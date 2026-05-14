@@ -190,8 +190,19 @@ npm start
 
 推荐直接用 `make`，少记环境变量。
 
+依赖命令语义：
+
+| Command | Semantics |
+| --- | --- |
+| `make deps-up` | 启动或更新 integration dependencies。 |
+| `make deps-ready` | 只轮询 readiness，不启动 dependencies。 |
+| `make deps-bootstrap` | Makefile helper：先 `deps-up`，再 `deps-ready`。 |
+| `make deps-init` | 先 `deps-bootstrap`，再初始化 postgres/keycloak。 |
+| `make deps-smoke` | 先 `deps-init`，再执行 dependency smoke。 |
+| `make bootstrap` | 完整依赖准备入口，收口到 `deps-smoke`。 |
+
 ```bash
-# 1) 一键准备依赖（启动 + 健康检查 + PG 初始化）
+# 1) 一键准备依赖（启动 + 健康检查 + 初始化 + smoke）
 make bootstrap
 
 # 2) 启动 API（新终端）
@@ -208,7 +219,7 @@ make urls
 
 ```bash
 make help          # 查看所有命令
-make deps-init     # 只执行 postgres schema 初始化（含 pgvector）
+make deps-init     # 启动/等待依赖后执行 postgres/keycloak 初始化
 make api-dev-min   # 仅 keycloak + minio 的最小 API 启动
 make web-msw       # 前端 mock 模式
 make e2e                # mock e2e (MSW)
@@ -822,7 +833,7 @@ When business logic changes are large, run this manual flow once before freeze:
 5. Validate resource management:
    - endpoints create/edit/toggle/delete
    - files upload/manage libraries
-   - agents create/edit/toggle and key management
+   - Agent Runners create/edit/toggle and key management
 6. Validate resource policy:
    - edit default/resource/subject rules
    - save and confirm effective summary update

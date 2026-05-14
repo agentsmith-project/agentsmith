@@ -8,6 +8,10 @@ import {
   type IntegrationDepsProbeName,
 } from './integration-deps-ready';
 
+function readMakeTargetBlock(makefile: string, target: string): string {
+  return makefile.match(new RegExp(`^${target}:[^\\n]*(?:\\n\\t[^\\n]*)*`, 'm'))?.[0] ?? '';
+}
+
 describe('integration deps readiness polling', () => {
   it('continues immediately when all dependencies are healthy', async () => {
     const probes: IntegrationDepsProbeName[] = [];
@@ -178,5 +182,28 @@ describe('integration deps readiness polling', () => {
     expect(makefile).toContain('scripts/integration-deps-ready.ts');
     expect(makefile).not.toContain('DEPS_READY_SLEEP');
     expect(makefile).not.toContain('sleep $(DEPS_READY_SLEEP)');
+  });
+
+  it('keeps Makefile deps-ready readiness-only and names the combined helper deps-bootstrap', () => {
+    const makefile = readFileSync('Makefile', 'utf8');
+    const depsReady = readMakeTargetBlock(makefile, 'deps-ready');
+    const depsBootstrap = readMakeTargetBlock(makefile, 'deps-bootstrap');
+    const depsInit = readMakeTargetBlock(makefile, 'deps-init');
+    const depsSmoke = readMakeTargetBlock(makefile, 'deps-smoke');
+    const bootstrap = readMakeTargetBlock(makefile, 'bootstrap');
+
+    expect(depsReady).not.toBe('');
+    expect(depsReady.split('\n')[0]).not.toMatch(/\bdeps-up\b/);
+    expect(depsReady).not.toMatch(/\bintegration:deps:up\b|\bdeps-up\b/);
+    expect(depsReady).toContain('scripts/integration-deps-ready.ts');
+
+    expect(depsBootstrap).not.toBe('');
+    expect(depsBootstrap).toMatch(/\bdeps-up\b/);
+    expect(depsBootstrap).toMatch(/\bdeps-ready\b/);
+
+    expect(depsInit.split('\n')[0]).toMatch(/\bdeps-bootstrap\b/);
+    expect(depsInit.split('\n')[0]).not.toMatch(/\bdeps-ready\b/);
+    expect(depsSmoke.split('\n')[0]).toMatch(/\bdeps-init\b/);
+    expect(bootstrap.split('\n')[0]).toMatch(/\bdeps-smoke\b/);
   });
 });

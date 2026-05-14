@@ -5,6 +5,7 @@ import YAML from 'yaml';
 import {
   CURRENT_CI_WORKFLOW_MANIFEST,
   CURRENT_WORKFLOW_DOCUMENT_FILES,
+  listCurrentGovernanceSurfaceInventory,
 } from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
@@ -69,6 +70,19 @@ function listTrackedWorkflowFiles(): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
+    .sort();
+}
+
+function listTrackedScriptFiles(): string[] {
+  const stdout = execFileSync('git', ['ls-files', 'scripts'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith('.sh'))
     .sort();
 }
 
@@ -138,6 +152,49 @@ function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId:
   return paths.sort();
 }
 
+function readMakeTargetBlock(content: string, target: string): string {
+  const lines = content.split('\n');
+  const start = lines.findIndex((line) => line.startsWith(`${target}:`));
+  if (start === -1) return '';
+
+  const next = lines.findIndex((line, index) => index > start && /^[A-Za-z0-9_.-]+:/.test(line));
+  return lines.slice(start, next === -1 ? lines.length : next).join('\n');
+}
+
+function dependencyCallerKey(pathName: string, calls: readonly string[]): string {
+  return `${pathName}:${calls.join('|')}`;
+}
+
+function collectDependencyCallerKeys(): string[] {
+  const keys: string[] = [];
+  const makefile = readFileSync(path.join(rootDir, 'Makefile'), 'utf8');
+
+  if (readMakeTargetBlock(makefile, 'deps-up').includes('integration:deps:up')) {
+    keys.push(dependencyCallerKey('Makefile', ['integration:deps:up']));
+  }
+  if (readMakeTargetBlock(makefile, 'deps-ready').includes('scripts/integration-deps-ready.ts')) {
+    keys.push(dependencyCallerKey('Makefile', ['scripts/integration-deps-ready.ts']));
+  }
+  if (/^deps-bootstrap:\s*deps-up\s+deps-ready/m.test(makefile)) {
+    keys.push(dependencyCallerKey('Makefile', ['deps-up', 'deps-ready']));
+  }
+
+  for (const scriptPath of listTrackedScriptFiles()) {
+    const content = readFileSync(path.join(rootDir, scriptPath), 'utf8');
+    if (/\bnpm run integration:deps:up\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['integration:deps:up']));
+    }
+    if (/\bmake\s+deps-ready\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['make deps-ready']));
+    }
+    if (/\bmake\s+deps-bootstrap\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['make deps-bootstrap']));
+    }
+  }
+
+  return keys.sort();
+}
+
 function sorted(values: readonly string[]): string[] {
   return [...values].sort();
 }
@@ -156,6 +213,7 @@ function assertArrayEqual(
 }
 
 const failures: string[] = [];
+const governanceSurfaceInventory = listCurrentGovernanceSurfaceInventory();
 
 for (const relativePath of listTrackedFiles()) {
   const absPath = path.join(rootDir, relativePath);
@@ -183,6 +241,25 @@ assertArrayEqual(
   'active GitHub workflow files must be declared in CURRENT_CI_WORKFLOW_MANIFEST',
   failures,
 );
+
+assertArrayEqual(
+  governanceSurfaceInventory.dependencyStartupReadinessCallers.map((caller) => (
+    dependencyCallerKey(caller.path, caller.calls)
+  )),
+  collectDependencyCallerKeys(),
+  'lean governance inventory must identify every dependency startup/readiness caller',
+  failures,
+);
+
+if (!governanceSurfaceInventory.evidenceAuthorityRoots.some((root) => root.authority === 'campaign')) {
+  failures.push('lean governance inventory must include campaign authority roots');
+}
+if (!governanceSurfaceInventory.evidenceAuthorityRoots.some((root) => root.authority === 'standalone_diagnostic')) {
+  failures.push('lean governance inventory must include standalone diagnostic roots');
+}
+if (governanceSurfaceInventory.publicHumanEntrypoints.length === 0) {
+  failures.push('lean governance inventory must include public human entrypoints');
+}
 
 for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
   const parsedWorkflow = parseWorkflow(workflow.path);

@@ -3,6 +3,7 @@ import path from 'node:path';
 import {
   CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS,
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
+  listCurrentGovernanceSurfaceInventory,
   listCurrentWorkflowCommands,
   listQuickHumanCurrentWorkflowCommands,
   type CurrentWorkflowCommand,
@@ -48,6 +49,7 @@ const contractsCheckWorkflow = read('.github/workflows/contracts-check.yml');
 const qualityGatesWorkflow = read('.github/workflows/quality-gates.yml');
 const governanceModel = read(governanceDoc);
 const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+const governanceSurfaceInventory = listCurrentGovernanceSurfaceInventory();
 
 const failures: string[] = [];
 
@@ -238,6 +240,19 @@ requireMatch(governanceModel, /lane:backend-real:core/, 'current engineering gov
 requireMatch(governanceModel, /execution target/i, 'current engineering governance model must describe structured execution targets');
 requireMatch(governanceModel, /operator hint/i, 'current engineering governance model must describe command as an operator hint');
 requireMatch(development, /operator hint/i, 'DEVELOPMENT must describe command as an operator hint');
+requireMatch(governanceModel, /Lean closure inventory/, 'current engineering governance model must include the lean closure inventory view');
+requireMatch(governanceModel, /campaign authority/, 'lean closure inventory must label campaign authority roots');
+requireMatch(governanceModel, /standalone diagnostics/, 'lean closure inventory must label standalone diagnostic roots');
+requireMatch(governanceModel, /run-local state/, 'lean closure inventory must label run-local state as operational state');
+requireMatch(governanceModel, /dependency startup\/readiness callers/, 'lean closure inventory must list dependency startup/readiness callers');
+requireMatch(governanceModel, /Intentional duplicate-looking safety checks/, 'lean closure inventory must separate intentional duplicate-looking safety checks from waste');
+for (const caller of governanceSurfaceInventory.dependencyStartupReadinessCallers) {
+  requireMatch(
+    governanceModel,
+    new RegExp(escapeRegExp(caller.caller)),
+    `lean closure inventory must document dependency caller ${caller.caller}`,
+  );
+}
 requireMatch(contractsIndex, /product-terminology\.md/, 'contracts README is missing the product terminology contract reference');
 requireMatch(contractsIndex, /Model/, 'contracts README must describe Model as part of the current terminology contract');
 requireMatch(contractsIndex, /Agent tasks/, 'contracts README must describe Agent tasks as part of the current terminology contract');

@@ -23,6 +23,7 @@ export type ChangedFileImpactRule =
   | 'visual_code_ref'
   | 'trace_spec_story_binding'
   | 'env_only_configuration'
+  | 'docs_only'
   | 'design_system'
   | 'runner_context_credential'
   | 'release_real_owner_diagnostic'
@@ -196,6 +197,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'visual_code_ref',
   'trace_spec_story_binding',
   'env_only_configuration',
+  'docs_only',
   'design_system',
   'runner_context_credential',
   'release_real_owner_diagnostic',
@@ -430,6 +432,23 @@ function isDesignSystemPath(filePath: string): boolean {
     || /^tailwind\.config\.[cm]?[jt]s$/.test(filePath)
     || /^postcss\.config\.[cm]?[jt]s$/.test(filePath)
     || filePath === 'components.json';
+}
+
+function isDocsOnlyPath(filePath: string): boolean {
+  if (
+    isDesignSystemPath(filePath)
+    || isReleaseDeployPath(filePath)
+    || isUnifiedDeployPath(filePath)
+  ) {
+    return false;
+  }
+
+  return filePath === 'README.md'
+    || filePath === 'DEVELOPMENT.md'
+    || /^marketing\/.*\.md$/u.test(filePath)
+    || /^docs\/(?:user-guides|testing|engineering)\/.*\.md$/u.test(filePath)
+    || filePath === 'docs/current-engineering-governance-model.md'
+    || filePath === 'docs/项目宪法.md';
 }
 
 function levelsForGoal(goal: VerificationGoal): readonly VerificationLevel[] {
@@ -1426,6 +1445,26 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         storyIds: [],
         action,
         manualReviewRequired: true,
+        broadImpact: false,
+      });
+    }
+
+    if (isDocsOnlyPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Run npm run verify -- --goal=pr --run for the docs-only change; heavy visual/backend-real evidence is not selected by this impact report.';
+      const surface = 'docs-only';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} is docs-only; V0/V1 verification is selected without visual or backend-real expansion.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'docs_only',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
         broadImpact: false,
       });
     }

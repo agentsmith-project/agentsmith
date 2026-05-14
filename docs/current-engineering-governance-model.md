@@ -158,6 +158,53 @@ npm run release:status
 ```
 <!-- current-workflow:governance-model:end -->
 
+## 3.5 Lean closure inventory
+
+This is a review baseline for simplifying existing scripts; it adds no command, gate, lane, campaign, or inventory system.
+
+Public human entrypoints:
+- `npm run dev`
+- `make local-real-up`
+- `make local-real-status`
+- `make local-real-down`
+- `make local-real-reset`
+- `npm run verify` and `npm run verify -- --goal=<pr|real|visual> --run`
+- `npm run release:ready`
+- `npm run release:status`
+
+Internal adapters and owner diagnostics stay behind manifests, CI, failure projection, or owner runbooks:
+- `gate:*`, `lane:*`, `backend-real:*`, `release:campaign:*`, `release:aggregate`
+- focused owner scripts such as `test:unified-deploy:*`, `test:backend-real:*`, and `test:agent-task:*`
+
+Evidence roots:
+- campaign authority: release campaign paths under `<campaign-root>/...`, normally `artifacts/release-runs/<campaign-run-id>/...`
+- standalone diagnostics: `artifacts/backend-real/runs/`, `artifacts/backend-real-visual/`, `artifacts/visual-baseline-reviews/`, and `artifacts/unified-deploy/` unless linked from the campaign root
+- run-local state: `artifacts/runtime/lines/<line>/current`; this is operational state, not release sign-off evidence
+
+Cleanup commands and ownership proofs:
+- `make local-real-down` / `make local-real-reset`: `current-runtime-line:local-manual`
+- `npm run backend-real:reset`: `current-resource-lock:destructive-lifecycle`
+- `npm run integration:deps:down` / `npm run integration:deps:down:volumes`: `current-resource-lock:destructive-lifecycle`
+
+Current dependency startup/readiness callers:
+
+| Caller | File | Calls | Meaning |
+| --- | --- | --- | --- |
+| `deps-up` | `Makefile` | `integration:deps:up` | dependency startup |
+| `deps-ready` | `Makefile` | `scripts/integration-deps-ready.ts` | readiness-only polling |
+| `deps-bootstrap` | `Makefile` | `deps-up` then `deps-ready` | intentional combined helper |
+| `backend-real bootstrap` | `scripts/backend-real-bootstrap.sh` | `integration:deps:up` | backend-real owner dependency startup |
+| `internal agent task real gate bootstrap` | `scripts/run-internal-agent-task-real-gate.sh` | `make deps-bootstrap` | intentional combined helper caller |
+| `integration e2e full bootstrap` | `scripts/run-integration-e2e-full.sh` | `make deps-bootstrap` | intentional combined helper caller |
+| `release user story integration bootstrap` | `scripts/run-integration-release-user-story.sh` | `make deps-bootstrap` | intentional combined helper caller |
+| `release local precheck bootstrap` | `scripts/run-release-local-precheck.sh` | `make deps-bootstrap` | intentional combined helper caller |
+
+Intentional duplicate-looking safety checks:
+- wrapper `result.json` plus native `result.json`: preserves wrapper versus producer truth
+- terminal aggregate revalidation: recomputes campaign evidence before release verdict
+- rollout image preflight: proves the rollout target can consume the image
+- route smoke before product flows: fails fast on basic availability before expensive checks
+
 ## 4. Playwright model
 
 Current Playwright projects map to the workflow model as follows:

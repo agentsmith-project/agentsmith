@@ -23,11 +23,14 @@ screenshots/
 │   └── overview.png
 ├── 04-chat/
 │   └── chat.png
-├── 05-notebook/
-│   ├── notebook.png
-│   └── task-detail.png
-├── 06-agents/
-│   └── agents.png
+├── 05-agent-tasks/
+│   ├── agent-tasks.png
+│   ├── create-task-dialog.png
+│   └── agent-task-detail.png
+├── 06-agent-runners/
+│   ├── agent-runners.png
+│   ├── create-agent-runner-dialog.png
+│   └── connection-keys-dialog.png
 ├── 07-endpoints/
 │   └── endpoints.png
 ├── 08-members/

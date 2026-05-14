@@ -2,6 +2,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  collectProductFacingTerminologyFiles,
+  scanProductFacingTerminology,
+} from "./check-product-terminology";
 
 describe("check-product-terminology contract", () => {
   it("passes against the active product terminology contract and route truth", () => {
@@ -90,5 +94,78 @@ describe("check-product-terminology contract", () => {
         path.join(root, "docs/contracts/notebook-frontend-module-map.md"),
       ),
     ).toBe(false);
+  });
+
+  it("flags retired product terms in product-facing docs while allowing path and implementation contexts", () => {
+    const findings = scanProductFacingTerminology([
+      {
+        path: "README.md",
+        content:
+          "Use Notebook for work and Credentials for project secret setup.\n",
+      },
+      {
+        path: "DEVELOPMENT.md",
+        content: "Manual UAT still says agents create/edit/toggle.\n",
+      },
+      {
+        path: "docs/user-guides/terminology-drift.md",
+        content:
+          "Notebook was retired but still appears in the product page.\n",
+      },
+      {
+        path: "docs/user-guides/terminology-policy.md",
+        content: "Do not use Notebook as a product-facing term.\n",
+      },
+      {
+        path: "marketing/市场推广文案-英文-v1.md",
+        content: "Enterprise teams can manage AI agents safely.\n",
+      },
+      {
+        path: "marketing/README.md",
+        content:
+          "Generated screenshot paths may remain `05-agent-tasks/` and `13-credentials/`.\n",
+      },
+      {
+        path: "docs/user-guides/workspace-isolation-model.md",
+        content:
+          "| Mongo | `credentials` | collection_prefix + baseCollection | Yes |\n",
+      },
+      {
+        path: "docs/contracts/product-terminology.md",
+        content:
+          "Use `Agent tasks` for the active product surface instead of Notebook.\nNotebook was retired but still appears in the product page.\n",
+      },
+    ]);
+
+    expect(
+      findings.map((finding) => ({
+        path: finding.path,
+        term: finding.term,
+        line: finding.line,
+      })),
+    ).toEqual([
+      { path: "README.md", term: "Notebook", line: 1 },
+      { path: "README.md", term: "Credentials", line: 1 },
+      { path: "DEVELOPMENT.md", term: "Agents", line: 1 },
+      {
+        path: "docs/user-guides/terminology-drift.md",
+        term: "Notebook",
+        line: 1,
+      },
+    ]);
+  });
+
+  it("keeps UXUI terminology coverage to selected product-facing corrected files", () => {
+    const paths = collectProductFacingTerminologyFiles().map(
+      (file) => file.path,
+    );
+
+    expect(paths).toContain(
+      "docs/UXUI/00-设计系统/站点页面配方与壳层规范-v1.md",
+    );
+    expect(paths).toContain("docs/UXUI/00-设计系统/错误码映射表-v1.md");
+    expect(paths).not.toContain(
+      "docs/UXUI/01-通用规范/usage-audit-职责边界-v1.md",
+    );
   });
 });

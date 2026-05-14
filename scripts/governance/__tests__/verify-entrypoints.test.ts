@@ -799,9 +799,12 @@ describe('verify human entrypoints', () => {
       expect(exitCode).toBe(1);
       expect(sentinelProfiles).toEqual([]);
       expect(aliases).toEqual([]);
-      expect(combinedOutput.trim().split('\n')).toHaveLength(8);
-      expect(combinedOutput).toContain('AgentSmith Verification');
+      expect(combinedOutput.trim().split('\n')).toHaveLength(6);
+      expect(combinedOutput).not.toContain('AgentSmith Verification');
+      expect(combinedOutput).not.toContain('Verdict:');
       expect(combinedOutput).toContain('Blocker: environment_conflict');
+      expect(combinedOutput).toContain('Stage: preflight');
+      expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
       expect(combinedOutput).toContain('Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down');
       expect(combinedOutput).toContain('Rerun: npm run verify -- --goal=real --run');
       expect(combinedOutput).toContain(`Evidence: ${evidencePath}`);
@@ -2233,6 +2236,11 @@ describe('verify human entrypoints', () => {
 
       expect(exitCode).toBe(7);
       expect(aliases).toEqual(['verify:quick']);
+      expect(stderr.join('')).toContain('Blocker: verify_alias_failed');
+      expect(stderr.join('')).toContain('Stage: verify');
+      expect(stderr.join('')).toContain('Why: npm run verify:quick failed with exit 7.');
+      expect(stderr.join('')).toContain('Rerun: npm run verify -- --goal=debug --run');
+      expect(stderr.join('')).toContain(`Evidence: ${root}`);
       expect(stderr.join('')).toContain('[verify] failed script: npm run verify:quick (exit 7)');
       expect(stderr.join('')).toContain(`[verify] report root: ${root}`);
       expect(stdout.join('')).toContain(`Pure check shadow audit: ${join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME)}`);

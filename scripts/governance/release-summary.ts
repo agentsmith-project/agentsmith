@@ -12,6 +12,7 @@ import {
 import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
+import { renderShortFailureProjection } from './status-projection';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
 
@@ -248,16 +249,15 @@ function nextActionForFailure(
   }
 
   const ownerCommandByStep: Record<string, string> = {
-    'lane-visual': 'npm run verify:visual',
+    'lane-visual': 'npm run verify -- --goal=visual --run',
     'gate-release': 'npm run verify -- --goal=release-real --run',
-    'lane-unified-deploy-substrate': 'npm run lane:unified-deploy:substrate',
-    'lane-unified-deploy-local-kind-images': 'npm run lane:unified-deploy:local-kind:images',
-    'lane-unified-deploy-local-kind': 'npm run lane:unified-deploy:local-kind',
-    'lane-unified-deploy-product-flows': 'npm run lane:unified-deploy:product-flows',
-    'gate-fast': 'npm run verify:quick',
-    'gate-default': 'npm run verify:default',
+    'gate-fast': 'npm run verify -- --goal=debug --run',
+    'gate-default': 'npm run verify -- --goal=pr --run',
   };
   const ownerCommand = blockedStep ? ownerCommandByStep[blockedStep] : undefined;
+  const ownerInspection = blockedStep
+    ? `Inspect campaign evidence for ${blockedStep}, fix the owning issue, then rerun npm run release:ready.`
+    : 'Inspect the campaign evidence, fix the owning issue, then rerun npm run release:ready.';
 
   if (failureClass === 'infra_setup_failure') {
     return 'Fix the local release environment, then rerun npm run release:ready.';
@@ -268,7 +268,7 @@ function nextActionForFailure(
   if (failureClass === 'evidence_missing') {
     return ownerCommand
       ? `Run the owning diagnostic (${ownerCommand}), then rerun npm run release:ready.`
-      : 'Run the owning diagnostic for the missing evidence, then rerun npm run release:ready.';
+      : ownerInspection;
   }
   if (failureClass === 'contract_drift') {
     return 'Do not blindly rerun. Hand this to the governance maintainer to repair manifest/schema/evidence drift.';
@@ -276,7 +276,7 @@ function nextActionForFailure(
 
   return ownerCommand
     ? `Fix the product regression, run ${ownerCommand}, then rerun npm run release:ready.`
-    : 'Fix the product regression, then rerun npm run release:ready.';
+    : ownerInspection;
 }
 
 function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
@@ -552,6 +552,15 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       'Automated release verdict: MISSING',
       `Latest summary: not found (${status.latestPath})`,
       'Next: run npm run release:ready',
+      renderShortFailureProjection({
+        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        verdict: 'BLOCKED',
+        blocker: 'release_status_missing_latest',
+        stage: 'not-started',
+        why: `Latest release summary pointer was not found: ${status.latestPath}`,
+        rerunCommand: 'npm run release:ready',
+        evidencePath: status.latestPath,
+      }).trimEnd(),
       '',
     ].join('\n');
   }
@@ -563,6 +572,15 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       'Automated release verdict: MISSING',
       `Summary: not found (${status.summaryPath})`,
       'Next: run npm run release:ready to produce a fresh campaign summary.',
+      renderShortFailureProjection({
+        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        verdict: 'BLOCKED',
+        blocker: 'release_status_missing_summary',
+        stage: 'report',
+        why: `Release summary is missing: ${status.summaryPath}`,
+        rerunCommand: 'npm run release:ready',
+        evidencePath: status.summaryPath,
+      }).trimEnd(),
       '',
     ].join('\n');
   }
@@ -574,14 +592,46 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       'Automated release verdict: UNKNOWN',
       `Why: ${status.error}`,
       'Next: rerun npm run release:ready after fixing the malformed summary pointer.',
+      renderShortFailureProjection({
+        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        verdict: 'BLOCKED',
+        blocker: 'release_status_malformed',
+        stage: 'report',
+        why: status.error,
+        inspectCommand: status.latestPath,
+        rerunCommand: 'npm run release:ready',
+        evidencePath: status.latestPath,
+      }).trimEnd(),
       '',
     ].join('\n');
   }
 
   const summary = status.summary;
+  if (summary.status !== 'passed') {
+    return [
+      'AgentSmith Release Status',
+      '',
+      `Automated release verdict: ${summary.automated_release_verdict}`,
+      `Campaign: ${summary.campaign_run_id}`,
+      renderShortFailureProjection({
+        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        verdict: 'FAILED',
+        blocker: summary.blocked_step ?? summary.failure_class,
+        stage: summary.stage,
+        why: summary.why,
+        inspectCommand: summary.summary_md_path,
+        rerunCommand: 'npm run release:ready',
+        evidencePath: summary.evidence_package,
+      }).trimEnd(),
+      `Next: ${summary.next_action}`,
+      '',
+    ].join('\n');
+  }
+
   return [
     'AgentSmith Release Status',
     '',
+    'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Automated release verdict: ${summary.automated_release_verdict}`,
     `Campaign: ${summary.campaign_run_id}`,
     `Blocked step: ${summary.blocked_step ?? '<none>'}`,

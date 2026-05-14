@@ -81,6 +81,7 @@ export interface BuildStatusProjectionInput {
 export interface ShortFailureProjectionInput {
   title?: string;
   diagnosticOnly?: boolean;
+  readOnlyMessage?: string | null;
   verdict?: 'FAILED' | 'BLOCKED';
   blocker: string;
   stage: string;
@@ -109,15 +110,21 @@ function redactProjectionPath(path: string): string {
   return path;
 }
 
+function isCleanRerunCommand(command: string): boolean {
+  return [
+    /^npm run verify(?:\s|$)/,
+    /^npm run release:(?:ready|status)(?:\s|$)/,
+    /^make local-real-(?:up|status|down|reset)(?:\s|$)/,
+  ].some((pattern) => pattern.test(command));
+}
+
 export function renderShortFailureProjection(input: ShortFailureProjectionInput): string {
   const lines: string[] = [];
-  if (input.title) {
-    lines.push(input.title);
+  if (input.readOnlyMessage) {
+    lines.push(`Read-only: ${input.readOnlyMessage}`);
   }
   if (input.diagnosticOnly) {
     lines.push('Diagnostic only: not a release verdict.');
-  } else {
-    lines.push(`Verdict: ${input.verdict ?? 'FAILED'}`);
   }
   lines.push(`Blocker: ${redactProjectionText(input.blocker)}`);
   lines.push(`Stage: ${redactProjectionText(input.stage)}`);
@@ -127,8 +134,10 @@ export function renderShortFailureProjection(input: ShortFailureProjectionInput)
   } else if (input.inspectCommand) {
     lines.push(`Inspect: ${redactProjectionText(input.inspectCommand)}`);
   }
-  if (input.rerunCommand) {
+  if (input.rerunCommand && isCleanRerunCommand(input.rerunCommand)) {
     lines.push(`Rerun: ${redactProjectionText(input.rerunCommand)}`);
+  } else if (input.rerunCommand && !input.fixCommand && !input.inspectCommand) {
+    lines.push(`Inspect: ${redactProjectionText(input.rerunCommand)}`);
   }
   if (input.evidencePath) {
     lines.push(`Evidence: ${redactProjectionPath(input.evidencePath)}`);
@@ -331,17 +340,13 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
   if (owner === 'gate-release') {
     return 'npm run verify -- --goal=release-real --run';
   }
-  if (owner === 'lane-unified-deploy-substrate') {
-    return 'npm run lane:unified-deploy:substrate';
-  }
-  if (owner === 'lane-unified-deploy-local-kind-images') {
-    return 'npm run lane:unified-deploy:local-kind:images';
-  }
-  if (owner === 'lane-unified-deploy-local-kind') {
-    return 'npm run lane:unified-deploy:local-kind';
-  }
-  if (owner === 'lane-unified-deploy-product-flows') {
-    return 'npm run lane:unified-deploy:product-flows';
+  if (
+    owner === 'lane-unified-deploy-substrate'
+    || owner === 'lane-unified-deploy-local-kind-images'
+    || owner === 'lane-unified-deploy-local-kind'
+    || owner === 'lane-unified-deploy-product-flows'
+  ) {
+    return goal === 'release-ready' ? 'npm run release:ready' : null;
   }
   if (owner === 'gate-fast') {
     return 'npm run verify -- --goal=debug --run';
@@ -958,10 +963,39 @@ export function renderStatusProjectionLeaseShadowLines(
   ];
 }
 
+function releaseReadyRerunCommand(projection: CurrentStatusProjection): string | null {
+  if (projection.goal === 'release-ready' && projection.presentation_status !== 'passed') {
+    return 'npm run release:ready';
+  }
+  return projection.safe_next_command;
+}
+
+function renderProjectionBlocker(projection: CurrentStatusProjection): string | null {
+  if (projection.goal !== 'release-ready' || projection.presentation_status === 'passed') {
+    return null;
+  }
+
+  const evidencePath = projection.primary_blocker?.path
+    ?? projection.deepest_reason?.source_path
+    ?? projection.authority_paths.aggregate
+    ?? projection.evidence_paths[0]?.path
+    ?? null;
+  return renderShortFailureProjection({
+    blocker: projection.primary_blocker?.owner ?? projection.deepest_reason?.code ?? projection.presentation_status,
+    stage: projection.primary_blocker?.stage ?? projection.phase,
+    why: projection.deepest_reason?.summary ?? projection.presentation_status,
+    inspectCommand: evidencePath ?? 'release status artifacts are not available yet.',
+    rerunCommand: releaseReadyRerunCommand(projection),
+    evidencePath,
+  }).trimEnd();
+}
+
 export function renderStatusProjection(projection: CurrentStatusProjection): string {
+  const blocker = renderProjectionBlocker(projection);
   return [
     'AgentSmith Status Projection',
     '',
+    ...(blocker ? [blocker, ''] : []),
     `Projection kind: ${projection.projection_kind.replaceAll('_', '-')}`,
     `Goal: ${renderOptional(projection.goal)}`,
     `Runtime line: ${renderOptional(projection.runtime_line)}`,

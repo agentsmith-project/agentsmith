@@ -1,4 +1,4 @@
-.PHONY: help help-extended quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
+.PHONY: help help-extended quick-help help-glossary bootstrap deps-up deps-bootstrap deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent-task e2e-int-chat-real e2e-int-local \
@@ -28,6 +28,8 @@
 	manual-feishu-admin manual-feishu-user manual-feishu-check
 
 NPM ?= npm
+
+.NOTPARALLEL: deps-bootstrap bootstrap
 
 # Load local non-committed developer overrides/secrets.
 # .env.local is already gitignored in standard setups.
@@ -228,16 +230,18 @@ verify-governance-with-report:
 deps-up:
 	$(NPM) run integration:deps:up
 
+deps-bootstrap: deps-up deps-ready
+
 # Poll integration services until they are ready, with a bounded timeout.
 DEPS_READY_TIMEOUT_MS ?= 120000
 DEPS_READY_POLL_MS ?= 1000
-deps-ready: deps-up
+deps-ready:
 	DEPS_READY_TIMEOUT_MS=$(DEPS_READY_TIMEOUT_MS) \
 	DEPS_READY_POLL_MS=$(DEPS_READY_POLL_MS) \
 	npx tsx scripts/integration-deps-ready.ts
 
 # Order: deps-smoke runs last (verifies pgvector, which is created by deps-init).
-deps-init: deps-ready
+deps-init: deps-bootstrap
 	$(NPM) run integration:deps:init:postgres
 	$(NPM) run integration:deps:init:keycloak
 

@@ -18,8 +18,8 @@ npm run marketing:assets:generate
 | 02-projects | `projects-list.png` | 项目列表 |
 | 03-overview | `overview.png` | 项目概览 |
 | 04-chat | `chat.png` | 对话工作区 |
-| 05-notebook | `notebook.png`, `task-detail.png` | Notebook 列表与任务详情 |
-| 06-agents | `agents.png` | 智能体管理 |
+| 05-agent-tasks | `agent-tasks.png`, `create-task-dialog.png`, `agent-task-detail.png` | Agent tasks 列表与任务详情 |
+| 06-agent-runners | `agent-runners.png`, `create-agent-runner-dialog.png`, `connection-keys-dialog.png` | Agent Runners 管理 |
 | 07-endpoints | `endpoints.png` | 端点管理 |
 | 08-members | `members-list.png`, `member-detail-overview.png`, `invite-member-dialog.png` | 成员列表、详情与邀请对话框 |
 | 09-audit | `audit.png` | 审计日志 |

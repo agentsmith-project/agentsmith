@@ -19,7 +19,7 @@ AgentSmith 当前只采用一条治理主线：
 
 1. 项目级治理（project scope）
 2. LLM endpoint 统一约束链路
-3. Chat / Notebook / API 共用同一套约束与审计证据
+3. Chat / Agent tasks / API 共用同一套约束与审计证据
 
 约束对象：
 

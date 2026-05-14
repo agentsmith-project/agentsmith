@@ -1,10 +1,13 @@
 import {
   findCurrentGateDefinition,
   findCurrentGateDefinitionById,
+  listCurrentGateDefinitions,
   type CurrentGateRequirement,
   type CurrentGateStoryEvidenceKind,
   type CurrentGateStoryEvidencePolicy,
 } from './current-gate-manifest';
+import { findCurrentResourceLockById } from './current-resource-lock-manifest';
+import { listCurrentRuntimeLines } from './current-runtime-line-manifest';
 
 export const CURRENT_WORKFLOW_TOP_LEVEL_TERMS = [
   '环境',
@@ -102,6 +105,67 @@ export type CurrentWorkflowDiagnosticCommand = CurrentWorkflowDiagnosticCommandB
       ownerSurface: string;
     }
 );
+
+export type CurrentGovernanceEvidenceAuthority = 'campaign' | 'standalone_diagnostic';
+export type CurrentGovernanceDependencyPurpose =
+  | 'dependency_startup'
+  | 'dependency_readiness'
+  | 'combined_bootstrap';
+
+export interface CurrentGovernancePublicHumanEntrypoint {
+  command: string;
+  source: string;
+  description: string;
+}
+
+export interface CurrentGovernanceInternalAdapter {
+  commandOrAdapter: string;
+  workflowRole: CurrentWorkflowRole;
+  source: string;
+  note: string;
+}
+
+export interface CurrentGovernanceEvidenceAuthorityRoot {
+  path: string;
+  authority: CurrentGovernanceEvidenceAuthority;
+  source: string;
+}
+
+export interface CurrentGovernanceRunLocalStateRoot {
+  path: string;
+  source: string;
+  note: string;
+}
+
+export interface CurrentGovernanceCleanupOwnershipProof {
+  command: string;
+  ownershipProof: string;
+  note: string;
+}
+
+export interface CurrentGovernanceDependencyCaller {
+  path: string;
+  caller: string;
+  calls: readonly string[];
+  purpose: CurrentGovernanceDependencyPurpose;
+  note: string;
+}
+
+export interface CurrentGovernanceIntentionalDuplicateSafetyCheck {
+  id: string;
+  where: string;
+  whyNotWaste: string;
+}
+
+export interface CurrentGovernanceSurfaceInventory {
+  publicHumanEntrypoints: readonly CurrentGovernancePublicHumanEntrypoint[];
+  internalAdaptersAndOwnerDiagnostics: readonly CurrentGovernanceInternalAdapter[];
+  evidenceAuthorityRoots: readonly CurrentGovernanceEvidenceAuthorityRoot[];
+  runLocalStateRoots: readonly CurrentGovernanceRunLocalStateRoot[];
+  cleanupCommandsAndOwnershipProofs: readonly CurrentGovernanceCleanupOwnershipProof[];
+  dependencyStartupReadinessCallers: readonly CurrentGovernanceDependencyCaller[];
+  intentionalDuplicateSafetyChecks: readonly CurrentGovernanceIntentionalDuplicateSafetyCheck[];
+}
 
 export const CURRENT_CI_WORKFLOW_ROLES = [
   'quality_gate',
@@ -1169,4 +1233,207 @@ export function listQuickHumanCurrentWorkflowCommands(): readonly CurrentWorkflo
 
 export function listCurrentCIWorkflowJobs(): readonly CurrentCIWorkflowJob[] {
   return CURRENT_CI_WORKFLOW_MANIFEST.flatMap((workflow) => workflow.jobs);
+}
+
+function uniqueByKey<T>(items: readonly T[], keyOf: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+
+  for (const item of items) {
+    const key = keyOf(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+
+  return result;
+}
+
+function workflowCommandSurface(command: CurrentWorkflowCommand): string {
+  return command.npmScript ?? command.makeTarget ?? command.command;
+}
+
+const CURRENT_DEPENDENCY_STARTUP_READINESS_CALLERS: readonly CurrentGovernanceDependencyCaller[] = [
+  {
+    path: 'Makefile',
+    caller: 'deps-up',
+    calls: ['integration:deps:up'],
+    purpose: 'dependency_startup',
+    note: 'canonical Make wrapper for starting integration dependencies',
+  },
+  {
+    path: 'Makefile',
+    caller: 'deps-ready',
+    calls: ['scripts/integration-deps-ready.ts'],
+    purpose: 'dependency_readiness',
+    note: 'readiness-only polling target; no dependency startup',
+  },
+  {
+    path: 'Makefile',
+    caller: 'deps-bootstrap',
+    calls: ['deps-up', 'deps-ready'],
+    purpose: 'combined_bootstrap',
+    note: 'intentional combined helper; this is not duplicate waste',
+  },
+  {
+    path: 'scripts/backend-real-bootstrap.sh',
+    caller: 'backend-real bootstrap',
+    calls: ['integration:deps:up'],
+    purpose: 'dependency_startup',
+    note: 'backend-real owner bootstrap starts integration dependencies before readiness consumers',
+  },
+  {
+    path: 'scripts/run-internal-agent-task-real-gate.sh',
+    caller: 'internal agent task real gate bootstrap',
+    calls: ['make deps-bootstrap'],
+    purpose: 'combined_bootstrap',
+    note: 'owner diagnostic uses the canonical combined dependency bootstrap helper',
+  },
+  {
+    path: 'scripts/run-integration-e2e-full.sh',
+    caller: 'integration e2e full bootstrap',
+    calls: ['make deps-bootstrap'],
+    purpose: 'combined_bootstrap',
+    note: 'integration e2e preflight uses the canonical combined dependency bootstrap helper',
+  },
+  {
+    path: 'scripts/run-integration-release-user-story.sh',
+    caller: 'release user story integration bootstrap',
+    calls: ['make deps-bootstrap'],
+    purpose: 'combined_bootstrap',
+    note: 'release user story owner diagnostic uses the canonical combined dependency bootstrap helper',
+  },
+  {
+    path: 'scripts/run-release-local-precheck.sh',
+    caller: 'release local precheck bootstrap',
+    calls: ['make deps-bootstrap'],
+    purpose: 'combined_bootstrap',
+    note: 'release precheck uses the canonical combined dependency bootstrap helper after readiness reuse fails',
+  },
+] as const;
+
+const CURRENT_INTENTIONAL_DUPLICATE_SAFETY_CHECKS: readonly CurrentGovernanceIntentionalDuplicateSafetyCheck[] = [
+  {
+    id: 'wrapper-and-native-result-json',
+    where: 'current gate result writers',
+    whyNotWaste: 'keeps producer-owned native truth separate from wrapper verdict truth',
+  },
+  {
+    id: 'terminal-aggregate-revalidation',
+    where: 'gate:release:full',
+    whyNotWaste: 'recomputes campaign evidence completeness before the terminal release verdict',
+  },
+  {
+    id: 'rollout-image-consumability-preflight',
+    where: 'unified deploy local-kind rollout',
+    whyNotWaste: 'proves the rollout target can actually consume the image being deployed',
+  },
+  {
+    id: 'route-smoke-before-product-flows',
+    where: 'unified deploy product flows',
+    whyNotWaste: 'fails fast on basic availability before expensive focused product flows hide that blocker',
+  },
+] as const;
+
+function listEvidenceAuthorityRoots(): CurrentGovernanceEvidenceAuthorityRoot[] {
+  const gateRoots = listCurrentGateDefinitions().flatMap((gate) => [
+    ...gate.standaloneEvidenceArtifacts.map((artifact) => ({
+      path: artifact,
+      authority: 'standalone_diagnostic' as const,
+      source: gate.id,
+    })),
+    ...gate.campaignEvidenceArtifacts.map((artifact) => ({
+      path: artifact,
+      authority: 'campaign' as const,
+      source: gate.id,
+    })),
+  ]);
+  const runtimeStandaloneRoots = listCurrentRuntimeLines().flatMap((line) => (
+    line.evidenceRoot
+      ? [{
+          path: line.evidenceRoot,
+          authority: 'standalone_diagnostic' as const,
+          source: line.id,
+        }]
+      : []
+  ));
+
+  return uniqueByKey(
+    [...gateRoots, ...runtimeStandaloneRoots],
+    (root) => `${root.authority}:${root.path}`,
+  );
+}
+
+function listInternalAdaptersAndOwnerDiagnostics(): CurrentGovernanceInternalAdapter[] {
+  const workflowAdapters = listCurrentWorkflowCommands()
+    .filter((command) => !command.quickHuman)
+    .map((command) => ({
+      commandOrAdapter: workflowCommandSurface(command),
+      workflowRole: command.workflowRole,
+      source: 'current-workflow-manifest',
+      note: command.description,
+    }));
+  const ownerDiagnostics = CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.map((diagnostic) => ({
+    commandOrAdapter: diagnostic.internalAdapter ?? diagnostic.command,
+    workflowRole: diagnostic.workflowRole,
+    source: diagnostic.internalAdapter ? diagnostic.ownerSurface : 'diagnostic catalog',
+    note: diagnostic.whenToUse,
+  }));
+
+  return uniqueByKey(
+    [...workflowAdapters, ...ownerDiagnostics],
+    (adapter) => adapter.commandOrAdapter,
+  );
+}
+
+function listCleanupCommandsAndOwnershipProofs(): CurrentGovernanceCleanupOwnershipProof[] {
+  const destructiveLockId = findCurrentResourceLockById('destructive-lifecycle')?.id ?? 'destructive-lifecycle';
+
+  return [
+    {
+      command: 'make local-real-down',
+      ownershipProof: 'current-runtime-line:local-manual',
+      note: 'human cleanup for the supported local-real entrypoint',
+    },
+    {
+      command: 'make local-real-reset',
+      ownershipProof: 'current-runtime-line:local-manual',
+      note: 'human reset for the supported local-real entrypoint',
+    },
+    {
+      command: 'npm run backend-real:reset',
+      ownershipProof: `current-resource-lock:${destructiveLockId}`,
+      note: 'owner cleanup for backend-real release verification state',
+    },
+    {
+      command: 'npm run integration:deps:down',
+      ownershipProof: `current-resource-lock:${destructiveLockId}`,
+      note: 'integration dependency lifecycle cleanup; use only when that dependency owner is the active owner',
+    },
+    {
+      command: 'npm run integration:deps:down:volumes',
+      ownershipProof: `current-resource-lock:${destructiveLockId}`,
+      note: 'destructive integration dependency cleanup; requires explicit dependency owner intent',
+    },
+  ];
+}
+
+export function listCurrentGovernanceSurfaceInventory(): CurrentGovernanceSurfaceInventory {
+  return {
+    publicHumanEntrypoints: listQuickHumanCurrentWorkflowCommands().map((command) => ({
+      command: command.command,
+      source: 'current-workflow-manifest',
+      description: command.description,
+    })),
+    internalAdaptersAndOwnerDiagnostics: listInternalAdaptersAndOwnerDiagnostics(),
+    evidenceAuthorityRoots: listEvidenceAuthorityRoots(),
+    runLocalStateRoots: listCurrentRuntimeLines().map((line) => ({
+      path: line.runtimePath.currentRootRelative,
+      source: line.id,
+      note: 'run-local operational state; not release sign-off evidence',
+    })),
+    cleanupCommandsAndOwnershipProofs: listCleanupCommandsAndOwnershipProofs(),
+    dependencyStartupReadinessCallers: CURRENT_DEPENDENCY_STARTUP_READINESS_CALLERS,
+    intentionalDuplicateSafetyChecks: CURRENT_INTENTIONAL_DUPLICATE_SAFETY_CHECKS,
+  };
 }

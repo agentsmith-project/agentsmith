@@ -7,7 +7,7 @@ This guide reflects the current baseline:
 
 ## Scope
 
-Use `Personal connections` for user-owned external credentials that agents or downstream tools may use on your behalf.
+Use `Personal connections` for user-owned external credentials that Agent tasks or downstream tools may use on your behalf.
 
 Current provider types in `Personal connections`:
 - `Jira`

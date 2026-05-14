@@ -253,14 +253,7 @@ if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
     MINIO_API_PORT="${MINIO_API_PORT}" \
     MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
     KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
-    run_clean npm run integration:deps:up
-    POSTGRES_PORT="${POSTGRES_PORT}" \
-    MONGO_PORT="${MONGO_PORT}" \
-    REDIS_PORT="${REDIS_PORT}" \
-    MINIO_API_PORT="${MINIO_API_PORT}" \
-    MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
-    KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
-    run_clean make deps-ready
+    run_clean make deps-bootstrap
   fi
 fi
 

@@ -17,6 +17,7 @@ import { writeStoryAcceptanceReport } from './story-acceptance-report';
 import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
 import {
   buildStatusProjection,
+  renderShortFailureProjection,
   renderStatusProjectionLeaseShadowLines,
 } from './status-projection';
 import type { CurrentStatusProjection } from './current-status-projection-schema';
@@ -556,9 +557,18 @@ function renderFailedNpmScriptSummary(args: {
   script: string;
   status: number | null;
   reportRoot: string;
+  goal: VerificationGoal;
 }): string {
   const exitStatus = args.status === null ? 'terminated without exit status' : `exit ${args.status}`;
-  return [
+  const governedRerun = `npm run verify -- --goal=${args.goal} --run`;
+  return renderShortFailureProjection({
+    verdict: 'FAILED',
+    blocker: 'verify_alias_failed',
+    stage: 'verify',
+    why: `npm run ${args.script} failed with ${exitStatus}.`,
+    rerunCommand: governedRerun,
+    evidencePath: args.reportRoot,
+  }) + [
     `[verify] failed script: npm run ${args.script} (${exitStatus})`,
     `[verify] report root: ${args.reportRoot}`,
   ].join('\n') + '\n';
@@ -743,6 +753,7 @@ export function runVerificationCli(
           script,
           status: result.status,
           reportRoot,
+          goal: options.goal,
         }));
         const auditPath = writeVerifyPureCheckShadowAudit({
           repoRoot: pureCheckShadowRepoRoot,

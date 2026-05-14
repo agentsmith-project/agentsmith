@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -11,6 +11,19 @@ const rootDir = process.cwd();
 
 function read(relativePath: string): string {
   return readFileSync(path.join(rootDir, relativePath), 'utf8');
+}
+
+function listFiles(relativeDir: string): string[] {
+  const absoluteDir = path.join(rootDir, relativeDir);
+  return readdirSync(absoluteDir).flatMap((entry) => {
+    const relativePath = path.join(relativeDir, entry);
+    const absolutePath = path.join(rootDir, relativePath);
+    const stat = statSync(absolutePath);
+    if (stat.isDirectory()) {
+      return listFiles(relativePath);
+    }
+    return [relativePath];
+  });
 }
 
 function parseKeyValueOutput(output: string): Record<string, string> {
@@ -60,6 +73,13 @@ const localRuntimeFlows = read('docs/user-guides/local-runtime-flows.md');
 const runtimeLinesMatrix = read('docs/user-guides/runtime-lines-matrix.md');
 const unifiedDeployOperations = read('docs/user-guides/unified-deploy-operations.md');
 const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+
+const duplicateDepsBootstrapPattern = /\bintegration:deps:up\b[\s\S]{0,1400}?\bmake\s+deps-ready\b/;
+for (const sourcePath of listFiles('scripts').filter((filePath) => filePath.endsWith('.sh'))) {
+  if (duplicateDepsBootstrapPattern.test(read(sourcePath))) {
+    failures.push(`${sourcePath} must call make deps-bootstrap instead of npm run integration:deps:up followed by make deps-ready`);
+  }
+}
 
 const activeUniversalProxyRuntimeEntrypoints = [
   'scripts/run-integration-e2e-full.sh',

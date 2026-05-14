@@ -15,6 +15,7 @@ import {
   CURRENT_WORKFLOW_ROLES,
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
   listCurrentCIWorkflowJobs,
+  listCurrentGovernanceSurfaceInventory,
   listCurrentWorkflowCommands,
   listQuickHumanCurrentWorkflowSections,
   listRecommendedCurrentWorkflowCommands,
@@ -150,6 +151,62 @@ function readTrackedWorkflowFiles(): string[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .sort();
+}
+
+function readTrackedScriptFiles(): string[] {
+  const stdout = execSync('git ls-files scripts', {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith('.sh'))
+    .sort();
+}
+
+function readMakeTargetBlock(content: string, target: string): string {
+  const lines = content.split('\n');
+  const start = lines.findIndex((line) => line.startsWith(`${target}:`));
+  if (start === -1) return '';
+
+  const next = lines.findIndex((line, index) => index > start && /^[A-Za-z0-9_.-]+:/.test(line));
+  return lines.slice(start, next === -1 ? lines.length : next).join('\n');
+}
+
+function dependencyCallerKey(pathName: string, calls: readonly string[]): string {
+  return `${pathName}:${calls.join('|')}`;
+}
+
+function collectDependencyCallerKeysFromSources(): string[] {
+  const keys: string[] = [];
+  const makefile = readRepoFile('Makefile');
+
+  if (readMakeTargetBlock(makefile, 'deps-up').includes('integration:deps:up')) {
+    keys.push(dependencyCallerKey('Makefile', ['integration:deps:up']));
+  }
+  if (readMakeTargetBlock(makefile, 'deps-ready').includes('scripts/integration-deps-ready.ts')) {
+    keys.push(dependencyCallerKey('Makefile', ['scripts/integration-deps-ready.ts']));
+  }
+  if (/^deps-bootstrap:\s*deps-up\s+deps-ready/m.test(makefile)) {
+    keys.push(dependencyCallerKey('Makefile', ['deps-up', 'deps-ready']));
+  }
+
+  for (const scriptPath of readTrackedScriptFiles()) {
+    const content = readRepoFile(scriptPath);
+    if (/\bnpm run integration:deps:up\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['integration:deps:up']));
+    }
+    if (/\bmake\s+deps-ready\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['make deps-ready']));
+    }
+    if (/\bmake\s+deps-bootstrap\b/.test(content)) {
+      keys.push(dependencyCallerKey(scriptPath, ['make deps-bootstrap']));
+    }
+  }
+
+  return keys.sort();
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -917,6 +974,135 @@ describe('current workflow governance', () => {
 
     for (const job of mockEvidenceOwners) {
       expect(job.artifactPaths).toContain('artifacts/mock-lane/runs/**');
+    }
+  });
+
+  it('exposes a lean governance inventory from existing workflow truth', () => {
+    const inventory = listCurrentGovernanceSurfaceInventory();
+    const governanceModel = readRepoFile('docs/current-engineering-governance-model.md');
+
+    expect(governanceModel.match(/Lean closure inventory/g) ?? []).toHaveLength(1);
+    expect(inventory.publicHumanEntrypoints.map((entry) => entry.command)).toEqual([...HUMAN_ENTRYPOINT_COMMANDS]);
+    expect(inventory.internalAdaptersAndOwnerDiagnostics.map((entry) => entry.commandOrAdapter)).toEqual(
+      expect.arrayContaining([
+        'gate:release',
+        'gate:release:full',
+        'lane:visual',
+        'lane:backend-real:core',
+        'lane:unified-deploy:local-kind',
+        'test:unified-deploy:local-kind',
+      ]),
+    );
+
+    expect(inventory.evidenceAuthorityRoots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
+          authority: 'campaign',
+        }),
+        expect.objectContaining({
+          path: 'artifacts/backend-real-visual/<run-id>/ux-traces',
+          authority: 'standalone_diagnostic',
+        }),
+        expect.objectContaining({
+          path: 'artifacts/unified-deploy/',
+          authority: 'standalone_diagnostic',
+        }),
+      ]),
+    );
+    expect(inventory.evidenceAuthorityRoots.some((root) => root.authority === 'campaign')).toBe(true);
+    expect(inventory.evidenceAuthorityRoots.some((root) => root.authority === 'standalone_diagnostic')).toBe(true);
+
+    expect(inventory.runLocalStateRoots.map((root) => root.path)).toEqual(
+      expect.arrayContaining([
+        'artifacts/runtime/lines/local-manual/current',
+        'artifacts/runtime/lines/unified-deploy-local-kind/current',
+      ]),
+    );
+
+    expect(inventory.cleanupCommandsAndOwnershipProofs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: 'npm run backend-real:reset',
+          ownershipProof: 'current-resource-lock:destructive-lifecycle',
+        }),
+        expect.objectContaining({
+          command: 'make local-real-reset',
+          ownershipProof: 'current-runtime-line:local-manual',
+        }),
+      ]),
+    );
+
+    expect(inventory.dependencyStartupReadinessCallers).toEqual([
+      {
+        path: 'Makefile',
+        caller: 'deps-up',
+        calls: ['integration:deps:up'],
+        purpose: 'dependency_startup',
+        note: 'canonical Make wrapper for starting integration dependencies',
+      },
+      {
+        path: 'Makefile',
+        caller: 'deps-ready',
+        calls: ['scripts/integration-deps-ready.ts'],
+        purpose: 'dependency_readiness',
+        note: 'readiness-only polling target; no dependency startup',
+      },
+      {
+        path: 'Makefile',
+        caller: 'deps-bootstrap',
+        calls: ['deps-up', 'deps-ready'],
+        purpose: 'combined_bootstrap',
+        note: 'intentional combined helper; this is not duplicate waste',
+      },
+      {
+        path: 'scripts/backend-real-bootstrap.sh',
+        caller: 'backend-real bootstrap',
+        calls: ['integration:deps:up'],
+        purpose: 'dependency_startup',
+        note: 'backend-real owner bootstrap starts integration dependencies before readiness consumers',
+      },
+      {
+        path: 'scripts/run-internal-agent-task-real-gate.sh',
+        caller: 'internal agent task real gate bootstrap',
+        calls: ['make deps-bootstrap'],
+        purpose: 'combined_bootstrap',
+        note: 'owner diagnostic uses the canonical combined dependency bootstrap helper',
+      },
+      {
+        path: 'scripts/run-integration-e2e-full.sh',
+        caller: 'integration e2e full bootstrap',
+        calls: ['make deps-bootstrap'],
+        purpose: 'combined_bootstrap',
+        note: 'integration e2e preflight uses the canonical combined dependency bootstrap helper',
+      },
+      {
+        path: 'scripts/run-integration-release-user-story.sh',
+        caller: 'release user story integration bootstrap',
+        calls: ['make deps-bootstrap'],
+        purpose: 'combined_bootstrap',
+        note: 'release user story owner diagnostic uses the canonical combined dependency bootstrap helper',
+      },
+      {
+        path: 'scripts/run-release-local-precheck.sh',
+        caller: 'release local precheck bootstrap',
+        calls: ['make deps-bootstrap'],
+        purpose: 'combined_bootstrap',
+        note: 'release precheck uses the canonical combined dependency bootstrap helper after readiness reuse fails',
+      },
+    ]);
+    expect(inventory.dependencyStartupReadinessCallers.map((caller) => (
+      dependencyCallerKey(caller.path, caller.calls)
+    )).sort()).toEqual(collectDependencyCallerKeysFromSources());
+
+    expect(inventory.intentionalDuplicateSafetyChecks.map((check) => check.id)).toEqual([
+      'wrapper-and-native-result-json',
+      'terminal-aggregate-revalidation',
+      'rollout-image-consumability-preflight',
+      'route-smoke-before-product-flows',
+    ]);
+    for (const check of inventory.intentionalDuplicateSafetyChecks) {
+      expect(check.whyNotWaste.length).toBeGreaterThan(0);
     }
   });
 });

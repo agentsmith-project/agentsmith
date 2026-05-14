@@ -574,7 +574,6 @@ export function renderResourceOwnerPreflightSummary(
     return '';
   }
   return renderShortFailureProjection({
-    title: options.title,
     diagnosticOnly: options.diagnosticOnly,
     blocker: 'environment_conflict',
     stage: 'preflight',

@@ -110,15 +110,7 @@ ensure_release_user_story_integration_deps_for_afscp() {
         MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
         MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
         KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
-        npm run integration:deps:up && \
-      run_release_user_story_clean_env env \
-        POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
-        MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
-        REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
-        MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
-        MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
-        KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
-        make deps-ready && \
+        make deps-bootstrap && \
       run_release_user_story_clean_env env \
         POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
         npm run integration:deps:init:postgres

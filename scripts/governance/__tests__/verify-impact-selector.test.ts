@@ -917,6 +917,39 @@ describe('verify impact selector', () => {
     ));
   });
 
+  it('maps ordinary docs-only changes to V0/V1 without heavy visual or backend-real expansion', () => {
+    const changedFiles = [
+      'README.md',
+      'DEVELOPMENT.md',
+      'docs/user-guides/test-and-evidence-directory-model.md',
+      'marketing/README.md',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['docs-only']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['docs_only'],
+        affectedSurfaces: ['docs-only'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      })),
+    ));
+  });
+
   it.each([
     'infra/runtime/backend-real.env',
     'infra/substrate/local-dev.env',

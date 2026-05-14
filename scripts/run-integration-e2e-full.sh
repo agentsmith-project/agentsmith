@@ -550,8 +550,7 @@ stop_integration_afscp_local_runtime() {
 preflight_managed_agent_task_sandbox_env
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
-  run_clean_with_integration_env npm run integration:deps:up
-  run_clean_with_integration_env make deps-ready
+  run_clean_with_integration_env make deps-bootstrap
   gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
   record_service integration_deps ready "docker compose dependencies bootstrapped"
 fi

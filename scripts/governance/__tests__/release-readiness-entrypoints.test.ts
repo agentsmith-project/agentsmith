@@ -296,6 +296,42 @@ describe('release readiness human entrypoints', () => {
     }
   });
 
+  it('keeps release summary next actions on clean commands for unified deploy blockers', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-clean-unified-next-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step lane-unified-deploy-product-flows did not pass.',
+      });
+
+      const summary = writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+      const rendered = renderReleaseStatus({
+        kind: 'ready',
+        latestPath,
+        summary,
+      });
+
+      expect(summary.next_action).toContain('npm run release:ready');
+      expect(summary.next_action).not.toContain('npm run lane:');
+      expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(rendered).toContain('Blocker: lane-unified-deploy-product-flows');
+      expect(rendered).toContain('Stage: aggregate');
+      expect(rendered).toContain('Why: Campaign step lane-unified-deploy-product-flows did not pass.');
+      expect(rendered).toContain('Inspect:');
+      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain(`Evidence: ${root}`);
+      expect(rendered).not.toContain('npm run lane:');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed instead of rendering stale release-real summary next actions', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-stale-release-real-command-'));
     const latestPath = join(root, 'latest.json');
@@ -336,6 +372,9 @@ describe('release readiness human entrypoints', () => {
 
       const output = renderReleaseStatus(missing);
       expect(output).toContain('Automated release verdict: MISSING');
+      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(output).toContain('Blocker: release_status_missing_latest');
+      expect(output).toContain('Rerun: npm run release:ready');
       expect(output).toContain('Next: run npm run release:ready');
       expect(output).not.toContain('gate:release:full');
     } finally {
@@ -547,6 +586,10 @@ exit 0
 
       expect(result.status).toBe(9);
       expect(`${result.stdout}\n${result.stderr}`).toContain('Automated release verdict: NOT STARTED');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('Blocker: release_precheck');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('Stage: preflight');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('Rerun: npm run release:ready');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('Evidence: no campaign evidence was produced; no release verdict was written.');
       expect(`${result.stdout}\n${result.stderr}`).toContain('no release verdict');
       expect(readFileSync(logPath, 'utf8')).toBe('run test:release:precheck\n');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
@@ -588,6 +631,9 @@ exit 0
       expect(scripts).toEqual(['test:release:precheck']);
       expect(sentinelProfiles).toEqual([]);
       expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Automated release verdict: NOT STARTED');
+      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Blocker: release_precheck');
+      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Stage: preflight');
+      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Rerun: npm run release:ready');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
     } finally {
@@ -626,7 +672,7 @@ exit 0
       expect(exitCode).toBe(1);
       expect(scripts).toEqual([]);
       expect(sentinelProfiles).toEqual([]);
-      expect(combinedOutput.trim().split('\n')).toHaveLength(8);
+      expect(combinedOutput.trim().split('\n')).toHaveLength(6);
       expect(combinedOutput).toContain('Blocker: environment_conflict');
       expect(combinedOutput).toContain('Stage: preflight');
       expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');

@@ -14,7 +14,7 @@ import {
 } from '../current-status-projection-schema';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 import { buildMinimalLeaseStatusShadow, resolveMinimalLeaseStatusShadow } from '../lease-status-shadow';
-import { buildStatusProjection, renderStatusProjection } from '../status-projection';
+import { buildStatusProjection, renderShortFailureProjection, renderStatusProjection } from '../status-projection';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const CURRENT_GIT_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -158,6 +158,60 @@ function expectNoInternalVerifyAlias(value: unknown): void {
 }
 
 describe('current status projection', () => {
+  it('renders clean command failures with the canonical blocker-only shape', () => {
+    const rendered = renderShortFailureProjection({
+      title: 'AgentSmith Release Readiness',
+      verdict: 'FAILED',
+      blocker: 'environment_conflict',
+      stage: 'preflight',
+      why: 'port 27027 is owned by agentsmith-unified-substrate-mongodb-1',
+      fixCommand: 'npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
+      rerunCommand: 'npm run release:ready',
+      evidencePath: 'artifacts/release-runs/run-001/preflight/evidence.json',
+    });
+
+    expect(rendered).toBe([
+      'Blocker: environment_conflict',
+      'Stage: preflight',
+      'Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1',
+      'Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
+      'Rerun: npm run release:ready',
+      'Evidence: artifacts/release-runs/run-001/preflight/evidence.json',
+      '',
+    ].join('\n'));
+    expect(rendered).not.toContain('AgentSmith Release Readiness');
+    expect(rendered).not.toContain('Verdict:');
+  });
+
+  it('renders release-ready status rerun as release:ready instead of an owner diagnostic adapter', () => {
+    withTempRoot((campaignRoot) => {
+      const aggregatePath = writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        stage: 'aggregate',
+        summary: 'Campaign step lane-unified-deploy-product-flows did not pass.',
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjection(projection);
+
+      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(rendered).toContain('Blocker: lane-unified-deploy-product-flows');
+      expect(rendered).toContain('Stage: aggregate');
+      expect(rendered).toContain('Why: Campaign step lane-unified-deploy-product-flows did not pass.');
+      expect(rendered).toContain(`Inspect: ${aggregatePath}`);
+      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain(`Evidence: ${aggregatePath}`);
+      expect(rendered).not.toContain('npm run lane:unified-deploy:product-flows');
+    });
+  });
+
   it('includes the read-only lease status shadow in projection JSON without producing decisions or commands', () => {
     const leaseStatusShadow = buildMinimalLeaseStatusShadow({
       activeLeases: [

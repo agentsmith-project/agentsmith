@@ -22,6 +22,7 @@ import {
   runResourceOwnerPreflight,
   type ResourceOwnerPreflightResult,
 } from './resource-owner-preflight';
+import { renderShortFailureProjection } from './status-projection';
 
 type CliWriteStream = {
   write(chunk: string): unknown;
@@ -60,7 +61,10 @@ function describeExit(status: number | null, signal: NodeJS.Signals | null): str
   return 'unknown exit status';
 }
 
-function renderNotStarted(reason: string, options: {
+function renderNotStarted(options: {
+  blocker: string;
+  stage: string;
+  why: string;
   next: string;
   logs: string;
 }): string {
@@ -69,10 +73,19 @@ function renderNotStarted(reason: string, options: {
     '',
     'Automated release verdict: NOT STARTED',
     'Blocked before: release campaign',
-    `Why: ${reason}`,
+    `Why: ${options.why}`,
     `Next: ${options.next}`,
     'Evidence: no campaign evidence was produced; no release verdict was written.',
     `Logs: ${options.logs}`,
+    renderShortFailureProjection({
+      verdict: 'BLOCKED',
+      blocker: options.blocker,
+      stage: options.stage,
+      why: options.why,
+      inspectCommand: options.logs,
+      rerunCommand: 'npm run release:ready',
+      evidencePath: 'no campaign evidence was produced; no release verdict was written.',
+    }).trimEnd(),
     '',
   ].join('\n');
 }
@@ -138,7 +151,10 @@ export function runReleaseReady(
 
   if (precheck.status !== 0) {
     const exitCode = typeof precheck.status === 'number' ? precheck.status : 1;
-    stdout.write(renderNotStarted(`release precheck failed with ${describeExit(precheck.status, precheck.signal)}.`, {
+    stdout.write(renderNotStarted({
+      blocker: 'release_precheck',
+      stage: 'preflight',
+      why: `release precheck failed with ${describeExit(precheck.status, precheck.signal)}.`,
       next: 'fix the release precheck issue, then run: npm run release:ready',
       logs: 'see the release precheck output above.',
     }));
@@ -149,7 +165,10 @@ export function runReleaseReady(
   try {
     sentinelResult = sentinelRunner('release-ready', env, cwd);
   } catch {
-    stdout.write(renderNotStarted('sentinel preflight unavailable for release-ready.', {
+    stdout.write(renderNotStarted({
+      blocker: 'sentinel_preflight',
+      stage: 'preflight',
+      why: 'sentinel preflight unavailable for release-ready.',
       next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
       logs: 'see the sentinel preflight output above.',
     }));
@@ -157,7 +176,10 @@ export function runReleaseReady(
   }
   if (sentinelResult.exitCode !== 0) {
     stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
-    stdout.write(renderNotStarted('sentinel preflight failed for release-ready.', {
+    stdout.write(renderNotStarted({
+      blocker: 'sentinel_preflight',
+      stage: 'preflight',
+      why: 'sentinel preflight failed for release-ready.',
       next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
       logs: 'see the redacted sentinel diagnostic above.',
     }));
@@ -168,7 +190,10 @@ export function runReleaseReady(
   try {
     campaignContext = resolveReleaseReadyCampaignContext(env, defaultRunId);
   } catch (error) {
-    stdout.write(renderNotStarted(error instanceof Error ? error.message : String(error), {
+    stdout.write(renderNotStarted({
+      blocker: 'release_campaign_context',
+      stage: 'preflight',
+      why: error instanceof Error ? error.message : String(error),
       next: 'fix the release campaign run id, then run: npm run release:ready',
       logs: 'no campaign evidence was produced.',
     }));

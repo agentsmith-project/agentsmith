@@ -21,7 +21,7 @@ export interface ProjectStorageReadyWaitOptions {
 }
 
 export const DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT: ProjectStorageReadyWaitOptions = {
-  timeoutMs: 15_000,
+  timeoutMs: 45_000,
   intervalMs: 250,
 };
 

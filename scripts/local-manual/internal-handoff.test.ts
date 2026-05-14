@@ -271,6 +271,12 @@ describe('local-manual internal handoff', () => {
 
     const ensureRuntimeBody = functionBody(common, 'ensure_afscp_local_runtime');
     expect(ensureRuntimeBody).toContain('ensure_afscp_local_runtime_mounts_and_write_env');
+    expect(ensureRuntimeBody.indexOf('start_afscp_api')).toBeLessThan(
+      ensureRuntimeBody.indexOf('ensure_afscp_default_volume'),
+    );
+    expect(ensureRuntimeBody.indexOf('ensure_afscp_default_volume')).toBeLessThan(
+      ensureRuntimeBody.indexOf('wait_afscp_api_ready'),
+    );
 
     const resolverIndex = up.indexOf('resolve_afscp_jvs_binary');
     const afscpIndex = up.indexOf('ensure_afscp_local_runtime');
@@ -302,6 +308,8 @@ describe('local-manual internal handoff', () => {
       expect(body).toContain('ensure_afscp_local_runtime_mounts_and_write_env');
       expect(body).not.toContain('write_afscp_local_runtime_env');
     }
+    expect(apiBody).toContain('afscp_wait_for_api_listener');
+    expect(apiBody).not.toContain('wait_http "${AFSCP_BASE_URL%/}/readyz"');
   });
 
   it('keeps local-real internal runner launch after the API switches to internal mode', () => {

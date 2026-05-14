@@ -1291,6 +1291,27 @@ afscp_wait_for_gateway_listener() {
   done
 }
 
+afscp_wait_for_api_listener() {
+  local timeout="${1:-90}"
+  local started
+  started="$(date +%s)"
+  while true; do
+    if lsof -tiTCP:"${AFSCP_API_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 0
+    fi
+    if (( "$(date +%s)" - started > timeout )); then
+      internal_err "AFSCP API listener not ready on port ${AFSCP_API_PORT}"
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+wait_afscp_api_ready() {
+  wait_http "${AFSCP_BASE_URL%/}/readyz" "AFSCP API" 120
+  write_ready_file "${AFSCP_API_READY_FILE}"
+}
+
 afscp_run_worker_once() {
   prepare_afscp_local_runtime_env
   ( cd "${AFSCP_ROOT}" && set -a && source "${AFSCP_LOCAL_RUNTIME_ENV_FILE}" && set +a && go run ./cmd/afscp-worker --run-once )
@@ -1314,9 +1335,8 @@ start_afscp_api() {
   wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
   internal_info "starting AFSCP internal API at ${AFSCP_BASE_URL}"
   launch_detached "${AFSCP_API_PID_FILE}" "${AFSCP_API_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-api --serve"
-  wait_http "${AFSCP_BASE_URL%/}/readyz" "AFSCP API" 120
+  afscp_wait_for_api_listener 120
   capture_listener_pid "${AFSCP_API_PORT}" "${AFSCP_API_PID_FILE}" "AFSCP API"
-  write_ready_file "${AFSCP_API_READY_FILE}"
 }
 
 start_afscp_worker_loop() {
@@ -1450,8 +1470,9 @@ ensure_afscp_local_runtime() {
   afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1
   start_afscp_export_gateway
   start_afscp_api
-  start_afscp_worker_loop
   ensure_afscp_default_volume
+  wait_afscp_api_ready
+  start_afscp_worker_loop
 }
 
 afscp_api_status() {

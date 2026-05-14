@@ -4,6 +4,7 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import type { FileLibraryStoragePort } from './file-library-afscp-storage.js';
 import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
 import {
+  DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
   createAndCloneTaskFileTemplateLibrary,
   createAndProvisionProjectFileLibrary,
 } from './project-file-library-service.js';
@@ -83,6 +84,13 @@ function createDeps(input: {
 }
 
 describe('project file library service storage readiness wait', () => {
+  it('uses a bounded cold-bootstrap wait budget above the e2e request default', () => {
+    expect(DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT).toMatchObject({
+      timeoutMs: 45_000,
+      intervalMs: 250,
+    });
+  });
+
   it('counts the initial ensure call against the strict project storage wait deadline', async () => {
     let nowMs = 1_000;
     const ensureProjectStorageReady = vi.fn(async () => {

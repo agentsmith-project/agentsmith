@@ -27,6 +27,7 @@ import {
   expectTerminalSessionRunnerEvidenceViaApi,
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
+  resolveAgentTaskCreateTimeoutMs,
   selectExpiredWorkloadReleaseTargets,
   resolveIntegrationKeycloakBaseUrl,
   resolveAgentTaskRunnerSocketUrl,
@@ -1883,6 +1884,38 @@ describe('integration-real-helpers', () => {
       workspace_file_library_id: 'fl_1',
     });
     expect(payload).not.toHaveProperty('agent_id');
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
+      expect.objectContaining({
+        timeout: 90_000,
+      }),
+    );
+  });
+
+  it('keeps Agent Task create request timeout aligned above project storage bootstrap wait', async () => {
+    expect(resolveAgentTaskCreateTimeoutMs({})).toBe(90_000);
+    expect(resolveAgentTaskCreateTimeoutMs({
+      INTEGRATION_AGENT_TASK_CREATE_TIMEOUT_MS: '120000',
+    })).toBe(120_000);
+
+    const post = vi.fn().mockRejectedValue(new Error('apiRequestContext.post: Timeout 15000ms exceeded'));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof createAgentTaskViaApi>[0]['page'];
+
+    await expect(createAgentTaskViaApi({
+      page,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      title: 'Agent Task with cold project storage',
+    })).rejects.toThrow('create_agent_task_request_failed:timeout_ms=90000');
+    expect(post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/workspaces/ws_default/projects/proj_1/tasks'),
+      expect.objectContaining({
+        timeout: 90_000,
+      }),
+    );
   });
 
   it('starts Agent Task runs through the public runs API with intent and without message roles', async () => {

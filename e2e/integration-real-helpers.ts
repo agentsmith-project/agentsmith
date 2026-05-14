@@ -124,6 +124,7 @@ export const SYSTEM_ADMIN_USERNAME =
 export const SYSTEM_ADMIN_PASSWORD =
   process.env.SYSTEM_ADMIN_PASSWORD ?? "mbos-admin";
 const DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS = 300_000;
+const DEFAULT_AGENT_TASK_CREATE_TIMEOUT_MS = 90_000;
 type ChildProcessWithIgnoredStdin = ChildProcessByStdio<
   null,
   Readable,
@@ -183,6 +184,16 @@ export function resolveTerminalSessionCreateTimeoutMs(
     env,
     "INTEGRATION_TERMINAL_SESSION_CREATE_TIMEOUT_MS",
     DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS,
+  );
+}
+
+export function resolveAgentTaskCreateTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return readPositiveIntegerEnv(
+    env,
+    "INTEGRATION_AGENT_TASK_CREATE_TIMEOUT_MS",
+    DEFAULT_AGENT_TASK_CREATE_TIMEOUT_MS,
   );
 }
 
@@ -2325,6 +2336,8 @@ type CreateAgentTaskViaApiArgs =
 
 export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Promise<string> {
   const token = await readStoredAuthToken(args.page);
+  const timeoutMs = resolveAgentTaskCreateTimeoutMs();
+  const startedAt = Date.now();
   const title = args.title.trim();
   if (!title) {
     throw new Error("agent_task_title_required");
@@ -2333,28 +2346,37 @@ export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Pr
   if (args.fileLibraryId !== undefined && !fileLibraryId) {
     throw new Error("agent_task_workspace_file_library_id_required");
   }
-  const response = await args.page.request.post(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+  let response: Awaited<ReturnType<Page["request"]["post"]>>;
+  try {
+    response = await args.page.request.post(
+      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: timeoutMs,
+        data: {
+          title,
+          ...(fileLibraryId
+            ? {
+                workspace_mode: "use_existing" as const,
+                workspace_file_library_id: fileLibraryId,
+              }
+            : { workspace_mode: args.workspaceMode ?? "create_new" }),
+          ...(args.workspaceName?.trim()
+            ? { workspace_name: args.workspaceName.trim() }
+            : {}),
+          ...(args.initialInputs ? { initial_inputs: args.initialInputs } : {}),
+        },
       },
-      data: {
-        title,
-        ...(fileLibraryId
-          ? {
-              workspace_mode: "use_existing" as const,
-              workspace_file_library_id: fileLibraryId,
-            }
-          : { workspace_mode: args.workspaceMode ?? "create_new" }),
-        ...(args.workspaceName?.trim()
-          ? { workspace_name: args.workspaceName.trim() }
-          : {}),
-        ...(args.initialInputs ? { initial_inputs: args.initialInputs } : {}),
-      },
-    },
-  );
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `create_agent_task_request_failed:timeout_ms=${timeoutMs}:elapsed_ms=${Date.now() - startedAt}:${message}`,
+    );
+  }
   if (!response.ok()) {
     const body = await response.text().catch(() => "");
     throw new Error(`create_agent_task_failed:${response.status()}:${body}`);

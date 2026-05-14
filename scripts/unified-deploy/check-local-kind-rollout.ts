@@ -1181,6 +1181,18 @@ function resetPresenceFingerprint(source: unknown, pathSegments: readonly string
   return resetFieldFingerprint(readOwnResetPath(source, pathSegments).present);
 }
 
+function resetSecretReferenceFingerprint(
+  source: unknown,
+  pathName: string,
+  pathSegments: readonly string[],
+): ResetSpecFingerprint {
+  return {
+    [`${pathName}.present`]: resetPresenceFingerprint(source, pathSegments),
+    [`${pathName}.name`]: resetPathFingerprint(source, [...pathSegments, 'name']),
+    [`${pathName}.namespace`]: resetPathFingerprint(source, [...pathSegments, 'namespace']),
+  };
+}
+
 function resetValueText(value: unknown): string {
   const stringified = JSON.stringify(canonicalResetValue(value));
   return stringified === undefined ? String(value) : stringified;
@@ -1212,11 +1224,15 @@ function afscpPersistentVolumeResetFingerprint(resource: Record<string, unknown>
     'spec.accessModes': resetArrayPathFingerprint(spec, ['accessModes'], { sort: true }),
     'spec.storageClassName': resetPathFingerprint(spec, ['storageClassName']),
     'spec.mountOptions': resetArrayPathFingerprint(spec, ['mountOptions'], { sort: false }),
+    'spec.nodeAffinity': resetPathFingerprint(spec, ['nodeAffinity']),
     'spec.csi.driver': resetPathFingerprint(spec, ['csi', 'driver']),
     'spec.csi.volumeHandle': resetPathFingerprint(spec, ['csi', 'volumeHandle']),
+    'spec.csi.readOnly': resetPathFingerprint(spec, ['csi', 'readOnly']),
     'spec.csi.fsType': resetPathFingerprint(spec, ['csi', 'fsType']),
-    'spec.csi.nodePublishSecretRef.name': resetPathFingerprint(spec, ['csi', 'nodePublishSecretRef', 'name']),
-    'spec.csi.nodePublishSecretRef.namespace': resetPathFingerprint(spec, ['csi', 'nodePublishSecretRef', 'namespace']),
+    ...resetSecretReferenceFingerprint(spec, 'spec.csi.nodePublishSecretRef', ['csi', 'nodePublishSecretRef']),
+    ...resetSecretReferenceFingerprint(spec, 'spec.csi.nodeStageSecretRef', ['csi', 'nodeStageSecretRef']),
+    ...resetSecretReferenceFingerprint(spec, 'spec.csi.controllerPublishSecretRef', ['csi', 'controllerPublishSecretRef']),
+    ...resetSecretReferenceFingerprint(spec, 'spec.csi.controllerExpandSecretRef', ['csi', 'controllerExpandSecretRef']),
     'spec.csi.volumeAttributes': resetPathFingerprint(spec, ['csi', 'volumeAttributes']),
   };
 }

@@ -1658,6 +1658,77 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(true);
   });
 
+  it('resets owned AFSCP static PV when live CSI placement fields are extra', async () => {
+    const root = tempDir('local-kind-afscp-pv-source-extra-reset-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (command === 'kubectl' && joined.includes('get pvc afscp-default-volume')) {
+        return jsonResult(ownedAfscpPersistentVolumeClaim('12P'));
+      }
+      if (command === 'kubectl' && joined.includes('get pv agentsmith-afscp-default-volume')) {
+        const resource = ownedAfscpPersistentVolume('12P');
+        const spec = resource.spec as Record<string, unknown>;
+        spec.nodeAffinity = {
+          required: {
+            nodeSelectorTerms: [{
+              matchExpressions: [{
+                key: 'kubernetes.io/hostname',
+                operator: 'In',
+                values: ['stale-kind-node'],
+              }],
+            }],
+          },
+        };
+        const csi = spec.csi as Record<string, unknown>;
+        csi.readOnly = true;
+        csi.nodeStageSecretRef = {
+          name: 'stale-stage-secret',
+          namespace: 'agentsmith',
+        };
+        return jsonResult(resource);
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const commandText = calls.map((call) => call.args.join(' '));
+
+    expect(result.status).toBe('passed');
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
+    )).toBe(true);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(true);
+    expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(true);
+    expect(result.evidence.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'afscp-static-volume-reset-diff',
+        stdout: expect.stringContaining('spec.nodeAffinity'),
+      }),
+      expect.objectContaining({
+        name: 'afscp-static-volume-reset-diff',
+        stdout: expect.stringContaining('spec.csi.nodeStageSecretRef.name'),
+      }),
+      expect.objectContaining({
+        name: 'afscp-static-volume-reset-diff',
+        stdout: expect.stringContaining('spec.csi.readOnly'),
+      }),
+    ]));
+  });
+
   it('fails closed without deleting when AFSCP static PV reset drift is paired with reclaim policy drift', async () => {
     const root = tempDir('local-kind-afscp-pv-reclaim-policy-fail-');
     const evidenceDir = tempDir('local-kind-evidence-');

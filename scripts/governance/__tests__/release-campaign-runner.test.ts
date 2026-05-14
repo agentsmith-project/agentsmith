@@ -20,6 +20,9 @@ import {
 import {
   readReleaseStatus,
 } from '../release-summary';
+import {
+  validateRunReadinessStateForConsumer,
+} from '../run-readiness-state';
 
 function releaseFullTerminalStep() {
   const campaign = findCurrentVerificationCampaignById('release-full');
@@ -556,6 +559,59 @@ exit 0
     }
   });
 
+  it('creates release campaign readiness state and propagates its identity to child adapters', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-readiness-state-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|state=%s|invocation=%s|nonce=%s|input=%s|env_digest=%s\\n' \\
+  "$*" \\
+  "\${AGENTSMITH_READINESS_STATE_PATH:-}" \\
+  "\${AGENTSMITH_READINESS_INVOCATION_ID:-}" \\
+  "\${AGENTSMITH_READINESS_PROCESS_NONCE:-}" \\
+  "\${AGENTSMITH_READINESS_INPUT_DIGEST:-}" \\
+  "\${AGENTSMITH_READINESS_ENV_DIGEST:-}" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
+  exit 5
+fi
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  exit 1
+fi
+exit 0
+`);
+
+      runReleaseCampaignWithFakeNpm(root, fakeBin);
+
+      const log = readFileSync(logPath, 'utf8');
+      const firstLine = log.split('\n').find((line) => line.startsWith('run gate:fast|'));
+      expect(firstLine).toBeDefined();
+      expect(firstLine).toContain(`state=${join(root, 'state', 'readiness.json')}`);
+      expect(firstLine).toContain('invocation=');
+      expect(firstLine).toContain('nonce=');
+      expect(firstLine).toContain('input=sha256:');
+      expect(firstLine).toContain('env_digest=sha256:');
+      expect(log).toContain(`run gate:release:full|state=${join(root, 'state', 'readiness.json')}`);
+
+      const parts = Object.fromEntries(
+        firstLine!
+          .split('|')
+          .slice(1)
+          .map((pair) => pair.split(/=(.*)/, 2) as [string, string]),
+      );
+      expect(validateRunReadinessStateForConsumer({
+        statePath: parts.state,
+        invocationId: parts.invocation,
+        processNonce: parts.nonce,
+        inputDigest: parts.input,
+        envDigest: parts.env_digest,
+      })).toMatchObject({ ok: true });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
 
   it('writes skipped results and evidence pointers for executable steps after an upstream failure', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-skipped-'));

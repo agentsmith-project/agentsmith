@@ -125,6 +125,32 @@ function successfulRunner(calls: CommandCall[]): LocalKindImageCommandRunner {
   };
 }
 
+function testRegistryAvailabilityPoll(timeoutMs = 2, intervalMs = 1): {
+  poll: {
+    timeoutMs: number;
+    intervalMs: number;
+    now: () => number;
+    sleep: (durationMs: number) => Promise<void>;
+  };
+  sleeps: number[];
+} {
+  let now = 0;
+  const sleeps: number[] = [];
+
+  return {
+    poll: {
+      timeoutMs,
+      intervalMs,
+      now: () => now,
+      sleep: async (durationMs: number) => {
+        sleeps.push(durationMs);
+        now += Math.max(durationMs, 1);
+      },
+    },
+    sleeps,
+  };
+}
+
 function yamlStringList(values: readonly string[]): string {
   return values.map((value) => `            - ${value}`).join('\n');
 }
@@ -490,6 +516,90 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(existsSync(outSiteEnvPath)).toBe(true);
   });
 
+  it('polls local-kind registry network availability until a transient failure clears', async () => {
+    const registryPoll = testRegistryAvailabilityPoll(50, 5);
+    let networkChecks = 0;
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: `\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentsmith-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          image: kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}
+`,
+      registryAvailabilityPoll: registryPoll.poll,
+      runner: async (_command, args) => {
+        const joined = args.join(' ');
+        if (args.includes('ps')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('network inspect kind')) {
+          networkChecks += 1;
+          return networkChecks === 1
+            ? { exitCode: 1, stdout: '', stderr: 'network kind not found' }
+            : { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('buildx imagetools inspect')) {
+          return { exitCode: 0, stdout: 'ok', stderr: '' };
+        }
+
+        return { exitCode: 0, stdout: 'ok', stderr: '' };
+      },
+    });
+
+    expect(result.status).toBe('passed');
+    expect(networkChecks).toBe(2);
+    expect(registryPoll.sleeps).toEqual([5]);
+  });
+
+  it('reports the last observed registry availability reason when bounded polling times out', async () => {
+    const registryPoll = testRegistryAvailabilityPoll();
+    const result = await checkLocalKindImagePreflight({
+      renderedYaml: `\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentsmith-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          image: kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}
+`,
+      registryAvailabilityPoll: registryPoll.poll,
+      runner: async (_command, args) => {
+        const joined = args.join(' ');
+        if (args.includes('ps')) {
+          return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+        }
+        if (joined.includes('network inspect kind')) {
+          return { exitCode: 1, stdout: '', stderr: 'network kind not found' };
+        }
+        if (joined.includes('buildx imagetools inspect')) {
+          return { exitCode: 0, stdout: 'ok', stderr: '' };
+        }
+
+        return { exitCode: 0, stdout: 'ok', stderr: '' };
+      },
+    });
+    const serialized = JSON.stringify({
+      failures: result.failures,
+      diagnostics: result.diagnostics,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(serialized).toContain('timed out after 2ms');
+    expect(serialized).toContain('last observed reason');
+    expect(serialized).toContain('network missing');
+    expect(registryPoll.sleeps).toEqual([1, 1]);
+  });
+
   it('fails without writing generated site env when CRI/containerd cannot pull local-kind images', async () => {
     const root = tempDir('local-kind-images-cri-pull-');
     const sandboxSourceDir = createSandboxSource(root);
@@ -517,6 +627,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: outSiteEnvPath,
       sandboxSourceDir,
+      registryAvailabilityPoll: testRegistryAvailabilityPoll().poll,
       runner,
     });
 
@@ -555,6 +666,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: outSiteEnvPath,
       sandboxSourceDir,
+      registryAvailabilityPoll: testRegistryAvailabilityPoll().poll,
       runner,
     });
 
@@ -582,6 +694,7 @@ spec:
         - name: api
           image: kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}
 `,
+      registryAvailabilityPoll: testRegistryAvailabilityPoll().poll,
       runner: async (_command, args) => {
         const joined = args.join(' ');
         if (args.includes('ps')) {

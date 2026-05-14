@@ -436,6 +436,29 @@ describe('current real session coverage manifest', () => {
     });
   });
 
+  it('documents retained duplicate skill and agent-task runner wrappers as distinct owner diagnostics', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.['test:skills:fast']).toBe('bash scripts/skills-runtime-fast-gate.sh');
+    expect(packageJson.scripts?.['test:agent-task:runner:fast']).toBe(packageJson.scripts?.['test:skills:fast']);
+    expect(packageJson.scripts?.['test:skills:backend-real']).toBe('bash scripts/skills-runtime-backend-real-gate.sh');
+    expect(packageJson.scripts?.['test:agent-task:runner:backend-real']).toBe(
+      packageJson.scripts?.['test:skills:backend-real'],
+    );
+
+    const skillsBackendReal = npmScriptEntry('test:skills:backend-real');
+    const runnerBackendReal = npmScriptEntry('test:agent-task:runner:backend-real');
+
+    for (const entry of [skillsBackendReal, runnerBackendReal]) {
+      expect(entry.reason).toContain('same physical producer');
+      expect(entry.reason).toContain('skill runtime');
+      expect(entry.reason).toContain('Agent task runner');
+      expect(entry.merge_allowed).toBe(false);
+    }
+  });
+
   it('declares chat backend-real greps as one serial diagnostic session without changing merge safety', () => {
     const expectedEntries = CHAT_BACKEND_REAL_SESSION_SHARDS.map((shard) => chatGrepEntry(shard.spec, shard.grep));
     const contract = chatSessionContract();

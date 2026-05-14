@@ -45,7 +45,7 @@ Current gate truth:
 - `visual_scene_catalog` is the machine-readable evidence kind owned by `test:visual` / `lane:visual`, with scene linkage defined in `e2e/visual-baseline-support.ts`.
 - `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and release-tier backend-real commands:
   - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
-  - standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
+  - standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.
   - `release:campaign:full` writes its release-grade trace bundles under `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
 - `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and the currently registered backend-real runtime result writers.
@@ -85,7 +85,7 @@ Still-binding runtime contracts:
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
-Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.
+standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.
 <!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms
@@ -252,7 +252,7 @@ Important:
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
 - `lane:visual` release authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
 - `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.
-- `gate:release` and `lane:backend-real:release` own release-grade `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`.
+- Standalone release backend-real owner diagnostics publish `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.
 - backend-real trace bundles must publish `ux-trace-index.json` at the trace root and `contract-snapshot.json` inside each bundle directory.
 - Checklists and contracts must use these machine-readable evidence kinds instead of inventing parallel release-only names.
 

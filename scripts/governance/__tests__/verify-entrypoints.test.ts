@@ -26,6 +26,10 @@ import {
   PURE_CHECK_PRODUCER_RESULT_FILE_NAME,
   writePureCheckProducerEvidence,
 } from '../pure-check-producer-evidence';
+import {
+  READINESS_STATE_ENV,
+  validateRunReadinessStateForConsumer,
+} from '../run-readiness-state';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 
 const LEASE_SNAPSHOT_ENV = 'AGENTSMITH_GOVERNANCE_LEASE_SNAPSHOT_PATH';
@@ -445,6 +449,14 @@ function recommendedPlanBlock(output: string): string {
   return output.split('\n\nNext action:')[0]?.split('Recommended plan:\n')[1] ?? '';
 }
 
+function heavyEvidenceDecisionLine(output: string): string {
+  const line = output.split('\n').find((candidate) => candidate.startsWith('Heavy evidence: '));
+  if (!line) {
+    throw new Error(`Missing heavy evidence decision line in output:\n${output}`);
+  }
+  return line;
+}
+
 describe('verify human entrypoints', () => {
   it('keeps npm run verify as a dry-run planner by default', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-dry-run-'));
@@ -487,6 +499,74 @@ describe('verify human entrypoints', () => {
     expect(recommendedBlock).not.toContain('npm run release:ready');
     expect(recommendedBlock).not.toContain('npm run verify:visual');
     expect(output).toContain('Next action: Release or deploy path changed. Use npm run release:ready');
+  });
+
+  it('prints heavy evidence decisions from selector output for docs-only and env-only plans', () => {
+    const docsPlan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['docs/user-guides/test-and-evidence-directory-model.md'],
+    });
+    const envPlan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['.env.local.example'],
+    });
+
+    const docsDecision = heavyEvidenceDecisionLine(renderVerificationPlan(docsPlan));
+    const envDecision = heavyEvidenceDecisionLine(renderVerificationPlan(envPlan));
+
+    expect(docsDecision).toContain('visual=no');
+    expect(docsDecision).toContain('backend-real=no');
+    expect(docsDecision).toContain('docs/user-guides/test-and-evidence-directory-model.md is docs-only');
+    expect(docsDecision).toContain('without visual or backend-real expansion');
+    expect(envDecision).toContain('visual=no');
+    expect(envDecision).toContain('backend-real=no');
+    expect(envDecision).toContain('.env.local.example is env-only configuration');
+    expect(envDecision).toContain('without visual or backend-real expansion');
+  });
+
+  it('prints heavy evidence decisions from selector output for visual and backend-real impact', () => {
+    const visualPlan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['src/components/ui/button.tsx'],
+    });
+    const backendRealPlan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['e2e/stories/backend-real/agent-task-first-success.story.md'],
+    });
+
+    const visualDecision = heavyEvidenceDecisionLine(renderVerificationPlan(visualPlan));
+    const backendRealDecision = heavyEvidenceDecisionLine(renderVerificationPlan(backendRealPlan));
+
+    expect(visualDecision).toContain('visual=yes');
+    expect(visualDecision).toContain('backend-real=yes');
+    expect(visualDecision).toContain('src/components/ui/button.tsx touches design-system truth');
+    expect(backendRealDecision).toContain('visual=no');
+    expect(backendRealDecision).toContain('backend-real=yes');
+    expect(backendRealDecision).toContain('e2e/stories/backend-real/agent-task-first-success.story.md is canonical story markdown');
+    expect(backendRealDecision).not.toContain('Heavy evidence: visual=no, backend-real=no');
+  });
+
+  it('does not use docs-only as the heavy evidence reason for mixed heavy impact plans', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: [
+        'README.md',
+        'scripts/unified-deploy/release-local-kind.sh',
+        'src/unknown-heavy.ts',
+      ],
+    });
+
+    const decision = heavyEvidenceDecisionLine(renderVerificationPlan(plan));
+
+    expect(decision).toContain('visual=yes');
+    expect(decision).toContain('backend-real=yes');
+    expect(decision).not.toContain('README.md is docs-only');
+    expect(decision).toMatch(/release or deploy operations|unmapped source impact/);
   });
 
   it('exposes friendly verification aliases without replacing existing expert commands', () => {
@@ -1923,6 +2003,18 @@ describe('verify human entrypoints', () => {
       expect(captured[0]?.env.AGENTSMITH_VERIFY_GIT_SHA).toBe('current-git-sha');
       expect(captured[0]?.env[CLAIM_STORE_ROOT_ENV]).toBe(root);
       expect(captured[0]?.env[CLAIM_STORE_GIT_SHA_ENV]).toBe('current-git-sha');
+      expect(captured[0]?.env[READINESS_STATE_ENV.path]).toBe(join(root, 'state', 'readiness.json'));
+      expect(captured[0]?.env[READINESS_STATE_ENV.invocationId]).toBeTruthy();
+      expect(captured[0]?.env[READINESS_STATE_ENV.processNonce]).toBeTruthy();
+      expect(existsSync(join(root, 'state', 'readiness.json'))).toBe(true);
+      expect(validateRunReadinessStateForConsumer({
+        statePath: captured[0]?.env[READINESS_STATE_ENV.path] ?? '',
+        invocationId: captured[0]?.env[READINESS_STATE_ENV.invocationId] ?? '',
+        processNonce: captured[0]?.env[READINESS_STATE_ENV.processNonce] ?? '',
+        inputDigest: captured[0]?.env[READINESS_STATE_ENV.inputDigest],
+        envDigest: captured[0]?.env[READINESS_STATE_ENV.envDigest],
+        gitSha: 'current-git-sha',
+      })).toMatchObject({ ok: true });
       expect(stderr.join('')).toContain('[verify] stop after env capture');
     } finally {
       rmSync(root, { recursive: true, force: true });

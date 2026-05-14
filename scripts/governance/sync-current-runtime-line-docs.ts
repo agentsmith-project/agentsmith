@@ -117,7 +117,7 @@ function renderGovernanceRuntimeBlock(): string {
     'Still-binding runtime contracts:',
     ...renderRuleList('contract'),
     '',
-    'Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.',
+    'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.',
   ].join('\n');
 }
 

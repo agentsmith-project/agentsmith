@@ -43,6 +43,10 @@ import {
   isDefaultReleaseRunsCampaignRoot,
   writeReleaseSummaryForCampaign,
 } from './release-summary';
+import {
+  ensureRunReadinessState,
+  resolveReadinessGitSha,
+} from './run-readiness-state';
 
 export interface BuildReleaseCampaignCommandEnvInput {
   campaignRoot: string;
@@ -589,6 +593,25 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
     runId: input.runId,
     env,
   });
+  const campaignIdentityEnv: NodeJS.ProcessEnv = {
+    ...env,
+    RELEASE_CAMPAIGN_RUN_ID: input.runId,
+    RELEASE_CAMPAIGN_ROOT: campaignRoot,
+  };
+  const readiness = ensureRunReadinessState({
+    scope: 'release',
+    root: campaignRoot,
+    gitSha: resolveReadinessGitSha(cwd),
+    input: {
+      campaign_root: campaignRoot,
+      run_id: input.runId,
+    },
+    env: campaignIdentityEnv,
+  });
+  const campaignExecutionEnv: NodeJS.ProcessEnv = {
+    ...campaignIdentityEnv,
+    ...readiness.env,
+  };
   const stepById = new Map(input.campaign.steps.map((step) => [step.id, step]));
   const terminalStep = input.campaign.steps.find((step) => step.executionMode === 'aggregate_only');
   if (!terminalStep) {
@@ -646,7 +669,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               env: buildReleaseCampaignAggregateEnv({
                 campaignRoot,
                 runId: input.runId,
-                baseEnv: env,
+                baseEnv: campaignExecutionEnv,
               }),
               stdio,
             });
@@ -676,7 +699,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               campaignRoot,
               runId: input.runId,
               step,
-              baseEnv: env,
+              baseEnv: campaignExecutionEnv,
             }),
             stdio,
           });

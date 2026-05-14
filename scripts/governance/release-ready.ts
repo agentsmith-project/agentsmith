@@ -23,6 +23,11 @@ import {
   type ResourceOwnerPreflightResult,
 } from './resource-owner-preflight';
 import { renderShortFailureProjection } from './status-projection';
+import {
+  createRunReadinessState,
+  resolveReadinessGitSha,
+  updateRunReadinessStateField,
+} from './run-readiness-state';
 
 type CliWriteStream = {
   write(chunk: string): unknown;
@@ -71,12 +76,6 @@ function renderNotStarted(options: {
   return [
     'AgentSmith Release Readiness',
     '',
-    'Automated release verdict: NOT STARTED',
-    'Blocked before: release campaign',
-    `Why: ${options.why}`,
-    `Next: ${options.next}`,
-    'Evidence: no campaign evidence was produced; no release verdict was written.',
-    `Logs: ${options.logs}`,
     renderShortFailureProjection({
       verdict: 'BLOCKED',
       blocker: options.blocker,
@@ -147,7 +146,40 @@ export function runReleaseReady(
     return 1;
   }
 
-  const precheck = runNpmScript('test:release:precheck', [], env);
+  let campaignContext: ReturnType<typeof resolveReleaseReadyCampaignContext>;
+  try {
+    campaignContext = resolveReleaseReadyCampaignContext(env, defaultRunId);
+  } catch (error) {
+    stdout.write(renderNotStarted({
+      blocker: 'release_campaign_context',
+      stage: 'preflight',
+      why: error instanceof Error ? error.message : String(error),
+      next: 'fix the release campaign run id, then run: npm run release:ready',
+      logs: 'no campaign evidence was produced.',
+    }));
+    return 1;
+  }
+  const campaignBaseEnv = {
+    ...env,
+    RELEASE_CAMPAIGN_RUN_ID: campaignContext.runId,
+    RELEASE_CAMPAIGN_ROOT: campaignContext.campaignRoot,
+  };
+  const readiness = createRunReadinessState({
+    scope: 'release',
+    root: campaignContext.campaignRoot,
+    gitSha: resolveReadinessGitSha(cwd),
+    input: {
+      campaign_root: campaignContext.campaignRoot,
+      run_id: campaignContext.runId,
+    },
+    env: campaignBaseEnv,
+  });
+  const releaseReadyEnv = {
+    ...campaignBaseEnv,
+    ...readiness.env,
+  };
+
+  const precheck = runNpmScript('test:release:precheck', [], releaseReadyEnv);
 
   if (precheck.status !== 0) {
     const exitCode = typeof precheck.status === 'number' ? precheck.status : 1;
@@ -160,10 +192,20 @@ export function runReleaseReady(
     }));
     return exitCode;
   }
+  updateRunReadinessStateField({
+    statePath: readiness.statePath,
+    invocationId: readiness.state.invocation_id,
+    processNonce: readiness.state.process_nonce,
+    inputDigest: readiness.state.input_digest,
+    envDigest: readiness.state.env_digest.digest,
+    gitSha: readiness.state.git_sha,
+    field: 'integration_deps_ready',
+    status: 'ready',
+  });
 
   let sentinelResult: SentinelPreflightResult;
   try {
-    sentinelResult = sentinelRunner('release-ready', env, cwd);
+    sentinelResult = sentinelRunner('release-ready', releaseReadyEnv, cwd);
   } catch {
     stdout.write(renderNotStarted({
       blocker: 'sentinel_preflight',
@@ -186,23 +228,8 @@ export function runReleaseReady(
     return 1;
   }
 
-  let campaignContext: ReturnType<typeof resolveReleaseReadyCampaignContext>;
-  try {
-    campaignContext = resolveReleaseReadyCampaignContext(env, defaultRunId);
-  } catch (error) {
-    stdout.write(renderNotStarted({
-      blocker: 'release_campaign_context',
-      stage: 'preflight',
-      why: error instanceof Error ? error.message : String(error),
-      next: 'fix the release campaign run id, then run: npm run release:ready',
-      logs: 'no campaign evidence was produced.',
-    }));
-    return 1;
-  }
   const campaignEnv = {
-    ...env,
-    RELEASE_CAMPAIGN_RUN_ID: campaignContext.runId,
-    RELEASE_CAMPAIGN_ROOT: campaignContext.campaignRoot,
+    ...releaseReadyEnv,
   };
 
   const campaign = runNpmScript('release:campaign:full', argv, campaignEnv);

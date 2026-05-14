@@ -12,6 +12,10 @@ import {
   writeReleaseSummaryForCampaign,
 } from '../release-summary';
 import { runReleaseReady } from '../release-ready';
+import {
+  READINESS_STATE_ENV,
+  validateRunReadinessStateForConsumer,
+} from '../run-readiness-state';
 import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
 
 function readPackageScripts(): Record<string, string> {
@@ -202,6 +206,19 @@ function passingOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResu
     },
     conflicts: [],
   };
+}
+
+function expectCanonicalNotStartedBlocker(output: string, blocker: string): void {
+  expect(output).toContain('AgentSmith Release Readiness');
+  expect(output).toContain(`Blocker: ${blocker}`);
+  expect(output).toContain('Stage: preflight');
+  expect(output).toContain('Rerun: npm run release:ready');
+  expect(output).toContain('Evidence: no campaign evidence was produced; no release verdict was written.');
+  expect(output).not.toContain('Automated release verdict: NOT STARTED');
+  expect(output).not.toContain('Blocked before:');
+  expect(output).not.toContain('Next:');
+  expect(output).not.toContain('Logs:');
+  expect(output.match(/^Blocker:/gm) ?? []).toHaveLength(1);
 }
 
 describe('release readiness human entrypoints', () => {
@@ -585,12 +602,10 @@ exit 0
       });
 
       expect(result.status).toBe(9);
-      expect(`${result.stdout}\n${result.stderr}`).toContain('Automated release verdict: NOT STARTED');
-      expect(`${result.stdout}\n${result.stderr}`).toContain('Blocker: release_precheck');
-      expect(`${result.stdout}\n${result.stderr}`).toContain('Stage: preflight');
-      expect(`${result.stdout}\n${result.stderr}`).toContain('Rerun: npm run release:ready');
-      expect(`${result.stdout}\n${result.stderr}`).toContain('Evidence: no campaign evidence was produced; no release verdict was written.');
-      expect(`${result.stdout}\n${result.stderr}`).toContain('no release verdict');
+      const output = `${result.stdout}\n${result.stderr}`;
+      expectCanonicalNotStartedBlocker(output, 'release_precheck');
+      expect(output).toContain('Inspect: see the release precheck output above.');
+      expect(output).toContain('no release verdict');
       expect(readFileSync(logPath, 'utf8')).toBe('run test:release:precheck\n');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
@@ -630,10 +645,9 @@ exit 0
       expect(exitCode).toBe(9);
       expect(scripts).toEqual(['test:release:precheck']);
       expect(sentinelProfiles).toEqual([]);
-      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Automated release verdict: NOT STARTED');
-      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Blocker: release_precheck');
-      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Stage: preflight');
-      expect(`${stdout.join('')}\n${stderr.join('')}`).toContain('Rerun: npm run release:ready');
+      const output = `${stdout.join('')}\n${stderr.join('')}`;
+      expectCanonicalNotStartedBlocker(output, 'release_precheck');
+      expect(output).toContain('Inspect: see the release precheck output above.');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
     } finally {
@@ -716,7 +730,7 @@ exit 0
       expect(exitCode).toBe(1);
       expect(scripts).toEqual(['test:release:precheck']);
       expect(sentinelProfiles).toEqual(['release-ready']);
-      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expectCanonicalNotStartedBlocker(combinedOutput, 'sentinel_preflight');
       expect(combinedOutput).toContain('sentinel preflight failed');
       expect(combinedOutput).toContain('"probe.secret_profile_present": false');
       expect(combinedOutput).not.toContain('Automated release verdict: PASSED');
@@ -793,10 +807,10 @@ exit 0
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
       expect(exitCode).toBe(1);
-      expect(scripts).toEqual(['test:release:precheck']);
-      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(scripts).toEqual([]);
+      expect(sentinelProfiles).toEqual([]);
       expect(combinedOutput).toContain('invalid RELEASE_CAMPAIGN_RUN_ID');
-      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expectCanonicalNotStartedBlocker(combinedOutput, 'release_campaign_context');
       expect(existsSync(join(root, '..', 'escaped-campaign'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -835,10 +849,10 @@ exit 0
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
       expect(exitCode).toBe(1);
-      expect(scripts).toEqual(['test:release:precheck']);
-      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(scripts).toEqual([]);
+      expect(sentinelProfiles).toEqual([]);
       expect(combinedOutput).toContain('symlink');
-      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expectCanonicalNotStartedBlocker(combinedOutput, 'release_campaign_context');
       expect(existsSync(join(outsideRoot, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(outsideRoot, 'summary.json'))).toBe(false);
     } finally {
@@ -881,8 +895,8 @@ exit 0
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
       expect(exitCode).toBe(1);
-      expect(scripts).toEqual(['test:release:precheck']);
-      expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(scripts).toEqual([]);
+      expect(sentinelProfiles).toEqual([]);
       expect(combinedOutput).toContain('symlink');
       expect(existsSync(join(outsideRoot, 'release-runs', runId))).toBe(false);
     } finally {
@@ -928,7 +942,7 @@ exit 0
       expect(scripts).toEqual(['test:release:precheck']);
       expect(parentEnv.PRESET_ENDPOINT_API_KEY).toBeUndefined();
       expect(parentEnv.PRESET_ENDPOINT_MODEL).toBeUndefined();
-      expect(combinedOutput).toContain('Automated release verdict: NOT STARTED');
+      expectCanonicalNotStartedBlocker(combinedOutput, 'sentinel_preflight');
       expect(combinedOutput).toContain('sentinel preflight failed');
       expect(combinedOutput).not.toContain('sk-test-child-only-value');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
@@ -944,6 +958,8 @@ exit 0
     const stderr: string[] = [];
     const scripts: string[] = [];
     const sentinelProfiles: string[] = [];
+    const precheckEnvs: NodeJS.ProcessEnv[] = [];
+    const campaignEnvs: NodeJS.ProcessEnv[] = [];
     try {
       const exitCode = runReleaseReady(['--dry-run'], {
         stdout: { write: (chunk: string) => stdout.push(chunk) },
@@ -952,8 +968,14 @@ exit 0
           ...process.env,
           RELEASE_CAMPAIGN_ROOT: root,
         },
-        runNpmScript: (script, args) => {
+        runNpmScript: (script, args, env) => {
           scripts.push([script, ...args].join(' '));
+          if (script === 'test:release:precheck') {
+            precheckEnvs.push(env);
+          }
+          if (script === 'release:campaign:full') {
+            campaignEnvs.push(env);
+          }
           return script === 'release:campaign:full'
             ? { status: 7, signal: null }
             : { status: 0, signal: null };
@@ -971,9 +993,80 @@ exit 0
         'release:campaign:full --dry-run',
       ]);
       expect(sentinelProfiles).toEqual(['release-ready']);
+      expect(precheckEnvs).toHaveLength(1);
+      expect(precheckEnvs[0]?.[READINESS_STATE_ENV.path]).toBe(join(root, 'state', 'readiness.json'));
+      expect(precheckEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBeTruthy();
+      expect(precheckEnvs[0]?.[READINESS_STATE_ENV.processNonce]).toBeTruthy();
+      expect(campaignEnvs).toHaveLength(1);
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.path]).toBe(join(root, 'state', 'readiness.json'));
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBe(precheckEnvs[0]?.[READINESS_STATE_ENV.invocationId]);
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce]).toBe(precheckEnvs[0]?.[READINESS_STATE_ENV.processNonce]);
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBeTruthy();
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce]).toBeTruthy();
+      expect(existsSync(join(root, 'state', 'readiness.json'))).toBe(true);
+      const readinessValidation = validateRunReadinessStateForConsumer({
+        statePath: campaignEnvs[0]?.[READINESS_STATE_ENV.path] ?? '',
+        invocationId: campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId] ?? '',
+        processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
+        inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
+        envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+      });
+      expect(readinessValidation).toMatchObject({ ok: true });
+      if (!readinessValidation.ok) {
+        throw new Error(readinessValidation.error);
+      }
+      expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
+      expect(stdout.join('')).not.toContain('state/readiness.json');
       expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the release-runs campaign root for release readiness state when no explicit campaign root is provided', () => {
+    const releaseRunsRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-state-root-'));
+    const runId = 'release-ready-state-run';
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const campaignEnvs: NodeJS.ProcessEnv[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_RUNS_ROOT: releaseRunsRoot,
+          RELEASE_CAMPAIGN_RUN_ID: runId,
+        },
+        runNpmScript: (script, _args, env) => {
+          if (script === 'release:campaign:full') {
+            campaignEnvs.push(env);
+            return { status: 7, signal: null };
+          }
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+      });
+
+      const expectedCampaignRoot = join(releaseRunsRoot, runId);
+      const expectedStatePath = join(expectedCampaignRoot, 'state', 'readiness.json');
+
+      expect(exitCode).toBe(7);
+      expect(campaignEnvs).toHaveLength(1);
+      expect(campaignEnvs[0]?.RELEASE_CAMPAIGN_ROOT).toBe(expectedCampaignRoot);
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.path]).toBe(expectedStatePath);
+      expect(existsSync(expectedStatePath)).toBe(true);
+      expect(validateRunReadinessStateForConsumer({
+        statePath: expectedStatePath,
+        invocationId: campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId] ?? '',
+        processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
+        inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
+        envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+      })).toMatchObject({ ok: true });
+      expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('state/readiness.json');
+    } finally {
+      rmSync(releaseRunsRoot, { recursive: true, force: true });
     }
   });
 

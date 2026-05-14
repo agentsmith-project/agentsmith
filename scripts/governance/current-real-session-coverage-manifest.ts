@@ -898,7 +898,7 @@ const NPM_SCRIPT_COVERAGE = [
       ],
       lock_ids: BACKEND_REAL_LOCK_IDS,
       reason:
-        "Notebook skill runtime checks mutate task/member Context Store state and runner workspaces.",
+        "Retained duplicate wrappers point to the same physical producer while preserving skill runtime and Agent task runner owner diagnostic contexts; the checks mutate task/member Context Store state and runner workspaces.",
     },
   ),
   ...npmScriptCoverageGroup(

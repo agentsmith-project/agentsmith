@@ -14,6 +14,7 @@ source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
+source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
 ensure_backend_real_state
 
 ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
@@ -101,20 +102,30 @@ run_release_user_story_clean_env() {
 
 ensure_release_user_story_integration_deps_for_afscp() {
   info "ensuring local integration dependencies for AFSCP"
-  (
-    cd "${ROOT_DIR}" && \
-      run_release_user_story_clean_env env \
-        POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
-        MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
-        REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
-        MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
-        MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
-        KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
-        make deps-bootstrap && \
-      run_release_user_story_clean_env env \
-        POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
-        npm run integration:deps:init:postgres
-  )
+  if readiness_state_field_ready integration_deps_ready; then
+    info "reusing parent-verified integration dependencies for AFSCP"
+    (
+      cd "${ROOT_DIR}" && \
+        run_release_user_story_clean_env env \
+          POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+          npm run integration:deps:init:postgres
+    )
+  else
+    (
+      cd "${ROOT_DIR}" && \
+        run_release_user_story_clean_env env \
+          POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+          MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
+          REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+          MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
+          MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
+          KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
+          make deps-bootstrap && \
+        run_release_user_story_clean_env env \
+          POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+          npm run integration:deps:init:postgres
+    )
+  fi
 }
 
 with_release_user_story_afscp_runtime_env() {

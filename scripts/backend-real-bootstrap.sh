@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
 ensure_backend_real_state
 
 resolve_loopback_runtime_stack
@@ -49,8 +50,12 @@ run_keycloak_init_with_retry() {
   done
 }
 
-info "starting integration dependencies"
-(cd "${ROOT_DIR}" && npm run integration:deps:up >/dev/null)
+if readiness_state_field_ready integration_deps_ready; then
+  info "reusing parent-verified integration dependencies"
+else
+  info "starting integration dependencies"
+  (cd "${ROOT_DIR}" && npm run integration:deps:up >/dev/null)
+fi
 wait_for_keycloak
 
 info "initializing integration services"

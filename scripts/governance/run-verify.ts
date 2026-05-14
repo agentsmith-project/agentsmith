@@ -43,6 +43,9 @@ import {
   type PureCheckVerifyScriptExecution,
 } from './pure-check-runtime-shadow';
 import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
+import {
+  createRunReadinessState,
+} from './run-readiness-state';
 
 export {
   buildVerificationPlan,
@@ -194,6 +197,57 @@ function renderRiskWarnings(plan: VerificationPlan): string {
   return `Risk warnings: ${plan.riskSummary.warnings.length > 0 ? cleanVerifyHumanText(plan.riskSummary.warnings.join('; ')) : '<none>'}`;
 }
 
+function includesText(values: readonly string[], pattern: RegExp): boolean {
+  return values.some((value) => pattern.test(value));
+}
+
+const HEAVY_EVIDENCE_REASON_PATTERN =
+  /release(?:\/| or )deploy|release or deploy operations|backend-real|visual|design-system|runner|context|credential|unmapped[- ]source|\bV[234]\b|verify:(?:visual|real|release-real)|--goal=(?:visual|real|release-real)|release:ready/i;
+const NO_HEAVY_EVIDENCE_REASON_PATTERN =
+  /docs-only|env-only|without visual or backend-real expansion/i;
+
+function candidateHeavyEvidenceReasons(plan: VerificationPlan): string[] {
+  return [
+    ...plan.riskSummary.reasons,
+    ...plan.riskSummary.warnings,
+    plan.nextAction,
+    ...plan.nextActions,
+    `Required levels: ${plan.requiredLevels.join(', ')}`,
+    `Required evidence: ${plan.requiredEvidence.join(', ')}`,
+    `Recommended commands: ${plan.recommendedCommands.join(', ')}`,
+    `Affected surfaces: ${plan.affectedSurfaces.join(', ')}`,
+  ].filter((value) => value.trim().length > 0);
+}
+
+function selectHeavyEvidenceReason(plan: VerificationPlan, heavyRequired: boolean): string {
+  const candidates = candidateHeavyEvidenceReasons(plan);
+  const preferred = heavyRequired
+    ? candidates.find((candidate) => (
+        HEAVY_EVIDENCE_REASON_PATTERN.test(candidate)
+        && !NO_HEAVY_EVIDENCE_REASON_PATTERN.test(candidate)
+      ))
+    : candidates.find((candidate) => NO_HEAVY_EVIDENCE_REASON_PATTERN.test(candidate));
+
+  return cleanVerifyHumanText(
+    preferred
+      ?? (heavyRequired ? candidates.find((candidate) => HEAVY_EVIDENCE_REASON_PATTERN.test(candidate)) : undefined)
+      ?? candidates[0]
+      ?? plan.riskSummary.summary,
+  );
+}
+
+function renderHeavyEvidenceDecision(plan: VerificationPlan): string {
+  const visualRequired = plan.requiredLevels.includes('V2')
+    || includesText(plan.requiredEvidence, /\bvisual\b/i)
+    || includesText(plan.recommendedCommands, /\bverify:visual\b|--goal=visual\b/i);
+  const backendRealRequired = plan.requiredLevels.includes('V3')
+    || includesText(plan.requiredEvidence, /\bbackend-real\b/i)
+    || includesText(plan.recommendedCommands, /\bverify:(?:real|release-real)\b|--goal=(?:real|release-real)\b|backend-real/i);
+  const reason = selectHeavyEvidenceReason(plan, visualRequired || backendRealRequired);
+
+  return `Heavy evidence: visual=${visualRequired ? 'yes' : 'no'}, backend-real=${backendRealRequired ? 'yes' : 'no'}; reason: ${reason}`;
+}
+
 export function renderVerificationPlan(plan: VerificationPlan): string {
   return [
     'AgentSmith Verification',
@@ -209,6 +263,7 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
     `Affected surfaces: ${plan.affectedSurfaces.join('; ')}`,
     `Required levels: ${plan.requiredLevels.join(', ')}`,
     `Required evidence: ${plan.requiredEvidence.join(', ')}`,
+    renderHeavyEvidenceDecision(plan),
     '',
     'Recommended plan:',
     ...renderRecommendedPlan(plan),
@@ -524,9 +579,12 @@ function buildNpmScriptRunContext(args: {
   reportRoot: string;
   repoRoot: string;
   gitSha: string;
+  readinessEnv?: NodeJS.ProcessEnv;
 }): NpmScriptRunContext {
   return {
-    ...args,
+    reportRoot: args.reportRoot,
+    repoRoot: args.repoRoot,
+    gitSha: args.gitSha,
     env: {
       ...process.env,
       [VERIFY_REPORT_ROOT_ENV]: args.reportRoot,
@@ -534,6 +592,7 @@ function buildNpmScriptRunContext(args: {
       [VERIFY_GIT_SHA_ENV]: args.gitSha,
       [PURE_CHECK_SHADOW_REPO_ROOT_ENV]: args.repoRoot,
       [PURE_CHECK_SHADOW_GIT_SHA_ENV]: args.gitSha,
+      ...(args.readinessEnv ?? {}),
     },
   };
 }
@@ -741,6 +800,21 @@ export function runVerificationCli(
       reportRoot,
       repoRoot: pureCheckShadowRepoRoot,
       gitSha: pureCheckShadowGitSha,
+      readinessEnv: createRunReadinessState({
+        scope: 'verify',
+        root: reportRoot,
+        gitSha: pureCheckShadowGitSha,
+        input: {
+          entrypoint: 'verify',
+          goal: options.goal,
+          goal_explicit: options.goalExplicit,
+          mode: plan.mode,
+          changed_files: plan.changedFiles,
+          recommended_commands: plan.recommendedCommands,
+          required_levels: plan.requiredLevels,
+        },
+        env: process.env,
+      }).env,
     });
     for (const command of plan.recommendedCommands) {
       const script = npmScriptFromCommand(command);

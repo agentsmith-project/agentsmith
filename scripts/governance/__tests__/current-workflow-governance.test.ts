@@ -1105,4 +1105,21 @@ describe('current workflow governance', () => {
       expect(check.whyNotWaste.length).toBeGreaterThan(0);
     }
   });
+
+  it('keeps standalone release evidence roots diagnostic unless campaign-linked', () => {
+    const governanceModel = readRepoFile('docs/current-engineering-governance-model.md');
+
+    expect(governanceModel).toContain(
+      'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.',
+    );
+    expect(governanceModel).toContain(
+      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.',
+    );
+    expect(governanceModel).not.toContain(
+      'standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles',
+    );
+    expect(governanceModel).not.toContain(
+      'Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.',
+    );
+  });
 });

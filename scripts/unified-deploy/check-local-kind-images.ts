@@ -130,6 +130,7 @@ export type LocalKindImagesProducerOptions = {
   tag?: string;
   env?: Record<string, string | undefined>;
   runner?: LocalKindImageCommandRunner;
+  registryAvailabilityPoll?: RegistryAvailabilityPollOptions;
 };
 
 export type LocalKindImagesProducerResult = {
@@ -146,6 +147,13 @@ export type LocalKindImagePreflightResult = {
   diagnostics: string[];
 };
 
+export type RegistryAvailabilityPollOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  now?: () => number;
+  sleep?: (durationMs: number) => Promise<void>;
+};
+
 const DEFAULT_EVIDENCE_DIR = path.join(REPO_ROOT, 'artifacts', 'unified-deploy');
 export const DEFAULT_LOCAL_KIND_SITE_ENV_PATH = path.join(DEFAULT_EVIDENCE_DIR, 'local-kind-site.env');
 const DEFAULT_LLMUP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'llmup-image.lock');
@@ -160,6 +168,8 @@ const AFSCP_SCHEMA_BOOTSTRAP_COMMAND = '/usr/local/bin/afscp-migrate';
 const AFSCP_VOLUME_BOOTSTRAP_COMMAND = '/usr/local/bin/afscp-volume-bootstrap';
 const DOCKER_TIMEOUT_MS = 20 * 60_000;
 const SHORT_DOCKER_TIMEOUT_MS = 30_000;
+const REGISTRY_AVAILABILITY_TIMEOUT_MS = 60_000;
+const REGISTRY_AVAILABILITY_INTERVAL_MS = 1_000;
 const SECRET_DIAGNOSTIC_PATTERN = /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)=([^\s]+)/giu;
 const CLI_SECRET_ASSIGNMENT_PATTERN = /((?:--?|\/)?[A-Z0-9_-]*(?:PASSWORD|SECRET|TOKEN|ACCESS[-_]?KEY|API[-_]?KEY|CLIENT[-_]?SECRET)[A-Z0-9_-]*=)([^\s,"]+)/giu;
 const COMMAND_SECRET_KEY_PATTERN = /(?:password|secret|token|access[-_]?key|api[-_]?key|client[-_]?secret)/iu;
@@ -168,6 +178,12 @@ const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function addFailure(failures: CheckFailure[], failurePath: string, message: string): void {
@@ -699,7 +715,7 @@ function classifyRegistryProbeFailure(details: string): string {
   return 'kind node registry availability check failed';
 }
 
-async function checkRegistryAvailability(options: {
+async function probeRegistryAvailabilityOnce(options: {
   runner: LocalKindImageCommandRunner;
   env: Record<string, string | undefined>;
   k8sRegistry: string;
@@ -792,6 +808,97 @@ async function checkRegistryAvailability(options: {
   return {
     operations,
     failures,
+    diagnostics: diagnostics.filter(Boolean).map(redactDiagnostic),
+  };
+}
+
+function registryAvailabilityPollOptions(
+  options?: RegistryAvailabilityPollOptions,
+): Required<RegistryAvailabilityPollOptions> {
+  return {
+    timeoutMs: Math.max(0, options?.timeoutMs ?? REGISTRY_AVAILABILITY_TIMEOUT_MS),
+    intervalMs: Math.max(1, options?.intervalMs ?? REGISTRY_AVAILABILITY_INTERVAL_MS),
+    now: options?.now ?? (() => Date.now()),
+    sleep: options?.sleep ?? sleep,
+  };
+}
+
+function registryAvailabilityLastObservedReason(result: {
+  failures: readonly CheckFailure[];
+  diagnostics: readonly string[];
+}): string {
+  const failureReason = result.failures
+    .map((failure) => `${failure.path}: ${failure.message}`)
+    .join('; ');
+
+  if (failureReason) {
+    return redactDiagnostic(failureReason);
+  }
+
+  for (let index = result.diagnostics.length - 1; index >= 0; index -= 1) {
+    const diagnostic = result.diagnostics[index];
+    if (diagnostic?.trim()) {
+      return redactDiagnostic(diagnostic);
+    }
+  }
+
+  return 'registry availability probe produced no diagnostic output';
+}
+
+async function checkRegistryAvailability(options: {
+  runner: LocalKindImageCommandRunner;
+  env: Record<string, string | undefined>;
+  k8sRegistry: string;
+  failurePrefix: string;
+  pullImages?: string[];
+  poll?: RegistryAvailabilityPollOptions;
+}): Promise<{ operations: ImageOperationEvidence[]; failures: CheckFailure[]; diagnostics: string[] }> {
+  const poll = registryAvailabilityPollOptions(options.poll);
+  const startedAt = poll.now();
+  const operations: ImageOperationEvidence[] = [];
+  const diagnostics: string[] = [];
+  let lastResult: Awaited<ReturnType<typeof probeRegistryAvailabilityOnce>> | undefined;
+  let lastObservedReason = 'registry availability probe did not run';
+  let attempt = 0;
+
+  while (true) {
+    attempt += 1;
+    const result = await probeRegistryAvailabilityOnce(options);
+    operations.push(...result.operations);
+    diagnostics.push(...result.diagnostics);
+
+    if (result.failures.length === 0) {
+      return {
+        operations,
+        failures: [],
+        diagnostics: diagnostics.filter(Boolean).map(redactDiagnostic),
+      };
+    }
+
+    lastResult = result;
+    lastObservedReason = registryAvailabilityLastObservedReason(result);
+    const elapsedMs = Math.max(0, poll.now() - startedAt);
+
+    if (elapsedMs >= poll.timeoutMs) {
+      break;
+    }
+
+    const sleepMs = Math.min(poll.intervalMs, poll.timeoutMs - elapsedMs);
+    diagnostics.push(
+      `registry availability attempt ${attempt} failed; retrying in ${sleepMs}ms; last observed reason: ${lastObservedReason}`,
+    );
+    await poll.sleep(sleepMs);
+  }
+
+  const timeoutDiagnostic = `registry availability timed out after ${poll.timeoutMs}ms; last observed reason: ${lastObservedReason}`;
+  diagnostics.push(timeoutDiagnostic);
+
+  return {
+    operations,
+    failures: (lastResult?.failures ?? []).map((failure) => ({
+      ...failure,
+      message: redactDiagnostic(`${failure.message}; ${timeoutDiagnostic}`),
+    })),
     diagnostics: diagnostics.filter(Boolean).map(redactDiagnostic),
   };
 }
@@ -1155,6 +1262,7 @@ export async function runLocalKindImagesProducer(
     env,
     k8sRegistry,
     failurePrefix: 'registry-availability',
+    poll: options.registryAvailabilityPoll,
     pullImages: [
       digestRefs.app.k8s_ref,
       digestRefs.sandbox_manager.k8s_ref,
@@ -1484,6 +1592,7 @@ export async function checkLocalKindImagePreflight(options: {
   env?: Record<string, string | undefined>;
   hostRegistry?: string;
   k8sRegistry?: string;
+  registryAvailabilityPoll?: RegistryAvailabilityPollOptions;
 }): Promise<LocalKindImagePreflightResult> {
   const hostRegistry = options.hostRegistry ?? DEFAULT_HOST_REGISTRY;
   const k8sRegistry = options.k8sRegistry ?? DEFAULT_K8S_REGISTRY;
@@ -1532,6 +1641,7 @@ export async function checkLocalKindImagePreflight(options: {
     env,
     k8sRegistry,
     failurePrefix: 'image-preflight',
+    poll: options.registryAvailabilityPoll,
     pullImages: imageRefs,
   });
   diagnostics.push(...registryAvailability.diagnostics);

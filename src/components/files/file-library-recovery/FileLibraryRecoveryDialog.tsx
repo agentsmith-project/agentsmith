@@ -571,6 +571,7 @@ export function FileLibraryRecoveryDialog({
   const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
   const [pendingSavePointCreate, setPendingSavePointCreate] = React.useState<{
     existingIds: ReadonlySet<string>;
+    initialDataUpdatedAt: number;
     message?: string;
   } | null>(null);
   const [restorePreview, setRestorePreview] = React.useState<FileLibraryRestorePreview | null>(null);
@@ -660,19 +661,22 @@ export function FileLibraryRecoveryDialog({
   React.useEffect(() => {
     if (savePointActionError?.kind !== 'pending' || !pendingSavePointCreate) return;
     if (savePointsQuery.isError || savePointsQuery.isLoading) return;
+    if (savePointsQuery.dataUpdatedAt <= pendingSavePointCreate.initialDataUpdatedAt) return;
     const pendingMessage = pendingSavePointCreate.message;
     const createdSavePointVisible = savePoints.some((savePoint) => (
       !pendingSavePointCreate.existingIds.has(savePoint.id)
       && (!pendingMessage || savePoint.message === pendingMessage)
     ));
-    if (!createdSavePointVisible) return;
     setSavePointActionError(null);
     setPendingSavePointCreate(null);
-    setSavePointMessage('');
+    if (createdSavePointVisible) {
+      setSavePointMessage('');
+    }
   }, [
     pendingSavePointCreate,
     savePointActionError?.kind,
     savePoints,
+    savePointsQuery.dataUpdatedAt,
     savePointsQuery.isError,
     savePointsQuery.isLoading,
   ]);
@@ -704,6 +708,7 @@ export function FileLibraryRecoveryDialog({
       if (isFileLibraryOperationPendingError(error)) {
         setPendingSavePointCreate({
           existingIds: new Set(savePoints.map((savePoint) => savePoint.id)),
+          initialDataUpdatedAt: savePointsQuery.dataUpdatedAt,
           message: savePointMessage.trim() || undefined,
         });
         void savePointsQuery.refetch();

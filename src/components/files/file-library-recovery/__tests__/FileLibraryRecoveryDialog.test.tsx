@@ -207,6 +207,7 @@ describe('FileLibraryRecoveryDialog', () => {
     mockRefetchActiveRestorePreview.mockResolvedValue(undefined);
     mockSavePointsQueryState.mockImplementation(() => ({
       data: { items: mockListSavePoints() },
+      dataUpdatedAt: 1,
       error: null,
       isError: false,
       isLoading: false,
@@ -447,6 +448,7 @@ describe('FileLibraryRecoveryDialog', () => {
           },
         ],
       },
+      dataUpdatedAt: 2,
       error: null,
       isError: false,
       isLoading: false,
@@ -469,6 +471,59 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByText('Before prompt edits')).toBeInTheDocument();
     expect(screen.getByTestId('files__save-point__message')).toHaveValue('');
     expect(screen.getByTestId('files__save-point__create')).toBeEnabled();
+  });
+
+  it('clears pending and preserves the draft when a busy create was not accepted', async () => {
+    const user = userEvent.setup();
+    mockCreateSavePoint.mockRejectedValueOnce(new APIError(
+      'FILE_LIBRARY_OPERATION_PENDING',
+      'file_library_operation_pending',
+      'req-save-point-busy',
+      409,
+    ));
+    const { rerender } = renderDialog();
+
+    await user.type(screen.getByTestId('files__save-point__message'), 'Retry after current save');
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    expect(await screen.findByTestId('files__save-point__pending')).toBeInTheDocument();
+    expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
+    expect(screen.getByTestId('files__save-point__create')).toBeDisabled();
+
+    mockSavePointsQueryState.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'sp_1',
+            file_library_id: 'lib_1',
+            message: 'Before edits',
+            created_at: '2026-05-09T12:00:00.000Z',
+          },
+        ],
+      },
+      dataUpdatedAt: 2,
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchSavePoints,
+    });
+    rerender(
+      <FileLibraryRecoveryDialog
+        open
+        library={library}
+        projectId="proj_001"
+        t={t}
+        workspaceId="ws_default"
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('files__save-point__pending')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('files__save-point__message')).toHaveValue('Retry after current save');
+    expect(screen.getByTestId('files__save-point__create')).toBeEnabled();
+    expect(mockCreateSavePoint).toHaveBeenCalledTimes(1);
   });
 
   it('shows a retryable save-point list error instead of an empty state', async () => {

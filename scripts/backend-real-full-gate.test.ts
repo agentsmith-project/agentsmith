@@ -691,6 +691,49 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toMatch(/LOCAL_RUNTIME_PROCESS_STATE_DIR="\$\{RELEASE_RUN_ROOT\}\/processes"/);
   });
 
+  it('reuses a parent-verified kind cluster only when readiness identity matches', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const prewarmStart = script.indexOf('prewarm_internal_kind_cluster()');
+    const prewarmEnd = script.indexOf('cleanup() {', prewarmStart);
+    const prewarmBody = script.slice(prewarmStart, prewarmEnd);
+
+    expect(script).toContain('scripts/lib/run-readiness-state.sh');
+    expect(prewarmBody).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(prewarmBody).toContain('local_kind_context=${kind_context_name}');
+    expect(prewarmBody).toContain('local_kind_cluster_uid=${cluster_uid}');
+    expect(prewarmBody).toContain('reusing parent-verified local kind cluster');
+    expect(prewarmBody).toContain('ensure_local_kind_cluster');
+  });
+
+  it('lets internal Agent Task gates skip runner rebuild and kind image import only with matching readiness identity', () => {
+    const script = readFileSync('scripts/lib/internal-backend-real-gate.sh', 'utf8');
+
+    expect(script).toContain('internal_real_gate_runner_image_reuse_ready()');
+    expect(script).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
+    expect(script).toContain('runner_image_ref=${RUNNER_IMAGE}');
+    expect(script).toContain('runner_image_id=${runner_image_id}');
+    expect(script).toContain('internal_real_gate_local_kind_image_import_reuse_ready()');
+    expect(script).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(script).toContain('local_kind_context=${KIND_CONTEXT_NAME}');
+    expect(script).toContain('local_kind_cluster_uid=${cluster_uid}');
+    expect(script).toContain('reusing parent-verified runner image digest');
+    expect(script).toContain('reusing parent-verified kind runner image import');
+    expect(script).toContain('reusing parent-verified CSI image import');
+  });
+
+  it('lets the release user story reuse runner build and CSI kind imports without suppressing evidence', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+
+    expect(script).toContain('scripts/lib/run-readiness-state.sh');
+    expect(script).toContain('release_user_story_runner_image_reuse_ready()');
+    expect(script).toContain('release_user_story_local_kind_image_import_reuse_ready()');
+    expect(script).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
+    expect(script).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(script).toContain('reusing parent-verified runner image digest');
+    expect(script).toContain('reusing parent-verified kind image imports');
+    expect(script).toContain('wait_for_afscp_storage_csi_ready');
+  });
+
   it('captures an authoritative release-ready API pid from the shared local runtime helper while preserving root cleanup ownership', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 

@@ -11,6 +11,9 @@ import {
   renderReleaseStatus,
   writeReleaseSummaryForCampaign,
 } from '../release-summary';
+import {
+  createReleaseCleanupFinalizer,
+} from '../release-cleanup-finalizer';
 import { runReleaseReady } from '../release-ready';
 import {
   READINESS_STATE_ENV,
@@ -31,6 +34,7 @@ const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
 ] as const;
 
 const VALID_TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
+const VALID_RELEASE_READY_GIT_SHA = 'abcdef0123456789abcdef0123456789abcdef01';
 const SENTINEL_PASS_ENV = {
   NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
   INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
@@ -117,6 +121,21 @@ function writeFakeNpm(dir: string, script: string): void {
   const lsofPath = join(dir, 'lsof');
   writeFileSync(lsofPath, '#!/usr/bin/env bash\nexit 1\n');
   chmodSync(lsofPath, 0o755);
+  const gitPath = join(dir, 'git');
+  writeFileSync(gitPath, [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'if [[ "$1" == "rev-parse" ]]; then',
+    `  printf '%s\\n' "${VALID_RELEASE_READY_GIT_SHA}"`,
+    '  exit 0',
+    'fi',
+    'if [[ "$1" == "status" ]]; then',
+    '  exit 0',
+    'fi',
+    'exit 1',
+    '',
+  ].join('\n'));
+  chmodSync(gitPath, 0o755);
 }
 
 function writeBackendRealStyleEnv(root: string): void {
@@ -157,6 +176,27 @@ function failingSentinelResult() {
       profile_digest: 'sha256:redacted-failing-profile-digest',
       public_endpoint: null,
       port_family: 'unknown',
+    },
+  };
+}
+
+function passingGitGuard() {
+  return {
+    ok: true as const,
+    headSha: VALID_RELEASE_READY_GIT_SHA,
+  };
+}
+
+function passingReusableResourceReadiness() {
+  return {
+    runnerImage: {
+      imageRef: 'agentsmith-agent-task-runner:local',
+      imageId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    localKind: {
+      context: 'kind-agentsmith',
+      clusterUid: 'cluster-uid-release-ready',
+      controlPlaneContainerId: 'kind-control-plane-container',
     },
   };
 }
@@ -629,6 +669,7 @@ exit 0
           ...process.env,
           RELEASE_CAMPAIGN_ROOT: root,
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return script === 'test:release:precheck'
@@ -640,6 +681,17 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
+        reusableResourceReadiness: () => ({
+          runnerImage: {
+            imageRef: 'agentsmith-agent-task-runner:local',
+            imageId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+          localKind: {
+            context: 'kind-agentsmith',
+            clusterUid: 'cluster-uid-release-ready',
+            controlPlaneContainerId: 'kind-control-plane-container',
+          },
+        }),
       });
 
       expect(exitCode).toBe(9);
@@ -670,6 +722,7 @@ exit 0
           ...process.env,
           RELEASE_CAMPAIGN_ROOT: root,
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return { status: 0, signal: null };
@@ -686,7 +739,8 @@ exit 0
       expect(exitCode).toBe(1);
       expect(scripts).toEqual([]);
       expect(sentinelProfiles).toEqual([]);
-      expect(combinedOutput.trim().split('\n')).toHaveLength(6);
+      expect(combinedOutput.trim().split('\n')).toHaveLength(8);
+      expect(combinedOutput).toContain('AgentSmith Release Readiness');
       expect(combinedOutput).toContain('Blocker: environment_conflict');
       expect(combinedOutput).toContain('Stage: preflight');
       expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
@@ -694,6 +748,62 @@ exit 0
       expect(combinedOutput).toContain('Rerun: npm run release:ready');
       expect(combinedOutput).toContain(`Evidence: ${evidencePath}`);
       expect(combinedOutput).not.toContain('Automated release verdict: PASSED');
+      expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast on dirty git state before owner preflight, release precheck, sentinel, or campaign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-dirty-git-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const ownerPreflightCalls: string[] = [];
+    const cleanupReasons: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: () => ({
+          ok: false,
+          blocker: 'release_git_clean_guard',
+          why: 'release:ready requires a clean git worktree before release sign-off.',
+          inspectCommand: 'git status --short',
+        }),
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        ownerPreflight: (evidencePath) => {
+          ownerPreflightCalls.push(evidencePath);
+          return passingOwnerPreflight(evidencePath);
+        },
+        createCleanupFinalizer: () => ({
+          finalize: (reason) => cleanupReasons.push(reason),
+        }),
+      });
+
+      const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+      expect(exitCode).toBe(1);
+      expect(scripts).toEqual([]);
+      expect(sentinelProfiles).toEqual([]);
+      expect(ownerPreflightCalls).toEqual([]);
+      expect(cleanupReasons).toEqual([]);
+      expectCanonicalNotStartedBlocker(combinedOutput, 'release_git_clean_guard');
+      expect(combinedOutput).toContain('Inspect: git status --short');
+      expect(combinedOutput).toContain('release:ready requires a clean git worktree');
+      expect(existsSync(join(root, 'state', 'readiness.json'))).toBe(false);
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -714,6 +824,7 @@ exit 0
           ...process.env,
           RELEASE_CAMPAIGN_ROOT: root,
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return { status: 0, signal: null };
@@ -758,6 +869,7 @@ exit 0
         stderr: { write: (chunk: string) => stderr.push(chunk) },
         cwd: root,
         env: parentEnv,
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return script === 'release:campaign:full'
@@ -794,6 +906,7 @@ exit 0
           RELEASE_RUNS_ROOT: root,
           RELEASE_CAMPAIGN_RUN_ID: '../escaped-campaign',
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return { status: 0, signal: null };
@@ -803,6 +916,7 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
+        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -836,6 +950,7 @@ exit 0
           RELEASE_RUNS_ROOT: root,
           RELEASE_CAMPAIGN_RUN_ID: runId,
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return { status: 0, signal: null };
@@ -845,6 +960,7 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
+        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -882,6 +998,7 @@ exit 0
           RELEASE_CAMPAIGN_RUN_ID: runId,
         },
         cwd: root,
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script) => {
           scripts.push(script);
           return { status: 0, signal: null };
@@ -921,6 +1038,7 @@ exit 0
         stderr: { write: (chunk: string) => stderr.push(chunk) },
         cwd: root,
         env: parentEnv,
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script, _args, env) => {
           scripts.push(script);
           if (script === 'test:release:precheck') {
@@ -968,6 +1086,10 @@ exit 0
           ...process.env,
           RELEASE_CAMPAIGN_ROOT: root,
         },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: VALID_RELEASE_READY_GIT_SHA,
+        }),
         runNpmScript: (script, args, env) => {
           scripts.push([script, ...args].join(' '));
           if (script === 'test:release:precheck') {
@@ -985,6 +1107,7 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
+        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       expect(exitCode).toBe(7);
@@ -994,11 +1117,15 @@ exit 0
       ]);
       expect(sentinelProfiles).toEqual(['release-ready']);
       expect(precheckEnvs).toHaveLength(1);
+      expect(precheckEnvs[0]?.AGENTSMITH_RELEASE_READY_GIT_SHA).toBe(VALID_RELEASE_READY_GIT_SHA);
       expect(precheckEnvs[0]?.[READINESS_STATE_ENV.path]).toBe(join(root, 'state', 'readiness.json'));
+      expect(precheckEnvs[0]?.[READINESS_STATE_ENV.gitSha]).toBe(VALID_RELEASE_READY_GIT_SHA);
       expect(precheckEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBeTruthy();
       expect(precheckEnvs[0]?.[READINESS_STATE_ENV.processNonce]).toBeTruthy();
       expect(campaignEnvs).toHaveLength(1);
+      expect(campaignEnvs[0]?.AGENTSMITH_RELEASE_READY_GIT_SHA).toBe(VALID_RELEASE_READY_GIT_SHA);
       expect(campaignEnvs[0]?.[READINESS_STATE_ENV.path]).toBe(join(root, 'state', 'readiness.json'));
+      expect(campaignEnvs[0]?.[READINESS_STATE_ENV.gitSha]).toBe(VALID_RELEASE_READY_GIT_SHA);
       expect(campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBe(precheckEnvs[0]?.[READINESS_STATE_ENV.invocationId]);
       expect(campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce]).toBe(precheckEnvs[0]?.[READINESS_STATE_ENV.processNonce]);
       expect(campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId]).toBeTruthy();
@@ -1010,14 +1137,192 @@ exit 0
         processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
         inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
         envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+        gitSha: VALID_RELEASE_READY_GIT_SHA,
       });
       expect(readinessValidation).toMatchObject({ ok: true });
       if (!readinessValidation.ok) {
         throw new Error(readinessValidation.error);
       }
       expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
+      expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('ready');
+      expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('ready');
+      expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared?.values).toMatchObject({
+        runner_image_ref: 'agentsmith-agent-task-runner:local',
+        runner_image_id: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      });
+      expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed?.values).toMatchObject({
+        local_kind_context: 'kind-agentsmith',
+        local_kind_cluster_uid: 'cluster-uid-release-ready',
+        local_kind_control_plane_container_id: 'kind-control-plane-container',
+      });
       expect(stdout.join('')).not.toContain('state/readiness.json');
       expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the release cleanup finalizer after a failed release readiness run without replacing the exit code', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-cleanup-failure-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const scripts: string[] = [];
+    const cleanupContexts: string[] = [];
+    const cleanupReasons: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: VALID_RELEASE_READY_GIT_SHA,
+        }),
+        runNpmScript: (script) => {
+          scripts.push(script);
+          return script === 'test:release:precheck'
+            ? { status: 9, signal: null }
+            : { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+        createCleanupFinalizer: (context) => {
+          cleanupContexts.push(context.campaignRoot);
+          return {
+            finalize: (reason) => cleanupReasons.push(reason),
+          };
+        },
+      });
+
+      expect(exitCode).toBe(9);
+      expect(scripts).toEqual(['test:release:precheck']);
+      expect(cleanupContexts).toEqual([root]);
+      expect(cleanupReasons).toEqual(['failure']);
+      expectCanonicalNotStartedBlocker(`${stdout.join('')}\n${stderr.join('')}`, 'release_precheck');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the release cleanup finalizer after a successful release readiness run', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-cleanup-success-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const cleanupReasons: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: VALID_RELEASE_READY_GIT_SHA,
+        }),
+        runNpmScript: (script) => {
+          if (script === 'release:campaign:full') {
+            writeTerminalResult(root);
+            writeSummaryCache(root);
+          }
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+        createCleanupFinalizer: () => ({
+          finalize: (reason) => cleanupReasons.push(reason),
+        }),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(cleanupReasons).toEqual(['success']);
+      expect(stdout.join('')).toContain('Automated release verdict: PASSED');
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('can disable the release cleanup finalizer without changing release readiness execution', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-cleanup-disabled-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const cleanupReasons: string[] = [];
+    try {
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+          AGENTSMITH_RELEASE_READY_CLEANUP: '0',
+        },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: VALID_RELEASE_READY_GIT_SHA,
+        }),
+        runNpmScript: (script) => (
+          script === 'test:release:precheck'
+            ? { status: 9, signal: null }
+            : { status: 0, signal: null }
+        ),
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+        createCleanupFinalizer: () => ({
+          finalize: (reason) => cleanupReasons.push(reason),
+        }),
+      });
+
+      expect(exitCode).toBe(9);
+      expect(cleanupReasons).toEqual([]);
+      expectCanonicalNotStartedBlocker(`${stdout.join('')}\n${stderr.join('')}`, 'release_precheck');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the release cleanup finalizer safe, idempotent, and non-volume-destructive', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-cleanup-plan-'));
+    const commands: string[] = [];
+    try {
+      const finalizer = createReleaseCleanupFinalizer({
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        campaignRoot: root,
+        probeResource: (resource, phase) => (
+          phase === 'after'
+          && (
+            resource === 'integration_deps'
+            || resource === 'unified_substrate'
+            || resource === 'kind_cluster'
+            || resource === 'kind_registry'
+          )
+        ),
+        cleanupRunner: (command) => {
+          commands.push([command.executable, ...command.args].join(' '));
+          return { status: 0, signal: null };
+        },
+      });
+
+      finalizer.finalize('failure');
+      finalizer.finalize('failure');
+
+      expect(commands).toEqual([
+        `npx tsx scripts/unified-deploy/substrate-lifecycle.ts down --profile=local-kind --evidence-dir=${join(root, 'cleanup', 'unified-substrate')}`,
+        'npm run integration:deps:down',
+        'kind delete cluster --name agentsmith',
+        'docker rm -f kind-registry',
+      ]);
+      expect(commands.join('\n')).not.toContain('down:volumes');
+      expect(commands.join('\n')).not.toContain(' -v');
+      expect(commands.join('\n')).not.toContain('rm -rf');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1038,6 +1343,7 @@ exit 0
           RELEASE_RUNS_ROOT: releaseRunsRoot,
           RELEASE_CAMPAIGN_RUN_ID: runId,
         },
+        gitCleanGuard: passingGitGuard,
         runNpmScript: (script, _args, env) => {
           if (script === 'release:campaign:full') {
             campaignEnvs.push(env);

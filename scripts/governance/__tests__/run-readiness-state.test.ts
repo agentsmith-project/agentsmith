@@ -253,12 +253,90 @@ describe('run-local readiness state', () => {
     });
   });
 
+  it('requires matching resource identity before reusing a ready field', () => {
+    withTempRoot((root) => {
+      const context = createRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-identity',
+        input: {
+          campaign_root: root,
+          run_id: 'release-run-identity',
+        },
+        env: {
+          NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+        },
+        invocationId: 'identity-invocation',
+        processNonce: 'identity-process-nonce',
+      });
+
+      updateRunReadinessStateField({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        field: 'runner_image_digest_prepared',
+        status: 'ready',
+        identity: {
+          runner_image_ref: 'agentsmith-agent-task-runner:local',
+          runner_image_id: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      });
+
+      expect(spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'runner_image_digest_prepared',
+        '--identity',
+        'runner_image_ref=agentsmith-agent-task-runner:local',
+        '--identity',
+        'runner_image_id=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ...context.env,
+        },
+        encoding: 'utf8',
+      }).status).toBe(0);
+
+      expect(spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'runner_image_digest_prepared',
+        '--identity',
+        'runner_image_ref=agentsmith-agent-task-runner:local',
+        '--identity',
+        'runner_image_id=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ...context.env,
+        },
+        encoding: 'utf8',
+      }).status).toBe(1);
+
+      const raw = readFileSync(context.statePath, 'utf8');
+      expect(raw).toContain('runner_image_digest_prepared');
+      expect(raw).toContain('runner_image_id');
+      expect(raw).not.toContain('PRESET_ENDPOINT_API_KEY');
+    });
+  });
+
   it('keeps shell readiness consumers read-only behind a shared helper before skipping deps startup', () => {
     const helper = readFileSync('scripts/lib/run-readiness-state.sh', 'utf8');
     const backendBootstrap = readFileSync('scripts/backend-real-bootstrap.sh', 'utf8');
     const releaseUserStory = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
     expect(helper).toContain('readiness_state_field_ready');
+    expect(helper).toContain('readiness_state_field_ready_with_identity');
     expect(helper).toContain('run-readiness-state.ts');
     expect(helper).toContain('check');
 

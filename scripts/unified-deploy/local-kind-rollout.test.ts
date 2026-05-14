@@ -1,4 +1,5 @@
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +11,10 @@ import {
   type LocalKindCommandRunner,
   type LocalKindHttpProbeRunner,
 } from './check-local-kind-rollout';
+import {
+  createRunReadinessState,
+  updateRunReadinessStateField,
+} from '../governance/run-readiness-state';
 import { DEFAULT_SITE_ENV_PATH } from './render';
 
 const tempRoots: string[] = [];
@@ -185,6 +190,10 @@ function writeMutableLocalKindImageSiteEnv(root: string): string {
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, 'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner:local-kind-dev'));
 }
 
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
 function writeTemplatesRootWithInlineAfscpCsi(root: string): string {
   const templatesRoot = join(root, 'unified-templates');
   cpSync(join(process.cwd(), 'infra', 'deploy', 'unified', 'templates'), join(templatesRoot, 'templates'), {
@@ -323,6 +332,9 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
     }
     if (joined.includes('config current-context')) {
       return { exitCode: 0, stdout: `${context}\n`, stderr: '' };
+    }
+    if (joined.includes('get namespace kube-system') && joined.includes('jsonpath')) {
+      return { exitCode: 0, stdout: 'cluster-uid-local-kind\n', stderr: '' };
     }
     if (joined.includes('rollout status')) {
       return { exitCode: 0, stdout: 'deployment successfully rolled out', stderr: '' };
@@ -888,6 +900,66 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
+    expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(true);
+  });
+
+  it('reuses parent-verified local-kind image handoff when site env and cluster identity match', async () => {
+    const root = tempDir('local-kind-image-preflight-reuse-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const readiness = createRunReadinessState({
+      scope: 'release',
+      root,
+      gitSha: 'local-kind-rollout-test',
+      input: {
+        campaign_root: root,
+        run_id: 'local-kind-rollout-test',
+      },
+      env: {
+        NEXT_PUBLIC_API_BASE: 'http://localhost:29180/api/v1',
+      },
+      invocationId: 'local-kind-rollout-invocation',
+      processNonce: 'local-kind-rollout-process-nonce',
+    });
+    updateRunReadinessStateField({
+      statePath: readiness.statePath,
+      invocationId: readiness.state.invocation_id,
+      processNonce: readiness.state.process_nonce,
+      inputDigest: readiness.state.input_digest,
+      envDigest: readiness.state.env_digest.digest,
+      gitSha: readiness.state.git_sha,
+      field: 'local_kind_image_import_completed',
+      status: 'ready',
+      identity: {
+        local_kind_context: 'kind-agentsmith',
+        local_kind_cluster_uid: 'cluster-uid-local-kind',
+        local_kind_site_env_digest: sha256(readFileSync(siteEnvPath, 'utf8')),
+      },
+    });
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: {
+        ...readiness.env,
+        KUBECONFIG: kubeconfigPath,
+      },
+      homeDir: root,
+      siteEnvPath,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+    expect(result.status).toBe('passed');
+    expect(result.evidence.image_preflight.status).toBe('passed');
+    expect(result.evidence.image_preflight.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining('reused parent-verified local-kind image handoff'),
+    ]));
+    expect(commandText).not.toContain('crictl pull');
+    expect(commandText).not.toContain('buildx imagetools inspect');
     expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(true);
   });
 

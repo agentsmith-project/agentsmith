@@ -12,7 +12,7 @@ import {
 import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
-import { renderShortFailureProjection } from './status-projection';
+import { RELEASE_HUMAN_LOG_NOTE, renderShortFailureProjection } from './status-projection';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
 
@@ -561,6 +561,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         rerunCommand: 'npm run release:ready',
         evidencePath: status.latestPath,
       }).trimEnd(),
+      `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
   }
@@ -581,6 +582,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         rerunCommand: 'npm run release:ready',
         evidencePath: status.summaryPath,
       }).trimEnd(),
+      `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
   }
@@ -602,6 +604,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         rerunCommand: 'npm run release:ready',
         evidencePath: status.latestPath,
       }).trimEnd(),
+      `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
   }
@@ -623,7 +626,10 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         rerunCommand: 'npm run release:ready',
         evidencePath: summary.evidence_package,
       }).trimEnd(),
+      `Summary: ${summary.summary_md_path}`,
+      `Terminal result: ${summary.terminal_result_path}`,
       `Next: ${summary.next_action}`,
+      `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
   }
@@ -634,11 +640,12 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Automated release verdict: ${summary.automated_release_verdict}`,
     `Campaign: ${summary.campaign_run_id}`,
-    `Blocked step: ${summary.blocked_step ?? '<none>'}`,
     `Why: ${summary.why}`,
     `Summary: ${summary.summary_md_path}`,
-    `Evidence package: ${summary.evidence_package}`,
+    `Evidence: ${summary.evidence_package}`,
+    `Terminal result: ${summary.terminal_result_path}`,
     `Next: ${summary.next_action}`,
+    `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
     '',
   ].join('\n');
 }

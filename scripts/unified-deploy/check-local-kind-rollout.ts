@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -53,6 +54,11 @@ import {
   type SubstrateCommandInvocation,
   type SubstrateRuntimeTruthSummary,
 } from './substrate-lifecycle';
+import {
+  READINESS_STATE_ENV,
+  validateRunReadinessStateForConsumer,
+  type RunReadinessState,
+} from '../governance/run-readiness-state';
 
 type ProducerStatus = 'passed' | 'failed';
 type StepStatus = 'passed' | 'failed' | 'skipped';
@@ -330,6 +336,10 @@ function rolloutTimeoutForDeployment(deployment: string): string {
 
 function addFailure(failures: CheckFailure[], failurePath: string, message: string): void {
   failures.push({ path: failurePath, message });
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function errorMessage(error: unknown): string {
@@ -981,6 +991,57 @@ async function kubectlJson(options: {
       exitCode: result.exitCode,
     };
   }
+}
+
+function readinessFieldReadyWithIdentity(options: {
+  env: Record<string, string | undefined>;
+  field: keyof RunReadinessState['readiness'];
+  identity: Record<string, string>;
+}): boolean {
+  const statePath = options.env[READINESS_STATE_ENV.path]?.trim();
+  const invocationId = options.env[READINESS_STATE_ENV.invocationId]?.trim();
+  const processNonce = options.env[READINESS_STATE_ENV.processNonce]?.trim();
+  const inputDigest = options.env[READINESS_STATE_ENV.inputDigest]?.trim();
+  const envDigest = options.env[READINESS_STATE_ENV.envDigest]?.trim();
+  const gitSha = options.env[READINESS_STATE_ENV.gitSha]?.trim();
+  if (!statePath || !invocationId || !processNonce || !inputDigest || !envDigest) {
+    return false;
+  }
+
+  const validation = validateRunReadinessStateForConsumer({
+    statePath,
+    invocationId,
+    processNonce,
+    inputDigest,
+    envDigest,
+    ...(gitSha ? { gitSha } : {}),
+  });
+  if (!validation.ok || validation.state.readiness[options.field] !== 'ready') {
+    return false;
+  }
+
+  const stored = validation.state.readiness_identities?.[options.field]?.values;
+  if (!stored) {
+    return false;
+  }
+  return Object.entries(options.identity).every(([key, value]) => stored[key] === value);
+}
+
+async function resolveLocalKindClusterUid(options: {
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+}): Promise<string | null> {
+  const result = await options.runner('kubectl', [
+    'get',
+    'namespace',
+    'kube-system',
+    '-o',
+    'jsonpath={.metadata.uid}',
+  ], {
+    env: options.env,
+    timeoutMs: KUBECTL_TIMEOUT_MS,
+  });
+  return result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : null;
 }
 
 function listItems(resourceList: Record<string, unknown>): Record<string, unknown>[] {
@@ -3369,12 +3430,34 @@ export async function runLocalKindRolloutProducer(
     return finish(baseEvidence, evidenceDir);
   }
 
-  const imagePreflight = await checkLocalKindImagePreflight({
-    renderedYaml: imagePreflightYaml,
-    runner,
-    env,
-    registryAvailabilityPoll: options.registryAvailabilityPoll,
-  });
+  const clusterUid = await resolveLocalKindClusterUid({ runner, env });
+  const imagePreflightReuseReady = clusterUid
+    ? readinessFieldReadyWithIdentity({
+      env,
+      field: 'local_kind_image_import_completed',
+      identity: {
+        local_kind_context: safety.context,
+        local_kind_cluster_uid: clusterUid,
+        local_kind_site_env_digest: sha256(await readFile(siteEnvPath, 'utf8')),
+      },
+    })
+    : false;
+  const imagePreflight: LocalKindImagePreflightResult = imagePreflightReuseReady
+    ? {
+      status: 'passed',
+      image_refs: Object.values(imageRefs),
+      host_refs: [],
+      failures: [],
+      diagnostics: [
+        `reused parent-verified local-kind image handoff for ${safety.context}`,
+      ],
+    }
+    : await checkLocalKindImagePreflight({
+      renderedYaml: imagePreflightYaml,
+      runner,
+      env,
+      registryAvailabilityPoll: options.registryAvailabilityPoll,
+    });
   const afterImagePreflightEvidence = {
     ...baseEvidence,
     image_preflight: imagePreflight,

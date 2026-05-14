@@ -52,6 +52,11 @@ export interface RunReadinessEnvDigest {
   entries: readonly RunReadinessEnvDigestEntry[];
 }
 
+export interface RunReadinessIdentityRecord {
+  updated_at: string;
+  values: Record<string, string>;
+}
+
 export interface RunReadinessState {
   schema: typeof RUN_READINESS_STATE_SCHEMA;
   kind: 'operational_state';
@@ -71,6 +76,7 @@ export interface RunReadinessState {
     afscp_image_digest_prepared: ReadinessStatus;
     local_kind_image_import_completed: ReadinessStatus;
   };
+  readiness_identities?: Partial<Record<RunReadinessField, RunReadinessIdentityRecord>>;
 }
 
 export interface CreateRunReadinessStateInput {
@@ -221,6 +227,11 @@ function isRunReadinessField(value: string): value is RunReadinessField {
   return (RUN_READINESS_FIELDS as readonly string[]).includes(value);
 }
 
+function validateIdentityValues(value: unknown): value is Record<string, string> {
+  return isRecord(value)
+    && Object.entries(value).every(([key, entry]) => key.length > 0 && typeof entry === 'string');
+}
+
 function parseRunReadinessState(value: unknown): RunReadinessStateValidationResult {
   if (!isRecord(value)) {
     return { ok: false, error: 'readiness state must be a JSON object' };
@@ -273,6 +284,19 @@ function parseRunReadinessState(value: unknown): RunReadinessStateValidationResu
   for (const field of RUN_READINESS_FIELDS) {
     if (!validateReadinessStatus(value.readiness[field])) {
       return { ok: false, error: `required readiness state readiness field is missing: ${field}` };
+    }
+  }
+  if (value.readiness_identities !== undefined) {
+    if (!isRecord(value.readiness_identities)) {
+      return { ok: false, error: 'readiness state readiness_identities must be an object' };
+    }
+    for (const [field, record] of Object.entries(value.readiness_identities)) {
+      if (!isRunReadinessField(field)) {
+        return { ok: false, error: `readiness state readiness_identities has unknown field: ${field}` };
+      }
+      if (!isRecord(record) || typeof record.updated_at !== 'string' || !validateIdentityValues(record.values)) {
+        return { ok: false, error: `readiness state identity is invalid for field: ${field}` };
+      }
     }
   }
 
@@ -341,6 +365,7 @@ export function updateRunReadinessStateField(input: {
   gitSha?: string;
   field: RunReadinessField;
   status: ReadinessStatus;
+  identity?: Record<string, string>;
 }): RunReadinessState {
   if (!isRunReadinessField(input.field)) {
     throw new Error(`unknown readiness state field: ${input.field}`);
@@ -352,12 +377,29 @@ export function updateRunReadinessStateField(input: {
   if (!validation.ok) {
     throw new Error(`readiness state validation failed: ${validation.error}`);
   }
+  const readinessIdentities: Partial<Record<RunReadinessField, RunReadinessIdentityRecord>> = {
+    ...(validation.state.readiness_identities ?? {}),
+  };
+  if (input.identity !== undefined) {
+    readinessIdentities[input.field] = {
+      updated_at: new Date().toISOString(),
+      values: Object.fromEntries(
+        Object.entries(input.identity)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, value]) => [key, String(value)]),
+      ),
+    };
+  } else if (input.status !== 'ready') {
+    delete readinessIdentities[input.field];
+  }
+
   const updated: RunReadinessState = {
     ...validation.state,
     readiness: {
       ...validation.state.readiness,
       [input.field]: input.status,
     },
+    readiness_identities: readinessIdentities,
   };
   writeFileSync(input.statePath, `${JSON.stringify(updated, null, 2)}\n`);
   return updated;
@@ -422,27 +464,67 @@ function isCliEntrypoint(): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith('/scripts/governance/run-readiness-state.ts'));
 }
 
-function parseCheckField(argv: readonly string[]): string | null {
+function parseCheckArgs(argv: readonly string[]): {
+  field: string | null;
+  identities: Record<string, string>;
+  error?: string;
+} {
   if (argv[0] !== 'check') {
-    return null;
+    return { field: null, identities: {} };
   }
+  let field: string | null = null;
+  const identities: Record<string, string> = {};
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
     if (arg === '--field' && next) {
-      return next;
+      field = next;
+      index += 1;
+      continue;
     }
     if (arg.startsWith('--field=')) {
-      return arg.slice('--field='.length);
+      field = arg.slice('--field='.length);
+      continue;
+    }
+    let identity: string | null = null;
+    if (arg === '--identity' && next) {
+      identity = next;
+      index += 1;
+    } else if (arg.startsWith('--identity=')) {
+      identity = arg.slice('--identity='.length);
+    }
+    if (identity !== null) {
+      const separator = identity.indexOf('=');
+      if (separator <= 0) {
+        return { field, identities, error: 'readiness identity must be key=value' };
+      }
+      identities[identity.slice(0, separator)] = identity.slice(separator + 1);
     }
   }
-  return null;
+  return { field, identities };
+}
+
+function readinessIdentityMatches(
+  state: RunReadinessState,
+  field: RunReadinessField,
+  identities: Record<string, string>,
+): boolean {
+  const entries = Object.entries(identities);
+  if (entries.length === 0) {
+    return true;
+  }
+  const stored = state.readiness_identities?.[field]?.values;
+  if (!stored) {
+    return false;
+  }
+  return entries.every(([key, value]) => stored[key] === value);
 }
 
 function runReadinessStateCli(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): number {
-  const field = parseCheckField(argv);
-  if (!field || !isRunReadinessField(field)) {
-    process.stderr.write('[readiness-state] usage: check --field <readiness_field>\n');
+  const parsed = parseCheckArgs(argv);
+  const field = parsed.field;
+  if (!field || !isRunReadinessField(field) || parsed.error) {
+    process.stderr.write(`[readiness-state] ${parsed.error ?? 'usage: check --field <readiness_field>'}\n`);
     return 1;
   }
   const statePath = env[READINESS_STATE_ENV.path]?.trim();
@@ -467,7 +549,10 @@ function runReadinessStateCli(argv: readonly string[], env: NodeJS.ProcessEnv = 
     process.stderr.write(`[readiness-state] ${validation.error}\n`);
     return 1;
   }
-  return validation.state.readiness[field] === 'ready' ? 0 : 1;
+  return validation.state.readiness[field] === 'ready'
+    && readinessIdentityMatches(validation.state, field, parsed.identities)
+    ? 0
+    : 1;
 }
 
 if (isCliEntrypoint()) {

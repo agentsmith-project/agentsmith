@@ -205,7 +205,7 @@ function withLeaseSnapshotEnv<T>(snapshotPath: string, action: () => T): T {
 
 
 describe('clean status entrypoints', () => {
-  it('renders release:status default human output as a read-only status projection first screen', () => {
+  it('renders release:status default human output as a short read-only evidence summary', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-projection-'));
     try {
       writeReleaseAggregateResult(campaignRoot);
@@ -220,21 +220,51 @@ describe('clean status entrypoints', () => {
         encoding: 'utf8',
       });
 
-      expect(output).toContain('AgentSmith Status Projection');
-      expect(output).toContain('Projection kind: read-only');
+      expect(output).toContain('AgentSmith Release Status');
+      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(output).toContain('Status: passed');
       expect(output).toContain('Goal: release-ready');
-      expect(output).toContain('Presentation status: passed');
-      expect(output).toContain('Lease shadow active run: not-known');
-      expect(output).toContain('Lease shadow destructive command lock: not-known');
-      expect(output).toContain('Lease shadow port family: not-known');
-      expect(output).toContain('Lease shadow secret profile: not-known');
-      expect(output).toContain('Release decision produced: false');
-      expect(output).toContain('Commands executed: false');
+      expect(output).toContain('Authority:');
+      expect(output).toContain(`${campaignRoot}/gate-release-full/result.json`);
+      expect(output).toContain('Evidence:');
+      expect(output).toContain('Lease shadow: active_run=not-known; locks=not-known');
+      expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
+      expect(output).not.toContain('AgentSmith Status Projection');
+      expect(output).not.toContain('Projection kind: read-only');
+      expect(output).not.toContain('Resume recommendation:');
+      expect(output).not.toContain('Commands executed:');
       expect(output).not.toContain('Automated release verdict');
       expect(output).not.toContain('release_verdict');
       expect(output).not.toContain('automated_release_verdict');
     } finally {
       rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps release:status missing-latest output focused on the missing evidence pointer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-missing-latest-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--latest-path',
+        latestPath,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const output = `${result.stdout}\n${result.stderr}`;
+
+      expect(result.status).toBe(1);
+      expect(output).toContain('Blocker: release_status_missing_latest');
+      expect(output).toContain(`Evidence: ${latestPath}`);
+      expect(output).toContain('Rerun: npm run release:ready');
+      expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
+      expect(output).not.toContain('Resume recommendation:');
+      expect(output).not.toContain('Commands executed:');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -326,11 +356,12 @@ describe('clean status entrypoints', () => {
         env,
         encoding: 'utf8',
       });
-      expect(humanOutput).toContain('Lease shadow active run: clean-status-run');
-      expect(humanOutput).toContain('Lease shadow destructive command lock: present');
-      expect(humanOutput).toContain('Lease shadow port family: present');
-      expect(humanOutput).toContain('Lease shadow secret profile: present');
+      expect(humanOutput).toContain('Lease shadow: active_run=clean-status-run');
+      expect(humanOutput).toContain('destructive=present');
+      expect(humanOutput).toContain('ports=present');
+      expect(humanOutput).toContain('secret_profile=present');
       expect(humanOutput).toContain('profile_presence=true');
+      expect(humanOutput).not.toContain('Lease shadow destructive command lock:');
       expect(humanOutput).not.toContain(LEASE_SNAPSHOT_SECRET);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -372,7 +403,7 @@ describe('clean status entrypoints', () => {
     }
   });
 
-  it('redacts secret-like lease snapshot strings in real release:status JSON and human output', () => {
+  it('redacts secret-like lease snapshot strings in real release:status JSON and keeps human summary non-sensitive', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-secret-lease-'));
     try {
       const campaignRoot = join(root, 'campaign');
@@ -412,8 +443,8 @@ describe('clean status entrypoints', () => {
         encoding: 'utf8',
       });
 
-      expect(humanOutput).toContain('[redacted]');
-      expect(humanOutput).toContain('Lease shadow active run:');
+      expect(humanOutput).toContain('Lease shadow: active_run=');
+      expect(humanOutput).not.toContain('Resume recommendation:');
       expectNoLeaseSnapshotSecretLeak(humanOutput);
     } finally {
       rmSync(root, { recursive: true, force: true });

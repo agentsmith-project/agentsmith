@@ -64,6 +64,7 @@ function renderCurrentWorkflowDocBlock(): string {
     'Quick path note:',
     '- `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.',
     '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '- `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.',
     '',
     ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -95,6 +96,7 @@ function renderDevelopmentWorkflowBlock(): string {
     'Quick path note:',
     '- `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。',
     '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '- `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。',
     '',
     ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -108,6 +110,8 @@ function renderGovernanceModelCommandBlock(): string {
     'Human-facing command blocks intentionally list clean entrypoints only.',
     '',
     'Internal adapters and evidence producers remain in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `package.json`, but are not rendered here as copyable human defaults.',
+    '',
+    '`npm run release:ready` and `npm run release:status` keep raw logs available while ending on a short evidence summary. Treat common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations as diagnostic unless the referenced evidence names them as the blocker.',
     '',
     ...listQuickHumanCurrentWorkflowSections().flatMap((section, index, sections) => {
       const block = renderCommandList(section).split('\n');

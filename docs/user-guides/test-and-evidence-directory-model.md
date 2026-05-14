@@ -113,7 +113,7 @@
 - `artifacts/release-runs/latest.json`
 - `artifacts/release-reports/` 中被当前 release run 明确引用的生成报告；其他旧报告只作为历史证据快照
 
-不要把 standalone `artifacts/backend-real-visual/<run-id>/...` 或 `artifacts/unified-deploy/` 的最新文件直接当作发布结论；除非它们被当前 campaign root 的 evidence pointer 明确引用，否则只属于诊断产物。`state/readiness.json` 这类运行期 readiness state 也不是 release authority evidence。
+`release:ready` / `release:status` 的人类输出只做短摘要和 evidence path 导航；原始日志仍是排障材料。不要把 standalone `artifacts/backend-real-visual/<run-id>/...` 或 `artifacts/unified-deploy/` 的最新文件直接当作发布结论；除非它们被当前 campaign root 的 evidence pointer 明确引用，否则只属于诊断产物。`state/readiness.json` 这类运行期 readiness state 也不是 release authority evidence。
 
 ## 6. 当前目录治理结论
 

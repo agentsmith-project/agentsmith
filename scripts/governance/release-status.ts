@@ -1,9 +1,10 @@
 import {
   readReleaseStatus,
+  renderReleaseStatus,
   resolveCurrentGitSha,
 } from './release-summary';
 import { resolveMinimalLeaseStatusShadow } from './lease-status-shadow';
-import { buildStatusProjection, renderStatusProjection } from './status-projection';
+import { buildStatusProjection, renderStatusProjectionSummary } from './status-projection';
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -63,7 +64,12 @@ export function runReleaseStatus(argv: readonly string[] = process.argv.slice(2)
       return 0;
     }
 
-    process.stdout.write(renderStatusProjection(projection));
+    if (!options.campaignRoot && status && status.kind !== 'ready') {
+      process.stdout.write(renderReleaseStatus(status));
+      return 1;
+    }
+
+    process.stdout.write(renderStatusProjectionSummary(projection));
     return projection.aggregate_status_ref ? 0 : 1;
   } catch {
     process.stderr.write('[release-status] status unavailable; check arguments and release artifacts.\n');

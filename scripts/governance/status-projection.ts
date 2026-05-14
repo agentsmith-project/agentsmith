@@ -92,6 +92,12 @@ export interface ShortFailureProjectionInput {
   evidencePath?: string | null;
 }
 
+export const RELEASE_HUMAN_LOG_NOTE = [
+  'Raw logs stay available above/in artifacts;',
+  'common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations)',
+  'are diagnostic unless the evidence above names them as the blocker.',
+].join(' ');
+
 const DEFAULT_GENERATED_AT = '1970-01-01T00:00:00.000Z';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -970,16 +976,20 @@ function releaseReadyRerunCommand(projection: CurrentStatusProjection): string |
   return projection.safe_next_command;
 }
 
+function primaryEvidencePath(projection: CurrentStatusProjection): string | null {
+  return projection.primary_blocker?.path
+    ?? projection.deepest_reason?.source_path
+    ?? projection.authority_paths.aggregate
+    ?? projection.evidence_paths[0]?.path
+    ?? null;
+}
+
 function renderProjectionBlocker(projection: CurrentStatusProjection): string | null {
   if (projection.goal !== 'release-ready' || projection.presentation_status === 'passed') {
     return null;
   }
 
-  const evidencePath = projection.primary_blocker?.path
-    ?? projection.deepest_reason?.source_path
-    ?? projection.authority_paths.aggregate
-    ?? projection.evidence_paths[0]?.path
-    ?? null;
+  const evidencePath = primaryEvidencePath(projection);
   return renderShortFailureProjection({
     blocker: projection.primary_blocker?.owner ?? projection.deepest_reason?.code ?? projection.presentation_status,
     stage: projection.primary_blocker?.stage ?? projection.phase,
@@ -988,6 +998,49 @@ function renderProjectionBlocker(projection: CurrentStatusProjection): string | 
     rerunCommand: releaseReadyRerunCommand(projection),
     evidencePath,
   }).trimEnd();
+}
+
+function renderCompactLeaseShadow(projection: CurrentStatusProjection): string {
+  const shadow = projection.lease_status_shadow;
+  if (!shadow) {
+    return 'Lease shadow: active_run=not-known; locks=not-known';
+  }
+
+  const activeRun = shadow.active_run?.run_id ?? 'none observed';
+  const lockStates = [
+    `destructive=${renderLeaseLockPresence(shadow.destructive_command_lock)}`,
+    `ports=${renderLeaseLockPresence(shadow.port_family)}`,
+    `secret_profile=${renderLeaseLockPresence(shadow.secret_profile_lock)}`,
+    `profile_presence=${String(shadow.secret_profile_lock.profile.present)}`,
+  ].join('; ');
+  return `Lease shadow: active_run=${activeRun}; ${lockStates}`;
+}
+
+function renderProjectionAuthority(projection: CurrentStatusProjection): string {
+  if (projection.aggregate_status_ref) {
+    return renderAggregateStatusRef(projection.aggregate_status_ref);
+  }
+  return renderOptionalPath(primaryEvidencePath(projection));
+}
+
+export function renderStatusProjectionSummary(projection: CurrentStatusProjection): string {
+  const blocker = renderProjectionBlocker(projection);
+  return [
+    'AgentSmith Release Status',
+    '',
+    'Read-only: release:status does not rerun checks or revalidate evidence.',
+    `Status: ${projection.presentation_status}`,
+    `Goal: ${renderOptional(projection.goal)}`,
+    `Run: ${renderOptional(projection.run_id)}`,
+    `Phase: ${projection.phase}`,
+    ...(blocker ? [blocker] : []),
+    `Authority: ${renderProjectionAuthority(projection)}`,
+    `Evidence: ${renderOptionalPath(primaryEvidencePath(projection))}`,
+    `Next: ${renderOptional(releaseReadyRerunCommand(projection))}`,
+    renderCompactLeaseShadow(projection),
+    `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
+    '',
+  ].join('\n');
 }
 
 export function renderStatusProjection(projection: CurrentStatusProjection): string {

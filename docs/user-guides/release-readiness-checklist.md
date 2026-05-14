@@ -16,11 +16,12 @@
 
 补充判定规则：
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
-2. `npm run release:status` 是只读入口，只读取 latest summary / status，不重新聚合 evidence。
+2. `npm run release:status` 是只读入口，只读取 latest summary / status，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
 3. 默认 release campaign 使用 `local-kind` 和 focused product-flow producers 证明统一部署；`existing-cluster` 是需要目标集群时显式执行的 operator smoke。
 4. `gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或最终 release verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. `gate:release:full` is aggregate-only terminal verdict verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
+7. `release:ready` / `release:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
 
 ## 环境前提
 
@@ -47,7 +48,7 @@ npm run release:ready
 npm run release:status
 ```
 
-部署路径排障或 owner 复核时，可以单独运行 producer：
+只有 failure summary、owner runbook 或 manifest 明确指向部署 evidence owner 时，才单独运行 producer 做定位；不要把下面命令当成 release 人工顺序重复跑：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -56,7 +57,7 @@ npm run test:unified-deploy:local-kind
 npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-cluster-site-env> --substrate-truth=infra/deploy/unified/substrate/connection.env --public-base-url=<public-base-url>
 ```
 
-`npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 terminal aggregate verdict。
+`npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 terminal aggregate verdict。结束时优先看短摘要里的 `Evidence` / `Terminal result` / `Summary` 路径；上方原始日志仍保留用于排障。
 
 ### 2. Role Map
 

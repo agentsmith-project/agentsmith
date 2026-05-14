@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
@@ -143,6 +144,12 @@ ensure_local_release_stack() {
 }
 
 prewarm_internal_kind_cluster() {
+  local kind_cluster_name
+  local kind_context_name
+  local cluster_uid
+  kind_cluster_name="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
+  kind_context_name="kind-${kind_cluster_name}"
+
   if ! command -v kind >/dev/null 2>&1; then
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kind_missing" "kind is required for internal agent-task backend-real coverage"
     echo "[backend-real-full-gate] kind is required for internal agent-task backend-real coverage." >&2
@@ -154,10 +161,19 @@ prewarm_internal_kind_cluster() {
     exit 1
   fi
 
+  kubectl config use-context "${kind_context_name}" >/dev/null 2>&1 || true
+  cluster_uid="$(kubectl get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true)"
+  if [[ -n "${cluster_uid}" ]] && readiness_state_field_ready_with_identity local_kind_image_import_completed \
+    "local_kind_context=${kind_context_name}" \
+    "local_kind_cluster_uid=${cluster_uid}"; then
+    info "reusing parent-verified local kind cluster ${kind_context_name}"
+    return 0
+  fi
+
   info "prewarming local kind cluster for internal agent-task backend-real coverage"
-  LOCAL_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}" \
+  LOCAL_KIND_CLUSTER_NAME="${kind_cluster_name}" \
   LOCAL_KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml" \
-  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}-control-plane" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${kind_cluster_name}-control-plane" \
     ensure_local_kind_cluster
 }
 

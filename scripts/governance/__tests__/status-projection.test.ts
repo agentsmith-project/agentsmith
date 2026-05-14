@@ -14,7 +14,12 @@ import {
 } from '../current-status-projection-schema';
 import type { GovernanceRuntimeLockLease } from '../governance-lock-lease-manager';
 import { buildMinimalLeaseStatusShadow, resolveMinimalLeaseStatusShadow } from '../lease-status-shadow';
-import { buildStatusProjection, renderShortFailureProjection, renderStatusProjection } from '../status-projection';
+import {
+  buildStatusProjection,
+  renderShortFailureProjection,
+  renderStatusProjection,
+  renderStatusProjectionSummary,
+} from '../status-projection';
 
 const GENERATED_AT = '2026-04-27T12:00:00.000Z';
 const CURRENT_GIT_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -209,6 +214,38 @@ describe('current status projection', () => {
       expect(rendered).toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${aggregatePath}`);
       expect(rendered).not.toContain('npm run lane:unified-deploy:product-flows');
+    });
+  });
+
+  it('renders the release status summary without making benign raw-log warnings the blocker', () => {
+    withTempRoot((campaignRoot) => {
+      const aggregatePath = writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        stage: 'aggregate',
+        summary: 'Campaign step gate-release did not pass.',
+      });
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjectionSummary(projection);
+
+      expect(rendered).toContain('AgentSmith Release Status');
+      expect(rendered).toContain('Status: failed');
+      expect(rendered).toContain('Blocker: gate-release');
+      expect(rendered).toContain(`Evidence: ${aggregatePath}`);
+      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
+      expect(rendered).not.toContain('Blocker: NO_COLOR');
+      expect(rendered).not.toContain('Blocker: Postgres already exists');
+      expect(rendered).not.toContain('Blocker: containerd deprecation');
+      expect(rendered).not.toContain('Resume recommendation:');
+      expect(rendered).not.toContain('Commands executed:');
     });
   });
 

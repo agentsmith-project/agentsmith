@@ -100,6 +100,38 @@ run_release_user_story_clean_env() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
 
+release_user_story_runner_image_id() {
+  docker image inspect --format '{{.Id}}' "${RUNNER_IMAGE}" 2>/dev/null | head -n1 || true
+}
+
+release_user_story_cluster_uid() {
+  kubectl --context "${KIND_CONTEXT_NAME}" get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
+}
+
+release_user_story_runner_image_reuse_ready() {
+  local runner_image_id
+  runner_image_id="$(release_user_story_runner_image_id)"
+  [[ -n "${runner_image_id}" ]] || return 1
+
+  readiness_state_field_ready_with_identity runner_image_digest_prepared \
+    "runner_image_ref=${RUNNER_IMAGE}" \
+    "runner_image_id=${runner_image_id}"
+}
+
+release_user_story_local_kind_image_import_reuse_ready() {
+  local cluster_uid
+  local runner_image_id
+  cluster_uid="$(release_user_story_cluster_uid)"
+  runner_image_id="$(release_user_story_runner_image_id)"
+  [[ -n "${cluster_uid}" && -n "${runner_image_id}" ]] || return 1
+
+  readiness_state_field_ready_with_identity local_kind_image_import_completed \
+    "local_kind_context=${KIND_CONTEXT_NAME}" \
+    "local_kind_cluster_uid=${cluster_uid}" \
+    "runner_image_ref=${RUNNER_IMAGE}" \
+    "runner_image_id=${runner_image_id}"
+}
+
 ensure_release_user_story_integration_deps_for_afscp() {
   info "ensuring local integration dependencies for AFSCP"
   if readiness_state_field_ready integration_deps_ready; then
@@ -197,8 +229,12 @@ CONFIG_PATH="$(backend_real_resolve_runtime_path "${INTEGRATION_SANDBOX_CONFIG:-
 mkdir -p "${INTEGRATION_DIR}" "${INTEGRATION_AFSCP_DIR}" "$(dirname "${SANDBOX_LOG}")" "$(dirname "${CONFIG_PATH}")"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
-  info "building internal runner image ${RUNNER_IMAGE}"
-  build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "1" "1" "${ROOT_DIR}"
+  if release_user_story_runner_image_reuse_ready; then
+    info "reusing parent-verified runner image digest for ${RUNNER_IMAGE}"
+  else
+    info "building internal runner image ${RUNNER_IMAGE}"
+    build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "1" "1" "${ROOT_DIR}"
+  fi
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2
   exit 1
@@ -210,6 +246,7 @@ KIND_CLUSTER_NAME="$(
     "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" \
     "${CONTEXT_NAME}"
 )"
+KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 KIND_NODE_NAME="$(
   kind_control_plane_node_name_from_context_or_override \
     "${CONTEXT_NAME}" \
@@ -268,6 +305,14 @@ ensure_afscp_storage_csi() {
   kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
+    if release_user_story_local_kind_image_import_reuse_ready; then
+      info "reusing parent-verified kind image imports for ${KIND_CONTEXT_NAME}"
+      if wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"; then
+        return 0
+      fi
+      info "parent-verified CSI readiness no longer matches live cluster; reloading kind images"
+    fi
+
     info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
     ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     ensure_kind_image "${RUNNER_IMAGE}"

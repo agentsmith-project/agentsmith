@@ -100,6 +100,7 @@ Command naming rule:
 Quick path note:
 - `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.
 - `npm run release:status` is read-only; it only reads the latest release summary.
+- `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.
 
 ### 环境
 

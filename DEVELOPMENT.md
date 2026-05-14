@@ -42,6 +42,7 @@ Repo version files:
 Quick path note:
 - `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。
 - `npm run release:status` is read-only; it only reads the latest release summary.
+- `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。
 
 ### 环境
 
@@ -572,6 +573,7 @@ Notes:
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
 5. Unified deploy evidence roots derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
+6. The final human output is a short evidence summary. Keep raw logs for diagnosis, but do not treat common setup warnings such as NO_COLOR, Postgres already exists, or containerd deprecation as blockers unless the referenced evidence names them.
 
 ## Test & Evidence Directory Contract
 

@@ -1,4 +1,6 @@
 import { spawnSync, type StdioOptions } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
@@ -46,6 +48,7 @@ import {
 import {
   ensureRunReadinessState,
   resolveReadinessGitSha,
+  updateRunReadinessStateField,
 } from './run-readiness-state';
 
 export interface BuildReleaseCampaignCommandEnvInput {
@@ -372,6 +375,96 @@ function spawnNpmScript(input: {
     cwd: input.cwd,
     env: input.env,
     stdio: input.stdio,
+  });
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function firstLine(value: string): string {
+  return value.trim().split(/\r?\n/u)[0]?.trim() ?? '';
+}
+
+function commandStdout(input: {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}): string {
+  const result = spawnSync(input.command, [...input.args], {
+    cwd: input.cwd,
+    env: input.env,
+    encoding: 'utf8',
+  });
+  return result.status === 0 && typeof result.stdout === 'string' ? firstLine(result.stdout) : '';
+}
+
+function markReadinessField(input: {
+  readiness: ReturnType<typeof ensureRunReadinessState>;
+  field: Parameters<typeof updateRunReadinessStateField>[0]['field'];
+  identity?: Record<string, string>;
+}): void {
+  updateRunReadinessStateField({
+    statePath: input.readiness.statePath,
+    invocationId: input.readiness.state.invocation_id,
+    processNonce: input.readiness.state.process_nonce,
+    inputDigest: input.readiness.state.input_digest,
+    envDigest: input.readiness.state.env_digest.digest,
+    gitSha: input.readiness.state.git_sha,
+    field: input.field,
+    status: 'ready',
+    ...(input.identity ? { identity: input.identity } : {}),
+  });
+}
+
+function markReleaseCampaignStepReadiness(input: {
+  step: CurrentVerificationCampaignStep;
+  campaignRoot: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  readiness: ReturnType<typeof ensureRunReadinessState>;
+}): void {
+  if (input.step.id === 'lane-unified-deploy-substrate') {
+    markReadinessField({
+      readiness: input.readiness,
+      field: 'unified_deploy_substrate_ready',
+    });
+    return;
+  }
+
+  if (input.step.id !== 'lane-unified-deploy-local-kind-images') {
+    return;
+  }
+
+  const siteEnvPath = join(input.campaignRoot, 'unified-deploy', 'local-kind-site.env');
+  if (!existsSync(siteEnvPath)) {
+    return;
+  }
+  const context = commandStdout({
+    command: 'kubectl',
+    args: ['config', 'current-context'],
+    cwd: input.cwd,
+    env: input.env,
+  });
+  const clusterUid = commandStdout({
+    command: 'kubectl',
+    args: ['get', 'namespace', 'kube-system', '-o', 'jsonpath={.metadata.uid}'],
+    cwd: input.cwd,
+    env: input.env,
+  });
+  if (!context || !clusterUid) {
+    return;
+  }
+
+  markReadinessField({
+    readiness: input.readiness,
+    field: 'local_kind_image_import_completed',
+    identity: {
+      local_kind_context: context,
+      local_kind_cluster_uid: clusterUid,
+      local_kind_site_env_digest: sha256(readFileSync(siteEnvPath, 'utf8')),
+    },
   });
 }
 
@@ -708,6 +801,14 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             const outcome = writeCompletedStep(campaignRoot, step, 0);
             if (!outcome.passed) {
               hadExecutableStepFailure = true;
+            } else {
+              markReleaseCampaignStepReadiness({
+                step,
+                campaignRoot,
+                cwd,
+                env: campaignExecutionEnv,
+                readiness,
+              });
             }
             return {
               status: outcome.passed ? 'passed' : 'failed',

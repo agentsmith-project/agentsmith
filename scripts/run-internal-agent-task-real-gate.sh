@@ -15,6 +15,7 @@ source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
+source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 GATE_MODE="workspace"

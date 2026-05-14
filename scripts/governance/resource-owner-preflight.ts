@@ -573,7 +573,7 @@ export function renderResourceOwnerPreflightSummary(
   if (result.ok) {
     return '';
   }
-  return renderShortFailureProjection({
+  const summary = renderShortFailureProjection({
     diagnosticOnly: options.diagnosticOnly,
     blocker: 'environment_conflict',
     stage: 'preflight',
@@ -583,6 +583,15 @@ export function renderResourceOwnerPreflightSummary(
     rerunCommand: options.rerunCommand ?? null,
     evidencePath: result.evidencePath,
   });
+  if (!options.title) {
+    return summary;
+  }
+  return [
+    options.title,
+    '',
+    summary.trimEnd(),
+    '',
+  ].join('\n');
 }
 
 function safeDefaultRunId(): string {

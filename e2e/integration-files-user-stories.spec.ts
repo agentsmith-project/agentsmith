@@ -1451,6 +1451,8 @@ async function expectSavePointListPendingUiNotFatal(fileStatesDialog: Locator): 
     timeout: 10_000,
   });
   await expect(fileStatesDialog.getByTestId('files__save-point__retry')).toBeVisible();
+  await expect(fileStatesDialog.getByTestId('files__save-point__message')).toBeDisabled();
+  await expect(fileStatesDialog.getByTestId('files__save-point__create')).toBeDisabled();
   await expect(fileStatesDialog.getByTestId('files__save-point__list-error')).toHaveCount(0);
   await expect(fileStatesDialog.getByText(/^Could not load save points$/i)).toHaveCount(0);
 }

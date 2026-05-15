@@ -12,6 +12,7 @@ import { docObjectDbByLibraryId } from '../doc-fixtures/files';
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const API_V1_PATTERN = '*/api/v1';
+const MOCK_SAVE_POINTS_PENDING_HEADER = 'x-mock-file-library-save-points-pending';
 
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
@@ -899,7 +900,7 @@ export const fileHandlers = [
     }
     return HttpResponse.json(withTaskHomeBinding(library));
   }),
-  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, ({ params, request }) => {
     const library = getRouteFileLibrary(params);
     if (!library) {
       return fileLibraryNotFoundResponse(String(params.id ?? ''));
@@ -907,6 +908,16 @@ export const fileHandlers = [
     const workspaceId = String(params.ws ?? '');
     const projectId = String(params.prj ?? '');
     const libraryId = String(params.id ?? '');
+    const forcedPendingLibraryId = request.headers.get(MOCK_SAVE_POINTS_PENDING_HEADER)?.trim();
+    if (forcedPendingLibraryId === '*' || forcedPendingLibraryId === libraryId) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+        message: 'file_library_operation_pending',
+        request_id: 'mock-save-points-pending',
+        operation_status: 'pending',
+        retry_after_ms: 2_000,
+      }, { status: 409 });
+    }
     const items = Array.from(savePointsById.values())
       .filter((savePoint) =>
         savePoint.workspace_id === workspaceId

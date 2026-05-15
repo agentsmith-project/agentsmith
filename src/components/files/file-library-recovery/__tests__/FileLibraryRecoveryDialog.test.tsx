@@ -582,6 +582,12 @@ describe('FileLibraryRecoveryDialog', () => {
     );
     expect(screen.getByText('Before risky edits')).toBeInTheDocument();
     expect(screen.getByTestId('files__save-point__restore--sp_cached')).toBeEnabled();
+    expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
+    expect(screen.getByTestId('files__save-point__create')).toBeDisabled();
+
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    expect(mockCreateSavePoint).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId('files__save-point__retry'));
 

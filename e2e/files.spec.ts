@@ -164,6 +164,25 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
   });
 
+  test('File states reflects pending save-point list after refresh and blocks duplicate create', async ({ authedPage }) => {
+    await authedPage.reload();
+    await authedPage.evaluate((libraryId) => {
+      const win = window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> };
+      win.__MBOS_MSW_TEST_HEADERS__ = {
+        ...(win.__MBOS_MSW_TEST_HEADERS__ ?? {}),
+        'x-mock-file-library-save-points-pending': libraryId,
+      };
+    }, 'lib_shared_default');
+
+    await authedPage.getByTestId('files__file-states').click();
+    const fileStatesDialog = authedPage.getByTestId('files__dialog__file-states');
+    await expect(fileStatesDialog).toBeVisible();
+    await expect(fileStatesDialog.getByTestId('files__save-point__list-recovering')).toBeVisible();
+    await expect(fileStatesDialog.getByTestId('files__save-point__list-error')).toHaveCount(0);
+    await expect(fileStatesDialog.getByTestId('files__save-point__message')).toBeDisabled();
+    await expect(fileStatesDialog.getByTestId('files__save-point__create')).toBeDisabled();
+  });
+
   test('resets folder prefix after refresh', async ({ authedPage }) => {
     const docsRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'docs' }).first();
     await expect(docsRow).toBeVisible();

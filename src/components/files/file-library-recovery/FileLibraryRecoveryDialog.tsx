@@ -894,7 +894,9 @@ export function FileLibraryRecoveryDialog({
   };
 
   const savePointPending = createSavePoint.isPending;
-  const savePointCreateBlocked = savePointPending || savePointActionError?.kind === 'pending';
+  const savePointCreateBlocked = savePointPending
+    || savePointListOperationPending
+    || savePointActionError?.kind === 'pending';
   const restorePending = createRestorePreview.isPending || runRestore.isPending || cancelRestore.isPending;
   const releasePending = releaseRuntimeAccess.isPending;
   const templatePending = createTemplate.isPending || publishTemplate.isPending || unpublishTemplate.isPending || deleteTemplate.isPending;

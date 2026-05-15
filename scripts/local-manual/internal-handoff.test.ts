@@ -408,6 +408,56 @@ describe('local-manual internal handoff', () => {
     expect(envSource).toContain('AFSCP_JVS_SHA256SUMS_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
   });
 
+  it('enables direct restore with explicit local JVS artifact evidence in the local-real internal env', () => {
+    const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
+
+    expect(envSource).toContain('AFSCP_JVS_BINARY_PATH=${AFSCP_JVS_BINARY_PATH:-${ROOT_DIR}/../jvs/bin/jvs-direct-restore}');
+    expect(envSource).toContain('AFSCP_RESTORE_RECOVERY_ENABLED=${AFSCP_RESTORE_RECOVERY_ENABLED:-true}');
+    expect(envSource).toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256=${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-c88553bb18bdd70e1399bf562fcb853bd200798498bd24bc25458196fb568902}');
+    expect(envSource).toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF=${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-jvs@c65b418f58d6e39e91199c1d55783e2ec91be9a1}');
+  });
+
+  it('writes direct restore readiness evidence into the AFSCP runtime env', () => {
+    const directArtifact = 'direct restore local artifact';
+    const directSha = sha256(directArtifact);
+    const result = runInternalCommonSnippet(`
+      direct_binary="\${SNIPPET_TEMP_ROOT}/jvs-direct-restore"
+      printf '%s' ${shellSingleQuote(directArtifact)} > "$direct_binary"
+      chmod +x "$direct_binary"
+      AFSCP_JVS_BINARY_PATH="$direct_binary"
+      AFSCP_JVS_BINARY_SHA256="${directSha}"
+      AFSCP_RESTORE_RECOVERY_ENABLED=true
+      AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${directSha}"
+      AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="jvs@test-direct-restore"
+      write_afscp_local_runtime_env
+      set -a
+      source "$AFSCP_LOCAL_RUNTIME_ENV_FILE"
+      set +a
+      for key in \
+        AFSCP_RESTORE_RECOVERY_ENABLED \
+        AFSCP_JVS_BINARY_PATH \
+        AFSCP_JVS_BINARY_SHA256 \
+        AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256 \
+        AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF; do
+        printf '%s=%s\\n' "$key" "\${!key}"
+      done
+    `);
+    const values = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.split(/=(.*)/su).slice(0, 2) as [string, string]),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(values.AFSCP_RESTORE_RECOVERY_ENABLED).toBe('true');
+    expect(values.AFSCP_JVS_BINARY_PATH).toContain('/jvs-direct-restore');
+    expect(values.AFSCP_JVS_BINARY_SHA256).toBe(directSha);
+    expect(values.AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256).toBe(directSha);
+    expect(values.AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF).toBe('jvs@test-direct-restore');
+  });
+
   it('keeps the AFSCP WebDAV public base URL separate from the gateway route prefix', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');

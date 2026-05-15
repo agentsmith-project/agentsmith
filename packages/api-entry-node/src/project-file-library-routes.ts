@@ -55,6 +55,7 @@ import {
   buildFileLibraryTaskHomeBindingFields,
   findTaskFileLibraryBinding,
   hydrateTaskFileLibraryBindingsForProject,
+  JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
   type TaskFileLibraryBinding,
 } from './notebook-task/task-file-library-bindings.js';
@@ -475,6 +476,9 @@ async function reconcileRestoreOperationRecord(input: {
   requestId?: string;
 }): Promise<FileLibraryRestoreOperationRecord> {
   if (!isActiveRestoreOperationStatus(input.operation.status)) {
+    if (isTerminalRestoreOperationStatus(input.operation.status)) {
+      await restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input);
+    }
     return input.operation;
   }
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
@@ -500,6 +504,12 @@ async function reconcileRestoreOperationRecord(input: {
     failureReason: result.operationStatus === 'failed' ? 'file_library_restore_failed' : null,
   });
   const next = updated ?? input.operation;
+  if (isTerminalRestoreOperationStatus(next.status)) {
+    await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+      ...input,
+      operation: next,
+    });
+  }
   if (
     isTerminalRestoreOperationStatus(next.status)
     && next.status !== input.operation.status
@@ -525,6 +535,35 @@ async function reconcileRestoreOperationRecord(input: {
     });
   }
   return next;
+}
+
+async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryRestoreOperationRecord;
+  requestId?: string;
+}): Promise<void> {
+  const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore);
+  const binding = await bindingRepo.find({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+  });
+  if (!binding || binding.bindingState !== 'releasing') {
+    return;
+  }
+  await bindingRepo.rollbackRuntimeAccessRelease({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+    taskId: binding.taskId,
+    bindingGeneration: binding.bindingGeneration,
+    correlationId: input.requestId
+      ? `${input.requestId}:restore_terminal`
+      : `${input.operation.id}:restore_terminal`,
+  });
 }
 
 async function findReconciledActiveRestoreOperation(input: {
@@ -590,6 +629,17 @@ type FileLibraryRuntimeAccessReleaseBlockerCode =
   | 'active_terminal'
   | 'workspace_holder';
 
+function isWorkspaceBindingActiveWorkloadError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes('workspace binding has active workloads');
+}
+
+function runtimeAccessReleaseHardBlockers(
+  blockers: FileLibraryRuntimeAccessReleaseBlockerCode[],
+): FileLibraryRuntimeAccessReleaseBlockerCode[] {
+  return blockers.filter((blocker) => blocker !== 'workspace_holder');
+}
+
 function isActiveWritableTaskBinding(binding: TaskFileLibraryBinding): boolean {
   return binding.bindingState === 'bound'
     && binding.taskStatus === 'active'
@@ -608,12 +658,22 @@ function isActiveRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding)
   return status === 'ready' || status === 'active';
 }
 
+function isReleasingRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  const status = binding.status.trim().toLowerCase();
+  return status === 'releasing'
+    || status === 'release_pending'
+    || binding.mount_binding_status === 'releasing';
+}
+
 function isReleasePendingRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  const status = binding.status.trim().toLowerCase();
+  if (status === 'releasing' || status === 'release_pending') {
+    return true;
+  }
   const mountStatus = binding.mount_binding_status;
   if (mountStatus === 'released' || mountStatus === 'revoked' || mountStatus === 'expired') {
     return false;
   }
-  const status = binding.status.trim().toLowerCase();
   if (status === 'released' || status === 'revoked' || status === 'expired' || status === 'deleted') {
     return false;
   }
@@ -656,11 +716,18 @@ async function findActiveRuntimeWriter(input: {
     workspaceId: input.workspaceId,
     fileLibraryId: input.libraryId,
   });
-  if (!runtimeBinding || !isActiveRuntimeWorkspaceBinding(runtimeBinding)) {
+  if (!runtimeBinding) {
+    return null;
+  }
+  const releasePending = isReleasingRuntimeWorkspaceBinding(runtimeBinding);
+  if (!isActiveRuntimeWorkspaceBinding(runtimeBinding) && !releasePending) {
     return null;
   }
   return {
-    binding: await findRestoreActiveWriterBinding(input),
+    binding: await findRestoreActiveWriterBinding({
+      ...input,
+      includeReleasingBinding: true,
+    }),
   };
 }
 
@@ -669,6 +736,7 @@ async function findRestoreActiveWriterBinding(input: {
   workspaceId: string;
   projectId: string;
   libraryId: string;
+  includeReleasingBinding?: boolean;
 }): Promise<TaskFileLibraryBinding | null> {
   await hydrateFileLibraryTaskBindings({
     deps: input.deps,
@@ -681,7 +749,17 @@ async function findRestoreActiveWriterBinding(input: {
     projectId: input.projectId,
     fileLibraryId: input.libraryId,
   });
-  return binding && isActiveWritableTaskBinding(binding) ? binding : null;
+  if (!binding) return null;
+  if (isActiveWritableTaskBinding(binding)) return binding;
+  return input.includeReleasingBinding
+    && binding.bindingState === 'releasing'
+    && binding.taskStatus === 'active'
+    && (
+      binding.runtimeWritableAffordance === 'task_internal_home'
+      || binding.runtimeWritableAffordance === 'files_update'
+    )
+    ? binding
+    : null;
 }
 
 function buildActiveWriterRestoreBlockedBody(input: {
@@ -715,6 +793,7 @@ async function buildActiveWriterRestoreBlockedBodyForCurrentBinding(input: {
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
+    includeReleasingBinding: true,
   });
   return buildActiveWriterRestoreBlockedBody({
     libraryId: input.libraryId,
@@ -829,6 +908,69 @@ function buildRuntimeAccessReleaseBlockedBody(input: {
       actorUserId: input.actorUserId,
     }),
   };
+}
+
+function buildRuntimeAccessReleaseBindingConflictBody(input: {
+  libraryId: string;
+  binding: TaskFileLibraryBinding | null;
+  actorUserId: string;
+}): Record<string, unknown> {
+  return {
+    error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+    message: 'agent_task_workspace_binding_conflict',
+    file_library_id: input.libraryId,
+    ...(input.binding
+      ? {
+          binding_generation: String(input.binding.bindingGeneration),
+          ...buildBoundTaskSafeFields({
+            binding: input.binding,
+            actorUserId: input.actorUserId,
+          }),
+        }
+      : {}),
+  };
+}
+
+async function releaseManagedTaskWorkloadBeforeRuntimeAccessRelease(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+}): Promise<void> {
+  await input.deps.internalAgentPodManager?.releasePod(
+    input.workspaceId,
+    input.projectId,
+    sanitizeWorkloadId(input.task.id),
+  );
+}
+
+async function releaseTaskWorkspaceHoldersForRuntimeAccessRelease(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  binding: TaskFileLibraryBinding;
+}): Promise<void> {
+  const holderRepo = new JsonDocTaskWorkspaceHolderRepo(input.deps.docStore);
+  const liveHolders = await holderRepo.listLiveByTask({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    taskId: input.task.id,
+    bindingGeneration: input.binding.bindingGeneration,
+  });
+  const releasedAt = new Date().toISOString();
+  for (const holder of liveHolders) {
+    await holderRepo.release({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      taskId: input.task.id,
+      fileLibraryId: holder.fileLibraryId,
+      holderId: holder.holderId,
+      bindingGeneration: holder.bindingGeneration,
+      leaseEpoch: holder.leaseEpoch,
+      releasedAt,
+    });
+  }
 }
 
 export async function handleProjectFileLibraryRoutes(args: {
@@ -1245,8 +1387,8 @@ export async function handleProjectFileLibraryRoutes(args: {
 
   if (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST') {
     await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
-    const binding = await findTaskFileLibraryBinding({
-      docStore: deps.docStore,
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const binding = await bindingRepo.find({
       workspaceId,
       projectId,
       fileLibraryId: libraryId,
@@ -1259,6 +1401,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
+    const releaseCorrelationId = readOptionalRequestId(req) ?? 'file_library_runtime_access_release';
     const task = await findTaskRecordForBinding({
       deps,
       workspaceId,
@@ -1272,12 +1415,13 @@ export async function handleProjectFileLibraryRoutes(args: {
       task,
       binding,
     });
-    if (blockers.length > 0) {
+    const hardBlockers = runtimeAccessReleaseHardBlockers(blockers);
+    if (hardBlockers.length > 0) {
       json(res, 409, buildRuntimeAccessReleaseBlockedBody({
         libraryId,
         binding,
         actorUserId: user.id,
-        blockers,
+        blockers: hardBlockers,
       }));
       return true;
     }
@@ -1300,7 +1444,63 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
+    const releaseFence = await bindingRepo.beginRuntimeAccessRelease({
+      workspaceId,
+      projectId,
+      fileLibraryId: libraryId,
+      taskId: task.id,
+      bindingGeneration: binding.bindingGeneration,
+      correlationId: releaseCorrelationId,
+    });
+    if (!releaseFence.ok) {
+      json(res, 409, buildRuntimeAccessReleaseBindingConflictBody({
+        libraryId,
+        binding: releaseFence.binding,
+        actorUserId: user.id,
+      }));
+      return true;
+    }
+    const rollbackReleaseFence = async (correlationId: string): Promise<void> => {
+      await bindingRepo.rollbackRuntimeAccessRelease({
+        workspaceId,
+        projectId,
+        fileLibraryId: libraryId,
+        taskId: task.id,
+        bindingGeneration: binding.bindingGeneration,
+        correlationId,
+      });
+    };
     try {
+      await releaseManagedTaskWorkloadBeforeRuntimeAccessRelease({
+        deps,
+        workspaceId,
+        projectId,
+        task,
+      });
+      await releaseTaskWorkspaceHoldersForRuntimeAccessRelease({
+        deps,
+        workspaceId,
+        projectId,
+        task,
+        binding,
+      });
+      const remainingHardBlockers = runtimeAccessReleaseHardBlockers(await collectRuntimeAccessReleaseBlockers({
+        deps,
+        workspaceId,
+        projectId,
+        task,
+        binding,
+      }));
+      if (remainingHardBlockers.length > 0) {
+        await rollbackReleaseFence(`${releaseCorrelationId}:hard_blocker`);
+        json(res, 409, buildRuntimeAccessReleaseBlockedBody({
+          libraryId,
+          binding,
+          actorUserId: user.id,
+          blockers: remainingHardBlockers,
+        }));
+        return true;
+      }
       await workspaceBindingManager.deleteWorkspaceBinding({
         workspaceId,
         fileLibraryId: libraryId,
@@ -1312,12 +1512,41 @@ export async function handleProjectFileLibraryRoutes(args: {
           })
         : null;
       const releasePending = runtimeBinding ? isReleasePendingRuntimeWorkspaceBinding(runtimeBinding) : false;
+      if (!releasePending) {
+        const completed = await bindingRepo.completeRuntimeAccessRelease({
+          workspaceId,
+          projectId,
+          fileLibraryId: libraryId,
+          taskId: task.id,
+          bindingGeneration: binding.bindingGeneration,
+          correlationId: `${releaseCorrelationId}:complete`,
+        });
+        if (!completed.ok) {
+          json(res, 409, buildRuntimeAccessReleaseBindingConflictBody({
+            libraryId,
+            binding: completed.binding,
+            actorUserId: user.id,
+          }));
+          return true;
+        }
+      }
       json(res, 200, {
         file_library_id: libraryId,
         released: !releasePending,
         runtime_access_status: releasePending ? 'release_pending' : 'released',
       });
     } catch (error) {
+      if (isWorkspaceBindingActiveWorkloadError(error)) {
+        await rollbackReleaseFence(`${releaseCorrelationId}:workspace_holder`);
+        json(res, 409, buildRuntimeAccessReleaseBlockedBody({
+          libraryId,
+          binding,
+          actorUserId: user.id,
+          blockers: ['workspace_holder'],
+        }));
+        return true;
+      }
+      await rollbackReleaseFence(`${releaseCorrelationId}:failed`);
       const mapped = mapFileLibraryInfraError(error);
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
@@ -1850,6 +2079,14 @@ export async function handleProjectFileLibraryRoutes(args: {
           status: 'failed',
           failureReason: 'file_library_restore_failed',
         }) ?? pendingOperation;
+        await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation: failedOperation,
+          requestId,
+        });
         await writeFileLibraryRestoreAuditEvent({
           deps,
           workspaceId,
@@ -1880,6 +2117,14 @@ export async function handleProjectFileLibraryRoutes(args: {
         failureReason: nextStatus === 'failed' ? 'file_library_restore_failed' : null,
       }) ?? pendingOperation;
       if (isTerminalRestoreOperationStatus(operation.status)) {
+        await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation,
+          requestId,
+        });
         await writeFileLibraryRestoreAuditEvent({
           deps,
           workspaceId,
@@ -1916,6 +2161,14 @@ export async function handleProjectFileLibraryRoutes(args: {
           status: 'failed',
           failureReason: mapped.message,
         }) ?? startedOperation;
+        await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation: failedOperation,
+          requestId,
+        });
         await writeFileLibraryRestoreAuditEvent({
           deps,
           workspaceId,

@@ -604,6 +604,110 @@ describe('task-route-handler workspace access', () => {
     expect(JSON.stringify(payload)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
   });
 
+  it('revalidates the task HOME binding after holder acquire and releases the holder on a late release fence', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: 'lib_workspace_access_late_release',
+      name: 'Workspace Access Late Release',
+      now,
+    }));
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const acquired = await bindingRepo.acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_workspace_access_late_release',
+      taskId: 'task_workspace_access_late_release',
+      taskTitle: 'Workspace access late release task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_workspace_access_late_release_acquire',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_workspace_access_late_release', {
+      id: 'task_workspace_access_late_release',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Workspace access late release task',
+      task_home_segment: 'task_workspace_access_late_release',
+      workspace_file_library_id: 'lib_workspace_access_late_release',
+      workspace_file_library_name: 'Workspace Access Late Release',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const originalCreateIfAbsent = deps.docStore.createIfAbsent.bind(deps.docStore);
+    let fencedAfterHolderAcquire = false;
+    deps.docStore.createIfAbsent = vi.fn(async (collection: string, id: string, doc: unknown) => {
+      const result = await originalCreateIfAbsent(collection, id, doc);
+      if (collection === 'agent_task_workspace_holders' && result.ok && !fencedAfterHolderAcquire) {
+        fencedAfterHolderAcquire = true;
+        await bindingRepo.beginRuntimeAccessRelease({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          fileLibraryId: 'lib_workspace_access_late_release',
+          taskId: 'task_workspace_access_late_release',
+          bindingGeneration: acquired.binding.bindingGeneration,
+          correlationId: 'req_workspace_access_late_release_begin',
+        });
+      }
+      return result;
+    }) as never;
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccess',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_workspace_access_late_release',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(fencedAfterHolderAcquire).toBe(true);
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: 'task_workspace_access_late_release',
+        file_library_id: 'lib_workspace_access_late_release',
+        binding_generation: String(acquired.binding.bindingGeneration),
+      }),
+    );
+    expect(JSON.stringify(json.mock.calls)).not.toMatch(/task_home_path|workspace_path|artifacts_path/);
+    await expect(new JsonDocTaskWorkspaceHolderRepo(deps.docStore).listLiveByTask({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_workspace_access_late_release',
+      bindingGeneration: acquired.binding.bindingGeneration,
+    })).resolves.toEqual([]);
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_workspace_access_late_release',
+    })).resolves.toMatchObject({
+      taskId: 'task_workspace_access_late_release',
+      bindingState: 'releasing',
+    });
+  });
+
   it('denies files_update workspace access when project files update permission is no longer granted', async () => {
     const deps = createDefaultNodeApiDeps();
     await grantProjectPermissionsForUser(deps, 'user_1', ['project:agent_task:use']);

@@ -241,6 +241,11 @@ function mountBindingStatusRetryable(value: AfscpWorkloadMountBindingStatus): bo
   return value === 'pending' || value === 'releasing';
 }
 
+function isLocalWorkspaceBindingReleasing(binding: InternalAgentWorkspaceBinding): boolean {
+  const status = binding.status.trim().toLowerCase();
+  return status === 'releasing' || status === 'release_pending';
+}
+
 function normalizeMountBindingGeneration(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
     return value;
@@ -430,6 +435,17 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
 
     const collection = bindingsCollection(input.workspaceId);
     const existing = await this.docStore.get<InternalAgentWorkspaceBinding>(collection, input.fileLibraryId);
+    if (existing && isLocalWorkspaceBindingReleasing(existing)) {
+      throwProvisioningError({
+        code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+        statusCode: 409,
+        retryable: true,
+        metadata: {
+          reason: 'workspace_binding_releasing',
+          workspace_binding_status: existing.status,
+        },
+      });
+    }
     const now = new Date().toISOString();
     const taskHomeSegment = input.taskHomeSegment?.trim() || buildTaskHomeSegment({
       workspaceId: input.workspaceId,

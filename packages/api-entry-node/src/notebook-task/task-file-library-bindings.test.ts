@@ -126,6 +126,215 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     })).resolves.toBeNull();
   });
 
+  it('keeps a releasing CAS fence after completing runtime access release', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration + 1,
+      correlationId: 'release_wrong_generation',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        taskId: 'task_1',
+        bindingState: 'bound',
+      },
+    });
+
+    const begun = await repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_begin',
+    });
+    expect(begun).toMatchObject({
+      ok: true,
+      binding: {
+        taskId: 'task_1',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        bindingState: 'releasing',
+        correlationId: 'release_begin',
+      },
+    });
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_begin_idempotent',
+    })).resolves.toMatchObject({
+      ok: true,
+      binding: {
+        taskId: 'task_1',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        bindingState: 'releasing',
+      },
+    });
+
+    await expect(repo.release({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'legacy_release_during_fence',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        bindingState: 'releasing',
+      },
+    });
+
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_complete',
+    })).resolves.toEqual({ ok: true, released: true });
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+    })).resolves.toMatchObject({
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: 'release_complete',
+    });
+
+    await hydrateTaskFileLibraryBindingsForProject({
+      docStore,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      tasks: [{
+        id: 'task_1',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Task One',
+        status: 'active',
+        workspace_file_library_id: 'flib_home',
+        file_library_binding_generation: acquired.binding.bindingGeneration,
+        runtime_writable_affordance: 'task_internal_home',
+      } as never],
+    });
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+    })).resolves.toMatchObject({
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      bindingState: 'releasing',
+    });
+  });
+
+  it('rolls back only the matching releasing fence and treats missing bindings as no-op', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_begin_for_rollback',
+    })).resolves.toMatchObject({ ok: true });
+
+    await expect(repo.rollbackRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_2',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_rollback_wrong_task',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        taskId: 'task_1',
+        bindingState: 'releasing',
+      },
+    });
+
+    await expect(repo.rollbackRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_rollback',
+    })).resolves.toEqual({ ok: true, rolledBack: true });
+
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+    })).resolves.toMatchObject({
+      taskId: 'task_1',
+      bindingState: 'bound',
+      correlationId: 'release_rollback',
+    });
+
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_complete_without_fence',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        bindingState: 'bound',
+      },
+    });
+
+    await repo.release({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_after_rollback',
+    });
+
+    await expect(repo.rollbackRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_rollback_missing',
+    })).resolves.toEqual({ ok: true, rolledBack: false });
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'release_complete_missing',
+    })).resolves.toEqual({ ok: true, released: false });
+  });
+
   it('redacts bound task identity fields when actor cannot see the binding owner', () => {
     expect(buildFileLibraryTaskHomeBindingFields({
       binding: {

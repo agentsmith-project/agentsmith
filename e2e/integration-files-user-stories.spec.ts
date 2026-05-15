@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type APIResponse, type Locator, type Page, type Request, type Response } from '@playwright/test';
@@ -13,6 +14,7 @@ import {
   keycloakLoginToWorkspace,
   runTerminalCommandInSession,
   startAgentTaskRunViaApi,
+  waitForAgentTaskRunFinalStateViaApi,
   waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -21,6 +23,7 @@ const WORKSPACE_ID = 'ws_default';
 const DEMO_PROJECT_NAME = 'Codex Agent Regression';
 const MANY_LIBRARY_COUNT = 16;
 const CREATE_NEW_TASK_REQUEST_TIMEOUT_MS = 60_000;
+const MULTI_SELECT_MODIFIER: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 type FileLibraryListItem = {
   id: string;
@@ -61,6 +64,16 @@ type SavePointEvidence = {
   payload: unknown;
 };
 
+type TaskHistoryEvidence = {
+  activityIds: string[];
+  runnerOutputs: string[];
+  traceKeys: string[];
+  terminalSuccessTraceKeys: string[];
+  taskRunState: string | null;
+  taskRunStatus: string | null;
+  activeRunStatus: string | null;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -75,6 +88,29 @@ function readStringField(record: Record<string, unknown>, field: string): string
 function readNumberField(record: Record<string, unknown>, field: string): number | null {
   const value = record[field];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeEvidenceStatus(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function isSuccessEvidenceStatus(value: string | null | undefined): boolean {
+  return ['completed', 'complete', 'succeeded', 'success'].includes(normalizeEvidenceStatus(value));
+}
+
+function isTerminalSuccessTraceRecord(record: Record<string, unknown>): boolean {
+  if (!isSuccessEvidenceStatus(readStringField(record, 'status'))) return false;
+  const phase = normalizeEvidenceStatus(readStringField(record, 'phase'));
+  if (['end', 'complete', 'completed'].includes(phase)) return true;
+  const name = normalizeEvidenceStatus(readStringField(record, 'name'));
+  return [
+    'run.completed',
+    'run.complete',
+    'run.lifecycle',
+    'run.summary',
+    'execution.terminal',
+    'codex.exec',
+  ].includes(name);
 }
 
 function resolveCreatedAgentTaskFields(payload: unknown): { taskId: string | null; workspaceFileLibraryId: string | null } {
@@ -132,6 +168,36 @@ function buildSineSvgContent(token: string): string {
     `  <polyline points="${points}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`,
     `  <text x="20" y="104" font-family="monospace" font-size="10" fill="#111827">${token}</text>`,
     '</svg>',
+  ].join('\n');
+}
+
+function buildPythonImageAssetSvgContent(token: string): string {
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="Deterministic Agent Task asset">',
+    '  <rect width="320" height="180" rx="18" fill="#f8fafc"/>',
+    '  <rect x="24" y="24" width="272" height="132" rx="14" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>',
+    '  <polyline points="44,122 92,74 140,104 188,54 236,92 276,40" fill="none" stroke="#0f766e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>',
+    '  <circle cx="92" cy="74" r="8" fill="#f59e0b"/>',
+    '  <circle cx="188" cy="54" r="8" fill="#ef4444"/>',
+    `  <text x="44" y="146" font-family="monospace" font-size="11" fill="#0f172a">${token}</text>`,
+    '</svg>',
+    '',
+  ].join('\n');
+}
+
+function buildPythonImageAssetNoteContent(args: {
+  token: string;
+  svgSha256: string;
+  assetFolderName: string;
+}): string {
+  return [
+    '# Agent Task Image Asset Save Point',
+    '',
+    `Business token: ${args.token}`,
+    `Asset folder: ${args.assetFolderName}`,
+    `SVG sha256: ${args.svgSha256}`,
+    'Purpose: verify Files save point restore keeps generated image assets and task history intact.',
+    '',
   ].join('\n');
 }
 
@@ -845,12 +911,14 @@ async function openWorkspaceFilesRoot(args: {
     && response
       .url()
       .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/entries`)
+    && fileEntriesResponseMatchesPrefix(response, '')
     && response.ok()
   ), { timeout: 30_000 });
   await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/files?library_id=${encodeURIComponent(args.libraryId)}`);
   await expect(args.page).toHaveURL(new RegExp(`[?&]library_id=${escapeRegex(args.libraryId)}(?:&|$)`), {
     timeout: 30_000,
   });
+  await expectFilesCurrentPrefix(args.page, '', { timeoutMs: 30_000 });
   const libraryItem = args.page.getByTestId(`files__library-item--${args.libraryId}`);
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
   await expect(libraryItem).toHaveClass(/bg-accent\/10/, { timeout: 30_000 });
@@ -861,6 +929,45 @@ async function openWorkspaceFilesRoot(args: {
 
 function getObjectRowByName(page: Page, name: string): Locator {
   return page.getByTestId('files__object-row').filter({ hasText: name }).first();
+}
+
+function normalizeFilesBrowsePrefix(value: string | null | undefined): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return '';
+  const withoutLeading = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+  return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
+}
+
+function currentFilesBrowsePrefix(page: Page): string {
+  return normalizeFilesBrowsePrefix(new URL(page.url()).searchParams.get('prefix'));
+}
+
+function fileEntriesResponseMatchesPrefix(response: Response, expectedPrefix: string): boolean {
+  const url = new URL(response.url());
+  if (!url.pathname.endsWith('/entries')) return false;
+  return normalizeFilesBrowsePrefix(url.searchParams.get('path')) === normalizeFilesBrowsePrefix(expectedPrefix);
+}
+
+async function expectFilesCurrentPrefix(
+  page: Page,
+  expectedPrefix: string,
+  options?: { timeoutMs?: number },
+): Promise<void> {
+  const normalizedExpectedPrefix = normalizeFilesBrowsePrefix(expectedPrefix);
+  await expect.poll(() => currentFilesBrowsePrefix(page), {
+    timeout: options?.timeoutMs ?? 10_000,
+    intervals: [100, 250, 500, 1_000],
+    message: `Files did not navigate to prefix ${normalizedExpectedPrefix || '<root>'}`,
+  }).toBe(normalizedExpectedPrefix);
+}
+
+async function readPrefixFromFolderRow(row: Locator, folderName: string): Promise<string> {
+  const rowId = await row.getAttribute('data-row-id');
+  if (!rowId?.startsWith('p:')) {
+    throw new Error(`files_folder_row_missing_prefix:${folderName}:${rowId ?? '<missing>'}`);
+  }
+  return normalizeFilesBrowsePrefix(rowId.slice(2));
 }
 
 async function selectObjectRowByName(page: Page, name: string): Promise<Locator> {
@@ -903,14 +1010,46 @@ async function selectObjectAndDownloadViaUi(args: {
 
 async function openFolderByName(page: Page, name: string): Promise<void> {
   await closeVisibleDialog(page);
-  const folderRow = getObjectRowByName(page, name);
-  await expect(folderRow).toBeVisible({ timeout: 30_000 });
-  const button = folderRow.getByRole('button').first();
-  if (await button.isVisible().catch(() => false)) {
-    await button.dblclick();
-    return;
+  let expectedPrefix = '';
+  let lastPrefix = currentFilesBrowsePrefix(page);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const folderRow = getObjectRowByName(page, name);
+    await expect(folderRow).toBeVisible({ timeout: 30_000 });
+    expectedPrefix = await readPrefixFromFolderRow(folderRow, name);
+    if (lastPrefix === expectedPrefix) {
+      await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+
+    const targetEntriesResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'GET'
+      && response.ok()
+      && fileEntriesResponseMatchesPrefix(response, expectedPrefix)
+    ), { timeout: 10_000 }).catch(() => null);
+    const button = folderRow.getByRole('button').first();
+    if (await button.isVisible().catch(() => false)) {
+      await button.dblclick();
+    } else {
+      await folderRow.dblclick();
+    }
+
+    const opened = await expectFilesCurrentPrefix(page, expectedPrefix, { timeoutMs: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (opened) {
+      await targetEntriesResponsePromise;
+      await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+      await expect(getObjectRowByName(page, name)).toBeHidden({ timeout: 10_000 }).catch(() => undefined);
+      return;
+    }
+
+    lastPrefix = currentFilesBrowsePrefix(page);
+    await clearFilesSelectionIfNeeded(page);
+    await page.waitForTimeout(250);
   }
-  await folderRow.dblclick();
+  throw new Error(
+    `files_folder_open_failed:${name}:expected_prefix=${expectedPrefix || '<unknown>'}:actual_prefix=${lastPrefix || '<root>'}`,
+  );
 }
 
 async function closeVisibleDialog(page: Page): Promise<void> {
@@ -1034,6 +1173,32 @@ async function downloadSelectedTextFileViaUi(args: {
   return verifiedDownload.text();
 }
 
+async function downloadSelectedBinaryFileViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<Buffer> {
+  await expect(args.page.getByTestId('files__download')).toBeEnabled({ timeout: 10_000 });
+  const downloadResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'GET'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/download`)
+    && response.url().includes('/download')
+    && response.status() === 200
+  ), { timeout: 30_000 });
+  await args.page.getByTestId('files__download').click();
+  const downloadResponse = await downloadResponsePromise;
+  expect(downloadResponse.url()).toContain(`path=${encodeURIComponent(args.path)}`);
+  const verifiedDownload = await args.page.request.get(downloadResponse.url(), {
+    headers: await authHeaders(args.page),
+  });
+  expect(verifiedDownload.ok()).toBeTruthy();
+  return verifiedDownload.body();
+}
+
 async function openFileFromLibraryRootAndDownloadText(args: {
   page: Page;
   workspaceId: string;
@@ -1048,6 +1213,208 @@ async function openFileFromLibraryRootAndDownloadText(args: {
     path: args.path,
   });
   return downloadSelectedTextFileViaUi(args);
+}
+
+async function openFileFromLibraryRootAndDownloadBinary(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<Buffer> {
+  await openWorkspaceFilesRoot(args);
+  await closeVisibleDialog(args.page);
+  await openFilePathFromRoot({
+    page: args.page,
+    path: args.path,
+  });
+  return downloadSelectedBinaryFileViaUi(args);
+}
+
+function sha256Hex(value: Buffer | string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function expectSvgContentMatchesArtifact(args: {
+  svgContent: string;
+  token: string;
+  expectedSha256: string;
+}): void {
+  expect(args.svgContent).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+  expect(args.svgContent).toContain('<polyline');
+  expect(args.svgContent).toContain(args.token);
+  expect(sha256Hex(args.svgContent)).toBe(args.expectedSha256);
+}
+
+async function clearFilesSelectionIfNeeded(page: Page): Promise<void> {
+  const clearSelection = page.getByTestId('files__clear-selection');
+  if (await clearSelection.isEnabled().catch(() => false)) {
+    await clearSelection.click();
+  }
+}
+
+async function selectFilesInCurrentFolderViaUi(page: Page, fileNames: string[]): Promise<void> {
+  await closeVisibleDialog(page);
+  await clearFilesSelectionIfNeeded(page);
+  for (const [index, fileName] of fileNames.entries()) {
+    const row = getObjectRowByName(page, fileName);
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole('button').click(index === 0 ? {} : { modifiers: [MULTI_SELECT_MODIFIER] });
+  }
+  await expect(page.getByTestId('files__selection-summary')).toContainText(String(fileNames.length), {
+    timeout: 10_000,
+  });
+}
+
+async function deleteFilesInCurrentFolderViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  fileNames: string[];
+}): Promise<void> {
+  await selectFilesInCurrentFolderViaUi(args.page, args.fileNames);
+  await expect(args.page.getByTestId('files__delete')).toBeEnabled({ timeout: 10_000 });
+  await args.page.getByTestId('files__delete').click();
+  const dialog = args.page.getByTestId('files__dialog__delete');
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await expect(dialog).toContainText(String(args.fileNames.length));
+  const deleteResponsePromise = args.page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && response
+      .url()
+      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/delete`)
+  ), { timeout: 120_000 });
+  await dialog.getByTestId('files__delete__submit').click();
+  const deleteResponse = await deleteResponsePromise;
+  const deleteBody = await deleteResponse.text();
+  expect(deleteResponse.ok(), deleteBody).toBe(true);
+  const batchResult = args.page.getByTestId('files__dialog__batch-result');
+  await expect(batchResult).toHaveCount(0, { timeout: 10_000 });
+  for (const fileName of args.fileNames) {
+    await expect(getObjectRowByName(args.page, fileName)).toBeHidden({ timeout: 30_000 });
+  }
+}
+
+async function openWorkspaceArtifactsFolder(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<void> {
+  await openWorkspaceFilesRoot(args);
+  await openFolderByName(args.page, 'workspace');
+  await openFolderByName(args.page, '.artifacts');
+}
+
+function taskTraceKey(item: Record<string, unknown>): string {
+  return [
+    readStringField(item, 'id'),
+    readStringField(item, 'message_id'),
+    readStringField(item, 'run_id'),
+    readStringField(item, 'category'),
+    readStringField(item, 'phase'),
+    readStringField(item, 'status'),
+    readStringField(item, 'name'),
+    readStringField(item, 'summary'),
+  ].filter(Boolean).join('|');
+}
+
+async function readTaskHistoryEvidence(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  runId?: string;
+}): Promise<TaskHistoryEvidence> {
+  const headers = await authHeaders(args.page);
+  const [activityResponse, tracesResponse, taskResponse] = await Promise.all([
+    args.page.request.get(
+      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/activity`,
+      { headers },
+    ),
+    args.page.request.get(
+      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/traces?page_size=100${
+        args.runId ? `&run_id=${encodeURIComponent(args.runId)}` : ''
+      }`,
+      { headers },
+    ),
+    args.page.request.get(
+      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}`,
+      { headers },
+    ),
+  ]);
+  expect(activityResponse.ok(), await activityResponse.text()).toBe(true);
+  expect(tracesResponse.ok(), await tracesResponse.text()).toBe(true);
+  expect(taskResponse.ok(), await taskResponse.text()).toBe(true);
+
+  const activityPayload = await activityResponse.json() as unknown;
+  const activityRoot = asRecord(activityPayload);
+  const activityItems = Array.isArray(activityPayload)
+    ? activityPayload
+    : activityRoot && Array.isArray(activityRoot.items)
+      ? activityRoot.items
+      : [];
+  const activityRecords = activityItems
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null);
+
+  const tracesPayload = await tracesResponse.json() as unknown;
+  const tracesRoot = asRecord(tracesPayload);
+  const traceItems = Array.isArray(tracesPayload)
+    ? tracesPayload
+    : tracesRoot && Array.isArray(tracesRoot.items)
+      ? tracesRoot.items
+      : [];
+  const traceRecords = traceItems
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null);
+
+  const taskPayload = await taskResponse.json() as unknown;
+  const taskRecord = asRecord(taskPayload);
+  const activeRunRecord = taskRecord ? asRecord(taskRecord.active_run) : null;
+
+  return {
+    activityIds: activityRecords
+      .map((item) => readStringField(item, 'id'))
+      .filter((id): id is string => Boolean(id)),
+    runnerOutputs: activityRecords
+      .filter((item) => readStringField(item, 'kind') === 'runner_output')
+      .map((item) => readStringField(item, 'content') ?? ''),
+    traceKeys: traceRecords.map(taskTraceKey).filter(Boolean),
+    terminalSuccessTraceKeys: traceRecords
+      .filter(isTerminalSuccessTraceRecord)
+      .map(taskTraceKey)
+      .filter(Boolean),
+    taskRunState: taskRecord ? readStringField(taskRecord, 'run_state') : null,
+    taskRunStatus: taskRecord ? readStringField(taskRecord, 'run_status') : null,
+    activeRunStatus: activeRunRecord ? readStringField(activeRunRecord, 'status') : null,
+  };
+}
+
+function hasExplicitTaskSuccessEvidence(history: TaskHistoryEvidence): boolean {
+  return history.terminalSuccessTraceKeys.length > 0
+    || isSuccessEvidenceStatus(history.taskRunStatus)
+    || isSuccessEvidenceStatus(history.activeRunStatus);
+}
+
+function expectTaskHistoryPreservedAfterRestore(args: {
+  before: TaskHistoryEvidence;
+  after: TaskHistoryEvidence;
+  pythonExecutionMarker: string;
+  token: string;
+}): void {
+  expect(args.before.activityIds.length).toBeGreaterThan(0);
+  expect(args.before.traceKeys.length).toBeGreaterThan(0);
+  expect(hasExplicitTaskSuccessEvidence(args.before)).toBe(true);
+  expect(args.before.runnerOutputs.some((output) => output.includes(args.token))).toBe(true);
+  expect(args.before.runnerOutputs.some((output) => output.includes(args.pythonExecutionMarker))).toBe(true);
+  expect(args.after.runnerOutputs.some((output) => output.includes(args.token))).toBe(true);
+  expect(args.after.runnerOutputs.some((output) => output.includes(args.pythonExecutionMarker))).toBe(true);
+  expect(args.after.activityIds).toEqual(expect.arrayContaining(args.before.activityIds));
+  expect(args.after.traceKeys).toEqual(expect.arrayContaining(args.before.traceKeys));
+  expect(args.after.taskRunState).toBe('idle');
+  expect(hasExplicitTaskSuccessEvidence(args.after)).toBe(true);
 }
 
 async function openTaskCreateDialog(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -1144,8 +1511,16 @@ async function waitForTaskArtifact(args: {
       { headers },
     );
     if (!response.ok()) return false;
-    const payload = (await response.json()) as Array<{ task_relative_path?: string }>;
-    return payload.some((item) => item.task_relative_path === args.expectedPath);
+    const payload = await response.json() as unknown;
+    const root = asRecord(payload);
+    const items = Array.isArray(payload)
+      ? payload
+      : root && Array.isArray(root.items)
+        ? root.items
+        : [];
+    return items
+      .map((item) => asRecord(item))
+      .some((item) => item?.task_relative_path === args.expectedPath);
   }, {
     timeout: 120_000,
     intervals: [1_000, 2_000, 5_000],
@@ -1169,24 +1544,17 @@ async function createSavePointViaFilesUi(args: {
     await savePointsTab.click();
   }
 
-  await fileStatesDialog.getByTestId('files__save-point__message').fill(args.message);
-  const savePointResponsePromise = args.page.waitForResponse((response) => (
-    response.request().method() === 'POST'
-    && response
-      .url()
-      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`)
-  ), { timeout: 120_000 });
-  await fileStatesDialog.getByTestId('files__save-point__create').click();
-  const savePointResponse = await savePointResponsePromise;
-  const savePointBody = await savePointResponse.text();
-  expect(savePointResponse.ok(), savePointBody).toBe(true);
-  const savePointPayload = JSON.parse(savePointBody) as { id?: string };
-  const savePointId = savePointPayload.id?.trim();
-  expect(savePointId).toBeTruthy();
-  await expect(fileStatesDialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
+  const savePointId = await createSavePointFromOpenDialogWithPendingAssertions({
+    page: args.page,
+    dialog: fileStatesDialog,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    libraryId: args.libraryId,
+    message: args.message,
+  });
   await fileStatesDialog.getByLabel('Close', { exact: true }).click();
   await expect(fileStatesDialog).toBeHidden({ timeout: 10_000 });
-  return savePointId ?? '';
+  return savePointId;
 }
 
 function isSavePointCollectionRequest(args: {
@@ -1415,6 +1783,24 @@ function isFileLibraryOperationPendingEvidence(evidence: {
     && retryAfterMs > 0;
 }
 
+function isActiveWriterBlockedRestoreBody(body: string): boolean {
+  const record = asRecord(parseJsonEvidence(body));
+  const errorCode = record ? readStringField(record, 'error_code') : null;
+  const message = record ? readStringField(record, 'message') : null;
+  return errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'
+    || message === 'file_library_active_writer_blocked';
+}
+
+function isRuntimeAccessReleaseConfirmedPayload(payload: Record<string, unknown> | null): boolean {
+  const status = payload ? readStringField(payload, 'runtime_access_status') : null;
+  return status === 'released' || payload?.released === true;
+}
+
+function isRuntimeAccessReleasePendingPayload(payload: Record<string, unknown> | null): boolean {
+  const status = payload ? readStringField(payload, 'runtime_access_status') : null;
+  return status === 'release_pending' && payload?.released === false;
+}
+
 async function expectSavePointListPendingUiNotFatal(fileStatesDialog: Locator): Promise<void> {
   await expect(fileStatesDialog.getByTestId('files__save-point__list-recovering')).toBeVisible({
     timeout: 10_000,
@@ -1442,14 +1828,72 @@ async function expectRestoreConfirmVisibleWithoutPreparingStep(args: {
 async function waitForRestoreOperationTerminalIfVisible(fileStatesDialog: Locator): Promise<void> {
   const operation = fileStatesDialog.getByTestId('files__restore-operation');
   if (!(await operation.isVisible().catch(() => false))) return;
-  await expect.poll(async () => {
-    const text = await operation.textContent().catch(() => '');
-    if (/Files restored|文件已恢复|Restore failed|恢复失败/i.test(text ?? '')) return 'terminal';
-    return 'active';
-  }, {
-    timeout: 180_000,
-    intervals: [1_000, 2_000, 5_000],
-  }).toBe('terminal');
+  const failurePattern = /Restore failed|恢复失败/i;
+  const terminalPattern = /Files restored|文件已恢复|Restore state refreshed|No active restore is running now|恢复状态已刷新|当前没有正在运行的恢复操作/i;
+  const startedAt = Date.now();
+  let lastText = '';
+  while (Date.now() - startedAt < 180_000) {
+    const title = await operation.getByTestId('files__restore-operation-title').textContent().catch(() => '');
+    const summary = await operation.getByTestId('files__restore-operation-summary').textContent().catch(() => '');
+    lastText = `${title ?? ''}\n${summary ?? ''}`;
+    if (failurePattern.test(lastText)) {
+      throw new Error(`files_restore_operation_failed:${lastText}`);
+    }
+    if (terminalPattern.test(lastText)) {
+      await expect(operation).not.toContainText(failurePattern);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`files_restore_operation_timeout:${lastText}`);
+}
+
+async function releaseRuntimeAccessUntilConfirmedViaFilesUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  dialog: Locator;
+}): Promise<void> {
+  const deadline = Date.now() + 180_000;
+  let lastReleaseBody = '';
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    await expect(args.dialog.getByTestId('files__restore-blocker-release')).toBeVisible({ timeout: 10_000 });
+    await expect(args.dialog.getByTestId('files__restore-blocker-release')).toBeEnabled({ timeout: 30_000 });
+    const releaseResponsePromise = args.page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'POST'
+        && url.pathname.endsWith(`/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/runtime-access/release`);
+    }, { timeout: 120_000 });
+    await args.dialog.getByTestId('files__restore-blocker-release').click();
+    const releaseResponse = await releaseResponsePromise;
+    lastReleaseBody = await releaseResponse.text();
+    expect(releaseResponse.ok(), lastReleaseBody).toBe(true);
+    const releasePayload = asRecord(parseJsonEvidence(lastReleaseBody));
+
+    if (isRuntimeAccessReleaseConfirmedPayload(releasePayload)) {
+      await expect(args.dialog.getByTestId('files__restore-release-error')).toHaveCount(0);
+      await expect(args.dialog.getByTestId('files__restore-release-pending')).toHaveCount(0);
+      await expect(args.dialog.getByTestId('files__restore-blocker-release')).toHaveCount(0, {
+        timeout: 30_000,
+      });
+      return;
+    }
+
+    if (!isRuntimeAccessReleasePendingPayload(releasePayload)) {
+      throw new Error(`files_restore_runtime_release_unexpected:${lastReleaseBody}`);
+    }
+
+    await expect(args.dialog.getByTestId('files__restore-release-error')).toHaveCount(0);
+    await expect(args.dialog.getByTestId('files__restore-release-pending')).toBeVisible({ timeout: 10_000 });
+    await expect(args.dialog.getByTestId('files__restore-release-pending')).toContainText(/release|释放|稍后|moment/i);
+    attempt += 1;
+    await args.page.waitForTimeout(Math.min(5_000, 1_000 * attempt));
+  }
+
+  throw new Error(`files_restore_runtime_release_timeout:${lastReleaseBody}`);
 }
 
 async function restoreSavePointViaFilesUi(args: {
@@ -1483,19 +1927,37 @@ async function restoreSavePointViaFilesUi(args: {
   };
   args.page.on('request', onRestoreRequest);
   try {
-    await fileStatesDialog.getByTestId(`files__save-point__restore--${args.savePointId}`).click();
-    await expectRestoreConfirmVisibleWithoutPreparingStep(args);
-    expect(forbiddenRestoreRequests).toEqual([]);
+    const submitRestoreOnce = async () => {
+      await fileStatesDialog.getByTestId(`files__save-point__restore--${args.savePointId}`).click();
+      await expectRestoreConfirmVisibleWithoutPreparingStep({
+        ...args,
+        dialog: fileStatesDialog,
+      });
+      expect(forbiddenRestoreRequests).toEqual([]);
+      const restoreResponsePromise = args.page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'POST'
+          && url.pathname.endsWith(`/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore`);
+      }, { timeout: 120_000 });
+      await args.page.getByTestId('files__restore-confirm-submit').click();
+      const restoreResponse = await restoreResponsePromise;
+      const restoreBody = await restoreResponse.text();
+      return { restoreResponse, restoreBody };
+    };
 
-    const restoreResponsePromise = args.page.waitForResponse((response) => (
-      response.request().method() === 'POST'
-      && response
-        .url()
-        .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore`)
-    ), { timeout: 120_000 });
-    await args.page.getByTestId('files__restore-confirm-submit').click();
-    const restoreResponse = await restoreResponsePromise;
-    const restoreBody = await restoreResponse.text();
+    let { restoreResponse, restoreBody } = await submitRestoreOnce();
+    while (!restoreResponse.ok() && isActiveWriterBlockedRestoreBody(restoreBody)) {
+      await expect(fileStatesDialog.getByTestId('files__restore-operation-title')).toContainText(/Restore blocked|恢复被阻止/i, {
+        timeout: 10_000,
+      });
+      await expect(fileStatesDialog.getByTestId('files__restore-blocker-release')).toBeVisible({ timeout: 10_000 });
+      await releaseRuntimeAccessUntilConfirmedViaFilesUi({
+        ...args,
+        dialog: fileStatesDialog,
+      });
+      ({ restoreResponse, restoreBody } = await submitRestoreOnce());
+    }
+
     expect(restoreResponse.ok(), restoreBody).toBe(true);
     const restorePayload = JSON.parse(restoreBody) as { status?: string };
     expect(restorePayload.status).toMatch(/^(pending|restoring|succeeded)$/);
@@ -2593,6 +3055,371 @@ test.describe.serial('@lane-real files user stories', () => {
           });
         }
       }
+    });
+  });
+
+  test('agent-task generated image assets can be save-pointed, deleted from Files, restored, and keep task history', async ({ page }) => {
+    test.setTimeout(720_000);
+
+    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+
+    const timestamp = Date.now();
+    const { projectId, runnerId, endpointId, model } = await resolveDemoProjectAndRunner(page);
+    expect(runnerId).toBeTruthy();
+    expect(endpointId).toBeTruthy();
+    expect(isPlaceholderModel(model)).toBe(false);
+
+    const libraryName = `Image Asset Savepoint Library ${timestamp}`;
+    const taskTitle = `Image asset savepoint task ${timestamp}`;
+    const assetFolderName = 'workspace/.artifacts';
+    const svgFileName = `agent-image-${timestamp}.svg`;
+    const noteFileName = `agent-image-notes-${timestamp}.md`;
+    const manifestFileName = `agent-image-manifest-${timestamp}.json`;
+    const artifactToken = `AGENT_IMAGE_SAVEPOINT_RESTORE_${timestamp}`;
+    const svgPath = `workspace/.artifacts/${svgFileName}`;
+    const notePath = `workspace/.artifacts/${noteFileName}`;
+    const manifestPath = `workspace/.artifacts/${manifestFileName}`;
+    const expectedSvgContent = buildPythonImageAssetSvgContent(artifactToken);
+    const expectedSvgSha256 = sha256Hex(expectedSvgContent);
+    const expectedNoteContent = buildPythonImageAssetNoteContent({
+      token: artifactToken,
+      svgSha256: expectedSvgSha256,
+      assetFolderName,
+    });
+    const expectedNoteSha256 = sha256Hex(expectedNoteContent);
+    const pythonExecutionMarker = `PYTHON_IMAGE_ASSET_WRITTEN:${artifactToken}:${expectedSvgSha256}:${expectedNoteSha256}`;
+    const savePointMessage = `Before campaign image asset cleanup ${timestamp}`;
+    const createdLibrary = await createFileLibraryViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      name: libraryName,
+    });
+    const libraryId = createdLibrary.id;
+    await waitForLibraryStatus({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      expected: /^ready$/i,
+      timeoutMs: 180_000,
+    });
+
+    const createdTask = await test.step('Agent Task is explicitly bound to the ready file library', async () => {
+      const task = await createTaskUsingExistingLibraryViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        title: taskTitle,
+        libraryName,
+      });
+      expect(task.workspaceFileLibraryId).toBe(libraryId);
+      const boundLibrary = await waitForLibraryBindingStatus({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        expected: 'bound',
+      });
+      expect(boundLibrary.bound_task_id).toBe(task.taskId);
+      expect(boundLibrary.bound_task_title).toBe(taskTitle);
+      return task;
+    });
+    const taskId = createdTask.taskId;
+
+    const run = await test.step('real Agent Task writes deterministic image, note, and manifest with Python', async () => {
+      const pythonLinesJson = JSON.stringify(expectedSvgContent.trimEnd().split('\n'));
+      const noteLinesJson = JSON.stringify(expectedNoteContent.trimEnd().split('\n'));
+      const runStart = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        intent: [
+          `Use the real configured model (${model}) and run this exact Python stdlib script. Do not create these files with shell redirection outside Python.`,
+          '```bash',
+          'set -euo pipefail',
+          "python3 - <<'PY'",
+          'from pathlib import Path',
+          'import hashlib',
+          'import json',
+          `token = ${JSON.stringify(artifactToken)}`,
+          'asset_dir = Path.home() / "workspace" / ".artifacts"',
+          `svg_lines = ${pythonLinesJson}`,
+          `note_lines = ${noteLinesJson}`,
+          'asset_dir.mkdir(parents=True, exist_ok=True)',
+          'svg = "\\n".join(svg_lines) + "\\n"',
+          'note = "\\n".join(note_lines) + "\\n"',
+          `svg_path = asset_dir / ${JSON.stringify(svgFileName)}`,
+          `note_path = asset_dir / ${JSON.stringify(noteFileName)}`,
+          `manifest_path = asset_dir / ${JSON.stringify(manifestFileName)}`,
+          'svg_path.write_text(svg, encoding="utf-8")',
+          'note_path.write_text(note, encoding="utf-8")',
+          'svg_sha256 = hashlib.sha256(svg.encode("utf-8")).hexdigest()',
+          'note_sha256 = hashlib.sha256(note.encode("utf-8")).hexdigest()',
+          'manifest = {',
+          '    "files": [svg_path.name, note_path.name],',
+          '    "generator": "python-stdlib-svg",',
+          '    "note_sha256": note_sha256,',
+          '    "svg_sha256": svg_sha256,',
+          '    "token": token,',
+          '}',
+          'manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")',
+          `assert token in svg_path.read_text(encoding="utf-8")`,
+          `assert svg_sha256 == ${JSON.stringify(expectedSvgSha256)}`,
+          `assert note_sha256 == ${JSON.stringify(expectedNoteSha256)}`,
+          'print(f"PYTHON_IMAGE_ASSET_WRITTEN:{token}:{svg_sha256}:{note_sha256}")',
+          'PY',
+          '```',
+          `After the Python script succeeds, reply with exactly ${pythonExecutionMarker}.`,
+        ].join('\n'),
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        token: pythonExecutionMarker,
+        runnerOutputActivityId: runStart.runnerOutputActivityId,
+        runId: runStart.runId,
+        timeoutMs: 360_000,
+      });
+      await waitForTaskArtifact({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        expectedPath: `.artifacts/${svgFileName}`,
+      });
+      await waitForAgentTaskRunFinalStateViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        runnerOutputActivityId: runStart.runnerOutputActivityId,
+        runId: runStart.runId,
+        timeoutMs: 300_000,
+      });
+      return runStart;
+    });
+
+    await test.step('Files shows and downloads the generated image assets with verifiable content', async () => {
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: svgPath,
+        timeoutMs: 180_000,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: notePath,
+        timeoutMs: 180_000,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: manifestPath,
+        timeoutMs: 180_000,
+      });
+
+      await openWorkspaceArtifactsFolder({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await expect(getObjectRowByName(page, svgFileName)).toBeVisible({ timeout: 30_000 });
+      await expect(getObjectRowByName(page, noteFileName)).toBeVisible({ timeout: 30_000 });
+      await expect(getObjectRowByName(page, manifestFileName)).toBeVisible({ timeout: 30_000 });
+
+      await selectObjectRowByName(page, svgFileName);
+      const svgDownload = await downloadSelectedBinaryFileViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: svgPath,
+      });
+      expectSvgContentMatchesArtifact({
+        svgContent: svgDownload.toString('utf8'),
+        token: artifactToken,
+        expectedSha256: expectedSvgSha256,
+      });
+
+      await selectObjectRowByName(page, noteFileName);
+      const noteDownload = await downloadSelectedTextFileViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: notePath,
+      });
+      expect(noteDownload).toBe(expectedNoteContent);
+
+      await selectObjectRowByName(page, manifestFileName);
+      const manifestDownload = await downloadSelectedTextFileViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: manifestPath,
+      });
+      const manifest = JSON.parse(manifestDownload) as {
+        files?: string[];
+        generator?: string;
+        note_sha256?: string;
+        svg_sha256?: string;
+        token?: string;
+      };
+      expect(manifest).toMatchObject({
+        generator: 'python-stdlib-svg',
+        note_sha256: expectedNoteSha256,
+        svg_sha256: expectedSvgSha256,
+        token: artifactToken,
+      });
+      expect(manifest.files).toEqual(expect.arrayContaining([svgFileName, noteFileName]));
+    });
+
+    const historyBeforeRestore = await test.step('Agent Task history and trace evidence exist before Files restore', async () => {
+      const history = await readTaskHistoryEvidence({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        runId: run.runId,
+      });
+      expect(history.runnerOutputs.some((output) => output.includes(artifactToken))).toBe(true);
+      expect(history.runnerOutputs.some((output) => output.includes(pythonExecutionMarker))).toBe(true);
+      expect(history.traceKeys.length).toBeGreaterThan(0);
+      expect(history.terminalSuccessTraceKeys.length).toBeGreaterThan(0);
+      expect(history.taskRunState).toBe('idle');
+      expect(hasExplicitTaskSuccessEvidence(history)).toBe(true);
+      return history;
+    });
+
+    const savePointId = await test.step('Files UI creates a business save point before cleanup', async () => createSavePointViaFilesUi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+      message: savePointMessage,
+    }));
+
+    await test.step('Files UI multi-select delete removes the image and note', async () => {
+      await openWorkspaceArtifactsFolder({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await deleteFilesInCurrentFolderViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        fileNames: [svgFileName, noteFileName],
+      });
+      await expectFileEntryMissingViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: svgPath,
+        timeoutMs: 120_000,
+      });
+      await expectFileEntryMissingViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: notePath,
+        timeoutMs: 120_000,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: manifestPath,
+        timeoutMs: 30_000,
+      });
+    });
+
+    await test.step('Files UI restore confirms and brings back the image and note unchanged', async () => {
+      await restoreSavePointViaFilesUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        savePointId,
+        message: savePointMessage,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: svgPath,
+        timeoutMs: 240_000,
+      });
+      await waitForTextFileContentViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: notePath,
+        expectedContent: expectedNoteContent.trim(),
+        timeoutMs: 240_000,
+      });
+
+      const restoredSvg = await openFileFromLibraryRootAndDownloadBinary({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: svgPath,
+      });
+      expectSvgContentMatchesArtifact({
+        svgContent: restoredSvg.toString('utf8'),
+        token: artifactToken,
+        expectedSha256: expectedSvgSha256,
+      });
+      const restoredNote = await openFileFromLibraryRootAndDownloadText({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: notePath,
+      });
+      expect(restoredNote).toBe(expectedNoteContent);
+    });
+
+    await test.step('Files restore does not roll back or break Agent Task activity and traces', async () => {
+      const historyAfterRestore = await readTaskHistoryEvidence({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        runId: run.runId,
+      });
+      expectTaskHistoryPreservedAfterRestore({
+        before: historyBeforeRestore,
+        after: historyAfterRestore,
+        pythonExecutionMarker,
+        token: artifactToken,
+      });
+      await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/agent-tasks/${taskId}`);
+      await expect(page.getByTestId('agent-task__task-header')).toContainText(taskTitle, { timeout: 30_000 });
+      const finalAnswer = page.getByTestId('agent-tasks__message-final-answer').filter({ hasText: pythonExecutionMarker });
+      await expect(finalAnswer).toHaveCount(1, { timeout: 30_000 });
+      await expect(finalAnswer).toContainText(artifactToken);
     });
   });
 

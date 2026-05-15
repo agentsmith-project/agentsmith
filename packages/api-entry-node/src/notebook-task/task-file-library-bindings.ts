@@ -401,6 +401,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
         expected: {
           task_id: input.taskId,
           binding_generation: bindingGeneration,
+          binding_state: 'bound',
         },
       },
     );
@@ -413,6 +414,174 @@ export class JsonDocTaskFileLibraryBindingRepo {
       return { ok: true, released: result.deleted };
     }
     if (!result.current) {
+      return { ok: true, released: false };
+    }
+    const current = recordToBinding(result.current);
+    cacheBinding(current);
+    return {
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: current,
+    };
+  }
+
+  async beginRuntimeAccessRelease(input: {
+    workspaceId: string;
+    projectId: string;
+    fileLibraryId: string;
+    taskId: string;
+    bindingGeneration: number;
+    correlationId: string;
+    now?: string;
+  }): Promise<{
+    ok: true;
+    binding: TaskFileLibraryBinding;
+  } | {
+    ok: false;
+    code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT';
+    binding: TaskFileLibraryBinding | null;
+  }> {
+    const now = input.now ?? new Date().toISOString();
+    const result = await this.docStore.updateIfMatch<TaskFileLibraryBindingRecord>(
+      BINDINGS_COLLECTION,
+      bindingKey(input),
+      {
+        expected: {
+          task_id: input.taskId,
+          binding_generation: input.bindingGeneration,
+          binding_state: 'bound',
+        },
+        patch: {
+          binding_state: 'releasing',
+          updated_at: now,
+          correlation_id: input.correlationId,
+        },
+      },
+    );
+    if (result.ok) {
+      const binding = recordToBinding(result.doc);
+      cacheBinding(binding);
+      return { ok: true, binding };
+    }
+    if (!result.current) {
+      uncacheBinding(input);
+      return {
+        ok: false,
+        code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        binding: null,
+      };
+    }
+    const current = recordToBinding(result.current);
+    cacheBinding(current);
+    if (
+      current.taskId === input.taskId
+      && current.bindingGeneration === input.bindingGeneration
+      && current.bindingState === 'releasing'
+    ) {
+      return { ok: true, binding: current };
+    }
+    return {
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: current,
+    };
+  }
+
+  async rollbackRuntimeAccessRelease(input: {
+    workspaceId: string;
+    projectId: string;
+    fileLibraryId: string;
+    taskId: string;
+    bindingGeneration: number;
+    correlationId: string;
+    now?: string;
+  }): Promise<{
+    ok: true;
+    rolledBack: boolean;
+  } | {
+    ok: false;
+    code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT';
+    binding: TaskFileLibraryBinding;
+  }> {
+    const now = input.now ?? new Date().toISOString();
+    const result = await this.docStore.updateIfMatch<TaskFileLibraryBindingRecord>(
+      BINDINGS_COLLECTION,
+      bindingKey(input),
+      {
+        expected: {
+          task_id: input.taskId,
+          binding_generation: input.bindingGeneration,
+          binding_state: 'releasing',
+        },
+        patch: {
+          binding_state: 'bound',
+          updated_at: now,
+          correlation_id: input.correlationId,
+        },
+      },
+    );
+    if (result.ok) {
+      cacheBinding(recordToBinding(result.doc));
+      return { ok: true, rolledBack: true };
+    }
+    if (!result.current) {
+      uncacheBinding(input);
+      return { ok: true, rolledBack: false };
+    }
+    const current = recordToBinding(result.current);
+    cacheBinding(current);
+    if (
+      current.taskId === input.taskId
+      && current.bindingGeneration === input.bindingGeneration
+      && current.bindingState === 'bound'
+    ) {
+      return { ok: true, rolledBack: false };
+    }
+    return {
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: current,
+    };
+  }
+
+  async completeRuntimeAccessRelease(input: {
+    workspaceId: string;
+    projectId: string;
+    fileLibraryId: string;
+    taskId: string;
+    bindingGeneration: number;
+    correlationId: string;
+    now?: string;
+  }): Promise<{
+    ok: true;
+    released: boolean;
+  } | {
+    ok: false;
+    code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT';
+    binding: TaskFileLibraryBinding;
+  }> {
+    const now = input.now ?? new Date().toISOString();
+    const result = await this.docStore.updateIfMatch<TaskFileLibraryBindingRecord>(
+      BINDINGS_COLLECTION,
+      bindingKey(input),
+      {
+        expected: {
+          task_id: input.taskId,
+          binding_generation: input.bindingGeneration,
+          binding_state: 'releasing',
+        },
+        patch: {
+          updated_at: now,
+          correlation_id: input.correlationId,
+        },
+      },
+    );
+    if (result.ok) {
+      cacheBinding(recordToBinding(result.doc));
+      return { ok: true, released: true };
+    }
+    if (!result.current) {
+      uncacheBinding(input);
       return { ok: true, released: false };
     }
     const current = recordToBinding(result.current);

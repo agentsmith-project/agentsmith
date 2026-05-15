@@ -3963,7 +3963,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       fileLibraryId: workspaceFileLibrary.id,
       bindingGeneration: currentBinding.bindingGeneration,
     });
-    const holderAcquire = await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).acquire({
+    const workspaceHolderRepo = new JsonDocTaskWorkspaceHolderRepo(deps.docStore);
+    const holderAcquire = await workspaceHolderRepo.acquire({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       taskId: task.id,
@@ -3984,6 +3985,39 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         file_library_id: workspaceFileLibrary.id,
         holder_id: holderFence.holder_id,
         binding_generation: String(currentBinding.bindingGeneration),
+        lease_epoch: holderFence.lease_epoch,
+      });
+      return true;
+    }
+    const revalidatedBinding = await findTaskFileLibraryBinding({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      fileLibraryId: workspaceFileLibrary.id,
+    });
+    if (
+      !revalidatedBinding
+      || revalidatedBinding.bindingState !== 'bound'
+      || revalidatedBinding.taskId !== task.id
+      || revalidatedBinding.bindingGeneration !== currentBinding.bindingGeneration
+    ) {
+      await workspaceHolderRepo.release({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: task.id,
+        fileLibraryId: workspaceFileLibrary.id,
+        holderId: holderFence.holder_id,
+        bindingGeneration: currentBinding.bindingGeneration,
+        leaseEpoch: holderFence.lease_epoch,
+        releasedAt: nowIso(),
+      });
+      json(res, 409, {
+        error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        message: 'agent_task_workspace_binding_conflict',
+        task_id: task.id,
+        file_library_id: workspaceFileLibrary.id,
+        holder_id: holderFence.holder_id,
+        binding_generation: String(revalidatedBinding?.bindingGeneration ?? currentBinding.bindingGeneration),
         lease_epoch: holderFence.lease_epoch,
       });
       return true;

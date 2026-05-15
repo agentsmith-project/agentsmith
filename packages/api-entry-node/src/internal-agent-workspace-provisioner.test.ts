@@ -647,6 +647,86 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     },
   );
 
+  it.each(['releasing', 'release_pending'] as const)(
+    'fails closed when the local workspace binding is already %s',
+    async (status) => {
+      const docStore = new InMemoryJsonDocStore();
+      const libraryId = `flib_local_${status}`;
+      const mappingRepo = await seedReadyAfscpLibrary({
+        docStore,
+        libraryId,
+      });
+      const existingBinding: InternalAgentWorkspaceBinding = {
+        file_library_id: libraryId,
+        workspace_id: 'ws_demo',
+        project_id: 'proj_demo',
+        provider: 'afscp',
+        task_home_binding_id: `wmb_local_${status}`,
+        afscp_mount_binding_id: `wmb_local_${status}`,
+        afscp_namespace_id: 'ns_project_1',
+        afscp_repo_id: 'repo_file_library_1',
+        afscp_volume_id: 'vol_shared',
+        project_storage_generation: 7,
+        status,
+        mount_binding_status: 'issued',
+        mount_binding_generation: 4,
+        release_operation_id: 'op_local_release_pending',
+        lease_expires_at: '2026-03-19T01:00:00.000Z',
+        task_home_path: '/home/task_demo',
+        workspace_path: '/home/task_demo/workspace',
+        artifacts_path: '/home/task_demo/workspace/.artifacts',
+        library_root_path: '.',
+        created_at: '2026-03-19T00:00:00.000Z',
+        updated_at: '2026-03-19T00:00:00.000Z',
+      };
+      await docStore.upsert<InternalAgentWorkspaceBinding>(
+        resolveWorkspaceScopedCollection('internal_agent_file_library_workspaces', 'ws_demo'),
+        existingBinding.file_library_id,
+        existingBinding,
+      );
+      const projectStorageBootstrapService = readyProjectStorageService();
+      const createWorkloadMountBinding = vi.fn();
+      const getWorkloadMountBinding = vi.fn();
+      const ensureWorkspaceBinding = vi.fn();
+      const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+        docStore,
+        {
+          ensureWorkspaceBinding,
+          deleteWorkspaceBinding: vi.fn().mockResolvedValue(undefined),
+        },
+        {
+          afscpProductClient: {
+            createWorkloadMountBinding,
+            getWorkloadMountBinding,
+            revokeWorkloadMountBinding: vi.fn(),
+          },
+          projectStorageBootstrapService,
+          mappingRepo,
+          resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+        },
+      );
+
+      await expect(provisioner.ensureWorkspaceBinding({
+        workspaceId: 'ws_demo',
+        projectId: 'proj_demo',
+        fileLibraryId: libraryId,
+        taskId: 'task_demo',
+        actorUserId: 'user_demo',
+      })).rejects.toMatchObject({
+        code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+        retryable: true,
+        metadata: {
+          reason: 'workspace_binding_releasing',
+          workspace_binding_status: status,
+        },
+      });
+      expect(projectStorageBootstrapService.ensureProjectStorageReady).not.toHaveBeenCalled();
+      expect(createWorkloadMountBinding).not.toHaveBeenCalled();
+      expect(getWorkloadMountBinding).not.toHaveBeenCalled();
+      expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses a generation-scoped idempotency key for repeatable terminal binding rotation attempts', async () => {
     const docStore = new InMemoryJsonDocStore();
     const mappingRepo = await seedReadyAfscpLibrary({

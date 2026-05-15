@@ -28,6 +28,7 @@ import {
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
   resolveAgentTaskCreateTimeoutMs,
+  resolveAgentTaskRunFinalState,
   selectExpiredWorkloadReleaseTargets,
   resolveIntegrationKeycloakBaseUrl,
   resolveAgentTaskRunnerSocketUrl,
@@ -2136,6 +2137,121 @@ describe('integration-real-helpers', () => {
       activityHasToken: false,
       latestRunnerOutput: 'current run completed without marker',
     });
+  });
+
+  it('does not accept scoped final-state success from task-level run_status alone', () => {
+    const finalState = resolveAgentTaskRunFinalState({
+      activity: [],
+      task: {
+        id: 'task_1',
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+      traces: [],
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+    });
+
+    expect(finalState).toBeNull();
+  });
+
+  it('accepts scoped final-state success from the current run terminal trace after active_run is cleared', () => {
+    const finalState = resolveAgentTaskRunFinalState({
+      activity: [],
+      task: {
+        id: 'task_1',
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+      traces: [
+        {
+          message_id: 'activity_projected_current',
+          run_id: 'run_current',
+          category: 'progress',
+          phase: 'completed',
+          status: 'completed',
+          name: 'run.completed',
+          summary: 'codex exited with code 0',
+        },
+      ],
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+    });
+
+    expect(finalState).toMatchObject({
+      runState: 'idle',
+      runStatus: 'completed',
+      activeRunId: null,
+      activeRunStatus: null,
+      terminalTraceSummary: 'codex exited with code 0',
+    });
+  });
+
+  it('accepts scoped final-state success from current-run activity when projection id differs from the run response id', () => {
+    const finalState = resolveAgentTaskRunFinalState({
+      activity: [
+        {
+          id: 'activity_projected_current',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'final answer for the current run',
+          run_id: 'run_current',
+        },
+      ],
+      task: {
+        id: 'task_1',
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+      traces: [],
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+    });
+
+    expect(finalState).toMatchObject({
+      runState: 'idle',
+      runStatus: 'completed',
+      activeRunId: null,
+      activeRunStatus: null,
+    });
+  });
+
+  it('does not accept old trace or activity evidence for scoped final-state success', () => {
+    const finalState = resolveAgentTaskRunFinalState({
+      activity: [
+        {
+          id: 'activity_from_run_response',
+          kind: 'runner_output',
+          actor: 'runner',
+          content: 'old final answer',
+          run_id: 'run_previous',
+        },
+      ],
+      task: {
+        id: 'task_1',
+        run_state: 'idle',
+        active_run: null,
+        run_status: 'completed',
+      },
+      traces: [
+        {
+          message_id: 'activity_previous',
+          run_id: 'run_previous',
+          category: 'progress',
+          phase: 'completed',
+          status: 'completed',
+          name: 'run.completed',
+          summary: 'previous run completed',
+        },
+      ],
+      runnerOutputActivityId: 'activity_from_run_response',
+      runId: 'run_current',
+    });
+
+    expect(finalState).toBeNull();
   });
 
   it('waits for runner output tokens using run_id when the activity projection id differs from the run response id', async () => {

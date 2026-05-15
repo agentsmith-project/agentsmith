@@ -190,6 +190,9 @@ function createDeps(args: {
       deleteWorkspaceBinding: vi.fn(async () => undefined),
       findWorkspaceBinding: vi.fn(async () => null),
     },
+    internalAgentPodManager: {
+      releasePod: vi.fn(async () => undefined),
+    },
     fileLibraryStorageAdapter: args.storageAdapter ?? createStorageAdapter(),
     projectStorageBootstrapService: {
       enabled: true,
@@ -2628,6 +2631,86 @@ describe('project-file-library-routes', () => {
     );
   });
 
+  it.each([
+    ['releasing', 'releasing'],
+    ['release_pending', 'released'],
+  ] as const)('blocks direct restore while local runtime binding is %s', async (runtimeStatus, mountStatus) => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: `task_restore_${runtimeStatus}`,
+      title: `Restore ${runtimeStatus} task`,
+    });
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      correlationId: `req_restore_${runtimeStatus}_begin`,
+    })).resolves.toMatchObject({ ok: true });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => ({
+      ...activeRuntimeBinding(libraryId),
+      status: runtimeStatus,
+      mount_binding_status: mountStatus,
+      release_operation_id: `op_restore_${runtimeStatus}`,
+    }));
+
+    const restoreJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': `req_restore_${runtimeStatus}_blocked`,
+          'idempotency-key': `restore-key-${runtimeStatus}`,
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: restoreJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+    expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_visible: true,
+      bound_task_id: seededTask.taskId,
+      bound_task_status: 'active',
+    }));
+    await expect(new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).findActiveByLibrary(
+      'ws_default',
+      'proj_1',
+      libraryId,
+    )).resolves.toBeNull();
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingState: 'releasing',
+    });
+    expect(JSON.stringify(restoreJson.mock.calls)).not.toMatch(/wmb_|ns_|repo_|mount|credential|control_root/);
+  });
+
   it('blocks concurrent file-library mutations and template snapshots while direct restore is active', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
@@ -2936,6 +3019,16 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       fileLibraryId: libraryId,
     });
+    expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      'task-release-runtime-access',
+    );
+    expect(
+      deps.internalAgentPodManager.releasePod.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding.mock.invocationCallOrder[0],
+    );
     expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
       file_library_id: libraryId,
       released: true,
@@ -2947,10 +3040,363 @@ describe('project-file-library-routes', () => {
       fileLibraryId: libraryId,
     })).resolves.toMatchObject({
       taskId: seededTask.taskId,
-      fileLibraryId: libraryId,
       bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
     });
+    const itemJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {} as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: itemJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+    });
+    const releasedTask = await deps.docStore.get<Record<string, unknown>>(
+      notebookTasksCollection('ws_default'),
+      seededTask.taskId,
+    );
+    expect(releasedTask).toMatchObject({ id: seededTask.taskId });
     expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(/wmb_|ns_|repo_|mount|credential|control_root/);
+  });
+
+  it('keeps the release fence when runtime workspace release is still pending', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_runtime_access_pending',
+      title: 'Release runtime access pending task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => ({
+      file_library_id: libraryId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      provider: 'afscp',
+      task_home_binding_id: 'wmb_release_pending',
+      afscp_mount_binding_id: 'wmb_release_pending',
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+      release_operation_id: 'op_release_pending',
+      task_home_path: '/home/task_release_runtime_access_pending',
+      workspace_path: '/home/task_release_runtime_access_pending/workspace',
+      artifacts_path: '/home/task_release_runtime_access_pending/workspace/.artifacts',
+      library_root_path: '.',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:01.000Z',
+    } satisfies InternalAgentWorkspaceBinding));
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_runtime_access_release_pending' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: false,
+      runtime_access_status: 'release_pending',
+    });
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+    });
+  });
+
+  it('restores the runtime release fence to bound after direct restore reaches a terminal state', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: 'op_restore_terminal_success',
+        operationStatus: 'succeeded',
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_restore_terminal',
+      title: 'Release restore terminal task',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_before_terminal_restore' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+    });
+
+    const restoreJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_terminal_success',
+          'idempotency-key': 'restore-key-terminal-success',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: restoreJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      savePointId: expect.any(String),
+      idempotencyKey: 'restore-key-terminal-success',
+    }));
+    expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'succeeded',
+    }));
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'bound',
+      correlationId: 'req_restore_terminal_success:restore_terminal',
+    });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), seededTask.taskId)).resolves.toMatchObject({
+      workspace_file_library_id: libraryId,
+      file_library_binding_generation: seededTask.bindingGeneration,
+    });
+  });
+
+  it('rolls back the release fence when a hard blocker appears after admission', async () => {
+    const deps = createDeps();
+    deps.notebookTerminalService.hasLiveSessionsForTask = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_late_terminal',
+      title: 'Release late terminal task',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_late_terminal' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      'task-release-late-terminal',
+    );
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      message: 'file_library_runtime_access_release_blocked',
+      file_library_id: libraryId,
+      blockers: [{ code: 'active_terminal' }],
+      bound_task_id: seededTask.taskId,
+    }));
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'bound',
+    });
+  });
+
+  it('keeps runtime access release blocked when sandbox still reports active workloads', async () => {
+    const deps = createDeps();
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw new Error('sandbox_manager_error: delete_workspace_binding 409 {"error":"workspace binding has active workloads; delete workloads first: workload-task-active"}');
+    });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_active_sandbox_workload',
+      title: 'Release blocked by sandbox active workload',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_active_sandbox_workload' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      'task-release-active-sandbox-workload',
+    );
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      message: 'file_library_runtime_access_release_blocked',
+      file_library_id: libraryId,
+      blockers: [{ code: 'workspace_holder' }],
+      bound_task_id: seededTask.taskId,
+    }));
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'bound',
+    });
+  });
+
+  it('releases residual task workspace holders for a completed task before releasing runtime access', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_residual_holder',
+      title: 'Release residual holder task',
+    });
+    await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: seededTask.taskId,
+      fileLibraryId: libraryId,
+      taskHomeSegment: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      holderId: 'holder_release_residual',
+      holderKind: 'runner_workspace',
+      leaseEpoch: 'lease_release_residual',
+      issuedAt: '2026-05-09T00:00:00.000Z',
+      expiresAt: '2999-05-09T00:00:00.000Z',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_residual_holder' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_1',
+      'task-release-residual-holder',
+    );
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+    await expect(new JsonDocTaskWorkspaceHolderRepo(deps.docStore).listLiveByTask({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+    })).resolves.toEqual([]);
   });
 
   it.each([
@@ -2966,21 +3412,6 @@ describe('project-file-library-routes', () => {
     }],
     ['active_terminal', async (deps: ReturnType<typeof createDeps>) => {
       deps.notebookTerminalService.hasLiveSessionsForTask = vi.fn(async () => true);
-    }],
-    ['workspace_holder', async (deps: ReturnType<typeof createDeps>, taskId: string, libraryId: string, bindingGeneration: number) => {
-      await new JsonDocTaskWorkspaceHolderRepo(deps.docStore).acquire({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        taskId,
-        fileLibraryId: libraryId,
-        taskHomeSegment: taskId,
-        bindingGeneration,
-        holderId: 'holder_release_blocked',
-        holderKind: 'runner_workspace',
-        leaseEpoch: 'lease_release_blocked',
-        issuedAt: '2026-05-09T00:00:00.000Z',
-        expiresAt: '2999-05-09T00:00:00.000Z',
-      });
     }],
   ] as const)('refuses runtime access release while %s is live', async (blockerCode, setupBlocker) => {
     const deps = createDeps();
@@ -3018,6 +3449,7 @@ describe('project-file-library-routes', () => {
       bound_task_id: seededTask.taskId,
     }));
     expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
     await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',

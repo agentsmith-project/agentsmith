@@ -3516,7 +3516,7 @@ export async function waitForRunnerOutputToken(args: {
   throw new Error(`runner_output_token_timeout:${args.taskId}\n\n${context}`);
 }
 
-type IntegrationTaskActivitySnapshot = {
+export type IntegrationTaskActivitySnapshot = {
   id?: string;
   kind?: string;
   actor?: string;
@@ -3524,7 +3524,7 @@ type IntegrationTaskActivitySnapshot = {
   run_id?: string;
 };
 
-type IntegrationTaskTraceSnapshot = {
+export type IntegrationTaskTraceSnapshot = {
   id?: string;
   message_id?: string;
   run_id?: string;
@@ -3557,7 +3557,7 @@ function normalizeTaskTraceScope(args: {
   };
 }
 
-type IntegrationTaskRealtimeSnapshot = {
+export type IntegrationTaskRealtimeSnapshot = {
   id?: string;
   status?: string;
   run_state?: string;
@@ -3568,8 +3568,287 @@ type IntegrationTaskRealtimeSnapshot = {
     status?: string;
     started_at?: string;
     finished_at?: string;
-  };
+  } | null;
 };
+
+export type AgentTaskRunFinalState = {
+  runState: string | null;
+  runStatus: string | null;
+  activeRunId: string | null;
+  activeRunStatus: string | null;
+  terminalTraceSummary: string | null;
+};
+
+function normalizeIntegrationStatus(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function isTerminalSuccessStatus(value: string | null | undefined): boolean {
+  return ["completed", "complete", "succeeded", "success"].includes(
+    normalizeIntegrationStatus(value),
+  );
+}
+
+function isTerminalFailureStatus(value: string | null | undefined): boolean {
+  return ["error", "failed", "cancelled", "canceled"].includes(
+    normalizeIntegrationStatus(value),
+  );
+}
+
+function isTerminalTracePhase(value: string | null | undefined): boolean {
+  return ["end", "complete", "completed"].includes(
+    normalizeIntegrationStatus(value),
+  );
+}
+
+function findTerminalSuccessTrace(
+  traces: IntegrationTaskTraceSnapshot[],
+): IntegrationTaskTraceSnapshot | null {
+  return traces.find((trace) => {
+    if (!isTerminalSuccessStatus(trace.status)) return false;
+    if (isTerminalTracePhase(trace.phase)) return true;
+    const name = normalizeIntegrationStatus(trace.name);
+    return [
+      "run.completed",
+      "run.complete",
+      "run.lifecycle",
+      "run.summary",
+      "execution.terminal",
+      "codex.exec",
+    ].includes(name);
+  }) ?? null;
+}
+
+function integrationSnapshotText(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function integrationTraceMatchesScope(args: {
+  trace: IntegrationTaskTraceSnapshot;
+  runId: string;
+  runnerOutputActivityId: string;
+}): boolean {
+  if (!args.runId && !args.runnerOutputActivityId) return true;
+  const traceRunId = integrationSnapshotText(args.trace.run_id);
+  if (args.runId) {
+    if (traceRunId) return traceRunId === args.runId;
+    return Boolean(
+      args.runnerOutputActivityId
+      && integrationSnapshotText(args.trace.message_id) === args.runnerOutputActivityId,
+    );
+  }
+  return integrationSnapshotText(args.trace.message_id) === args.runnerOutputActivityId;
+}
+
+function findScopedTerminalSuccessTrace(args: {
+  traces: IntegrationTaskTraceSnapshot[];
+  runId: string;
+  runnerOutputActivityId: string;
+}): IntegrationTaskTraceSnapshot | null {
+  return findTerminalSuccessTrace(
+    args.traces.filter((trace) => integrationTraceMatchesScope({ ...args, trace })),
+  );
+}
+
+function integrationActivityMatchesScope(args: {
+  activity: IntegrationTaskActivitySnapshot;
+  runId: string;
+  runnerOutputActivityId: string;
+}): boolean {
+  if (!args.runId && !args.runnerOutputActivityId) return true;
+  const activityRunId = integrationSnapshotText(args.activity.run_id);
+  if (args.runId) {
+    if (activityRunId) return activityRunId === args.runId;
+    return Boolean(
+      args.runnerOutputActivityId
+      && integrationSnapshotText(args.activity.id) === args.runnerOutputActivityId,
+    );
+  }
+  return integrationSnapshotText(args.activity.id) === args.runnerOutputActivityId;
+}
+
+function findScopedRunnerOutputActivity(args: {
+  activity: IntegrationTaskActivitySnapshot[];
+  runId: string;
+  runnerOutputActivityId: string;
+}): IntegrationTaskActivitySnapshot | null {
+  return [...args.activity].reverse().find((item) => {
+    return item.kind === "runner_output"
+      && item.actor === "runner"
+      && integrationActivityMatchesScope({ ...args, activity: item });
+  }) ?? null;
+}
+
+function buildAgentTaskRunFinalState(
+  task: IntegrationTaskRealtimeSnapshot | null,
+  terminalTrace: IntegrationTaskTraceSnapshot | null,
+): AgentTaskRunFinalState {
+  return {
+    runState: task?.run_state ?? null,
+    runStatus: task?.run_status ?? null,
+    activeRunId: task?.active_run?.id ?? null,
+    activeRunStatus: task?.active_run?.status ?? null,
+    terminalTraceSummary: terminalTrace?.summary ?? null,
+  };
+}
+
+export function resolveAgentTaskRunFinalState(args: {
+  activity?: IntegrationTaskActivitySnapshot[];
+  task: IntegrationTaskRealtimeSnapshot | null;
+  traces: IntegrationTaskTraceSnapshot[];
+  runId?: string;
+  runnerOutputActivityId?: string;
+}): AgentTaskRunFinalState | null {
+  const task = args.task;
+  const runState = normalizeIntegrationStatus(task?.run_state);
+  const runStatus = normalizeIntegrationStatus(task?.run_status);
+  const activeRunId = task?.active_run?.id?.trim() ?? "";
+  const activeRunStatus = normalizeIntegrationStatus(task?.active_run?.status);
+  const scopedRunId = args.runId?.trim() ?? "";
+  const scopedRunnerOutputActivityId = args.runnerOutputActivityId?.trim() ?? "";
+  const hasExplicitScope = scopedRunId.length > 0 || scopedRunnerOutputActivityId.length > 0;
+  const taskIsIdle = runState === "idle";
+  const terminalTrace = hasExplicitScope
+    ? findScopedTerminalSuccessTrace({
+        traces: args.traces,
+        runId: scopedRunId,
+        runnerOutputActivityId: scopedRunnerOutputActivityId,
+      })
+    : findTerminalSuccessTrace(args.traces);
+  const scopedRunnerOutputActivity = hasExplicitScope
+    ? findScopedRunnerOutputActivity({
+        activity: args.activity ?? [],
+        runId: scopedRunId,
+        runnerOutputActivityId: scopedRunnerOutputActivityId,
+      })
+    : null;
+  const scopedActivityHasVisibleOutput =
+    integrationSnapshotText(scopedRunnerOutputActivity?.content).length > 0;
+
+  if (
+    taskIsIdle
+    && scopedRunId
+    && activeRunId === scopedRunId
+    && isTerminalSuccessStatus(activeRunStatus)
+  ) {
+    return buildAgentTaskRunFinalState(task, terminalTrace);
+  }
+
+  if (hasExplicitScope) {
+    const scopedTraceOrActivityShowsCurrentRunFinished =
+      terminalTrace !== null
+      || (isTerminalSuccessStatus(runStatus) && scopedActivityHasVisibleOutput);
+    if (taskIsIdle && scopedTraceOrActivityShowsCurrentRunFinished) {
+      return buildAgentTaskRunFinalState(task, terminalTrace);
+    }
+    return null;
+  }
+
+  const activeRunIsCurrent =
+    scopedRunId.length > 0
+      ? activeRunId === scopedRunId
+      : activeRunId.length > 0;
+  if (activeRunIsCurrent && !isTerminalSuccessStatus(activeRunStatus)) {
+    return null;
+  }
+
+  const taskHasTerminalSuccess = isTerminalSuccessStatus(runStatus);
+  const traceOrTaskShowsCurrentRunFinished =
+    terminalTrace !== null || taskHasTerminalSuccess;
+
+  if (
+    !hasExplicitScope
+    && taskIsIdle
+    && activeRunIsCurrent
+    && isTerminalSuccessStatus(activeRunStatus)
+    && traceOrTaskShowsCurrentRunFinished
+  ) {
+    return buildAgentTaskRunFinalState(task, terminalTrace);
+  }
+
+  if (taskIsIdle && !activeRunIsCurrent && traceOrTaskShowsCurrentRunFinished) {
+    return buildAgentTaskRunFinalState(task, terminalTrace);
+  }
+
+  return null;
+}
+
+export async function waitForAgentTaskRunFinalStateViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  runnerOutputActivityId?: string;
+  runId?: string;
+  timeoutMs?: number;
+}): Promise<AgentTaskRunFinalState> {
+  const authToken = await readStoredAuthToken(args.page);
+  const timeoutMs = args.timeoutMs ?? 300_000;
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const [activity, task, traces] = await Promise.all([
+      fetchTaskActivitySnapshot({ ...args, authToken }),
+      fetchTaskRealtimeSnapshot({ ...args, authToken }),
+      fetchTaskTracesSnapshot({
+        ...args,
+        authToken,
+        messageId: args.runnerOutputActivityId,
+        runId: args.runId,
+      }),
+    ]);
+    const failureOutcome = evaluateAgentTaskExecutionSnapshot({
+      token: "__agent_task_final_state_wait_never_matches__",
+      runnerOutputActivityId: args.runnerOutputActivityId,
+      runId: args.runId,
+      activity,
+      traces,
+      task,
+    });
+    const runnerOutputError = findTerminalRunnerOutputError(activity);
+    const activeRunStatus = task?.active_run?.status;
+    if (failureOutcome.failure || runnerOutputError || isTerminalFailureStatus(activeRunStatus)) {
+      const context = await collectInternalTaskFailureContext({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        runnerOutputActivityId: args.runnerOutputActivityId,
+        runId: args.runId,
+        authToken,
+      });
+      throw new Error(
+        `agent_task_run_final_state_failed:${failureOutcome.reason ?? runnerOutputError ?? activeRunStatus ?? "unknown"}\n\n${context}`,
+      );
+    }
+
+    const finalState = resolveAgentTaskRunFinalState({
+      activity,
+      task,
+      traces,
+      runnerOutputActivityId: args.runnerOutputActivityId,
+      runId: args.runId,
+    });
+    if (finalState) return finalState;
+
+    const intervals = [1_000, 2_000, 5_000];
+    const delay = intervals[Math.min(attempt, intervals.length - 1)] ?? 5_000;
+    attempt += 1;
+    await args.page.waitForTimeout(delay);
+  }
+
+  const context = await collectInternalTaskFailureContext({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    runnerOutputActivityId: args.runnerOutputActivityId,
+    runId: args.runId,
+    authToken,
+  });
+  throw new Error(`agent_task_run_final_state_timeout:${args.taskId}\n\n${context}`);
+}
 
 export type WorkloadPodSnapshot = {
   name?: string | null;

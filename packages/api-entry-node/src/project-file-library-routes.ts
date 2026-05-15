@@ -919,6 +919,46 @@ async function ensureNoActiveRestoreOperation(input: {
   }
 }
 
+async function findActiveRestoreBlockingRuntimeAccessRelease(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<FileLibraryRestoreOperationRecord | null> {
+  const active = await input.restoreRepo.findActiveByLibrary(input.workspaceId, input.projectId, input.libraryId);
+  if (!active) {
+    return null;
+  }
+  const operation = active.afscp_operation_id
+    ? await reconcileRestoreOperationRecord({
+        deps: input.deps,
+        restoreRepo: input.restoreRepo,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        operation: active,
+        requestId: input.requestId,
+      })
+    : active;
+  if (!isActiveRestoreOperationStatus(operation.status)) {
+    return null;
+  }
+  if (!operation.afscp_operation_id) {
+    const activeWriter = await findActiveRuntimeWriter({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+    });
+    if (activeWriter) {
+      return null;
+    }
+  }
+  return operation;
+}
+
 function readIdempotencyKey(req: http.IncomingMessage): string | null {
   const value = req.headers?.['idempotency-key'];
   const raw = Array.isArray(value) ? value[0] : value;
@@ -1215,17 +1255,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
     workspaceId: input.workspaceId,
     fileLibraryId: input.libraryId,
   });
-  if (runtimeBinding && isReleasingRuntimeWorkspaceBinding(runtimeBinding)) {
-    return {
-      handled: true,
-      statusCode: 200,
-      body: {
-        file_library_id: input.libraryId,
-        released: false,
-        runtime_access_status: 'release_pending',
-      },
-    };
-  }
   if (runtimeBinding && !isTerminalRuntimeWorkspaceBinding(runtimeBinding)) {
     const task = await findTaskRecordForBinding({
       deps: input.deps,
@@ -1967,15 +1996,31 @@ export async function handleProjectFileLibraryRoutes(args: {
     isFileLibraryRestoreConflictingMutationRoute(routeKind, method)
     && routeKind !== 'fileLibraryRestore'
   ) {
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
     try {
-      await ensureNoActiveRestoreOperation({
-        deps,
-        restoreRepo: new JsonDocFileLibraryRestoreOperationRepo(deps.docStore),
-        workspaceId,
-        projectId,
-        libraryId,
-        requestId: readOptionalRequestId(req),
-      });
+      const requestId = readOptionalRequestId(req);
+      if (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST') {
+        const blocker = await findActiveRestoreBlockingRuntimeAccessRelease({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          requestId,
+        });
+        if (blocker) {
+          throw new FileLibraryRestoreOperationActiveError(blocker);
+        }
+      } else {
+        await ensureNoActiveRestoreOperation({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          requestId,
+        });
+      }
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,

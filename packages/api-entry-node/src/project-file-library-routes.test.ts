@@ -2412,6 +2412,202 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('lets runtime access release unblock a pre-start restore that is waiting on an active writer', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: 'op_restore_after_release_pre_start_active_writer',
+        operationStatus: 'pending',
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: null,
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_002',
+      status: 'pending',
+      idempotencyKey: 'restore-key-pre-start-release-active-writer',
+      createdByUserId: OWNER_USER.id,
+      discardUnsavedChangesConfirmed: true,
+    });
+    const pendingOperation = pendingOperationResult.operation;
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_release_active_writer',
+      title: 'Restore release active writer task',
+    });
+    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      runtimeBinding = null;
+    });
+
+    const blockedReplayJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_pre_start_release_active_writer_blocked',
+          'idempotency-key': 'restore-key-pre-start-release-active-writer',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: blockedReplayJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+    expect(blockedReplayJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      file_library_id: libraryId,
+      bound_task_id: seededTask.taskId,
+    }));
+    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_for_pre_start_restore_active_writer' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+
+    const resumedReplayJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_pre_start_release_active_writer_resumed',
+          'idempotency-key': 'restore-key-pre-start-release-active-writer',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: resumedReplayJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      savePointId: 'sp_user_002',
+      idempotencyKey: 'restore-key-pre-start-release-active-writer',
+      actorUserId: OWNER_USER.id,
+      requestId: 'req_restore_pre_start_release_active_writer_resumed',
+    }));
+    expect(resumedReplayJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: pendingOperation.id,
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'restoring',
+    }));
+    await expect(restoreRepo.getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      pendingOperation.id,
+    )).resolves.toMatchObject({
+      id: pendingOperation.id,
+      afscp_operation_id: 'op_restore_after_release_pre_start_active_writer',
+      runtime_access_release_task_id: seededTask.taskId,
+      runtime_access_release_binding_generation: seededTask.bindingGeneration,
+    });
+  });
+
+  it('keeps runtime access release fenced by a pre-start restore when no runtime writer needs release', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: null,
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_002',
+      status: 'pending',
+      idempotencyKey: 'restore-key-pre-start-release-no-writer',
+      createdByUserId: OWNER_USER.id,
+      discardUnsavedChangesConfirmed: true,
+    });
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_release_no_writer',
+      title: 'Restore release no writer task',
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_for_pre_start_restore_no_writer' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+      restore_operation: expect.objectContaining({
+        id: pendingOperationResult.operation.id,
+        status: 'pending',
+      }),
+    }));
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+  });
+
   it('fails direct restore validation without idempotency key or explicit discard confirmation', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
@@ -3592,6 +3788,75 @@ describe('project-file-library-routes', () => {
       projectId: 'proj_1',
       libraryId,
       req: { headers: { 'x-request-id': 'req_release_begin_crash_converge' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId }),
+    });
+  });
+
+  it('re-invokes runtime access release when a begin fence survives with a releasing runtime binding', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_begin_releasing_retry',
+      title: 'Release begin releasing retry task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_release_begin_crash_after_releasing',
+    });
+    await expect(bindingRepo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    let runtimeBinding: InternalAgentWorkspaceBinding | null = {
+      ...activeRuntimeBinding(libraryId),
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+      release_operation_id: 'op_release_begin_releasing_retry',
+    };
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      runtimeBinding = null;
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_begin_releasing_converge' } } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,

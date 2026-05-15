@@ -12,6 +12,7 @@ import {
   deleteTerminalSessionViaApi,
   expectTerminalSessionRunnerEvidenceViaApi,
   keycloakLoginToWorkspace,
+  readAgentTaskViaApi,
   runTerminalCommandInSession,
   startAgentTaskRunViaApi,
   waitForAgentTaskRunFinalStateViaApi,
@@ -72,6 +73,11 @@ type TaskHistoryEvidence = {
   taskRunState: string | null;
   taskRunStatus: string | null;
   activeRunStatus: string | null;
+};
+
+type AgentTaskRunStartEvidence = {
+  runnerOutputActivityId: string;
+  runId?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -253,6 +259,18 @@ function parseJsonEvidence(body: string): unknown {
   } catch {
     return body;
   }
+}
+
+function parseKeyValueEvidence(body: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line) continue;
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    fields[line.slice(0, separatorIndex)] = line.slice(separatorIndex + 1);
+  }
+  return fields;
 }
 
 async function createFileLibraryViaApi(args: {
@@ -1504,6 +1522,51 @@ async function createTaskUsingExistingLibraryViaUi(args: {
   await expect(page.getByTestId('agent-task__task-header')).toContainText(title, { timeout: 30_000 });
   await expect(page.getByTestId('agent-task__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
   return createdTask;
+}
+
+async function sendAgentTaskMessageViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  content: string;
+}): Promise<AgentTaskRunStartEvidence> {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/agent-tasks/${args.taskId}`);
+  await expect(args.page.getByTestId('agent-task__task-header')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('agent-tasks__conversation-blocked-state')).toHaveCount(0, { timeout: 30_000 });
+
+  const input = args.page.getByTestId('agent-tasks__conversation-input').locator('textarea').first();
+  await expect(input).toBeVisible({ timeout: 30_000 });
+  await expect(input).toBeEnabled({ timeout: 30_000 });
+  await input.fill(args.content);
+
+  const runResponsePromise = args.page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'POST'
+      && url.pathname.endsWith(
+        `/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/runs`,
+      );
+  }, { timeout: 60_000 });
+  await expect(args.page.getByTestId('agent-tasks__send-btn')).toBeEnabled({ timeout: 10_000 });
+  await args.page.getByTestId('agent-tasks__send-btn').click();
+
+  const runResponse = await runResponsePromise;
+  const body = await runResponse.text();
+  expect(runResponse.ok(), body).toBe(true);
+  const payload = asRecord(parseJsonEvidence(body));
+  const runnerOutputActivityId = payload ? readStringField(payload, 'id') : null;
+  expect(runnerOutputActivityId).toBeTruthy();
+  if (!runnerOutputActivityId) {
+    throw new Error('agent_task_ui_run_response_missing_runner_output_id');
+  }
+  expect(payload ? readStringField(payload, 'kind') : null).toBe('runner_output');
+  expect(payload ? readStringField(payload, 'actor') : null).toBe('runner');
+  const runId = payload ? readStringField(payload, 'run_id') : null;
+
+  return {
+    runnerOutputActivityId,
+    ...(runId ? { runId } : {}),
+  };
 }
 
 async function waitForTaskArtifact(args: {
@@ -3072,8 +3135,8 @@ test.describe.serial('@lane-real files user stories', () => {
     });
   });
 
-  test('agent-task generated image assets can be save-pointed, deleted from Files, restored, and keep task history', async ({ page }) => {
-    test.setTimeout(720_000);
+  test('same task can continue after Files restore of agent-task generated image assets', async ({ page }) => {
+    test.setTimeout(900_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
 
@@ -3093,6 +3156,9 @@ test.describe.serial('@lane-real files user stories', () => {
     const svgPath = `workspace/.artifacts/${svgFileName}`;
     const notePath = `workspace/.artifacts/${noteFileName}`;
     const manifestPath = `workspace/.artifacts/${manifestFileName}`;
+    const postRestoreFileName = `post-restore-continue-${timestamp}.txt`;
+    const postRestorePath = `workspace/.artifacts/${postRestoreFileName}`;
+    const postRestoreTaskRelativePath = `.artifacts/${postRestoreFileName}`;
     const expectedSvgContent = buildPythonImageAssetSvgContent(artifactToken);
     const expectedSvgSha256 = sha256Hex(expectedSvgContent);
     const expectedNoteContent = buildPythonImageAssetNoteContent({
@@ -3140,6 +3206,7 @@ test.describe.serial('@lane-real files user stories', () => {
       return task;
     });
     const taskId = createdTask.taskId;
+    const postRestoreContinueMarkerPrefix = `POST_RESTORE_CONTINUE_OK:${artifactToken}:`;
 
     const run = await test.step('real Agent Task writes deterministic image, note, and manifest with Python', async () => {
       const pythonLinesJson = JSON.stringify(expectedSvgContent.trimEnd().split('\n'));
@@ -3326,7 +3393,7 @@ test.describe.serial('@lane-real files user stories', () => {
       message: savePointMessage,
     }));
 
-    await test.step('Files UI multi-select delete removes the image and note', async () => {
+    await test.step('Files UI multi-select delete removes the image, note, and manifest', async () => {
       await openWorkspaceArtifactsFolder({
         page,
         workspaceId: WORKSPACE_ID,
@@ -3338,7 +3405,7 @@ test.describe.serial('@lane-real files user stories', () => {
         workspaceId: WORKSPACE_ID,
         projectId,
         libraryId,
-        fileNames: [svgFileName, noteFileName],
+        fileNames: [svgFileName, noteFileName, manifestFileName],
       });
       await expectFileEntryMissingViaApi({
         page,
@@ -3356,17 +3423,17 @@ test.describe.serial('@lane-real files user stories', () => {
         path: notePath,
         timeoutMs: 120_000,
       });
-      await waitForFileEntryViaApi({
+      await expectFileEntryMissingViaApi({
         page,
         workspaceId: WORKSPACE_ID,
         projectId,
         libraryId,
         path: manifestPath,
-        timeoutMs: 30_000,
+        timeoutMs: 120_000,
       });
     });
 
-    await test.step('Files UI restore confirms and brings back the image and note unchanged', async () => {
+    await test.step('Files UI restore confirms and brings back the image, note, and manifest unchanged', async () => {
       await restoreSavePointViaFilesUi({
         page,
         workspaceId: WORKSPACE_ID,
@@ -3392,6 +3459,14 @@ test.describe.serial('@lane-real files user stories', () => {
         expectedContent: expectedNoteContent.trim(),
         timeoutMs: 240_000,
       });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: manifestPath,
+        timeoutMs: 240_000,
+      });
 
       const restoredSvg = await openFileFromLibraryRootAndDownloadBinary({
         page,
@@ -3413,6 +3488,19 @@ test.describe.serial('@lane-real files user stories', () => {
         path: notePath,
       });
       expect(restoredNote).toBe(expectedNoteContent);
+      const restoredManifest = await openFileFromLibraryRootAndDownloadText({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: manifestPath,
+      });
+      expect(JSON.parse(restoredManifest)).toMatchObject({
+        generator: 'python-stdlib-svg',
+        note_sha256: expectedNoteSha256,
+        svg_sha256: expectedSvgSha256,
+        token: artifactToken,
+      });
     });
 
     await test.step('Files restore does not roll back or break Agent Task activity and traces', async () => {
@@ -3434,6 +3522,198 @@ test.describe.serial('@lane-real files user stories', () => {
       const finalAnswer = page.getByTestId('agent-tasks__message-final-answer').filter({ hasText: pythonExecutionMarker });
       await expect(finalAnswer).toHaveCount(1, { timeout: 30_000 });
       await expect(finalAnswer).toContainText(artifactToken);
+    });
+
+    await test.step('same Agent Task sends a UI follow-up and the managed runner reads restored files before writing new evidence', async () => {
+      const taskBeforeContinue = await readAgentTaskViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+      });
+      expect(taskBeforeContinue.id).toBe(taskId);
+      expect(taskBeforeContinue.workspace_file_library_id).toBe(libraryId);
+
+      const runStart = await sendAgentTaskMessageViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        content: [
+          `Continue this exact Agent Task after the Files restore. Use the real configured model (${model}) and run this exact Python stdlib script against the current task HOME. Do not create these files with shell redirection outside Python.`,
+          '```bash',
+          'set -euo pipefail',
+          "python3 - <<'PY'",
+          'from pathlib import Path',
+          'import hashlib',
+          'import json',
+          'import os',
+          `token = ${JSON.stringify(artifactToken)}`,
+          `api_task_id = ${JSON.stringify(taskId)}`,
+          `api_bound_library_id = ${JSON.stringify(libraryId)}`,
+          `expected_svg_sha256 = ${JSON.stringify(expectedSvgSha256)}`,
+          `expected_note_sha256 = ${JSON.stringify(expectedNoteSha256)}`,
+          'runtime_task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()',
+          'runtime_task_home = os.environ.get("TASK_HOME", "").strip()',
+          'runtime_home = os.environ.get("HOME", "").strip()',
+          'runtime_workspace_path = os.environ.get("WORKSPACE_PATH", "").strip()',
+          'runtime_artifacts_path = os.environ.get("ARTIFACTS_PATH", "").strip()',
+          'runtime_library_id = (',
+          '    os.environ.get("MBOS_AGENT_WORKSPACE_FILE_LIBRARY_ID", "").strip()',
+          '    or os.environ.get("MBOS_AGENT_FILE_LIBRARY_ID", "").strip()',
+          '    or "<not-exposed>"',
+          ')',
+          'assert runtime_task_id == api_task_id, f"runtime task id mismatch: {runtime_task_id} != {api_task_id}"',
+          'assert runtime_task_home, "TASK_HOME missing"',
+          'assert runtime_home == runtime_task_home, f"HOME/TASK_HOME mismatch: {runtime_home} != {runtime_task_home}"',
+          'assert runtime_workspace_path, "WORKSPACE_PATH missing"',
+          'assert Path(runtime_workspace_path) == Path(runtime_task_home) / "workspace"',
+          'assert runtime_artifacts_path, "ARTIFACTS_PATH missing"',
+          'assert Path(runtime_artifacts_path) == Path(runtime_workspace_path) / ".artifacts"',
+          'asset_dir = Path(runtime_artifacts_path)',
+          `svg_path = asset_dir / ${JSON.stringify(svgFileName)}`,
+          `note_path = asset_dir / ${JSON.stringify(noteFileName)}`,
+          `manifest_path = asset_dir / ${JSON.stringify(manifestFileName)}`,
+          `evidence_path = asset_dir / ${JSON.stringify(postRestoreFileName)}`,
+          'svg = svg_path.read_text(encoding="utf-8")',
+          'note = note_path.read_text(encoding="utf-8")',
+          'manifest = json.loads(manifest_path.read_text(encoding="utf-8"))',
+          'svg_sha256 = hashlib.sha256(svg.encode("utf-8")).hexdigest()',
+          'note_sha256 = hashlib.sha256(note.encode("utf-8")).hexdigest()',
+          'assert token in svg',
+          'assert token in note',
+          'assert manifest["token"] == token',
+          'assert manifest["svg_sha256"] == expected_svg_sha256',
+          'assert manifest["note_sha256"] == expected_note_sha256',
+          'assert svg_sha256 == expected_svg_sha256',
+          'assert note_sha256 == expected_note_sha256',
+          'assert api_task_id',
+          'assert api_bound_library_id',
+          'evidence = "\\n".join([',
+          '    "post_restore_continue=ok",',
+          '    f"token={token}",',
+          '    f"runtime_observed_task_id={runtime_task_id}",',
+          '    f"runtime_observed_task_home={runtime_task_home}",',
+          '    f"runtime_observed_home={runtime_home}",',
+          '    f"runtime_observed_workspace_path={runtime_workspace_path}",',
+          '    f"runtime_observed_artifacts_path={runtime_artifacts_path}",',
+          '    f"runtime_observed_workspace_file_library_id={runtime_library_id}",',
+          '    f"api_bound_task_id={api_task_id}",',
+          '    f"api_bound_workspace_file_library_id={api_bound_library_id}",',
+          '    f"svg_file={svg_path.name}",',
+          '    f"note_file={note_path.name}",',
+          '    f"manifest_file={manifest_path.name}",',
+          '    f"manifest_token={manifest[\'token\']}",',
+          '    f"manifest_svg_sha256={manifest[\'svg_sha256\']}",',
+          '    f"manifest_note_sha256={manifest[\'note_sha256\']}",',
+          '    f"restored_svg_sha256={svg_sha256}",',
+          '    f"restored_note_sha256={note_sha256}",',
+          '    "",',
+          '])',
+          'evidence_path.write_text(evidence, encoding="utf-8")',
+          'evidence_sha256 = hashlib.sha256(evidence.encode("utf-8")).hexdigest()',
+          'print(f"POST_RESTORE_CONTINUE_OK:{token}:{evidence_sha256}")',
+          'PY',
+          '```',
+          `After the Python script succeeds, reply with the exact marker printed by the script, which starts with ${postRestoreContinueMarkerPrefix}.`,
+        ].join('\n'),
+      });
+
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        token: postRestoreContinueMarkerPrefix,
+        runnerOutputActivityId: runStart.runnerOutputActivityId,
+        runId: runStart.runId,
+        minRunnerOutputs: 2,
+        timeoutMs: 360_000,
+      });
+      await waitForAgentTaskRunFinalStateViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        runnerOutputActivityId: runStart.runnerOutputActivityId,
+        runId: runStart.runId,
+        timeoutMs: 300_000,
+      });
+      await waitForTaskArtifact({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        expectedPath: postRestoreTaskRelativePath,
+      });
+      await waitForFileEntryViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: postRestorePath,
+        timeoutMs: 180_000,
+      });
+      const postRestoreEvidence = await openFileFromLibraryRootAndDownloadText({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+        path: postRestorePath,
+      });
+      const postRestoreFields = parseKeyValueEvidence(postRestoreEvidence);
+      expect(postRestoreFields.post_restore_continue).toBe('ok');
+      expect(postRestoreFields.token).toBe(artifactToken);
+      expect(postRestoreFields.runtime_observed_task_id).toBe(taskId);
+      expect(postRestoreFields.runtime_observed_task_home).toBeTruthy();
+      expect(postRestoreFields.runtime_observed_home).toBe(postRestoreFields.runtime_observed_task_home);
+      expect(postRestoreFields.runtime_observed_workspace_path).toBe(
+        `${postRestoreFields.runtime_observed_task_home}/workspace`,
+      );
+      expect(postRestoreFields.runtime_observed_artifacts_path).toBe(
+        `${postRestoreFields.runtime_observed_workspace_path}/.artifacts`,
+      );
+      expect(postRestoreFields.api_bound_task_id).toBe(taskId);
+      expect(postRestoreFields.api_bound_workspace_file_library_id).toBe(libraryId);
+      expect([libraryId, '<not-exposed>']).toContain(
+        postRestoreFields.runtime_observed_workspace_file_library_id,
+      );
+      expect(postRestoreFields.svg_file).toBe(svgFileName);
+      expect(postRestoreFields.note_file).toBe(noteFileName);
+      expect(postRestoreFields.manifest_file).toBe(manifestFileName);
+      expect(postRestoreFields.manifest_token).toBe(artifactToken);
+      expect(postRestoreFields.manifest_svg_sha256).toBe(expectedSvgSha256);
+      expect(postRestoreFields.manifest_note_sha256).toBe(expectedNoteSha256);
+      expect(postRestoreFields.restored_svg_sha256).toBe(expectedSvgSha256);
+      expect(postRestoreFields.restored_note_sha256).toBe(expectedNoteSha256);
+
+      const taskAfterContinue = await readAgentTaskViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+      });
+      expect(taskAfterContinue.id).toBe(taskId);
+      expect(taskAfterContinue.workspace_file_library_id).toBe(libraryId);
+
+      const historyAfterContinue = await readTaskHistoryEvidence({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        taskId,
+        runId: runStart.runId,
+      });
+      expect(historyAfterContinue.runnerOutputs.some((output) => output.includes(postRestoreContinueMarkerPrefix))).toBe(true);
+      expect(historyAfterContinue.runnerOutputs.join('\n')).not.toContain('AGENT_WORKSPACE_AFSCP_ERROR');
+      expect(historyAfterContinue.taskRunState).toBe('idle');
+      expect(hasExplicitTaskSuccessEvidence(historyAfterContinue)).toBe(true);
+
+      await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/agent-tasks/${taskId}`);
+      const followUpFinalAnswer = page
+        .getByTestId('agent-tasks__message-final-answer')
+        .filter({ hasText: postRestoreContinueMarkerPrefix });
+      await expect(followUpFinalAnswer).toHaveCount(1, { timeout: 30_000 });
+      await expect(followUpFinalAnswer).toContainText(postRestoreContinueMarkerPrefix);
     });
   });
 

@@ -19,12 +19,21 @@ source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 GATE_MODE="workspace"
+PLAYWRIGHT_PASSTHROUGH_ARGS=()
 if [[ "${1:-}" == "--skills-runtime" ]]; then
   GATE_MODE="skills-runtime"
   shift
 elif [[ "${1:-}" == "--visual-review" ]]; then
   GATE_MODE="visual-review"
   shift
+elif [[ "${1:-}" == "--files-restore-continue" ]]; then
+  GATE_MODE="files-restore-continue"
+  shift
+fi
+if [[ "${1:-}" == "--" ]]; then
+  shift
+  PLAYWRIGHT_PASSTHROUGH_ARGS=("$@")
+  set --
 fi
 if [[ "$#" -ne 0 ]]; then
   echo "[internal-real-gate] unsupported arguments: $*" >&2
@@ -159,6 +168,12 @@ wait_for_internal_integration_deps_for_afscp() {
   gate_wait_for_tcp "${INTERNAL_REAL_DIR}" "127.0.0.1" "${INTEGRATION_REDIS_PORT}" 120 infra_dependency_unready redis_ready
   gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}/minio/health/live" 120 infra_dependency_unready minio_ready 200
   gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 180 infra_dependency_unready keycloak_ready 200
+}
+
+enable_files_restore_continuation_afscp_restore_recovery() {
+  if [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
+    export AFSCP_RESTORE_RECOVERY_ENABLED="${AFSCP_RESTORE_RECOVERY_ENABLED:-true}"
+  fi
 }
 
 prepare_internal_spec_port_pair() {
@@ -319,6 +334,7 @@ trap cleanup EXIT
 reset_internal_afscp_local_runtime
 ensure_internal_integration_deps_for_afscp
 wait_for_internal_integration_deps_for_afscp
+enable_files_restore_continuation_afscp_restore_recovery
 prepare_internal_backend_real_gate_runtime
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
 record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
@@ -333,6 +349,8 @@ if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   info "running internal agent-task skills runtime real integration"
 elif [[ "${GATE_MODE}" == "visual-review" ]]; then
   info "running backend-real visual review with internal managed Agent Task sandbox"
+elif [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
+  info "running Files restore continuation with internal managed Agent Task sandbox"
 else
   info "running internal agent-task workspace real integration"
 fi
@@ -410,6 +428,8 @@ run_internal_spec_grep() {
   local label="$2"
   local preferred_api_port="$3"
   local preferred_web_port="$4"
+  shift 4
+  local extra_args=("$@")
   local spec_api_port
   local spec_web_port
   local spec_slug
@@ -426,10 +446,10 @@ run_internal_spec_grep() {
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
   if [[ -n "${label}" ]]; then
     info "running ${spec} --grep ${label}"
-    run_internal_spec "${spec}" "${spec_api_port}" "${spec_web_port}" "${spec_state_file}" --grep "${label}"
+    run_internal_spec "${spec}" "${spec_api_port}" "${spec_web_port}" "${spec_state_file}" --grep "${label}" "${extra_args[@]}"
   else
     info "running ${spec}"
-    run_internal_spec "${spec}" "${spec_api_port}" "${spec_web_port}" "${spec_state_file}"
+    run_internal_spec "${spec}" "${spec_api_port}" "${spec_web_port}" "${spec_state_file}" "${extra_args[@]}"
   fi
   spec_status=$?
   if [[ "${spec_status}" -eq 0 ]]; then
@@ -507,6 +527,19 @@ if [[ "${GATE_MODE}" == "visual-review" ]]; then
   fi
   info "backend-real visual review internal managed Agent Task gate passed"
   gate_record_success "${INTERNAL_REAL_DIR}" "visual_review_spec"
+  exit 0
+fi
+
+if [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
+  RESTORE_CONTINUATION_STATUS=0
+  run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121 "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || RESTORE_CONTINUATION_STATUS=$?
+  GATE_STATUS="${RESTORE_CONTINUATION_STATUS}"
+  set -e
+  if [[ "${GATE_STATUS}" -ne 0 ]]; then
+    exit "${GATE_STATUS}"
+  fi
+  info "Files restore continuation internal managed Agent Task gate passed"
+  gate_record_success "${INTERNAL_REAL_DIR}" "files_restore_continuation_spec"
   exit 0
 fi
 

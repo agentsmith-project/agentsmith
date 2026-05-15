@@ -806,6 +806,21 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(releaseStoryIndex).toBeGreaterThan(visualReviewIndex);
   });
 
+  it('includes Files restore continuation in the release-grade backend-real lane after core coverage', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const coreIndex = script.indexOf('run_real_cmd 20050 3051 "npm run backend-real:run"');
+    const restoreContinueIndex = script.indexOf(
+      'run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"',
+    );
+    const visualReviewIndex = script.indexOf(
+      'run_real_cmd 20080 3081 "RELEASE_REAL_VISUAL_ARTIFACT_DIR=',
+    );
+
+    expect(coreIndex).toBeGreaterThanOrEqual(0);
+    expect(restoreContinueIndex).toBeGreaterThan(coreIndex);
+    expect(visualReviewIndex).toBeGreaterThan(restoreContinueIndex);
+  });
+
   it('delegates standalone UX trace evidence acceptance to the semantic validator instead of find review.md', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 

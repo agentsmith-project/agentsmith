@@ -24,6 +24,7 @@ import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections
 
 const INTERNAL_AGENT_WORKSPACE_COLLECTION = 'internal_agent_file_library_workspaces';
 const DEFAULT_WORKLOAD_MOUNT_LEASE_SECONDS = 3600;
+const MAX_LEGACY_MISSING_TOMBSTONE_CREATE_ROTATIONS = 8;
 
 export interface InternalAgentWorkspaceBinding {
   file_library_id: string;
@@ -242,8 +243,45 @@ function mountBindingStatusRetryable(value: AfscpWorkloadMountBindingStatus): bo
 }
 
 function isLocalWorkspaceBindingReleasing(binding: InternalAgentWorkspaceBinding): boolean {
+  if (isTerminalWorkspaceBindingStatus(binding.mount_binding_status)) {
+    return false;
+  }
   const status = binding.status.trim().toLowerCase();
   return status === 'releasing' || status === 'release_pending';
+}
+
+function isTerminalWorkspaceBindingStatus(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const status = value.trim().toLowerCase();
+  return status === 'released' || status === 'revoked' || status === 'expired' || status === 'deleted';
+}
+
+function isLocalWorkspaceBindingStatusTerminal(binding: InternalAgentWorkspaceBinding): boolean {
+  return isTerminalWorkspaceBindingStatus(binding.status);
+}
+
+function isLocalMountBindingStatusTerminal(binding: InternalAgentWorkspaceBinding): boolean {
+  return isTerminalWorkspaceBindingStatus(binding.mount_binding_status);
+}
+
+function isLocalWorkspaceBindingTerminal(binding: InternalAgentWorkspaceBinding): boolean {
+  return isLocalWorkspaceBindingStatusTerminal(binding) || isLocalMountBindingStatusTerminal(binding);
+}
+
+function isLegacyMissingTombstoneCreateReplay(input: {
+  existing: InternalAgentWorkspaceBinding | null | undefined;
+  mountBinding: AfscpWorkloadMountBinding;
+}): boolean {
+  return !input.existing && isRotatableMountBindingStatus(input.mountBinding.status);
+}
+
+function isAfscpResourceNotFoundError(error: unknown): boolean {
+  return error instanceof AfscpClientError
+    && (
+      error.status === 404
+      || error.code === 'afscp_resource_not_found'
+      || error.code === 'not_found'
+    );
 }
 
 function normalizeMountBindingGeneration(value: unknown, fallback: number): number {
@@ -263,6 +301,21 @@ function currentMountBindingGeneration(existing: InternalAgentWorkspaceBinding |
 
 function nextMountBindingGeneration(existing: InternalAgentWorkspaceBinding | null | undefined): number {
   return Math.max(1, currentMountBindingGeneration(existing) + 1);
+}
+
+function releasedWorkspaceBindingTombstone(input: {
+  binding: InternalAgentWorkspaceBinding;
+  releaseOperationId: string | null;
+  completedAt: string;
+}): InternalAgentWorkspaceBinding {
+  return {
+    ...input.binding,
+    status: 'released',
+    mount_binding_status: 'released',
+    release_operation_id: input.releaseOperationId,
+    drain_completed_at: input.completedAt,
+    updated_at: input.completedAt,
+  };
 }
 
 function throwUnusableMountBinding(input: {
@@ -562,6 +615,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     const collection = bindingsCollection(input.workspaceId);
     const existing = await this.docStore.get<InternalAgentWorkspaceBinding>(collection, input.fileLibraryId);
     if (!existing) return;
+    if (isLocalWorkspaceBindingTerminal(existing)) return;
     const mountBindingId = existing.afscp_mount_binding_id?.trim() || existing.task_home_binding_id.trim() || input.fileLibraryId;
     const now = new Date().toISOString();
     const releasing: InternalAgentWorkspaceBinding = {
@@ -609,6 +663,15 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
           });
         }
       } catch (error) {
+        if (isAfscpResourceNotFoundError(error)) {
+          const completedAt = new Date().toISOString();
+          await this.docStore.upsert(collection, input.fileLibraryId, releasedWorkspaceBindingTombstone({
+            binding: releasing,
+            releaseOperationId: null,
+            completedAt,
+          }));
+          return;
+        }
         throw mapAfscpProvisioningError(error);
       }
       const releaseOperationId = typeof revokeOperation.operation_id === 'string'
@@ -642,12 +705,13 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         });
         return;
       }
-      await this.docStore.upsert(collection, input.fileLibraryId, {
-        ...releasing,
-        release_operation_id: releaseOperationId,
-        drain_completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      const completedAt = new Date().toISOString();
+      await this.docStore.upsert(collection, input.fileLibraryId, releasedWorkspaceBindingTombstone({
+        binding: releasing,
+        releaseOperationId,
+        completedAt,
+      }));
+      return;
     }
     await this.docStore.delete(collection, input.fileLibraryId);
   }
@@ -756,105 +820,122 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         previousMountBindingId = existingBinding.mount_binding_id;
         mountBindingGeneration = nextMountBindingGeneration(input.existing);
       } catch (error) {
+        if (isAfscpResourceNotFoundError(error) && isLocalWorkspaceBindingTerminal(input.existing)) {
+          previousMountBindingId = existingMountBindingId;
+          mountBindingGeneration = nextMountBindingGeneration(input.existing);
+        } else {
+          throw mapAfscpProvisioningError(error);
+        }
+      }
+    }
+
+    let legacyMissingTombstoneRotations = 0;
+    while (true) {
+      let operation: AfscpOperationEnvelope | AfscpOperationRecord;
+      try {
+        operation = await input.client.createWorkloadMountBinding({
+          namespaceId: input.mapping.namespace_id,
+          repoId: input.mapping.repo_id,
+          mountPath: input.taskHomePath,
+          readOnly: false,
+          leaseSeconds: input.leaseSeconds,
+          correlationId: input.correlationId,
+          idempotencyKey: buildIdempotencyKey({
+            workspaceId: input.workspaceId,
+            projectId: input.projectId,
+            fileLibraryId: input.fileLibraryId,
+            taskHomePath: input.taskHomePath,
+            operation: 'create',
+            mountBindingGeneration,
+          }),
+          actor: input.actor,
+          signal: input.signal,
+        });
+        const operationId = sanitizeAfscpOperationId(operation.operation_id);
+        if (operationId && !isSuccessOperationState(operation.operation_state) && input.client.pollOperation) {
+          operation = await input.client.pollOperation({
+            operationId,
+            correlationId: input.correlationId,
+            signal: input.signal,
+            intervalMs: 250,
+            timeoutMs: 30_000,
+          });
+        }
+      } catch (error) {
         throw mapAfscpProvisioningError(error);
       }
-    }
 
-    let operation: AfscpOperationEnvelope | AfscpOperationRecord;
-    try {
-      operation = await input.client.createWorkloadMountBinding({
+      if (isFailedOperationState(operation.operation_state)) {
+        throwProvisioningError({
+          code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+          statusCode: 502,
+          retryable: false,
+          metadata: {
+            operation_id: typeof operation.operation_id === 'string'
+              ? sanitizeAfscpOperationId(operation.operation_id)
+              : undefined,
+            operation_state: typeof operation.operation_state === 'string' ? operation.operation_state : 'unknown',
+          },
+        });
+      }
+      const mountBindingId = readOperationMountBindingId(operation);
+      if (!mountBindingId) {
+        throwProvisioningError({
+          code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+          statusCode: 502,
+          retryable: false,
+          metadata: {
+            operation_id: typeof operation.operation_id === 'string'
+              ? sanitizeAfscpOperationId(operation.operation_id)
+              : undefined,
+            reason: 'mount_binding_id_missing',
+          },
+        });
+      }
+      await input.resourceOwnershipStore?.ensureResourceOwnership({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        resourceKind: 'workload_mount_binding',
+        resourceId: mountBindingId,
         namespaceId: input.mapping.namespace_id,
-        repoId: input.mapping.repo_id,
-        mountPath: input.taskHomePath,
-        readOnly: false,
-        leaseSeconds: input.leaseSeconds,
-        correlationId: input.correlationId,
-        idempotencyKey: buildIdempotencyKey({
-          workspaceId: input.workspaceId,
-          projectId: input.projectId,
-          fileLibraryId: input.fileLibraryId,
-          taskHomePath: input.taskHomePath,
-          operation: 'create',
-          mountBindingGeneration,
-        }),
-        actor: input.actor,
-        signal: input.signal,
       });
-      const operationId = sanitizeAfscpOperationId(operation.operation_id);
-      if (operationId && !isSuccessOperationState(operation.operation_state) && input.client.pollOperation) {
-        operation = await input.client.pollOperation({
-          operationId,
+      try {
+        const mountBinding = await input.client.getWorkloadMountBinding({
+          namespaceId: input.mapping.namespace_id,
+          mountBindingId,
           correlationId: input.correlationId,
           signal: input.signal,
-          intervalMs: 250,
-          timeoutMs: 30_000,
         });
-      }
-    } catch (error) {
-      throw mapAfscpProvisioningError(error);
-    }
-
-    if (isFailedOperationState(operation.operation_state)) {
-      throwProvisioningError({
-        code: 'AGENT_WORKSPACE_AFSCP_ERROR',
-        statusCode: 502,
-        retryable: false,
-        metadata: {
-          operation_id: typeof operation.operation_id === 'string'
-            ? sanitizeAfscpOperationId(operation.operation_id)
-            : undefined,
-          operation_state: typeof operation.operation_state === 'string' ? operation.operation_state : 'unknown',
-        },
-      });
-    }
-    const mountBindingId = readOperationMountBindingId(operation);
-    if (!mountBindingId) {
-      throwProvisioningError({
-        code: 'AGENT_WORKSPACE_AFSCP_ERROR',
-        statusCode: 502,
-        retryable: false,
-        metadata: {
-          operation_id: typeof operation.operation_id === 'string'
-            ? sanitizeAfscpOperationId(operation.operation_id)
-            : undefined,
-          reason: 'mount_binding_id_missing',
-        },
-      });
-    }
-    await input.resourceOwnershipStore?.ensureResourceOwnership({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      resourceKind: 'workload_mount_binding',
-      resourceId: mountBindingId,
-      namespaceId: input.mapping.namespace_id,
-    });
-    try {
-      const mountBinding = await input.client.getWorkloadMountBinding({
-        namespaceId: input.mapping.namespace_id,
-        mountBindingId,
-        correlationId: input.correlationId,
-        signal: input.signal,
-      });
-      if (mountBinding.mount_path !== input.taskHomePath) {
-        throwUnusableMountBinding({
-          status: mountBinding.status,
-          mountBindingId: mountBinding.mount_binding_id,
-          reason: 'mount_binding_target_mismatch',
-        });
-      }
-      if (!isUsableMountBindingStatus(mountBinding.status)) {
+        if (mountBinding.mount_path !== input.taskHomePath) {
+          throwUnusableMountBinding({
+            status: mountBinding.status,
+            mountBindingId: mountBinding.mount_binding_id,
+            reason: 'mount_binding_target_mismatch',
+          });
+        }
+        if (isUsableMountBindingStatus(mountBinding.status)) {
+          return {
+            mountBinding,
+            mountBindingGeneration,
+            ...(previousMountBindingId ? { previousMountBindingId } : {}),
+          };
+        }
+        if (
+          isLegacyMissingTombstoneCreateReplay({ existing: input.existing, mountBinding })
+          && legacyMissingTombstoneRotations < MAX_LEGACY_MISSING_TOMBSTONE_CREATE_ROTATIONS
+        ) {
+          previousMountBindingId = mountBinding.mount_binding_id;
+          mountBindingGeneration += 1;
+          legacyMissingTombstoneRotations += 1;
+          continue;
+        }
         throwUnusableMountBinding({
           status: mountBinding.status,
           mountBindingId: mountBinding.mount_binding_id,
         });
+      } catch (error) {
+        throw mapAfscpProvisioningError(error);
       }
-      return {
-        mountBinding,
-        mountBindingGeneration,
-        ...(previousMountBindingId ? { previousMountBindingId } : {}),
-      };
-    } catch (error) {
-      throw mapAfscpProvisioningError(error);
     }
   }
 }

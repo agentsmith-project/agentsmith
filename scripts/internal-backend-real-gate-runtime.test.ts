@@ -79,7 +79,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
     expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
     expect(agentTaskGate).toContain(
-      '\nreset_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nprepare_internal_backend_real_gate_runtime',
+      '\nreset_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
     );
     expect(agentTaskGate).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
     expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
@@ -222,5 +222,63 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate.indexOf('INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \\')).toBeLessThan(
       agentTaskGate.indexOf('bash scripts/run-integration-e2e-full.sh "${spec}" "$@"'),
     );
+  });
+
+  it('routes Files restore continuation through the internal managed Agent Task sandbox harness', () => {
+    const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+    const wrapper = read('scripts/files-restore-continuation-real-gate.sh');
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const backendRealRun = read('scripts/backend-real-run.sh');
+
+    expect(packageJson.scripts?.['test:e2e:integration:files:user-stories:restore-continue'])
+      .toBe('bash scripts/files-restore-continuation-real-gate.sh');
+    expect(wrapper).toContain('RESTORE_CONTINUATION_SPEC="e2e/integration-files-user-stories.spec.ts"');
+    expect(wrapper).toContain('RESTORE_CONTINUATION_GREP="same task can continue after Files restore"');
+    expect(wrapper).toContain('bash scripts/run-internal-agent-task-real-gate.sh --files-restore-continue -- "$@"');
+    expect(wrapper).toContain('npx playwright test --list --config playwright.config.integration.ts');
+    expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--files-restore-continue" ]]');
+    expect(agentTaskGate).toContain('running Files restore continuation with internal managed Agent Task sandbox');
+    expect(agentTaskGate).toContain(
+      'run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121 "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}"',
+    );
+    expect(agentTaskGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
+    expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
+    expect(agentTaskGate).toContain('AGENT_EXECUTION_WS_BASE_URL="${spec_agent_execution_ws_base_url}" \\');
+    expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
+    expect(backendRealRun).not.toContain('test:e2e:integration:files:user-stories:restore-continue');
+    expect(backendRealRun).not.toContain('e2e/integration-files-user-stories.spec.ts');
+  });
+
+  it('enables AFSCP direct restore recovery only for the focused Files restore continuation gate', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+
+    expect(agentTaskGate).toContain('enable_files_restore_continuation_afscp_restore_recovery()');
+    expect(agentTaskGate).toContain(
+      'if [[ "${GATE_MODE}" == "files-restore-continue" ]]; then\n'
+      + '    export AFSCP_RESTORE_RECOVERY_ENABLED="${AFSCP_RESTORE_RECOVERY_ENABLED:-true}"\n'
+      + '  fi',
+    );
+    expect(agentTaskGate).toContain(
+      '\nwait_for_internal_integration_deps_for_afscp\n'
+      + 'enable_files_restore_continuation_afscp_restore_recovery\n'
+      + 'prepare_internal_backend_real_gate_runtime',
+    );
+    expect(agentTaskGate).not.toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="');
+    expect(agentTaskGate).not.toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="');
+  });
+
+  it('keeps Files restore continuation evidence based on runner-observed task metadata', () => {
+    const spec = read('e2e/integration-files-user-stories.spec.ts');
+    const story = read('e2e/stories/backend-real/agent-task-image-asset-savepoint-delete-restore.story.md');
+
+    expect(spec).toContain('runtime_task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()');
+    expect(spec).toContain('f"runtime_observed_task_id={runtime_task_id}"');
+    expect(spec).toContain('expect(postRestoreFields.runtime_observed_task_id).toBe(taskId)');
+    expect(spec).toContain('f"api_bound_task_id={api_task_id}"');
+    expect(spec).toContain('f"api_bound_workspace_file_library_id={api_bound_library_id}"');
+    expect(spec).not.toContain('expected_task_id =');
+    expect(spec).not.toContain('expected_library_id =');
+    expect(spec).not.toContain('expected_evidence =');
+    expect(story).toContain('runner-observed task metadata');
   });
 });

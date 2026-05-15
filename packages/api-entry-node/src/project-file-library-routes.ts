@@ -810,6 +810,43 @@ async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
   });
 }
 
+async function rollbackCompletedRuntimeAccessReleaseFenceAfterRestoreAdmissionFailure(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<void> {
+  const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore);
+  try {
+    const binding = await bindingRepo.find({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      fileLibraryId: input.libraryId,
+    });
+    if (
+      !binding
+      || binding.bindingState !== 'releasing'
+      || !isRuntimeAccessReleaseCompleteCorrelation(binding.correlationId)
+    ) {
+      return;
+    }
+    await bindingRepo.rollbackRuntimeAccessRelease({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      fileLibraryId: input.libraryId,
+      taskId: binding.taskId,
+      bindingGeneration: binding.bindingGeneration,
+      expectedCorrelationId: binding.correlationId,
+      correlationId: buildRuntimeAccessReleaseRollbackCorrelationId({
+        beginCorrelationId: binding.correlationId,
+        reason: 'failed',
+      }),
+    });
+  } catch {
+    // Preserve the original restore admission error; later reconciliation can observe any surviving fence.
+  }
+}
+
 async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
   deps: NodeApiDeps;
   restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
@@ -1018,40 +1055,48 @@ function isActiveRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding)
   return status === 'ready' || status === 'active';
 }
 
+function isTerminalRuntimeWorkspaceStatus(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const status = value.trim().toLowerCase();
+  return status === 'released' || status === 'revoked' || status === 'expired' || status === 'deleted';
+}
+
 function isReleasingRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  if (isTerminalRuntimeWorkspaceStatus(binding.mount_binding_status)) {
+    return false;
+  }
+  if (binding.mount_binding_status === 'releasing') {
+    return true;
+  }
   const status = binding.status.trim().toLowerCase();
   return status === 'releasing'
-    || status === 'release_pending'
-    || binding.mount_binding_status === 'releasing';
+    || status === 'release_pending';
 }
 
 function isTerminalRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
+  if (isTerminalRuntimeWorkspaceStatus(binding.mount_binding_status)) return true;
   const status = binding.status.trim().toLowerCase();
-  if (
-    status === 'released'
-    || status === 'revoked'
-    || status === 'expired'
-    || status === 'deleted'
-  ) {
+  if (isTerminalRuntimeWorkspaceStatus(status)) {
     return true;
+  }
+  if (status === 'releasing' || status === 'release_pending') {
+    return false;
   }
   if (
     status === 'ready'
     || status === 'active'
-    || status === 'releasing'
-    || status === 'release_pending'
   ) {
     return false;
-  }
-  const mountStatus = binding.mount_binding_status;
-  if (mountStatus === 'released' || mountStatus === 'revoked' || mountStatus === 'expired') {
-    return true;
   }
   return false;
 }
 
 function isRuntimeAccessReleaseBeginCorrelation(correlationId: string): boolean {
   return correlationId.startsWith('release:begin:');
+}
+
+function isRuntimeAccessReleaseCompleteCorrelation(correlationId: string): boolean {
+  return correlationId.startsWith('release:complete:');
 }
 
 type RuntimeAccessReleaseRouteResponse = {
@@ -2595,16 +2640,26 @@ export async function handleProjectFileLibraryRoutes(args: {
         return true;
       }
 
-      await deps.fileLibraryStorageAdapter.preflightRestoreFileLibrary({
-        workspaceId,
-        projectId,
-        libraryId,
-        savePointId: savePoint.afscp_save_point_id,
-        discardUnsavedChangesConfirmed: true,
-        idempotencyKey,
-        actorUserId: user.id,
-        requestId: requestId ?? undefined,
-      });
+      try {
+        await deps.fileLibraryStorageAdapter.preflightRestoreFileLibrary({
+          workspaceId,
+          projectId,
+          libraryId,
+          savePointId: savePoint.afscp_save_point_id,
+          discardUnsavedChangesConfirmed: true,
+          idempotencyKey,
+          actorUserId: user.id,
+          requestId: requestId ?? undefined,
+        });
+      } catch (error) {
+        await rollbackCompletedRuntimeAccessReleaseFenceAfterRestoreAdmissionFailure({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+        });
+        throw error;
+      }
 
       const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
         workspaceId,

@@ -6,6 +6,7 @@ describe('backend real run first-lane port contract', () => {
   it('keeps backend-real runner shell scripts syntax valid', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/backend-real-run.sh'])).not.toThrow();
     expect(() => execFileSync('bash', ['-n', 'scripts/agent-task-real-smoke-gate.sh'])).not.toThrow();
+    expect(() => execFileSync('bash', ['-n', 'scripts/files-restore-continuation-real-gate.sh'])).not.toThrow();
   });
 
   it('resolves the first lane from inherited integration ports before cleanup and execution', () => {
@@ -54,6 +55,16 @@ describe('backend real run first-lane port contract', () => {
     expect(script).toContain('npm run test:backend-real:core');
     expect(script).toContain('AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT=1');
     expect(script).toContain('npm run test:agent-task:backend-real:smoke');
+  });
+
+  it('keeps focused Files restore continuation out of backend-real core direct integration entrypoints', () => {
+    const script = readFileSync('scripts/backend-real-run.sh', 'utf8');
+
+    expect(script).not.toContain('running file library user-story restore continuation');
+    expect(script).not.toContain('cleanup_gate_ports 21020 3121 e2e/integration-files-user-stories.spec.ts');
+    expect(script).not.toContain('npm run test:e2e:integration:files:user-stories:restore-continue');
+    expect(script).not.toContain('AFSCP_RESTORE_RECOVERY_ENABLED');
+    expect(script).toContain('npm run test:internal:backend-real:agent-task-workspace');
   });
 
   it('keeps agent-task smoke static preflight by default and skippable only by explicit flag or env', () => {

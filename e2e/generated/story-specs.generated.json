@@ -221,11 +221,11 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
-    "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片和说明文件、再通过 restore 找回文件，同时 Agent Task 的对话、trace 和 task history 不被文件库 restore 回滚或破坏。",
+    "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片、说明文件和 manifest、再通过 restore 找回文件；回到同一个 Agent Task 后，成员还能从输入框继续发消息，managed runner 通过运行时 task metadata 证明仍在同一任务 HOME 中，读取恢复后的文件、manifest 和 hash，并写出新的 post-restore evidence；API 侧仍显示该任务绑定同一个 workspaceFileLibraryId。",
     "sourceRef": "e2e/stories/backend-real/agent-task-image-asset-savepoint-delete-restore.story.md#agent-task-image-asset-savepoint-delete-restore",
-    "sourceFingerprint": "141c20944b8edc06fe4e7a227b5efe06eded04f0eafc725698ca344329bb8356",
-    "storyFingerprint": "f0f9c8a93903198148220d3c2fff3fd4455388f64a130218101b60005337f5c5",
-    "stepMapFingerprint": "0673ce9130a7c9588ea22072f6b3d9b49a6b631615fb75add1486949cabd5938",
+    "sourceFingerprint": "146c247c8a523db0dede71dfb1d81541310e5c7dab1a947748b9bf29977c58c3",
+    "storyFingerprint": "a070503fb9bf428f2929a265dd269c578eee1f325ce427640dca3d1d8ef01967",
+    "stepMapFingerprint": "5e7bb645b3f269dbb36092363c18005569f2d149512d22ed6684b1552876acda",
     "sceneIds": [
       "agent-task-create",
       "agent-task-detail",
@@ -237,18 +237,20 @@
       "generate-python-image-assets",
       "download-and-verify-assets",
       "create-business-save-point",
-      "delete-image-and-note-from-files",
+      "delete-image-note-and-manifest-from-files",
       "restore-save-point",
-      "verify-task-history-preserved"
+      "verify-task-history-preserved",
+      "continue-same-task-after-restore"
     ],
     "traceStepIds": [
       "bind-ready-library-to-agent-task",
       "generate-python-image-assets",
       "download-and-verify-assets",
       "create-business-save-point",
-      "delete-image-and-note-from-files",
+      "delete-image-note-and-manifest-from-files",
       "restore-save-point",
-      "verify-task-history-preserved"
+      "verify-task-history-preserved",
+      "continue-same-task-after-restore"
     ],
     "visualStepIds": []
   },

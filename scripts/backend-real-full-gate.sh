@@ -219,6 +219,7 @@ run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "npm run backend-real:run"
+run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"
 run_real_cmd 20080 3081 "RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
 run_real_cmd 20074 3074 "ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"

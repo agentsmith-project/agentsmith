@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
-  "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片和说明文件、再通过 restore 找回文件，同时 Agent Task 的对话、trace 和 task history 不被文件库 restore 回滚或破坏。",
+  "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片、说明文件和 manifest、再通过 restore 找回文件；回到同一个 Agent Task 后，成员还能从输入框继续发消息，managed runner 通过运行时 task metadata 证明仍在同一任务 HOME 中，读取恢复后的文件、manifest 和 hash，并写出新的 post-restore evidence；API 侧仍显示该任务绑定同一个 workspaceFileLibraryId。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -43,11 +43,12 @@
       "assetFiles": [
         "agent-image-{timestamp}.svg",
         "agent-image-notes-{timestamp}.md",
-        "agent-image-manifest-{timestamp}.json"
+        "agent-image-manifest-{timestamp}.json",
+        "post-restore-continue-{timestamp}.txt"
       ]
     }
   },
-  "narrative": "这个故事覆盖成员真实工作闭环：Agent Task 负责生成可校验图片交付物，Files 负责保存、下载、save point、删除和恢复，restore 只影响文件库状态，不应该抹掉 Agent Task 已发生的对话与运行证据。",
+  "narrative": "这个故事覆盖成员真实工作闭环：Agent Task 负责生成可校验图片交付物，Files 负责保存、下载、save point、删除和恢复，restore 只影响文件库状态，不应该抹掉 Agent Task 已发生的对话与运行证据；restore 后用户回到同一个任务继续发消息时，runner 必须能重新读取恢复后的工作区文件并成功产出新证据。",
   "scenes": [
     {
       "sceneId": "agent-task-create",
@@ -61,7 +62,10 @@
       "sceneId": "agent-task-detail",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/agent-tasks/{taskId}",
       "stableMarkers": [
-        "agent-task__task-header"
+        "agent-task__task-header",
+        "agent-tasks__conversation-input",
+        "agent-tasks__send-btn",
+        "agent-tasks__message-final-answer"
       ]
     },
     {
@@ -132,12 +136,12 @@
       ]
     },
     {
-      "stepId": "delete-image-and-note-from-files",
+      "stepId": "delete-image-note-and-manifest-from-files",
       "sceneId": "project-files",
-      "intent": "Use Files UI multi-select to delete the generated image and note from the same folder.",
+      "intent": "Use Files UI multi-select to delete the generated image, note, and manifest from the same folder.",
       "action": "Delete selected files",
       "target": "files__delete",
-      "expectedFeedback": "Selection summary reflects the two selected files and both files disappear from UI and backend entries.",
+      "expectedFeedback": "Selection summary reflects the selected files and the image, note, and manifest disappear from UI and backend entries.",
       "note": "删除路径代表用户心智，不用后台 API 绕过 Files UI。",
       "evidence": [
         "trace"
@@ -149,7 +153,7 @@
       "intent": "Restore the save point through Files UI and confirm the restore operation reaches a terminal state.",
       "action": "Restore save point",
       "target": "files__restore-confirm",
-      "expectedFeedback": "Restore confirm appears before the request, restore operation settles, and deleted files return with the same content hashes.",
+      "expectedFeedback": "Restore confirm appears before the request, restore operation settles, and deleted image, note, and manifest return with the same content hashes.",
       "note": "restore 验证用户确认、终态和内容一致性。",
       "evidence": [
         "trace"
@@ -166,8 +170,20 @@
       "evidence": [
         "trace"
       ]
+    },
+    {
+      "stepId": "continue-same-task-after-restore",
+      "sceneId": "agent-task-detail",
+      "intent": "Return to the same Agent Task page and send a follow-up message from the UI input after Files restore.",
+      "action": "Send follow-up message",
+      "target": "agent-tasks__conversation-input",
+      "expectedFeedback": "The follow-up run starts from the same task, records runner-observed task metadata, reads the restored image, note, manifest, and hashes, writes post-restore-continue evidence in .artifacts, the API task binding still points to the same workspaceFileLibraryId, and the run finishes with successful runner output and final answer.",
+      "note": "这一步覆盖真实用户心智：用户不是只检查历史，而是回到原任务继续工作；不能只断言历史存在，必须断言第二次 managed runner 成功执行。",
+      "evidence": [
+        "trace"
+      ]
     }
   ]
 }
 ---
-Canonical backend-real story for Agent Task generated image assets flowing through Files save point delete restore without task history rollback.
+Canonical backend-real story for Agent Task generated image assets flowing through Files save point delete restore and continuing successfully in the same task afterward.

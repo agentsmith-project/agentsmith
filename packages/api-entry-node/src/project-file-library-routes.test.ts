@@ -23,6 +23,7 @@ import {
 import {
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
+  RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS,
 } from './notebook-task/task-file-library-bindings.js';
 import type { ProjectStoragePreflightResult } from './project-storage-bootstrap-service.js';
 import type { InternalAgentWorkspaceBinding } from './internal-agent-workspace-provisioner.js';
@@ -3231,6 +3232,202 @@ describe('project-file-library-routes', () => {
       workspace_file_library_id: libraryId,
       file_library_binding_generation: seededTask.bindingGeneration,
     });
+  });
+
+  it('does not let an older terminal restore idempotency replay rollback a newer runtime release fence', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: 'op_restore_old_terminal_success',
+        operationStatus: 'succeeded',
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+
+    const oldRestoreJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_old_terminal_success',
+          'idempotency-key': 'restore-key-old-terminal-success',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: oldRestoreJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+    expect(oldRestoreJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      status: 'succeeded',
+    }));
+
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_newer_than_old_restore',
+      title: 'Release newer than old restore task',
+    });
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_after_old_restore' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+
+    const replayJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_old_terminal_replay',
+          'idempotency-key': 'restore-key-old-terminal-success',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: replayJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
+    expect(replayJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      status: 'succeeded',
+    }));
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: 'req_release_after_old_restore:complete',
+    });
+  });
+
+  it('lets a completed runtime release fence lease expire after restore preflight fails before operation creation', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = '2026-05-09T12:00:00.000Z';
+      vi.setSystemTime(new Date(now));
+      const storageAdapter = createStorageAdapter({
+        preflightRestoreFileLibrary: vi.fn(async () => {
+          throw new Error('file_library_project_storage_not_ready repo_hidden ns_hidden');
+        }),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+      const savePoint = await createSavePointForRestore({ deps, libraryId });
+      const seededTask = await seedBoundTask({
+        deps,
+        libraryId,
+        taskId: 'task_release_before_restore_preflight_failure',
+        title: 'Release before restore preflight failure task',
+      });
+
+      const releaseJson = vi.fn();
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryRuntimeAccessRelease',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: { headers: { 'x-request-id': 'req_release_before_preflight_failure' } } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: releaseJson,
+        readBody: vi.fn().mockResolvedValue({}),
+      })).resolves.toBe(true);
+      expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+        file_library_id: libraryId,
+        released: true,
+        runtime_access_status: 'released',
+      });
+
+      const restoreJson = vi.fn();
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryRestore',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: {
+          headers: {
+            'x-request-id': 'req_restore_preflight_failure_after_release',
+            'idempotency-key': 'restore-key-preflight-failure-after-release',
+          },
+        } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: restoreJson,
+        readBody: vi.fn().mockResolvedValue({
+          save_point_id: savePoint.id,
+          discard_unsaved_changes_confirmed: true,
+        }),
+      })).resolves.toBe(true);
+
+      expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+      expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: 'FILE_LIBRARY_STORAGE_NOT_READY',
+        message: 'file_library_project_storage_not_ready',
+      });
+      await expect(deps.docStore.list<Record<string, unknown>>(
+        'project_file_library_restore_operations',
+        { workspace_id: 'ws_default', project_id: 'proj_1', library_id: libraryId },
+      )).resolves.toEqual([]);
+
+      const afterLeaseExpiry = new Date(Date.parse(now) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS + 1).toISOString();
+      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+        now: afterLeaseExpiry,
+      })).resolves.toMatchObject({
+        taskId: seededTask.taskId,
+        bindingGeneration: seededTask.bindingGeneration,
+        bindingState: 'bound',
+        correlationId: 'req_release_before_preflight_failure:complete:lease_expired',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rolls back the release fence when a hard blocker appears after admission', async () => {

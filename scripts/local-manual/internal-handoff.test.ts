@@ -408,16 +408,18 @@ describe('local-manual internal handoff', () => {
     expect(envSource).toContain('AFSCP_JVS_SHA256SUMS_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
   });
 
-  it('enables direct restore with explicit local JVS artifact evidence in the local-real internal env', () => {
+  it('does not default local-real internal env to the pre-GA sibling direct-restore binary', () => {
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
 
-    expect(envSource).toContain('AFSCP_JVS_BINARY_PATH=${AFSCP_JVS_BINARY_PATH:-${ROOT_DIR}/../jvs/bin/jvs-direct-restore}');
     expect(envSource).toContain('AFSCP_RESTORE_RECOVERY_ENABLED=${AFSCP_RESTORE_RECOVERY_ENABLED:-true}');
-    expect(envSource).toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256=${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-c88553bb18bdd70e1399bf562fcb853bd200798498bd24bc25458196fb568902}');
-    expect(envSource).toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF=${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-jvs@c65b418f58d6e39e91199c1d55783e2ec91be9a1}');
+    expect(envSource).not.toContain('../jvs/bin/jvs-direct-restore');
+    expect(envSource).not.toContain('AFSCP_JVS_BINARY_PATH=${AFSCP_JVS_BINARY_PATH:-');
+    expect(envSource).not.toContain('AFSCP_JVS_BINARY_SHA256=${AFSCP_JVS_BINARY_SHA256:-');
+    expect(envSource).not.toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256=${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-');
+    expect(envSource).not.toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF=${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-');
   });
 
-  it('writes direct restore readiness evidence into the AFSCP runtime env', () => {
+  it('writes opt-in direct restore readiness evidence into the AFSCP runtime env', () => {
     const directArtifact = 'direct restore local artifact';
     const directSha = sha256(directArtifact);
     const result = runInternalCommonSnippet(`

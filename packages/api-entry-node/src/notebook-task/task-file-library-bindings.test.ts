@@ -3,6 +3,7 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
+  RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS,
   buildFileLibraryTaskHomeBindingFields,
   hydrateTaskFileLibraryBindingsForProject,
 } from './task-file-library-bindings.js';
@@ -126,11 +127,18 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     })).resolves.toBeNull();
   });
 
-  it('keeps a releasing CAS fence after completing runtime access release', async () => {
+  it('keeps a completed runtime access release fence only until its lease expires', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
     const acquired = await repo.acquire(bindingInput());
     if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const fenceStartedAt = '2999-05-09T12:00:00.000Z';
+    const beforeLeaseExpiry = new Date(
+      Date.parse(fenceStartedAt) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS - 1,
+    ).toISOString();
+    const afterLeaseExpiry = new Date(
+      Date.parse(fenceStartedAt) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS + 1,
+    ).toISOString();
 
     await expect(repo.beginRuntimeAccessRelease({
       workspaceId: 'ws_default',
@@ -155,6 +163,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
       correlationId: 'release_begin',
+      now: fenceStartedAt,
     });
     expect(begun).toMatchObject({
       ok: true,
@@ -204,11 +213,13 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
       correlationId: 'release_complete',
+      now: fenceStartedAt,
     })).resolves.toEqual({ ok: true, released: true });
     await expect(repo.find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       fileLibraryId: 'flib_home',
+      now: beforeLeaseExpiry,
     })).resolves.toMatchObject({
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
@@ -236,10 +247,23 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       fileLibraryId: 'flib_home',
+      now: beforeLeaseExpiry,
     })).resolves.toMatchObject({
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
       bindingState: 'releasing',
+    });
+
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      now: afterLeaseExpiry,
+    })).resolves.toMatchObject({
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      bindingState: 'bound',
+      correlationId: 'release_complete:lease_expired',
     });
   });
 

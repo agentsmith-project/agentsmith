@@ -926,6 +926,10 @@ export interface FileLibraryRestoreOperationRecord extends FileLibraryRestoreOpe
   created_by_user_id: string;
   discard_unsaved_changes_confirmed: true;
   failure_reason?: string;
+  runtime_access_release_task_id?: string;
+  runtime_access_release_binding_generation?: number;
+  runtime_access_release_fence_correlation_id?: string;
+  runtime_access_release_restore_correlation_id?: string;
 }
 
 type FileLibraryRestoreOperationCreateInput = {
@@ -941,6 +945,10 @@ type FileLibraryRestoreOperationCreateInput = {
   createdByUserId: string;
   discardUnsavedChangesConfirmed?: true;
   failureReason?: string;
+  runtimeAccessReleaseTaskId?: string;
+  runtimeAccessReleaseBindingGeneration?: number;
+  runtimeAccessReleaseFenceCorrelationId?: string;
+  runtimeAccessReleaseRestoreCorrelationId?: string;
 };
 
 type FileLibraryRestoreOperationCreateOrReuseResult = {
@@ -1199,6 +1207,16 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       created_by_user_id: input.createdByUserId,
       discard_unsaved_changes_confirmed: input.discardUnsavedChangesConfirmed ?? true,
       ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
+      ...(input.runtimeAccessReleaseTaskId ? { runtime_access_release_task_id: input.runtimeAccessReleaseTaskId } : {}),
+      ...(typeof input.runtimeAccessReleaseBindingGeneration === 'number'
+        ? { runtime_access_release_binding_generation: input.runtimeAccessReleaseBindingGeneration }
+        : {}),
+      ...(input.runtimeAccessReleaseFenceCorrelationId
+        ? { runtime_access_release_fence_correlation_id: input.runtimeAccessReleaseFenceCorrelationId }
+        : {}),
+      ...(input.runtimeAccessReleaseRestoreCorrelationId
+        ? { runtime_access_release_restore_correlation_id: input.runtimeAccessReleaseRestoreCorrelationId }
+        : {}),
       created_at: now,
       updated_at: now,
     };
@@ -1515,6 +1533,40 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       await this.mirrorActiveLock(next);
     } else {
       await this.releaseActiveLockForOperation(next);
+    }
+    return next;
+  }
+
+  async updateRuntimeAccessReleaseAssociation(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    operationId: string;
+    taskId: string;
+    bindingGeneration: number;
+    fenceCorrelationId: string;
+    restoreCorrelationId: string;
+  }): Promise<FileLibraryRestoreOperationRecord | null> {
+    const existing = await this.getById(
+      input.workspaceId,
+      input.projectId,
+      input.libraryId,
+      input.operationId,
+    );
+    if (!existing) {
+      return null;
+    }
+    const next: FileLibraryRestoreOperationRecord = {
+      ...existing,
+      runtime_access_release_task_id: input.taskId,
+      runtime_access_release_binding_generation: input.bindingGeneration,
+      runtime_access_release_fence_correlation_id: input.fenceCorrelationId,
+      runtime_access_release_restore_correlation_id: input.restoreCorrelationId,
+      updated_at: this.nowIso(),
+    };
+    await this.docStore.upsert(FILE_LIBRARY_RESTORE_OPERATION_COLLECTION, next.id, next);
+    if (this.isActiveOperation(next)) {
+      await this.mirrorActiveLock(next);
     }
     return next;
   }

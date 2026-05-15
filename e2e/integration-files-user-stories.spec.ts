@@ -90,6 +90,15 @@ function readNumberField(record: Record<string, unknown>, field: string): number
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function readBlockerCodes(record: Record<string, unknown>): string[] {
+  const blockers = record.blockers;
+  if (!Array.isArray(blockers)) return [];
+  return blockers
+    .map((blocker) => asRecord(blocker))
+    .map((blocker) => (blocker ? readStringField(blocker, 'code') : null))
+    .filter((code): code is string => code !== null);
+}
+
 function normalizeEvidenceStatus(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
@@ -1784,11 +1793,15 @@ function isFileLibraryOperationPendingEvidence(evidence: {
 }
 
 function isActiveWriterBlockedRestoreBody(body: string): boolean {
+  if (/wmb_|ns_|repo_|mount|credential|control_root|jvs/i.test(body)) return false;
   const record = asRecord(parseJsonEvidence(body));
   const errorCode = record ? readStringField(record, 'error_code') : null;
   const message = record ? readStringField(record, 'message') : null;
-  return errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'
-    || message === 'file_library_active_writer_blocked';
+  const blockerCodes = record ? readBlockerCodes(record) : [];
+  return (
+    errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'
+    || message === 'file_library_active_writer_blocked'
+  ) && blockerCodes.includes('active_writer_sessions');
 }
 
 function isRuntimeAccessReleaseConfirmedPayload(payload: Record<string, unknown> | null): boolean {
@@ -1871,6 +1884,7 @@ async function releaseRuntimeAccessUntilConfirmedViaFilesUi(args: {
     const releaseResponse = await releaseResponsePromise;
     lastReleaseBody = await releaseResponse.text();
     expect(releaseResponse.ok(), lastReleaseBody).toBe(true);
+    expect(lastReleaseBody).not.toMatch(/wmb_|ns_|repo_|mount|credential|control_root|jvs/i);
     const releasePayload = asRecord(parseJsonEvidence(lastReleaseBody));
 
     if (isRuntimeAccessReleaseConfirmedPayload(releasePayload)) {

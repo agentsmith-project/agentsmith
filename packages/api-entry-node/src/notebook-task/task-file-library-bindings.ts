@@ -128,6 +128,54 @@ function nextBindingGeneration(): number {
   return Date.now() * 1000 + randomInt(0, 1000);
 }
 
+function normalizeRuntimeAccessReleaseFenceToken(input?: string | null): string {
+  const trimmed = input?.trim();
+  if (!trimmed) return 'unspecified';
+  const normalized = trimmed.replace(/[^A-Za-z0-9._:-]+/g, '_').slice(0, 160);
+  return normalized || 'unspecified';
+}
+
+export function buildRuntimeAccessReleaseBeginCorrelationId(input?: {
+  requestId?: string | null;
+}): string {
+  return `release:begin:${normalizeRuntimeAccessReleaseFenceToken(input?.requestId)}`;
+}
+
+export function buildRuntimeAccessReleaseCompleteCorrelationId(input: {
+  beginCorrelationId: string;
+}): string {
+  return `release:complete:${normalizeRuntimeAccessReleaseFenceToken(input.beginCorrelationId)}`;
+}
+
+export function buildRuntimeAccessReleaseRollbackCorrelationId(input: {
+  beginCorrelationId: string;
+  reason: 'failed' | 'hard_blocker' | 'workspace_holder';
+}): string {
+  return `release:rollback:${input.reason}:${normalizeRuntimeAccessReleaseFenceToken(input.beginCorrelationId)}`;
+}
+
+export function buildRuntimeAccessRestoreStartedCorrelationId(input: {
+  operationId: string;
+}): string {
+  return `restore:${normalizeRuntimeAccessReleaseFenceToken(input.operationId)}:started`;
+}
+
+export function buildRuntimeAccessRestoreTerminalCorrelationId(input: {
+  operationId: string;
+  requestId?: string | null;
+}): string {
+  const requestToken = normalizeRuntimeAccessReleaseFenceToken(input.requestId);
+  return `restore:${normalizeRuntimeAccessReleaseFenceToken(input.operationId)}:terminal:${requestToken}`;
+}
+
+export function isRuntimeAccessRestoreStartedCorrelationForOperation(input: {
+  correlationId: string;
+  operationId: string;
+}): boolean {
+  return input.correlationId === buildRuntimeAccessRestoreStartedCorrelationId({ operationId: input.operationId })
+    || input.correlationId === `${input.operationId}:restore_started`;
+}
+
 function recordToBinding(record: TaskFileLibraryBindingRecord): TaskFileLibraryBinding {
   return {
     workspaceId: record.workspace_id,
@@ -242,7 +290,7 @@ function holderToRecord(holder: TaskWorkspaceHolder): TaskWorkspaceHolderRecord 
 
 function isCompletedRuntimeAccessReleaseFence(record: TaskFileLibraryBindingRecord): boolean {
   if (record.binding_state !== 'releasing') return false;
-  return record.correlation_id.endsWith(':complete') || record.correlation_id.endsWith('_complete');
+  return record.correlation_id.startsWith('release:complete:');
 }
 
 function isExpiredRuntimeAccessReleaseFence(input: {
@@ -546,6 +594,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
       current.taskId === input.taskId
       && current.bindingGeneration === input.bindingGeneration
       && current.bindingState === 'releasing'
+      && current.correlationId === input.correlationId
     ) {
       return { ok: true, binding: current };
     }
@@ -563,7 +612,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
     taskId: string;
     bindingGeneration: number;
     correlationId: string;
-    expectedCorrelationId?: string;
+    expectedCorrelationId: string;
     now?: string;
   }): Promise<{
     ok: true;
@@ -582,7 +631,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
           task_id: input.taskId,
           binding_generation: input.bindingGeneration,
           binding_state: 'releasing',
-          ...(input.expectedCorrelationId ? { correlation_id: input.expectedCorrelationId } : {}),
+          correlation_id: input.expectedCorrelationId,
         },
         patch: {
           binding_state: 'bound',
@@ -682,6 +731,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
     fileLibraryId: string;
     taskId: string;
     bindingGeneration: number;
+    expectedCorrelationId: string;
     correlationId: string;
     now?: string;
   }): Promise<{
@@ -701,6 +751,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
           task_id: input.taskId,
           binding_generation: input.bindingGeneration,
           binding_state: 'releasing',
+          correlation_id: input.expectedCorrelationId,
         },
         patch: {
           updated_at: now,

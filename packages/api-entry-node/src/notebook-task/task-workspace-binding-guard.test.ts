@@ -6,6 +6,8 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
 } from '../file-library-persistence.js';
 import {
+  buildRuntimeAccessReleaseBeginCorrelationId,
+  buildRuntimeAccessReleaseCompleteCorrelationId,
   JsonDocTaskFileLibraryBindingRepo,
   RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS,
 } from './task-file-library-bindings.js';
@@ -202,13 +204,17 @@ describe('resolveTaskWorkspaceBindingGuard', () => {
       last_activity_at: now,
     };
     await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_guard_release_expired', task);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_guard_release_expired',
+    });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
     await expect(repo.beginRuntimeAccessRelease({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       fileLibraryId: 'lib_guard_release_expired',
       taskId: 'task_guard_release_expired',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'req_guard_release_expired_begin',
+      correlationId: beginCorrelationId,
       now,
     })).resolves.toMatchObject({ ok: true });
     await expect(repo.completeRuntimeAccessRelease({
@@ -217,7 +223,8 @@ describe('resolveTaskWorkspaceBindingGuard', () => {
       fileLibraryId: 'lib_guard_release_expired',
       taskId: 'task_guard_release_expired',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'req_guard_release_expired_complete',
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
       now,
     })).resolves.toMatchObject({ ok: true });
 
@@ -235,7 +242,7 @@ describe('resolveTaskWorkspaceBindingGuard', () => {
           taskId: 'task_guard_release_expired',
           fileLibraryId: 'lib_guard_release_expired',
           bindingState: 'bound',
-          correlationId: 'req_guard_release_expired_complete:lease_expired',
+          correlationId: `${completeCorrelationId}:lease_expired`,
         },
       });
     } finally {

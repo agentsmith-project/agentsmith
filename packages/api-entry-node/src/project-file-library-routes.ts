@@ -53,8 +53,14 @@ import type { TaskRecord } from './notebook-task/task-models.js';
 import {
   buildBoundTaskSafeFields,
   buildFileLibraryTaskHomeBindingFields,
+  buildRuntimeAccessReleaseBeginCorrelationId,
+  buildRuntimeAccessReleaseCompleteCorrelationId,
+  buildRuntimeAccessReleaseRollbackCorrelationId,
+  buildRuntimeAccessRestoreStartedCorrelationId,
+  buildRuntimeAccessRestoreTerminalCorrelationId,
   findTaskFileLibraryBinding,
   hydrateTaskFileLibraryBindingsForProject,
+  isRuntimeAccessRestoreStartedCorrelationForOperation,
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
   type TaskFileLibraryBinding,
@@ -195,6 +201,7 @@ function isFileLibraryWriteRoute(routeKind: ProjectFileLibraryRouteKind, method:
 
 function isFileLibraryRestoreConflictingMutationRoute(routeKind: ProjectFileLibraryRouteKind, method: string): boolean {
   return isFileLibraryWriteRoute(routeKind, method)
+    || (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST')
     || (routeKind === 'fileLibraryItem' && method === 'DELETE');
 }
 
@@ -475,35 +482,42 @@ async function reconcileRestoreOperationRecord(input: {
   operation: FileLibraryRestoreOperationRecord;
   requestId?: string;
 }): Promise<FileLibraryRestoreOperationRecord> {
-  if (!isActiveRestoreOperationStatus(input.operation.status)) {
-    if (isTerminalRestoreOperationStatus(input.operation.status)) {
-      await restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input);
+  const operation = await associateRuntimeAccessReleaseFenceWithRestoreOperation({
+    ...input,
+    allowClaim: isActiveRestoreOperationStatus(input.operation.status),
+  });
+  if (!isActiveRestoreOperationStatus(operation.status)) {
+    if (isTerminalRestoreOperationStatus(operation.status)) {
+      await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+        ...input,
+        operation,
+      });
     }
-    return input.operation;
+    return operation;
   }
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
-    return input.operation;
+    return operation;
   }
-  if (!input.operation.afscp_operation_id) {
-    return input.operation;
+  if (!operation.afscp_operation_id) {
+    return operation;
   }
   const result = await input.deps.fileLibraryStorageAdapter.reconcileRestoreOperation({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
-    operationId: input.operation.afscp_operation_id,
+    operationId: operation.afscp_operation_id,
     requestId: input.requestId,
   });
   const updated = await input.restoreRepo.updateStatus({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
-    operationId: input.operation.id,
+    operationId: operation.id,
     status: storageStatusToRestoreOperationStatus(result.operationStatus),
     afscpOperationId: result.operationId,
     failureReason: result.operationStatus === 'failed' ? 'file_library_restore_failed' : null,
   });
-  const next = updated ?? input.operation;
+  const next = updated ?? operation;
   if (isTerminalRestoreOperationStatus(next.status)) {
     await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
       ...input,
@@ -512,7 +526,7 @@ async function reconcileRestoreOperationRecord(input: {
   }
   if (
     isTerminalRestoreOperationStatus(next.status)
-    && next.status !== input.operation.status
+    && next.status !== operation.status
   ) {
     await writeFileLibraryRestoreAuditEvent({
       deps: input.deps,
@@ -570,9 +584,10 @@ async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
     taskId: binding.taskId,
     bindingGeneration: binding.bindingGeneration,
     expectedCorrelationId: restoreCorrelationId,
-    correlationId: input.requestId
-      ? `${input.requestId}:restore_terminal`
-      : `${input.operation.id}:restore_terminal`,
+    correlationId: buildRuntimeAccessRestoreTerminalCorrelationId({
+      operationId: input.operation.id,
+      requestId: input.requestId,
+    }),
   });
 }
 
@@ -583,6 +598,7 @@ async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
   projectId: string;
   libraryId: string;
   operation: FileLibraryRestoreOperationRecord;
+  allowClaim: boolean;
 }): Promise<FileLibraryRestoreOperationRecord> {
   const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore);
   const binding = await bindingRepo.find({
@@ -593,7 +609,27 @@ async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
   if (!binding || binding.bindingState !== 'releasing') {
     return input.operation;
   }
-  const restoreCorrelationId = `${input.operation.id}:restore_started`;
+  const restoreCorrelationId = buildRuntimeAccessRestoreStartedCorrelationId({
+    operationId: input.operation.id,
+  });
+  if (isRuntimeAccessRestoreStartedCorrelationForOperation({
+    correlationId: binding.correlationId,
+    operationId: input.operation.id,
+  })) {
+    return await input.restoreRepo.updateRuntimeAccessReleaseAssociation({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      operationId: input.operation.id,
+      taskId: binding.taskId,
+      bindingGeneration: binding.bindingGeneration,
+      fenceCorrelationId: input.operation.runtime_access_release_fence_correlation_id ?? binding.correlationId,
+      restoreCorrelationId: binding.correlationId,
+    }) ?? input.operation;
+  }
+  if (!input.allowClaim || input.operation.runtime_access_release_restore_correlation_id) {
+    return input.operation;
+  }
   const claimed = await bindingRepo.claimRuntimeAccessReleaseForRestore({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
@@ -606,7 +642,10 @@ async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
   if (!claimed.ok) {
     throw new Error('file_library_active_writer_blocked');
   }
-  if (!claimed.claimed) {
+  if (!claimed.binding || !isRuntimeAccessRestoreStartedCorrelationForOperation({
+    correlationId: claimed.binding.correlationId,
+    operationId: input.operation.id,
+  })) {
     return input.operation;
   }
   return await input.restoreRepo.updateRuntimeAccessReleaseAssociation({
@@ -614,10 +653,10 @@ async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
     projectId: input.projectId,
     libraryId: input.libraryId,
     operationId: input.operation.id,
-    taskId: binding.taskId,
-    bindingGeneration: binding.bindingGeneration,
+    taskId: claimed.binding.taskId,
+    bindingGeneration: claimed.binding.bindingGeneration,
     fenceCorrelationId: binding.correlationId,
-    restoreCorrelationId,
+    restoreCorrelationId: claimed.binding.correlationId,
   }) ?? input.operation;
 }
 
@@ -1456,7 +1495,9 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
-    const releaseCorrelationId = readOptionalRequestId(req) ?? 'file_library_runtime_access_release';
+    const releaseCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: readOptionalRequestId(req),
+    });
     const task = await findTaskRecordForBinding({
       deps,
       workspaceId,
@@ -1522,6 +1563,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         fileLibraryId: libraryId,
         taskId: task.id,
         bindingGeneration: binding.bindingGeneration,
+        expectedCorrelationId: releaseCorrelationId,
         correlationId,
       });
     };
@@ -1547,7 +1589,10 @@ export async function handleProjectFileLibraryRoutes(args: {
         binding,
       }));
       if (remainingHardBlockers.length > 0) {
-        await rollbackReleaseFence(`${releaseCorrelationId}:hard_blocker`);
+        await rollbackReleaseFence(buildRuntimeAccessReleaseRollbackCorrelationId({
+          beginCorrelationId: releaseCorrelationId,
+          reason: 'hard_blocker',
+        }));
         json(res, 409, buildRuntimeAccessReleaseBlockedBody({
           libraryId,
           binding,
@@ -1574,7 +1619,10 @@ export async function handleProjectFileLibraryRoutes(args: {
           fileLibraryId: libraryId,
           taskId: task.id,
           bindingGeneration: binding.bindingGeneration,
-          correlationId: `${releaseCorrelationId}:complete`,
+          expectedCorrelationId: releaseCorrelationId,
+          correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
+            beginCorrelationId: releaseCorrelationId,
+          }),
         });
         if (!completed.ok) {
           json(res, 409, buildRuntimeAccessReleaseBindingConflictBody({
@@ -1592,7 +1640,10 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
     } catch (error) {
       if (isWorkspaceBindingActiveWorkloadError(error)) {
-        await rollbackReleaseFence(`${releaseCorrelationId}:workspace_holder`);
+        await rollbackReleaseFence(buildRuntimeAccessReleaseRollbackCorrelationId({
+          beginCorrelationId: releaseCorrelationId,
+          reason: 'workspace_holder',
+        }));
         json(res, 409, buildRuntimeAccessReleaseBlockedBody({
           libraryId,
           binding,
@@ -1601,7 +1652,10 @@ export async function handleProjectFileLibraryRoutes(args: {
         }));
         return true;
       }
-      await rollbackReleaseFence(`${releaseCorrelationId}:failed`);
+      await rollbackReleaseFence(buildRuntimeAccessReleaseRollbackCorrelationId({
+        beginCorrelationId: releaseCorrelationId,
+        reason: 'failed',
+      }));
       const mapped = mapFileLibraryInfraError(error);
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
@@ -2112,6 +2166,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         projectId,
         libraryId,
         operation: pendingOperation,
+        allowClaim: true,
       });
       await writeFileLibraryRestoreAuditEvent({
         deps,

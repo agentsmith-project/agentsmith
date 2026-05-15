@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
+  buildRuntimeAccessReleaseBeginCorrelationId,
+  buildRuntimeAccessReleaseCompleteCorrelationId,
+  buildRuntimeAccessReleaseRollbackCorrelationId,
+  buildRuntimeAccessRestoreStartedCorrelationId,
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
   RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS,
@@ -139,6 +143,8 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     const afterLeaseExpiry = new Date(
       Date.parse(fenceStartedAt) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS + 1,
     ).toISOString();
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({ requestId: 'release_begin' });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
 
     await expect(repo.beginRuntimeAccessRelease({
       workspaceId: 'ws_default',
@@ -162,7 +168,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'release_begin',
+      correlationId: beginCorrelationId,
       now: fenceStartedAt,
     });
     expect(begun).toMatchObject({
@@ -171,7 +177,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
         taskId: 'task_1',
         bindingGeneration: acquired.binding.bindingGeneration,
         bindingState: 'releasing',
-        correlationId: 'release_begin',
+        correlationId: beginCorrelationId,
       },
     });
 
@@ -181,13 +187,30 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'release_begin_idempotent',
+      correlationId: beginCorrelationId,
     })).resolves.toMatchObject({
       ok: true,
       binding: {
         taskId: 'task_1',
         bindingGeneration: acquired.binding.bindingGeneration,
         bindingState: 'releasing',
+      },
+    });
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: buildRuntimeAccessReleaseBeginCorrelationId({ requestId: 'release_begin_other_owner' }),
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        taskId: 'task_1',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        bindingState: 'releasing',
+        correlationId: beginCorrelationId,
       },
     });
 
@@ -212,7 +235,8 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'release_complete',
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
       now: fenceStartedAt,
     })).resolves.toEqual({ ok: true, released: true });
     await expect(repo.find({
@@ -224,7 +248,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
       bindingState: 'releasing',
-      correlationId: 'release_complete',
+      correlationId: completeCorrelationId,
     });
 
     await hydrateTaskFileLibraryBindingsForProject({
@@ -263,7 +287,113 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
       bindingState: 'bound',
-      correlationId: 'release_complete:lease_expired',
+      correlationId: `${completeCorrelationId}:lease_expired`,
+    });
+  });
+
+  it('does not treat a release begin request id suffix as a completed fence', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const fenceStartedAt = '2999-05-09T12:00:00.000Z';
+    const afterLeaseExpiry = new Date(
+      Date.parse(fenceStartedAt) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS + 1,
+    ).toISOString();
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'user_supplied_complete',
+    });
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+      now: fenceStartedAt,
+    })).resolves.toMatchObject({
+      ok: true,
+      binding: {
+        bindingState: 'releasing',
+        correlationId: beginCorrelationId,
+      },
+    });
+
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      now: afterLeaseExpiry,
+    })).resolves.toMatchObject({
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: beginCorrelationId,
+    });
+  });
+
+  it('does not let release completion overwrite a restore-owned fence claim', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'release_begin_for_restore_claim',
+    });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+    const restoreCorrelationId = buildRuntimeAccessRestoreStartedCorrelationId({
+      operationId: 'restore_op_for_release_claim',
+    });
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(repo.claimRuntimeAccessReleaseForRestore({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      releaseCorrelationId: beginCorrelationId,
+      restoreCorrelationId,
+    })).resolves.toMatchObject({
+      ok: true,
+      claimed: true,
+      binding: {
+        bindingState: 'releasing',
+        correlationId: restoreCorrelationId,
+      },
+    });
+
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        bindingState: 'releasing',
+        correlationId: restoreCorrelationId,
+      },
+    });
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+    })).resolves.toMatchObject({
+      bindingState: 'releasing',
+      correlationId: restoreCorrelationId,
     });
   });
 
@@ -272,6 +402,9 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
     const acquired = await repo.acquire(bindingInput());
     if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'release_begin_for_rollback',
+    });
 
     await expect(repo.beginRuntimeAccessRelease({
       workspaceId: 'ws_default',
@@ -279,7 +412,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'release_begin_for_rollback',
+      correlationId: beginCorrelationId,
     })).resolves.toMatchObject({ ok: true });
 
     await expect(repo.rollbackRuntimeAccessRelease({
@@ -288,6 +421,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_2',
       bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
       correlationId: 'release_rollback_wrong_task',
     })).resolves.toMatchObject({
       ok: false,
@@ -304,7 +438,11 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
-      correlationId: 'release_rollback',
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: buildRuntimeAccessReleaseRollbackCorrelationId({
+        beginCorrelationId,
+        reason: 'failed',
+      }),
     })).resolves.toEqual({ ok: true, rolledBack: true });
 
     await expect(repo.find({
@@ -314,7 +452,10 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     })).resolves.toMatchObject({
       taskId: 'task_1',
       bindingState: 'bound',
-      correlationId: 'release_rollback',
+      correlationId: buildRuntimeAccessReleaseRollbackCorrelationId({
+        beginCorrelationId,
+        reason: 'failed',
+      }),
     });
 
     await expect(repo.completeRuntimeAccessRelease({
@@ -323,6 +464,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
       correlationId: 'release_complete_without_fence',
     })).resolves.toMatchObject({
       ok: false,
@@ -347,6 +489,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
       correlationId: 'release_rollback_missing',
     })).resolves.toEqual({ ok: true, rolledBack: false });
     await expect(repo.completeRuntimeAccessRelease({
@@ -355,6 +498,7 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
       fileLibraryId: 'flib_home',
       taskId: 'task_1',
       bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
       correlationId: 'release_complete_missing',
     })).resolves.toEqual({ ok: true, released: false });
   });

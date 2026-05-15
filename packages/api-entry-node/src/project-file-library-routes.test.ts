@@ -21,6 +21,9 @@ import {
   type FileLibraryStoragePort,
 } from './file-library-afscp-storage.js';
 import {
+  buildRuntimeAccessReleaseBeginCorrelationId,
+  buildRuntimeAccessReleaseCompleteCorrelationId,
+  buildRuntimeAccessRestoreStartedCorrelationId,
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
   RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS,
@@ -2966,6 +2969,27 @@ describe('project-file-library-routes', () => {
     expect(storageAdapter.assertEmpty).not.toHaveBeenCalled();
     expect(storageAdapter.deleteRepoForLibrary).not.toHaveBeenCalled();
 
+    const runtimeAccessReleaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_restore_active' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: runtimeAccessReleaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+    expect(runtimeAccessReleaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+    }));
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+
     expect(JSON.stringify([
       differentSavePointJson.mock.calls,
       createTemplateJson.mock.calls,
@@ -2975,6 +2999,7 @@ describe('project-file-library-routes', () => {
       moveJson.mock.calls,
       uploadJson.mock.calls,
       deleteJson.mock.calls,
+      runtimeAccessReleaseJson.mock.calls,
     ]))
       .not.toMatch(/op_restore|repo_|sp_user_|ns_|credential|control_root/);
   });
@@ -3134,6 +3159,69 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('does not let runtime release completion overwrite a restore-owned fence claim', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_complete_restore_claim',
+      title: 'Release complete restore claim task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const restoreCorrelationId = buildRuntimeAccessRestoreStartedCorrelationId({
+      operationId: 'restore_op_release_complete_claim',
+    });
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      const current = await bindingRepo.find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+      });
+      if (!current) throw new Error('expected release fence to exist');
+      await bindingRepo.claimRuntimeAccessReleaseForRestore({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+        taskId: seededTask.taskId,
+        bindingGeneration: seededTask.bindingGeneration,
+        releaseCorrelationId: current.correlationId,
+        restoreCorrelationId,
+      });
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_complete_restore_claim' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      file_library_id: libraryId,
+    }));
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: restoreCorrelationId,
+    });
+  });
+
   it('restores the runtime release fence to bound after direct restore reaches a terminal state', async () => {
     const storageAdapter = createStorageAdapter({
       restoreFileLibrary: vi.fn(async () => ({
@@ -3226,11 +3314,114 @@ describe('project-file-library-routes', () => {
       taskId: seededTask.taskId,
       bindingGeneration: seededTask.bindingGeneration,
       bindingState: 'bound',
-      correlationId: 'req_restore_terminal_success:restore_terminal',
+      correlationId: expect.stringMatching(/^restore:.*:terminal:req_restore_terminal_success$/),
     });
     await expect(deps.docStore.get(notebookTasksCollection('ws_default'), seededTask.taskId)).resolves.toMatchObject({
       workspace_file_library_id: libraryId,
       file_library_binding_generation: seededTask.bindingGeneration,
+    });
+  });
+
+  it('reconciles a restore-started release fence when terminal restore association is missing', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => {
+        throw new Error('restore should be idempotency replayed');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_missing_release_association',
+      title: 'Restore missing release association task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'release_begin_before_missing_association',
+    });
+    await expect(bindingRepo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    const operationId = 'restore_op_missing_release_association';
+    const restoreCorrelationId = `${operationId}:restore_started`;
+    await expect(bindingRepo.claimRuntimeAccessReleaseForRestore({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      releaseCorrelationId: beginCorrelationId,
+      restoreCorrelationId,
+    })).resolves.toMatchObject({ ok: true, claimed: true });
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    await restoreRepo.create({
+      id: operationId,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: 'op_restore_missing_release_association',
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_002',
+      status: 'succeeded',
+      idempotencyKey: 'restore-key-missing-release-association',
+      createdByUserId: OWNER_USER.id,
+      discardUnsavedChangesConfirmed: true,
+    });
+
+    const replayJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_missing_release_association_replay',
+          'idempotency-key': 'restore-key-missing-release-association',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: replayJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+    expect(replayJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: operationId,
+      status: 'succeeded',
+    }));
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'bound',
+    });
+    await expect(restoreRepo.getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      operationId,
+    )).resolves.toMatchObject({
+      runtime_access_release_task_id: seededTask.taskId,
+      runtime_access_release_binding_generation: seededTask.bindingGeneration,
+      runtime_access_release_restore_correlation_id: restoreCorrelationId,
     });
   });
 
@@ -3299,6 +3490,12 @@ describe('project-file-library-routes', () => {
       released: true,
       runtime_access_status: 'released',
     });
+    const releaseBeginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_release_after_old_restore',
+    });
+    const releaseCompleteCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({
+      beginCorrelationId: releaseBeginCorrelationId,
+    });
 
     const replayJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -3335,7 +3532,76 @@ describe('project-file-library-routes', () => {
       taskId: seededTask.taskId,
       bindingGeneration: seededTask.bindingGeneration,
       bindingState: 'releasing',
-      correlationId: 'req_release_after_old_restore:complete',
+      correlationId: releaseCompleteCorrelationId,
+    });
+  });
+
+  it('does not let runtime release rollback reopen access after restore claims the fence', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_rollback_restore_claim',
+      title: 'Release rollback restore claim task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const restoreCorrelationId = buildRuntimeAccessRestoreStartedCorrelationId({
+      operationId: 'restore_op_release_rollback_claim',
+    });
+    let terminalChecks = 0;
+    deps.notebookTerminalService.hasLiveSessionsForTask = vi.fn(async () => {
+      terminalChecks += 1;
+      if (terminalChecks === 2) {
+        const current = await bindingRepo.find({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          fileLibraryId: libraryId,
+        });
+        if (!current) throw new Error('expected release fence to exist');
+        await bindingRepo.claimRuntimeAccessReleaseForRestore({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          fileLibraryId: libraryId,
+          taskId: seededTask.taskId,
+          bindingGeneration: seededTask.bindingGeneration,
+          releaseCorrelationId: current.correlationId,
+          restoreCorrelationId,
+        });
+        return true;
+      }
+      return false;
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_rollback_restore_claim' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_BLOCKED',
+      blockers: [{ code: 'active_terminal' }],
+    }));
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: restoreCorrelationId,
     });
   });
 
@@ -3414,6 +3680,12 @@ describe('project-file-library-routes', () => {
       )).resolves.toEqual([]);
 
       const afterLeaseExpiry = new Date(Date.parse(now) + RUNTIME_ACCESS_RELEASE_FENCE_LEASE_TTL_MS + 1).toISOString();
+      const releaseBeginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+        requestId: 'req_release_before_preflight_failure',
+      });
+      const releaseCompleteCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({
+        beginCorrelationId: releaseBeginCorrelationId,
+      });
       await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
         workspaceId: 'ws_default',
         projectId: 'proj_1',
@@ -3423,7 +3695,7 @@ describe('project-file-library-routes', () => {
         taskId: seededTask.taskId,
         bindingGeneration: seededTask.bindingGeneration,
         bindingState: 'bound',
-        correlationId: 'req_release_before_preflight_failure:complete:lease_expired',
+        correlationId: `${releaseCompleteCorrelationId}:lease_expired`,
       });
     } finally {
       vi.useRealTimers();

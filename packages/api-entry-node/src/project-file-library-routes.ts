@@ -551,6 +551,120 @@ async function reconcileRestoreOperationRecord(input: {
   return next;
 }
 
+async function continuePreStartRestoreOperationReplay(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryRestoreOperationRecord;
+  requestId?: string;
+}): Promise<FileLibraryRestoreOperationRecord> {
+  if (
+    !isActiveRestoreOperationStatus(input.operation.status)
+    || input.operation.afscp_operation_id
+    || !input.deps.fileLibraryStorageAdapter?.enabled
+  ) {
+    return input.operation;
+  }
+
+  const failOperation = async (error: unknown): Promise<FileLibraryRestoreOperationRecord> => {
+    const mapped = mapFileLibraryControlRouteError(
+      error,
+      'FILE_LIBRARY_RESTORE_FAILED',
+      'file_library_restore_failed',
+    );
+    const failedOperation = await input.restoreRepo.updateStatus({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      operationId: input.operation.id,
+      status: 'failed',
+      failureReason: mapped.message,
+    }) ?? input.operation;
+    await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      operation: failedOperation,
+      requestId: input.requestId,
+    });
+    await writeFileLibraryRestoreAuditEvent({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      actorUserId: input.operation.created_by_user_id,
+      requestId: input.requestId,
+      operation: failedOperation,
+      action: 'project.file_library.restore.failed',
+      result: 'error',
+      errorCode: mapped.errorCode,
+      errorMessage: mapped.message,
+      failureCategory: mapped.message,
+    });
+    return failedOperation;
+  };
+
+  try {
+    const result = await input.deps.fileLibraryStorageAdapter.restoreFileLibrary({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      savePointId: input.operation.source_afscp_save_point_id,
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: input.operation.idempotency_key,
+      actorUserId: input.operation.created_by_user_id,
+      requestId: input.requestId,
+    });
+    if (!result.operationId) {
+      return await failOperation(new Error('file_library_restore_failed'));
+    }
+    const nextStatus = storageStatusToRestoreOperationStatus(result.operationStatus);
+    const operation = await input.restoreRepo.updateStatus({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      operationId: input.operation.id,
+      afscpOperationId: result.operationId,
+      status: nextStatus,
+      failureReason: nextStatus === 'failed' ? 'file_library_restore_failed' : null,
+    }) ?? input.operation;
+    if (isTerminalRestoreOperationStatus(operation.status)) {
+      await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        operation,
+        requestId: input.requestId,
+      });
+      await writeFileLibraryRestoreAuditEvent({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        actorUserId: operation.created_by_user_id,
+        requestId: input.requestId,
+        operation,
+        action: operation.status === 'succeeded'
+          ? 'project.file_library.restore.succeeded'
+          : 'project.file_library.restore.failed',
+        result: operation.status === 'succeeded' ? 'ok' : 'error',
+        ...(operation.status === 'failed'
+          ? {
+              errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
+              errorMessage: 'file_library_restore_failed',
+              failureCategory: operation.failure_reason ?? 'file_library_restore_failed',
+            }
+          : {}),
+      });
+    }
+    return operation;
+  } catch (error) {
+    return await failOperation(error);
+  }
+}
+
 async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -772,6 +886,85 @@ function isReleasePendingRuntimeWorkspaceBinding(binding: InternalAgentWorkspace
     return false;
   }
   return true;
+}
+
+function isRuntimeAccessReleaseBeginCorrelation(correlationId: string): boolean {
+  return correlationId.startsWith('release:begin:');
+}
+
+async function convergeExistingRuntimeAccessReleaseFence(input: {
+  deps: NodeApiDeps;
+  bindingRepo: JsonDocTaskFileLibraryBindingRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  binding: TaskFileLibraryBinding;
+  actorUserId: string;
+}): Promise<{
+  handled: false;
+} | {
+  handled: true;
+  statusCode: number;
+  body: Record<string, unknown>;
+}> {
+  if (
+    input.binding.bindingState !== 'releasing'
+    || !isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)
+  ) {
+    return { handled: false };
+  }
+  const workspaceBindingManager = input.deps.internalAgentWorkspaceBindingManager
+    ?? input.deps.internalAgentWorkspaceProvisioner;
+  if (typeof workspaceBindingManager?.findWorkspaceBinding !== 'function') {
+    return { handled: false };
+  }
+  const runtimeBinding = await workspaceBindingManager.findWorkspaceBinding({
+    workspaceId: input.workspaceId,
+    fileLibraryId: input.libraryId,
+  });
+  const releasePending = runtimeBinding ? isReleasePendingRuntimeWorkspaceBinding(runtimeBinding) : false;
+  if (releasePending) {
+    return {
+      handled: true,
+      statusCode: 200,
+      body: {
+        file_library_id: input.libraryId,
+        released: false,
+        runtime_access_status: 'release_pending',
+      },
+    };
+  }
+  const completed = await input.bindingRepo.completeRuntimeAccessRelease({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+    taskId: input.binding.taskId,
+    bindingGeneration: input.binding.bindingGeneration,
+    expectedCorrelationId: input.binding.correlationId,
+    correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
+      beginCorrelationId: input.binding.correlationId,
+    }),
+  });
+  if (!completed.ok) {
+    return {
+      handled: true,
+      statusCode: 409,
+      body: buildRuntimeAccessReleaseBindingConflictBody({
+        libraryId: input.libraryId,
+        binding: completed.binding,
+        actorUserId: input.actorUserId,
+      }),
+    };
+  }
+  return {
+    handled: true,
+    statusCode: 200,
+    body: {
+      file_library_id: input.libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    },
+  };
 }
 
 async function findTaskRecordForBinding(input: {
@@ -1498,6 +1691,19 @@ export async function handleProjectFileLibraryRoutes(args: {
     const releaseCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
       requestId: readOptionalRequestId(req),
     });
+    const convergedReleaseFence = await convergeExistingRuntimeAccessReleaseFence({
+      deps,
+      bindingRepo,
+      workspaceId,
+      projectId,
+      libraryId,
+      binding,
+      actorUserId: user.id,
+    });
+    if (convergedReleaseFence.handled) {
+      json(res, convergedReleaseFence.statusCode, convergedReleaseFence.body);
+      return true;
+    }
     const task = await findTaskRecordForBinding({
       deps,
       workspaceId,
@@ -2084,7 +2290,16 @@ export async function handleProjectFileLibraryRoutes(args: {
           operation: existing,
           requestId,
         });
-        json(res, 200, restoreRepo.toPublic(reconciled));
+        const replayed = await continuePreStartRestoreOperationReplay({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation: reconciled,
+          requestId,
+        });
+        json(res, 200, restoreRepo.toPublic(replayed));
         return true;
       }
 

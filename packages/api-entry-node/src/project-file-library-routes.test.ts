@@ -2659,6 +2659,7 @@ describe('project-file-library-routes', () => {
       }),
     });
     const restoreOperation = restoreJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    const savePointCreateCallsAfterSetup = vi.mocked(storageAdapter.createSavePoint).mock.calls.length;
 
     const sameSavePointJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -2751,6 +2752,48 @@ describe('project-file-library-routes', () => {
     }));
     expect(storageAdapter.createTemplateFromLibrary).not.toHaveBeenCalled();
 
+    const savePointJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_restore_active' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: savePointJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Blocked save point' }),
+    })).resolves.toBe(true);
+    expect(savePointJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+    }));
+    expect(storageAdapter.createSavePoint).toHaveBeenCalledTimes(savePointCreateCallsAfterSetup);
+
+    const folderJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryFolders',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_folder_restore_active' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: folderJson,
+      readBody: vi.fn().mockResolvedValue({ path: 'docs/blocked' }),
+    })).resolves.toBe(true);
+    expect(folderJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+    }));
+    expect(storageAdapter.createFolder).not.toHaveBeenCalled();
+
     const fileObjectDeleteJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraryDelete',
@@ -2771,6 +2814,51 @@ describe('project-file-library-routes', () => {
       file_library_id: libraryId,
     }));
     expect(storageAdapter.deletePaths).not.toHaveBeenCalled();
+
+    const moveJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryMove',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_move_restore_active' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: moveJson,
+      readBody: vi.fn().mockResolvedValue({
+        from_path: 'docs/readme.txt',
+        to_path: 'docs/renamed.txt',
+      }),
+    })).resolves.toBe(true);
+    expect(moveJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+    }));
+    expect(storageAdapter.moveEntry).not.toHaveBeenCalled();
+
+    const uploadJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryUpload',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: multipartUploadRequest('blocked-upload.txt'),
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: uploadJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(uploadJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+    }));
+    expect(storageAdapter.uploadObject).not.toHaveBeenCalled();
 
     const deleteJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -2797,7 +2885,11 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify([
       differentSavePointJson.mock.calls,
       createTemplateJson.mock.calls,
+      savePointJson.mock.calls,
+      folderJson.mock.calls,
       fileObjectDeleteJson.mock.calls,
+      moveJson.mock.calls,
+      uploadJson.mock.calls,
       deleteJson.mock.calls,
     ]))
       .not.toMatch(/op_restore|repo_|sp_user_|ns_|credential|control_root/);

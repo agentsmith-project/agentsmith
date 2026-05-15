@@ -1,4 +1,4 @@
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { JsonDocConditionalCreateResult, JsonDocStorePort } from '@mbos/ports';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   FileLibraryRecord,
@@ -1336,11 +1336,17 @@ export class JsonDocFileLibraryRestoreOperationRepo {
         operation,
       );
       if (lockResult.ok) {
-        const operationResult = await this.docStore.createIfAbsent(
-          FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
-          operation.id,
-          operation,
-        );
+        let operationResult: JsonDocConditionalCreateResult<FileLibraryRestoreOperationRecord>;
+        try {
+          operationResult = await this.docStore.createIfAbsent(
+            FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+            operation.id,
+            operation,
+          );
+        } catch (error) {
+          await this.releaseActiveLockForOperation(operation);
+          throw error;
+        }
         if (operationResult.ok) {
           return { operation, created: true, reason: 'created' };
         }
@@ -1372,12 +1378,15 @@ export class JsonDocFileLibraryRestoreOperationRepo {
         input.libraryId,
         lockedOperation.id,
       );
-      const activeOperation = storedOperation ?? lockedOperation;
-      if (this.isActiveOperation(activeOperation)) {
+      if (!storedOperation) {
+        await this.releaseActiveLockForOperation(lockedOperation);
+        continue;
+      }
+      if (this.isActiveOperation(storedOperation)) {
         return {
-          operation: activeOperation,
+          operation: storedOperation,
           created: false,
-          reason: activeOperation.idempotency_key === input.idempotencyKey ? 'idempotency' : 'active',
+          reason: storedOperation.idempotency_key === input.idempotencyKey ? 'idempotency' : 'active',
         };
       }
 
@@ -1421,11 +1430,13 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     const lockedOperation = await this.getActiveLock(workspaceId, projectId, libraryId);
     if (lockedOperation) {
       const storedOperation = await this.getById(workspaceId, projectId, libraryId, lockedOperation.id);
-      const operation = storedOperation ?? lockedOperation;
-      if (this.isActiveOperation(operation)) {
-        return operation;
+      if (!storedOperation) {
+        await this.releaseActiveLockForOperation(lockedOperation);
+      } else if (this.isActiveOperation(storedOperation)) {
+        return storedOperation;
+      } else {
+        await this.releaseActiveLockForOperation(lockedOperation);
       }
-      await this.releaseActiveLockForOperation(lockedOperation);
     }
 
     const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(

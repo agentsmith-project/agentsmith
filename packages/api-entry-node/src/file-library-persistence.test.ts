@@ -1,11 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import type { JsonDocConditionalCreateResult } from '@mbos/ports';
 import {
   buildFileLibraryRecord,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectFileLibraryCatalogRepo,
 } from './file-library-persistence.js';
+
+class RestoreOperationCreateFailureDocStore extends InMemoryJsonDocStore {
+  private failedOperationCreate = false;
+
+  override async createIfAbsent<T>(
+    collection: string,
+    id: string,
+    doc: T,
+  ): Promise<JsonDocConditionalCreateResult<T>> {
+    if (
+      collection === 'project_file_library_restore_operations'
+      && !this.failedOperationCreate
+    ) {
+      this.failedOperationCreate = true;
+      throw new Error('operation_create_failed');
+    }
+    return super.createIfAbsent(collection, id, doc);
+  }
+}
 
 describe('file-library-persistence catalog schema', () => {
   it('writes only current catalog schema and presents the public source contract', async () => {
@@ -409,6 +429,94 @@ describe('file-library-persistence catalog schema', () => {
         idempotency_key: 'restore-key-active-a',
       }),
     ]);
+  });
+
+  it('releases the active restore lock when operation creation fails after lock acquisition', async () => {
+    const docStore = new RestoreOperationCreateFailureDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_lock_failure',
+      afscpOperationId: null,
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'pending' as const,
+      idempotencyKey: 'restore-key-lock-failure',
+      createdByUserId: 'user_1',
+      discardUnsavedChangesConfirmed: true as const,
+    };
+
+    await expect(repo.createOrReuseActiveByLibrary(input)).rejects.toThrow('operation_create_failed');
+    await expect(docStore.list<Record<string, unknown>>(
+      'project_file_library_restore_operation_active_locks',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: 'flib_restore_lock_failure',
+      },
+    )).resolves.toEqual([]);
+
+    await expect(repo.createOrReuseActiveByLibrary(input)).resolves.toMatchObject({
+      created: true,
+      reason: 'created',
+      operation: {
+        library_id: 'flib_restore_lock_failure',
+        idempotency_key: 'restore-key-lock-failure',
+      },
+    });
+  });
+
+  it('cleans stale active restore locks whose operation record is missing', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_stale_lock',
+      afscpOperationId: null,
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'pending' as const,
+      idempotencyKey: 'restore-key-stale-lock',
+      createdByUserId: 'user_1',
+      discardUnsavedChangesConfirmed: true as const,
+    };
+
+    const first = await repo.createOrReuseActiveByLibrary(input);
+    await docStore.delete('project_file_library_restore_operations', first.operation.id);
+
+    await expect(repo.findActiveByLibrary(
+      'ws_default',
+      'proj_1',
+      'flib_restore_stale_lock',
+    )).resolves.toBeNull();
+    await expect(docStore.list<Record<string, unknown>>(
+      'project_file_library_restore_operation_active_locks',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: 'flib_restore_stale_lock',
+      },
+    )).resolves.toEqual([]);
+
+    await expect(repo.createOrReuseActiveByLibrary({
+      ...input,
+      idempotencyKey: 'restore-key-after-stale-lock',
+    })).resolves.toMatchObject({
+      created: true,
+      reason: 'created',
+      operation: {
+        library_id: 'flib_restore_stale_lock',
+        idempotency_key: 'restore-key-after-stale-lock',
+      },
+    });
   });
 
   it('keeps AFSCP history save points public without direct restore fence classification', async () => {

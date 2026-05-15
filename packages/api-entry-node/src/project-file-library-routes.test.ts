@@ -2274,6 +2274,144 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('continues a pre-start direct restore from GET status when the active operation has no storage operation id', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: 'op_restore_pre_start_get',
+        operationStatus: 'succeeded',
+        restorePlanId: null,
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: null,
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_002',
+      status: 'pending',
+      idempotencyKey: 'restore-key-pre-start-get',
+      createdByUserId: OWNER_USER.id,
+      discardUnsavedChangesConfirmed: true,
+    });
+    const pendingOperation = pendingOperationResult.operation;
+
+    const getJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_pre_start_get' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: getJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      savePointId: 'sp_user_002',
+      idempotencyKey: 'restore-key-pre-start-get',
+      actorUserId: OWNER_USER.id,
+      requestId: 'req_restore_pre_start_get',
+    }));
+    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      restore_operation: null,
+    });
+    await expect(restoreRepo.getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      pendingOperation.id,
+    )).resolves.toMatchObject({
+      id: pendingOperation.id,
+      afscp_operation_id: 'op_restore_pre_start_get',
+      status: 'succeeded',
+    });
+  });
+
+  it('blocks pre-start restore idempotency replay when runtime access is reacquired before storage start', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: null,
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_002',
+      status: 'pending',
+      idempotencyKey: 'restore-key-pre-start-active-writer',
+      createdByUserId: OWNER_USER.id,
+      discardUnsavedChangesConfirmed: true,
+    });
+    const pendingOperation = pendingOperationResult.operation;
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_restore_reacquired_runtime_access',
+      title: 'Restore reacquired runtime access task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
+
+    const replayJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_pre_start_active_writer_replay',
+          'idempotency-key': 'restore-key-pre-start-active-writer',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: replayJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+    expect(replayJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
+      message: 'file_library_active_writer_blocked',
+      file_library_id: libraryId,
+      blockers: [{ code: 'active_writer_sessions' }],
+      bound_task_id: seededTask.taskId,
+    }));
+    await expect(restoreRepo.getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+      pendingOperation.id,
+    )).resolves.toMatchObject({
+      id: pendingOperation.id,
+      afscp_operation_id: null,
+      status: 'pending',
+    });
+  });
+
   it('fails direct restore validation without idempotency key or explicit discard confirmation', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
@@ -3409,6 +3547,68 @@ describe('project-file-library-routes', () => {
       runtime_access_status: 'released',
     });
     await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId }),
+    });
+  });
+
+  it('retries runtime access release when a begin fence survives with an active runtime binding', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_begin_active_retry',
+      title: 'Release begin active retry task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_release_begin_crash_before_delete',
+    });
+    await expect(bindingRepo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn()
+      .mockResolvedValueOnce(activeRuntimeBinding(libraryId))
+      .mockResolvedValueOnce(null);
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_begin_crash_converge' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: true,
+      runtime_access_status: 'released',
+    });
+    await expect(bindingRepo.find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       fileLibraryId: libraryId,

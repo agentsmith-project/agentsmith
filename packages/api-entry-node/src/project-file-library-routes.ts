@@ -1,8 +1,7 @@
 import type http from 'node:http';
 import Busboy from 'busboy';
 import {
-  CancelFileLibraryRestoreRequestSchema,
-  CreateFileLibraryRestorePreviewRequestSchema,
+  CreateFileLibraryRestoreRequestSchema,
   CreateFileLibrarySavePointRequestSchema,
   CreateFileLibraryRequestSchema,
   CreateFileLibraryFolderRequestSchema,
@@ -11,23 +10,20 @@ import {
   FileLibraryDownloadQuerySchema,
   ListFileLibraryEntriesQuerySchema,
   MoveFileLibraryEntryRequestSchema,
-  RunFileLibraryRestoreRequestSchema,
   UpdateFileLibraryRequestSchema,
 } from '@mbos/contracts';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildAfscpTemplateId,
+  JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
-  JsonDocFileLibraryRestorePreviewRepo,
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectTaskFileTemplateRepo,
-  RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
-  generateFileLibraryRestoreRunId,
   generateTaskFileTemplateId,
   type FileLibrarySavePointPublicRecord,
-  type FileLibraryRestorePreviewRecord,
-  type FileLibraryRestorePreviewStatus,
+  type FileLibraryRestoreOperationRecord,
+  type FileLibraryRestoreOperationStatus,
 } from './file-library-persistence.js';
 import {
   createHttpOperationEnvelope,
@@ -73,20 +69,13 @@ const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
 const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
 const FILE_LIBRARY_RETRY_AFTER_MS = 2_000;
 
-class FileLibraryRestorePreviewActiveError extends Error {
-  readonly preview: FileLibraryRestorePreviewRecord;
+class FileLibraryRestoreOperationActiveError extends Error {
+  readonly operation: FileLibraryRestoreOperationRecord;
 
-  constructor(preview: FileLibraryRestorePreviewRecord) {
-    super('file_library_restore_preview_active');
-    this.name = 'FileLibraryRestorePreviewActiveError';
-    this.preview = preview;
-  }
-}
-
-class FileLibraryRestorePreviewPreparationPendingError extends Error {
-  constructor() {
-    super('file_library_restore_preview_pending');
-    this.name = 'FileLibraryRestorePreviewPreparationPendingError';
+  constructor(operation: FileLibraryRestoreOperationRecord) {
+    super('file_library_restore_operation_active');
+    this.name = 'FileLibraryRestoreOperationActiveError';
+    this.operation = operation;
   }
 }
 
@@ -101,9 +90,7 @@ type ProjectFileLibraryRouteKind =
   | 'fileLibraryDownload'
   | 'fileLibraryMeta'
   | 'fileLibrarySavePoints'
-  | 'fileLibraryRestorePreview'
-  | 'fileLibraryRestoreRun'
-  | 'fileLibraryRestoreCancel'
+  | 'fileLibraryRestore'
   | 'fileLibraryRuntimeAccessRelease'
   | 'fileLibraryOperation'
   | 'taskFileTemplates'
@@ -202,10 +189,13 @@ function isFileLibraryWriteRoute(routeKind: ProjectFileLibraryRouteKind, method:
   if (routeKind === 'fileLibraryMove' && method === 'POST') return true;
   if (routeKind === 'fileLibraryUpload' && method === 'POST') return true;
   if (routeKind === 'fileLibrarySavePoints' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryRestorePreview' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryRestoreRun' && method === 'POST') return true;
-  if (routeKind === 'fileLibraryRestoreCancel' && method === 'POST') return true;
+  if (routeKind === 'fileLibraryRestore' && method === 'POST') return true;
   return false;
+}
+
+function isFileLibraryRestoreConflictingMutationRoute(routeKind: ProjectFileLibraryRouteKind, method: string): boolean {
+  return isFileLibraryWriteRoute(routeKind, method)
+    || (routeKind === 'fileLibraryItem' && method === 'DELETE');
 }
 
 const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
@@ -225,14 +215,8 @@ const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
   'file_library_save_point_list_pending',
-  'file_library_restore_preview_failed',
-  'file_library_restore_preview_pending',
-  'file_library_restore_preview_active',
-  'file_library_restore_run_failed',
-  'file_library_restore_run_pending',
-  'file_library_restore_discard_failed',
-  'file_library_restore_discard_pending',
-  'file_library_restore_preview_stale',
+  'file_library_restore_failed',
+  'file_library_restore_operation_active',
   'file_library_active_writer_blocked',
   'file_library_namespace_project_mismatch',
   'file_library_template_clone_not_allowed',
@@ -349,11 +333,8 @@ function mapFileLibraryControlRouteError(error: unknown, fallbackErrorCode: stri
   if (message.endsWith('_pending')) {
     return { statusCode: 409, errorCode: 'FILE_LIBRARY_OPERATION_PENDING', message };
   }
-  if (message === 'file_library_restore_preview_stale') {
-    return { statusCode: 409, errorCode: 'FILE_LIBRARY_RESTORE_PREVIEW_STALE', message };
-  }
-  if (message === 'file_library_restore_preview_active') {
-    return { statusCode: 409, errorCode: 'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE', message };
+  if (message === 'file_library_restore_operation_active') {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_OPERATION_PENDING', message };
   }
   if (message === 'file_library_active_writer_blocked') {
     return { statusCode: 409, errorCode: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', message };
@@ -397,31 +378,24 @@ function fileLibraryControlRouteErrorBody(
     && (
       mapped.message === 'file_library_save_point_create_pending'
       || mapped.message === 'file_library_save_point_list_pending'
+      || mapped.message === 'file_library_restore_operation_active'
     )
   ) {
     return {
       ...base,
-      operation_status: 'pending',
-      retry_after_ms: FILE_LIBRARY_RETRY_AFTER_MS,
-    };
-  }
-  if (error instanceof FileLibraryRestorePreviewActiveError) {
-    return {
-      ...base,
-      file_library_id: error.preview.file_library_id,
-      restore_preview_id: error.preview.id,
-      restore_preview_status: error.preview.status,
-      ...(error.preview.status === 'previewing'
-        || error.preview.status === 'canceling'
-        || error.preview.status === 'restoring'
-        ? { operation_status: 'pending', retry_after_ms: FILE_LIBRARY_RETRY_AFTER_MS }
+      ...(error instanceof FileLibraryRestoreOperationActiveError
+        ? {
+            file_library_id: error.operation.file_library_id,
+            restore_operation: {
+              id: error.operation.id,
+              file_library_id: error.operation.file_library_id,
+              source_save_point_id: error.operation.source_save_point_id,
+              status: error.operation.status,
+              created_at: error.operation.created_at,
+              updated_at: error.operation.updated_at,
+            },
+          }
         : {}),
-    };
-  }
-  if (error instanceof FileLibraryRestorePreviewPreparationPendingError) {
-    return {
-      ...base,
-      restore_preview_status: 'preparing',
       operation_status: 'pending',
       retry_after_ms: FILE_LIBRARY_RETRY_AFTER_MS,
     };
@@ -429,185 +403,172 @@ function fileLibraryControlRouteErrorBody(
   return base;
 }
 
-async function createRestorePreviewCurrentStateFence(input: {
-  storageAdapter: FileLibraryStoragePort;
-  savePointRepo: JsonDocFileLibrarySavePointMappingRepo;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  actorUserId: string;
-  requestId?: string;
-}): Promise<void> {
-  let result: Awaited<ReturnType<FileLibraryStoragePort['createSavePoint']>>;
-  try {
-    result = await input.storageAdapter.createSavePoint({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-    });
-  } catch (error) {
-    if (publicFileOperationMessage(error, '') === 'file_library_save_point_create_pending') {
-      throw new FileLibraryRestorePreviewPreparationPendingError();
-    }
-    throw error;
-  }
-  if (result.operationStatus === 'pending') {
-    throw new FileLibraryRestorePreviewPreparationPendingError();
-  }
-  if (result.operationStatus !== 'succeeded' || !result.savePointId) {
-    throw new Error('file_library_restore_preview_failed');
-  }
-  await input.savePointRepo.upsertFromAfscp({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    afscpSavePointId: result.savePointId,
-    message: RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE,
-    createdAt: result.createdAt,
-    purpose: 'restore_preview_fence',
-  });
-}
-
 function buildPublishSnapshotAfscpTemplateId(taskFileTemplateId: string, requestId?: string): string {
   const suffix = requestId?.trim() || generateTaskFileTemplateId();
   return buildAfscpTemplateId(`${taskFileTemplateId}_publish_${suffix}`);
 }
 
-function operationStatusToRestorePreviewStatus(status: 'pending' | 'succeeded' | 'failed') {
-  if (status === 'succeeded') return 'ready' as const;
-  if (status === 'failed') return 'failed' as const;
-  return 'previewing' as const;
+function storageStatusToRestoreOperationStatus(
+  status: 'pending' | 'succeeded' | 'failed',
+): FileLibraryRestoreOperationStatus {
+  if (status === 'pending') return 'restoring';
+  return status;
 }
 
-function restorePreviewStatusAfterActiveOperation(
-  currentStatus: FileLibraryRestorePreviewStatus,
-  operationStatus: 'pending' | 'succeeded' | 'failed',
-): FileLibraryRestorePreviewStatus {
-  if (operationStatus === 'pending') {
-    return currentStatus;
-  }
-  if (operationStatus === 'failed') {
-    return 'failed';
-  }
-  if (currentStatus === 'canceling') {
-    return 'canceled';
-  }
-  if (currentStatus === 'restoring') {
-    return 'restored';
-  }
-  return 'ready';
+function isActiveRestoreOperationStatus(status: FileLibraryRestoreOperationStatus): boolean {
+  return status === 'pending' || status === 'restoring';
 }
 
-function isActiveRestorePreviewStatus(status: FileLibraryRestorePreviewStatus): boolean {
-  return status === 'previewing'
-    || status === 'ready'
-    || status === 'canceling'
-    || status === 'restoring';
+function isTerminalRestoreOperationStatus(status: FileLibraryRestoreOperationStatus): boolean {
+  return status === 'succeeded' || status === 'failed';
 }
 
-function isDisplayableRestorePreviewStatus(status: FileLibraryRestorePreviewStatus): boolean {
-  return isActiveRestorePreviewStatus(status) || status === 'failed';
-}
-
-function restorePreviewActiveOperationId(preview: FileLibraryRestorePreviewRecord): string {
-  return preview.afscp_active_operation_id ?? preview.afscp_preview_operation_id;
-}
-
-async function reconcileRestorePreviewRecord(input: {
+async function writeFileLibraryRestoreAuditEvent(input: {
   deps: NodeApiDeps;
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  workspaceId: string;
+  projectId: string;
+  actorUserId: string;
+  requestId?: string | null;
+  operation: FileLibraryRestoreOperationRecord;
+  action: 'project.file_library.restore.start' | 'project.file_library.restore.succeeded' | 'project.file_library.restore.failed';
+  result?: 'ok' | 'error';
+  errorCode?: string;
+  errorMessage?: string;
+  finalResult?: 'started' | 'succeeded' | 'failed';
+  failureCategory?: string;
+}): Promise<void> {
+  await writeProjectAuditEvent(input.deps, {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    actor: { type: 'user', id: input.actorUserId },
+    action: input.action,
+    result: input.result ?? 'ok',
+    requestId: input.requestId ?? null,
+    resourceType: 'project_file_library',
+    resourceId: input.operation.file_library_id,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    metadata: {
+      file_library_id: input.operation.file_library_id,
+      source_save_point_id: input.operation.source_save_point_id,
+      discard_unsaved_changes_confirmed: input.operation.discard_unsaved_changes_confirmed,
+      restore_operation_id: input.operation.id,
+      restore_operation_status: input.operation.status,
+      final_result: input.finalResult ?? (
+        input.action === 'project.file_library.restore.succeeded'
+          ? 'succeeded'
+          : input.action === 'project.file_library.restore.failed'
+            ? 'failed'
+            : 'started'
+      ),
+      ...(input.failureCategory ? { failure_category: input.failureCategory } : {}),
+    },
+  });
+}
+
+async function reconcileRestoreOperationRecord(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
   workspaceId: string;
   projectId: string;
   libraryId: string;
-  preview: FileLibraryRestorePreviewRecord;
+  operation: FileLibraryRestoreOperationRecord;
   requestId?: string;
-}): Promise<FileLibraryRestorePreviewRecord> {
-  if (
-    input.preview.status !== 'previewing'
-    && input.preview.status !== 'canceling'
-    && input.preview.status !== 'restoring'
-  ) {
-    return input.preview;
+}): Promise<FileLibraryRestoreOperationRecord> {
+  if (!isActiveRestoreOperationStatus(input.operation.status)) {
+    return input.operation;
   }
   if (!input.deps.fileLibraryStorageAdapter?.enabled) {
-    return input.preview;
+    return input.operation;
   }
-  const activeOperationId = restorePreviewActiveOperationId(input.preview);
-  const result = await input.deps.fileLibraryStorageAdapter.reconcileRestorePreview({
+  if (!input.operation.afscp_operation_id) {
+    return input.operation;
+  }
+  const result = await input.deps.fileLibraryStorageAdapter.reconcileRestoreOperation({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
-    operationId: activeOperationId,
+    operationId: input.operation.afscp_operation_id,
     requestId: input.requestId,
   });
-  const status = restorePreviewStatusAfterActiveOperation(input.preview.status, result.operationStatus);
-  return await input.restoreRepo.updateStatus({
+  const updated = await input.restoreRepo.updateStatus({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
-    restorePreviewId: input.preview.id,
-    status,
-    activeAfscpOperationId: result.operationStatus === 'pending' ? activeOperationId : null,
-    restorePlanId: result.restorePlanId ?? undefined,
-    summary: result.summary,
-    blockers: result.blockers,
-    stale: result.stale,
-  }) ?? input.preview;
+    operationId: input.operation.id,
+    status: storageStatusToRestoreOperationStatus(result.operationStatus),
+    afscpOperationId: result.operationId,
+    failureReason: result.operationStatus === 'failed' ? 'file_library_restore_failed' : null,
+  });
+  const next = updated ?? input.operation;
+  if (
+    isTerminalRestoreOperationStatus(next.status)
+    && next.status !== input.operation.status
+  ) {
+    await writeFileLibraryRestoreAuditEvent({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      actorUserId: next.created_by_user_id,
+      requestId: input.requestId,
+      operation: next,
+      action: next.status === 'succeeded'
+        ? 'project.file_library.restore.succeeded'
+        : 'project.file_library.restore.failed',
+      result: next.status === 'succeeded' ? 'ok' : 'error',
+      ...(next.status === 'failed'
+        ? {
+            errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
+            errorMessage: 'file_library_restore_failed',
+            failureCategory: next.failure_reason ?? 'file_library_restore_failed',
+          }
+        : {}),
+    });
+  }
+  return next;
 }
 
-async function findReconciledActiveRestorePreview(input: {
+async function findReconciledActiveRestoreOperation(input: {
   deps: NodeApiDeps;
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
   workspaceId: string;
   projectId: string;
   libraryId: string;
   requestId?: string;
-}): Promise<FileLibraryRestorePreviewRecord | null> {
+}): Promise<FileLibraryRestoreOperationRecord | null> {
   const active = await input.restoreRepo.findActiveByLibrary(input.workspaceId, input.projectId, input.libraryId);
   if (!active) {
     return null;
   }
-  const reconciled = await reconcileRestorePreviewRecord({
+  const reconciled = await reconcileRestoreOperationRecord({
     ...input,
-    preview: active,
+    operation: active,
   });
-  return isActiveRestorePreviewStatus(reconciled.status) ? reconciled : null;
+  return isActiveRestoreOperationStatus(reconciled.status) ? reconciled : null;
 }
 
-async function findReconciledDisplayableRestorePreview(input: {
+async function ensureNoActiveRestoreOperation(input: {
   deps: NodeApiDeps;
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  requestId?: string;
-}): Promise<FileLibraryRestorePreviewRecord | null> {
-  const latest = await input.restoreRepo.findLatestByLibrary(input.workspaceId, input.projectId, input.libraryId);
-  if (!latest) {
-    return null;
-  }
-  const reconciled = await reconcileRestorePreviewRecord({
-    ...input,
-    preview: latest,
-  });
-  return isDisplayableRestorePreviewStatus(reconciled.status) ? reconciled : null;
-}
-
-async function ensureNoActiveRestorePreview(input: {
-  deps: NodeApiDeps;
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
   workspaceId: string;
   projectId: string;
   libraryId: string;
   requestId?: string;
 }): Promise<void> {
-  const active = await findReconciledActiveRestorePreview(input);
-  if (active && isActiveRestorePreviewStatus(active.status)) {
-    throw new FileLibraryRestorePreviewActiveError(active);
+  const active = await findReconciledActiveRestoreOperation(input);
+  if (active) {
+    throw new FileLibraryRestoreOperationActiveError(active);
   }
+}
+
+function readIdempotencyKey(req: http.IncomingMessage): string | null {
+  const value = req.headers?.['idempotency-key'];
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
 }
 
 async function listCachedUserSavePoints(input: {
@@ -622,22 +583,6 @@ async function listCachedUserSavePoints(input: {
     libraryId: input.libraryId,
   });
   return records.map((record) => input.savePointRepo.toPublic(record));
-}
-
-async function shouldServeCachedSavePointsDuringRestorePreview(input: {
-  deps: NodeApiDeps;
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  requestId?: string;
-}): Promise<boolean> {
-  try {
-    const preview = await findReconciledDisplayableRestorePreview(input);
-    return preview !== null;
-  } catch {
-    return false;
-  }
 }
 
 type FileLibraryRuntimeAccessReleaseBlockerCode =
@@ -720,10 +665,6 @@ async function findActiveRuntimeWriter(input: {
   };
 }
 
-function hasRestorePreviewActiveWriterBlocker(preview: FileLibraryRestorePreviewRecord): boolean {
-  return preview.blockers?.some((blocker) => blocker.code === 'active_writer_sessions') ?? false;
-}
-
 async function findRestoreActiveWriterBinding(input: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -746,7 +687,6 @@ async function findRestoreActiveWriterBinding(input: {
 
 function buildActiveWriterRestoreBlockedBody(input: {
   libraryId: string;
-  restorePreviewId: string;
   binding: TaskFileLibraryBinding | null;
   actorUserId: string;
 }): Record<string, unknown> {
@@ -754,7 +694,6 @@ function buildActiveWriterRestoreBlockedBody(input: {
     error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
     message: 'file_library_active_writer_blocked',
     file_library_id: input.libraryId,
-    restore_preview_id: input.restorePreviewId,
     blockers: [{ code: 'active_writer_sessions' }],
     ...(input.binding
       ? buildBoundTaskSafeFields({
@@ -765,31 +704,11 @@ function buildActiveWriterRestoreBlockedBody(input: {
   };
 }
 
-async function markRestorePreviewActiveWriterBlocked(input: {
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  preview: FileLibraryRestorePreviewRecord;
-}): Promise<FileLibraryRestorePreviewRecord> {
-  return await input.restoreRepo.updateStatus({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    restorePreviewId: input.preview.id,
-    status: 'ready',
-    activeAfscpOperationId: null,
-    blockers: [{ code: 'active_writer_sessions' }],
-    stale: false,
-  }) ?? input.preview;
-}
-
 async function buildActiveWriterRestoreBlockedBodyForCurrentBinding(input: {
   deps: NodeApiDeps;
   workspaceId: string;
   projectId: string;
   libraryId: string;
-  restorePreviewId: string;
   actorUserId: string;
 }): Promise<Record<string, unknown>> {
   const binding = await findRestoreActiveWriterBinding({
@@ -800,33 +719,8 @@ async function buildActiveWriterRestoreBlockedBodyForCurrentBinding(input: {
   });
   return buildActiveWriterRestoreBlockedBody({
     libraryId: input.libraryId,
-    restorePreviewId: input.restorePreviewId,
     binding,
     actorUserId: input.actorUserId,
-  });
-}
-
-async function clearRestorePreviewActiveWriterBlocker(input: {
-  restoreRepo: JsonDocFileLibraryRestorePreviewRepo;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-}): Promise<void> {
-  const active = await input.restoreRepo.findActiveByLibrary(
-    input.workspaceId,
-    input.projectId,
-    input.libraryId,
-  );
-  if (!active?.blockers?.some((blocker) => blocker.code === 'active_writer_sessions')) {
-    return;
-  }
-  await input.restoreRepo.updateStatus({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    restorePreviewId: active.id,
-    status: active.status,
-    blockers: active.blockers.filter((blocker) => blocker.code !== 'active_writer_sessions'),
   });
 }
 
@@ -1117,11 +1011,11 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
-    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
     const templateId = generateTaskFileTemplateId();
     const afscpTemplateId = buildAfscpTemplateId(templateId);
     try {
-      await ensureNoActiveRestorePreview({
+      await ensureNoActiveRestoreOperation({
         deps,
         restoreRepo,
         workspaceId,
@@ -1202,9 +1096,9 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
     }
     try {
-      await ensureNoActiveRestorePreview({
+      await ensureNoActiveRestoreOperation({
         deps,
-        restoreRepo: new JsonDocFileLibraryRestorePreviewRepo(deps.docStore),
+        restoreRepo: new JsonDocFileLibraryRestoreOperationRepo(deps.docStore),
         workspaceId,
         projectId,
         libraryId: existing.source_library_id,
@@ -1326,6 +1220,30 @@ export async function handleProjectFileLibraryRoutes(args: {
     return true;
   }
 
+  if (
+    isFileLibraryRestoreConflictingMutationRoute(routeKind, method)
+    && routeKind !== 'fileLibraryRestore'
+  ) {
+    try {
+      await ensureNoActiveRestoreOperation({
+        deps,
+        restoreRepo: new JsonDocFileLibraryRestoreOperationRepo(deps.docStore),
+        workspaceId,
+        projectId,
+        libraryId,
+        requestId: readOptionalRequestId(req),
+      });
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_FAILED',
+        'file_library_restore_failed',
+      );
+      json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
+      return true;
+    }
+  }
+
   if (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST') {
     await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
     const binding = await findTaskFileLibraryBinding({
@@ -1395,14 +1313,6 @@ export async function handleProjectFileLibraryRoutes(args: {
           })
         : null;
       const releasePending = runtimeBinding ? isReleasePendingRuntimeWorkspaceBinding(runtimeBinding) : false;
-      if (!releasePending) {
-        await clearRestorePreviewActiveWriterBlocker({
-          restoreRepo: new JsonDocFileLibraryRestorePreviewRepo(deps.docStore),
-          workspaceId,
-          projectId,
-          libraryId,
-        });
-      }
       json(res, 200, {
         file_library_id: libraryId,
         released: !releasePending,
@@ -1709,28 +1619,6 @@ export async function handleProjectFileLibraryRoutes(args: {
           return true;
         }
       }
-      if (publicMessage === 'file_library_save_point_list_failed') {
-        const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
-        const hasRestorePreviewProjection = await shouldServeCachedSavePointsDuringRestorePreview({
-          deps,
-          restoreRepo,
-          workspaceId,
-          projectId,
-          libraryId,
-          requestId: readOptionalRequestId(req),
-        });
-        if (hasRestorePreviewProjection) {
-          json(res, 200, {
-            items: await listCachedUserSavePoints({
-              savePointRepo,
-              workspaceId,
-              projectId,
-              libraryId,
-            }),
-          });
-          return true;
-        }
-      }
       const mapped = mapFileLibraryControlRouteError(
         error,
         'FILE_LIBRARY_SAVE_POINT_LIST_FAILED',
@@ -1790,10 +1678,10 @@ export async function handleProjectFileLibraryRoutes(args: {
     return true;
   }
 
-  if (routeKind === 'fileLibraryRestorePreview' && method === 'GET') {
-    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+  if (routeKind === 'fileLibraryRestore' && method === 'GET') {
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
     try {
-      const active = await findReconciledDisplayableRestorePreview({
+      const active = await findReconciledActiveRestoreOperation({
         deps,
         restoreRepo,
         workspaceId,
@@ -1802,23 +1690,28 @@ export async function handleProjectFileLibraryRoutes(args: {
         requestId: readOptionalRequestId(req),
       });
       json(res, 200, {
-        restore_preview: active ? restoreRepo.toPublic(active) : null,
+        restore_operation: active ? restoreRepo.toPublic(active) : null,
       });
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,
-        'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
-        'file_library_restore_preview_failed',
+        'FILE_LIBRARY_RESTORE_FAILED',
+        'file_library_restore_failed',
       );
       json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
     }
     return true;
   }
 
-  if (routeKind === 'fileLibraryRestorePreview' && method === 'POST') {
-    const parsed = CreateFileLibraryRestorePreviewRequestSchema.safeParse(await readBody(req));
+  if (routeKind === 'fileLibraryRestore' && method === 'POST') {
+    const parsed = CreateFileLibraryRestoreRequestSchema.safeParse(await readBody(req));
     if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_preview_request' });
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'bad_request' });
+      return true;
+    }
+    const idempotencyKey = readIdempotencyKey(req);
+    if (!idempotencyKey) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'idempotency_key_required' });
       return true;
     }
     if (!deps.fileLibraryStorageAdapter?.enabled) {
@@ -1826,7 +1719,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
-    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
+    const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
     const savePoint = await savePointRepo.getById(workspaceId, projectId, libraryId, parsed.data.save_point_id);
     if (!savePoint) {
       json(res, 404, {
@@ -1835,110 +1728,45 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       return true;
     }
+    const requestId = readOptionalRequestId(req);
+    let startedOperation: FileLibraryRestoreOperationRecord | null = null;
     try {
-      await ensureNoActiveRestorePreview({
-        deps,
-        restoreRepo,
+      const existing = await restoreRepo.findByIdempotencyKey(
         workspaceId,
         projectId,
         libraryId,
-        requestId: readOptionalRequestId(req),
-      });
-      await createRestorePreviewCurrentStateFence({
-        storageAdapter: deps.fileLibraryStorageAdapter,
-        savePointRepo,
-        workspaceId,
-        projectId,
-        libraryId,
-        actorUserId: user.id,
-        requestId: readOptionalRequestId(req),
-      });
-      const result = await deps.fileLibraryStorageAdapter.createRestorePreview({
-        workspaceId,
-        projectId,
-        libraryId,
-        savePointId: savePoint.afscp_save_point_id,
-        actorUserId: user.id,
-        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
-      });
-      if (!result.operationId) {
-        json(res, 502, {
-          error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
-          message: 'file_library_restore_preview_failed',
-        });
-        return true;
-      }
-      const preview = await restoreRepo.create({
-        workspaceId,
-        projectId,
-        libraryId,
-        afscpPreviewOperationId: result.operationId,
-        activeAfscpOperationId: result.operationStatus === 'pending' ? result.operationId : null,
-        sourceSavePointId: savePoint.id,
-        sourceAfscpSavePointId: savePoint.afscp_save_point_id,
-        status: operationStatusToRestorePreviewStatus(result.operationStatus),
-        restorePlanId: result.restorePlanId ?? undefined,
-        summary: result.summary,
-        blockers: result.blockers,
-        stale: result.stale,
-      });
-      json(res, 201, restoreRepo.toPublic(preview));
-    } catch (error) {
-      const mapped = mapFileLibraryControlRouteError(
-        error,
-        'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
-        'file_library_restore_preview_failed',
+        idempotencyKey,
       );
-      json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
-    }
-    return true;
-  }
-
-  if (routeKind === 'fileLibraryRestoreRun' && method === 'POST') {
-    const parsed = RunFileLibraryRestoreRequestSchema.safeParse(await readBody(req));
-    if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_run_request' });
-      return true;
-    }
-    if (!deps.fileLibraryStorageAdapter?.enabled) {
-      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
-      return true;
-    }
-    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
-    let preview = await restoreRepo.getById(workspaceId, projectId, libraryId, parsed.data.restore_preview_id);
-    if (!preview) {
-      json(res, 404, {
-        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
-        message: 'file_library_restore_preview_not_found',
-      });
-      return true;
-    }
-    try {
-      preview = await reconcileRestorePreviewRecord({
-        deps,
-        restoreRepo,
-        workspaceId,
-        projectId,
-        libraryId,
-        preview,
-        requestId: readOptionalRequestId(req),
-      });
-      if (preview.status !== 'ready') {
-        throw new Error(preview.status === 'previewing'
-          ? 'file_library_restore_preview_pending'
-          : 'file_library_restore_preview_stale');
-      }
-      if (hasRestorePreviewActiveWriterBlocker(preview)) {
-        json(res, 409, await buildActiveWriterRestoreBlockedBodyForCurrentBinding({
+      if (existing) {
+        const reconciled = await reconcileRestoreOperationRecord({
           deps,
+          restoreRepo,
           workspaceId,
           projectId,
           libraryId,
-          restorePreviewId: preview.id,
-          actorUserId: user.id,
-        }));
+          operation: existing,
+          requestId,
+        });
+        json(res, 200, restoreRepo.toPublic(reconciled));
         return true;
       }
+
+      const active = await findReconciledActiveRestoreOperation({
+        deps,
+        restoreRepo,
+        workspaceId,
+        projectId,
+        libraryId,
+        requestId,
+      });
+      if (active) {
+        if (active.source_save_point_id === savePoint.id) {
+          json(res, 200, restoreRepo.toPublic(active));
+          return true;
+        }
+        throw new FileLibraryRestoreOperationActiveError(active);
+      }
+
       const activeWriter = await findActiveRuntimeWriter({
         deps,
         workspaceId,
@@ -1946,140 +1774,171 @@ export async function handleProjectFileLibraryRoutes(args: {
         libraryId,
       });
       if (activeWriter) {
-        await markRestorePreviewActiveWriterBlocked({
-          restoreRepo,
-          workspaceId,
-          projectId,
-          libraryId,
-          preview,
-        });
         json(res, 409, buildActiveWriterRestoreBlockedBody({
           libraryId,
-          restorePreviewId: preview.id,
           binding: activeWriter.binding,
           actorUserId: user.id,
         }));
         return true;
       }
-      const result = await deps.fileLibraryStorageAdapter.runRestorePreview({
+
+      await deps.fileLibraryStorageAdapter.preflightRestoreFileLibrary({
         workspaceId,
         projectId,
         libraryId,
-        previewOperationId: preview.afscp_preview_operation_id,
+        savePointId: savePoint.afscp_save_point_id,
+        discardUnsavedChangesConfirmed: true,
+        idempotencyKey,
         actorUserId: user.id,
-        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+        requestId: requestId ?? undefined,
       });
-      await restoreRepo.updateStatus({
+
+      const pendingOperationResult = await restoreRepo.createOrReuseByIdempotencyKey({
         workspaceId,
         projectId,
         libraryId,
-        restorePreviewId: preview.id,
-        status: result.operationStatus === 'succeeded'
-          ? 'restored'
-          : result.operationStatus === 'failed'
-            ? 'failed'
-            : 'restoring',
-        activeAfscpOperationId: result.operationStatus === 'pending' ? result.operationId : null,
-        restorePlanId: result.restorePlanId ?? undefined,
-        summary: result.summary,
-        blockers: result.blockers,
-        stale: result.stale,
+        afscpOperationId: null,
+        sourceSavePointId: savePoint.id,
+        sourceAfscpSavePointId: savePoint.afscp_save_point_id,
+        status: 'pending',
+        idempotencyKey,
+        createdByUserId: user.id,
+        discardUnsavedChangesConfirmed: true,
       });
-      const now = new Date().toISOString();
-      json(res, 200, {
-        id: generateFileLibraryRestoreRunId(),
-        file_library_id: libraryId,
-        restore_preview_id: preview.id,
-        status: result.operationStatus,
-        created_at: now,
-        updated_at: now,
-      });
-    } catch (error) {
-      const mapped = mapFileLibraryControlRouteError(
-        error,
-        'FILE_LIBRARY_RESTORE_RUN_FAILED',
-        'file_library_restore_run_failed',
-      );
-      if (mapped.errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED') {
-        await markRestorePreviewActiveWriterBlocked({
+      const pendingOperation = pendingOperationResult.operation;
+      if (!pendingOperationResult.created) {
+        const reconciled = await reconcileRestoreOperationRecord({
+          deps,
           restoreRepo,
           workspaceId,
           projectId,
           libraryId,
-          preview,
+          operation: pendingOperation,
+          requestId,
         });
+        json(res, 200, restoreRepo.toPublic(reconciled));
+        return true;
+      }
+      startedOperation = pendingOperation;
+      await writeFileLibraryRestoreAuditEvent({
+        deps,
+        workspaceId,
+        projectId,
+        actorUserId: user.id,
+        requestId,
+        operation: pendingOperation,
+        action: 'project.file_library.restore.start',
+      });
+
+      const result = await deps.fileLibraryStorageAdapter.restoreFileLibrary({
+        workspaceId,
+        projectId,
+        libraryId,
+        savePointId: savePoint.afscp_save_point_id,
+        discardUnsavedChangesConfirmed: true,
+        idempotencyKey,
+        actorUserId: user.id,
+        requestId: requestId ?? undefined,
+      });
+      if (!result.operationId) {
+        const failedOperation = await restoreRepo.updateStatus({
+          workspaceId,
+          projectId,
+          libraryId,
+          operationId: pendingOperation.id,
+          status: 'failed',
+          failureReason: 'file_library_restore_failed',
+        }) ?? pendingOperation;
+        await writeFileLibraryRestoreAuditEvent({
+          deps,
+          workspaceId,
+          projectId,
+          actorUserId: user.id,
+          requestId,
+          operation: failedOperation,
+          action: 'project.file_library.restore.failed',
+          result: 'error',
+          errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
+          errorMessage: 'file_library_restore_failed',
+          failureCategory: 'file_library_restore_failed',
+        });
+        json(res, 502, {
+          error_code: 'FILE_LIBRARY_RESTORE_FAILED',
+          message: 'file_library_restore_failed',
+        });
+        return true;
+      }
+      const nextStatus = storageStatusToRestoreOperationStatus(result.operationStatus);
+      const operation = await restoreRepo.updateStatus({
+        workspaceId,
+        projectId,
+        libraryId,
+        operationId: pendingOperation.id,
+        afscpOperationId: result.operationId,
+        status: nextStatus,
+        failureReason: nextStatus === 'failed' ? 'file_library_restore_failed' : null,
+      }) ?? pendingOperation;
+      if (isTerminalRestoreOperationStatus(operation.status)) {
+        await writeFileLibraryRestoreAuditEvent({
+          deps,
+          workspaceId,
+          projectId,
+          actorUserId: user.id,
+          requestId,
+          operation,
+          action: operation.status === 'succeeded'
+            ? 'project.file_library.restore.succeeded'
+            : 'project.file_library.restore.failed',
+          result: operation.status === 'succeeded' ? 'ok' : 'error',
+          ...(operation.status === 'failed'
+            ? {
+                errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
+                errorMessage: 'file_library_restore_failed',
+                failureCategory: operation.failure_reason ?? 'file_library_restore_failed',
+              }
+            : {}),
+        });
+      }
+      json(res, 200, restoreRepo.toPublic(operation));
+    } catch (error) {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_FAILED',
+        'file_library_restore_failed',
+      );
+      if (startedOperation) {
+        const failedOperation = await restoreRepo.updateStatus({
+          workspaceId,
+          projectId,
+          libraryId,
+          operationId: startedOperation.id,
+          status: 'failed',
+          failureReason: mapped.message,
+        }) ?? startedOperation;
+        await writeFileLibraryRestoreAuditEvent({
+          deps,
+          workspaceId,
+          projectId,
+          actorUserId: user.id,
+          requestId,
+          operation: failedOperation,
+          action: 'project.file_library.restore.failed',
+          result: 'error',
+          errorCode: mapped.errorCode,
+          errorMessage: mapped.message,
+          failureCategory: mapped.message,
+        });
+      }
+      if (mapped.errorCode === 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED') {
         json(res, 409, await buildActiveWriterRestoreBlockedBodyForCurrentBinding({
           deps,
           workspaceId,
           projectId,
           libraryId,
-          restorePreviewId: preview.id,
           actorUserId: user.id,
         }));
         return true;
       }
-      json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
-    }
-    return true;
-  }
-
-  if (routeKind === 'fileLibraryRestoreCancel' && method === 'POST') {
-    const parsed = CancelFileLibraryRestoreRequestSchema.safeParse(await readBody(req));
-    if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_restore_cancel_request' });
-      return true;
-    }
-    if (!deps.fileLibraryStorageAdapter?.enabled) {
-      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
-      return true;
-    }
-    const restoreRepo = new JsonDocFileLibraryRestorePreviewRepo(deps.docStore);
-    let preview = await restoreRepo.getById(workspaceId, projectId, libraryId, parsed.data.restore_preview_id);
-    if (!preview) {
-      json(res, 404, {
-        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
-        message: 'file_library_restore_preview_not_found',
-      });
-      return true;
-    }
-    try {
-      preview = await reconcileRestorePreviewRecord({
-        deps,
-        restoreRepo,
-        workspaceId,
-        projectId,
-        libraryId,
-        preview,
-        requestId: readOptionalRequestId(req),
-      });
-      const result = await deps.fileLibraryStorageAdapter.discardRestorePreview({
-        workspaceId,
-        projectId,
-        libraryId,
-        previewOperationId: preview.afscp_preview_operation_id,
-        actorUserId: user.id,
-        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
-      });
-      const updated = await restoreRepo.updateStatus({
-        workspaceId,
-        projectId,
-        libraryId,
-        restorePreviewId: preview.id,
-        status: result.operationStatus === 'succeeded'
-          ? 'canceled'
-          : result.operationStatus === 'failed'
-            ? 'failed'
-            : 'canceling',
-        activeAfscpOperationId: result.operationStatus === 'pending' ? result.operationId : null,
-        restorePlanId: result.restorePlanId ?? undefined,
-      });
-      json(res, 200, restoreRepo.toPublic(updated ?? preview));
-    } catch (error) {
-      const mapped = mapFileLibraryControlRouteError(
-        error,
-        'FILE_LIBRARY_RESTORE_CANCEL_FAILED',
-        'file_library_restore_discard_failed',
-      );
       json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
     }
     return true;

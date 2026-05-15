@@ -59,8 +59,7 @@ export const ErrorResponseSchema = z.object({
   request_id: z.string().optional(),
   file_library_id: z.string().min(1).optional(),
   file_library_status: z.string().min(1).optional(),
-  restore_preview_id: z.string().min(1).optional(),
-  restore_preview_status: z.string().min(1).optional(),
+  restore_operation: z.unknown().optional(),
   operation_status: z.string().min(1).optional(),
   retry_after_ms: z.number().int().positive().optional(),
 });
@@ -212,7 +211,6 @@ export const FileLibraryRestoreActiveWriterBlockedErrorSchema = z.object({
   error_code: z.literal('FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'),
   message: z.literal('file_library_active_writer_blocked'),
   file_library_id: z.string().min(1),
-  restore_preview_id: z.string().min(1),
   blockers: z.array(z.object({
     code: z.literal('active_writer_sessions'),
   }).strict()).min(1),
@@ -401,76 +399,29 @@ export const CreateFileLibrarySavePointRequestSchema = z.object({
   message: z.string().trim().min(1).max(500).optional(),
 }).strict();
 
-export const FileLibraryRestorePreviewStatusSchema = z.enum([
-  'previewing',
-  'ready',
-  'failed',
-  'canceling',
-  'canceled',
+export const FileLibraryRestoreOperationStatusSchema = z.enum([
+  'pending',
   'restoring',
-  'restored',
+  'succeeded',
+  'failed',
 ]);
 
-export const FileLibraryRestorePreviewChangeSummarySchema = z.object({
-  count: z.number().int().nonnegative(),
-  samples: z.array(z.string().min(1)).default([]),
-}).strict();
-
-export const FileLibraryRestorePreviewSummarySchema = z.object({
-  added: FileLibraryRestorePreviewChangeSummarySchema,
-  changed: FileLibraryRestorePreviewChangeSummarySchema,
-  removed: FileLibraryRestorePreviewChangeSummarySchema,
-  destructive: z.boolean(),
-}).strict();
-
-export const FileLibraryRestorePreviewBlockerCodeSchema = z.enum([
-  'active_writer_sessions',
-  'stale_writer_session_uncertain',
-  'restore_preview_stale',
-  'restore_plan_requires_recovery',
-]);
-
-export const FileLibraryRestorePreviewBlockerSchema = z.object({
-  code: FileLibraryRestorePreviewBlockerCodeSchema,
-  message: z.string().min(1).optional(),
-}).strict();
-
-export const FileLibraryRestorePreviewSchema = z.object({
+export const FileLibraryRestoreOperationSchema = z.object({
   id: z.string().min(1),
   file_library_id: z.string().min(1),
   source_save_point_id: z.string().min(1),
-  status: FileLibraryRestorePreviewStatusSchema,
-  message: z.string().min(1).optional(),
-  summary: FileLibraryRestorePreviewSummarySchema.optional(),
-  blockers: z.array(FileLibraryRestorePreviewBlockerSchema).optional(),
-  stale: z.boolean().optional(),
+  status: FileLibraryRestoreOperationStatusSchema,
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 }).strict();
 
-export const GetFileLibraryRestorePreviewResponseSchema = z.object({
-  restore_preview: FileLibraryRestorePreviewSchema.nullable(),
+export const GetFileLibraryRestoreResponseSchema = z.object({
+  restore_operation: FileLibraryRestoreOperationSchema.nullable(),
 }).strict();
 
-export const CreateFileLibraryRestorePreviewRequestSchema = z.object({
+export const CreateFileLibraryRestoreRequestSchema = z.object({
   save_point_id: z.string().min(1),
-}).strict();
-
-export const RunFileLibraryRestoreRequestSchema = z.object({
-  restore_preview_id: z.string().min(1),
-}).strict();
-
-export const CancelFileLibraryRestoreRequestSchema = z.object({
-  restore_preview_id: z.string().min(1),
-}).strict();
-
-export const FileLibraryRestoreRunSchema = z.object({
-  id: z.string().min(1),
-  file_library_id: z.string().min(1),
-  restore_preview_id: z.string().min(1),
-  status: z.enum(['pending', 'succeeded', 'failed']),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
+  discard_unsaved_changes_confirmed: z.literal(true),
 }).strict();
 
 export const TaskFileTemplateStatusSchema = z.enum(['unpublished', 'published', 'failed']);
@@ -713,17 +664,10 @@ export type UpdateFileLibraryRequest = z.infer<typeof UpdateFileLibraryRequestSc
 export type FileLibrarySavePointDTO = z.infer<typeof FileLibrarySavePointSchema>;
 export type ListFileLibrarySavePointsResponse = z.infer<typeof ListFileLibrarySavePointsResponseSchema>;
 export type CreateFileLibrarySavePointRequest = z.infer<typeof CreateFileLibrarySavePointRequestSchema>;
-export type FileLibraryRestorePreviewStatus = z.infer<typeof FileLibraryRestorePreviewStatusSchema>;
-export type FileLibraryRestorePreviewChangeSummary = z.infer<typeof FileLibraryRestorePreviewChangeSummarySchema>;
-export type FileLibraryRestorePreviewSummary = z.infer<typeof FileLibraryRestorePreviewSummarySchema>;
-export type FileLibraryRestorePreviewBlockerCode = z.infer<typeof FileLibraryRestorePreviewBlockerCodeSchema>;
-export type FileLibraryRestorePreviewBlocker = z.infer<typeof FileLibraryRestorePreviewBlockerSchema>;
-export type FileLibraryRestorePreviewDTO = z.infer<typeof FileLibraryRestorePreviewSchema>;
-export type GetFileLibraryRestorePreviewResponse = z.infer<typeof GetFileLibraryRestorePreviewResponseSchema>;
-export type CreateFileLibraryRestorePreviewRequest = z.infer<typeof CreateFileLibraryRestorePreviewRequestSchema>;
-export type RunFileLibraryRestoreRequest = z.infer<typeof RunFileLibraryRestoreRequestSchema>;
-export type CancelFileLibraryRestoreRequest = z.infer<typeof CancelFileLibraryRestoreRequestSchema>;
-export type FileLibraryRestoreRunDTO = z.infer<typeof FileLibraryRestoreRunSchema>;
+export type FileLibraryRestoreOperationStatus = z.infer<typeof FileLibraryRestoreOperationStatusSchema>;
+export type FileLibraryRestoreOperationDTO = z.infer<typeof FileLibraryRestoreOperationSchema>;
+export type GetFileLibraryRestoreResponse = z.infer<typeof GetFileLibraryRestoreResponseSchema>;
+export type CreateFileLibraryRestoreRequest = z.infer<typeof CreateFileLibraryRestoreRequestSchema>;
 export type TaskFileTemplateStatus = z.infer<typeof TaskFileTemplateStatusSchema>;
 export type TaskFileTemplateDTO = z.infer<typeof TaskFileTemplateSchema>;
 export type ListTaskFileTemplatesResponse = z.infer<typeof ListTaskFileTemplatesResponseSchema>;

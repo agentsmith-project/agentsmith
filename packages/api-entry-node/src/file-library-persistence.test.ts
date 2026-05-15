@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   buildFileLibraryRecord,
-  JsonDocFileLibraryRestorePreviewRepo,
+  JsonDocFileLibraryRestoreOperationRepo,
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectFileLibraryCatalogRepo,
 } from './file-library-persistence.js';
@@ -197,9 +197,9 @@ describe('file-library-persistence catalog schema', () => {
     await expect(docStore.get('project_file_libraries', 'flib_invalid_update')).resolves.toEqual(before);
   });
 
-  it('persists restore preview typed projection for public records', async () => {
+  it('persists direct restore operation typed projection for public records', async () => {
     const docStore = new InMemoryJsonDocStore();
-    const repo = new JsonDocFileLibraryRestorePreviewRepo(
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
       docStore,
       () => '2026-05-09T12:00:00.000Z',
     );
@@ -208,65 +208,162 @@ describe('file-library-persistence catalog schema', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_restore',
-      afscpPreviewOperationId: 'op_preview01',
+      afscpOperationId: 'op_restore_direct',
       sourceSavePointId: 'flsp_restore',
       sourceAfscpSavePointId: 'sp_restore',
-      status: 'ready',
-      restorePlanId: 'plan_001',
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [],
-      stale: false,
+      status: 'restoring',
+      idempotencyKey: 'restore-key-1',
+      createdByUserId: 'user_1',
     });
 
     expect(repo.toPublic(record)).toMatchObject({
       id: record.id,
       file_library_id: 'flib_restore',
       source_save_point_id: 'flsp_restore',
-      status: 'ready',
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [],
-      stale: false,
+      status: 'restoring',
+      created_at: '2026-05-09T12:00:00.000Z',
+      updated_at: '2026-05-09T12:00:00.000Z',
     });
 
     const stored = await docStore.get<Record<string, unknown>>(
-      'project_file_library_restore_previews',
+      'project_file_library_restore_operations',
       record.id,
     );
     expect(stored).toMatchObject({
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [],
-      stale: false,
+      afscp_operation_id: 'op_restore_direct',
+      source_afscp_save_point_id: 'sp_restore',
+      idempotency_key: 'restore-key-1',
+      created_by_user_id: 'user_1',
+    });
+    await expect(repo.findByIdempotencyKey(
+      'ws_default',
+      'proj_1',
+      'flib_restore',
+      'restore-key-1',
+    )).resolves.toMatchObject({ id: record.id });
+    await expect(repo.findActiveByLibrary('ws_default', 'proj_1', 'flib_restore'))
+      .resolves.toMatchObject({ id: record.id });
+  });
+
+  it('supports a durable pre-start direct restore operation before the AFSCP operation id is assigned', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+
+    const record = await repo.create({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_prestart',
+      afscpOperationId: null,
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'pending',
+      idempotencyKey: 'restore-key-prestart',
+      createdByUserId: 'user_1',
+    });
+
+    expect(repo.toPublic(record)).toEqual({
+      id: record.id,
+      file_library_id: 'flib_restore_prestart',
+      source_save_point_id: 'flsp_restore',
+      status: 'pending',
+      created_at: '2026-05-09T12:00:00.000Z',
+      updated_at: '2026-05-09T12:00:00.000Z',
+    });
+    await expect(docStore.get<Record<string, unknown>>(
+      'project_file_library_restore_operations',
+      record.id,
+    )).resolves.toMatchObject({
+      afscp_operation_id: null,
+      idempotency_key: 'restore-key-prestart',
+    });
+
+    await expect(repo.updateStatus({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_prestart',
+      operationId: record.id,
+      status: 'restoring',
+      afscpOperationId: 'op_restore_direct',
+    })).resolves.toMatchObject({
+      id: record.id,
+      status: 'restoring',
+      afscp_operation_id: 'op_restore_direct',
     });
   });
 
-  it('classifies restore preview fence save points synced from AFSCP as internal records', async () => {
+  it('creates or reuses one restore operation for a scoped idempotency key', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_idempotent',
+      afscpOperationId: null,
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'pending' as const,
+      idempotencyKey: 'restore-key-stable',
+      createdByUserId: 'user_1',
+      discardUnsavedChangesConfirmed: true as const,
+    };
+
+    const [first, second] = await Promise.all([
+      repo.createOrReuseByIdempotencyKey(input),
+      repo.createOrReuseByIdempotencyKey(input),
+    ]);
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.operation.id).toBe(first.operation.id);
+    expect(first.operation.id).toMatch(/^flro_/);
+    await expect(docStore.list<Record<string, unknown>>(
+      'project_file_library_restore_operations',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: 'flib_restore_idempotent',
+      },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: first.operation.id,
+        idempotency_key: 'restore-key-stable',
+      }),
+    ]);
+
+    const repeatFromFreshRepo = await new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:01:00.000Z',
+    ).createOrReuseByIdempotencyKey({
+      ...input,
+      sourceSavePointId: 'flsp_restore_other',
+    });
+    expect(repeatFromFreshRepo.created).toBe(false);
+    expect(repeatFromFreshRepo.operation).toMatchObject({
+      id: first.operation.id,
+      source_save_point_id: 'flsp_restore',
+      idempotency_key: 'restore-key-stable',
+    });
+  });
+
+  it('keeps AFSCP history save points public without direct restore fence classification', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocFileLibrarySavePointMappingRepo(
       docStore,
       () => '2026-05-09T12:00:00.000Z',
     );
 
-    const syncedFence = await repo.upsertFromAfscp({
+    const syncedHistoryPoint = await repo.upsertFromAfscp({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_restore',
-      afscpSavePointId: 'sp_restore_preview_fence',
-      message: 'Restore preview current state',
+      afscpSavePointId: 'sp_direct_restore_history',
+      message: 'Direct restore historical checkpoint',
       createdAt: '2026-05-09T00:00:00.000Z',
     });
     await repo.upsertFromAfscp({
@@ -278,12 +375,16 @@ describe('file-library-persistence catalog schema', () => {
       createdAt: '2026-05-09T00:01:00.000Z',
     });
 
-    expect(syncedFence.purpose).toBe('restore_preview_fence');
+    expect(syncedHistoryPoint.purpose).toBe('user');
     await expect(repo.listByLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_restore',
     })).resolves.toEqual([
+      expect.objectContaining({
+        afscp_save_point_id: 'sp_direct_restore_history',
+        purpose: 'user',
+      }),
       expect.objectContaining({
         afscp_save_point_id: 'sp_user_visible',
         purpose: 'user',

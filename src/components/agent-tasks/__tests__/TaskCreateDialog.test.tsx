@@ -184,7 +184,6 @@ vi.mock('next-intl', () => ({
       'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
       'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
       'file_library_operation_pending.description': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
-      'file_library_restore_preview_active.description': 'A restore preview is still open. Cancel or finish it before creating a task from this template.',
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
       'advanced_settings': 'Advanced settings',
@@ -1088,11 +1087,6 @@ describe('TaskCreateDialog', () => {
         'FILE_LIBRARY_OPERATION_PENDING',
         'file_library_operation_pending',
         'File state is still being updated. Wait for the current file operation to finish, then try again.',
-      ],
-      [
-        'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
-        'file_library_restore_preview_active',
-        'A restore preview is still open. Cancel or finish it before creating a task from this template.',
       ],
     ])('keeps template create conflicts inline for %s', async (errorCode, message, expectedMessage) => {
       const user = userEvent.setup();

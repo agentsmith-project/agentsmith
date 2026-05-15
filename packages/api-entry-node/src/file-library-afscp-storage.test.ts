@@ -87,22 +87,14 @@ function createProductClient(overrides: Partial<AfscpProductClientPort> = {}): A
       result: null,
       error: null,
     })),
-    createRestorePreview: vi.fn(async () => ({
-      operation_id: 'op_preview01',
-      operation_state: 'queued',
-      resource: { type: 'repo', id: 'repo_flib_123' },
-      result: null,
-      error: null,
+    admitRestoreRepo: vi.fn(async () => ({
+      admitted: true,
+      repo_id: 'repo_flib_123',
+      save_point_id: 'sp_user_001',
+      operation_type: 'restore',
     })),
-    runRestorePreview: vi.fn(async () => ({
-      operation_id: 'op_restore_run',
-      operation_state: 'queued',
-      resource: { type: 'repo', id: 'repo_flib_123' },
-      result: null,
-      error: null,
-    })),
-    discardRestorePreview: vi.fn(async () => ({
-      operation_id: 'op_restore_discard',
+    restoreRepo: vi.fn(async () => ({
+      operation_id: 'op_restore_direct',
       operation_state: 'queued',
       resource: { type: 'repo', id: 'repo_flib_123' },
       result: null,
@@ -1013,7 +1005,7 @@ describe('AFSCP File Library storage adapter', () => {
           message: 'afscp_operator_recovery_required',
           retryable: false,
           correlation_id: 'corr_save_point_operator',
-          operation_id: 'op_restore_preview_failed_hidden',
+          operation_id: 'op_save_point_list_failed_hidden',
           resource_kind: 'operation',
         });
       }),
@@ -1284,98 +1276,142 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.pollOperation).not.toHaveBeenCalled();
   });
 
-  it('creates, runs, and discards restore previews through AFSCP with restore-plan ownership anchors', async () => {
+  it('directly restores a save point through AFSCP with save-point ownership anchors', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async (input) => ({
         ...succeededRepoOperation,
         operation_id: input.operationId,
-        operation_type: input.operationId === 'op_preview01'
-          ? 'restore_preview'
-          : input.operationId === 'op_restore_run'
-            ? 'restore_run'
-            : 'restore_preview_discard',
+        operation_type: 'repo_restore',
         operation_state: 'succeeded',
         external_resource_ids: {
-          restore_plan_id: 'plan_001',
           source_save_point_id: 'sp_user_001',
         },
         verification_result: {
-          restore_plan_id: 'plan_001',
           source_save_point_id: 'sp_user_001',
-          summary: {
-            added: { count: 1, samples: ['src/new.ts'] },
-            changed: { count: 2, samples: ['docs/readme.md'] },
-            removed: { count: 1, samples: ['tmp/cache.txt'] },
-            destructive: true,
-          },
-          blockers: [],
-          stale: false,
         },
       })),
     });
     const { adapter, ownershipStore } = await createMappedAdapter({ client });
 
-    await expect(adapter.createRestorePreview({
+    await expect(adapter.restoreFileLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: 'sp_user_001',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-direct',
       actorUserId: 'user_1',
-      requestId: 'req_restore_preview',
+      requestId: 'req_restore_direct',
     })).resolves.toMatchObject({
-      operationId: 'op_preview01',
+      operationId: 'op_restore_direct',
       operationStatus: 'succeeded',
-      restorePlanId: 'plan_001',
       sourceSavePointId: 'sp_user_001',
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [],
-      stale: false,
     });
-    await expect(adapter.runRestorePreview({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_123',
-      previewOperationId: 'op_preview01',
-      actorUserId: 'user_1',
-      requestId: 'req_restore_run',
-    })).resolves.toMatchObject({
-      operationId: 'op_restore_run',
-      operationStatus: 'succeeded',
-    });
-    await expect(adapter.discardRestorePreview({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_123',
-      previewOperationId: 'op_preview01',
-      actorUserId: 'user_1',
-      requestId: 'req_restore_discard',
-    })).resolves.toMatchObject({
-      operationId: 'op_restore_discard',
-      operationStatus: 'succeeded',
-    });
-
+    expect(client.restoreRepo).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      savePointId: 'sp_user_001',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-direct',
+    }));
     await expect(ownershipStore.getResourceOwnership({
-      resourceKind: 'restore_plan',
-      resourceId: 'plan_001',
+      resourceKind: 'save_point',
+      resourceId: 'sp_user_001',
     })).resolves.toMatchObject({
       workspace_id: 'ws_default',
       project_id: 'proj_1',
     });
   });
 
-  it('returns pending restore previews when AFSCP polling times out before the operation completes', async () => {
+  it('preflights direct restore admission through mapping readiness without creating an AFSCP restore operation', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const client = createProductClient();
+    const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
+    await mappingRepo.saveReady({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      projectStorageGeneration: 1,
+      operationId: 'op_repo_create',
+    });
+    const adapter = new AfscpFileLibraryStorageAdapter({
+      client,
+      mappingRepo,
+      projectAfscpNamespaceStore: new ProjectAfscpNamespaceStore(docStore),
+      resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    });
+
+    await expect(adapter.preflightRestoreFileLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: 'sp_user_001',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-preflight-not-ready',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preflight_not_ready',
+    })).rejects.toThrow('file_library_project_storage_not_ready');
+    expect(client.admitRestoreRepo).not.toHaveBeenCalled();
+    expect(client.restoreRepo).not.toHaveBeenCalled();
+  });
+
+  it('maps direct restore preflight capability denials before creating an AFSCP restore operation', async () => {
+    const client = createProductClient({
+      listSavePoints: vi.fn(async () => ({
+        save_points: [
+          {
+            save_point_id: 'sp_user_001',
+            repo_id: 'repo_flib_123',
+            message: 'User checkpoint',
+            created_at: '2026-05-09T00:00:00.000Z',
+          },
+        ],
+      })),
+      admitRestoreRepo: vi.fn(async () => {
+        throw new AfscpClientError({
+          status: 403,
+          code: 'afscp_capability_denied',
+          message: 'restore disabled repo_hidden ns_hidden',
+          retryable: false,
+          correlation_id: 'corr_restore_preflight_capability',
+          resource_kind: 'repo',
+        });
+      }),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.preflightRestoreFileLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: 'sp_user_001',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-preflight-capability',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_preflight_capability',
+    })).rejects.toThrow('file_library_capability_denied');
+    expect(client.admitRestoreRepo).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      repoId: 'repo_flib_123',
+      savePointId: 'sp_user_001',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-preflight-capability',
+    }));
+    expect(client.listSavePoints).not.toHaveBeenCalled();
+    expect(client.restoreRepo).not.toHaveBeenCalled();
+  });
+
+  it('returns pending direct restore when AFSCP polling has not reached a terminal operation', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async (input) => ({
         ...succeededRepoOperation,
         operation_id: input.operationId,
-        operation_type: 'restore_preview',
+        operation_type: 'repo_restore',
         operation_state: 'running',
-        phase: 'restore_preview_diff',
+        phase: 'repo_restore_apply',
         resource: { type: 'repo', id: 'repo_flib_123' },
         external_resource_ids: {
           source_save_point_id: '1778481131647-4d2e0211',
@@ -1388,17 +1424,18 @@ describe('AFSCP File Library storage adapter', () => {
     });
     const { adapter, ownershipStore } = await createMappedAdapter({ client });
 
-    await expect(adapter.createRestorePreview({
+    await expect(adapter.restoreFileLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: '1778481131647-4d2e0211',
+      discardUnsavedChangesConfirmed: true,
+      idempotencyKey: 'restore-key-pending',
       actorUserId: 'user_1',
-      requestId: 'req_restore_preview_pending',
+      requestId: 'req_restore_pending',
     })).resolves.toMatchObject({
-      operationId: 'op_preview01',
+      operationId: 'op_restore_direct',
       operationStatus: 'pending',
-      restorePlanId: null,
       sourceSavePointId: '1778481131647-4d2e0211',
     });
 
@@ -1411,105 +1448,40 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
-  it('projects failed restore preview operations as retryable preview state instead of throwing', async () => {
-    const client = createProductClient({
-      pollOperation: vi.fn(async (input) => ({
-        ...succeededRepoOperation,
-        operation_id: input.operationId,
-        operation_type: 'restore_preview',
-        operation_state: 'operator_intervention_required',
-        resource: { type: 'repo', id: 'repo_flib_123' },
-        error: {
-          code: 'RESTORE_PREVIEW_FAILED',
-          retryable: true,
-        },
-        external_resource_ids: {
-          source_save_point_id: 'sp_user_001',
-        },
-        verification_result: {
-          source_save_point_id: 'sp_user_001',
-        },
-        finished_at: null,
-      })),
-    });
-    const { adapter, ownershipStore } = await createMappedAdapter({ client });
-
-    await expect(adapter.createRestorePreview({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_123',
-      savePointId: 'sp_user_001',
-      actorUserId: 'user_1',
-      requestId: 'req_restore_preview_failed',
-    })).resolves.toMatchObject({
-      operationId: 'op_preview01',
-      operationStatus: 'failed',
-      restorePlanId: null,
-      sourceSavePointId: 'sp_user_001',
-    });
-
-    await expect(ownershipStore.getResourceOwnership({
-      resourceKind: 'save_point',
-      resourceId: 'sp_user_001',
-    })).resolves.toMatchObject({
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-    });
-  });
-
-  it('reconciles existing restore preview operations from getOperation using public save point ids', async () => {
+  it('reconciles existing direct restore operations from getOperation using public save point ids', async () => {
     const client = createProductClient({
       getOperation: vi.fn(async (input) => ({
         ...succeededRepoOperation,
         operation_id: input.operationId,
-        operation_type: 'restore_preview',
+        operation_type: 'repo_restore',
         operation_state: 'succeeded',
         resource: { type: 'repo', id: 'repo_flib_123' },
         external_resource_ids: {
           save_point_id: '[REDACTED]',
-          restore_plan_id: 'plan_001',
         },
         verification_result: {
           save_point_id: '1778481131647-4d2e0211',
-          restore_plan_id: 'plan_001',
-          summary: {
-            added: { count: 0, samples: [] },
-            changed: { count: 1, samples: ['docs/guide.txt'] },
-            removed: { count: 0, samples: [] },
-            destructive: false,
-          },
-          blockers: [],
-          stale: false,
         },
       })),
       pollOperation: vi.fn(),
     });
     const { adapter, ownershipStore } = await createMappedAdapter({ client });
 
-    await expect(adapter.reconcileRestorePreview({
+    await expect(adapter.reconcileRestoreOperation({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_123',
-      operationId: 'op_preview_long',
-      requestId: 'req_restore_preview_reconcile',
+      operationId: 'op_restore_long',
+      requestId: 'req_restore_reconcile',
     })).resolves.toMatchObject({
-      operationId: 'op_preview_long',
+      operationId: 'op_restore_long',
       operationStatus: 'succeeded',
-      restorePlanId: 'plan_001',
       sourceSavePointId: '1778481131647-4d2e0211',
-      summary: {
-        added: { count: 0, samples: [] },
-        changed: { count: 1, samples: ['docs/guide.txt'] },
-        removed: { count: 0, samples: [] },
-        destructive: false,
-      },
-      blockers: [],
-      stale: false,
     });
 
     expect(client.getOperation).toHaveBeenCalledWith(expect.objectContaining({
-      operationId: 'op_preview_long',
-      correlationId: 'req_restore_preview_reconcile',
+      operationId: 'op_restore_long',
+      correlationId: 'req_restore_reconcile',
     }));
     expect(client.pollOperation).not.toHaveBeenCalled();
     await expect(ownershipStore.getResourceOwnership({
@@ -1525,101 +1497,20 @@ describe('AFSCP File Library storage adapter', () => {
     })).resolves.toBeNull();
   });
 
-  it('projects stale restore preview AFSCP responses without leaking upstream ids', async () => {
-    const client = createProductClient({
-      runRestorePreview: vi.fn(async () => {
-        throw new AfscpClientError({
-          status: 409,
-          code: 'afscp_restore_preview_stale',
-          message: 'afscp_restore_preview_stale',
-          retryable: true,
-          correlation_id: 'corr_restore_stale',
-          operation_id: 'op_hidden_restore',
-        });
-      }),
-    });
-    const { adapter } = await createMappedAdapter({ client });
-
-    let caught: unknown;
-    try {
-      await adapter.runRestorePreview({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId: 'flib_123',
-        previewOperationId: 'op_preview01',
-        actorUserId: 'user_1',
-        requestId: 'req_restore_stale',
-      });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe('file_library_restore_preview_stale');
-    expect(JSON.stringify(caught)).not.toMatch(/op_hidden_restore|corr_restore_stale|repo_|ns_project/);
-  });
-
-  it('maps typed stale restore preview operation failures to the public storage error', async () => {
+  it('maps direct restore writer-session blockers without exposing AFSCP payload details', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async () => ({
         ...succeededRepoOperation,
-        operation_id: 'op_restore_run',
-        operation_type: 'restore_run',
+        operation_id: 'op_restore_direct',
+        operation_type: 'repo_restore',
         operation_state: 'failed',
-        error: {
-          code: 'RESTORE_PREVIEW_STALE',
-          message: 'restore preview stale repo_hidden_elsewhere',
-          retryable: true,
-          correlation_id: 'corr_restore_stale',
-          operation_id: 'op_restore_run',
-          details: {
-            repo_id: 'repo_hidden_elsewhere',
-            namespace_id: 'ns_hidden',
-            restore_plan_id: 'plan_hidden',
-          },
-        },
-        verification_result: {
-          stale: true,
-          restore_state: 'stale_restore_preview',
-          restore_plan_id: 'plan_hidden',
-        },
-      })),
-    });
-    const { adapter } = await createMappedAdapter({ client });
-
-    let caught: unknown;
-    try {
-      await adapter.runRestorePreview({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId: 'flib_123',
-        previewOperationId: 'op_preview01',
-        actorUserId: 'user_1',
-        requestId: 'req_restore_stale_operation',
-      });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe('file_library_restore_preview_stale');
-    expect(JSON.stringify(caught)).not.toMatch(/plan_hidden|repo_hidden_elsewhere|ns_hidden|corr_restore_stale/);
-  });
-
-  it('projects restore writer-session blocker operation failures without exposing AFSCP payload details', async () => {
-    const client = createProductClient({
-      pollOperation: vi.fn(async () => ({
-        ...succeededRepoOperation,
-        operation_id: 'op_restore_run',
-        operation_type: 'restore_run',
-        operation_state: 'failed',
-        phase: 'restore_run_writer_fenced',
+        phase: 'repo_restore_writer_fenced',
         error: {
           code: 'RESTORE_RUN_WRITER_SESSIONS_DENIED',
-          message: 'restore run writer sessions denied repo_hidden_elsewhere',
+          message: 'restore writer sessions denied repo_hidden_elsewhere',
           retryable: false,
           correlation_id: 'corr_writer_blocked',
-          operation_id: 'op_restore_run',
+          operation_id: 'op_restore_direct',
           details: {
             repo_id: 'repo_hidden_elsewhere',
             namespace_id: 'ns_hidden',
@@ -1638,11 +1529,13 @@ describe('AFSCP File Library storage adapter', () => {
 
     let caught: unknown;
     try {
-      await adapter.runRestorePreview({
+      await adapter.restoreFileLibrary({
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         libraryId: 'flib_123',
-        previewOperationId: 'op_preview01',
+        savePointId: 'sp_user_001',
+        discardUnsavedChangesConfirmed: true,
+        idempotencyKey: 'restore-key-writer-blocked',
         actorUserId: 'user_1',
         requestId: 'req_writer_blocked',
       });

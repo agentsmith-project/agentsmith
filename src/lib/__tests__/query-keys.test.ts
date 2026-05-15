@@ -42,6 +42,12 @@ describe('queryKeys scope contracts', () => {
       'proj_001',
       'lib_1',
     ]);
+    expect(queryKeys.fileLibraries.activeRestoreOperation('ws_default', 'proj_001', 'lib_1')).toEqual([
+      'file-library-active-restore-operation',
+      'ws_default',
+      'proj_001',
+      'lib_1',
+    ]);
     expect(queryKeys.taskFileTemplates.list('ws_default', 'proj_001')).toEqual([
       'task-file-templates',
       'ws_default',

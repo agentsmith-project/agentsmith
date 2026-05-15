@@ -53,7 +53,7 @@ The Files page supports:
 - task attachment display and deletion blocking
 - File states:
   - save points for the whole file library HOME payload
-  - restore preview, restore run, and restore cancel
+  - direct restore from a save point after confirming unsaved file changes will be discarded
   - task file template create, publish, unpublish, and delete
 
 ### Local Client Connectors
@@ -96,9 +96,13 @@ Status fields must not include namespace, repository, volume, export id, credent
 ### Save Points and Restore
 
 - save points snapshot the whole file library HOME payload for the selected file library
-- restore must be previewed before it can run
+- restore starts as a direct operation after the user confirms current file changes that were not saved to a save point will be discarded
+- direct restore admission must use AFSCP `POST /internal/v1/repos/{repoId}/restore:admit` before AgentSmith creates a local durable restore operation; `listSavePoints` is history/listing evidence only and must not be treated as restore readiness
 - restore readiness, blockers, stale state, and failures are backend-owned truth
+- restore pending states must remain pending/restoring in the UI until the backend reports terminal success or typed failure
 - restore changes files only; task conversation and trace state are not restored
+
+AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a04fdfca18bd272e09f43cf` added restore-specific admit preflight. Capability denied from that endpoint is an admission failure and must happen before AgentSmith writes restore start/terminal audit or invokes AFSCP `/restore`.
 
 ### Task File Templates
 

@@ -21,11 +21,13 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('failed to delete guide after save point');
     expect(script).toContain('post-save-point mutation delete');
     expect(script).toContain('Smoke save point after mutation');
-    expect(script).toContain('/file-libraries/${LIBRARY_ID}/restore-preview');
-    expect(script).toContain('wait_restore_preview_ready()');
-    expect(script).toContain('/file-libraries/${LIBRARY_ID}/restore-preview")');
-    expect(script).toContain('restore preview is ready');
-    expect(script).toContain('/file-libraries/${LIBRARY_ID}/restore-run');
+    expect(script).toContain('api_json_with_idempotency()');
+    expect(script).toContain('Idempotency-Key: ${idempotency_key}');
+    expect(script).toContain('/file-libraries/${LIBRARY_ID}/restore"');
+    expect(script).toContain('\\"discard_unsaved_changes_confirmed\\":true');
+    expect(script).toContain('wait_restore_operation_terminal()');
+    expect(script).toContain('direct restore changed save point count; possible restore-triggered save point');
+    expect(script).toContain('direct restore created an internal-looking save point');
     expect(script).toContain('restored file content mismatch');
     expect(script).toContain('/task-file-templates');
     expect(script).toContain('/task-file-templates/${TASK_FILE_TEMPLATE_ID}/publish');

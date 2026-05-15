@@ -6,7 +6,7 @@ import type {
 
 export const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
 const FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION = 'project_file_library_save_point_mappings';
-const FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION = 'project_file_library_restore_previews';
+const FILE_LIBRARY_RESTORE_OPERATION_COLLECTION = 'project_file_library_restore_operations';
 const TASK_FILE_TEMPLATE_COLLECTION = 'project_task_file_templates';
 const FILE_LIBRARY_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -886,8 +886,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 }
 
-export type FileLibrarySavePointPurpose = 'user' | 'task_template_source' | 'restore_preview_fence';
-export const RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE = 'Restore preview current state';
+export type FileLibrarySavePointPurpose = 'user' | 'task_template_source';
 
 export interface FileLibrarySavePointPublicRecord {
   id: string;
@@ -905,59 +904,27 @@ export interface FileLibrarySavePointMappingRecord extends FileLibrarySavePointP
   updated_at: string;
 }
 
-export type FileLibraryRestorePreviewStatus =
-  | 'previewing'
-  | 'ready'
-  | 'failed'
-  | 'canceling'
-  | 'canceled'
-  | 'restoring'
-  | 'restored';
+export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
 
-export interface FileLibraryRestorePreviewChangeSummary {
-  count: number;
-  samples: string[];
-}
-
-export interface FileLibraryRestorePreviewSummary {
-  added: FileLibraryRestorePreviewChangeSummary;
-  changed: FileLibraryRestorePreviewChangeSummary;
-  removed: FileLibraryRestorePreviewChangeSummary;
-  destructive: boolean;
-}
-
-export type FileLibraryRestorePreviewBlockerCode =
-  | 'active_writer_sessions'
-  | 'stale_writer_session_uncertain'
-  | 'restore_preview_stale'
-  | 'restore_plan_requires_recovery';
-
-export interface FileLibraryRestorePreviewBlocker {
-  code: FileLibraryRestorePreviewBlockerCode;
-  message?: string;
-}
-
-export interface FileLibraryRestorePreviewPublicRecord {
+export interface FileLibraryRestoreOperationPublicRecord {
   id: string;
   file_library_id: string;
   source_save_point_id: string;
-  status: FileLibraryRestorePreviewStatus;
-  message?: string;
-  summary?: FileLibraryRestorePreviewSummary;
-  blockers?: FileLibraryRestorePreviewBlocker[];
-  stale?: boolean;
+  status: FileLibraryRestoreOperationStatus;
   created_at: string;
   updated_at: string;
 }
 
-export interface FileLibraryRestorePreviewRecord extends FileLibraryRestorePreviewPublicRecord {
+export interface FileLibraryRestoreOperationRecord extends FileLibraryRestoreOperationPublicRecord {
   workspace_id: string;
   project_id: string;
   library_id: string;
-  afscp_preview_operation_id: string;
-  afscp_active_operation_id?: string;
+  afscp_operation_id: string | null;
   source_afscp_save_point_id: string;
-  restore_plan_id?: string;
+  idempotency_key: string;
+  created_by_user_id: string;
+  discard_unsaved_changes_confirmed: true;
+  failure_reason?: string;
 }
 
 export type TaskFileTemplateStatus = 'unpublished' | 'published' | 'failed';
@@ -1005,12 +972,22 @@ export function buildFileLibrarySavePointPublicId(input: {
   ]);
 }
 
-export function generateFileLibraryRestorePreviewId(): string {
-  return `flrp_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+export function generateFileLibraryRestoreOperationId(): string {
+  return `flro_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
 }
 
-export function generateFileLibraryRestoreRunId(): string {
-  return `flrr_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+export function buildFileLibraryRestoreOperationIdempotencyId(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  idempotencyKey: string;
+}): string {
+  return scopedDigestId('flro', [
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+    input.idempotencyKey,
+  ]);
 }
 
 export function generateTaskFileTemplateId(): string {
@@ -1034,91 +1011,25 @@ function publicSavePoint(record: FileLibrarySavePointMappingRecord): FileLibrary
   };
 }
 
-function isRestorePreviewFenceSavePointMessage(message?: string): boolean {
-  return message?.trim() === RESTORE_PREVIEW_FENCE_SAVE_POINT_MESSAGE;
-}
-
 function resolveFileLibrarySavePointPurpose(input: {
   purpose?: FileLibrarySavePointPurpose;
-  message?: string;
   existingPurpose?: FileLibrarySavePointPurpose;
 }): FileLibrarySavePointPurpose {
   if (input.purpose) return input.purpose;
-  if (isRestorePreviewFenceSavePointMessage(input.message)) return 'restore_preview_fence';
   return input.existingPurpose ?? 'user';
 }
 
-function publicRestorePreview(record: FileLibraryRestorePreviewRecord): FileLibraryRestorePreviewPublicRecord {
+function publicRestoreOperation(
+  record: FileLibraryRestoreOperationRecord,
+): FileLibraryRestoreOperationPublicRecord {
   return {
     id: record.id,
     file_library_id: record.file_library_id,
     source_save_point_id: record.source_save_point_id,
     status: record.status,
-    ...(record.message ? { message: record.message } : {}),
-    ...(record.summary ? { summary: normalizeRestorePreviewSummary(record.summary) } : {}),
-    ...(record.blockers ? { blockers: normalizeRestorePreviewBlockers(record.blockers) } : {}),
-    ...(record.stale !== undefined ? { stale: record.stale } : {}),
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
-}
-
-function normalizeRestorePreviewChangeSummary(
-  summary: FileLibraryRestorePreviewChangeSummary,
-): FileLibraryRestorePreviewChangeSummary {
-  if (!Number.isSafeInteger(summary.count) || summary.count < 0 || !Array.isArray(summary.samples)) {
-    throw new Error('invalid_file_library_restore_preview_record');
-  }
-  const samples = summary.samples.map((sample) => {
-    if (typeof sample !== 'string' || sample.trim() === '') {
-      throw new Error('invalid_file_library_restore_preview_record');
-    }
-    return sample;
-  });
-  return { count: summary.count, samples };
-}
-
-function normalizeRestorePreviewSummary(
-  summary: FileLibraryRestorePreviewSummary,
-): FileLibraryRestorePreviewSummary {
-  if (typeof summary !== 'object' || summary === null || typeof summary.destructive !== 'boolean') {
-    throw new Error('invalid_file_library_restore_preview_record');
-  }
-  return {
-    added: normalizeRestorePreviewChangeSummary(summary.added),
-    changed: normalizeRestorePreviewChangeSummary(summary.changed),
-    removed: normalizeRestorePreviewChangeSummary(summary.removed),
-    destructive: summary.destructive,
-  };
-}
-
-const RESTORE_PREVIEW_BLOCKER_CODES = new Set<FileLibraryRestorePreviewBlockerCode>([
-  'active_writer_sessions',
-  'stale_writer_session_uncertain',
-  'restore_preview_stale',
-  'restore_plan_requires_recovery',
-]);
-
-function normalizeRestorePreviewBlockers(
-  blockers: FileLibraryRestorePreviewBlocker[],
-): FileLibraryRestorePreviewBlocker[] {
-  if (!Array.isArray(blockers)) {
-    throw new Error('invalid_file_library_restore_preview_record');
-  }
-  return blockers.map((blocker) => {
-    if (
-      typeof blocker !== 'object'
-      || blocker === null
-      || !RESTORE_PREVIEW_BLOCKER_CODES.has(blocker.code)
-      || (blocker.message !== undefined && (typeof blocker.message !== 'string' || blocker.message.trim() === ''))
-    ) {
-      throw new Error('invalid_file_library_restore_preview_record');
-    }
-    return {
-      code: blocker.code,
-      ...(blocker.message ? { message: blocker.message } : {}),
-    };
-  });
 }
 
 export function publicTaskFileTemplate(record: TaskFileTemplateRecord): TaskFileTemplatePublicRecord {
@@ -1164,7 +1075,6 @@ export class JsonDocFileLibrarySavePointMappingRepo {
       afscp_save_point_id: input.afscpSavePointId,
       purpose: resolveFileLibrarySavePointPurpose({
         purpose: input.purpose,
-        message: input.message,
         existingPurpose: existing?.purpose,
       }),
       ...(input.message ?? existing?.message ? { message: input.message ?? existing?.message } : {}),
@@ -1220,11 +1130,9 @@ export class JsonDocFileLibrarySavePointMappingRepo {
         library_id: input.libraryId,
       },
     );
-    return records.filter((record) => (
-      input.includeTemplateSources
-        ? record.purpose !== 'restore_preview_fence'
-        : record.purpose === 'user'
-    ));
+    return input.includeTemplateSources
+      ? records
+      : records.filter((record) => record.purpose === 'user');
   }
 
   toPublic(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
@@ -1232,7 +1140,7 @@ export class JsonDocFileLibrarySavePointMappingRepo {
   }
 }
 
-export class JsonDocFileLibraryRestorePreviewRepo {
+export class JsonDocFileLibraryRestoreOperationRepo {
   constructor(
     private readonly docStore: JsonDocStorePort,
     private readonly nowIso: () => string = () => new Date().toISOString(),
@@ -1243,48 +1151,117 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     workspaceId: string;
     projectId: string;
     libraryId: string;
-    afscpPreviewOperationId: string;
-    activeAfscpOperationId?: string | null;
+    afscpOperationId?: string | null;
     sourceSavePointId: string;
     sourceAfscpSavePointId: string;
-    status: FileLibraryRestorePreviewStatus;
-    restorePlanId?: string;
-    summary?: FileLibraryRestorePreviewSummary;
-    blockers?: FileLibraryRestorePreviewBlocker[];
-    stale?: boolean;
-    message?: string;
-  }): Promise<FileLibraryRestorePreviewRecord> {
+    status: FileLibraryRestoreOperationStatus;
+    idempotencyKey: string;
+    createdByUserId: string;
+    discardUnsavedChangesConfirmed?: true;
+    failureReason?: string;
+  }): Promise<FileLibraryRestoreOperationRecord> {
     const now = this.nowIso();
-    const record: FileLibraryRestorePreviewRecord = {
-      id: input.id ?? generateFileLibraryRestorePreviewId(),
+    const record: FileLibraryRestoreOperationRecord = {
+      id: input.id ?? generateFileLibraryRestoreOperationId(),
       file_library_id: input.libraryId,
       workspace_id: input.workspaceId,
       project_id: input.projectId,
       library_id: input.libraryId,
-      afscp_preview_operation_id: input.afscpPreviewOperationId,
-      ...(input.activeAfscpOperationId ? { afscp_active_operation_id: input.activeAfscpOperationId } : {}),
+      afscp_operation_id: input.afscpOperationId ?? null,
       source_save_point_id: input.sourceSavePointId,
       source_afscp_save_point_id: input.sourceAfscpSavePointId,
       status: input.status,
-      ...(input.restorePlanId ? { restore_plan_id: input.restorePlanId } : {}),
-      ...(input.message ? { message: input.message } : {}),
-      ...(input.summary ? { summary: normalizeRestorePreviewSummary(input.summary) } : {}),
-      ...(input.blockers ? { blockers: normalizeRestorePreviewBlockers(input.blockers) } : {}),
-      ...(input.stale !== undefined ? { stale: input.stale } : {}),
+      idempotency_key: input.idempotencyKey,
+      created_by_user_id: input.createdByUserId,
+      discard_unsaved_changes_confirmed: input.discardUnsavedChangesConfirmed ?? true,
+      ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
       created_at: now,
       updated_at: now,
     };
-    await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, record.id, record);
+    await this.docStore.upsert(FILE_LIBRARY_RESTORE_OPERATION_COLLECTION, record.id, record);
     return record;
+  }
+
+  async createOrReuseByIdempotencyKey(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    afscpOperationId?: string | null;
+    sourceSavePointId: string;
+    sourceAfscpSavePointId: string;
+    status: FileLibraryRestoreOperationStatus;
+    idempotencyKey: string;
+    createdByUserId: string;
+    discardUnsavedChangesConfirmed?: true;
+    failureReason?: string;
+  }): Promise<{
+    operation: FileLibraryRestoreOperationRecord;
+    created: boolean;
+  }> {
+    const now = this.nowIso();
+    const id = buildFileLibraryRestoreOperationIdempotencyId(input);
+    const record: FileLibraryRestoreOperationRecord = {
+      id,
+      file_library_id: input.libraryId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+      afscp_operation_id: input.afscpOperationId ?? null,
+      source_save_point_id: input.sourceSavePointId,
+      source_afscp_save_point_id: input.sourceAfscpSavePointId,
+      status: input.status,
+      idempotency_key: input.idempotencyKey,
+      created_by_user_id: input.createdByUserId,
+      discard_unsaved_changes_confirmed: input.discardUnsavedChangesConfirmed ?? true,
+      ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
+      created_at: now,
+      updated_at: now,
+    };
+    const result = await this.docStore.createIfAbsent(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      record.id,
+      record,
+    );
+    if (result.ok) {
+      return { operation: record, created: true };
+    }
+    const current = result.current;
+    if (
+      current.workspace_id !== input.workspaceId
+      || current.project_id !== input.projectId
+      || current.library_id !== input.libraryId
+      || current.idempotency_key !== input.idempotencyKey
+    ) {
+      throw new Error('file_library_restore_operation_idempotency_conflict');
+    }
+    return { operation: current, created: false };
+  }
+
+  async findByIdempotencyKey(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    idempotencyKey: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+        idempotency_key: idempotencyKey,
+      },
+    );
+    return records[0] ?? null;
   }
 
   async findActiveByLibrary(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<FileLibraryRestorePreviewRecord | null> {
-    const records = await this.docStore.list<FileLibraryRestorePreviewRecord>(
-      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
       {
         workspace_id: workspaceId,
         project_id: projectId,
@@ -1292,12 +1269,7 @@ export class JsonDocFileLibraryRestorePreviewRepo {
       },
     );
     const active = records
-      .filter((record) => (
-        record.status === 'previewing'
-        || record.status === 'ready'
-        || record.status === 'canceling'
-        || record.status === 'restoring'
-      ))
+      .filter((record) => record.status === 'pending' || record.status === 'restoring')
       .sort((left, right) => {
         const updated = right.updated_at.localeCompare(left.updated_at);
         return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
@@ -1305,36 +1277,15 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     return active[0] ?? null;
   }
 
-  async findLatestByLibrary(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<FileLibraryRestorePreviewRecord | null> {
-    const records = await this.docStore.list<FileLibraryRestorePreviewRecord>(
-      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
-      {
-        workspace_id: workspaceId,
-        project_id: projectId,
-        library_id: libraryId,
-      },
-    );
-    const latest = records
-      .sort((left, right) => {
-        const updated = right.updated_at.localeCompare(left.updated_at);
-        return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
-      });
-    return latest[0] ?? null;
-  }
-
   async getById(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    restorePreviewId: string,
-  ): Promise<FileLibraryRestorePreviewRecord | null> {
-    const record = await this.docStore.get<FileLibraryRestorePreviewRecord>(
-      FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION,
-      restorePreviewId,
+    operationId: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const record = await this.docStore.get<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      operationId,
     );
     if (
       !record
@@ -1351,51 +1302,41 @@ export class JsonDocFileLibraryRestorePreviewRepo {
     workspaceId: string;
     projectId: string;
     libraryId: string;
-    restorePreviewId: string;
-    status: FileLibraryRestorePreviewStatus;
-    activeAfscpOperationId?: string | null;
-    restorePlanId?: string | null;
-    summary?: FileLibraryRestorePreviewSummary;
-    blockers?: FileLibraryRestorePreviewBlocker[];
-    stale?: boolean;
-  }): Promise<FileLibraryRestorePreviewRecord | null> {
+    operationId: string;
+    status: FileLibraryRestoreOperationStatus;
+    afscpOperationId?: string | null;
+    failureReason?: string | null;
+  }): Promise<FileLibraryRestoreOperationRecord | null> {
     const existing = await this.getById(
       input.workspaceId,
       input.projectId,
       input.libraryId,
-      input.restorePreviewId,
+      input.operationId,
     );
     if (!existing) {
       return null;
     }
-    const next: FileLibraryRestorePreviewRecord = {
+    const next: FileLibraryRestoreOperationRecord = {
       ...existing,
       status: input.status,
-      ...(input.summary ? { summary: normalizeRestorePreviewSummary(input.summary) } : {}),
-      ...(input.blockers ? { blockers: normalizeRestorePreviewBlockers(input.blockers) } : {}),
-      ...(input.stale !== undefined ? { stale: input.stale } : {}),
       updated_at: this.nowIso(),
     };
-    if (input.activeAfscpOperationId !== undefined) {
-      if (input.activeAfscpOperationId) {
-        next.afscp_active_operation_id = input.activeAfscpOperationId;
+    if (input.afscpOperationId !== undefined) {
+      next.afscp_operation_id = input.afscpOperationId;
+    }
+    if (input.failureReason !== undefined) {
+      if (input.failureReason) {
+        next.failure_reason = input.failureReason;
       } else {
-        delete next.afscp_active_operation_id;
+        delete next.failure_reason;
       }
     }
-    if (input.restorePlanId !== undefined) {
-      if (input.restorePlanId) {
-        next.restore_plan_id = input.restorePlanId;
-      } else {
-        delete next.restore_plan_id;
-      }
-    }
-    await this.docStore.upsert(FILE_LIBRARY_RESTORE_PREVIEW_COLLECTION, next.id, next);
+    await this.docStore.upsert(FILE_LIBRARY_RESTORE_OPERATION_COLLECTION, next.id, next);
     return next;
   }
 
-  toPublic(record: FileLibraryRestorePreviewRecord): FileLibraryRestorePreviewPublicRecord {
-    return publicRestorePreview(record);
+  toPublic(record: FileLibraryRestoreOperationRecord): FileLibraryRestoreOperationPublicRecord {
+    return publicRestoreOperation(record);
   }
 }
 

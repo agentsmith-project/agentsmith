@@ -71,7 +71,6 @@ function isTaskCreateFileLibraryTypedError(error: unknown): error is APIError {
 
 const TASK_CREATE_TEMPLATE_TYPED_ERROR_CODES = new Set([
   'FILE_LIBRARY_OPERATION_PENDING',
-  'FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE',
 ]);
 
 function isTaskCreateTemplateTypedError(error: unknown): error is APIError {

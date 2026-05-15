@@ -374,39 +374,27 @@ function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePor
         createdAt,
       };
     },
-    async createRestorePreview(input) {
+    async preflightRestoreFileLibrary(input) {
+      requireRepo(input);
+    },
+    async admitRestoreFileLibrary(input) {
+      requireRepo(input);
+    },
+    async restoreFileLibrary(input) {
       requireRepo(input);
       return {
-        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_preview`,
+        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       };
     },
-    async reconcileRestorePreview(input) {
+    async reconcileRestoreOperation(input) {
       requireRepo(input);
       return {
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
-        sourceSavePointId: null,
-      };
-    },
-    async runRestorePreview(input) {
-      requireRepo(input);
-      return {
-        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_run`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
-        sourceSavePointId: null,
-      };
-    },
-    async discardRestorePreview(input) {
-      requireRepo(input);
-      return {
-        operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore_discard`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeDefaultAfscpSegment(input.libraryId)}`,
+        restorePlanId: null,
         sourceSavePointId: null,
       };
     },

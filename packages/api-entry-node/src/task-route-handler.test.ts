@@ -170,28 +170,18 @@ describe('task-route-handler workspace access', () => {
         savePointId: `sp_${input.libraryId}`,
         createdAt: new Date().toISOString(),
       })),
-      createRestorePreview: vi.fn(async (input) => ({
-        operationId: `op_${input.libraryId}_restore_preview`,
+      admitRestoreFileLibrary: vi.fn(async () => undefined),
+      preflightRestoreFileLibrary: vi.fn(async () => undefined),
+      restoreFileLibrary: vi.fn(async (input) => ({
+        operationId: `op_${input.libraryId}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${input.libraryId}`,
+        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       })),
-      reconcileRestorePreview: vi.fn(async (input) => ({
+      reconcileRestoreOperation: vi.fn(async (input) => ({
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${input.libraryId}`,
-        sourceSavePointId: null,
-      })),
-      runRestorePreview: vi.fn(async (input) => ({
-        operationId: `op_${input.libraryId}_restore_run`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${input.libraryId}`,
-        sourceSavePointId: null,
-      })),
-      discardRestorePreview: vi.fn(async (input) => ({
-        operationId: `op_${input.libraryId}_restore_discard`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${input.libraryId}`,
+        restorePlanId: null,
         sourceSavePointId: null,
       })),
       createTemplateFromLibrary: vi.fn(async (input) => ({

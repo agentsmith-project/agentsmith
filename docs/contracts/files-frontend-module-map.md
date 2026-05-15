@@ -21,7 +21,7 @@ Applies to:
   - URL state
   - file library CRUD
   - file entry browsing and mutation
-  - File states: save points, restore preview/run/cancel, and task file template publication
+  - File states: save points, direct restore operations, and task file template publication
   - connector routes remain disabled and are not shown as product actions
 
 ## 2. Functional Contract
@@ -42,7 +42,7 @@ Applies to:
   - multi-select
   - view file library storage readiness using product-safe status fields
   - create save points for the whole file library HOME payload
-  - preview, cancel, and run restore operations against a save point
+  - confirm and start a direct restore operation against a save point
   - publish/unpublish/delete task file templates from the current file library HOME payload
 - Out of scope:
   - docdb/vectordb workflows
@@ -73,10 +73,10 @@ Applies to:
   - `bound_task_visible` controls whether task summary fields may be shown
   - `bound_task_id`, `bound_task_title`, and `bound_task_status` must only be rendered when `bound_task_visible` is true
 - Files must not infer task workspace attachment from the task list.
-- Save points, restore previews/runs, and task file templates are backend-owned state; the frontend displays API results and never derives restore readiness locally.
-- Restore preview may use an internal current-state fence save point. It must be
-  hidden from ordinary save point lists. If shown in audit/debug views, it must
-  be labeled `internal/restore preview fence`.
+- Save points, direct restore operations, and task file templates are backend-owned state; the frontend displays API results and never derives restore readiness locally.
+- The normal restore path must not create hidden current-state save points or
+  product-level preview records. Users who want to keep current files must cancel
+  restore and create an explicit save point first.
 - Published task file templates capture the file state at publish time. Later
   source library changes, unpublish, or template delete do not mutate already
   cloned task file libraries.
@@ -106,12 +106,12 @@ Applies to:
 - File states copy must describe the scope as the whole file library HOME
   payload, including runtime/system folders when present; it must not teach
   users to manage implementation folders directly.
-- Restore-run pending states must not be presented as success. The UI shows
+- Restore operation pending states must not be presented as success. The UI shows
   restoring/converging copy until the backend reaches a terminal success or
   typed failure state.
 - Task creation copy must call published templates `task file templates`.
 - Typed blocker copy must distinguish capability denied, project file storage
-  not ready, operation/restore pending, library in use, stale restore preview,
+  not ready, operation/restore pending, library in use, out-of-date restore state,
   and active writer/session blockers. Do not collapse all blockers into
   "contact an administrator"; only non-retryable storage readiness or capability
   configuration states should suggest administrator action.
@@ -135,12 +135,12 @@ Applies to:
   - nested directory correctness
   - degraded/failed runtime state handling
   - HOME root default browsing and "dot folder exists => visible" behavior
-  - whole-HOME save point and restore-run round trip, including pending success timing
-  - internal restore preview fence is absent from ordinary save point lists
+  - whole-HOME save point and direct restore operation round trip, including pending success timing
+  - direct restore does not create hidden current-state save points in ordinary save point lists
   - task file template publish-time snapshot and clone independence
   - template internal source save point is absent from ordinary recovery lists
   - file library binding exclusivity, release after task delete, and reuse without old task state
-  - stale restore preview requires preview again before restore-run
-  - active writer/session blocks restore-run with typed copy
+  - out-of-date restore state is handled with typed copy
+  - active writer/session blocks direct restore with typed copy
   - known top-level runtime/system dot folder destructive guard
   - typed blocker copy for capability denied, storage not ready, restore pending, and library in use; capability denied may stay at component/error-mapping coverage unless the UI path is stable and non-racy

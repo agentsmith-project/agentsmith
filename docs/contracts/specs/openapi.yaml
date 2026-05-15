@@ -1691,7 +1691,6 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: "#/components/schemas/FileLibrarySavePointOperationPendingError"
                   - $ref: "#/components/schemas/ApiError"
         "502":
           description: Save point list failed
@@ -1742,7 +1741,6 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
-                  - $ref: "#/components/schemas/FileLibrarySavePointOperationPendingError"
                   - $ref: "#/components/schemas/ApiError"
         "502":
           description: Save point create failed
@@ -1756,7 +1754,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
@@ -1764,14 +1762,14 @@ paths:
     get:
       tags:
         - Files
-      operationId: getActiveFileLibraryRestorePreview
+      operationId: getActiveFileLibraryRestore
       responses:
         "200":
-          description: Active restore preview projection, reconciled by the backend without exposing AFSCP operation ids
+          description: Active direct restore operation projection, reconciled by the backend without exposing AFSCP operation ids
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GetFileLibraryRestorePreviewResponse"
+                $ref: "#/components/schemas/GetFileLibraryRestoreResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1792,7 +1790,7 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
         "502":
-          description: Restore preview reconcile failed
+          description: Restore reconcile failed
           content:
             application/json:
               schema:
@@ -1806,20 +1804,27 @@ paths:
     post:
       tags:
         - Files
-      operationId: createFileLibraryRestorePreview
+      operationId: createFileLibraryRestore
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateFileLibraryRestorePreviewRequest"
+              $ref: "#/components/schemas/CreateFileLibraryRestoreRequest"
       responses:
-        "201":
-          description: Restore preview created
+        "200":
+          description: Restore operation created or idempotently reused
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryRestorePreview"
+                $ref: "#/components/schemas/FileLibraryRestoreOperation"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1833,7 +1838,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: Restore preview stale, writer blocked, or file library not ready
+          description: Restore operation active, writer blocked, storage not ready, or file library not ready
           content:
             application/json:
               schema:
@@ -1841,119 +1846,14 @@ paths:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
                   - $ref: "#/components/schemas/ApiError"
+        "422":
+          description: Required idempotency key is missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "502":
-          description: Restore preview create failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: File library backend unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    post:
-      tags:
-        - Files
-      operationId: runFileLibraryRestore
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RunFileLibraryRestoreRequest"
-      responses:
-        "200":
-          description: Restore run result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileLibraryRestoreRun"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          description: File library or restore preview not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Restore preview stale, writer blocked, or file library not ready
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryDeletingError"
-                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
-                  - $ref: "#/components/schemas/FileLibraryRestoreActiveWriterBlockedError"
-                  - $ref: "#/components/schemas/FileLibraryRestoreRunConflictError"
-        "502":
-          description: Restore run failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: File library backend unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/libraryId"
-    post:
-      tags:
-        - Files
-      operationId: cancelFileLibraryRestore
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CancelFileLibraryRestoreRequest"
-      responses:
-        "200":
-          description: Restore preview canceled
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileLibraryRestorePreview"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          description: File library or restore preview not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Restore preview stale, writer blocked, or file library not ready
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: "#/components/schemas/FileLibraryDeletingError"
-                  - $ref: "#/components/schemas/FileLibraryNotReadyError"
-                  - $ref: "#/components/schemas/ApiError"
-        "502":
-          description: Restore cancel failed
+          description: Restore failed
           content:
             application/json:
               schema:
@@ -7253,10 +7153,8 @@ components:
           type: string
         file_library_status:
           type: string
-        restore_preview_id:
-          type: string
-        restore_preview_status:
-          type: string
+        restore_operation:
+          type: object
         operation_status:
           type: string
         retry_after_ms:
@@ -8750,7 +8648,7 @@ components:
         finished_at:
           type: string
           format: date-time
-    FileLibraryRestorePreview:
+    FileLibraryRestoreOperation:
       type: object
       additionalProperties: false
       required:
@@ -8770,126 +8668,8 @@ components:
         status:
           type: string
           enum:
-            - previewing
-            - ready
-            - failed
-            - canceling
-            - canceled
-            - restoring
-            - restored
-        message:
-          type: string
-        summary:
-          type: object
-          additionalProperties: false
-          required:
-            - added
-            - changed
-            - removed
-            - destructive
-          properties:
-            added:
-              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
-            changed:
-              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
-            removed:
-              $ref: '#/components/schemas/FileLibraryRestorePreviewChangeSummary'
-            destructive:
-              type: boolean
-        blockers:
-          type: array
-          items:
-            type: object
-            additionalProperties: false
-            required:
-              - code
-            properties:
-              code:
-                type: string
-                enum:
-                  - active_writer_sessions
-                  - stale_writer_session_uncertain
-                  - restore_preview_stale
-                  - restore_plan_requires_recovery
-              message:
-                type: string
-        stale:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    GetFileLibraryRestorePreviewResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - restore_preview
-      properties:
-        restore_preview:
-          oneOf:
-            - $ref: "#/components/schemas/FileLibraryRestorePreview"
-            - type: "null"
-    FileLibraryRestorePreviewChangeSummary:
-      type: object
-      additionalProperties: false
-      required:
-        - count
-        - samples
-      properties:
-        count:
-          type: integer
-          minimum: 0
-        samples:
-          type: array
-          items:
-            type: string
-    CreateFileLibraryRestorePreviewRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - save_point_id
-      properties:
-        save_point_id:
-          type: string
-    RunFileLibraryRestoreRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - restore_preview_id
-      properties:
-        restore_preview_id:
-          type: string
-    CancelFileLibraryRestoreRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - restore_preview_id
-      properties:
-        restore_preview_id:
-          type: string
-    FileLibraryRestoreRun:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - file_library_id
-        - restore_preview_id
-        - status
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-        file_library_id:
-          type: string
-        restore_preview_id:
-          type: string
-        status:
-          type: string
-          enum:
             - pending
+            - restoring
             - succeeded
             - failed
         created_at:
@@ -8898,6 +8678,29 @@ components:
         updated_at:
           type: string
           format: date-time
+    GetFileLibraryRestoreResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - restore_operation
+      properties:
+        restore_operation:
+          oneOf:
+            - $ref: "#/components/schemas/FileLibraryRestoreOperation"
+            - type: "null"
+    CreateFileLibraryRestoreRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - save_point_id
+        - discard_unsaved_changes_confirmed
+      properties:
+        save_point_id:
+          type: string
+        discard_unsaved_changes_confirmed:
+          type: boolean
+          enum:
+            - true
     TaskFileTemplate:
       type: object
       additionalProperties: false
@@ -9022,11 +8825,7 @@ components:
             - FILE_LIBRARY_SAVE_POINT_LIST_FAILED
             - FILE_LIBRARY_SAVE_POINT_CREATE_FAILED
             - FILE_LIBRARY_SAVE_POINT_NOT_FOUND
-            - FILE_LIBRARY_RESTORE_PREVIEW_FAILED
-            - FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND
-            - FILE_LIBRARY_RESTORE_PREVIEW_STALE
-            - FILE_LIBRARY_RESTORE_RUN_FAILED
-            - FILE_LIBRARY_RESTORE_CANCEL_FAILED
+            - FILE_LIBRARY_RESTORE_FAILED
             - FILE_LIBRARY_ACTIVE_WRITER_BLOCKED
             - FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND
             - FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED
@@ -9352,7 +9151,6 @@ components:
         - error_code
         - message
         - file_library_id
-        - restore_preview_id
         - blockers
         - bound_task_visible
       properties:
@@ -9365,8 +9163,6 @@ components:
           enum:
             - file_library_active_writer_blocked
         file_library_id:
-          type: string
-        restore_preview_id:
           type: string
         blockers:
           type: array
@@ -9449,32 +9245,6 @@ components:
             - active
             - archived
           description: Present only when bound_task_visible is true.
-        request_id:
-          type: string
-    FileLibraryRestoreRunConflictError:
-      type: object
-      additionalProperties: false
-      required:
-        - error_code
-        - message
-      properties:
-        error_code:
-          type: string
-          enum:
-            - FILE_LIBRARY_OPERATION_PENDING
-            - FILE_LIBRARY_RESTORE_PREVIEW_STALE
-            - FILE_LIBRARY_STORAGE_NOT_READY
-            - FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH
-        message:
-          type: string
-        file_library_id:
-          type: string
-        restore_preview_id:
-          type: string
-        operation_status:
-          type: string
-        retry_after_ms:
-          type: integer
         request_id:
           type: string
     ReleaseFileLibraryRuntimeAccessResponse:

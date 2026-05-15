@@ -19,11 +19,6 @@ import type {
   ProjectAfscpNamespaceStore,
   ProjectAfscpResourceOwnershipStore,
 } from './project-afscp-namespace-store.js';
-import type {
-  FileLibraryRestorePreviewBlocker,
-  FileLibraryRestorePreviewBlockerCode,
-  FileLibraryRestorePreviewSummary,
-} from './file-library-persistence.js';
 import { normalizeAfscpValidatedValue } from './afscp-validation.js';
 import { guessFileLibraryContentType } from './file-library-content-type.js';
 import { createAbortError } from './object-stream-bridge.js';
@@ -86,10 +81,16 @@ export interface FileLibrarySavePointCreateResult extends FileLibraryStorageOper
 export interface FileLibraryRestoreOperationResult extends FileLibraryStorageOperationResult {
   restorePlanId: string | null;
   sourceSavePointId: string | null;
-  summary?: FileLibraryRestorePreviewSummary;
-  blockers?: FileLibraryRestorePreviewBlocker[];
-  stale?: boolean;
 }
+
+export type FileLibraryRestoreAdmissionInput = FileLibraryStorageLibraryInput & {
+  savePointId: string;
+  discardUnsavedChangesConfirmed: true;
+  idempotencyKey: string;
+  actorUserId: string;
+  requestId?: string;
+  signal?: AbortSignal;
+};
 
 export interface FileLibraryTemplateCreateResult extends FileLibraryStorageOperationResult {
   templateId: string;
@@ -188,26 +189,18 @@ export interface FileLibraryStoragePort {
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<FileLibrarySavePointCreateResult>;
-  createRestorePreview(input: FileLibraryStorageLibraryInput & {
+  admitRestoreFileLibrary(input: FileLibraryRestoreAdmissionInput): Promise<void>;
+  preflightRestoreFileLibrary(input: FileLibraryRestoreAdmissionInput): Promise<void>;
+  restoreFileLibrary(input: FileLibraryStorageLibraryInput & {
     savePointId: string;
+    discardUnsavedChangesConfirmed: true;
+    idempotencyKey: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<FileLibraryRestoreOperationResult>;
-  reconcileRestorePreview(input: FileLibraryStorageLibraryInput & {
+  reconcileRestoreOperation(input: FileLibraryStorageLibraryInput & {
     operationId: string;
-    requestId?: string;
-    signal?: AbortSignal;
-  }): Promise<FileLibraryRestoreOperationResult>;
-  runRestorePreview(input: FileLibraryStorageLibraryInput & {
-    previewOperationId: string;
-    actorUserId: string;
-    requestId?: string;
-    signal?: AbortSignal;
-  }): Promise<FileLibraryRestoreOperationResult>;
-  discardRestorePreview(input: FileLibraryStorageLibraryInput & {
-    previewOperationId: string;
-    actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<FileLibraryRestoreOperationResult>;
@@ -357,12 +350,9 @@ const PUBLIC_STORAGE_ERROR_MESSAGES = new Set([
   'file_library_save_point_create_pending',
   'file_library_save_point_list_failed',
   'file_library_save_point_list_pending',
-  'file_library_restore_preview_failed',
-  'file_library_restore_run_failed',
-  'file_library_restore_discard_failed',
+  'file_library_restore_failed',
   'file_library_template_create_failed',
   'file_library_template_clone_failed',
-  'file_library_restore_preview_stale',
   'file_library_active_writer_blocked',
   'file_library_namespace_project_mismatch',
   'file_library_template_clone_not_allowed',
@@ -371,9 +361,7 @@ const PUBLIC_STORAGE_ERROR_MESSAGES = new Set([
 ]);
 
 type AfscpStorageFailureContext =
-  | 'restore_preview'
-  | 'restore_run'
-  | 'restore_discard'
+  | 'restore'
   | 'template_create'
   | 'template_clone'
   | 'generic';
@@ -577,99 +565,6 @@ function readSavePointCreatedAt(operation: AfscpOperationEnvelope | AfscpOperati
   return readOperationString(operation, 'created_at') ?? undefined;
 }
 
-function readOperationBoolean(operation: AfscpOperationEnvelope | AfscpOperationRecord, key: string): boolean | undefined {
-  const value = readOperationValue(operation, key);
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-function readRestorePreviewSummary(
-  operation: AfscpOperationEnvelope | AfscpOperationRecord,
-): FileLibraryRestorePreviewSummary | undefined {
-  const value = readOperationValue(operation, 'summary');
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const added = readRestorePreviewChangeSummary(value.added);
-  const changed = readRestorePreviewChangeSummary(value.changed);
-  const removed = readRestorePreviewChangeSummary(value.removed);
-  if (!added || !changed || !removed || typeof value.destructive !== 'boolean') {
-    return undefined;
-  }
-  return {
-    added,
-    changed,
-    removed,
-    destructive: value.destructive,
-  };
-}
-
-function readRestorePreviewChangeSummary(value: unknown): FileLibraryRestorePreviewSummary['added'] | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const count = value.count;
-  const samplesValue = value.samples;
-  if (!Number.isSafeInteger(count) || typeof count !== 'number' || count < 0 || !Array.isArray(samplesValue)) {
-    return null;
-  }
-  const samples = samplesValue.filter((sample): sample is string => typeof sample === 'string' && sample.trim() !== '');
-  if (samples.length !== samplesValue.length) {
-    return null;
-  }
-  return { count, samples };
-}
-
-const RESTORE_PREVIEW_BLOCKER_CODES = new Set<FileLibraryRestorePreviewBlockerCode>([
-  'active_writer_sessions',
-  'stale_writer_session_uncertain',
-  'restore_preview_stale',
-  'restore_plan_requires_recovery',
-]);
-
-function readRestorePreviewBlockers(
-  operation: AfscpOperationEnvelope | AfscpOperationRecord,
-): FileLibraryRestorePreviewBlocker[] | undefined {
-  const value = readOperationValue(operation, 'blockers');
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const blockers: FileLibraryRestorePreviewBlocker[] = [];
-  for (const item of value) {
-    if (!isRecord(item) || typeof item.code !== 'string') {
-      return undefined;
-    }
-    const code = normalizeRestorePreviewBlockerCode(item.code);
-    if (!code) {
-      return undefined;
-    }
-    const message = typeof item.message === 'string' && item.message.trim() ? item.message : undefined;
-    blockers.push({
-      code,
-      ...(message ? { message } : {}),
-    });
-  }
-  return blockers;
-}
-
-function normalizeRestorePreviewBlockerCode(value: string): FileLibraryRestorePreviewBlockerCode | null {
-  const normalized = value.trim().toLowerCase();
-  if (RESTORE_PREVIEW_BLOCKER_CODES.has(normalized as FileLibraryRestorePreviewBlockerCode)) {
-    return normalized as FileLibraryRestorePreviewBlockerCode;
-  }
-  switch (value.trim()) {
-    case 'ACTIVE_WRITER_SESSIONS':
-      return 'active_writer_sessions';
-    case 'STALE_WRITER_SESSION_UNCERTAIN':
-      return 'stale_writer_session_uncertain';
-    case 'RESTORE_PREVIEW_STALE':
-      return 'restore_preview_stale';
-    case 'OPERATION_RECOVERY_REQUIRED':
-      return 'restore_plan_requires_recovery';
-    default:
-      return null;
-  }
-}
-
 function normalizeAfscpSavePoint(record: AfscpSavePoint): FileLibraryAfscpSavePoint | null {
   const savePointId = readStringField(record, 'save_point_id');
   const createdAt = readStringField(record, 'created_at');
@@ -693,10 +588,6 @@ function safeStorageErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function isRestoreRunContext(context: AfscpStorageFailureContext | undefined): boolean {
-  return context === 'restore_run' || context === 'restore_discard';
-}
-
 function mapAfscpClientErrorToStorageMessage(
   error: unknown,
   fallback: string,
@@ -708,7 +599,7 @@ function mapAfscpClientErrorToStorageMessage(
 
   switch (error.code) {
     case 'afscp_restore_preview_stale':
-      return 'file_library_restore_preview_stale';
+      return context === 'restore' ? 'file_library_restore_failed' : fallback;
     case 'afscp_active_writer_blocks_restore':
       return 'file_library_active_writer_blocked';
     case 'afscp_repo_mutation_in_progress':
@@ -721,9 +612,7 @@ function mapAfscpClientErrorToStorageMessage(
       }
       return fallback;
     case 'afscp_resource_not_found':
-      return isRestoreRunContext(context)
-        ? 'file_library_restore_preview_stale'
-        : 'file_library_namespace_project_mismatch';
+      return 'file_library_namespace_project_mismatch';
     case 'afscp_template_clone_not_allowed':
       return 'file_library_template_clone_not_allowed';
     case 'afscp_capability_denied':
@@ -755,7 +644,7 @@ function mapAfscpOperationFailureMessage(
   }
 
   if (RESTORE_STALE_OPERATION_CODES.has(code)) {
-    return 'file_library_restore_preview_stale';
+    return fallback;
   }
 
   if (code === 'CAPABILITY_DENIED') {
@@ -784,9 +673,8 @@ function buildProductClientBoundary(client: AfscpProductClientPort): AfscpProduc
     deleteRepo: (input) => client.deleteRepo(input),
     listSavePoints: (input) => client.listSavePoints(input),
     createSavePoint: (input) => client.createSavePoint(input),
-    createRestorePreview: (input) => client.createRestorePreview(input),
-    runRestorePreview: (input) => client.runRestorePreview(input),
-    discardRestorePreview: (input) => client.discardRestorePreview(input),
+    admitRestoreRepo: (input) => client.admitRestoreRepo(input),
+    restoreRepo: (input) => client.restoreRepo(input),
     createRepoTemplate: (input) => client.createRepoTemplate(input),
     cloneRepoTemplate: (input) => client.cloneRepoTemplate(input),
     createExport: (input) => client.createExport(input),
@@ -1032,19 +920,19 @@ class DisabledFileLibraryStorageAdapter implements FileLibraryStoragePort {
     throw new Error('file_library_backend_unavailable');
   }
 
-  async createRestorePreview(): Promise<never> {
+  async preflightRestoreFileLibrary(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
 
-  async reconcileRestorePreview(): Promise<never> {
+  async admitRestoreFileLibrary(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
 
-  async runRestorePreview(): Promise<never> {
+  async restoreFileLibrary(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
 
-  async discardRestorePreview(): Promise<never> {
+  async reconcileRestoreOperation(): Promise<never> {
     throw new Error('file_library_backend_unavailable');
   }
 
@@ -1574,8 +1462,10 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     };
   }
 
-  async createRestorePreview(input: FileLibraryStorageLibraryInput & {
+  async restoreFileLibrary(input: FileLibraryStorageLibraryInput & {
     savePointId: string;
+    discardUnsavedChangesConfirmed: true;
+    idempotencyKey: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1583,40 +1473,60 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     const mapping = await this.requireActiveMapping(input);
     let operation: AfscpOperationEnvelope;
     try {
-      operation = await this.client.createRestorePreview({
+      operation = await this.client.restoreRepo({
         namespaceId: mapping.namespace_id,
         repoId: mapping.repo_id,
         savePointId: input.savePointId,
-        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-preview'),
-        idempotencyKey: safeIdempotencyKey([
-          'file-library',
-          input.libraryId,
-          'restore-preview',
-          input.savePointId,
-          input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
-        ]),
+        discardUnsavedChangesConfirmed: true,
+        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore'),
+        idempotencyKey: input.idempotencyKey,
         actor: { type: 'user', id: input.actorUserId },
         signal: input.signal,
       });
     } catch (error) {
       throw new Error(mapAfscpClientErrorToStorageMessage(
         error,
-        'file_library_restore_preview_failed',
-        'restore_preview',
+        'file_library_restore_failed',
+        'restore',
       ));
     }
     return this.finalizeRestoreOperation({
       operation,
       input,
       namespaceId: mapping.namespace_id,
-      fallbackPrefix: 'file-library-restore-preview-poll',
-      failureMessage: 'file_library_restore_preview_failed',
-      failureContext: 'restore_preview',
-      failOnFailed: false,
+      fallbackPrefix: 'file-library-restore-poll',
+      failureMessage: 'file_library_restore_failed',
+      failureContext: 'restore',
     });
   }
 
-  async reconcileRestorePreview(input: FileLibraryStorageLibraryInput & {
+  async preflightRestoreFileLibrary(input: FileLibraryRestoreAdmissionInput): Promise<void> {
+    await this.admitRestoreFileLibrary(input);
+  }
+
+  async admitRestoreFileLibrary(input: FileLibraryRestoreAdmissionInput): Promise<void> {
+    const mapping = await this.requireActiveMapping(input);
+    try {
+      await this.client.admitRestoreRepo({
+        namespaceId: mapping.namespace_id,
+        repoId: mapping.repo_id,
+        savePointId: input.savePointId,
+        discardUnsavedChangesConfirmed: true,
+        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-admit'),
+        idempotencyKey: input.idempotencyKey,
+        actor: { type: 'user', id: input.actorUserId },
+        signal: input.signal,
+      });
+    } catch (error) {
+      throw new Error(mapAfscpClientErrorToStorageMessage(
+        error,
+        'file_library_restore_failed',
+        'restore',
+      ));
+    }
+  }
+
+  async reconcileRestoreOperation(input: FileLibraryStorageLibraryInput & {
     operationId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1626,7 +1536,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     try {
       operation = await this.client.getOperation({
         operationId: input.operationId,
-        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-preview-reconcile'),
+        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-reconcile'),
         signal: input.signal,
       });
       await this.ensureOperationOwnership({
@@ -1638,8 +1548,8 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     } catch (error) {
       throw new Error(mapAfscpClientErrorToStorageMessage(
         error,
-        'file_library_restore_preview_failed',
-        'restore_preview',
+        'file_library_restore_failed',
+        'restore',
       ));
     }
     return this.projectRestoreOperationResult({
@@ -1647,90 +1557,8 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       initialOperation: null,
       input,
       namespaceId: mapping.namespace_id,
-      failureMessage: 'file_library_restore_preview_failed',
+      failureMessage: 'file_library_restore_failed',
       failOnFailed: false,
-    });
-  }
-
-  async runRestorePreview(input: FileLibraryStorageLibraryInput & {
-    previewOperationId: string;
-    actorUserId: string;
-    requestId?: string;
-    signal?: AbortSignal;
-  }): Promise<FileLibraryRestoreOperationResult> {
-    const mapping = await this.requireActiveMapping(input);
-    let operation: AfscpOperationEnvelope;
-    try {
-      operation = await this.client.runRestorePreview({
-        namespaceId: mapping.namespace_id,
-        repoId: mapping.repo_id,
-        previewOperationId: input.previewOperationId,
-        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-run'),
-        idempotencyKey: safeIdempotencyKey([
-          'file-library',
-          input.libraryId,
-          'restore-run',
-          input.previewOperationId,
-          input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
-        ]),
-        actor: { type: 'user', id: input.actorUserId },
-        signal: input.signal,
-      });
-    } catch (error) {
-      throw new Error(mapAfscpClientErrorToStorageMessage(
-        error,
-        'file_library_restore_run_failed',
-        'restore_run',
-      ));
-    }
-    return this.finalizeRestoreOperation({
-      operation,
-      input,
-      namespaceId: mapping.namespace_id,
-      fallbackPrefix: 'file-library-restore-run-poll',
-      failureMessage: 'file_library_restore_run_failed',
-      failureContext: 'restore_run',
-    });
-  }
-
-  async discardRestorePreview(input: FileLibraryStorageLibraryInput & {
-    previewOperationId: string;
-    actorUserId: string;
-    requestId?: string;
-    signal?: AbortSignal;
-  }): Promise<FileLibraryRestoreOperationResult> {
-    const mapping = await this.requireActiveMapping(input);
-    let operation: AfscpOperationEnvelope;
-    try {
-      operation = await this.client.discardRestorePreview({
-        namespaceId: mapping.namespace_id,
-        repoId: mapping.repo_id,
-        previewOperationId: input.previewOperationId,
-        correlationId: resolveCorrelationId(input.requestId, 'file-library-restore-discard'),
-        idempotencyKey: safeIdempotencyKey([
-          'file-library',
-          input.libraryId,
-          'restore-discard',
-          input.previewOperationId,
-          input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
-        ]),
-        actor: { type: 'user', id: input.actorUserId },
-        signal: input.signal,
-      });
-    } catch (error) {
-      throw new Error(mapAfscpClientErrorToStorageMessage(
-        error,
-        'file_library_restore_discard_failed',
-        'restore_discard',
-      ));
-    }
-    return this.finalizeRestoreOperation({
-      operation,
-      input,
-      namespaceId: mapping.namespace_id,
-      fallbackPrefix: 'file-library-restore-discard-poll',
-      failureMessage: 'file_library_restore_discard_failed',
-      failureContext: 'restore_discard',
     });
   }
 
@@ -2573,20 +2401,11 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     if (operationStatus === 'pending' && !operationId) {
       throw new Error(input.failureMessage);
     }
-    const summary = readRestorePreviewSummary(input.finalOperation)
-      ?? (initialOperation ? readRestorePreviewSummary(initialOperation) : undefined);
-    const blockers = readRestorePreviewBlockers(input.finalOperation)
-      ?? (initialOperation ? readRestorePreviewBlockers(initialOperation) : undefined);
-    const stale = readOperationBoolean(input.finalOperation, 'stale')
-      ?? (initialOperation ? readOperationBoolean(initialOperation, 'stale') : undefined);
     return {
       operationId,
       operationStatus,
       restorePlanId,
       sourceSavePointId,
-      ...(summary ? { summary } : {}),
-      ...(blockers ? { blockers } : {}),
-      ...(stale !== undefined ? { stale } : {}),
     };
   }
 

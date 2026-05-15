@@ -115,32 +115,30 @@ is_operation_failed_state() {
   [[ "${normalized}" == "failed" || "${normalized}" == "failure" || "${normalized}" == "error" || "${normalized}" == "errored" || "${normalized}" == "cancelled" || "${normalized}" == "canceled" ]]
 }
 
-wait_restore_preview_status() {
-  local preview_id="$1"
-  local desired_status="$2"
-  local label="$3"
-  local max_attempts="${FILE_LIBRARY_RESTORE_PREVIEW_READY_ATTEMPTS:-90}"
+wait_restore_operation_terminal() {
+  local operation_id="$1"
+  local max_attempts="${FILE_LIBRARY_RESTORE_OPERATION_ATTEMPTS:-90}"
   local attempt=1
   if ! [[ "${max_attempts}" =~ ^[0-9]+$ ]] || [[ "${max_attempts}" -lt 1 ]]; then
     max_attempts=90
   fi
 
   while (( attempt <= max_attempts )); do
-    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-preview")"
+    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore")"
     if [[ "${status}" == "200" ]]; then
-      assert_no_raw_storage_fields "file library restore preview ${label}"
-      local preview_status
-      preview_status="$(cat "${BODY_FILE}" | json_field "j.restore_preview && j.restore_preview.id === '${preview_id}' ? j.restore_preview.status : ''" || true)"
-      if [[ "${preview_status}" == "${desired_status}" ]]; then
-        if [[ "${desired_status}" == "ready" ]]; then
-          info "restore preview is ready"
-        else
-          info "restore preview is ${desired_status}"
-        fi
+      assert_no_raw_storage_fields "file library restore operation"
+      local operation_status
+      operation_status="$(cat "${BODY_FILE}" | json_field "j.restore_operation && j.restore_operation.id === '${operation_id}' ? j.restore_operation.status : ''" || true)"
+      if [[ -z "${operation_status}" ]]; then
+        info "restore operation ${operation_id} is no longer active"
         return 0
       fi
-      if [[ "${preview_status}" == "failed" ]]; then
-        err "restore preview failed while waiting for ${desired_status}"
+      if [[ "${operation_status}" == "succeeded" ]]; then
+        info "restore operation ${operation_id} succeeded"
+        return 0
+      fi
+      if [[ "${operation_status}" == "failed" ]]; then
+        err "restore operation ${operation_id} failed"
         cat "${BODY_FILE}" >&2
         exit 1
       fi
@@ -149,17 +147,9 @@ wait_restore_preview_status() {
     attempt=$((attempt + 1))
   done
 
-  err "timed out waiting for restore preview ${label}"
+  err "timed out waiting for restore operation ${operation_id}"
   cat "${BODY_FILE}" >&2
   exit 1
-}
-
-wait_restore_preview_ready() {
-  wait_restore_preview_status "$1" "ready" "ready"
-}
-
-wait_restore_preview_restored() {
-  wait_restore_preview_status "$1" "restored" "restored"
 }
 
 api_json() {
@@ -182,6 +172,24 @@ api_json() {
       -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \
       "${API_BASE%/}${path}")"
   fi
+  printf '%s' "${status}"
+}
+
+api_json_with_idempotency() {
+  local method="$1"
+  local path="$2"
+  local idempotency_key="$3"
+  local body="${4:-}"
+  : > "${BODY_FILE}"
+  : > "${HEADERS_FILE}"
+  local status
+  status="$(curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
+    -X "${method}" \
+    -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \
+    -H 'Content-Type: application/json' \
+    -H "Idempotency-Key: ${idempotency_key}" \
+    --data "${body}" \
+    "${API_BASE%/}${path}")"
   printf '%s' "${status}"
 }
 
@@ -589,29 +597,57 @@ if [[ "${MUTATION_SAVE_POINT_ID}" == "${SAVE_POINT_ID}" ]]; then
   exit 1
 fi
 
-status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-preview" "{\"save_point_id\":\"${SAVE_POINT_ID}\"}")"
-if [[ "${status}" != "201" ]]; then
-  err "failed to create restore preview: ${status}"
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list save points before restore: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
 fi
-assert_no_raw_storage_fields "file library restore preview"
-RESTORE_PREVIEW_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
-RESTORE_PREVIEW_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
-if [[ "${RESTORE_PREVIEW_STATUS}" != "ready" ]]; then
-  wait_restore_preview_ready "${RESTORE_PREVIEW_ID}"
+assert_no_raw_storage_fields "file library save point list before restore"
+SAVE_POINT_COUNT_BEFORE_RESTORE="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) ? String(j.items.length) : ''")"
+RESTORE_TRIGGERED_SAVE_POINT_BEFORE="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => /restore|preview|current state|fence/i.test(String(item.message || ''))) ? '1' : ''" || true)"
+if [[ "${RESTORE_TRIGGERED_SAVE_POINT_BEFORE}" == "1" ]]; then
+  err "save point list already contains restore-triggered internal-looking save point before direct restore"
+  cat "${BODY_FILE}" >&2
+  exit 1
 fi
 
-status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore-run" "{\"restore_preview_id\":\"${RESTORE_PREVIEW_ID}\"}")"
+RESTORE_IDEMPOTENCY_KEY="file-library-smoke-restore-${LIBRARY_ID}-${SAVE_POINT_ID}"
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore" "${RESTORE_IDEMPOTENCY_KEY}" "{\"save_point_id\":\"${SAVE_POINT_ID}\",\"discard_unsaved_changes_confirmed\":true}")"
 if [[ "${status}" != "200" ]]; then
-  err "failed to run restore preview: ${status}"
+  err "failed to start direct restore: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
 fi
-assert_no_raw_storage_fields "file library restore run"
-RESTORE_RUN_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
-if [[ "${RESTORE_RUN_STATUS}" == "pending" ]]; then
-  wait_restore_preview_restored "${RESTORE_PREVIEW_ID}"
+assert_no_raw_storage_fields "file library direct restore"
+RESTORE_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+RESTORE_OPERATION_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
+if [[ "${RESTORE_OPERATION_STATUS}" == "pending" || "${RESTORE_OPERATION_STATUS}" == "restoring" ]]; then
+  wait_restore_operation_terminal "${RESTORE_OPERATION_ID}"
+elif [[ "${RESTORE_OPERATION_STATUS}" != "succeeded" ]]; then
+  err "direct restore returned unexpected status: ${RESTORE_OPERATION_STATUS}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list save points after restore: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "file library save point list after restore"
+SAVE_POINT_COUNT_AFTER_RESTORE="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) ? String(j.items.length) : ''")"
+if [[ "${SAVE_POINT_COUNT_AFTER_RESTORE}" != "${SAVE_POINT_COUNT_BEFORE_RESTORE}" ]]; then
+  err "direct restore changed save point count; possible restore-triggered save point"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+RESTORE_TRIGGERED_SAVE_POINT_AFTER="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => /restore|preview|current state|fence/i.test(String(item.message || ''))) ? '1' : ''" || true)"
+if [[ "${RESTORE_TRIGGERED_SAVE_POINT_AFTER}" == "1" ]]; then
+  err "direct restore created an internal-looking save point"
+  cat "${BODY_FILE}" >&2
+  exit 1
 fi
 
 status="$(curl -sS -D "${HEADERS_FILE}" -o "${DOWNLOAD_FILE}" -w '%{http_code}' \

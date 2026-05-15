@@ -128,39 +128,7 @@ export interface MoveFileLibraryEntryRequest {
   overwrite?: boolean;
 }
 
-export type FileLibraryRestorePreviewStatus =
-  | 'previewing'
-  | 'ready'
-  | 'failed'
-  | 'canceling'
-  | 'canceled'
-  | 'restoring'
-  | 'restored';
-
-export type FileLibraryRestoreRunStatus = 'pending' | 'succeeded' | 'failed';
-
-export interface FileLibraryRestorePreviewChangeSummary {
-  count: number;
-  samples: string[];
-}
-
-export interface FileLibraryRestorePreviewSummary {
-  added: FileLibraryRestorePreviewChangeSummary;
-  changed: FileLibraryRestorePreviewChangeSummary;
-  removed: FileLibraryRestorePreviewChangeSummary;
-  destructive: boolean;
-}
-
-export type FileLibraryRestorePreviewBlockerCode =
-  | 'active_writer_sessions'
-  | 'stale_writer_session_uncertain'
-  | 'restore_preview_stale'
-  | 'restore_plan_requires_recovery';
-
-export interface FileLibraryRestorePreviewBlocker {
-  code: FileLibraryRestorePreviewBlockerCode;
-  message?: string;
-}
+export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
 
 export interface FileLibrarySavePoint {
   id: string;
@@ -177,42 +145,23 @@ export interface CreateFileLibrarySavePointRequest {
   message?: string;
 }
 
-export interface CreateFileLibraryRestorePreviewRequest {
+export interface RestoreFileLibraryRequest {
   save_point_id: string;
+  discard_unsaved_changes_confirmed: true;
 }
 
-export interface FileLibraryRestorePreview {
+export interface FileLibraryRestoreOperation {
   id: string;
   file_library_id: string;
   source_save_point_id: string;
-  message?: string;
-  status: FileLibraryRestorePreviewStatus;
-  summary?: FileLibraryRestorePreviewSummary;
-  blockers?: FileLibraryRestorePreviewBlocker[];
-  stale?: boolean;
+  status: FileLibraryRestoreOperationStatus;
+  failure_reason?: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface GetFileLibraryRestorePreviewResponse {
-  restore_preview: FileLibraryRestorePreview | null;
-}
-
-export interface RunFileLibraryRestoreRequest {
-  restore_preview_id: string;
-}
-
-export interface CancelFileLibraryRestoreRequest {
-  restore_preview_id: string;
-}
-
-export interface FileLibraryRestoreRun {
-  id: string;
-  file_library_id: string;
-  restore_preview_id: string;
-  status: FileLibraryRestoreRunStatus;
-  created_at: string;
-  updated_at: string;
+export interface GetFileLibraryRestoreOperationResponse {
+  restore_operation: FileLibraryRestoreOperation | null;
 }
 
 export interface ReleaseFileLibraryRuntimeAccessResponse {

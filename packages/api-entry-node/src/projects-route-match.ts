@@ -26,9 +26,7 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryDownload'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibrarySavePoints'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryRestorePreview'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryRestoreRun'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'fileLibraryRestoreCancel'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryRestore'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryRuntimeAccessRelease'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryOperation'; workspaceId: string; projectId: string; operationId: string }
   | { kind: 'taskFileTemplates'; workspaceId: string; projectId: string }
@@ -336,39 +334,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const fileLibraryRestorePreviewMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-preview\/?$/,
+  const fileLibraryRestoreMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore\/?$/,
   );
-  if (fileLibraryRestorePreviewMatched) {
+  if (fileLibraryRestoreMatched) {
     return {
-      kind: 'fileLibraryRestorePreview',
-      workspaceId: decodeURIComponent(fileLibraryRestorePreviewMatched[1]),
-      projectId: decodeURIComponent(fileLibraryRestorePreviewMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryRestorePreviewMatched[3]),
-    };
-  }
-
-  const fileLibraryRestoreRunMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-run\/?$/,
-  );
-  if (fileLibraryRestoreRunMatched) {
-    return {
-      kind: 'fileLibraryRestoreRun',
-      workspaceId: decodeURIComponent(fileLibraryRestoreRunMatched[1]),
-      projectId: decodeURIComponent(fileLibraryRestoreRunMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryRestoreRunMatched[3]),
-    };
-  }
-
-  const fileLibraryRestoreCancelMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/restore-cancel\/?$/,
-  );
-  if (fileLibraryRestoreCancelMatched) {
-    return {
-      kind: 'fileLibraryRestoreCancel',
-      workspaceId: decodeURIComponent(fileLibraryRestoreCancelMatched[1]),
-      projectId: decodeURIComponent(fileLibraryRestoreCancelMatched[2]),
-      libraryId: decodeURIComponent(fileLibraryRestoreCancelMatched[3]),
+      kind: 'fileLibraryRestore',
+      workspaceId: decodeURIComponent(fileLibraryRestoreMatched[1]),
+      projectId: decodeURIComponent(fileLibraryRestoreMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryRestoreMatched[3]),
     };
   }
 

@@ -518,7 +518,7 @@ describe('AfscpClient', () => {
     }
   });
 
-  it('calls save point, restore, and repo template APIs through the product namespace boundary', async () => {
+  it('calls save point, restore admit, restore, and repo template APIs through the product namespace boundary', async () => {
     const captured: CapturedRequest[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       captured.push({ url: String(input), init: init ?? {} });
@@ -532,6 +532,14 @@ describe('AfscpClient', () => {
               created_at: '2026-05-09T00:00:00.000Z',
             },
           ],
+        });
+      }
+      if (String(input).endsWith('/restore:admit') && init?.method === 'POST') {
+        return createJsonResponse({
+          admitted: true,
+          repo_id: 'repo_file_library_1',
+          save_point_id: 'sp_001',
+          operation_type: 'restore',
         });
       }
       return createJsonResponse({
@@ -566,28 +574,27 @@ describe('AfscpClient', () => {
         },
       ],
     });
-    await client.createRestorePreview({
+    await expect(client.admitRestoreRepo({
       namespaceId: 'ns_project_1',
       repoId: 'repo_file_library_1',
       savePointId: 'sp_001',
-      correlationId: 'corr-restore-preview',
-      idempotencyKey: 'idem-restore-preview',
+      discardUnsavedChangesConfirmed: true,
+      correlationId: 'corr-restore-admit',
+      idempotencyKey: 'idem-restore',
       actor: { type: 'user', id: 'user_1' },
+    })).resolves.toEqual({
+      admitted: true,
+      repo_id: 'repo_file_library_1',
+      save_point_id: 'sp_001',
+      operation_type: 'restore',
     });
-    await client.runRestorePreview({
+    await client.restoreRepo({
       namespaceId: 'ns_project_1',
       repoId: 'repo_file_library_1',
-      previewOperationId: 'op_preview01',
-      correlationId: 'corr-restore-run',
-      idempotencyKey: 'idem-restore-run',
-      actor: { type: 'user', id: 'user_1' },
-    });
-    await client.discardRestorePreview({
-      namespaceId: 'ns_project_1',
-      repoId: 'repo_file_library_1',
-      previewOperationId: 'op_preview01',
-      correlationId: 'corr-restore-discard',
-      idempotencyKey: 'idem-restore-discard',
+      savePointId: 'sp_001',
+      discardUnsavedChangesConfirmed: true,
+      correlationId: 'corr-restore',
+      idempotencyKey: 'idem-restore',
       actor: { type: 'user', id: 'user_1' },
     });
     await client.createRepoTemplate({
@@ -610,23 +617,27 @@ describe('AfscpClient', () => {
     expect(captured.map((entry) => [entry.init.method, entry.url])).toEqual([
       ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/save-points'],
       ['GET', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/save-points'],
-      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore-preview'],
-      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore-run'],
-      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore-preview:discard'],
+      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore:admit'],
+      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore'],
       ['POST', 'https://afscp.internal/internal/v1/repo-templates'],
       ['POST', 'https://afscp.internal/internal/v1/repo-templates/tmpl_template_1:clone'],
     ]);
     expect(JSON.parse(String(captured[0]?.init.body))).toEqual({ message: 'before restore' });
-    expect(JSON.parse(String(captured[2]?.init.body))).toEqual({ save_point_id: 'sp_001' });
-    expect(JSON.parse(String(captured[3]?.init.body))).toEqual({ preview_operation_id: 'op_preview01' });
-    expect(JSON.parse(String(captured[4]?.init.body))).toEqual({ preview_operation_id: 'op_preview01' });
-    expect(JSON.parse(String(captured[5]?.init.body))).toEqual({
+    expect(JSON.parse(String(captured[2]?.init.body))).toEqual({
+      save_point_id: 'sp_001',
+      discard_unsaved_changes_confirmed: true,
+    });
+    expect(JSON.parse(String(captured[3]?.init.body))).toEqual({
+      save_point_id: 'sp_001',
+      discard_unsaved_changes_confirmed: true,
+    });
+    expect(JSON.parse(String(captured[4]?.init.body))).toEqual({
       namespace_id: 'ns_project_1',
       source_repo_id: 'repo_file_library_1',
       target_template_id: 'tmpl_template_1',
       clone_history_mode: 'main',
     });
-    expect(JSON.parse(String(captured[6]?.init.body))).toEqual({
+    expect(JSON.parse(String(captured[5]?.init.body))).toEqual({
       namespace_id: 'ns_project_1',
       template_id: 'tmpl_template_1',
       target_repo_id: 'repo_clone_1',

@@ -1,8 +1,16 @@
 # AFSCP File Library Runtime Rearchitecture Plan
 
-Status: decision-complete handoff for the next development milestone.
+Status: decision-complete historical handoff; restore flow superseded for active implementation.
 
 Owner: AgentSmith product and engineering.
+
+> Superseded notice for save/restore: active restore implementation guidance now
+> lives in
+> [`file-library-fast-save-restore-simplification-plan-v1.md`](./file-library-fast-save-restore-simplification-plan-v1.md).
+> The active flow is save point -> confirm current file changes not saved to a
+> save point will be discarded -> direct restore operation. Treat older
+> preview-first restore language in this historical plan as background only, not
+> implementation or acceptance guidance.
 
 Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.5`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
@@ -62,7 +70,7 @@ AFSCP owns:
 - storage namespace and namespace volume binding.
 - shared JuiceFS volume metadata and capability health.
 - repo storage identity and lifecycle.
-- save point, restore preview/run/discard, and template clone execution,
+- save point, direct restore operation, and template clone execution,
   including any internal versioned-filesystem implementation.
 - export sessions and workload mount bindings.
 - low-level operation records and redacted storage audit.
@@ -265,28 +273,28 @@ User-facing behavior:
 
 - Users can create a save point from a file library.
 - Users can list save points from the file library detail area.
-- Users can restore through preview -> confirm restore, or cancel preview and
-  leave files unchanged. User-facing copy should say cancel preview leaves files
-  unchanged; the backend/AFSCP operation for canceling a preview may be named
-  discard preview.
-- Restore preview must consume an AFSCP redacted projection that includes affected file library, target save point, restore plan id, blocker state, destructive flags, and a user-readable added/changed/removed summary when the upstream engine can compute it.
+- Users can restore by choosing a save point, confirming that current file
+  changes not saved to a save point will be discarded, and starting a direct
+  restore operation.
+- Direct restore operation projection must include affected file library, target
+  save point, operation id, blocker state, destructive confirmation status, and a
+  user-readable status/summary when the upstream engine can compute it.
 - Restore changes files in the file library HOME. It does not change task records, task messages, run traces, audit records, terminal sessions, or runner binding.
 
 Safety behavior:
 
-- Restore-run must fail closed when active or uncertain read-write task/workload/export access exists.
-- Restore preview must bind the generated restore plan to the repo base
-  revision/generation/head and a writer-session fence token. Restore-run must
-  verify that the file library still matches that preview base and fence. If the
-  head/generation/fence no longer matches, restore-run fails with a typed stale
-  preview state and requires the user to preview again before confirming.
-- If restore preview materializes a current-state save point or equivalent
-  checkpoint for fence/recovery purposes, it is an internal restore preview
-  fence. It must be hidden from ordinary save point lists. If surfaced in
-  audit/debug projection, label it `internal/restore preview fence`.
+- Direct restore must fail closed when active or uncertain read-write
+  task/workload/export access exists.
+- Direct restore must bind admission to the selected save point, current file
+  library generation, lifecycle state, and writer-session fence. If that state no
+  longer allows restore, the operation fails with typed out-of-date restore copy
+  and asks the user to reopen File states or retry later.
+- Direct restore must not materialize hidden current-state save points in the
+  normal path. Users who want to keep current files must cancel and create an
+  explicit save point first.
 - AgentSmith frontend may explain the blocker, but backend and AFSCP remain the authority. Blocking UX must use typed AFSCP blockers and tell the user the next action: stop the running task, close/release terminal sessions, wait for file operations to finish, or retry later.
 - Restore operations must be operation-driven and auditable.
-- If AFSCP cannot provide enough redacted preview or blocker detail for a clear UX, that is an upstream contract gap. AgentSmith must not parse raw storage-backend output or inspect private control files to invent the summary.
+- If AFSCP cannot provide enough redacted restore or blocker detail for a clear UX, that is an upstream contract gap. AgentSmith must not parse raw storage-backend output or inspect private control files to invent the summary.
 
 ### 2.7 User Access And WebDAV Connector
 
@@ -361,7 +369,7 @@ mutations use `project:files:update`.
 | Bind existing file library to task | `project:agent_task:use` plus same-actor ownership of a released, ready, unbound task workspace; backend runtime writable affordance is `task_internal_home`, not Files edit permission; explicit Developer runner binding still requires runner-manage affordance |
 | Open terminal for bound task | `project:agent_task:use` + `project:agent_task:terminal` plus task visibility |
 | Create/list save points | `project:endpoint:use` plus `project:files:update` for create; file library visible |
-| Restore preview/confirm/cancel preview | `project:files:update`; file library visible; restore operation state valid; no active/uncertain writer for run; cancel preview maps to backend discard-preview semantics |
+| Direct restore confirm | `project:files:update`; file library visible; selected save point valid; no active/uncertain writer for the restore operation |
 | Create/edit/delete task file template draft | `project:files:update`; source file library or template visible in the current project; creator visibility is allowed for own drafts in project template management |
 | Publish/unpublish task file template | `project:files:update`; template belongs to the current project namespace |
 | List/use task file templates during task creation | `project:agent_task:use`; template is published in the current project |
@@ -382,9 +390,8 @@ handle these states without pretending the operation finished synchronously:
 - creating file library.
 - ready.
 - failed with retry or inspectable reason.
-- restore preview pending.
 - restoring.
-- restore-run accepted but still pending/reconciling; UI must not show success
+- direct restore operation accepted but still pending/reconciling; UI must not show success
   until terminal success is observed.
 - restore blocked by active writer/session.
 - template creating.
@@ -712,7 +719,7 @@ Developer runner flow:
 
 ### 3.6 Restore And Active Writers
 
-Restore-run must coordinate with task runtime access.
+Direct restore must coordinate with task runtime access.
 
 AFSCP export/workload session state is the storage authority for restore
 admission. AgentSmith task holder state is a supplemental product preflight, not
@@ -724,15 +731,15 @@ gap.
 
 Required behavior:
 
-- active read-write task session blocks restore-run.
-- expired/failed/uncertain mount state blocks restore-run until reconciled.
+- active read-write task session blocks direct restore.
+- expired/failed/uncertain mount state blocks direct restore until reconciled.
 - task delete, terminal close, runner shutdown, export/lease revoke, and any
   future connector revoke move access through releasing/draining states; file
   libraries are not reusable until AFSCP confirms no active or uncertain writer
   remains.
-- read-only file browsing does not block restore-run by itself, but lifecycle delete/archive may still need access drain according to AFSCP rules.
-- restore preview can exist as a pending plan and must have a cancel-preview UX
-  that leaves files unchanged, backed by AFSCP cancel/discard-preview semantics.
+- read-only file browsing does not block direct restore by itself, but lifecycle delete/archive may still need access drain according to AFSCP rules.
+- direct restore starts only after destructive confirmation; there is no
+  user-facing preparation state to cancel before restore begins.
 
 ### 3.7 Deployment Shape
 
@@ -817,7 +824,7 @@ operation truth.
 | Create file library | `creating` catalog row with namespace/retry key | repo create operation | ready only after repo operation succeeds; failed row can retry with same generation |
 | Create task from template | task and file library `creating_from_template` | template clone operation | task becomes runnable only after cloned repo is ready and binding succeeds; failed clone leaves retry/delete affordance |
 | Delete task / release binding | task deleted or archived, binding `draining` | workload/export release or revoke operations | file library becomes reusable only after confirmed non-accessing terminal state |
-| Restore run | file library `restoring` | restore run operation and writer-session fence | ready only after restore succeeds and writer fence is clear; blocked state keeps retry or cancel-preview affordance when applicable |
+| Direct restore operation | file library `restoring` | restore operation and writer-session fence | ready only after restore succeeds and writer fence is clear; blocked state keeps retry affordance when applicable |
 | File library lifecycle delete/archive | lifecycle pending | repo lifecycle operation and access drain | terminal product state follows AFSCP lifecycle result; no raw filesystem delete |
 | Server-side export or future connector revoke | export revoking | export revoke/reconcile | access is unusable immediately in AgentSmith and terminal only after AFSCP confirms revoke/expiry |
 | Project/workspace disable | access disabled, lifecycle draining | export and workload binding revoke/reconcile; later per-repo/template lifecycle | no new storage access; terminal only after AFSCP confirms sessions are inactive or reconciled |
@@ -869,7 +876,7 @@ Storage-dependent API behavior:
 | Task create from template | Validate product template availability first, then block/reconcile until storage is ready before cloning the AFSCP template. |
 | Bind existing file library to task | Requires project storage ready, resource generation match, file-library lifecycle visibility, and confirmed reusable binding state. |
 | Workload mount binding / terminal start | Must not request AFSCP mount binding or sandbox manager plan until project storage and file-library repo are ready. |
-| Save point, restore preview/run/cancel | Typed block or retryable pending response until project storage and target file library are ready; stale preview remains a separate typed state. |
+| Save point and direct restore | Typed block or retryable pending response until project storage, target file library, and selected save point are ready; out-of-date restore state remains a separate typed state. |
 | Template create/publish/use/clone | Product metadata visibility may be shown, but AFSCP template create/clone waits for project storage ready and source/target generation match. |
 | Server-side export / future connector | Must not create export/session/lease until project storage and resource lifecycle are ready. |
 
@@ -886,8 +893,8 @@ Required UX:
 - Normal dot folders are visible and navigable.
 - Save points are visible in the file library detail save point list.
 - Save point, restore, and template dialogs clearly state that the action applies to the whole file library HOME, which is the task HOME when bound, including hidden agent runtime folders, not only the current `workspace/` view.
-- Restore flow is preview-first and clearly says it restores files, leaves task conversation unchanged, and canceling preview leaves files unchanged.
-- Restore-run pending is shown as restoring/reconciling until the backend
+- Restore flow is direct after destructive confirmation and clearly says it restores files, leaves task conversation unchanged, and discards current file changes that were not saved to a save point.
+- Restore operation pending is shown as restoring/reconciling until the backend
   reports terminal success or a typed failure/blocker; the UI does not show
   "restored successfully" for a pending operation.
 - Template action is named as saving current task files as a task file template.
@@ -964,7 +971,7 @@ Examples:
 | `afscp_resource_not_found` | This file library or operation was not found. |
 | `afscp_repo_not_ready` | This file library is still getting ready. |
 | `afscp_active_writer_blocks_restore` | Stop active file sessions before restoring. |
-| `afscp_restore_preview_stale` | Files changed after preview; preview again before restoring. |
+| `afscp_restore_state_outdated` | Restore state changed. Reopen File states or try again before restoring. |
 | `afscp_restore_plan_requires_recovery` | This restore needs storage recovery before it can continue. |
 | `afscp_capability_denied` | This storage action is not available for this project. |
 | `afscp_storage_unavailable` | File storage is temporarily unavailable. |
@@ -983,7 +990,7 @@ AFSCP has the core storage-control primitives needed for this direction:
 - namespace volume binding.
 - repo create/lifecycle.
 - save point list/create.
-- restore preview/run/discard, where discard is the backend operation behind user-facing cancel preview.
+- direct restore by save point, including typed blockers and operation status.
 - repo template create/clone.
 - export sessions.
 - workload mount binding and sandbox-manager-only plan.
@@ -1010,7 +1017,7 @@ Known gaps or integration risks:
 8. Unified deploy renders AFSCP API/worker/export gateway plus schema/default-volume bootstrap Jobs from the selected `AFSCP_IMAGE`. AgentSmith product/business logic must not directly sense or call JVS; deployment templates only declare AFSCP contract-required runtime env/volumes, such as `AFSCP_JVS_CWD` when required by the selected AFSCP release. JVS lifecycle and internal semantics remain AFSCP-owned.
 9. AFSCP control-root and clone behavior must be pinned to the product semantics AgentSmith needs: payload-only HOME, no control-root exposure, snapshot-style templates, no internal storage-control state copy, and stable restore summaries. HOME payload files are intentionally copied. If AFSCP cannot express those safely, fix AFSCP instead of parsing private state in AgentSmith.
 10. AFSCP redaction and operation summaries must be strong enough for AgentSmith audit/debug projection. If raw storage-backend commands, private paths, or recovery internals are required to understand an operation, improve the upstream summary contract.
-11. Restore preview and restore-run admission must return typed blockers, redacted file-change summaries, and a preview base revision/generation/head/fence token that restore-run verifies. AgentSmith should not infer active writer causes or destructive restore effects from unrelated task state.
+11. Direct restore admission must return typed blockers, redacted operation summaries when available, and a generation/lifecycle/writer-session fence that the restore operation verifies. AgentSmith should not infer active writer causes or destructive restore effects from unrelated task state.
 12. Template creation should preferably be an AFSCP operation for "create template from current repo state" that internally materializes a source save point and returns `template_id` plus `source_save_point_id`. AgentSmith should not expose source save point plumbing as the normal template UX.
 13. Developer runner parity is a target of this milestone and requires an AFSCP
     export-backed developer runner lease/connector with short TTL, revoke,
@@ -1042,7 +1049,7 @@ Upstream security gates before AgentSmith integration:
   policy, credential verification, runtime request accounting, revoke, expiry,
   and redaction; an upstream first-class AFSCP file API must enforce equivalent
   storage-access safety.
-- AFSCP restore admission uses export/workload writer-session fences, binds preview plans to base revision/generation/head/fence, and returns typed blockers.
+- AFSCP restore admission uses export/workload writer-session fences, verifies repo generation/lifecycle/head/fence, and returns typed blockers.
 - AFSCP export/session accounting includes server-side Files exports and, when
   Slice 5 is unblocked, developer runner leases/connectors.
 - AFSCP operation views exposed to AgentSmith are allowlisted/redacted and contain no raw storage-backend command, stdout/stderr, raw path, Secret ref, or credential-shaped value.
@@ -1216,7 +1223,7 @@ TDD first:
 - task pod receives only payload root mounted at HOME.
 - sandbox manager cannot list/read arbitrary Kubernetes Secrets and consumes only AFSCP plan-scoped SecretRefs.
 - release/revoke/heartbeat updates are idempotent.
-- active writable mount blocks restore-run.
+- active writable mount blocks direct restore.
 - binding reuse is denied while the previous mount/export session is releasing, expired, failed, or otherwise uncertain.
 
 Implementation:
@@ -1277,26 +1284,25 @@ TDD first:
 - list save points.
 - save point and restore APIs require project storage and target file library
   ready; project storage pending/retryable/admin states are typed separately
-  from restore blockers and stale previews.
-- restore preview returns a plan bound to repo base revision/generation/head and writer-session fence token.
-- restore run from a matching preview verifies the base/fence still matches and rejects stale previews with a typed error.
-- cancel preview leaves files unchanged, backed by the AFSCP cancel/discard-preview operation.
+  from restore blockers and out-of-date restore states.
+- direct restore request identifies the selected save point and records destructive confirmation.
+- direct restore verifies repo generation/lifecycle and writer-session fence before mutating files.
 - active writer conflict.
 - redacted operation/audit projection extends the Slice 2 projection model.
-- contract-first handoff covers save point and restore endpoints, DTO/status/error shape, OpenAPI, generated types, MSW handlers, i18n messages, focused e2e for preview/run/cancel/blockers, and focused visual coverage only for changed UI states.
+- contract-first handoff covers save point and direct restore endpoint, DTO/status/error shape, OpenAPI, generated types, MSW handlers, i18n messages, focused e2e for direct restore/blockers, and focused visual coverage only for changed UI states.
 
 Implementation:
 
 - add file library save point API.
-- add file library restore API.
+- add direct file library restore API.
 - add Files UI save point list and restore flow.
-- add stale-preview and discard-preview state mapping to the existing operation/audit projection.
+- add out-of-date restore and operation-pending state mapping to the existing operation/audit projection.
 
 Acceptance:
 
 - user can create save point, change files, restore to save point, and see restored HOME in Files and terminal.
-- user can cancel a restore preview and leave files unchanged.
-- stale preview requires a new preview before restore-run.
+- user can cancel before confirming restore and leave files unchanged.
+- out-of-date restore state asks the user to reopen File states or retry later.
 - restore blocked states are typed and understandable.
 
 ### Slice 7: Project Template Library
@@ -1453,7 +1459,7 @@ Focused AFSCP checks:
   subsequent slices require schema/generated client evidence for the AFSCP
   internal endpoints they consume.
 - focused Go tests for namespace binding, repo create, save point,
-  restore preview/run/discard with base/fence validation, template clone,
+  direct restore with blocker/fence validation, template clone,
   workload mount, session accounting, resource namespace mismatch, and
   redaction; include export gateway checks when WebDAV/export backs the Files UI
   storage adapter, include equivalent first-class file API checks when that path
@@ -1479,7 +1485,7 @@ Manual/backend-real smokes:
 - Files uploads `workspace/files-marker.txt`; terminal sees it.
 - HOME runtime marker under `.config` or `.local` is visible and participates in save point/template behavior.
 - save point -> mutate -> restore -> terminal and Files see restored state.
-- restore preview -> mutate files -> confirm restore fails stale and requires preview again.
+- active writer or out-of-date restore state returns a typed blocker before files are changed.
 - template create -> publish to project -> clone into new task -> file appears.
 - template internal source save point is absent from ordinary recovery point list.
 - task delete -> session drain -> released file library can be reused only after confirmed non-accessing state.
@@ -1516,7 +1522,7 @@ This milestone is complete only when:
 8. Managed runner uses AFSCP workload mount binding and a sandbox-manager-only repo/namespace/destination/TTL-scoped mount plan. The sandbox manager cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers; Kubernetes/CSI performs the pod mount.
 9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If the current AFSCP contract cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
 10. Save point list/create works.
-11. Restore preview/confirm/cancel works; cancel leaves files unchanged, restore blocks active or uncertain writers, preview plans bind repo base revision/generation/head/fence token, stale previews require preview again before restore-run, and restore-run pending is shown as restoring/reconciling until the backend reports terminal success before success feedback appears. The backend operation may still be named discard preview.
+11. Direct restore confirm works; cancel before confirm leaves files unchanged, restore blocks active or uncertain writers, restore admission verifies repo generation/lifecycle/writer fence, out-of-date restore state is typed, and restore operation pending is shown as restoring/reconciling until the backend reports terminal success before success feedback appears.
 12. Template draft/publish/unpublish/delete/clone works within the AgentSmith project namespace model. Drafts are shown only in project template management to the creator and `project:files:update` users, mutation actions require `project:files:update`, published templates are available during task creation to current project members with `project:agent_task:use`, and no member/group sharing is introduced.
 13. Template creation internal source save points are not shown as ordinary recovery points and are labeled `template source/internal` in audit/debug projection if surfaced.
 14. Every product resource id and AFSCP resource id AgentSmith consumes maps back to the current `workspace_id/project_id/afscp_namespace_id`, current storage generation, lifecycle visibility, and ready namespace; AFSCP also rejects namespace mismatch; cross-namespace or invisible resources return not found without existence leakage.
@@ -1527,7 +1533,7 @@ This milestone is complete only when:
 19. File library reuse after task delete waits for AFSCP confirmed non-accessing terminal state.
 20. Slice 2/3/6/7 contract-first artifacts are updated: endpoints, DTO/status/error shape, OpenAPI, generated types, MSW handlers and fixtures, i18n messages, focused e2e fixtures/scenarios, and focused visual coverage where UI states changed.
 21. Slice 8 deploy evidence exists for unified deploy render/manifest/substrate-boundary/k8s dry-run unit checks and required product-flow smokes; developer-runner-specific deploy smoke is required only when Slice 5 is unblocked and implemented.
-22. AFSCP upstream/release evidence exists for service caller mapping, namespace mismatch rejection, external control-root, selected Files UI storage backing policy, writer-session fence, restore preview base/fence validation, redacted operation view, template clone boundary, and required AFSCP internal contract validation. If AFSCP uses JVS internally, JVS-local proof is attached to AFSCP release evidence rather than becoming an AgentSmith gate. Developer runner lease/session accounting evidence is required when Slice 5 is unblocked; otherwise the upstream blocker and no-workaround record are required.
+22. AFSCP upstream/release evidence exists for service caller mapping, namespace mismatch rejection, external control-root, selected Files UI storage backing policy, writer-session fence, direct restore admission/fence validation, redacted operation view, template clone boundary, and required AFSCP internal contract validation. If AFSCP uses JVS internally, JVS-local proof is attached to AFSCP release evidence rather than becoming an AgentSmith gate. Developer runner lease/session accounting evidence is required when Slice 5 is unblocked; otherwise the upstream blocker and no-workaround record are required.
 23. Focused tests and backend-real smokes listed above are green, except developer-runner-specific backend-real/deploy smoke is replaced by upstream blocker plus no-workaround evidence when Slice 5 is officially blocked.
 24. Ordinary product routes cannot import, inject, or receive a raw AFSCP client configured with bootstrap token/caller-service. Product routes use the product adapter; project storage bootstrap uses the bootstrap port.
 25. Product token/caller-service and bootstrap token/caller-service are distinct, and AgentSmith fails fast when they are missing, reused, or routed to the wrong port.

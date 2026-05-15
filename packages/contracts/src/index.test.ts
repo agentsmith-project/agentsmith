@@ -14,11 +14,11 @@ import {
   CreateTaskFileTemplateRequestSchema,
   FileLibrarySchema,
   FileLibrarySavePointSchema,
-  FileLibraryRestorePreviewSchema,
+  FileLibraryRestoreOperationSchema,
   FileLibraryRestoreActiveWriterBlockedErrorSchema,
   FileLibraryRuntimeAccessReleaseBlockedErrorSchema,
   ReleaseFileLibraryRuntimeAccessResponseSchema,
-  GetFileLibraryRestorePreviewResponseSchema,
+  GetFileLibraryRestoreResponseSchema,
   FileLibraryTaskInUseErrorSchema,
   TaskFileTemplateNotFoundErrorSchema,
   TaskFileTemplateUnpublishedErrorSchema,
@@ -146,7 +146,7 @@ describe('agent task persistent HOME contracts', () => {
     });
   });
 
-  it('keeps save point, restore preview, and task file template DTOs product-safe', () => {
+  it('keeps save point, direct restore operation, and task file template DTOs product-safe', () => {
     expect(FileLibrarySavePointSchema.parse({
       id: 'flsp_safe',
       file_library_id: 'flib_a',
@@ -157,39 +157,20 @@ describe('agent task persistent HOME contracts', () => {
       file_library_id: 'flib_a',
     });
 
-    expect(FileLibraryRestorePreviewSchema.parse({
-      id: 'flrp_safe',
+    expect(FileLibraryRestoreOperationSchema.parse({
+      id: 'flro_safe',
       file_library_id: 'flib_a',
       source_save_point_id: 'flsp_safe',
-      status: 'previewing',
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [
-        { code: 'restore_preview_stale' },
-      ],
-      stale: true,
+      status: 'restoring',
       created_at: '2026-05-09T00:00:00.000Z',
       updated_at: '2026-05-09T00:00:00.000Z',
     })).toMatchObject({
-      id: 'flrp_safe',
+      id: 'flro_safe',
       source_save_point_id: 'flsp_safe',
-      summary: {
-        added: { count: 1, samples: ['src/new.ts'] },
-        changed: { count: 2, samples: ['docs/readme.md'] },
-        removed: { count: 1, samples: ['tmp/cache.txt'] },
-        destructive: true,
-      },
-      blockers: [
-        { code: 'restore_preview_stale' },
-      ],
-      stale: true,
+      status: 'restoring',
     });
-    expect(FileLibraryRestorePreviewSchema.safeParse({
-      id: 'flrp_raw_summary',
+    expect(FileLibraryRestoreOperationSchema.safeParse({
+      id: 'flro_raw_summary',
       file_library_id: 'flib_a',
       source_save_point_id: 'flsp_safe',
       status: 'ready',
@@ -199,22 +180,22 @@ describe('agent task persistent HOME contracts', () => {
       updated_at: '2026-05-09T00:00:00.000Z',
     }).success).toBe(false);
 
-    expect(GetFileLibraryRestorePreviewResponseSchema.parse({
-      restore_preview: null,
-    })).toEqual({ restore_preview: null });
-    expect(GetFileLibraryRestorePreviewResponseSchema.parse({
-      restore_preview: {
-        id: 'flrp_active',
+    expect(GetFileLibraryRestoreResponseSchema.parse({
+      restore_operation: null,
+    })).toEqual({ restore_operation: null });
+    expect(GetFileLibraryRestoreResponseSchema.parse({
+      restore_operation: {
+        id: 'flro_active',
         file_library_id: 'flib_a',
         source_save_point_id: 'flsp_safe',
-        status: 'previewing',
+        status: 'restoring',
         created_at: '2026-05-09T00:00:00.000Z',
         updated_at: '2026-05-09T00:00:00.000Z',
       },
     })).toMatchObject({
-      restore_preview: {
-        id: 'flrp_active',
-        status: 'previewing',
+      restore_operation: {
+        id: 'flro_active',
+        status: 'restoring',
       },
     });
 
@@ -234,7 +215,7 @@ describe('agent task persistent HOME contracts', () => {
       status: 'published',
     });
 
-    for (const schema of [FileLibrarySavePointSchema, FileLibraryRestorePreviewSchema, TaskFileTemplateSchema]) {
+    for (const schema of [FileLibrarySavePointSchema, FileLibraryRestoreOperationSchema, TaskFileTemplateSchema]) {
       const parsed = schema.safeParse({
         id: 'safe_id',
         file_library_id: 'flib_a',
@@ -368,7 +349,6 @@ describe('agent task persistent HOME contracts', () => {
       error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
       message: 'file_library_active_writer_blocked',
       file_library_id: 'lib_a',
-      restore_preview_id: 'flrp_a',
       blockers: [{ code: 'active_writer_sessions' }],
       bound_task_visible: true,
       bound_task_id: 'task_restore',
@@ -560,8 +540,7 @@ describe('agent task persistent HOME contracts', () => {
 
     for (const path of [
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points',
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel',
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
     ]) {
       expect(readResponseSchemaNames(openapi.paths ?? {}, path, 'post', '409')).toEqual(expect.arrayContaining([
@@ -573,22 +552,17 @@ describe('agent task persistent HOME contracts', () => {
 
     expect(readResponseSchemaNames(
       openapi.paths ?? {},
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run',
-      'post',
-      '409',
-    )).toEqual(expect.arrayContaining([
-      'FileLibraryDeletingError',
-      'FileLibraryNotReadyError',
-      'FileLibraryRestoreActiveWriterBlockedError',
-      'FileLibraryRestoreRunConflictError',
-    ]));
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
+      'get',
+      '200',
+    )).toEqual(['GetFileLibraryRestoreResponse']);
 
     expect(readResponseSchemaNames(
       openapi.paths ?? {},
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
-      'get',
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
+      'post',
       '200',
-    )).toEqual(['GetFileLibraryRestorePreviewResponse']);
+    )).toEqual(['FileLibraryRestoreOperation']);
 
     for (const path of [
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}',
@@ -609,11 +583,7 @@ describe('agent task persistent HOME contracts', () => {
       'FILE_LIBRARY_SAVE_POINT_LIST_FAILED',
       'FILE_LIBRARY_SAVE_POINT_CREATE_FAILED',
       'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
-      'FILE_LIBRARY_RESTORE_PREVIEW_FAILED',
-      'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
-      'FILE_LIBRARY_RESTORE_PREVIEW_STALE',
-      'FILE_LIBRARY_RESTORE_RUN_FAILED',
-      'FILE_LIBRARY_RESTORE_CANCEL_FAILED',
+      'FILE_LIBRARY_RESTORE_FAILED',
       'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
       'FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH',
       'FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED',
@@ -715,29 +685,19 @@ describe('agent task persistent HOME contracts', () => {
         statuses: ['201', '400', '401', '403', '404', '409', '502', '503'],
       },
       {
-        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
+        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
         method: 'get',
         statuses: ['200', '401', '403', '404', '409', '502', '503'],
       },
       {
-        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview',
+        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
         method: 'post',
-        statuses: ['201', '400', '401', '403', '404', '409', '502', '503'],
-      },
-      {
-        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run',
-        method: 'post',
-        statuses: ['200', '400', '401', '403', '404', '409', '502', '503'],
+        statuses: ['200', '400', '401', '403', '404', '409', '422', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release',
         method: 'post',
         statuses: ['200', '401', '403', '404', '409', '502', '503'],
-      },
-      {
-        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel',
-        method: 'post',
-        statuses: ['200', '400', '401', '403', '404', '409', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
@@ -816,7 +776,7 @@ describe('agent task persistent HOME contracts', () => {
     ]));
   });
 
-  it('keeps removed file-library connector paths and schemas out of OpenAPI', () => {
+  it('keeps removed file-library connector and restore-preview paths and schemas out of OpenAPI', () => {
     const openapiPath = [
       resolve(process.cwd(), 'docs/contracts/specs/openapi.yaml'),
       resolve(process.cwd(), '../../docs/contracts/specs/openapi.yaml'),
@@ -835,6 +795,10 @@ describe('agent task persistent HOME contracts', () => {
     expect(serializedPaths).not.toContain('/storage-credential-exchange');
     expect(serializedPaths).not.toContain('/desktop-mount-access');
     expect(serializedPaths).not.toContain('/share-link');
+    expect(serializedPaths).not.toContain('/restore-preview');
+    expect(serializedPaths).not.toContain('/restore-run');
+    expect(serializedPaths).not.toContain('/restore-cancel');
+    expect(serializedPaths).not.toContain('restore_preview_id');
     expect(serializedPaths).not.toContain('createFileLibraryV2');
     expect(serializedPaths).not.toContain('updateFileLibraryV2');
     expect(serializedPaths).not.toContain('deleteFileLibraryV2');
@@ -849,9 +813,39 @@ describe('agent task persistent HOME contracts', () => {
       'FileLibraryConnectorUnsupportedError',
       'CreateFileLibraryShareLinkRequest',
       'FileLibraryObject',
+      'FileLibraryRestorePreview',
+      'GetFileLibraryRestorePreviewResponse',
+      'CreateFileLibraryRestorePreviewRequest',
+      'RunFileLibraryRestoreRequest',
+      'CancelFileLibraryRestoreRequest',
+      'FileLibraryRestoreRun',
+      'FileLibraryRestoreRunConflictError',
     ]) {
       expect(schemas).not.toHaveProperty(schemaName);
     }
+  });
+
+  it('keeps active route-kind map on direct file-library restore only', () => {
+    const routeKindMapPath = [
+      resolve(process.cwd(), 'docs/contracts/specs/openapi-route-kind-map.json'),
+      resolve(process.cwd(), '../../docs/contracts/specs/openapi-route-kind-map.json'),
+    ].find((candidate) => existsSync(candidate));
+    if (!routeKindMapPath) {
+      throw new Error('openapi-route-kind-map.json not found from contract test cwd');
+    }
+    const routeKindMap = JSON.parse(readFileSync(routeKindMapPath, 'utf8')) as Record<string, { path?: string; method?: string }>;
+    const serialized = JSON.stringify(routeKindMap);
+
+    expect(routeKindMap.fileLibraryRestore).toEqual({
+      path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
+      method: 'post',
+    });
+    expect(routeKindMap).not.toHaveProperty('fileLibraryRestorePreview');
+    expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreRun');
+    expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreCancel');
+    expect(serialized).not.toContain('/restore-preview');
+    expect(serialized).not.toContain('/restore-run');
+    expect(serialized).not.toContain('/restore-cancel');
   });
 });
 

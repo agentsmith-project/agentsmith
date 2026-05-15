@@ -189,7 +189,7 @@ describe('matchProjectsRoute', () => {
     });
   });
 
-  it('matches file-library save point, restore, and task file template routes', () => {
+  it('matches file-library save point, direct restore, and task file template routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/save-points'),
     ).toEqual({
@@ -200,31 +200,31 @@ describe('matchProjectsRoute', () => {
     });
 
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-preview'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore'),
     ).toEqual({
-      kind: 'fileLibraryRestorePreview',
+      kind: 'fileLibraryRestore',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore?active=true'),
+    ).toEqual({
+      kind: 'fileLibraryRestore',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_1',
     });
 
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-run'),
-    ).toEqual({
-      kind: 'fileLibraryRestoreRun',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_1',
-    });
-
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-cancel'),
-    ).toEqual({
-      kind: 'fileLibraryRestoreCancel',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: 'flib_1',
-    });
+    expect(matchProjectsRoute(
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-preview',
+    )).toBeNull();
+    expect(matchProjectsRoute(
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-run',
+    )).toBeNull();
+    expect(matchProjectsRoute(
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-cancel',
+    )).toBeNull();
 
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-library-operations/op_repo_create'),

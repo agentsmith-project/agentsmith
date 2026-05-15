@@ -163,22 +163,20 @@ export interface CreateSavePointInput extends AfscpMutationRequest {
   message: string;
 }
 
-export interface CreateRestorePreviewInput extends AfscpMutationRequest {
+export interface RestoreRepoInput extends AfscpMutationRequest {
   namespaceId: string;
   repoId: string;
   savePointId: string;
+  discardUnsavedChangesConfirmed: true;
 }
 
-export interface RunRestorePreviewInput extends AfscpMutationRequest {
-  namespaceId: string;
-  repoId: string;
-  previewOperationId: string;
-}
+export interface AdmitRestoreRepoInput extends RestoreRepoInput {}
 
-export interface DiscardRestorePreviewInput extends AfscpMutationRequest {
-  namespaceId: string;
-  repoId: string;
-  previewOperationId: string;
+export interface AfscpRestoreAdmitResponse {
+  admitted: true;
+  repo_id: string;
+  save_point_id: string;
+  operation_type: 'restore';
 }
 
 export interface CreateRepoTemplateInput extends AfscpMutationRequest {
@@ -251,9 +249,8 @@ export interface AfscpProductClientPort {
   deleteRepo(input: Omit<DeleteRepoInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   listSavePoints(input: Omit<ListSavePointsInput, 'caller'>): Promise<{ save_points: AfscpSavePoint[] }>;
   createSavePoint(input: Omit<CreateSavePointInput, 'caller'>): Promise<AfscpOperationEnvelope>;
-  createRestorePreview(input: Omit<CreateRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope>;
-  runRestorePreview(input: Omit<RunRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope>;
-  discardRestorePreview(input: Omit<DiscardRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope>;
+  admitRestoreRepo(input: Omit<AdmitRestoreRepoInput, 'caller'>): Promise<AfscpRestoreAdmitResponse>;
+  restoreRepo(input: Omit<RestoreRepoInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   createRepoTemplate(input: Omit<CreateRepoTemplateInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   cloneRepoTemplate(input: Omit<CloneRepoTemplateInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   createExport(input: Omit<CreateExportInput, 'caller'>): Promise<AfscpExportCreateOperationEnvelope>;
@@ -536,13 +533,13 @@ export class AfscpClient {
     });
   }
 
-  async createRestorePreview(input: CreateRestorePreviewInput): Promise<AfscpOperationEnvelope> {
+  async admitRestoreRepo(input: AdmitRestoreRepoInput): Promise<AfscpRestoreAdmitResponse> {
     const namespaceId = this.requireValidatedValue('namespace_id', input.namespaceId, input.correlationId);
     const repoId = this.requireValidatedValue('repo_id', input.repoId, input.correlationId);
     const savePointId = this.requireValidatedValue('save_point_id', input.savePointId, input.correlationId);
-    return this.requestJson<AfscpOperationEnvelope>({
+    return this.requestJson<AfscpRestoreAdmitResponse>({
       method: 'POST',
-      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore-preview`,
+      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore:admit`,
       correlationId: input.correlationId,
       namespaceId,
       caller: input.caller,
@@ -552,22 +549,19 @@ export class AfscpClient {
       },
       body: {
         save_point_id: savePointId,
+        discard_unsaved_changes_confirmed: true,
       },
       signal: input.signal,
     });
   }
 
-  async runRestorePreview(input: RunRestorePreviewInput): Promise<AfscpOperationEnvelope> {
+  async restoreRepo(input: RestoreRepoInput): Promise<AfscpOperationEnvelope> {
     const namespaceId = this.requireValidatedValue('namespace_id', input.namespaceId, input.correlationId);
     const repoId = this.requireValidatedValue('repo_id', input.repoId, input.correlationId);
-    const previewOperationId = this.requireValidatedValue(
-      'operation_id',
-      input.previewOperationId,
-      input.correlationId,
-    );
+    const savePointId = this.requireValidatedValue('save_point_id', input.savePointId, input.correlationId);
     return this.requestJson<AfscpOperationEnvelope>({
       method: 'POST',
-      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore-run`,
+      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore`,
       correlationId: input.correlationId,
       namespaceId,
       caller: input.caller,
@@ -576,32 +570,8 @@ export class AfscpClient {
         actor: input.actor,
       },
       body: {
-        preview_operation_id: previewOperationId,
-      },
-      signal: input.signal,
-    });
-  }
-
-  async discardRestorePreview(input: DiscardRestorePreviewInput): Promise<AfscpOperationEnvelope> {
-    const namespaceId = this.requireValidatedValue('namespace_id', input.namespaceId, input.correlationId);
-    const repoId = this.requireValidatedValue('repo_id', input.repoId, input.correlationId);
-    const previewOperationId = this.requireValidatedValue(
-      'operation_id',
-      input.previewOperationId,
-      input.correlationId,
-    );
-    return this.requestJson<AfscpOperationEnvelope>({
-      method: 'POST',
-      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore-preview:discard`,
-      correlationId: input.correlationId,
-      namespaceId,
-      caller: input.caller,
-      mutation: {
-        idempotencyKey: input.idempotencyKey,
-        actor: input.actor,
-      },
-      body: {
-        preview_operation_id: previewOperationId,
+        save_point_id: savePointId,
+        discard_unsaved_changes_confirmed: true,
       },
       signal: input.signal,
     });
@@ -939,9 +909,8 @@ export class AfscpProductClient implements AfscpProductClientPort {
       | 'deleteRepo'
       | 'listSavePoints'
       | 'createSavePoint'
-      | 'createRestorePreview'
-      | 'runRestorePreview'
-      | 'discardRestorePreview'
+      | 'admitRestoreRepo'
+      | 'restoreRepo'
       | 'createRepoTemplate'
       | 'cloneRepoTemplate'
       | 'createExport'
@@ -997,22 +966,15 @@ export class AfscpProductClient implements AfscpProductClientPort {
     });
   }
 
-  async createRestorePreview(input: Omit<CreateRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope> {
-    return this.client.createRestorePreview({
+  async admitRestoreRepo(input: Omit<AdmitRestoreRepoInput, 'caller'>): Promise<AfscpRestoreAdmitResponse> {
+    return this.client.admitRestoreRepo({
       ...input,
       caller: 'product',
     });
   }
 
-  async runRestorePreview(input: Omit<RunRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope> {
-    return this.client.runRestorePreview({
-      ...input,
-      caller: 'product',
-    });
-  }
-
-  async discardRestorePreview(input: Omit<DiscardRestorePreviewInput, 'caller'>): Promise<AfscpOperationEnvelope> {
-    return this.client.discardRestorePreview({
+  async restoreRepo(input: Omit<RestoreRepoInput, 'caller'>): Promise<AfscpOperationEnvelope> {
+    return this.client.restoreRepo({
       ...input,
       caller: 'product',
     });

@@ -1453,7 +1453,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-cancel": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -1464,49 +1464,9 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["getActiveFileLibraryRestore"];
         put?: never;
-        post: operations["cancelFileLibraryRestore"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get: operations["getActiveFileLibraryRestorePreview"];
-        put?: never;
-        post: operations["createFileLibraryRestorePreview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore-run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["runFileLibraryRestore"];
+        post: operations["createFileLibraryRestore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3094,7 +3054,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "UNSUPPORTED_MEDIA_TYPE" | "SERVICE_UNAVAILABLE" | "PROJECT_STORAGE_PENDING" | "PROJECT_STORAGE_BLOCKED" | "FILE_LIBRARY_PROVISIONING_FAILED" | "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_OPERATION_FAILED" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_SAVE_POINT_LIST_FAILED" | "FILE_LIBRARY_SAVE_POINT_CREATE_FAILED" | "FILE_LIBRARY_SAVE_POINT_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_FAILED" | "FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_RESTORE_RUN_FAILED" | "FILE_LIBRARY_RESTORE_CANCEL_FAILED" | "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED" | "FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND" | "FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH" | "FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED" | "FILE_LIBRARY_CAPABILITY_DENIED" | "FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED" | "TASK_FILE_TEMPLATE_CREATE_FAILED" | "FILE_LIBRARY_DELETE_FAILED" | "FILE_LIBRARY_UPLOAD_FAILED" | "FILE_LIBRARY_MOVE_FAILED" | "FILE_LIBRARY_FOLDER_CREATE_FAILED" | "FILE_LIBRARY_LIST_FAILED" | "destination_exists" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "RESOURCE_CONFLICT" | "VALIDATION_ERROR" | "FORBIDDEN" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "AGENT_OFFLINE" | "unsupported_field" | "UNSUPPORTED_MEDIA_TYPE" | "SERVICE_UNAVAILABLE" | "PROJECT_STORAGE_PENDING" | "PROJECT_STORAGE_BLOCKED" | "FILE_LIBRARY_PROVISIONING_FAILED" | "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_OPERATION_FAILED" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_SAVE_POINT_LIST_FAILED" | "FILE_LIBRARY_SAVE_POINT_CREATE_FAILED" | "FILE_LIBRARY_SAVE_POINT_NOT_FOUND" | "FILE_LIBRARY_RESTORE_FAILED" | "FILE_LIBRARY_ACTIVE_WRITER_BLOCKED" | "FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND" | "FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH" | "FILE_LIBRARY_TEMPLATE_CLONE_NOT_ALLOWED" | "FILE_LIBRARY_CAPABILITY_DENIED" | "FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED" | "TASK_FILE_TEMPLATE_CREATE_FAILED" | "FILE_LIBRARY_DELETE_FAILED" | "FILE_LIBRARY_UPLOAD_FAILED" | "FILE_LIBRARY_MOVE_FAILED" | "FILE_LIBRARY_FOLDER_CREATE_FAILED" | "FILE_LIBRARY_LIST_FAILED" | "destination_exists" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -3232,9 +3192,6 @@ export interface components {
             /** @description Whether bound task summary fields are safe to display to the current actor. */
             bound_task_visible: boolean;
         };
-        CancelFileLibraryRestoreRequest: {
-            restore_preview_id: string;
-        };
         ChatAttachment: {
             content_type?: string;
             id: string;
@@ -3303,8 +3260,7 @@ export interface components {
             /** @enum {string} */
             reason?: "hard_teardown_pending";
             request_id?: string;
-            restore_preview_id?: string;
-            restore_preview_status?: string;
+            restore_operation?: Record<string, never>;
             /** @enum {integer} */
             retry_after_ms?: "chat_session_stream_conflict";
         };
@@ -3377,7 +3333,9 @@ export interface components {
             description?: string;
             name: string;
         };
-        CreateFileLibraryRestorePreviewRequest: {
+        CreateFileLibraryRestoreRequest: {
+            /** @enum {boolean} */
+            discard_unsaved_changes_confirmed: true;
             save_point_id: string;
         };
         CreateFileLibrarySavePointRequest: {
@@ -3631,56 +3589,17 @@ export interface components {
             /** @enum {string} */
             message: "file_library_active_writer_blocked";
             request_id?: string;
-            restore_preview_id: string;
         };
-        FileLibraryRestorePreview: {
-            blockers?: {
-                /** @enum {string} */
-                code: "active_writer_sessions" | "stale_writer_session_uncertain" | "restore_preview_stale" | "restore_plan_requires_recovery";
-                message?: string;
-            }[];
+        FileLibraryRestoreOperation: {
             /** Format: date-time */
             created_at: string;
             file_library_id: string;
             id: string;
-            message?: string;
             source_save_point_id: string;
-            stale?: boolean;
             /** @enum {string} */
-            status: "previewing" | "ready" | "failed" | "canceling" | "canceled" | "restoring" | "restored";
-            summary?: {
-                added: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
-                changed: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
-                destructive: boolean;
-                removed: components["schemas"]["FileLibraryRestorePreviewChangeSummary"];
-            };
+            status: "pending" | "restoring" | "succeeded" | "failed";
             /** Format: date-time */
             updated_at: string;
-        };
-        FileLibraryRestorePreviewChangeSummary: {
-            count: number;
-            samples: string[];
-        };
-        FileLibraryRestoreRun: {
-            /** Format: date-time */
-            created_at: string;
-            file_library_id: string;
-            id: string;
-            restore_preview_id: string;
-            /** @enum {string} */
-            status: "pending" | "succeeded" | "failed";
-            /** Format: date-time */
-            updated_at: string;
-        };
-        FileLibraryRestoreRunConflictError: {
-            /** @enum {string} */
-            error_code: "FILE_LIBRARY_OPERATION_PENDING" | "FILE_LIBRARY_RESTORE_PREVIEW_STALE" | "FILE_LIBRARY_STORAGE_NOT_READY" | "FILE_LIBRARY_NAMESPACE_PROJECT_MISMATCH";
-            file_library_id?: string;
-            message: string;
-            operation_status?: string;
-            request_id?: string;
-            restore_preview_id?: string;
-            retry_after_ms?: number;
         };
         FileLibraryRuntimeAccessReleaseBlockedError: {
             blockers: {
@@ -3740,8 +3659,8 @@ export interface components {
             message: "file_library_task_in_use";
             request_id?: string;
         };
-        GetFileLibraryRestorePreviewResponse: {
-            restore_preview: components["schemas"]["FileLibraryRestorePreview"] | null;
+        GetFileLibraryRestoreResponse: {
+            restore_operation: components["schemas"]["FileLibraryRestoreOperation"] | null;
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
@@ -4022,9 +3941,6 @@ export interface components {
             resource_name: string;
             resource_type: string;
             tokens?: number;
-        };
-        RunFileLibraryRestoreRequest: {
-            restore_preview_id: string;
         };
         /** @description Silence notification request */
         SilenceNotificationRequest: {
@@ -8141,74 +8057,7 @@ export interface operations {
             };
         };
     };
-    cancelFileLibraryRestore: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CancelFileLibraryRestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Restore preview canceled */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryRestorePreview"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description File library or restore preview not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Restore preview stale, writer blocked, or file library not ready */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Restore cancel failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description File library backend unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    getActiveFileLibraryRestorePreview: {
+    getActiveFileLibraryRestore: {
         parameters: {
             query?: never;
             header?: never;
@@ -8221,13 +8070,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Active restore preview projection, reconciled by the backend without exposing AFSCP operation ids */
+            /** @description Active direct restore operation projection, reconciled by the backend without exposing AFSCP operation ids */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GetFileLibraryRestorePreviewResponse"];
+                    "application/json": components["schemas"]["GetFileLibraryRestoreResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -8250,7 +8099,7 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description Restore preview reconcile failed */
+            /** @description Restore reconcile failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -8270,10 +8119,12 @@ export interface operations {
             };
         };
     };
-    createFileLibraryRestorePreview: {
+    createFileLibraryRestore: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path: {
                 libraryId: components["parameters"]["libraryId"];
                 projectId: components["parameters"]["projectId"];
@@ -8283,17 +8134,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateFileLibraryRestorePreviewRequest"];
+                "application/json": components["schemas"]["CreateFileLibraryRestoreRequest"];
             };
         };
         responses: {
-            /** @description Restore preview created */
-            201: {
+            /** @description Restore operation created or idempotently reused */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryRestorePreview"];
+                    "application/json": components["schemas"]["FileLibraryRestoreOperation"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -8308,7 +8159,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Restore preview stale, writer blocked, or file library not ready */
+            /** @description Restore operation active, writer blocked, storage not ready, or file library not ready */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8317,8 +8168,8 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description Restore preview create failed */
-            502: {
+            /** @description Required idempotency key is missing or invalid */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8326,65 +8177,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description File library backend unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    runFileLibraryRestore: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                libraryId: components["parameters"]["libraryId"];
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RunFileLibraryRestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Restore run result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryRestoreRun"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description File library or restore preview not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Restore preview stale, writer blocked, or file library not ready */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["FileLibraryRestoreActiveWriterBlockedError"] | components["schemas"]["FileLibraryRestoreRunConflictError"];
-                };
-            };
-            /** @description Restore run failed */
+            /** @description Restore failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -8505,7 +8298,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point list failed */
@@ -8572,7 +8365,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point create failed */

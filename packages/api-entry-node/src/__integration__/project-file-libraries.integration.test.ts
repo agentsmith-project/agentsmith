@@ -221,29 +221,36 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     const listedSavePoints = (await listSavePointsRes.json()) as { items: Array<{ id: string }> };
     expect(listedSavePoints.items.some((item) => item.id === savePoint.id)).toBe(true);
 
-    const restorePreviewRes = await apiFetch(
+    const restoreRes = await apiFetch(
       baseUrl,
-      `${projectPath}/file-libraries/${sourceLibrary.id}/restore-preview`,
+      `${projectPath}/file-libraries/${sourceLibrary.id}/restore`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ save_point_id: savePoint.id }),
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'direct-restore-template-source',
+        },
+        body: JSON.stringify({
+          save_point_id: savePoint.id,
+          discard_unsaved_changes_confirmed: true,
+        }),
       },
     );
-    expect(restorePreviewRes.status).toBe(201);
-    const restorePreview = (await restorePreviewRes.json()) as { id: string; source_save_point_id: string };
-    expect(restorePreview.source_save_point_id).toBe(savePoint.id);
+    expect(restoreRes.status).toBe(200);
+    const restoreOperation = (await restoreRes.json()) as {
+      id: string;
+      source_save_point_id: string;
+      status: string;
+    };
+    expect(restoreOperation.source_save_point_id).toBe(savePoint.id);
+    expect(restoreOperation.status).toBe('succeeded');
 
-    const restoreRunRes = await apiFetch(
+    const restoreStatusRes = await apiFetch(
       baseUrl,
-      `${projectPath}/file-libraries/${sourceLibrary.id}/restore-run`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ restore_preview_id: restorePreview.id }),
-      },
+      `${projectPath}/file-libraries/${sourceLibrary.id}/restore`,
     );
-    expect(restoreRunRes.status).toBe(200);
+    expect(restoreStatusRes.status).toBe(200);
+    await expect(restoreStatusRes.json()).resolves.toEqual({ restore_operation: null });
 
     const createTemplateRes = await apiFetch(
       baseUrl,
@@ -315,7 +322,7 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     expect(clonedEntries.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'directory', path: 'template-docs/', name: 'template-docs' }),
     ]));
-    expect(JSON.stringify({ sourceLibrary, savePoint, restorePreview, template, task, clonedEntries })).not.toMatch(
+    expect(JSON.stringify({ sourceLibrary, savePoint, restoreOperation, template, task, clonedEntries })).not.toMatch(
       /repo_|tmpl_|sp_user_|sp_template|credential|control_root/,
     );
   });

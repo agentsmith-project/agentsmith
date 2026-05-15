@@ -1,8 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import type {
   FileLibrary,
-  FileLibraryRestorePreview,
-  FileLibraryRestoreRun,
+  FileLibraryRestoreOperation,
   FileLibrarySavePoint,
   TaskFileTemplate,
 } from '@/lib/api/types';
@@ -43,9 +42,10 @@ type MockFileLibrarySavePoint = FileLibrarySavePoint & {
   snapshot: ObjectRow[];
 };
 
-type MockFileLibraryRestorePreview = FileLibraryRestorePreview & {
+type MockFileLibraryRestoreOperation = FileLibraryRestoreOperation & {
   workspace_id: string;
   project_id: string;
+  idempotency_key: string;
 };
 
 type MockTaskFileTemplate = TaskFileTemplate & {
@@ -55,7 +55,8 @@ type MockTaskFileTemplate = TaskFileTemplate & {
 const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
 const runtimeAccessByLibrary = new Set<string>();
 const savePointsById = new Map<string, MockFileLibrarySavePoint>();
-const restorePreviewsById = new Map<string, MockFileLibraryRestorePreview>();
+const restoreOperationsById = new Map<string, MockFileLibraryRestoreOperation>();
+const restoreOperationIdsByIdempotencyKey = new Map<string, string>();
 const taskFileTemplatesById = new Map<string, MockTaskFileTemplate>();
 
 function bindingKey(input: { workspaceId: string; projectId: string; libraryId: string }) {
@@ -317,18 +318,15 @@ function toPublicSavePoint(savePoint: MockFileLibrarySavePoint): FileLibrarySave
   };
 }
 
-function toPublicRestorePreview(preview: MockFileLibraryRestorePreview): FileLibraryRestorePreview {
+function toPublicRestoreOperation(operation: MockFileLibraryRestoreOperation): FileLibraryRestoreOperation {
   return {
-    id: preview.id,
-    file_library_id: preview.file_library_id,
-    source_save_point_id: preview.source_save_point_id,
-    ...(preview.message ? { message: preview.message } : {}),
-    status: preview.status,
-    ...(preview.summary ? { summary: preview.summary } : {}),
-    ...(preview.blockers && preview.blockers.length > 0 ? { blockers: preview.blockers } : {}),
-    ...(typeof preview.stale === 'boolean' ? { stale: preview.stale } : {}),
-    created_at: preview.created_at,
-    updated_at: preview.updated_at,
+    id: operation.id,
+    file_library_id: operation.file_library_id,
+    source_save_point_id: operation.source_save_point_id,
+    status: operation.status,
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
   };
 }
 
@@ -546,34 +544,14 @@ function fileLibraryStatusConflictResponse(library: FileLibrary) {
   }, { status: 409 });
 }
 
-function activeWriterRestorePreviewBlockers(binding: MockTaskHomeBinding | null) {
-  return binding
-    ? [{ code: 'active_writer_sessions' as const, message: 'file_library_active_writer_blocked' }]
-    : [];
-}
-
-function hasActiveWriterRestorePreviewBlocker(preview: FileLibraryRestorePreview) {
-  return preview.blockers?.some((blocker) => blocker.code === 'active_writer_sessions') ?? false;
-}
-
-function clearActiveWriterRestorePreviewBlocker(preview: MockFileLibraryRestorePreview) {
-  if (!preview.blockers?.length) return false;
-  const nextBlockers = preview.blockers.filter((blocker) => blocker.code !== 'active_writer_sessions');
-  if (nextBlockers.length === preview.blockers.length) return false;
-  preview.blockers = nextBlockers;
-  return true;
-}
-
 function fileLibraryActiveWriterBlockedResponse(input: {
   binding: MockTaskHomeBinding | null;
   libraryId: string;
-  restorePreviewId?: string;
 }) {
   return HttpResponse.json({
     error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
     message: 'file_library_active_writer_blocked',
     file_library_id: input.libraryId,
-    ...(input.restorePreviewId ? { restore_preview_id: input.restorePreviewId } : {}),
     blockers: [{ code: 'active_writer_sessions' }],
     bound_task_visible: input.binding?.visible ?? false,
     ...(input.binding?.visible
@@ -586,18 +564,17 @@ function fileLibraryActiveWriterBlockedResponse(input: {
   }, { status: 409 });
 }
 
-function findActiveRestorePreview(input: {
+function findActiveRestoreOperation(input: {
   workspaceId: string;
   projectId: string;
   libraryId: string;
 }) {
-  return Array.from(restorePreviewsById.values())
-    .filter((preview) =>
-      preview.workspace_id === input.workspaceId
-      && preview.project_id === input.projectId
-      && preview.file_library_id === input.libraryId
-      && preview.status !== 'canceled'
-      && preview.status !== 'restored',
+  return Array.from(restoreOperationsById.values())
+    .filter((operation) =>
+      operation.workspace_id === input.workspaceId
+      && operation.project_id === input.projectId
+      && operation.file_library_id === input.libraryId
+      && (operation.status === 'pending' || operation.status === 'restoring'),
     )
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
 }
@@ -928,18 +905,18 @@ export const fileHandlers = [
       .map(toPublicSavePoint);
     return HttpResponse.json({ items });
   }),
-  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-preview`, ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore`, ({ params }) => {
     const library = getRouteFileLibrary(params);
     if (!library) {
       return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
-    const preview = findActiveRestorePreview({
+    const operation = findActiveRestoreOperation({
       workspaceId: String(params.ws ?? ''),
       projectId: String(params.prj ?? ''),
       libraryId: String(params.id ?? ''),
     });
     return HttpResponse.json({
-      restore_preview: preview ? toPublicRestorePreview(preview) : null,
+      restore_operation: operation ? toPublicRestoreOperation(operation) : null,
     });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, async ({ params, request }) => {
@@ -956,14 +933,38 @@ export const fileHandlers = [
     });
     return HttpResponse.json(toPublicSavePoint(savePoint), { status: 201 });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-preview`, async ({ params, request }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
-    const body = (await request.json().catch(() => ({}))) as { save_point_id?: string };
-    const savePoint = body.save_point_id ? savePointsById.get(body.save_point_id) : null;
+    const body = (await request.json().catch(() => ({}))) as {
+      discard_unsaved_changes_confirmed?: boolean;
+      save_point_id?: string;
+    };
     const workspaceId = String(params.ws ?? '');
     const projectId = String(params.prj ?? '');
     const libraryId = String(params.id ?? '');
+    const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() ?? '';
+    if (!idempotencyKey) {
+      return HttpResponse.json({
+        error_code: 'VALIDATION_ERROR',
+        message: 'idempotency_key_required',
+      }, { status: 400 });
+    }
+    const existingOperationId = restoreOperationIdsByIdempotencyKey.get(`${workspaceId}:${projectId}:${libraryId}:${idempotencyKey}`);
+    const existingOperation = existingOperationId ? restoreOperationsById.get(existingOperationId) : null;
+    if (existingOperation) {
+      return HttpResponse.json(toPublicRestoreOperation(existingOperation));
+    }
+    if (
+      !body.save_point_id
+      || body.discard_unsaved_changes_confirmed !== true
+    ) {
+      return HttpResponse.json({
+        error_code: 'VALIDATION_ERROR',
+        message: 'invalid_restore_request',
+      }, { status: 400 });
+    }
+    const savePoint = savePointsById.get(body.save_point_id);
     if (
       !savePoint
       || savePoint.workspace_id !== workspaceId
@@ -976,112 +977,43 @@ export const fileHandlers = [
         save_point_id: body.save_point_id,
       }, { status: 404 });
     }
-    const now = nowIso();
+    const activeOperation = findActiveRestoreOperation({ workspaceId, projectId, libraryId });
+    if (activeOperation) {
+      return HttpResponse.json({
+        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+        message: 'file_library_operation_pending',
+        operation_status: activeOperation.status,
+        restore_operation: toPublicRestoreOperation(activeOperation),
+        retry_after_ms: 2_000,
+      }, { status: 409 });
+    }
     const activeWriterBinding = getMockFileLibraryActiveWriterBinding({
       workspaceId,
       projectId,
       libraryId,
     });
-    const blockers = activeWriterRestorePreviewBlockers(activeWriterBinding);
-    const preview: MockFileLibraryRestorePreview = {
-      id: `rp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    if (activeWriterBinding) {
+      return fileLibraryActiveWriterBlockedResponse({
+        binding: activeWriterBinding,
+        libraryId,
+      });
+    }
+    const now = nowIso();
+    const operation: MockFileLibraryRestoreOperation = {
+      id: `flro_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       workspace_id: workspaceId,
       project_id: projectId,
       file_library_id: libraryId,
       source_save_point_id: savePoint.id,
-      message: savePoint.message,
-      status: 'ready',
-      ...(blockers.length > 0 ? { blockers } : {}),
-      stale: false,
-      created_at: now,
-      updated_at: now,
-    };
-    restorePreviewsById.set(preview.id, preview);
-    return HttpResponse.json(toPublicRestorePreview(preview), { status: 201 });
-  }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-run`, async ({ params, request }) => {
-    const availability = rejectUnavailableFileLibraryWrite(params);
-    if (availability.response) return availability.response;
-    const body = (await request.json().catch(() => ({}))) as { restore_preview_id?: string };
-    const preview = body.restore_preview_id ? restorePreviewsById.get(body.restore_preview_id) : null;
-    const workspaceId = String(params.ws ?? '');
-    const projectId = String(params.prj ?? '');
-    const libraryId = String(params.id ?? '');
-    if (
-      !preview
-      || preview.workspace_id !== workspaceId
-      || preview.project_id !== projectId
-      || preview.file_library_id !== libraryId
-    ) {
-      return HttpResponse.json({
-        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
-        message: 'file_library_restore_preview_not_found',
-        restore_preview_id: body.restore_preview_id,
-      }, { status: 404 });
-    }
-    const savePoint = savePointsById.get(preview.source_save_point_id);
-    if (!savePoint) {
-      return HttpResponse.json({
-        error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
-        message: 'file_library_save_point_not_found',
-        save_point_id: preview.source_save_point_id,
-      }, { status: 404 });
-    }
-    const activeWriterBinding = getMockFileLibraryActiveWriterBinding({
-      workspaceId,
-      projectId,
-      libraryId,
-    });
-    if (activeWriterBinding || hasActiveWriterRestorePreviewBlocker(preview)) {
-      return fileLibraryActiveWriterBlockedResponse({
-        binding: activeWriterBinding ?? getMockFileLibraryTaskHomeBinding({
-          workspaceId,
-          projectId,
-          libraryId,
-        }),
-        libraryId,
-        restorePreviewId: preview.id,
-      });
-    }
-    objectDbByLibraryId[libraryId] = cloneObjectRows(savePoint.snapshot);
-    const now = nowIso();
-    preview.status = 'restored';
-    preview.updated_at = now;
-    const run: FileLibraryRestoreRun = {
-      id: `rr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      file_library_id: libraryId,
-      restore_preview_id: preview.id,
+      idempotency_key: idempotencyKey,
       status: 'succeeded',
       created_at: now,
       updated_at: now,
     };
-    return HttpResponse.json(run);
-  }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore-cancel`, async ({ params, request }) => {
-    const library = getRouteFileLibrary(params);
-    if (!library) {
-      return fileLibraryNotFoundResponse(String(params.id ?? ''));
-    }
-    const body = (await request.json().catch(() => ({}))) as { restore_preview_id?: string };
-    const preview = body.restore_preview_id ? restorePreviewsById.get(body.restore_preview_id) : null;
-    const workspaceId = String(params.ws ?? '');
-    const projectId = String(params.prj ?? '');
-    const libraryId = String(params.id ?? '');
-    if (
-      !preview
-      || preview.workspace_id !== workspaceId
-      || preview.project_id !== projectId
-      || preview.file_library_id !== libraryId
-    ) {
-      return HttpResponse.json({
-        error_code: 'FILE_LIBRARY_RESTORE_PREVIEW_NOT_FOUND',
-        message: 'file_library_restore_preview_not_found',
-        restore_preview_id: body.restore_preview_id,
-      }, { status: 404 });
-    }
-    preview.status = 'canceled';
-    preview.updated_at = nowIso();
-    return HttpResponse.json(toPublicRestorePreview(preview));
+    objectDbByLibraryId[libraryId] = cloneObjectRows(savePoint.snapshot);
+    restoreOperationsById.set(operation.id, operation);
+    restoreOperationIdsByIdempotencyKey.set(`${workspaceId}:${projectId}:${libraryId}:${idempotencyKey}`, operation.id);
+    return HttpResponse.json(toPublicRestoreOperation(operation));
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/runtime-access/release`, ({ params }) => {
     const library = getRouteFileLibrary(params);
@@ -1097,16 +1029,6 @@ export const fileHandlers = [
       libraryId,
     });
     const released = releaseMockFileLibraryRuntimeAccess({ workspaceId, projectId, libraryId });
-    for (const preview of restorePreviewsById.values()) {
-      if (
-        preview.workspace_id === workspaceId
-        && preview.project_id === projectId
-        && preview.file_library_id === libraryId
-        && clearActiveWriterRestorePreviewBlocker(preview)
-      ) {
-        preview.updated_at = nowIso();
-      }
-    }
     return HttpResponse.json({
       file_library_id: libraryId,
       released,

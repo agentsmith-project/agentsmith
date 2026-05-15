@@ -5,26 +5,23 @@
  */
 
 import type {
-  CancelFileLibraryRestoreRequest,
-  CreateFileLibraryRestorePreviewRequest,
   CreateFileLibrarySavePointRequest,
   CreateTaskFileTemplateRequest,
   DeleteFileLibraryAcceptedResponse,
   DeleteFileLibraryResult,
   FileLibrary,
   FileLibraryOperationProjection,
-  FileLibraryRestorePreview,
-  FileLibraryRestoreRun,
+  FileLibraryRestoreOperation,
   FileObjectsListParams,
   FileObjectsListResponse,
   FileObjectMeta,
   FileObjectItem,
   FileLibrarySavePoint,
-  GetFileLibraryRestorePreviewResponse,
+  GetFileLibraryRestoreOperationResponse,
   ListFileLibrarySavePointsResponse,
   ListTaskFileTemplatesResponse,
   ReleaseFileLibraryRuntimeAccessResponse,
-  RunFileLibraryRestoreRequest,
+  RestoreFileLibraryRequest,
   TaskFileTemplate,
 } from '../types';
 import type { ApiClient, ApiRequestOptions } from '../client';
@@ -145,49 +142,31 @@ export class FilesAPI {
     );
   }
 
-  async getActiveRestorePreview(
+  async getActiveRestoreOperation(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<GetFileLibraryRestorePreviewResponse> {
-    return this.client.get<GetFileLibraryRestorePreviewResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`,
+  ): Promise<GetFileLibraryRestoreOperationResponse> {
+    return this.client.get<GetFileLibraryRestoreOperationResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore`,
     );
   }
 
-  async createRestorePreview(
+  async restoreFileLibrary(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    payload: CreateFileLibraryRestorePreviewRequest,
-  ): Promise<FileLibraryRestorePreview> {
-    return this.client.post<FileLibraryRestorePreview>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`,
+    payload: RestoreFileLibraryRequest,
+    options: { idempotencyKey: string },
+  ): Promise<FileLibraryRestoreOperation> {
+    return this.client.post<FileLibraryRestoreOperation>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore`,
       payload,
-    );
-  }
-
-  async runRestore(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    payload: RunFileLibraryRestoreRequest,
-  ): Promise<FileLibraryRestoreRun> {
-    return this.client.post<FileLibraryRestoreRun>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-run`,
-      payload,
-    );
-  }
-
-  async cancelRestore(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    payload: CancelFileLibraryRestoreRequest,
-  ): Promise<FileLibraryRestorePreview> {
-    return this.client.post<FileLibraryRestorePreview>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore-cancel`,
-      payload,
+      {
+        headers: {
+          'Idempotency-Key': options.idempotencyKey,
+        },
+      },
     );
   }
 

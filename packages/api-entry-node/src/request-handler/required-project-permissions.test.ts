@@ -215,14 +215,14 @@ describe('requiredProjectPermissions', () => {
 
     expect(
       requiredProjectPermissions(
-        { kind: 'fileLibraryRestorePreview', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
+        { kind: 'fileLibraryRestore', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
         'GET',
       ),
     ).toEqual(['project:endpoint:use']);
 
     expect(
       requiredProjectPermissions(
-        { kind: 'fileLibraryRestoreRun', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
+        { kind: 'fileLibraryRestore', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
         'POST',
       ),
     ).toEqual(['project:files:update']);

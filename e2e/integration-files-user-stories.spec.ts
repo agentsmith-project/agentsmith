@@ -49,16 +49,6 @@ type TaskArtifactListItem = {
   task_relative_path?: string;
 };
 
-type RestorePreviewProjection = {
-  restore_preview?: {
-    id?: string;
-    status?: string;
-    stale?: boolean;
-    blockers?: unknown[];
-    updated_at?: string;
-  } | null;
-};
-
 type SavePointListItemProjection = {
   id: string | null;
   message: string | null;
@@ -996,13 +986,11 @@ async function cancelDialog(dialog: Locator): Promise<void> {
   await expect(dialog).toBeHidden({ timeout: 10_000 });
 }
 
-async function expectVisibleSavePointListHidesRestorePreviewFence(fileStatesDialog: Locator): Promise<void> {
+async function expectVisibleSavePointListHasRestoreActions(fileStatesDialog: Locator): Promise<void> {
   const visibleRestoreActions = await fileStatesDialog
     .locator('[data-testid^="files__save-point__restore--"]')
     .count();
-  if (visibleRestoreActions > 0) {
-    await expect(fileStatesDialog.getByText(/^Restore preview current state$/i)).toHaveCount(0);
-  }
+  expect(visibleRestoreActions).toBeGreaterThan(0);
 }
 
 async function openFilePathFromRoot(args: {
@@ -1362,25 +1350,6 @@ async function createSavePointFromOpenDialogWithPendingAssertions(args: {
   }
 }
 
-async function readRestorePreviewEvidence(args: {
-  page: Page;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-}): Promise<{ ok: boolean; status: number; body: string; payload: unknown }> {
-  const response = await args.page.request.get(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-preview`,
-    { headers: await authHeaders(args.page) },
-  );
-  const body = await response.text();
-  return {
-    ok: response.ok(),
-    status: response.status(),
-    body: truncateEvidence(body),
-    payload: parseJsonEvidence(body),
-  };
-}
-
 async function readSavePointsEvidence(args: {
   page: Page;
   workspaceId: string;
@@ -1457,89 +1426,30 @@ async function expectSavePointListPendingUiNotFatal(fileStatesDialog: Locator): 
   await expect(fileStatesDialog.getByText(/^Could not load save points$/i)).toHaveCount(0);
 }
 
-async function waitForRestoreConfirmEnabledWithEvidence(args: {
+async function expectRestoreConfirmVisibleWithoutPreparingStep(args: {
   page: Page;
   dialog: Locator;
   workspaceId: string;
   projectId: string;
   libraryId: string;
-  timeoutMs: number;
 }): Promise<void> {
-  const confirm = args.dialog.getByTestId('files__restore-confirm');
-  const deadline = Date.now() + args.timeoutMs;
-  let lastEvidence: Record<string, unknown> = {};
-
-  while (Date.now() < deadline) {
-    if (await confirm.isEnabled().catch(() => false)) {
-      return;
-    }
-
-    const title = await args.dialog.getByTestId('files__restore-preview-title').textContent().catch(() => null);
-    const summary = await args.dialog.getByTestId('files__restore-preview-summary').textContent().catch(() => null);
-    const uiListErrorVisible = await args.dialog.getByTestId('files__save-point__list-error').isVisible().catch(() => false);
-    const uiFailed = /failed/i.test(`${title ?? ''} ${summary ?? ''}`);
-    const [activePreview, savePoints] = await Promise.all([
-      readRestorePreviewEvidence(args).catch((error: unknown) => ({
-        ok: false,
-        status: 0,
-        body: error instanceof Error ? error.message : String(error),
-        payload: null,
-      })),
-      readSavePointsEvidence(args).catch((error: unknown) => ({
-        ok: false,
-        status: 0,
-        body: error instanceof Error ? error.message : String(error),
-        payload: null,
-      })),
-    ]);
-    const previewPayload = activePreview.payload as RestorePreviewProjection;
-    const activeStatus = previewPayload?.restore_preview?.status ?? null;
-    const activeBlockers = previewPayload?.restore_preview?.blockers ?? [];
-
-    lastEvidence = {
-      ui: {
-        title,
-        summary,
-        list_error_visible: uiListErrorVisible,
-      },
-      active_preview: {
-        ok: activePreview.ok,
-        status: activePreview.status,
-        payload: activePreview.payload,
-      },
-      save_points: {
-        ok: savePoints.ok,
-        status: savePoints.status,
-        payload: savePoints.payload,
-      },
-    };
-
-    if (uiFailed || activeStatus === 'failed' || uiListErrorVisible || !savePoints.ok) {
-      throw new Error(`restore_preview_confirm_fail_fast:${JSON.stringify(lastEvidence)}`);
-    }
-    if (previewPayload?.restore_preview?.stale === true || activeBlockers.length > 0) {
-      throw new Error(`restore_preview_confirm_blocked:${JSON.stringify(lastEvidence)}`);
-    }
-
-    await args.page.waitForTimeout(2_000);
-  }
-
-  throw new Error(`restore_preview_confirm_timeout:${JSON.stringify(lastEvidence)}`);
+  const confirm = args.page.getByTestId('files__restore-confirm');
+  await expect(confirm).toBeVisible({ timeout: 10_000 });
+  await expect(confirm.getByTestId('files__restore-confirm-submit')).toBeEnabled({ timeout: 10_000 });
+  await expect(args.dialog.getByTestId('files__restore-operation')).toHaveCount(0);
 }
 
-async function waitForFileStatesDialogDismissedAfterRestoreRun(fileStatesDialog: Locator): Promise<void> {
-  if (await fileStatesDialog.isHidden().catch(() => true)) return;
-
-  const hiddenAfterRestoreRun = fileStatesDialog.waitFor({ state: 'hidden', timeout: 10_000 });
-  const hiddenAfterManualClose = (async () => {
-    await fileStatesDialog.getByLabel('Close', { exact: true }).click({ timeout: 10_000 });
-    await fileStatesDialog.waitFor({ state: 'hidden', timeout: 10_000 });
-  })();
-
-  await Promise.any([
-    hiddenAfterRestoreRun,
-    hiddenAfterManualClose,
-  ]);
+async function waitForRestoreOperationTerminalIfVisible(fileStatesDialog: Locator): Promise<void> {
+  const operation = fileStatesDialog.getByTestId('files__restore-operation');
+  if (!(await operation.isVisible().catch(() => false))) return;
+  await expect.poll(async () => {
+    const text = await operation.textContent().catch(() => '');
+    if (/Files restored|文件已恢复|Restore failed|恢复失败/i.test(text ?? '')) return 'terminal';
+    return 'active';
+  }, {
+    timeout: 180_000,
+    intervals: [1_000, 2_000, 5_000],
+  }).toBe('terminal');
 }
 
 async function restoreSavePointViaFilesUi(args: {
@@ -1556,42 +1466,45 @@ async function restoreSavePointViaFilesUi(args: {
   await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
   await expect(fileStatesDialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
 
-  const restorePreviewResponsePromise = args.page.waitForResponse((response) => (
-    response.request().method() === 'POST'
-    && response
-      .url()
-      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-preview`)
-  ), { timeout: 120_000 });
-  await fileStatesDialog.getByTestId(`files__save-point__restore--${args.savePointId}`).click();
-  const restorePreviewResponse = await restorePreviewResponsePromise;
-  const restorePreviewBody = await restorePreviewResponse.text();
-  expect(restorePreviewResponse.ok(), restorePreviewBody).toBe(true);
-  const restorePreviewPayload = JSON.parse(restorePreviewBody) as { id?: string };
-  expect(restorePreviewPayload.id).toBeTruthy();
-  await expect(fileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
-  await waitForRestoreConfirmEnabledWithEvidence({
-    page: args.page,
-    dialog: fileStatesDialog,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    libraryId: args.libraryId,
-    timeoutMs: 90_000,
-  });
+  const forbiddenRestoreRequests: string[] = [];
+  const onRestoreRequest = (request: Request) => {
+    const url = request.url();
+    if (
+      (
+        request.method() === 'POST'
+        && url.includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/save-points`)
+      )
+      ||
+      url.includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-`)
+      || request.postData()?.includes('restore_' + 'preview_id')
+    ) {
+      forbiddenRestoreRequests.push(`${request.method()} ${url}`);
+    }
+  };
+  args.page.on('request', onRestoreRequest);
+  try {
+    await fileStatesDialog.getByTestId(`files__save-point__restore--${args.savePointId}`).click();
+    await expectRestoreConfirmVisibleWithoutPreparingStep(args);
+    expect(forbiddenRestoreRequests).toEqual([]);
 
-  const restoreRunResponsePromise = args.page.waitForResponse((response) => (
-    response.request().method() === 'POST'
-    && response
-      .url()
-      .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore-run`)
-  ), { timeout: 120_000 });
-  await fileStatesDialog.getByTestId('files__restore-confirm').click();
-  const restoreRunResponse = await restoreRunResponsePromise;
-  const restoreRunBody = await restoreRunResponse.text();
-  expect(restoreRunResponse.ok(), restoreRunBody).toBe(true);
-  const restoreRunPayload = JSON.parse(restoreRunBody) as { status?: string };
-  expect(restoreRunPayload.status).toMatch(/^(pending|succeeded)$/);
-
-  await waitForFileStatesDialogDismissedAfterRestoreRun(fileStatesDialog);
+    const restoreResponsePromise = args.page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response
+        .url()
+        .includes(`/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/restore`)
+    ), { timeout: 120_000 });
+    await args.page.getByTestId('files__restore-confirm-submit').click();
+    const restoreResponse = await restoreResponsePromise;
+    const restoreBody = await restoreResponse.text();
+    expect(restoreResponse.ok(), restoreBody).toBe(true);
+    const restorePayload = JSON.parse(restoreBody) as { status?: string };
+    expect(restorePayload.status).toMatch(/^(pending|restoring|succeeded)$/);
+    await expect(fileStatesDialog.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
+    await waitForRestoreOperationTerminalIfVisible(fileStatesDialog);
+    expect(forbiddenRestoreRequests).toEqual([]);
+  } finally {
+    args.page.off('request', onRestoreRequest);
+  }
 }
 
 test.describe.serial('@lane-real files user stories', () => {
@@ -1807,14 +1720,14 @@ test.describe.serial('@lane-real files user stories', () => {
     }
   });
 
-  test('File states whole HOME restore round trip and task template clone independence stay in one user loop', async ({ page }) => {
+  test('File states direct restore round trip and task template clone independence stay in one user loop', async ({ page }) => {
     test.setTimeout(360_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await resolveDemoProjectAndRunner(page);
     const timestamp = Date.now();
     const libraryName = `State Loop Library ${timestamp}`;
-    const savePointMessage = `Before restore preview ${timestamp}`;
+    const savePointMessage = `Before direct restore ${timestamp}`;
     const templateName = `State Loop Template ${timestamp}`;
     const createdLibrary = await createFileLibraryViaApi({
       page,
@@ -1962,45 +1875,76 @@ test.describe.serial('@lane-real files user stories', () => {
     await expect(restoreFileStatesDialog).toBeVisible({ timeout: 10_000 });
     await expect(restoreFileStatesDialog.getByText(savePointMessage)).toBeVisible({ timeout: 10_000 });
 
-    const restorePreviewResponsePromise = page.waitForResponse((response) => (
-      response.request().method() === 'POST'
-      && response
-        .url()
-        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-preview`)
-    ), { timeout: 60_000 });
+    const savePointsBeforeRestore = await readSavePointsEvidence({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+    });
+    expect(savePointsBeforeRestore.ok, JSON.stringify(savePointsBeforeRestore)).toBe(true);
+    const savePointIdsBeforeRestore = readSavePointListItems(savePointsBeforeRestore.payload)
+      .map((item) => item.id)
+      .filter(Boolean);
+    const forbiddenRestoreRequests: string[] = [];
+    const onRestoreRequest = (request: Request) => {
+      const url = request.url();
+      if (
+        (
+          request.method() === 'POST'
+          && url.includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/save-points`)
+        )
+        ||
+        url.includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-`)
+        || request.postData()?.includes('restore_' + 'preview_id')
+      ) {
+        forbiddenRestoreRequests.push(`${request.method()} ${url}`);
+      }
+    };
+    page.on('request', onRestoreRequest);
     await restoreFileStatesDialog.getByTestId(`files__save-point__restore--${savePointId}`).click();
-    const restorePreviewResponse = await restorePreviewResponsePromise;
-    const restorePreviewBody = await restorePreviewResponse.text();
-    expect(restorePreviewResponse.ok(), restorePreviewBody).toBe(true);
-    const restorePreviewPayload = JSON.parse(restorePreviewBody) as { id?: string };
-    expect(restorePreviewPayload.id).toBeTruthy();
-    await expect(restoreFileStatesDialog.getByTestId('files__restore-preview')).toBeVisible({ timeout: 10_000 });
-    await expect(restoreFileStatesDialog.getByTestId('files__restore-preview-summary')).toBeVisible();
-    await expectVisibleSavePointListHidesRestorePreviewFence(restoreFileStatesDialog);
-    const taskTemplatesTab = restoreFileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
-    await waitForRestoreConfirmEnabledWithEvidence({
+    await expectRestoreConfirmVisibleWithoutPreparingStep({
       page,
       dialog: restoreFileStatesDialog,
       workspaceId: WORKSPACE_ID,
       projectId,
       libraryId,
-      timeoutMs: 90_000,
     });
-    await expect(taskTemplatesTab).toBeDisabled();
-    await expect(restoreFileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
+    expect(forbiddenRestoreRequests).toEqual([]);
+    await expectVisibleSavePointListHasRestoreActions(restoreFileStatesDialog);
+    const taskTemplatesTab = restoreFileStatesDialog.getByRole('tab', { name: /^Task file templates$/i });
 
-    const restoreRunResponsePromise = page.waitForResponse((response) => (
+    const restoreResponsePromise = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && response
         .url()
-        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore-run`)
+        .includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/file-libraries/${libraryId}/restore`)
     ), { timeout: 60_000 });
-    await restoreFileStatesDialog.getByTestId('files__restore-confirm').click();
-    const restoreRunResponse = await restoreRunResponsePromise;
-    const restoreRunBody = await restoreRunResponse.text();
-    expect(restoreRunResponse.ok(), restoreRunBody).toBe(true);
-    const restoreRunPayload = JSON.parse(restoreRunBody) as { status?: string };
-    expect(restoreRunPayload.status).toMatch(/^(pending|succeeded)$/);
+    await page.getByTestId('files__restore-confirm-submit').click();
+    const restoreResponse = await restoreResponsePromise;
+    const restoreBody = await restoreResponse.text();
+    expect(restoreResponse.ok(), restoreBody).toBe(true);
+    const restorePayload = JSON.parse(restoreBody) as { status?: string };
+    expect(restorePayload.status).toMatch(/^(pending|restoring|succeeded)$/);
+    await expect(restoreFileStatesDialog.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
+    if (restorePayload.status === 'pending' || restorePayload.status === 'restoring') {
+      await expect(taskTemplatesTab).toBeDisabled();
+      await expect(restoreFileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openWorkspaceFilesRoot({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        libraryId,
+      });
+      await page.getByTestId('files__file-states').click();
+      const reopenedDuringRestore = page.getByTestId('files__dialog__file-states');
+      await expect(reopenedDuringRestore.getByTestId('files__restore-operation')).toBeVisible({ timeout: 30_000 });
+      await waitForRestoreOperationTerminalIfVisible(reopenedDuringRestore);
+    } else {
+      await waitForRestoreOperationTerminalIfVisible(restoreFileStatesDialog);
+    }
+    page.off('request', onRestoreRequest);
+    expect(forbiddenRestoreRequests).toEqual([]);
     await waitForTextFileContentViaApi({
       page,
       workspaceId: WORKSPACE_ID,
@@ -2027,6 +1971,17 @@ test.describe.serial('@lane-real files user stories', () => {
       path: afterOnlyPath,
       timeoutMs: 180_000,
     });
+    const savePointsAfterRestore = await readSavePointsEvidence({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      libraryId,
+    });
+    expect(savePointsAfterRestore.ok, JSON.stringify(savePointsAfterRestore)).toBe(true);
+    const savePointIdsAfterRestore = readSavePointListItems(savePointsAfterRestore.payload)
+      .map((item) => item.id)
+      .filter(Boolean);
+    expect(savePointIdsAfterRestore).toEqual(savePointIdsBeforeRestore);
     const restoredRootContent = await openFileFromLibraryRootAndDownloadText({
       page,
       workspaceId: WORKSPACE_ID,

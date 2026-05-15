@@ -9,7 +9,7 @@ function isFileLibraryReadRoute(route: ProjectsRoute, method: string): boolean {
     || (route.kind === 'fileLibraryDownload' && method === 'GET')
     || (route.kind === 'fileLibraryMeta' && method === 'GET')
     || (route.kind === 'fileLibrarySavePoints' && method === 'GET')
-    || (route.kind === 'fileLibraryRestorePreview' && method === 'GET')
+    || (route.kind === 'fileLibraryRestore' && method === 'GET')
   );
 }
 
@@ -92,9 +92,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     || route.kind === 'fileLibraryDownload'
     || route.kind === 'fileLibraryMeta'
     || route.kind === 'fileLibrarySavePoints'
-    || route.kind === 'fileLibraryRestorePreview'
-    || route.kind === 'fileLibraryRestoreRun'
-    || route.kind === 'fileLibraryRestoreCancel'
+    || route.kind === 'fileLibraryRestore'
     || route.kind === 'fileLibraryRuntimeAccessRelease'
     || route.kind === 'taskFileTemplates'
     || route.kind === 'taskFileTemplateItem'

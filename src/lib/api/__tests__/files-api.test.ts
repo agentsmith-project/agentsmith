@@ -301,12 +301,15 @@ describe('FilesAPI', () => {
     );
   });
 
-  it('routes file-library save point and restore requests through project scoped paths', async () => {
+  it('routes file-library save point and direct restore requests through project scoped paths', async () => {
     const client: ApiClient = {
       setToken: () => undefined,
       getToken: () => null,
       clearToken: () => undefined,
-      get: vi.fn().mockResolvedValue({ items: [] }),
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({ items: [] })
+        .mockResolvedValueOnce({ restore_operation: null }),
       getBlob: vi.fn(),
       postMultipart: vi.fn(),
       post: vi
@@ -318,28 +321,12 @@ describe('FilesAPI', () => {
           created_at: '2026-05-09T12:00:00.000Z',
         })
         .mockResolvedValueOnce({
-          id: 'rp_1',
+          id: 'flro_1',
           file_library_id: 'flib_1',
           source_save_point_id: 'sp_1',
-          status: 'ready',
-          created_at: '2026-05-09T12:01:00.000Z',
-          updated_at: '2026-05-09T12:01:00.000Z',
-        })
-        .mockResolvedValueOnce({
-          id: 'rr_1',
-          file_library_id: 'flib_1',
-          restore_preview_id: 'rp_1',
           status: 'succeeded',
           created_at: '2026-05-09T12:02:00.000Z',
           updated_at: '2026-05-09T12:02:00.000Z',
-        })
-        .mockResolvedValueOnce({
-          id: 'rp_1',
-          file_library_id: 'flib_1',
-          source_save_point_id: 'sp_1',
-          status: 'canceled',
-          created_at: '2026-05-09T12:01:00.000Z',
-          updated_at: '2026-05-09T12:03:00.000Z',
         }),
       put: vi.fn(),
       patch: vi.fn(),
@@ -350,16 +337,23 @@ describe('FilesAPI', () => {
 
     await api.listSavePoints('ws_1', 'proj_1', 'flib_1');
     await api.createSavePoint('ws_1', 'proj_1', 'flib_1', { message: 'Before edits' });
-    await api.getActiveRestorePreview('ws_1', 'proj_1', 'flib_1');
-    await api.createRestorePreview('ws_1', 'proj_1', 'flib_1', { save_point_id: 'sp_1' });
-    await api.runRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
-    await api.cancelRestore('ws_1', 'proj_1', 'flib_1', { restore_preview_id: 'rp_1' });
+    await api.getActiveRestoreOperation('ws_1', 'proj_1', 'flib_1');
+    await api.restoreFileLibrary(
+      'ws_1',
+      'proj_1',
+      'flib_1',
+      {
+        save_point_id: 'sp_1',
+        discard_unsaved_changes_confirmed: true,
+      },
+      { idempotencyKey: 'restore-key-1' },
+    );
 
     expect(client.get).toHaveBeenCalledWith(
       '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
     );
     expect(client.get).toHaveBeenCalledWith(
-      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-preview',
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore',
     );
     expect(client.post).toHaveBeenNthCalledWith(
       1,
@@ -368,18 +362,16 @@ describe('FilesAPI', () => {
     );
     expect(client.post).toHaveBeenNthCalledWith(
       2,
-      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-preview',
-      { save_point_id: 'sp_1' },
-    );
-    expect(client.post).toHaveBeenNthCalledWith(
-      3,
-      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-run',
-      { restore_preview_id: 'rp_1' },
-    );
-    expect(client.post).toHaveBeenNthCalledWith(
-      4,
-      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore-cancel',
-      { restore_preview_id: 'rp_1' },
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore',
+      {
+        save_point_id: 'sp_1',
+        discard_unsaved_changes_confirmed: true,
+      },
+      {
+        headers: {
+          'Idempotency-Key': 'restore-key-1',
+        },
+      },
     );
   });
 

@@ -78,9 +78,7 @@ describe('resolveApiErrorPresentation', () => {
       'file_library_task_in_use.description': 'Delete the bound task before deleting this library.',
       'workspace_file_library_in_use.description': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
       'file_library_capability_denied.description': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
-      'file_library_restore_preview_active.description': 'A restore preview is still open. Cancel or finish it before publishing task file templates.',
       'file_library_operation_pending.description': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
-      'file_library_restore_preview_stale.description': 'The restore preview is out of date. Create a new preview before restoring files.',
       'file_library_active_writer_blocked.description': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
       'file_library_storage_not_ready.description': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
       'agent_task_delete_blocked.description':
@@ -134,10 +132,8 @@ describe('resolveApiErrorPresentation', () => {
     ['FILE_LIBRARY_TASK_IN_USE', 'file_library_task_in_use', 'Delete the bound task before deleting this library.'],
     ['AGENT_TASK_FILE_LIBRARY_IN_USE', 'workspace_file_library_in_use', 'That task workspace is now bound to another task. Select another workspace or create a new one.'],
     ['FILE_LIBRARY_CAPABILITY_DENIED', 'file_library_capability_denied', 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.'],
-    ['FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE', 'file_library_restore_preview_active', 'A restore preview is still open. Cancel or finish it before publishing task file templates.'],
     ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'File state is still being updated. Wait for the current file operation to finish, then try again.'],
     ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending', 'File state is still being updated. Wait for the current file operation to finish, then try again.'],
-    ['FILE_LIBRARY_RESTORE_PREVIEW_STALE', 'file_library_restore_preview_stale', 'The restore preview is out of date. Create a new preview before restoring files.'],
     ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked', 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.'],
     ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready', 'Project file storage is not ready yet. Wait for initialization to finish, then try again.'],
     ['AGENT_TASK_DELETE_BLOCKED', 'agent_task_delete_blocked', 'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.'],
@@ -172,7 +168,6 @@ describe('resolveApiErrorPresentation', () => {
   it.each([
     ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending'],
     ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending'],
-    ['FILE_LIBRARY_RESTORE_PREVIEW_STALE', 'file_library_restore_preview_stale'],
     ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked'],
     ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready'],
   ])('returns a productized toast message for %s', (errorCode, rawMessage) => {

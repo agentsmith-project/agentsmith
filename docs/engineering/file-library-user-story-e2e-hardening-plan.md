@@ -1,8 +1,12 @@
 # File Library User Story E2E Hardening Plan
 
 更新时间：2026-05-11
-状态：`handoff_ready_plan`
+状态：`superseded_by_direct_restore`
 适用范围：Files 文件库、Agent task HOME、save point/restore、task file template、task 与文件库绑定生命周期，以及这些功能的 focused user-story E2E/组件验收。
+
+> Superseded notice: restore 相关实现以
+> [`file-library-fast-save-restore-simplification-plan-v1.md`](./file-library-fast-save-restore-simplification-plan-v1.md)
+> 为准。当前 active flow 是：用户选择 save point -> 确认未保存到 save point 的当前文件改动会被丢弃 -> 后端启动 direct restore operation。不要按旧 preview-first/run/cancel 心智继续实现或验收。
 
 ## 0. 目标
 
@@ -35,13 +39,13 @@ Dot folders 采用“存在即展示、不做通用过滤”的原则：
 
 Save point 和 restore 覆盖 whole file library HOME payload，不是当前打开目录，也不是只覆盖 `workspace/`。`workspace/.artifacts/` 里的文件是普通 HOME payload 文件，参与 save point、restore、template clone 和 binding reuse。
 
-Restore preview 前，如果系统需要保存当前状态作为 stale/fence 校验，它是内部工程机制：
+Restore 不会为了恢复而隐式保存当前状态。用户如果想保留当前文件，必须取消恢复并主动创建 save point：
 
-- 普通 save point 列表必须隐藏这个 current-state fence save point。
-- audit/debug projection 如需暴露，必须标注为 `internal/restore preview fence`。
-- 它不是用户创建的 save point，不能被用户当作恢复点选择。
+- 普通 save point 列表只展示用户主动创建的 save point，以及明确属于用户可选择恢复点的后端结果。
+- 恢复确认文案必须说明：未保存到 save point 的当前文件改动会被丢弃。
+- 恢复确认后，后端启动 direct restore operation；前端展示 operation/pending/restoring 状态。
 
-Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给“已恢复成功”的心智；必须显示“正在恢复/收敛”或等价状态，并轮询/refetch 到终态后再展示成功。失败、stale preview、active writer、project storage not ready 都必须用 typed blocker 表达。
+Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pending 时给“已恢复成功”的心智；必须显示“正在恢复/收敛”或等价状态，并轮询/refetch 到终态后再展示成功。失败、out-of-date restore state、active writer、project storage not ready 都必须用 typed blocker 表达。
 
 ### 1.3 Task file template
 
@@ -68,9 +72,9 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 | --- | --- | --- |
 | capability denied | 当前项目不支持这个文件状态能力；如果预期可用，才提示联系管理员启用项目能力 | 返回/重试入口保持安全，不丢表单 |
 | project file storage not ready | 项目文件存储正在初始化、重试或暂不可用；只有 blocked-needs-admin 才提示管理员处理 | 等待、刷新、稍后重试 |
-| operation pending / restore pending | 已提交但仍在恢复/收敛，不能立即宣称成功 | 显示进度、轮询终态、必要时允许取消 preview |
+| operation pending / restore pending | 已提交但仍在恢复/收敛，不能立即宣称成功 | 显示进度、轮询终态、必要时允许用户稍后重试 |
 | library in use | 文件库仍被未删除 task 占用；停止运行不释放绑定 | 打开/删除对应 task，等待 release 完成 |
-| restore preview stale / active writer | 文件在 preview 后变化，或仍有写入会话 | 重新 preview、停止写入会话、稍后重试 |
+| restore state changed / active writer | 恢复请求已不再适用，或仍有写入会话 | 重新打开 File states、停止写入会话、稍后重试 |
 
 ## 2. Reviewer Findings 复核结论
 
@@ -79,11 +83,11 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 | dot folders 需要可见性保护 | 成立但需收敛 | 改为“存在即展示、不通用过滤”；示例不表示必然存在；runtime/system dot folders 用低范围 UX guard |
 | Files 根目录不能都写成 task HOME | 成立 | 普通 Files 是 file library HOME root；绑定 task 时才等同 task HOME |
 | 绑定复用语义需更精确 | 成立 | 未删除 task 独占；删除 task 后释放；停止/结束不释放；复用只继承 HOME payload |
-| save point/restore scope 与内部 fence | 成立 | restore 覆盖 whole HOME；restore preview fence 是内部机制，隐藏于普通 save point 列表 |
-| restore-run pending 不能立即成功 | 成立 | pending 展示“正在恢复/收敛”，终态成功后才给成功心智 |
+| save point/restore scope | 成立 | restore 覆盖 whole HOME；direct restore 不隐式创建 current-state save point |
+| restore operation pending 不能立即成功 | 成立 | pending 展示“正在恢复/收敛”，终态成功后才给成功心智 |
 | template 点击时快照与 clone independence | 成立 | 发布模板取点击当下文件状态；后续源变化、unpublish/delete 不影响已克隆 task |
 | capability denied 测试不要过度 E2E | 成立 | 保留组件/错误映射测试；只有主路径稳定可复现时加最小 UI E2E |
-| 错误文案不能全是 ask admin | 成立 | 拆分 capability、storage not ready、pending、in-use、stale/active writer |
+| 错误文案不能全是 ask admin | 成立 | 拆分 capability、storage not ready、pending、in-use、out-of-date restore/active writer |
 
 ## 3. 必补 User Stories
 
@@ -100,10 +104,10 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 3. 在 `workspace/docs/restore-target.txt` 创建内容 `before restore`。
 4. 创建用户 save point。
 5. 修改两个文件为 `after mutation`，或删除其中一个。
-6. 从该 save point 发起 restore preview。
-7. 验证普通 save point 列表不出现内部 `restore preview fence`；如 audit/debug 出现，必须标注 `internal/restore preview fence`。
-8. 点击确认 restore-run。
-9. 如果 restore-run 返回 pending，UI 显示“正在恢复/收敛”类状态，不能显示成功。
+6. 从该 save point 点击 restore。
+7. 确认弹窗说明 current file changes not saved to a save point will be discarded。
+8. 点击确认 direct restore。
+9. 如果 restore operation 返回 pending，UI 显示“正在恢复/收敛”类状态，不能显示成功。
 10. 等待终态成功后，回到 Files 浏览器并刷新/refetch。
 11. 验证两个文件存在且下载内容均为 `before restore`。
 
@@ -111,7 +115,7 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 
 - restore 覆盖 whole HOME payload，不只覆盖当前目录或 `workspace/`。
 - UI 成功心智只在 restore terminal success 后出现。
-- restore preview 期间模板发布和 destructive mutation 入口被 typed blocker 阻断；恢复完成后解除阻断。
+- restore operation 期间模板发布和 destructive mutation 入口被 typed blocker 阻断；恢复完成后解除阻断。
 - 页面不展示 raw storage-control/storage-backend id、storage path、内部 token 或原始错误码。
 
 ### Story B: Task file template 点击时快照与独立克隆
@@ -205,16 +209,16 @@ Restore-run 可能是异步操作。UI 不能在 restore-run 仍 pending 时给�
 
 - `FILE_LIBRARY_CAPABILITY_DENIED` / `file_library_capability_denied`
 - project file storage `bootstrapping` / `retryable_failed` / `blocked_needs_admin`
-- `FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE`
+- `FILE_LIBRARY_RESTORE_PREVIEW_ACTIVE` legacy typed code, rendered with direct restore operation copy
 - `FILE_LIBRARY_OPERATION_PENDING` plus front-end compatibility alias `FILE_LIBRARY_RESTORE_OPERATION_PENDING`
 - `AGENT_TASK_FILE_LIBRARY_IN_USE`
 - `FILE_LIBRARY_TASK_IN_USE`
-- restore preview stale / active writer blocker
+- out-of-date restore state / active writer blocker
 
 验收标准：
 
 - 页面主文案不显示 raw code。
-- 表单输入不丢失，用户能返回、取消 preview、重试或等待终态。
+- 表单输入不丢失，用户能返回、重试或等待终态。
 - pending 状态展示等待/收敛，不展示成功。
 - capability denied 保留组件测试和错误映射测试；只有当主路径稳定、可复现、不会依赖临界竞态时，再加最小 UI E2E。
 
@@ -287,7 +291,7 @@ npm run verify -- --goal=pr --run
 
 - `docs/contracts/files-frontend-module-map.md`：HOME root 默认、dot folder 可见、whole-HOME save point/restore、template clone independence、binding reuse/release、typed blocker copy 的模块/测试合同。
 - `docs/user-guides/file-library-access-model.md`：普通 Files 从 file library HOME root 打开；绑定 task 时才等同 task HOME。
-- `docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md`：internal restore preview fence、restore pending success timing、dot folder 示例非必然存在。
+- `docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md`：已被 direct restore simplification plan 覆盖；只可作为历史背景参考，不可按旧 preview-first flow 实施。
 - 相关 i18n 文案：不能重新引入 `workspace/` 默认根、所有 Files 都是 task HOME、所有错误都 ask admin 的旧心智。
 
 ## 7. 非目标

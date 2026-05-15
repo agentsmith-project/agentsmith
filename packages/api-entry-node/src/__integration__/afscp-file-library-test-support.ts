@@ -297,39 +297,27 @@ export function createInMemoryAfscpFileLibraryStorageAdapter(options: {
         createdAt,
       };
     },
-    async createRestorePreview(input) {
+    async preflightRestoreFileLibrary(input) {
+      requireRepo(input);
+    },
+    async admitRestoreFileLibrary(input) {
+      requireRepo(input);
+    },
+    async restoreFileLibrary(input) {
       requireRepo(input);
       return {
-        operationId: `op_${sanitizeNamespaceSegment(input.libraryId)}_restore_preview`,
+        operationId: `op_${sanitizeNamespaceSegment(input.libraryId)}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeNamespaceSegment(input.libraryId)}`,
+        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       };
     },
-    async reconcileRestorePreview(input) {
+    async reconcileRestoreOperation(input) {
       requireRepo(input);
       return {
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeNamespaceSegment(input.libraryId)}`,
-        sourceSavePointId: null,
-      };
-    },
-    async runRestorePreview(input) {
-      requireRepo(input);
-      return {
-        operationId: `op_${sanitizeNamespaceSegment(input.libraryId)}_restore_run`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeNamespaceSegment(input.libraryId)}`,
-        sourceSavePointId: null,
-      };
-    },
-    async discardRestorePreview(input) {
-      requireRepo(input);
-      return {
-        operationId: `op_${sanitizeNamespaceSegment(input.libraryId)}_restore_discard`,
-        operationStatus: 'succeeded',
-        restorePlanId: `plan_${sanitizeNamespaceSegment(input.libraryId)}`,
+        restorePlanId: null,
         sourceSavePointId: null,
       };
     },

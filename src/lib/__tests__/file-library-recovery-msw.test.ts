@@ -19,6 +19,17 @@ async function postJson(path: string, body?: Record<string, unknown>) {
   });
 }
 
+async function postJsonWithIdempotency(path: string, body: Record<string, unknown>, idempotencyKey: string) {
+  return fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 async function uploadTextFile(libraryId: string, name: string, content: string) {
   const boundary = `agentsmith-test-${Date.now()}`;
   const body = [
@@ -44,6 +55,16 @@ async function listEntryNames(libraryId: string) {
   return (payload.items ?? []).map((item) => item.name);
 }
 
+async function downloadTextFile(libraryId: string, path: string) {
+  const response = await fetch(`${baseUrl}/file-libraries/${libraryId}/download?path=${encodeURIComponent(path)}`);
+  expect(response.status).toBe(200);
+  return response.text();
+}
+
+async function deletePaths(libraryId: string, paths: string[]) {
+  return postJson(`/file-libraries/${libraryId}/delete`, { paths });
+}
+
 async function getFileLibrary(libraryId: string) {
   const response = await fetch(`${baseUrl}/file-libraries/${libraryId}`);
   expect(response.status).toBe(200);
@@ -58,46 +79,96 @@ async function getFileLibrary(libraryId: string) {
 }
 
 describe('file-library recovery and task-template MSW contracts', () => {
-  it('creates save points and restores file-library contents through preview/run', async () => {
+  it('creates save points and restores file-library contents through direct restore without hidden save points', async () => {
     const libraryId = 'lib_shared_default';
+    const before = await uploadTextFile(libraryId, 'direct-restore-target.txt', 'before restore');
+    expect(before.status, await before.text()).toBe(201);
     const save = await postJson(`/file-libraries/${libraryId}/save-points`, {
-      message: 'Before temporary file',
+      message: 'Before temporary change',
     });
     expect(save.status).toBe(201);
     const savePoint = await save.json() as { id?: string; file_library_id?: string; message?: string };
     expect(savePoint).toMatchObject({
       file_library_id: libraryId,
-      message: 'Before temporary file',
+      message: 'Before temporary change',
     });
 
-    const upload = await uploadTextFile(libraryId, 'temporary-template-input.txt', 'temporary');
-    const uploadText = await upload.text();
-    expect(upload.status, uploadText).toBe(201);
-    expect(JSON.parse(uploadText)).toMatchObject({
-      name: 'temporary-template-input.txt',
-      path: 'temporary-template-input.txt',
-    });
-    await expect(listEntryNames(libraryId)).resolves.toContain('temporary-template-input.txt');
+    const deleteOriginal = await deletePaths(libraryId, ['direct-restore-target.txt']);
+    expect(deleteOriginal.status, await deleteOriginal.text()).toBe(200);
+    const mutation = await uploadTextFile(libraryId, 'direct-restore-target.txt', 'after restore');
+    expect(mutation.status, await mutation.text()).toBe(201);
+    const afterOnly = await uploadTextFile(libraryId, 'post-savepoint-only.txt', 'remove me');
+    expect(afterOnly.status, await afterOnly.text()).toBe(201);
+    await expect(downloadTextFile(libraryId, 'direct-restore-target.txt')).resolves.toBe('after restore');
+    await expect(listEntryNames(libraryId)).resolves.toContain('post-savepoint-only.txt');
 
-    const preview = await postJson(`/file-libraries/${libraryId}/restore-preview`, {
+    const savePointListBefore = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
+    expect(savePointListBefore.status).toBe(200);
+    const savePointIdsBefore = new Set(
+      ((await savePointListBefore.json()) as { items?: Array<{ id?: string }> }).items?.map((item) => item.id) ?? [],
+    );
+
+    const restore = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-    });
-    expect(preview.status).toBe(201);
-    const previewPayload = await preview.json() as { id?: string; source_save_point_id?: string; status?: string };
-    expect(previewPayload).toMatchObject({
+      discard_unsaved_changes_confirmed: true,
+    }, 'msw-direct-restore-key-1');
+    expect(restore.status).toBe(200);
+    await expect(restore.json()).resolves.toMatchObject({
       source_save_point_id: savePoint.id,
-      status: 'ready',
-    });
-
-    const run = await postJson(`/file-libraries/${libraryId}/restore-run`, {
-      restore_preview_id: previewPayload.id,
-    });
-    expect(run.status).toBe(200);
-    await expect(run.json()).resolves.toMatchObject({
-      restore_preview_id: previewPayload.id,
       status: 'succeeded',
     });
-    await expect(listEntryNames(libraryId)).resolves.not.toContain('temporary-template-input.txt');
+
+    await expect(downloadTextFile(libraryId, 'direct-restore-target.txt')).resolves.toBe('before restore');
+    await expect(listEntryNames(libraryId)).resolves.not.toContain('post-savepoint-only.txt');
+
+    const savePointListAfter = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
+    expect(savePointListAfter.status).toBe(200);
+    const savePointIdsAfter = new Set(
+      ((await savePointListAfter.json()) as { items?: Array<{ id?: string }> }).items?.map((item) => item.id) ?? [],
+    );
+    expect(savePointIdsAfter).toEqual(savePointIdsBefore);
+  });
+
+  it('returns the same direct restore operation for a repeated idempotency key', async () => {
+    const library = await postJson('/file-libraries', {
+      name: `Restore idempotent ${Date.now()}`,
+    });
+    expect(library.status).toBe(201);
+    const libraryPayload = await library.json() as { id?: string };
+    const libraryId = libraryPayload.id ?? '';
+    const upload = await uploadTextFile(libraryId, 'restore-idempotent.txt', 'before restore');
+    expect(upload.status, await upload.text()).toBe(201);
+    const save = await postJson(`/file-libraries/${libraryId}/save-points`, {
+      message: 'Before idempotent restore',
+    });
+    expect(save.status).toBe(201);
+    const savePoint = await save.json() as { id?: string };
+    const deleteOriginal = await deletePaths(libraryId, ['restore-idempotent.txt']);
+    expect(deleteOriginal.status, await deleteOriginal.text()).toBe(200);
+    const mutation = await uploadTextFile(libraryId, 'restore-idempotent.txt', 'after restore');
+    expect(mutation.status, await mutation.text()).toBe(201);
+
+    const first = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
+      save_point_id: savePoint.id,
+      discard_unsaved_changes_confirmed: true,
+    }, 'msw-direct-restore-key-repeat');
+    expect(first.status).toBe(200);
+    const firstPayload = await first.json() as { id?: string; source_save_point_id?: string; status?: string };
+    expect(firstPayload).toMatchObject({
+      source_save_point_id: savePoint.id,
+      status: 'succeeded',
+    });
+
+    const second = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
+      save_point_id: savePoint.id,
+      discard_unsaved_changes_confirmed: true,
+    }, 'msw-direct-restore-key-repeat');
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toMatchObject({
+      id: firstPayload.id,
+      source_save_point_id: savePoint.id,
+      status: 'succeeded',
+    });
   });
 
   it('publishes task file templates and clones their files into a new task workspace', async () => {
@@ -164,7 +235,7 @@ describe('file-library recovery and task-template MSW contracts', () => {
     });
   });
 
-  it('returns typed active-writer blocked from restore-run when the active preview carries that blocker', async () => {
+  it('returns typed active-writer blocked from direct restore without creating a restore operation', async () => {
     const library = await postJson('/file-libraries', {
       name: `Restore blocked ${Date.now()}`,
     });
@@ -186,32 +257,22 @@ describe('file-library recovery and task-template MSW contracts', () => {
     expect(task.status).toBe(201);
     const taskPayload = await task.json() as { id?: string };
 
-    const preview = await postJson(`/file-libraries/${libraryId}/restore-preview`, {
+    const restore = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-    });
-    expect(preview.status).toBe(201);
-    const previewPayload = await preview.json() as {
-      id?: string;
-      blockers?: Array<{ code?: string }>;
-      status?: string;
-    };
-    expect(previewPayload).toMatchObject({
-      status: 'ready',
-      blockers: [{ code: 'active_writer_sessions' }],
-    });
-
-    const run = await postJson(`/file-libraries/${libraryId}/restore-run`, {
-      restore_preview_id: previewPayload.id,
-    });
-    expect(run.status).toBe(409);
-    await expect(run.json()).resolves.toMatchObject({
+      discard_unsaved_changes_confirmed: true,
+    }, 'msw-direct-restore-blocked');
+    expect(restore.status).toBe(409);
+    await expect(restore.json()).resolves.toMatchObject({
       error_code: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED',
       message: 'file_library_active_writer_blocked',
       file_library_id: libraryId,
-      restore_preview_id: previewPayload.id,
       bound_task_visible: true,
       bound_task_id: taskPayload.id,
       blockers: [{ code: 'active_writer_sessions' }],
     });
+
+    const active = await fetch(`${baseUrl}/file-libraries/${libraryId}/restore`);
+    expect(active.status).toBe(200);
+    await expect(active.json()).resolves.toEqual({ restore_operation: null });
   });
 });

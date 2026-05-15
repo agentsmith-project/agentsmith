@@ -94,6 +94,8 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.restore_error_title': 'Restore needs attention',
     'file_manager.restore_operation_failed_summary': 'Restore failed. No successful restore was applied. Review the reason and try again.',
     'file_manager.restore_operation_failed_title': 'Restore failed',
+    'file_manager.restore_operation_refreshed_summary': 'No active restore is running now. The file list and save points are refreshing.',
+    'file_manager.restore_operation_refreshed_title': 'Restore state refreshed',
     'file_manager.restore_operation_restoring_summary': 'Restore is updating the file library. File-changing actions stay unavailable until it finishes.',
     'file_manager.restore_operation_restoring_title': 'Restoring files...',
     'file_manager.restore_operation_succeeded_summary': 'The file library now matches the selected save point.',
@@ -361,6 +363,48 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__save-point__create')).toBeDisabled();
     expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeDisabled();
     expect(screen.getByRole('tab', { name: 'Task file templates' })).toBeDisabled();
+  });
+
+  it('clears local restoring state when backend reports no active restore and shows a refresh notice', () => {
+    let restoreOperation: unknown = {
+      id: 'flro_active',
+      file_library_id: 'lib_1',
+      source_save_point_id: 'sp_1',
+      status: 'restoring',
+      created_at: '2026-05-09T12:01:00.000Z',
+      updated_at: '2026-05-09T12:02:00.000Z',
+    };
+    mockActiveRestoreOperationQueryState.mockImplementation(() => ({
+      data: { restore_operation: restoreOperation },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestoreOperation,
+    }));
+
+    const view = renderDialog();
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('Restoring files...');
+    expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeDisabled();
+
+    restoreOperation = null;
+    view.rerender(
+      <FileLibraryRecoveryDialog
+        open
+        library={library}
+        projectId="proj_001"
+        t={t}
+        workspaceId="ws_default"
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('Restore state refreshed');
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
+      'No active restore is running now. The file list and save points are refreshing.',
+    );
+    expect(screen.getByTestId('files__restore-operation')).not.toHaveTextContent('Files restored.');
+    expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeEnabled();
+    expect(mockRefetchSavePoints).toHaveBeenCalled();
   });
 
   it('shows visible task actions when direct restore is blocked by an active writer', async () => {

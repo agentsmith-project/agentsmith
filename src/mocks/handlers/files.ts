@@ -948,7 +948,7 @@ export const fileHandlers = [
       return HttpResponse.json({
         error_code: 'VALIDATION_ERROR',
         message: 'idempotency_key_required',
-      }, { status: 400 });
+      }, { status: 422 });
     }
     const existingOperationId = restoreOperationIdsByIdempotencyKey.get(`${workspaceId}:${projectId}:${libraryId}:${idempotencyKey}`);
     const existingOperation = existingOperationId ? restoreOperationsById.get(existingOperationId) : null;

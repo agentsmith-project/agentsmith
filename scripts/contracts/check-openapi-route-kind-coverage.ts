@@ -6,7 +6,13 @@ type OpenApiDoc = {
   paths?: Record<string, Record<string, unknown>>;
 };
 
-type RouteMap = Record<string, { path: string; method: string }>;
+type RouteMapEntry = {
+  path: string;
+  method?: string;
+  methods?: string[];
+};
+
+type RouteMap = Record<string, RouteMapEntry>;
 
 function loadFile(relativePath: string): string {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -37,10 +43,13 @@ function main(): void {
 
   const missingMap = Array.from(kinds).filter((kind) => !map[kind]);
   const staleMap = Object.keys(map).filter((kind) => !kinds.has(kind));
-  const missingOpenApi = Object.entries(map).filter(([_, target]) => {
+  const missingOpenApi = Object.entries(map).flatMap(([kind, target]) => {
     const pathItem = openApi.paths?.[target.path];
-    if (!pathItem) return true;
-    return !Object.prototype.hasOwnProperty.call(pathItem, target.method.toLowerCase());
+    const methods = target.methods ?? (target.method ? [target.method] : []);
+    if (!pathItem || methods.length === 0) return [{ kind, target, method: target.method ?? target.methods?.join(',') ?? '' }];
+    return methods
+      .filter((method) => !Object.prototype.hasOwnProperty.call(pathItem, method.toLowerCase()))
+      .map((method) => ({ kind, target, method }));
   });
 
   if (missingMap.length === 0 && staleMap.length === 0 && missingOpenApi.length === 0) {
@@ -60,8 +69,8 @@ function main(): void {
   }
   if (missingOpenApi.length > 0) {
     process.stderr.write('Mapped kind missing in OpenAPI (path/method):\n');
-    for (const [kind, target] of missingOpenApi.sort(([a], [b]) => a.localeCompare(b))) {
-      process.stderr.write(`- ${kind}: ${target.method.toUpperCase()} ${target.path}\n`);
+    for (const item of missingOpenApi.sort((a, b) => a.kind.localeCompare(b.kind))) {
+      process.stderr.write(`- ${item.kind}: ${item.method.toUpperCase()} ${item.target.path}\n`);
     }
   }
   process.exit(1);

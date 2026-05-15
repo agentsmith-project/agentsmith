@@ -194,6 +194,61 @@ describe('file library recovery hooks', () => {
     expect(result.current.data?.restore_operation?.status).toBe('restoring');
   });
 
+  it('clears pending direct restore when the active projection becomes null and refreshes related caches', async () => {
+    vi.useFakeTimers();
+    mockGetActiveRestoreOperation
+      .mockResolvedValueOnce({
+        restore_operation: {
+          id: 'flro_active_to_null',
+          file_library_id: libraryId,
+          source_save_point_id: 'sp_1',
+          status: 'restoring',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      })
+      .mockResolvedValueOnce({ restore_operation: null });
+    const { queryClient, Wrapper } = createTestHarness();
+    const activeOperationKey = ['file-library-active-restore-operation', workspaceId, projectId, libraryId];
+    const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
+    const objectsKey = [
+      'file-objects',
+      'infinite',
+      workspaceId,
+      projectId,
+      libraryId,
+      { prefix: '', delimiter: '/', page_size: 200 },
+    ];
+    queryClient.setQueryData(savePointsKey, { items: [] });
+    queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
+
+    const { result } = renderHook(
+      () => useFileLibraryActiveRestoreOperation(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.restore_operation?.status).toBe('restoring'));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.restore_operation).toBeNull());
+    });
+    expect(mockGetActiveRestoreOperation.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(queryClient.getQueryCache().find({ queryKey: activeOperationKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
+      });
+    });
+  });
+
   it('creates a save point, shows it from cache immediately, and marks the save-point list stale', async () => {
     const { queryClient, Wrapper } = createTestHarness();
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];

@@ -95,8 +95,8 @@ type PendingRestoreConfirm = {
 
 type RestoreOperationDisplay = {
   description: string;
-  icon: 'loading' | 'success' | 'warning';
-  tone: 'success' | 'warning' | 'error';
+  icon: 'info' | 'loading' | 'success' | 'warning';
+  tone: 'info' | 'success' | 'warning' | 'error';
   title: string;
 };
 
@@ -476,6 +476,7 @@ export function FileLibraryRecoveryDialog({
   } | null>(null);
   const [pendingRestoreConfirm, setPendingRestoreConfirm] = React.useState<PendingRestoreConfirm | null>(null);
   const [restoreOperation, setRestoreOperation] = React.useState<FileLibraryRestoreOperation | null>(null);
+  const [restoreRefreshNoticeVisible, setRestoreRefreshNoticeVisible] = React.useState(false);
   const [restoreActionError, setRestoreActionError] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [restoreActiveWriterBlocker, setRestoreActiveWriterBlocker] = React.useState<RestoreActiveWriterBlocker | null>(null);
   const [restoreReleaseError, setRestoreReleaseError] = React.useState<RestoreActionErrorDisplay | null>(null);
@@ -492,6 +493,7 @@ export function FileLibraryRecoveryDialog({
   const savePointsQuery = useFileLibrarySavePoints(workspaceId, projectId, libraryId, {
     enabled: open && !!libraryId,
   });
+  const refetchSavePoints = savePointsQuery.refetch;
   const activeRestoreOperationQuery = useFileLibraryActiveRestoreOperation(workspaceId, projectId, libraryId, {
     enabled: open && !!libraryId,
   });
@@ -514,6 +516,7 @@ export function FileLibraryRecoveryDialog({
       setPendingSavePointCreate(null);
       setPendingRestoreConfirm(null);
       setRestoreOperation(null);
+      setRestoreRefreshNoticeVisible(false);
       setRestoreActionError(null);
       setRestoreActiveWriterBlocker(null);
       setRestoreReleaseError(null);
@@ -530,7 +533,15 @@ export function FileLibraryRecoveryDialog({
   React.useEffect(() => {
     if (!open || activeRestoreOperationQuery.isLoading) return;
     const nextOperation = activeRestoreOperationQuery.data?.restore_operation ?? null;
-    if (!nextOperation) return;
+    if (!nextOperation) {
+      if (isRestoreOperationActive(restoreOperation)) {
+        setRestoreOperation(null);
+        setRestoreRefreshNoticeVisible(true);
+        void refetchSavePoints();
+      }
+      return;
+    }
+    setRestoreRefreshNoticeVisible(false);
     setRestoreOperation((current) => (
       current?.id === nextOperation.id
       && current.status === nextOperation.status
@@ -546,6 +557,8 @@ export function FileLibraryRecoveryDialog({
     activeRestoreOperationQuery.data?.restore_operation,
     activeRestoreOperationQuery.isLoading,
     open,
+    refetchSavePoints,
+    restoreOperation,
   ]);
 
   const savePoints = savePointsQuery.data?.items ?? EMPTY_SAVE_POINTS;
@@ -558,7 +571,16 @@ export function FileLibraryRecoveryDialog({
   const showSavePointListError = savePointsQuery.isError
     && !savePointListOperationPending
     && savePoints.length === 0;
-  const restoreDisplay = restoreOperation ? buildRestoreOperationDisplay(restoreOperation, t) : null;
+  const restoreDisplay = restoreOperation
+    ? buildRestoreOperationDisplay(restoreOperation, t)
+    : restoreRefreshNoticeVisible
+      ? {
+          description: t('file_manager.restore_operation_refreshed_summary'),
+          icon: 'info' as const,
+          title: t('file_manager.restore_operation_refreshed_title'),
+          tone: 'info' as const,
+        }
+      : null;
 
   React.useEffect(() => {
     if (savePointActionError?.kind !== 'pending' || !pendingSavePointCreate) return;
@@ -625,6 +647,7 @@ export function FileLibraryRecoveryDialog({
     if (!library || !libraryReady || restoreOperationActive) return;
     setRestoreActionError(null);
     setRestoreActiveWriterBlocker(null);
+    setRestoreRefreshNoticeVisible(false);
     setRestoreReleaseError(null);
     setRestoreReleasePendingDisplay(null);
     setPendingRestoreConfirm({
@@ -645,6 +668,7 @@ export function FileLibraryRecoveryDialog({
     setRestoreConfirmSubmitting(true);
     setRestoreActionError(null);
     setRestoreActiveWriterBlocker(null);
+    setRestoreRefreshNoticeVisible(false);
     setRestoreReleaseError(null);
     setRestoreReleasePendingDisplay(null);
     try {
@@ -656,6 +680,7 @@ export function FileLibraryRecoveryDialog({
         idempotencyKey: pendingRestoreConfirm.idempotencyKey,
       });
       setRestoreOperation(operation);
+      setRestoreRefreshNoticeVisible(false);
       setPendingRestoreConfirm(null);
       if (operation.status === 'pending' || operation.status === 'restoring') {
         void activeRestoreOperationQuery.refetch();
@@ -664,6 +689,7 @@ export function FileLibraryRecoveryDialog({
       const display = buildRestoreErrorDisplay(error, t);
       setRestoreActionError(display);
       setRestoreOperation(null);
+      setRestoreRefreshNoticeVisible(false);
       setPendingRestoreConfirm(null);
       if (isFileLibraryActiveWriterBlocked(error)) {
         setRestoreActiveWriterBlocker(buildRestoreActiveWriterBlocker(error, library));
@@ -894,7 +920,9 @@ export function FileLibraryRecoveryDialog({
                       ? 'border-success/25 bg-success/10'
                       : restoreDisplay?.tone === 'error'
                         ? 'border-error/25 bg-error/10'
-                        : 'border-warning/30 bg-warning/10',
+                        : restoreDisplay?.tone === 'info'
+                          ? 'border-subtle bg-surface/45'
+                          : 'border-warning/30 bg-warning/10',
                   )}
                   data-testid="files__restore-operation"
                   role={restoreDisplay?.tone === 'error' || restoreActionError ? 'alert' : 'status'}
@@ -904,6 +932,8 @@ export function FileLibraryRecoveryDialog({
                       <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
                     ) : restoreDisplay?.icon === 'success' ? (
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                    ) : restoreDisplay?.icon === 'info' ? (
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
                     ) : (
                       <AlertTriangle className={cn(
                         'mt-0.5 h-4 w-4 shrink-0',

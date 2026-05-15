@@ -622,6 +622,12 @@ fi
 assert_no_raw_storage_fields "file library direct restore"
 RESTORE_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
 RESTORE_OPERATION_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
+RESTORE_OPERATION_SOURCE_SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.source_save_point_id" || true)"
+if [[ "${RESTORE_OPERATION_SOURCE_SAVE_POINT_ID}" != "${SAVE_POINT_ID}" ]]; then
+  err "direct restore operation did not reference the requested save point"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
 if [[ "${RESTORE_OPERATION_STATUS}" == "pending" || "${RESTORE_OPERATION_STATUS}" == "restoring" ]]; then
   wait_restore_operation_terminal "${RESTORE_OPERATION_ID}"
 elif [[ "${RESTORE_OPERATION_STATUS}" != "succeeded" ]]; then

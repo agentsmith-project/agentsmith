@@ -351,6 +351,66 @@ describe('file-library-persistence catalog schema', () => {
     });
   });
 
+  it('creates or reuses one active restore operation for a library across different idempotency keys', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_active_mutex',
+      afscpOperationId: null,
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'pending' as const,
+      createdByUserId: 'user_1',
+      discardUnsavedChangesConfirmed: true as const,
+    };
+
+    const first = await repo.createOrReuseActiveByLibrary({
+      ...input,
+      idempotencyKey: 'restore-key-active-a',
+    });
+    const second = await repo.createOrReuseActiveByLibrary({
+      ...input,
+      idempotencyKey: 'restore-key-active-b',
+      sourceSavePointId: 'flsp_restore_other',
+    });
+
+    expect(first).toMatchObject({
+      created: true,
+      reason: 'created',
+      operation: {
+        idempotency_key: 'restore-key-active-a',
+        source_save_point_id: 'flsp_restore',
+      },
+    });
+    expect(second).toMatchObject({
+      created: false,
+      reason: 'active',
+      operation: {
+        id: first.operation.id,
+        idempotency_key: 'restore-key-active-a',
+        source_save_point_id: 'flsp_restore',
+      },
+    });
+    await expect(docStore.list<Record<string, unknown>>(
+      'project_file_library_restore_operations',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: 'flib_restore_active_mutex',
+      },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: first.operation.id,
+        idempotency_key: 'restore-key-active-a',
+      }),
+    ]);
+  });
+
   it('keeps AFSCP history save points public without direct restore fence classification', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocFileLibrarySavePointMappingRepo(

@@ -2781,6 +2781,8 @@
       "restore_operation_restoring_summary": "恢复正在更新文件库。完成前，修改文件的操作会暂时不可用。",
       "restore_operation_succeeded_title": "文件已恢复。",
       "restore_operation_succeeded_summary": "文件库已回到选中的保存点状态。",
+      "restore_operation_refreshed_title": "恢复状态已刷新",
+      "restore_operation_refreshed_summary": "当前没有正在运行的恢复操作，文件列表和保存点正在刷新。",
       "restore_operation_failed_title": "恢复失败",
       "restore_operation_failed_summary": "恢复失败，未成功应用恢复结果。请查看原因后重试。",
       "restore_runtime_open_task": "打开任务",

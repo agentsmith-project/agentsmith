@@ -8,7 +8,6 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
   JsonDocFileLibraryRestoreOperationRepo,
-  JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
@@ -254,6 +253,41 @@ class RestoreOperationRaceDocStore extends InMemoryJsonDocStore {
   }
 }
 
+class RestoreOperationDifferentKeyRaceDocStore extends InMemoryJsonDocStore {
+  private readonly idempotencyListGate = createCountGate(2);
+  private readonly activeListGate = createCountGate(2);
+  private raceEnabled = false;
+
+  enableRestoreRace(): void {
+    this.raceEnabled = true;
+  }
+
+  override async list<T>(collection: string, filter: Record<string, string> = {}): Promise<T[]> {
+    if (!this.raceEnabled) {
+      return super.list<T>(collection, filter);
+    }
+    if (
+      collection === 'project_file_library_restore_operations'
+      && filter.workspace_id === 'ws_default'
+      && filter.project_id === 'proj_1'
+      && filter.library_id
+      && filter.idempotency_key
+    ) {
+      await this.idempotencyListGate();
+    }
+    if (
+      collection === 'project_file_library_restore_operations'
+      && filter.workspace_id === 'ws_default'
+      && filter.project_id === 'proj_1'
+      && filter.library_id
+      && !filter.idempotency_key
+    ) {
+      await this.activeListGate();
+    }
+    return super.list<T>(collection, filter);
+  }
+}
+
 function createMockResponse(): http.ServerResponse & {
   headers: Record<string, string>;
   end: ReturnType<typeof vi.fn>;
@@ -414,27 +448,6 @@ async function seedBoundTask(input: {
     taskId,
     bindingGeneration: acquired.binding.bindingGeneration,
   };
-}
-
-async function seedRestoreOperation(input: {
-  deps: ReturnType<typeof createDeps>;
-  libraryId: string;
-  sourceSavePointId?: string;
-  status?: 'pending' | 'restoring' | 'succeeded' | 'failed';
-  idempotencyKey?: string;
-}) {
-  return new JsonDocFileLibraryRestoreOperationRepo(input.deps.docStore).create({
-    id: `flro_${input.libraryId}`,
-    workspaceId: 'ws_default',
-    projectId: 'proj_1',
-    libraryId: input.libraryId,
-    afscpOperationId: 'op_restore_hidden',
-    sourceSavePointId: input.sourceSavePointId ?? 'flsp_before_restore',
-    sourceAfscpSavePointId: 'sp_user_hidden',
-    status: input.status ?? 'restoring',
-    idempotencyKey: input.idempotencyKey ?? `restore-key-${input.libraryId}`,
-    createdByUserId: 'user_1',
-  });
 }
 
 async function createSavePointForRestore(input: {
@@ -1874,6 +1887,87 @@ describe('project-file-library-routes', () => {
     ]);
   });
 
+  it('atomically rejects concurrent direct restores with different idempotency keys for the same library', async () => {
+    const storageAdapter = createStorageAdapter();
+    const docStore = new RestoreOperationDifferentKeyRaceDocStore();
+    const deps = createDeps({
+      storageAdapter,
+      docStore,
+    });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const makeRequest = (
+      requestId: string,
+      idempotencyKey: string,
+      json: ReturnType<typeof vi.fn>,
+    ) => handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': requestId,
+          'idempotency-key': idempotencyKey,
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+        discard_unsaved_changes_confirmed: true,
+      }),
+    });
+    const firstJson = vi.fn();
+    const secondJson = vi.fn();
+    docStore.enableRestoreRace();
+
+    await expect(Promise.all([
+      makeRequest('req_restore_concurrent_key_a', 'restore-key-concurrent-a', firstJson),
+      makeRequest('req_restore_concurrent_key_b', 'restore-key-concurrent-b', secondJson),
+    ])).resolves.toEqual([true, true]);
+
+    const responses = [firstJson, secondJson].map((json) => ({
+      status: json.mock.calls[0]?.[1] as number,
+      body: json.mock.calls[0]?.[2] as Record<string, unknown>,
+    }));
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    const accepted = responses.find((response) => response.status === 200);
+    const blocked = responses.find((response) => response.status === 409);
+    expect(accepted?.body).toMatchObject({
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'restoring',
+    });
+    expect(blocked?.body).toMatchObject({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      restore_operation: expect.objectContaining({
+        id: accepted?.body.id,
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: expect.stringMatching(/^(pending|restoring)$/),
+      }),
+      operation_status: 'pending',
+      retry_after_ms: 2000,
+    });
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
+    await expect(deps.docStore.list<Record<string, unknown>>(
+      'project_file_library_restore_operations',
+      { workspace_id: 'ws_default', project_id: 'proj_1', library_id: libraryId },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: accepted?.body.id,
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+      }),
+    ]);
+  });
+
   it('persists direct restore operation before storage restore returns and audits start and terminal success', async () => {
     const storageResult = createDeferred<Awaited<ReturnType<FileLibraryStoragePort['restoreFileLibrary']>>>();
     const storageStarted = createDeferred<void>();
@@ -2588,10 +2682,17 @@ describe('project-file-library-routes', () => {
         discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
-    expect(sameSavePointJson.mock.calls[0]?.[2]).toMatchObject({
-      id: restoreOperation.id,
-      status: 'restoring',
-    });
+    expect(sameSavePointJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_restore_operation_active',
+      file_library_id: libraryId,
+      restore_operation: expect.objectContaining({
+        id: restoreOperation.id,
+        status: 'restoring',
+      }),
+      operation_status: 'pending',
+      retry_after_ms: 2000,
+    }));
 
     const differentSavePointJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({

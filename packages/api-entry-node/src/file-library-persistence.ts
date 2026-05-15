@@ -7,6 +7,7 @@ import type {
 export const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
 const FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION = 'project_file_library_save_point_mappings';
 const FILE_LIBRARY_RESTORE_OPERATION_COLLECTION = 'project_file_library_restore_operations';
+const FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION = 'project_file_library_restore_operation_active_locks';
 const TASK_FILE_TEMPLATE_COLLECTION = 'project_task_file_templates';
 const FILE_LIBRARY_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -927,6 +928,27 @@ export interface FileLibraryRestoreOperationRecord extends FileLibraryRestoreOpe
   failure_reason?: string;
 }
 
+type FileLibraryRestoreOperationCreateInput = {
+  id?: string;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  afscpOperationId?: string | null;
+  sourceSavePointId: string;
+  sourceAfscpSavePointId: string;
+  status: FileLibraryRestoreOperationStatus;
+  idempotencyKey: string;
+  createdByUserId: string;
+  discardUnsavedChangesConfirmed?: true;
+  failureReason?: string;
+};
+
+type FileLibraryRestoreOperationCreateOrReuseResult = {
+  operation: FileLibraryRestoreOperationRecord;
+  created: boolean;
+  reason: 'created' | 'idempotency' | 'active';
+};
+
 export type TaskFileTemplateStatus = 'unpublished' | 'published' | 'failed';
 
 export interface TaskFileTemplatePublicRecord {
@@ -987,6 +1009,18 @@ export function buildFileLibraryRestoreOperationIdempotencyId(input: {
     input.projectId,
     input.libraryId,
     input.idempotencyKey,
+  ]);
+}
+
+export function buildFileLibraryRestoreOperationActiveLockId(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): string {
+  return scopedDigestId('flro_active', [
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
   ]);
 }
 
@@ -1146,23 +1180,13 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     private readonly nowIso: () => string = () => new Date().toISOString(),
   ) {}
 
-  async create(input: {
-    id?: string;
-    workspaceId: string;
-    projectId: string;
-    libraryId: string;
-    afscpOperationId?: string | null;
-    sourceSavePointId: string;
-    sourceAfscpSavePointId: string;
-    status: FileLibraryRestoreOperationStatus;
-    idempotencyKey: string;
-    createdByUserId: string;
-    discardUnsavedChangesConfirmed?: true;
-    failureReason?: string;
-  }): Promise<FileLibraryRestoreOperationRecord> {
+  private buildOperationRecord(
+    input: FileLibraryRestoreOperationCreateInput,
+    operationId: string,
+  ): FileLibraryRestoreOperationRecord {
     const now = this.nowIso();
-    const record: FileLibraryRestoreOperationRecord = {
-      id: input.id ?? generateFileLibraryRestoreOperationId(),
+    return {
+      id: operationId,
       file_library_id: input.libraryId,
       workspace_id: input.workspaceId,
       project_id: input.projectId,
@@ -1178,6 +1202,72 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       created_at: now,
       updated_at: now,
     };
+  }
+
+  private activeLockId(workspaceId: string, projectId: string, libraryId: string): string {
+    return buildFileLibraryRestoreOperationActiveLockId({ workspaceId, projectId, libraryId });
+  }
+
+  private async getActiveLock(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const record = await this.docStore.get<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION,
+      this.activeLockId(workspaceId, projectId, libraryId),
+    );
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
+      || record.library_id !== libraryId
+    ) {
+      return null;
+    }
+    return record;
+  }
+
+  private async releaseActiveLockForOperation(operation: FileLibraryRestoreOperationRecord): Promise<void> {
+    await this.docStore.deleteIfMatch<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION,
+      this.activeLockId(operation.workspace_id, operation.project_id, operation.library_id),
+      {
+        expected: {
+          id: operation.id,
+          workspace_id: operation.workspace_id,
+          project_id: operation.project_id,
+          library_id: operation.library_id,
+        },
+      },
+    );
+  }
+
+  private async mirrorActiveLock(operation: FileLibraryRestoreOperationRecord): Promise<void> {
+    await this.docStore.updateIfMatch<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION,
+      this.activeLockId(operation.workspace_id, operation.project_id, operation.library_id),
+      {
+        expected: {
+          id: operation.id,
+          workspace_id: operation.workspace_id,
+          project_id: operation.project_id,
+          library_id: operation.library_id,
+        },
+        replace: operation,
+      },
+    );
+  }
+
+  private isActiveOperation(record: FileLibraryRestoreOperationRecord): boolean {
+    return record.status === 'pending' || record.status === 'restoring';
+  }
+
+  async create(input: FileLibraryRestoreOperationCreateInput): Promise<FileLibraryRestoreOperationRecord> {
+    const record = this.buildOperationRecord(
+      input,
+      input.id ?? generateFileLibraryRestoreOperationId(),
+    );
     await this.docStore.upsert(FILE_LIBRARY_RESTORE_OPERATION_COLLECTION, record.id, record);
     return record;
   }
@@ -1198,25 +1288,8 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     operation: FileLibraryRestoreOperationRecord;
     created: boolean;
   }> {
-    const now = this.nowIso();
     const id = buildFileLibraryRestoreOperationIdempotencyId(input);
-    const record: FileLibraryRestoreOperationRecord = {
-      id,
-      file_library_id: input.libraryId,
-      workspace_id: input.workspaceId,
-      project_id: input.projectId,
-      library_id: input.libraryId,
-      afscp_operation_id: input.afscpOperationId ?? null,
-      source_save_point_id: input.sourceSavePointId,
-      source_afscp_save_point_id: input.sourceAfscpSavePointId,
-      status: input.status,
-      idempotency_key: input.idempotencyKey,
-      created_by_user_id: input.createdByUserId,
-      discard_unsaved_changes_confirmed: input.discardUnsavedChangesConfirmed ?? true,
-      ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
-      created_at: now,
-      updated_at: now,
-    };
+    const record = this.buildOperationRecord(input, id);
     const result = await this.docStore.createIfAbsent(
       FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
       record.id,
@@ -1235,6 +1308,91 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       throw new Error('file_library_restore_operation_idempotency_conflict');
     }
     return { operation: current, created: false };
+  }
+
+  async createOrReuseActiveByLibrary(
+    input: Omit<FileLibraryRestoreOperationCreateInput, 'id'>,
+  ): Promise<FileLibraryRestoreOperationCreateOrReuseResult> {
+    const existing = await this.findByIdempotencyKey(
+      input.workspaceId,
+      input.projectId,
+      input.libraryId,
+      input.idempotencyKey,
+    );
+    if (existing) {
+      return { operation: existing, created: false, reason: 'idempotency' };
+    }
+
+    const operation = this.buildOperationRecord(
+      input,
+      buildFileLibraryRestoreOperationIdempotencyId(input),
+    );
+    const lockId = this.activeLockId(input.workspaceId, input.projectId, input.libraryId);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const lockResult = await this.docStore.createIfAbsent(
+        FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION,
+        lockId,
+        operation,
+      );
+      if (lockResult.ok) {
+        const operationResult = await this.docStore.createIfAbsent(
+          FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+          operation.id,
+          operation,
+        );
+        if (operationResult.ok) {
+          return { operation, created: true, reason: 'created' };
+        }
+        const current = operationResult.current;
+        await this.releaseActiveLockForOperation(operation);
+        if (
+          current.workspace_id === input.workspaceId
+          && current.project_id === input.projectId
+          && current.library_id === input.libraryId
+          && current.idempotency_key === input.idempotencyKey
+        ) {
+          return { operation: current, created: false, reason: 'idempotency' };
+        }
+        throw new Error('file_library_restore_operation_idempotency_conflict');
+      }
+
+      const lockedOperation = lockResult.current;
+      if (
+        lockedOperation.workspace_id !== input.workspaceId
+        || lockedOperation.project_id !== input.projectId
+        || lockedOperation.library_id !== input.libraryId
+      ) {
+        throw new Error('file_library_restore_operation_active_lock_conflict');
+      }
+
+      const storedOperation = await this.getById(
+        input.workspaceId,
+        input.projectId,
+        input.libraryId,
+        lockedOperation.id,
+      );
+      const activeOperation = storedOperation ?? lockedOperation;
+      if (this.isActiveOperation(activeOperation)) {
+        return {
+          operation: activeOperation,
+          created: false,
+          reason: activeOperation.idempotency_key === input.idempotencyKey ? 'idempotency' : 'active',
+        };
+      }
+
+      await this.releaseActiveLockForOperation(lockedOperation);
+    }
+
+    const active = await this.findActiveByLibrary(input.workspaceId, input.projectId, input.libraryId);
+    if (active) {
+      return {
+        operation: active,
+        created: false,
+        reason: active.idempotency_key === input.idempotencyKey ? 'idempotency' : 'active',
+      };
+    }
+    throw new Error('file_library_restore_operation_active_lock_retry_exhausted');
   }
 
   async findByIdempotencyKey(
@@ -1260,6 +1418,16 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     projectId: string,
     libraryId: string,
   ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const lockedOperation = await this.getActiveLock(workspaceId, projectId, libraryId);
+    if (lockedOperation) {
+      const storedOperation = await this.getById(workspaceId, projectId, libraryId, lockedOperation.id);
+      const operation = storedOperation ?? lockedOperation;
+      if (this.isActiveOperation(operation)) {
+        return operation;
+      }
+      await this.releaseActiveLockForOperation(lockedOperation);
+    }
+
     const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
       FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
       {
@@ -1269,7 +1437,7 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       },
     );
     const active = records
-      .filter((record) => record.status === 'pending' || record.status === 'restoring')
+      .filter((record) => this.isActiveOperation(record))
       .sort((left, right) => {
         const updated = right.updated_at.localeCompare(left.updated_at);
         return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
@@ -1332,6 +1500,11 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       }
     }
     await this.docStore.upsert(FILE_LIBRARY_RESTORE_OPERATION_COLLECTION, next.id, next);
+    if (this.isActiveOperation(next)) {
+      await this.mirrorActiveLock(next);
+    } else {
+      await this.releaseActiveLockForOperation(next);
+    }
     return next;
   }
 

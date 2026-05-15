@@ -2781,6 +2781,8 @@
       "restore_operation_restoring_summary": "Restore is updating the file library. File-changing actions stay unavailable until it finishes.",
       "restore_operation_succeeded_title": "Files restored.",
       "restore_operation_succeeded_summary": "The file library now matches the selected save point.",
+      "restore_operation_refreshed_title": "Restore state refreshed",
+      "restore_operation_refreshed_summary": "No active restore is running now. The file list and save points are refreshing.",
       "restore_operation_failed_title": "Restore failed",
       "restore_operation_failed_summary": "Restore failed. No successful restore was applied. Review the reason and try again.",
       "restore_runtime_open_task": "Open task",

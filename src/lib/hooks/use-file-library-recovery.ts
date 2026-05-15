@@ -149,6 +149,12 @@ export function useFileLibraryActiveRestoreOperation(
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const safeLibraryId = libraryId ?? '';
+  const lastActiveOperationRef = React.useRef<{
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    operation: FileLibraryRestoreOperation;
+  } | null>(null);
   const query = useQuery({
     queryKey: queryKeys.fileLibraries.activeRestoreOperation(workspaceId, projectId, safeLibraryId),
     queryFn: () => filesAPI.getActiveRestoreOperation(workspaceId, projectId, safeLibraryId),
@@ -163,9 +169,34 @@ export function useFileLibraryActiveRestoreOperation(
 
   const operation = query.data?.restore_operation;
   React.useEffect(() => {
-    if (!safeLibraryId || !isRestoreOperationTerminal(operation)) return;
-    void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
-  }, [operation, operation?.id, operation?.status, projectId, queryClient, safeLibraryId, workspaceId]);
+    if (!safeLibraryId || query.isLoading) return;
+    if (isRestoreOperationActive(operation)) {
+      lastActiveOperationRef.current = operation
+        ? { workspaceId, projectId, libraryId: safeLibraryId, operation }
+        : null;
+      return;
+    }
+    if (isRestoreOperationTerminal(operation)) {
+      lastActiveOperationRef.current = null;
+      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
+      return;
+    }
+    const lastActive = lastActiveOperationRef.current;
+    if (
+      !operation
+      && lastActive
+      && lastActive.workspaceId === workspaceId
+      && lastActive.projectId === projectId
+      && lastActive.libraryId === safeLibraryId
+    ) {
+      lastActiveOperationRef.current = null;
+      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
+      return;
+    }
+    if (!operation) {
+      lastActiveOperationRef.current = null;
+    }
+  }, [operation, operation?.id, operation?.status, projectId, query.isLoading, queryClient, safeLibraryId, workspaceId]);
 
   return query;
 }

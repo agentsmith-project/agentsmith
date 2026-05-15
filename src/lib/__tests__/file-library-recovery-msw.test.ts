@@ -171,6 +171,19 @@ describe('file-library recovery and task-template MSW contracts', () => {
     });
   });
 
+  it('matches backend validation status when direct restore omits Idempotency-Key', async () => {
+    const restore = await postJson('/file-libraries/lib_shared_default/restore', {
+      save_point_id: 'sp_missing_key_check',
+      discard_unsaved_changes_confirmed: true,
+    });
+
+    expect(restore.status).toBe(422);
+    await expect(restore.json()).resolves.toMatchObject({
+      error_code: 'VALIDATION_ERROR',
+      message: 'idempotency_key_required',
+    });
+  });
+
   it('publishes task file templates and clones their files into a new task workspace', async () => {
     const createTemplate = await postJson('/task-file-templates', {
       source_library_id: 'lib_shared_default',

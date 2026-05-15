@@ -43,7 +43,6 @@ import type {
 } from './file-library-model.js';
 import {
   FileLibraryStorageOperationPendingError,
-  type FileLibraryStoragePort,
 } from './file-library-afscp-storage.js';
 import {
   readProjectPermissionContext,
@@ -1760,10 +1759,6 @@ export async function handleProjectFileLibraryRoutes(args: {
         requestId,
       });
       if (active) {
-        if (active.source_save_point_id === savePoint.id) {
-          json(res, 200, restoreRepo.toPublic(active));
-          return true;
-        }
         throw new FileLibraryRestoreOperationActiveError(active);
       }
 
@@ -1793,7 +1788,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         requestId: requestId ?? undefined,
       });
 
-      const pendingOperationResult = await restoreRepo.createOrReuseByIdempotencyKey({
+      const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
         workspaceId,
         projectId,
         libraryId,
@@ -1816,6 +1811,12 @@ export async function handleProjectFileLibraryRoutes(args: {
           operation: pendingOperation,
           requestId,
         });
+        if (
+          pendingOperationResult.reason === 'active'
+          && isActiveRestoreOperationStatus(reconciled.status)
+        ) {
+          throw new FileLibraryRestoreOperationActiveError(reconciled);
+        }
         json(res, 200, restoreRepo.toPublic(reconciled));
         return true;
       }

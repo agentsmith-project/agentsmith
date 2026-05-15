@@ -833,13 +833,14 @@ describe('agent task persistent HOME contracts', () => {
     if (!routeKindMapPath) {
       throw new Error('openapi-route-kind-map.json not found from contract test cwd');
     }
-    const routeKindMap = JSON.parse(readFileSync(routeKindMapPath, 'utf8')) as Record<string, { path?: string; method?: string }>;
+    const routeKindMap = JSON.parse(readFileSync(routeKindMapPath, 'utf8')) as Record<string, { path?: string; method?: string; methods?: string[] }>;
     const serialized = JSON.stringify(routeKindMap);
 
-    expect(routeKindMap.fileLibraryRestore).toEqual({
-      path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
-      method: 'post',
-    });
+    expect(routeKindMap.fileLibraryRestore?.path).toBe(
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
+    );
+    expect(new Set(routeKindMap.fileLibraryRestore?.methods ?? [])).toEqual(new Set(['get', 'post']));
+    expect(routeKindMap.fileLibraryRestore?.method).toBeUndefined();
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestorePreview');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreRun');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreCancel');

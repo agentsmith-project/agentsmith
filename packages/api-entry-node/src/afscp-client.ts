@@ -170,7 +170,7 @@ export interface RestoreRepoInput extends AfscpMutationRequest {
   discardUnsavedChangesConfirmed: true;
 }
 
-export interface AdmitRestoreRepoInput extends RestoreRepoInput {}
+export type AdmitRestoreRepoInput = RestoreRepoInput;
 
 export interface AfscpRestoreAdmitResponse {
   admitted: true;

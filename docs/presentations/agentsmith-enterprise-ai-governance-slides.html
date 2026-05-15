@@ -1,0 +1,1503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentSmith：企业 AI 使用与治理设计思路</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f7f4;
+      --paper-2: #efeee8;
+      --ink: #17140f;
+      --muted: #615c52;
+      --subtle: #918a7c;
+      --line: #d8d3c7;
+      --line-strong: #bdb4a4;
+      --panel: #fffdf7;
+      --panel-warm: #f2eadf;
+      --accent: #b96f34;
+      --accent-2: #416a58;
+      --danger: #8f3f2f;
+      --ok: #4f765f;
+      --shadow: 0 20px 60px rgba(39, 31, 17, 0.12);
+      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, monospace;
+      --sans: "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --serif: "Iowan Old Style", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(185, 111, 52, 0.12), transparent 28rem),
+        radial-gradient(circle at 86% 14%, rgba(65, 106, 88, 0.12), transparent 30rem),
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+
+    body {
+      overflow: hidden;
+    }
+
+    .deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      padding: 28px;
+    }
+
+    .slide {
+      display: none;
+      width: min(1500px, calc(100vw - 56px));
+      height: min(850px, calc(100vh - 56px));
+      margin: 0 auto;
+      padding: 54px 62px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, rgba(255, 253, 247, 0.96), rgba(242, 234, 223, 0.88)),
+        var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .slide.active,
+    html:not(.js-ready) .slide:target {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 26px;
+      animation: slide-in 220ms ease-out;
+    }
+
+    html:not(.js-ready) .deck:has(.slide:target) .slide {
+      display: none;
+    }
+
+    html:not(.js-ready) .deck:has(.slide:target) .slide:target {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 26px;
+    }
+
+    @keyframes slide-in {
+      from {
+        transform: translateY(12px);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(23, 20, 15, 0.04) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(23, 20, 15, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+      opacity: 0.45;
+    }
+
+    .slide > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      margin: 0 0 12px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 253, 247, 0.58);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(185, 111, 52, 0.12);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 1050px;
+      font-size: clamp(56px, 6.2vw, 96px);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+      font-weight: 760;
+    }
+
+    h2 {
+      max-width: 1060px;
+      font-size: clamp(38px, 4vw, 66px);
+      line-height: 1.02;
+      letter-spacing: -0.045em;
+      font-weight: 740;
+    }
+
+    h3 {
+      font-size: 25px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      max-width: 980px;
+      margin-top: 22px;
+      color: var(--muted);
+      font-family: var(--serif);
+      font-size: clamp(24px, 2.2vw, 34px);
+      line-height: 1.38;
+    }
+
+    .body {
+      display: grid;
+      gap: 22px;
+      align-content: center;
+      min-height: 0;
+    }
+
+    .body.top {
+      align-content: start;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .card {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255, 253, 247, 0.72);
+    }
+
+    .card.strong {
+      border-color: rgba(185, 111, 52, 0.38);
+      background: rgba(255, 246, 231, 0.78);
+    }
+
+    .card.green {
+      border-color: rgba(65, 106, 88, 0.34);
+      background: rgba(239, 246, 237, 0.72);
+    }
+
+    .card.dark {
+      background: #17140f;
+      color: #f7f7f4;
+      border-color: #17140f;
+    }
+
+    .card p,
+    li {
+      color: var(--muted);
+      font-size: 23px;
+      line-height: 1.48;
+    }
+
+    .card.dark p,
+    .card.dark li {
+      color: #d8d0c1;
+    }
+
+    ul {
+      margin: 12px 0 0;
+      padding-left: 1.1em;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .bigline {
+      color: var(--ink);
+      font-size: clamp(36px, 3.6vw, 58px);
+      line-height: 1.15;
+      letter-spacing: -0.035em;
+      font-weight: 720;
+    }
+
+    .quote {
+      padding: 34px 38px;
+      border-left: 6px solid var(--accent);
+      border-radius: 20px;
+      background: rgba(255, 253, 247, 0.7);
+      font-family: var(--serif);
+      font-size: clamp(30px, 3vw, 48px);
+      line-height: 1.28;
+      letter-spacing: -0.025em;
+    }
+
+    .kicker {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 15px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 13px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 253, 247, 0.6);
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .step {
+      position: relative;
+      padding: 20px 18px;
+      min-height: 180px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 253, 247, 0.74);
+    }
+
+    .step::after {
+      content: "→";
+      position: absolute;
+      right: -17px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--line-strong);
+      font-size: 28px;
+    }
+
+    .step:last-child::after {
+      content: "";
+    }
+
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      margin-bottom: 14px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    .step h3 {
+      margin-bottom: 8px;
+      font-size: 22px;
+    }
+
+    .step p {
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.4;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 253, 247, 0.7);
+      font-size: 20px;
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .matrix th {
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(239, 238, 232, 0.9);
+    }
+
+    .matrix td {
+      color: var(--muted);
+      line-height: 1.38;
+    }
+
+    .matrix tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .highlight {
+      color: var(--accent);
+    }
+
+    .green-text {
+      color: var(--accent-2);
+    }
+
+    .mono {
+      font-family: var(--mono);
+      letter-spacing: -0.01em;
+    }
+
+    .diagram {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255, 253, 247, 0.68);
+    }
+
+    .flow {
+      display: flex;
+      align-items: stretch;
+      gap: 14px;
+    }
+
+    .flow-box {
+      flex: 1;
+      display: grid;
+      align-content: center;
+      min-height: 120px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--paper);
+      text-align: center;
+    }
+
+    .flow-arrow {
+      display: grid;
+      place-items: center;
+      color: var(--line-strong);
+      font-size: 28px;
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .lane:last-child {
+      border-bottom: 0;
+    }
+
+    .lane-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+
+    .lane-track {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .mini {
+      min-height: 52px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 253, 247, 0.7);
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      color: var(--subtle);
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .progress {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar {
+      width: 190px;
+      height: 5px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--line);
+    }
+
+    .bar > i {
+      display: block;
+      width: var(--progress, 0%);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+    }
+
+    .controls {
+      position: fixed;
+      z-index: 20;
+      right: 28px;
+      bottom: 22px;
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(247, 247, 244, 0.84);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(39, 31, 17, 0.12);
+    }
+
+    button,
+    .control-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 13px;
+      background: rgba(255, 253, 247, 0.72);
+      color: var(--ink);
+      font: 600 14px var(--sans);
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    button:hover,
+    .control-link:hover {
+      border-color: var(--line-strong);
+      background: #fffdf7;
+    }
+
+    .noscript-warning {
+      position: fixed;
+      z-index: 50;
+      left: 24px;
+      right: 24px;
+      top: 18px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 253, 247, 0.96);
+      color: var(--muted);
+      font-size: 15px;
+      box-shadow: 0 10px 30px rgba(39, 31, 17, 0.12);
+    }
+
+    .notes {
+      display: none;
+      position: fixed;
+      z-index: 30;
+      left: 28px;
+      bottom: 22px;
+      width: min(720px, calc(100vw - 260px));
+      max-height: 38vh;
+      overflow: auto;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 253, 247, 0.94);
+      box-shadow: 0 16px 48px rgba(39, 31, 17, 0.15);
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.45;
+    }
+
+    .notes.visible {
+      display: block;
+    }
+
+    .notes strong {
+      color: var(--ink);
+    }
+
+    .title-mark {
+      position: absolute;
+      right: 70px;
+      top: 64px;
+      width: 210px;
+      height: 210px;
+      border: 1px solid rgba(185, 111, 52, 0.3);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(185, 111, 52, 0.17), transparent 45%),
+        conic-gradient(from 90deg, rgba(65, 106, 88, 0.35), rgba(185, 111, 52, 0.32), rgba(65, 106, 88, 0.35));
+      opacity: 0.72;
+    }
+
+    .title-mark::before,
+    .title-mark::after {
+      content: "";
+      position: absolute;
+      inset: 38px;
+      border: 1px solid rgba(23, 20, 15, 0.16);
+      border-radius: 34% 66% 38% 62%;
+      transform: rotate(28deg);
+    }
+
+    .title-mark::after {
+      inset: 72px;
+      border-radius: 62% 38% 66% 34%;
+      transform: rotate(-18deg);
+    }
+
+    .takeaway {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: center;
+      padding: 20px 22px;
+      border: 1px solid rgba(65, 106, 88, 0.28);
+      border-radius: 20px;
+      background: rgba(239, 246, 237, 0.62);
+      color: var(--accent-2);
+      font-size: 23px;
+      line-height: 1.35;
+    }
+
+    .takeaway::after {
+      content: "要点";
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: rgba(65, 106, 88, 0.12);
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent-2);
+    }
+
+    .mini-screen {
+      min-height: 330px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #17140f;
+      color: #f7f7f4;
+      overflow: hidden;
+    }
+
+    .mini-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(247, 247, 244, 0.12);
+      color: #cfc6b7;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .mini-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #b96f34;
+    }
+
+    .mini-content {
+      display: grid;
+      grid-template-columns: 170px 1fr;
+      min-height: 285px;
+    }
+
+    .mini-nav {
+      padding: 18px;
+      border-right: 1px solid rgba(247, 247, 244, 0.1);
+      color: #ada393;
+      font-size: 14px;
+      line-height: 2.1;
+    }
+
+    .mini-main {
+      padding: 22px;
+    }
+
+    .mini-message {
+      width: 68%;
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid rgba(247, 247, 244, 0.12);
+      border-radius: 18px;
+      background: rgba(247, 247, 244, 0.06);
+      color: #e7dfd2;
+      font-size: 16px;
+      line-height: 1.4;
+    }
+
+    .mini-input {
+      margin-top: 70px;
+      padding: 14px 16px;
+      border: 1px solid rgba(247, 247, 244, 0.17);
+      border-radius: 18px;
+      color: #bdb4a4;
+      font-size: 15px;
+    }
+
+    .print-title {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      body {
+        overflow: auto;
+      }
+
+      .deck {
+        height: auto;
+        padding: 12px;
+      }
+
+      .slide,
+      .slide.active {
+        display: grid;
+        width: 100%;
+        height: auto;
+        min-height: calc(100vh - 24px);
+        padding: 32px 24px;
+        margin-bottom: 14px;
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4,
+      .timeline,
+      .lane-track {
+        grid-template-columns: 1fr;
+      }
+
+      .step::after,
+      .title-mark,
+      .controls,
+      .notes {
+        display: none;
+      }
+    }
+
+    @media print {
+      body {
+        overflow: visible;
+        background: white;
+      }
+
+      .deck {
+        height: auto;
+        padding: 0;
+      }
+
+      .slide,
+      .slide.active {
+        display: grid !important;
+        width: 100%;
+        height: 100vh;
+        margin: 0;
+        box-shadow: none;
+        page-break-after: always;
+        border-radius: 0;
+      }
+
+      .controls,
+      .notes {
+        display: none !important;
+      }
+
+      .print-title {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide active" id="slide-1" data-min="1" data-note="开场先把定位讲清楚：AgentSmith 不是再做一个聊天工具，而是把企业里 AI 使用、资源、权限、成本和审计收成一个项目级入口。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 40 分钟领导汇报材料</div>
+        <h1>AgentSmith：<br>让企业更容易、<br>更可控地使用 AI</h1>
+        <p class="subtitle">一套面向企业内部推广 AI 的工作入口：员工更容易用，管理层更容易看清成本、风险和成效。</p>
+      </div>
+      <div class="body">
+        <div class="title-mark" aria-hidden="true"></div>
+        <div class="pill-row">
+          <span class="pill">统一 AI 入口</span>
+          <span class="pill">成本与额度可见</span>
+          <span class="pill">权限边界清晰</span>
+          <span class="pill">过程可追溯</span>
+          <span class="pill">试点可落地</span>
+        </div>
+      </div>
+      <footer class="footer"><span>AgentSmith / MBOS</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-2" data-min="1" data-note="这页给领导一个路线图。重点强调不是功能罗列，而是从企业痛点到产品答案，再到落地试点。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> Agenda</div>
+        <h2>今天讲四件事</h2>
+      </div>
+      <div class="body grid-4">
+        <div class="card strong">
+          <h3>为什么需要</h3>
+          <p>AI 从个人效率工具进入企业生产环境，问题从“能不能用”变成“怎么管”。</p>
+        </div>
+        <div class="card">
+          <h3>怎么降低心智</h3>
+          <p>员工面对“对话、任务、文件”，而不是模型配置、密钥和执行环境。</p>
+        </div>
+        <div class="card green">
+          <h3>怎么治理资源</h3>
+          <p>把模型服务、密钥、额度、用量、审计统一收进项目管理边界。</p>
+        </div>
+        <div class="card">
+          <h3>怎么落地</h3>
+          <p>先从一个真实项目开始，跑通使用、成本、权限和复盘闭环。</p>
+        </div>
+      </div>
+      <footer class="footer"><span>建议节奏：5 + 20 + 10 + 5 分钟</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-3" data-min="2" data-note="这里用小龙虾做熟悉参照。不要讲替代或优劣，而是讲使用阶段：OpenClaw 让个人和团队快速用起来；AgentSmith 让企业规模化后管起来。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 熟悉的参照物</div>
+        <h2>从“小龙虾”到 AgentSmith：场景发生了变化</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="card">
+          <div class="kicker">OpenClaw / 小龙虾</div>
+          <p class="bigline">让个人或小团队快速获得 AI 助手能力。</p>
+          <ul>
+            <li>直接对话、执行任务、接入多种模型和工具。</li>
+            <li>强调本地优先、快速上手、灵活扩展。</li>
+            <li>适合试用、个人效率、轻量团队自动化。</li>
+          </ul>
+        </div>
+        <div class="card strong">
+          <div class="kicker">AgentSmith</div>
+          <p class="bigline">让企业安全、可控、可追责地规模化使用 AI。</p>
+          <ul>
+            <li>统一项目、成员、权限、额度和使用记录。</li>
+            <li>统一公司模型服务和敏感密钥管理。</li>
+            <li>让员工少理解概念，让管理者看得清、管得住。</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>不是谁替代谁，而是企业阶段需要更强的治理面</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-4" data-min="2" data-note="用这页把痛点讲扎实。企业不是不想用 AI，而是怕成本、权限、数据、密钥、责任边界失控。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 企业 AI 的核心矛盾</div>
+        <h2>用户希望“像工具一样简单”，企业必须“像系统一样可控”</h2>
+      </div>
+      <div class="body">
+        <div class="quote">个人使用 AI 时，关键问题是“能不能帮我完成任务”。企业使用 AI 时，还必须回答：谁在用、用在哪里、花了多少、是否合规、出了问题能不能追溯。</div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>入口分散</h3>
+            <p>各团队自己找入口、自己配模型、自己保存密钥，短期快，长期难管理。</p>
+          </div>
+          <div class="card">
+            <h3>治理滞后</h3>
+            <p>权限、成本、审计常常在试点之后才补，容易形成“能用但不好管”。</p>
+          </div>
+          <div class="card">
+            <h3>责任难追</h3>
+            <p>AI 参与真实工作后，结果、过程、资料和责任需要有统一记录。</p>
+          </div>
+        </div>
+      </div>
+      <footer class="footer"><span>AgentSmith 的设计目标：同时降低使用心智与治理心智</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-5" data-min="2" data-note="这里讲业务对象：企业有多个工作区和项目，AgentSmith 把 AI 使用落在项目内，便于试点和治理。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 产品答案</div>
+        <h2>一套项目级 AI 工作空间：使用和管理在同一个地方发生</h2>
+      </div>
+      <div class="body">
+        <div class="diagram">
+          <div class="flow">
+            <div class="flow-box"><h3>公司管理侧</h3><p>创建工作区，配置企业登录入口</p></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><h3>工作区</h3><p>承载部门、组织或业务线边界</p></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><h3>项目</h3><p>承载 AI 使用、文件、成员、额度与审计</p></div>
+          </div>
+        </div>
+        <div class="takeaway">AI 能力不散落在个人电脑和个人账号里，而是进入企业可管理的项目空间。</div>
+      </div>
+      <footer class="footer"><span>当前主线：项目内统一使用、统一管理、统一复盘</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-6" data-min="2" data-note="这页强调降低用户心智。员工不需要理解后台配置，只要从三个自然入口开始。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 简化使用体验</div>
+        <h2>员工只需要理解三个入口</h2>
+      </div>
+      <div class="body grid-3">
+        <div class="card strong">
+          <h3>AI 对话</h3>
+          <p>快速问答、资料分析、日常辅助决策。</p>
+          <ul>
+            <li>像聊天一样使用</li>
+            <li>自动进入项目边界</li>
+          </ul>
+        </div>
+        <div class="card green">
+          <h3>AI 任务</h3>
+          <p>把复杂工作交给 AI 执行，过程可看，结果可复盘。</p>
+          <ul>
+            <li>过程可跟踪</li>
+            <li>产物可沉淀</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>项目文件</h3>
+          <p>统一放置资料、输入和 AI 生成产物。</p>
+          <ul>
+            <li>资料归项目管理</li>
+            <li>重要变更可回退</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>设计原则：把复杂配置藏在后台，把关键动作留给用户</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-7" data-min="2" data-note="讲 AI 对话时强调它是低门槛入口，员工不用知道后台如何接入模型。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> AI 对话</div>
+        <h2>把公司 AI 能力变成人人能用的工作入口</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="mini-screen" aria-label="Chat mockup">
+          <div class="mini-top"><span class="mini-dot"></span> AgentSmith / AI 对话 / 公司可用模型</div>
+          <div class="mini-content">
+            <div class="mini-nav">会话记录<br>项目上下文<br>近期问题<br>收藏回答</div>
+            <div class="mini-main">
+              <div class="mini-message">请基于项目文档总结本周风险。</div>
+              <div class="mini-message" style="margin-left: 24%; width: 76%;">已按项目上下文归纳为三类风险，并标记需要审计追溯的请求。</div>
+              <div class="mini-input">输入问题，系统自动使用项目可用的 AI 能力...</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>员工看到的是简单入口</h3>
+          <ul>
+            <li>不需要自己配置模型和密钥。</li>
+            <li>围绕项目资料和项目问题展开对话。</li>
+            <li>使用过程自动进入额度、权限和审计记录。</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>AI 对话解决“马上问”；AI 任务解决“交给 AI 完成一件事”</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-8" data-min="2" data-note="AI 任务是系统区别于普通聊天的重要价值点。强调过程、结果、产物和可复盘。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> AI 任务</div>
+        <h2>把复杂工作变成可跟踪、可复盘的 AI 任务</h2>
+      </div>
+      <div class="body">
+        <div class="lane">
+          <div class="lane-label">任务输入</div>
+          <div class="lane-track">
+            <div class="mini">项目文件</div>
+            <div class="mini">共享上下文</div>
+            <div class="mini">用户说明</div>
+            <div class="mini">任务模板</div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-label">执行过程</div>
+          <div class="lane-track">
+            <div class="mini">启动</div>
+            <div class="mini">分析</div>
+            <div class="mini">处理资料</div>
+            <div class="mini">最终回答</div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-label">任务产物</div>
+          <div class="lane-track">
+            <div class="mini">报告</div>
+            <div class="mini">图表</div>
+            <div class="mini">修改文件</div>
+            <div class="mini">可下载产物</div>
+          </div>
+        </div>
+        <div class="takeaway">相比“问答结束就结束”，AI 任务更适合企业真实工作：有输入、有过程、有产物、有责任边界。</div>
+      </div>
+      <footer class="footer"><span>员工关注任务结果，平台负责安排执行环境</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-9" data-min="2" data-note="项目文件不是普通网盘，而是 AI 工作所需资料、输入和产物的统一载体。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 项目文件</div>
+        <h2>让 AI 使用的资料、输入和产物有地方可管理</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="card">
+          <h3>面向员工的文件体验</h3>
+          <ul>
+            <li>创建文件库，上传、下载、重命名、移动、删除。</li>
+            <li>AI 任务和员工使用同一份项目资料。</li>
+            <li>保存点、恢复、任务文件模板，支持“先保存，再试错，再回退”。</li>
+          </ul>
+        </div>
+        <div class="diagram">
+          <div class="flow" style="flex-direction: column;">
+            <div class="flow-box"><h3>项目资料</h3><p>合同、方案、数据、说明文档</p></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-box"><h3>AI 任务</h3><p>读取资料，生成报告、图表或修改建议</p></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-box"><h3>保存点 / 恢复</h3><p>重要变更前后可追溯、可恢复</p></div>
+          </div>
+        </div>
+      </div>
+      <footer class="footer"><span>关键价值：AI 不是黑箱输出，文件状态也进入可管理闭环</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-10" data-min="2" data-note="这一页面向领导讲公司模型服务的统一管理，不展开后台术语。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 公司 AI 资源</div>
+        <h2>企业把“模型能力”纳入统一供给，而不是散落在个人配置里</h2>
+      </div>
+      <div class="body">
+        <div class="timeline">
+          <div class="step"><span class="step-num">1</span><h3>统一接入</h3><p>公司采购或自建的 AI 能力统一登记。</p></div>
+          <div class="step"><span class="step-num">2</span><h3>统一授权</h3><p>哪些项目和成员能用，由系统规则控制。</p></div>
+          <div class="step"><span class="step-num">3</span><h3>统一密钥</h3><p>敏感密钥由项目管理，不散落在个人电脑。</p></div>
+          <div class="step"><span class="step-num">4</span><h3>统一额度</h3><p>可设置用量、花费和访问范围。</p></div>
+          <div class="step"><span class="step-num">5</span><h3>统一记录</h3><p>每次使用都能进入用量和审计记录。</p></div>
+        </div>
+        <div class="takeaway">员工看到的是“可用 AI”；企业管理的是“谁能用、怎么用、用了多少、是否可追溯”。</div>
+      </div>
+      <footer class="footer"><span>核心价值：公司 AI 资源统一供给，项目按规则使用</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-11" data-min="2" data-note="这一页不讲底层执行细节，只讲 AI 任务由平台统一安排，员工不需要自己安装和维护工具。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> AI 任务执行</div>
+        <h2>AI 任务由平台统一安排执行，员工不需要自己维护环境</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="card green">
+          <h3>员工路径</h3>
+          <ul>
+            <li>创建 AI 任务。</li>
+            <li>系统自动安排合适的执行环境。</li>
+            <li>用户关注输入、过程、结果和文件产物。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>平台管理路径</h3>
+          <ul>
+            <li>查看执行环境是否在线。</li>
+            <li>确保任务能稳定运行。</li>
+            <li>在出问题时能定位到责任链路。</li>
+          </ul>
+        </div>
+        <div class="takeaway" style="grid-column: 1 / -1;">设计重点不是让员工面对更多选择题，而是让任务能稳定执行、过程能看见、问题能追溯。</div>
+      </div>
+      <footer class="footer"><span>员工要的是结果，企业要的是稳定与可追责</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-12" data-min="2" data-note="这页讲敏感信息和业务上下文如何从个人管理变成企业管理。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 密钥与业务背景</div>
+        <h2>敏感密钥和业务背景统一管理，避免“谁都能配、到处都能放”</h2>
+      </div>
+      <div class="body grid-3">
+        <div class="card">
+          <h3>项目密钥</h3>
+          <p>项目内统一保存敏感密钥，避免员工把密钥写在个人文件和脚本里。</p>
+        </div>
+        <div class="card">
+          <h3>个人授权</h3>
+          <p>个人账号类能力单独授权，和项目共享能力分开管理。</p>
+        </div>
+        <div class="card">
+          <h3>共享背景</h3>
+          <p>项目共享上下文，团队共识、说明和业务背景进入统一入口，而不是散在聊天里。</p>
+        </div>
+        <div class="card strong" style="grid-column: 1 / -1;">
+          <h3>安全边界</h3>
+          <p>敏感信息不应该被复制到任务文件、员工个人目录或可复用工具配置里；系统只在需要时按规则提供。</p>
+        </div>
+      </div>
+      <footer class="footer"><span>企业级 AI 不是只管模型，还要管凭据、上下文和授权边界</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-13" data-min="2" data-note="权限模型对领导可以讲成：谁能用、能用到什么程度、由系统统一执行。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 权限边界</div>
+        <h2>谁能用、能用什么、能用多少，由系统规则统一执行</h2>
+      </div>
+      <div class="body">
+        <div class="diagram">
+          <div class="flow">
+            <div class="flow-box"><h3>成员</h3><p>进入工作区和项目</p></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><h3>权限规则</h3><p>决定能使用哪些能力</p></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><h3>系统执行</h3><p>按规则放行或拒绝</p></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><h3>审计记录</h3><p>记录行为与结果</p></div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h3>入口清楚</h3><p>先进入工作区和项目，再使用项目能力。</p></div>
+          <div class="card"><h3>规则统一</h3><p>页面提示和后台规则一致，不靠人工口头约定。</p></div>
+          <div class="card"><h3>人员可识别</h3><p>界面以邮箱识别人，便于业务沟通和追责。</p></div>
+        </div>
+      </div>
+      <footer class="footer"><span>权限的目标不是增加麻烦，而是减少不确定性</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-14" data-min="2" data-note="治理链路是汇报的关键。强调同一套规则作用在所有 AI 使用入口上。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 资源规则</div>
+        <h2>项目级使用规则：所有 AI 入口都按同一套规则运行</h2>
+      </div>
+      <div class="body">
+        <div class="timeline">
+          <div class="step"><span class="step-num">A</span><h3>成员身份</h3><p>谁在使用，属于哪个工作区和项目。</p></div>
+          <div class="step"><span class="step-num">B</span><h3>使用资格</h3><p>是否可以使用项目内开放的 AI 能力。</p></div>
+          <div class="step"><span class="step-num">C</span><h3>额度范围</h3><p>可用模型、调用频率和花费上限。</p></div>
+          <div class="step"><span class="step-num">D</span><h3>统一服务</h3><p>由公司配置好的 AI 服务完成请求。</p></div>
+          <div class="step"><span class="step-num">E</span><h3>使用记录</h3><p>自动记录消耗、结果和关键行为。</p></div>
+        </div>
+        <div class="takeaway">核心不是“增加审批流程”，而是让每一次 AI 使用自动落入可治理、可追责的项目边界。</div>
+      </div>
+      <footer class="footer"><span>当前产品主线：项目内所有 AI 使用都进入统一规则</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-15" data-min="2" data-note="用量页是低心智视角，帮助使用者和管理者看见消耗和额度，不讲排障。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 用量与额度</div>
+        <h2>用量页面只回答一个问题：我用了多少，还剩多少</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="card green">
+          <h3>面向普通用户</h3>
+          <ul>
+            <li>看个人或项目范围内的用量、额度和剩余额度。</li>
+            <li>清楚提示是否接近限制，避免突然不可用。</li>
+            <li>避免把复杂分析和问题追查混进普通用户视图。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>为什么要克制</h3>
+          <p>如果用量页变成管理分析台，普通用户会被概念淹没；责任追溯和异常复盘应该固定进入审计页。</p>
+        </div>
+      </div>
+      <footer class="footer"><span>低心智设计：用户关心“还能不能继续用”，管理员关心“为什么这样用”</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-16" data-min="2" data-note="审计页是管理者的价值页。它把异常、配置变更、资源使用和责任追溯串起来。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 审计追溯</div>
+        <h2>审计让管理员能追溯：谁、在何时、对什么资源、做了什么</h2>
+      </div>
+      <div class="body">
+        <table class="matrix" aria-label="审计证据表">
+          <thead>
+            <tr><th>证据字段</th><th>业务意义</th><th>典型问题</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>使用人</td><td>谁发起了行为</td><td>是否越权？是否需要成员治理？</td></tr>
+            <tr><td>操作内容</td><td>对哪个资源做了什么</td><td>模型服务、规则、文件或任务是否被改变？</td></tr>
+            <tr><td>结果原因</td><td>成功、失败、被规则拒绝</td><td>是配置问题、权限问题，还是外部服务问题？</td></tr>
+            <tr><td>追溯编号</td><td>定位一次具体请求</td><td>相关页面和系统记录是否能对上？</td></tr>
+          </tbody>
+        </table>
+        <div class="takeaway">审计的价值不是“日志很多”，而是把资源、配置、状态与异常事件变成能复盘的证据。</div>
+      </div>
+      <footer class="footer"><span>用量给用户看，审计给管理员追</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-17" data-min="2" data-note="这页是端到端闭环，用一条业务使用路径解释 AgentSmith 为什么有价值。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 端到端闭环</div>
+        <h2>一次 AI 请求在 AgentSmith 中如何被管理</h2>
+      </div>
+      <div class="body">
+        <div class="timeline">
+          <div class="step"><span class="step-num">1</span><h3>用户发起</h3><p>从对话、任务或项目页面发起 AI 使用。</p></div>
+          <div class="step"><span class="step-num">2</span><h3>身份权限</h3><p>确认成员、工作区、项目和可用范围。</p></div>
+          <div class="step"><span class="step-num">3</span><h3>规则判断</h3><p>检查额度、频率和模型可用性。</p></div>
+          <div class="step"><span class="step-num">4</span><h3>服务处理</h3><p>由公司配置好的 AI 服务完成处理。</p></div>
+          <div class="step"><span class="step-num">5</span><h3>证据沉淀</h3><p>形成用量、审计、过程和产物记录。</p></div>
+        </div>
+        <div class="quote" style="font-size: 34px;">用户感受到的是“一个入口完成工作”；企业获得的是“每一步都有边界和证据”。</div>
+      </div>
+      <footer class="footer"><span>这是 AgentSmith 相对普通 AI 工具最核心的企业级差异</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-18" data-min="1" data-note="对比矩阵不要太多字，但要把差异讲清楚。可以说 OpenClaw 是熟悉的参照，AgentSmith 是企业治理面。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 与 OpenClaw 的定位差异</div>
+        <h2>不是替代关系，而是企业落地阶段需要不同产品能力</h2>
+      </div>
+      <div class="body top">
+        <table class="matrix">
+          <thead>
+            <tr><th>维度</th><th>OpenClaw 更适合</th><th>AgentSmith 更适合</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>主要价值</td><td>快速上手，提升个人/团队效率</td><td>统一管理、统一治理、统一审计</td></tr>
+            <tr><td>组织边界</td><td>轻量协作与个人自动化</td><td>工作区、项目、成员、权限边界清晰</td></tr>
+            <tr><td>模型接入</td><td>个人或团队自配模型能力</td><td>公司统一登记模型服务，项目按规则使用</td></tr>
+            <tr><td>资源治理</td><td>轻量使用为主</td><td>额度、花费、可用范围和使用记录统一管理</td></tr>
+            <tr><td>审计追溯</td><td>不是主要叙事重点</td><td>管理员可追踪使用人、时间、资源、结果和原因</td></tr>
+            <tr><td>企业落地</td><td>适合试点、轻量团队</td><td>适合多项目、多成员、可治理的企业环境</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="footer"><span>一句话：OpenClaw 解决“更快用上 AI”；AgentSmith 解决“企业可控地规模化使用 AI”</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-19" data-min="2" data-note="这里讲设计语言：不做花哨大屏，而是安静、清楚、低心智。领导往往会关心推广成本，低心智就是推广成本低。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 界面设计思路</div>
+        <h2>少概念、少跳转、少噪声：让企业系统像日常工具一样可用</h2>
+      </div>
+      <div class="body grid-3">
+        <div class="card">
+          <h3>普通用户少概念</h3>
+          <p>用“AI 对话、AI 任务、项目文件”表达工作，不让用户先学习后台配置概念。</p>
+        </div>
+        <div class="card">
+          <h3>管理员有证据</h3>
+          <p>权限、策略、用量、审计不是隐藏配置，而是可查看、可复制、可追踪。</p>
+        </div>
+        <div class="card">
+          <h3>界面保持安静</h3>
+          <p>少用大屏噪声和堆叠卡片，突出主任务、状态和下一步行动。</p>
+        </div>
+        <div class="card strong" style="grid-column: 1 / -1;">
+          <h3>产品交互原则</h3>
+          <p>默认视图降低认知负担；错误态给出可操作原因；关键链路能追溯到具体记录；治理信息不要求用户跨页手工拼上下文。</p>
+        </div>
+      </div>
+      <footer class="footer"><span>企业软件的高级感不是复杂，而是用户不用猜下一步</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-20" data-min="2" data-note="用一个用户故事把前面的功能串起来，方便领导想象落地场景。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 典型用户故事</div>
+        <h2>一个项目团队如何使用 AgentSmith 完成 AI 工作</h2>
+      </div>
+      <div class="body">
+        <div class="timeline">
+          <div class="step"><span class="step-num">1</span><h3>准备项目</h3><p>管理员配置成员、AI 服务、密钥和额度规则。</p></div>
+          <div class="step"><span class="step-num">2</span><h3>上传资料</h3><p>团队把项目文档放到文件库，必要时保存文件状态。</p></div>
+          <div class="step"><span class="step-num">3</span><h3>日常问答</h3><p>成员通过 AI 对话快速分析文档和业务问题。</p></div>
+          <div class="step"><span class="step-num">4</span><h3>长任务执行</h3><p>用 AI 任务生成报告、图表或修改建议，过程可追踪。</p></div>
+          <div class="step"><span class="step-num">5</span><h3>复盘治理</h3><p>用量看额度，审计查行为，文件保存点支持回退。</p></div>
+        </div>
+        <div class="takeaway">对团队来说是一条工作流；对企业来说是一条治理链。</div>
+      </div>
+      <footer class="footer"><span>这也是推荐的试点演示路径</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-21" data-min="1" data-note="这一页讲边界很重要。领导会喜欢知道系统不是无限扩张，而是先把项目级主线做好。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 边界与可信表达</div>
+        <h2>AgentSmith 当前聚焦项目级 AI 使用与治理，不做无边界扩张</h2>
+      </div>
+      <div class="body grid-2">
+        <div class="card green">
+          <h3>我们承诺的主线</h3>
+          <ul>
+            <li>项目级 AI 使用入口。</li>
+            <li>AI 服务、使用规则、用量和审计统一链路。</li>
+            <li>项目文件与 AI 任务的执行、产物闭环。</li>
+            <li>密钥、成员和共享业务背景辅助治理。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>我们不做的范围漂移</h3>
+          <ul>
+            <li>不把它讲成全组织 AI 总控平台。</li>
+            <li>不做发布编排平台。</li>
+            <li>不把每个细分入口都做成独立复杂的额度体系。</li>
+            <li>不承诺“零风险”，而是提供边界和证据。</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>可信产品叙事：能力边界清楚，落地路径才清楚</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-22" data-min="1" data-note="落地路径建议分三步：先项目试点，再治理配置，再审计复盘。可以结合客户自己的团队选一个真实项目。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 建议落地路径</div>
+        <h2>从一个项目开始，跑通“使用 + 治理 + 复盘”闭环</h2>
+      </div>
+      <div class="body grid-3">
+        <div class="card strong">
+          <h3>阶段 1：可用</h3>
+          <p>选择一个真实项目，配置工作区、项目、成员和 AI 服务，让对话和任务跑起来。</p>
+        </div>
+        <div class="card">
+          <h3>阶段 2：可管</h3>
+          <p>配置项目密钥、使用规则和用量视图，让成本、额度和权限进入项目边界。</p>
+        </div>
+        <div class="card green">
+          <h3>阶段 3：可追</h3>
+          <p>建立审计复盘机制，围绕具体请求、配置变更、异常事件形成管理闭环。</p>
+        </div>
+        <div class="card" style="grid-column: 1 / -1;">
+          <h3>试点成功标准</h3>
+          <p>一线用户愿意用；项目管理员能配置和解释资源；管理者能看到用量、成本、异常和审计证据。</p>
+        </div>
+      </div>
+      <footer class="footer"><span>建议先选 AI 使用频繁、资料集中、管理诉求明确的项目试点</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-23" data-min="1" data-note="总结页要落在三类对象：员工、管理员、企业。然后给一句总括，准备进入问答。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 总结</div>
+        <h2>AgentSmith 的价值：让 AI 从“个人能力”进入“企业能力”</h2>
+      </div>
+      <div class="body grid-3">
+        <div class="card">
+          <h3>对员工</h3>
+          <p>更少配置、更少概念，直接通过 AI 对话、AI 任务和项目文件完成工作。</p>
+        </div>
+        <div class="card green">
+          <h3>对管理员</h3>
+          <p>AI 服务、密钥、成员、规则、用量、审计都有统一入口和边界。</p>
+        </div>
+        <div class="card strong">
+          <h3>对企业</h3>
+          <p>AI 使用不再只靠个人自觉，而是进入项目级、可治理、可审计、可复盘的运行方式。</p>
+        </div>
+        <div class="quote" style="grid-column: 1 / -1;">OpenClaw 让人看到 AI 助手能做事；AgentSmith 让企业放心把 AI 助手放进真实项目里做事。</div>
+      </div>
+      <footer class="footer"><span>Q&A</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+
+    <section class="slide" id="slide-24" data-min="0" data-note="备用页。若领导追问治理能力，可以打开这页。">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> 备用：功能总览</div>
+        <h2>AgentSmith 当前主要功能面</h2>
+      </div>
+      <div class="body top">
+        <table class="matrix">
+          <thead>
+            <tr><th>功能面</th><th>用户价值</th><th>治理价值</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>工作区 / 项目</td><td>明确入口和项目边界</td><td>成员、项目生命周期可管理</td></tr>
+            <tr><td>AI 对话</td><td>快速使用项目可用模型</td><td>请求经过使用规则、用量和审计记录</td></tr>
+            <tr><td>AI 任务</td><td>长任务可跟踪、可产出文件</td><td>执行过程、任务产物和状态变化形成闭环</td></tr>
+            <tr><td>项目文件</td><td>统一管理项目文件和任务文件状态</td><td>保存点、恢复、模板和绑定状态可追溯</td></tr>
+            <tr><td>AI 服务 / 项目密钥</td><td>用户不用自己保存敏感密钥</td><td>模型能力和密钥绑定由项目治理</td></tr>
+            <tr><td>用量 / 审计</td><td>知道额度和状态</td><td>成本、行为、异常和配置变更可复盘</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="footer"><span>备用页，可按现场问题选择使用</span><span class="progress"><span class="bar"><i></i></span><span class="page-num"></span></span></footer>
+    </section>
+  </main>
+
+  <aside class="notes" id="notes"></aside>
+  <nav class="controls" aria-label="Slides controls">
+    <a class="control-link" href="#slide-1" id="prev" role="button">上一页</a>
+    <button type="button" id="note">备注</button>
+    <a class="control-link" href="#slide-2" id="next" role="button">下一页</a>
+  </nav>
+  <noscript>
+    <div class="noscript-warning">当前浏览器禁用了本地脚本。你仍然可以直接滚动浏览全部页面，或使用地址栏中的 #slide-页码 跳转。</div>
+    <style>
+      body {
+        overflow: auto;
+      }
+
+      .deck {
+        height: auto;
+      }
+
+      .slide,
+      .slide.active {
+        display: grid !important;
+        height: auto;
+        min-height: min(850px, calc(100vh - 56px));
+        margin-bottom: 28px;
+      }
+
+      .controls,
+      .notes {
+        display: none !important;
+      }
+    </style>
+  </noscript>
+
+  <script>
+    document.documentElement.classList.add('js-ready');
+
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const notes = document.getElementById('notes');
+    const prev = document.getElementById('prev');
+    const next = document.getElementById('next');
+    const note = document.getElementById('note');
+    const clampIndex = value => Math.max(0, Math.min(slides.length - 1, value));
+    let index = resolveInitialIndex();
+
+    function parseSlideNumber(value) {
+      const match = String(value || '').match(/slide-(\d+)/);
+      if (!match) return null;
+      const slideNumber = Number.parseInt(match[1], 10);
+      return Number.isFinite(slideNumber) ? clampIndex(slideNumber - 1) : null;
+    }
+
+    function resolveInitialIndex() {
+      const fromHash = parseSlideNumber(window.location.hash);
+      if (fromHash !== null) return fromHash;
+
+      const fromQuery = Number.parseInt(new URLSearchParams(window.location.search).get('slide') || '1', 10) - 1;
+      return Number.isFinite(fromQuery) ? clampIndex(fromQuery) : 0;
+    }
+
+    function totalMinutes() {
+      return slides.reduce((sum, slide) => sum + Number(slide.dataset.min || '0'), 0);
+    }
+
+    function render(syncHash = true) {
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle('active', slideIndex === index);
+        slide.setAttribute('aria-hidden', slideIndex === index ? 'false' : 'true');
+        const pageNum = slide.querySelector('.page-num');
+        const bar = slide.querySelector('.bar > i');
+        if (pageNum) pageNum.textContent = `${slideIndex + 1} / ${slides.length}`;
+        if (bar) bar.style.setProperty('--progress', `${((slideIndex + 1) / slides.length) * 100}%`);
+      });
+      const active = slides[index];
+      notes.innerHTML = `<strong>讲述备注（建议 ${active.dataset.min || '?'} 分钟 / 全稿约 ${totalMinutes()} 分钟）</strong><br>${active.dataset.note || '无备注'}`;
+      document.title = `${index + 1}/${slides.length} AgentSmith：企业 AI 使用与治理设计思路`;
+      prev.href = `#slide-${clampIndex(index - 1) + 1}`;
+      next.href = `#slide-${clampIndex(index + 1) + 1}`;
+      if (syncHash) {
+        const hash = `#slide-${index + 1}`;
+        if (window.location.hash !== hash) {
+          window.history.replaceState({}, '', hash);
+        }
+      }
+    }
+
+    function go(delta) {
+      index = Math.max(0, Math.min(slides.length - 1, index + delta));
+      render();
+    }
+
+    function goTo(nextIndex, syncHash = true) {
+      index = clampIndex(nextIndex);
+      render(syncHash);
+    }
+
+    prev.addEventListener('click', (event) => {
+      event.preventDefault();
+      go(-1);
+    });
+    next.addEventListener('click', (event) => {
+      event.preventDefault();
+      go(1);
+    });
+    note.addEventListener('click', () => notes.classList.toggle('visible'));
+
+    document.addEventListener('keydown', (event) => {
+      const key = event.key;
+      if (key === 'ArrowRight' || key === 'ArrowDown' || key === 'PageDown' || key === ' ') {
+        event.preventDefault();
+        go(1);
+      }
+      if (key === 'ArrowLeft' || key === 'ArrowUp' || key === 'PageUp') {
+        event.preventDefault();
+        go(-1);
+      }
+      if (key === 'Home') {
+        event.preventDefault();
+        goTo(0);
+      }
+      if (key === 'End') {
+        event.preventDefault();
+        goTo(slides.length - 1);
+      }
+      if (key.toLowerCase() === 'n') {
+        notes.classList.toggle('visible');
+      }
+    }, true);
+
+    window.addEventListener('hashchange', () => {
+      const fromHash = parseSlideNumber(window.location.hash);
+      if (fromHash !== null) goTo(fromHash, false);
+    });
+
+    render();
+  </script>
+</body>
+</html>

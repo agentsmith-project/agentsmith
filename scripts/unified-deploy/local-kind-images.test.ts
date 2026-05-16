@@ -400,22 +400,30 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
   it('builds app, sandbox, managed runner images, retags locked llmup, and pushes local registry refs in order', async () => {
     const root = tempDir('local-kind-images-order-');
     const sandboxSourceDir = createSandboxSource(root);
+    const afscpSourceDir = createAfscpSource(root);
     const calls: CommandCall[] = [];
 
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
       sandboxSourceDir,
+      afscpSourceDir,
       tag: 'order-tag',
       runner: successfulRunner(calls),
     });
     const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+    const syncIndex = commandText.indexOf('afscp-jvs-binary-sync');
+    const afscpBuildIndex = commandText.indexOf(`docker build -t localhost:5001/mbos/agentsmith-fs-control-plane:order-tag -f ${join(afscpSourceDir, 'Dockerfile')}`);
 
     expect(result.status).toBe('passed');
+    expect(syncIndex).toBeGreaterThan(-1);
+    expect(afscpBuildIndex).toBeGreaterThan(-1);
+    expect(syncIndex).toBeLessThan(afscpBuildIndex);
     expect(commandText).toContain('docker ps');
     expect(commandText).toContain('docker build -t localhost:5001/mbos/agentsmith-app-base:order-tag -f infra/deploy/Dockerfile.agentsmith-app-base');
     expect(commandText).toContain('docker build --build-arg APP_BASE_IMAGE=localhost:5001/mbos/agentsmith-app-base:order-tag -t localhost:5001/mbos/agentsmith-app:order-tag -f infra/deploy/Dockerfile.agentsmith-app');
     expect(commandText).toContain(`docker build -t localhost:5001/mbos/sandbox-manager:order-tag -f ${join(sandboxSourceDir, 'Dockerfile')}`);
+    expect(commandText).toContain(`docker build -t localhost:5001/mbos/agentsmith-fs-control-plane:order-tag -f ${join(afscpSourceDir, 'Dockerfile')}`);
     expect(commandText).toContain('docker build --build-arg RUNNER_BASE_IMAGE=localhost:5001/mbos/agentsmith-managed-runner-base:order-tag -t localhost:5001/mbos/agentsmith-managed-runner:order-tag -f infra/runner/Dockerfile.agent-task-runner');
     expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256:');
     expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256:');
@@ -435,6 +443,47 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(commandText).toContain('bash -lc source scripts/lib/kind-cluster-bootstrap.sh');
     expect(commandText).toContain('docker network inspect kind');
     expect(commandText).toContain('docker exec agentsmith-control-plane curl -fsS http://kind-registry:5000/v2/');
+  });
+
+  it('fails before the AFSCP image build when the JVS binary handoff is stale', async () => {
+    const root = tempDir('local-kind-images-afscp-jvs-stale-');
+    const sandboxSourceDir = createSandboxSource(root);
+    const afscpSourceDir = createAfscpSource(root);
+    const calls: CommandCall[] = [];
+    const runner: LocalKindImageCommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      const joined = args.join(' ');
+      if (joined.includes('network inspect kind')) {
+        return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+      }
+      if (args.includes('ps')) {
+        return { exitCode: 0, stdout: 'kind-registry\n', stderr: '' };
+      }
+      if (joined.includes('afscp-jvs-binary-sync')) {
+        return { exitCode: 1, stdout: '', stderr: 'JVS binary checksum mismatch: expected pinned artifact' };
+      }
+
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    };
+
+    const result = await runLocalKindImagesProducer({
+      evidenceDir: join(root, 'evidence'),
+      outputSiteEnvPath: join(root, 'local-kind-site.env'),
+      sandboxSourceDir,
+      afscpSourceDir,
+      tag: 'stale-jvs',
+      runner,
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'bash:afscp-jvs-binary-sync',
+        message: expect.stringContaining('checksum mismatch'),
+      }),
+    ]));
+    expect(commandText).not.toContain(`docker build -t localhost:5001/mbos/agentsmith-fs-control-plane:stale-jvs -f ${join(afscpSourceDir, 'Dockerfile')}`);
   });
 
   it('pulls llmup when the locked source image is not already present locally', async () => {

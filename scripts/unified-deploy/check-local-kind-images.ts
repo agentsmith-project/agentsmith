@@ -123,6 +123,8 @@ export type LocalKindImagesProducerOptions = {
   evidenceDir?: string;
   sandboxSourceDir?: string;
   afscpSourceDir?: string;
+  jvsSourceDir?: string;
+  jvsBinarySourcePath?: string;
   llmupImageLockPath?: string;
   hostRegistry?: string;
   k8sRegistry?: string;
@@ -697,6 +699,42 @@ async function configureKindRegistryNoProxy(options: {
   });
 }
 
+async function syncAfscpJvsBinary(options: {
+  afscpSourceDir: string;
+  jvsSourceDir: string;
+  jvsBinarySourcePath?: string;
+  runner: LocalKindImageCommandRunner;
+  env: Record<string, string | undefined>;
+}): Promise<{ evidence: ImageOperationEvidence; failure?: CheckFailure }> {
+  const sourcePath = options.jvsBinarySourcePath ?? path.join(options.jvsSourceDir, 'bin', 'jvs-linux-amd64');
+  const targetPath = path.join(options.afscpSourceDir, 'dist', 'jvs-linux-amd64');
+  const dockerfilePath = path.join(options.afscpSourceDir, 'Dockerfile');
+  const script = [
+    'set -euo pipefail',
+    'echo afscp-jvs-binary-sync',
+    `source_path=${shellQuote(sourcePath)}`,
+    `target_path=${shellQuote(targetPath)}`,
+    `dockerfile_path=${shellQuote(dockerfilePath)}`,
+    'expected_sha="$(sed -n \'s/^ARG JVS_SHA256=//p\' "${dockerfile_path}" | head -1)"',
+    'if [[ -z "${expected_sha}" ]]; then echo "missing ARG JVS_SHA256 in ${dockerfile_path}" >&2; exit 1; fi',
+    'if [[ ! -x "${source_path}" ]]; then echo "missing executable JVS release binary at ${source_path}; run make release-build in the sibling jvs checkout" >&2; exit 1; fi',
+    'mkdir -p "$(dirname "${target_path}")"',
+    'cp "${source_path}" "${target_path}"',
+    'chmod 0755 "${target_path}"',
+    'actual_sha="$(sha256sum "${target_path}" | awk \'{print $1}\')"',
+    'if [[ "${actual_sha}" != "${expected_sha}" ]]; then echo "JVS binary checksum mismatch: expected ${expected_sha}, got ${actual_sha} from ${source_path}" >&2; exit 1; fi',
+  ].join('\n');
+
+  return runCommandOperation({
+    name: 'afscp-jvs-binary-sync',
+    command: 'bash',
+    args: ['-lc', script],
+    runner: options.runner,
+    env: options.env,
+    timeoutMs: SHORT_DOCKER_TIMEOUT_MS,
+  });
+}
+
 function registryBaseUrl(k8sRegistry: string): string {
   return `http://${k8sRegistry}/v2/`;
 }
@@ -964,6 +1002,10 @@ function siblingAfscpSourceDir(): string {
   return path.resolve(REPO_ROOT, '..', 'agentsmith-fs-control-plane');
 }
 
+function siblingJvsSourceDir(): string {
+  return path.resolve(REPO_ROOT, '..', 'jvs');
+}
+
 export async function runLocalKindImagesProducer(
   options: LocalKindImagesProducerOptions = {},
 ): Promise<LocalKindImagesProducerResult> {
@@ -979,6 +1021,8 @@ export async function runLocalKindImagesProducer(
   const sandboxDockerfile = path.join(sandboxSourceDir, 'Dockerfile');
   const afscpSourceDir = path.resolve(options.afscpSourceDir ?? env.AFSCP_SOURCE_DIR ?? siblingAfscpSourceDir());
   const afscpDockerfile = path.join(afscpSourceDir, 'Dockerfile');
+  const jvsSourceDir = path.resolve(options.jvsSourceDir ?? env.JVS_SOURCE_DIR ?? siblingJvsSourceDir());
+  const jvsBinarySourcePath = options.jvsBinarySourcePath ?? env.JVS_BINARY_SOURCE_PATH;
   const llmupLockPath = path.resolve(options.llmupImageLockPath ?? DEFAULT_LLMUP_IMAGE_LOCK_PATH);
   const runner = options.runner ?? defaultLocalKindImageCommandRunner;
   const failures: CheckFailure[] = [];
@@ -1078,6 +1122,19 @@ export async function runLocalKindImagesProducer(
       path: 'kind-registry-no-proxy',
       message: `${noProxy.failure.message}; unable to reconcile kind control-plane containerd NO_PROXY for ${k8sRegistry}`,
     });
+    return finishImages({ ...baseEvidence, failures }, evidenceDir);
+  }
+
+  const jvsBinarySync = await syncAfscpJvsBinary({
+    afscpSourceDir,
+    jvsSourceDir,
+    jvsBinarySourcePath,
+    runner,
+    env,
+  });
+  operations.push(jvsBinarySync.evidence);
+  if (jvsBinarySync.failure) {
+    failures.push(jvsBinarySync.failure);
     return finishImages({ ...baseEvidence, failures }, evidenceDir);
   }
 

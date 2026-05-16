@@ -133,6 +133,23 @@ describe('run-integration-release-user-story integration dependency contract', (
     }
   });
 
+  it('derives Mongo URL from the release integration port truth instead of inheriting stale parent URLs', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const portDefaultIndex = script.indexOf('INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-27027}"');
+    const mongoUrlIndex = script.indexOf('MONGO_URL="mongodb://mbos:mbos_dev_password@localhost:${INTEGRATION_MONGO_PORT}/admin"');
+    const runtimeEnvStart = script.indexOf('with_release_user_story_afscp_runtime_env()');
+    const runtimeEnvBody = script.slice(runtimeEnvStart, script.indexOf('\nensure_release_user_story_afscp_local_runtime()', runtimeEnvStart));
+    const childStart = script.indexOf('info "running full integration release user story"');
+    const childBody = script.slice(childStart);
+
+    expect(portDefaultIndex).toBeGreaterThanOrEqual(0);
+    expect(mongoUrlIndex).toBeGreaterThan(portDefaultIndex);
+    expect(runtimeEnvBody).toContain('export MONGO_URL="${MONGO_URL}"');
+    expect(runtimeEnvBody).toContain('export MONGO_DB_NAME="${MONGO_DB_NAME}"');
+    expect(childBody).toContain('MONGO_URL="${MONGO_URL}" \\');
+    expect(childBody).toContain('MONGO_DB_NAME="${MONGO_DB_NAME}" \\');
+  });
+
   it('keeps JVS details out of the release user story wrapper contract', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 

@@ -3,9 +3,9 @@
 Last updated: 2026-04-14
 Status: `current reference`
 
-This guide is for developers who need to choose the smallest useful command before they run an expensive verification or release campaign.
+This guide is for maintainers and developers who need to choose the smallest useful diagnostic before they return to a clean verification or release entrypoint.
 
-Diagnostic commands are not final verdicts. They help you find the failing layer, prove a focused fix, and decide which clean verification entrypoint must be rerun next.
+Diagnostic commands are not final verdicts. They help you find the failing layer, prove a focused fix, and decide which clean verification entrypoint must be rerun next. Rows that mention internal adapters, unified deploy producers, or `npm run test:*` owner commands are maintainer diagnostics; do not treat this catalog as the default command directory for ordinary development or release sign-off.
 
 ## 1. Start With The Entry Path
 
@@ -29,7 +29,7 @@ If you are unsure, start with `ui_only` for frontend-only work, `local_manual` f
 
 Do not use a diagnostic success as a release sign-off. If `npm run test:integration` passes after a fix, that only proves the integration slice. You still need to return to `npm run verify -- --goal=... --run`, or to `npm run release:ready` when the change is release-grade.
 
-## 3. Diagnostic Commands
+## 3. Maintainer Diagnostics And Focused Commands
 
 | Command or owner | Use when | Next step |
 | --- | --- | --- |
@@ -41,13 +41,13 @@ Do not use a diagnostic success as a release sign-off. If `npm run test:integrat
 | `npm run openapi:check-generated` | Generated API types may be stale. | Regenerate or fix generated artifacts, then rerun typecheck. |
 | `npm run ws:typecheck` | Workspace shell, store, or shared library types changed. | Follow with the related integration or e2e slice. |
 | `npm run ws:test` | Workspace logic needs fast Vitest coverage. | Follow with the matching `npm run verify -- --goal=... --run` entrypoint. |
-| `npm run test:release:precheck` | You are about to enter release-grade verification and want local readiness first. | Treat success as readiness only, not a release verdict. |
+| Maintainer diagnostic `npm run test:release:precheck` | You are about to enter release-grade verification and want local readiness first. | Treat success as readiness only, not a release verdict. |
 | Internal adapter `lane:mock` | You need a governed mock verification channel but not full visual or backend-real. Stable gate id: `lane-mock`. | Treat it as an owner diagnostic surface, then return to the current human entrypoint or owner runbook. |
 | Internal adapter `gate:release` | A release campaign failed in the backend-real release evidence owner. | Preserve `ux_trace_bundle`, use the owner runbook if rerun is needed, then return to `npm run release:ready`. |
-| `npm run test:unified-deploy:local-kind:images` | Local deploy image handoff or registry digest refs may be broken. | Rerun before `npm run test:unified-deploy:local-kind`; inspect `artifacts/unified-deploy/`. |
-| `npm run test:unified-deploy:local-kind` | Local Kubernetes app rollout or ingress route smoke may be broken. | Fix deploy topology, then rerun focused product flows. |
-| `npm run test:unified-deploy:existing-cluster-smoke` | Existing-cluster profile apply/rollout/routing may be broken. | Treat route smoke as deploy proof only; follow with focused product flows for product behavior. |
-| `npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner` | You need minimal deployed product proof without a heavy release campaign. | This proves project setup, file library upload/list/download, and managed runner task completion only. |
+| Maintainer diagnostic `npm run test:unified-deploy:local-kind:images` | Local deploy image handoff or registry digest refs may be broken. | Rerun before the rollout producer; inspect `artifacts/unified-deploy/`. |
+| Maintainer diagnostic `npm run test:unified-deploy:local-kind` | Local Kubernetes app rollout or ingress route smoke may be broken. | Fix deploy topology, then rerun focused product flows. |
+| Maintainer diagnostic `npm run test:unified-deploy:existing-cluster-smoke` | Existing-cluster profile apply/rollout/routing may be broken. | Treat route smoke as deploy proof only; follow with focused product flows for product behavior. |
+| Maintainer diagnostic `npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner` | You need minimal deployed product proof without a heavy release campaign. | This proves project setup, file library upload/list/download, and managed runner task completion only. |
 | Internal verifier `gate:release:full` | You already have explicit campaign context and only need to understand the terminal aggregate verifier. | This verifier is aggregate-only and does not execute suites; without explicit context, run `npm run release:ready` instead. |
 
 ## 4. Diagnostic Commands Do / Don't

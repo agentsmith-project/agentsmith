@@ -55,6 +55,10 @@ NEXT_WEB_PID_FILE="${INTEGRATION_RUN_ROOT}/next-dev.pid"
 API_PID=""
 WEB_PID=""
 PRECHECK_STATUS=1
+DEPS_OPERATION_STATUS="unknown"
+DEPS_START_COUNT=0
+API_WEB_OPERATION_STATUS="unknown"
+API_WEB_START_COUNT=0
 
 info() {
   echo "[release-local-precheck] $*"
@@ -166,6 +170,12 @@ write_precheck_success_report() {
   WEB_BASE_URL="${WEB_BASE_URL}" \
   API_PORT="${API_PORT}" \
   WEB_PORT="${WEB_PORT}" \
+  RELEASE_CAMPAIGN_RUN_ID="${RELEASE_CAMPAIGN_RUN_ID:-}" \
+  RELEASE_CAMPAIGN_ROOT="${RELEASE_CAMPAIGN_ROOT:-}" \
+  DEPS_OPERATION_STATUS="${DEPS_OPERATION_STATUS}" \
+  DEPS_START_COUNT="${DEPS_START_COUNT}" \
+  API_WEB_OPERATION_STATUS="${API_WEB_OPERATION_STATUS}" \
+  API_WEB_START_COUNT="${API_WEB_START_COUNT}" \
   python3 - "${RELEASE_PRECHECK_EVIDENCE_DIR}/precheck-summary.json" <<'PY'
 import datetime
 import json
@@ -182,6 +192,18 @@ payload = {
         "web_minimal_ready",
         "public_auth_token_smoke",
     ],
+    "campaign_run_id": os.environ.get("RELEASE_CAMPAIGN_RUN_ID", ""),
+    "campaign_root": os.environ.get("RELEASE_CAMPAIGN_ROOT", ""),
+    "observed_operations": {
+        "dependency_services": {
+            "status": os.environ.get("DEPS_OPERATION_STATUS", "unknown"),
+            "start_count": int(os.environ.get("DEPS_START_COUNT", "0")),
+        },
+        "api_web": {
+            "status": os.environ.get("API_WEB_OPERATION_STATUS", "unknown"),
+            "start_count": int(os.environ.get("API_WEB_START_COUNT", "0")),
+        },
+    },
     "run_id": os.environ.get("INTEGRATION_RUN_ID", ""),
     "api_base": os.environ.get("INTEGRATION_API_BASE", ""),
     "web_base": os.environ.get("WEB_BASE_URL", ""),
@@ -226,6 +248,8 @@ trap cleanup EXIT
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   if deps_ready; then
     info "reusing existing local integration dependencies"
+    DEPS_OPERATION_STATUS="reused"
+    DEPS_START_COUNT=0
   else
     POSTGRES_PORT="${POSTGRES_PORT}" \
     MONGO_PORT="${MONGO_PORT}" \
@@ -234,7 +258,12 @@ if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
     MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
     KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
     run_clean make deps-bootstrap
+    DEPS_OPERATION_STATUS="started"
+    DEPS_START_COUNT=1
   fi
+elif deps_ready; then
+  DEPS_OPERATION_STATUS="reused"
+  DEPS_START_COUNT=0
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then
@@ -304,6 +333,8 @@ WEB_PID="$(
   NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
   start_background_job "${WEB_LOG}" run_clean bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
 )"
+API_WEB_OPERATION_STATUS="started"
+API_WEB_START_COUNT=1
 
 api_ready=0
 for _ in $(seq 1 120); do

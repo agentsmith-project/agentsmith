@@ -13,7 +13,7 @@ Owner: Engineering governance maintainers
 成功标准：
 
 1. 普通开发者只需要知道少数入口：`npm run verify`、`npm run verify -- --goal=<pr|real|visual> --run`、`npm run release:ready`、`npm run release:status`、`make local-real-up`、`make local-real-status`、`make local-real-down`、`make local-real-reset`。
-2. `release:ready` 的发布级检查不减项，但同一次命令内不重复启动真实服务、不重复初始化依赖、不重复准备同一批镜像。
+2. `release:ready` 的发布级检查不减项；precheck API/Web 启动观测独立展示，`gate-release` 内符合 ownership truth 的 browser trace 子检查不重复启动 release-owned API/Web/deps。
 3. 检查结束后，摘要直接告诉人：结论、能否继续、主要阻塞项、原因、下一步、最慢步骤、报告位置。
 4. 内部诊断命令仍保留给维护者，但普通流程不再要求人复制这些命令。
 
@@ -144,7 +144,7 @@ AgentSmith 发布前总检查
 | 发布流程正式引用的真实后端 UX trace | 是 | 不能被全量视觉检查替代 |
 | 发布流程正式引用的部署检查报告 | 是 | 必须保留部署可用性证据 |
 | 发布流程内的早失败检查报告 | 部分 | 可说明是否进入发布检查；不能替代业务检查 |
-| 同一次命令内的运行状态描述 | 否 | 只用于少重复启动，不是发布证据 |
+| 同一次命令内的运行状态描述 | 否 | 只用于运行观测和 release-owned 子检查复用校验，不是发布证据 |
 | 单独手跑的诊断报告 | 否 | 只用于排障，不能作为发布放行依据 |
 | `release:status` 输出 | 否 | 只读投影，不重新验收 |
 
@@ -157,7 +157,7 @@ AgentSmith 发布前总检查
 - 部署检查必须保留真实部署、镜像、路由和产品流证据。
 - 先做基础路由检查，再做高成本产品流。
 - 不明归属的端口、容器、集群、镜像仓库只能提示检查，不能自动清理。
-- 同一次命令内的运行状态描述不能跨命令复用，不能成为发布结论。
+- 同一次命令内的运行状态描述不能跨命令复用，不能成为发布结论，也不能作为 precheck API/Web 到 `gate-release` 的跨阶段 handoff 依据。
 - 内部结果分层保留，方便定位到底是外层流程失败还是某个诊断命令失败。
 
 ## 8. 实施阶段
@@ -204,8 +204,8 @@ npm run test:run -- scripts/governance/__tests__/release-readiness-entrypoints.t
 - 只保留 git 工作区是否干净检查（只读，不自动清理）、资源冲突检查、依赖服务可用检查、API/Web 最小可用检查、认证 token smoke。
 - 移出浏览器产品场景、Agent task 发布级检查、Files/Runner 业务断言。
 - 同步更新 `scripts/contracts/check-engineering-governance.ts`，把旧的 heavy precheck 要求改为轻量 precheck 边界和证据归属映射守护。
-- 成功后的检查报告保留在本次发布目录中。
-- 后续步骤可以读取同一次命令内的运行状态描述以避免重复启动，但不能把它当发布结论。
+- 成功后的检查报告保留在本次发布目录中；precheck API/Web 启动次数和是否复用依赖只做独立观测展示。
+- precheck 成功后仍停止 API/Web；本轮不把 precheck API/Web handoff 给 `gate-release`，也不让发布 cleanup 接管 precheck 启动的 API/Web。
 
 完成标准：
 
@@ -241,17 +241,17 @@ npm run test:run -- scripts/governance/__tests__/release-readiness-entrypoints.t
 
 - 定义同一次命令内的运行状态描述，写入本次报告目录下的 `state/readiness.json`。
 - 运行状态描述只记录服务是否已启动、输入摘要、镜像摘要、集群身份、时间戳、本次命令 nonce、git sha、allowlisted env 摘要。
-- 计数来源必须明确：真实服务启动次数、API/Web 启动次数、真实后端检查会话数、镜像导入次数都必须由父流程统一记录，不能由子检查猜测。
+- 计数来源必须明确：真实服务启动次数、API/Web 启动次数、真实后端检查会话数、镜像导入次数都必须由对应阶段的父流程统一记录，不能由子检查猜测。
 - 运行状态描述只能由父流程写，子检查只读。
 - 子检查必须通过 nonce、input digest、git sha、env digest 校验后才能读取；校验失败必须 fail closed。
 - 运行状态描述必须脱敏，不记录原始 env、token、secret、ticket、凭据路径。
-- 发布摘要增加总耗时、最慢步骤、真实服务启动次数、API/Web 启动次数、真实后端检查会话数、轮询/重试次数、报告大小。
+- 发布摘要增加总耗时、最慢步骤、precheck API/Web 观测、`gate-release` API/Web 观测、真实后端检查会话数、轮询/重试次数、报告大小。
 - `release:status` 只读展示这些信息。
 
 完成标准：
 
 - 发布摘要包含总耗时和前三个最慢步骤。
-- 发布摘要包含“真实服务启动次数”“API/Web 启动次数”“真实后端检查会话数”。
+- 发布摘要分阶段包含“precheck API/Web 观测”“gate-release API/Web 观测”“真实后端检查会话数”，避免把跨阶段启动次数写成复用承诺。
 - 同一次命令内的运行状态描述不能被下一次命令复用。
 - 运行状态描述不会进入发布结论字段。
 - 子检查不能写运行状态描述，只能读取父流程传入的已校验状态。
@@ -321,39 +321,48 @@ npm run contracts:check-current-workflows
 npm run contracts:check-engineering-governance
 ```
 
-### 阶段 D. 真实后端检查单命令复用
+### 阶段 D. `gate-release` 内 release-owned API/Web 复用
 
-目标：同一次 `release:ready` 内，真实后端发布检查复用同一套已启动服务，减少重复启动和重复初始化。
+目标：本轮不做 precheck API/Web 到 `gate-release` 的跨阶段 handoff/复用。`gate-release` 内部由 backend-real 父流程启动 release-owned API/Web/deps 并负责 cleanup；只有符合 ownership truth 的 browser trace 子检查可以复用这套 release-owned 服务，减少 `gate-release` 内部重复启动和重复初始化。
 
 改动方向：
 
-- 由发布前总检查流程统一管理真实服务生命周期。
-- 子检查只读消费阶段 B 定义的运行状态描述。
-- 依赖服务初始化、API/Web 启动、Runner 镜像准备、本机 Kubernetes 预热在输入不变时不重复做。
+- precheck 只做轻量可用性检查与启动次数观测；precheck 成功后仍停止 API/Web。
+- 由 `gate-release` 的 backend-real 父流程统一管理 release-owned API/Web/deps 生命周期，并写入本阶段运行状态描述。
+- Browser trace 子检查只读消费阶段 B 定义的运行状态描述，并必须校验 release-owned owner sidecar、端口、nonce、input digest、git sha、env digest。
+- Browser trace 子检查符合 ownership truth 时不得重复启动 API/Web/deps；校验失败时 fail closed，不回退到复用 precheck API/Web。
+- 不对 Agent Task、Files、AFSCP 等重状态路径宣称复用；这些路径继续按各自 release evidence owner 的生命周期和隔离规则运行。
+- Runner 镜像准备、本机 Kubernetes 预热只在各自阶段的 owner truth 内去重，不与 precheck API/Web 生命周期绑定。
 - 每个业务场景仍保留自己的报告和失败归属。
 
 数据隔离要求：
 
-- 优先通过当前 run 可证明归属的 workspace/project/task/file-library reset 做隔离。
-- 必须覆盖 Keycloak 用户、Project secrets、audit/usage、runner ticket/session、AFSCP volume/file-library、background jobs 的隔离风险。
-- 无法证明隔离时，必须回退到独立命名空间、独立数据前缀或重启服务，不能为了快而共享污染状态。
+- 本阶段复用范围只覆盖 `gate-release` 内 release-owned API/Web/deps 与 browser trace 子检查。
+- 优先通过当前 run 可证明归属的 workspace/project reset 做 browser trace 数据隔离。
+- 必须覆盖 release-owned API/Web 进程、Keycloak 用户/会话、Project secrets、audit/usage、background jobs 的隔离风险。
+- Runner ticket/session、AFSCP volume/file-library、Agent Task 长任务状态不进入本轮复用矩阵；如果未来要纳入，必须单独立项。
+- 无法证明隔离时，必须回退到独立命名空间、独立数据前缀或重启 `gate-release` 内 release-owned 服务，不能为了快而共享污染状态。
 
-必须补充隔离矩阵：
+必须补充 `gate-release` browser trace 内部复用隔离矩阵：
 
-| 对象 | reset 方式 | 证明报告 | 失败 fallback | 对应测试 |
-| --- | --- | --- | --- | --- |
-| Keycloak 用户/会话 | 当前 run 专属用户或可证明清理 | 待实现时填写 | 独立 realm/client 或重启服务 | 待实现时填写 |
-| Project secrets | 当前 run 专属 project 或可证明清理 | 待实现时填写 | 独立 project 前缀 | 待实现时填写 |
-| audit/usage | 当前 run 专属 workspace/project 前缀 | 待实现时填写 | 独立数据库前缀或重启服务 | 待实现时填写 |
-| runner ticket/session | 当前 run 专属 task/session | 待实现时填写 | 重启 runner/session 服务 | 待实现时填写 |
-| AFSCP volume/file-library | 当前 run 专属 file-library 或可证明清理 | 待实现时填写 | 独立 volume 前缀或重启服务 | 待实现时填写 |
-| background jobs | 当前 run job owner 可证明 | 待实现时填写 | 等待/终止 owned jobs 或重启服务 | 待实现时填写 |
+| 对象 | 本轮范围 | reset/ownership 方式 | 证明报告 | 失败 fallback | 对应测试 |
+| --- | --- | --- | --- | --- | --- |
+| release-owned API/Web/deps | `gate-release` browser trace 可复用 | backend-real 父流程启动并校验 owner sidecar、端口、nonce、input digest、git sha、env digest | 待实现时填写 | fail closed；重启 `gate-release` 内 release-owned stack，不接管 precheck API/Web | 待实现时填写 |
+| Browser trace workspace/project | `gate-release` browser trace 可复用 | 当前 run 专属 workspace/project 或可证明 reset | 待实现时填写 | 独立 workspace/project 前缀或重启 release-owned stack | 待实现时填写 |
+| Keycloak 用户/会话 | `gate-release` browser trace 可复用 | 当前 run 专属用户或可证明清理 | 待实现时填写 | 独立 realm/client 或重启 release-owned stack | 待实现时填写 |
+| Project secrets | `gate-release` browser trace 可复用 | 当前 run 专属 project 或可证明清理 | 待实现时填写 | 独立 project 前缀 | 待实现时填写 |
+| audit/usage | `gate-release` browser trace 可复用 | 当前 run 专属 workspace/project 前缀 | 待实现时填写 | 独立数据库前缀或重启 release-owned stack | 待实现时填写 |
+| background jobs | `gate-release` browser trace 可复用 | 当前 run job owner 可证明 | 待实现时填写 | 等待/终止 owned jobs 或重启 release-owned stack | 待实现时填写 |
+| runner ticket/session | 不纳入本轮复用 | 继续由 Agent Task release evidence owner 管理 | 对应 owner 报告 | 独立 owner run；不共享 browser trace stack | 待实现时填写 |
+| AFSCP volume/file-library | 不纳入本轮复用 | 继续由 Files/AFSCP release evidence owner 管理 | 对应 owner 报告 | 独立 owner run；不共享 browser trace stack | 待实现时填写 |
 
 完成标准：
 
-- 同一次发布前总检查中，依赖服务初始化次数不超过 1。
-- 同一次发布前总检查中，API/Web 启动次数不超过 1。
-- Runner 镜像和本机 Kubernetes 预热在摘要匹配时不重复做。
+- precheck API/Web 启动次数、复用依赖情况、停止结果在摘要中独立展示，不作为发布证据。
+- `gate-release` 内 backend-real 父流程启动 release-owned API/Web/deps，并由 release cleanup 只清理自己拥有的服务。
+- `gate-release` 内符合 ownership truth 的 browser trace 子检查不得重复启动 API/Web/deps。
+- Agent Task、Files、AFSCP 等重状态路径没有被文档、摘要或机器报告描述为复用同一套 API/Web/deps。
+- Runner 镜像和本机 Kubernetes 预热只在各自 owner 阶段摘要匹配时不重复做。
 - 真实后端发布检查观测目标小于 30 分钟；超过目标时必须在摘要中标记慢点，但不能因此降低检查覆盖。
 - 任一子检查失败时，摘要能定位业务场景和共享服务状态。
 - 隔离矩阵中的每一类对象都有证明报告、fallback 和测试。
@@ -361,12 +370,17 @@ npm run contracts:check-engineering-governance
 停止条件：
 
 - 如果需要改变发布证据权威边界，停止。
+- 如果实现需要把 precheck API/Web handoff 给 `gate-release` 或让 release cleanup 接管 precheck API/Web，停止；这必须单独立项。
+- 如果 release-owned owner sidecar、端口、nonce、input digest、git sha、env digest 任一项无法校验，停止，不共享该部分运行环境。
 - 如果 reset 隔离无法证明安全，停止，不共享该部分运行环境。
 - 如果实现开始变成通用调度器或跨命令缓存，停止。
 
 先失败测试：
 
-- 新增或扩展 focused test，断言同一次命令内依赖服务初始化次数和 API/Web 启动次数不超过 1。
+- 新增或扩展 focused test，断言 v3 文档不再要求 precheck API/Web 到 `gate-release` 的跨阶段 handoff，也不再宣称同一次 `release:ready` API/Web 启动次数不超过 1。
+- 测试 precheck 成功后停止 API/Web，并把 precheck API/Web 启动观测独立写入摘要。
+- 测试 `gate-release` browser trace 子检查在 ownership truth 缺失时 fail closed，而不是复用 precheck 或未知来源 API/Web。
+- 测试 `gate-release` 内符合 ownership truth 的 browser trace 子检查不重复启动 API/Web/deps。
 - 测试运行状态描述只能只读消费。
 - 测试隔离失败时回退而不是继续共享污染环境。
 - 测试隔离矩阵缺项时不能启用共享运行环境。
@@ -374,6 +388,8 @@ npm run contracts:check-engineering-governance
 建议命令：
 
 ```bash
+npm run test:run -- scripts/contracts/check-engineering-governance.test.ts
+npm run test:run -- scripts/backend-real-full-gate.test.ts scripts/release-local-precheck-afscp.test.ts
 npm run test:run -- scripts/governance/__tests__/release-readiness-entrypoints.test.ts scripts/governance/__tests__/run-readiness-state.test.ts scripts/governance/__tests__/pure-check-runtime-shadow.test.ts
 npm run test:agent-task:runner:fast
 ```
@@ -428,6 +444,15 @@ npm run test:run -- scripts/governance/__tests__/release-readiness-entrypoints.t
 - 端口、BASE_URL、环境变量和本地服务归属可证明隔离。
 - 多失败时机器可读报告保留全部失败项，摘要只突出主要阻塞项。
 - 实现不发展成通用调度器。
+
+precheck API/Web 到 `gate-release` 的跨阶段 handoff/复用也暂不作为本计划内容。未来只有同时满足下面条件，才允许单独立项：
+
+- precheck API/Web 有可校验 owner sidecar、端口、nonce、input digest、git sha、env digest。
+- release cleanup 明确接管 precheck API/Web 的停止责任，并能在 owner mismatch 时 fail closed。
+- 隔离矩阵覆盖 Keycloak、Project secrets、audit/usage、runner ticket/session、AFSCP volume/file-library、background jobs。
+- 机器可读报告把运行状态描述和发布证据分开，不能把 handoff 成功写成发布放行证据。
+- Agent Task、Files、AFSCP 等重状态路径先有独立 owner 设计，不能顺带共享 browser trace stack。
+- 有 focused tests 覆盖 handoff、cleanup、隔离失败、owner mismatch 和报告脱敏。
 
 ## 10. 推荐顺序
 
@@ -495,7 +520,7 @@ npm run release:ready
 - 发布失败时只看到一个主要阻塞项和一个公开下一步命令。
 - 机器可读报告保留全部失败项。
 - 发布通过时 summary 展示总耗时和最慢步骤。
-- 同一次命令内不重复启动/初始化同一套真实后端依赖。
+- precheck API/Web 观测独立展示；`gate-release` 内 browser trace 子检查不重复启动 release-owned API/Web/deps。
 - 诊断命令通过不会被写成发布通过。
 - 自动化通过不会被写成人工发布签署已完成。
 

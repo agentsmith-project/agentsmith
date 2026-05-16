@@ -63,7 +63,7 @@ function renderCurrentWorkflowDocBlock(): string {
     '',
     'Quick path note:',
     '- `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.',
-    '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.',
     '- `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.',
     '',
     ...quickSections.flatMap((section, index) => {
@@ -95,7 +95,7 @@ function renderDevelopmentWorkflowBlock(): string {
     '',
     'Quick path note:',
     '- `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。',
-    '- `npm run release:status` is read-only; it only reads the latest release summary.',
+    '- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.',
     '- `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。',
     '',
     ...quickSections.flatMap((section, index) => {

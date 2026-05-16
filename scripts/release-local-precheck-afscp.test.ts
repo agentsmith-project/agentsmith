@@ -38,6 +38,17 @@ describe('release local precheck lightweight contract', () => {
     expect(script).toContain('RELEASE_PRECHECK_EVIDENCE_DIR="${RELEASE_CAMPAIGN_ROOT}/release-local-precheck"');
     expect(script).toContain('write_precheck_success_report()');
     expect(script).toContain('"schema_version": "agentsmith.release-local-precheck/v1"');
+    expect(script).toContain('"observed_operations": {');
+    expect(script).toContain('"dependency_services": {');
+    expect(script).toContain('"api_web": {');
+    expect(script).toContain('"status": os.environ.get("DEPS_OPERATION_STATUS", "unknown")');
+    expect(script).toContain('"start_count": int(os.environ.get("DEPS_START_COUNT", "0"))');
+    expect(script).toContain('"status": os.environ.get("API_WEB_OPERATION_STATUS", "unknown")');
+    expect(script).toContain('"start_count": int(os.environ.get("API_WEB_START_COUNT", "0"))');
+    expect(script).toContain('RELEASE_CAMPAIGN_RUN_ID="${RELEASE_CAMPAIGN_RUN_ID:-}"');
+    expect(script).toContain('RELEASE_CAMPAIGN_ROOT="${RELEASE_CAMPAIGN_ROOT:-}"');
+    expect(script).toContain('"campaign_run_id": os.environ.get("RELEASE_CAMPAIGN_RUN_ID", "")');
+    expect(script).toContain('"campaign_root": os.environ.get("RELEASE_CAMPAIGN_ROOT", "")');
     expect(script).toContain('"dependency_services_ready"');
     expect(script).toContain('"api_minimal_ready"');
     expect(script).toContain('"web_minimal_ready"');
@@ -45,6 +56,24 @@ describe('release local precheck lightweight contract', () => {
     expect(script.lastIndexOf('\nwrite_precheck_success_report\n')).toBeLessThan(script.lastIndexOf('PRECHECK_STATUS=0'));
     expect(script).not.toContain('BACKEND_REAL_API_KEY_VALUE",');
     expect(script).not.toContain('ACCESS_TOKEN",');
+  });
+
+  it('records whether precheck reused dependencies or started bootstrap without guessing counts', () => {
+    const depsReadyBranch = script.slice(
+      script.indexOf('if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then'),
+      script.indexOf('if [[ "${INIT_DEPS}" == "true" ]]; then'),
+    );
+
+    expect(script).toContain('DEPS_OPERATION_STATUS="unknown"');
+    expect(script).toContain('DEPS_START_COUNT=0');
+    expect(script).toContain('API_WEB_OPERATION_STATUS="unknown"');
+    expect(script).toContain('API_WEB_START_COUNT=0');
+    expect(depsReadyBranch).toContain('DEPS_OPERATION_STATUS="reused"');
+    expect(depsReadyBranch).toContain('DEPS_START_COUNT=0');
+    expect(depsReadyBranch).toContain('DEPS_OPERATION_STATUS="started"');
+    expect(depsReadyBranch).toContain('DEPS_START_COUNT=1');
+    expect(script.indexOf('API_WEB_OPERATION_STATUS="started"')).toBeGreaterThan(script.indexOf('WEB_PID="$(\n'));
+    expect(script.indexOf('API_WEB_START_COUNT=1')).toBeGreaterThan(script.indexOf('WEB_PID="$(\n'));
   });
 
   it('does not run release-owned browser product scenarios, Agent Task gates, or Files/Runner assertions', () => {

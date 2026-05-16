@@ -900,6 +900,57 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(releaseStoryIndex).toBeGreaterThan(browserSpecsIndex);
   });
 
+  it('runs moved release browser trace specs on the parent-owned release stack instead of spawning nested stacks', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const start = script.indexOf('run_release_browser_trace_specs()');
+    const end = script.indexOf('\nrun_cmd "POSTGRES_PORT=', start);
+    const body = script.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(body).toContain('run_release_browser_trace_spec "e2e/integration-system-admin-entry.spec.ts"');
+    expect(body).toContain('run_release_browser_trace_spec "e2e/integration-workspace-public-login.spec.ts"');
+    expect(body).toContain('run_release_browser_trace_spec "e2e/integration-workspace-entry.spec.ts"');
+    expect(body).toContain('run_release_browser_trace_spec "e2e/integration-workspace-publish-usable.spec.ts"');
+    expect(body).toContain('run_release_browser_trace_spec "e2e/integration-workspace-settings-directory.spec.ts"');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_REUSE=true');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_OWNER_TOKEN="${LOCAL_RUNTIME_OWNER_TOKEN}"');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_API_ROOT_PID="${LOCAL_API_ROOT_PID}"');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_API_PID="${LOCAL_API_PID}"');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_WEB_ROOT_PID="${LOCAL_WEB_PID}"');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_DEPS_READY=true');
+    expect(body).toContain('INTEGRATION_PARENT_STACK_DEPS_INIT_READY=true');
+    expect(body).toContain('INTEGRATION_API_PORT="${API_PORT}"');
+    expect(body).toContain('INTEGRATION_WEB_PORT="${WEB_PORT}"');
+    expect(body).toContain('INTEGRATION_RUN_ROOT="${RELEASE_RUN_ROOT}/browser-trace-specs/${spec_slug}"');
+    expect(body).not.toContain('run_real_cmd 20084');
+    expect(body).not.toContain('run_real_cmd 20086');
+    expect(body).not.toContain('run_real_cmd 20088');
+    expect(body).not.toContain('run_real_cmd 20092');
+    expect(body).not.toContain('run_real_cmd 20094');
+    expect(body).not.toContain('cleanup_gate_ports "${API_PORT}" "${WEB_PORT}"');
+  });
+
+  it('fails closed before parent-stack browser reuse when release API or Web ports are already occupied', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const ensureStart = script.indexOf('ensure_local_release_stack()');
+    const ensureEnd = script.indexOf('prewarm_internal_kind_cluster()', ensureStart);
+    const ensureBody = script.slice(ensureStart, ensureEnd);
+    const apiFailIndex = ensureBody.indexOf('fail_if_release_stack_port_already_in_use api "${API_PORT}"');
+    const webFailIndex = ensureBody.indexOf('fail_if_release_stack_port_already_in_use web "${WEB_PORT}"');
+    const apiStartIndex = ensureBody.indexOf('local_runtime_start_owned_service api "${API_PORT}"');
+    const webStartIndex = ensureBody.indexOf('local_runtime_start_owned_service web "${WEB_PORT}"');
+
+    expect(script).toContain('fail_if_release_stack_port_already_in_use()');
+    expect(script).toContain('parent stack reuse requires release-owned API/Web ports');
+    expect(apiFailIndex).toBeGreaterThanOrEqual(0);
+    expect(webFailIndex).toBeGreaterThan(apiFailIndex);
+    expect(apiStartIndex).toBeGreaterThan(webFailIndex);
+    expect(webStartIndex).toBeGreaterThan(apiStartIndex);
+    expect(ensureBody).not.toContain('if ! local_runtime_port_is_listening "${API_PORT}"; then');
+    expect(ensureBody).not.toContain('if ! local_runtime_port_is_listening "${WEB_PORT}"; then');
+  });
+
   it('includes Files restore continuation in the release-grade backend-real lane after core coverage', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
     const coreIndex = script.indexOf('run_real_cmd 20050 3051 "npm run backend-real:run"');

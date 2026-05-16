@@ -76,56 +76,68 @@ run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
 
+fail_if_release_stack_port_already_in_use() {
+  local service_kind="$1"
+  local port="$2"
+
+  if ! local_runtime_port_is_listening "${port}"; then
+    return 0
+  fi
+
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "environment_conflict" "release_stack_${service_kind}_port" "parent stack reuse requires release-owned API/Web ports; ${service_kind} port ${port} was already in use before this gate started it"
+  echo "[backend-real-full-gate] parent stack reuse requires release-owned API/Web ports; ${service_kind} port ${port} is already in use before this gate started it." >&2
+  exit 1
+}
+
 ensure_local_release_stack() {
   mkdir -p "${LOCAL_READY_LOG_DIR}"
 
-  if ! local_runtime_port_is_listening "${API_PORT}"; then
-    info "starting local API on :${API_PORT} for release readiness"
-    LOCAL_API_ROOT_PID="$(
-      local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
-        -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-        PORT="${API_PORT}" \
-        KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-        PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-        INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-        KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-        KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-        DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
-        MONGO_URL="${MONGO_URL}" \
-        MONGO_DB_NAME="${MONGO_DB_NAME}" \
-        REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
-        MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-        MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
-        MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
-        MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-        MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-        MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-        npm run api:node:dev
-    )"
-    LOCAL_API_PID="$(local_runtime_capture_authoritative_service_pid "${LOCAL_API_ROOT_PID}" api "${API_PORT}" 120)"
-  fi
+  fail_if_release_stack_port_already_in_use api "${API_PORT}"
+  fail_if_release_stack_port_already_in_use web "${WEB_PORT}"
 
-  if ! local_runtime_port_is_listening "${WEB_PORT}"; then
-    info "starting local Web on :${WEB_PORT} for release readiness"
-    LOCAL_WEB_PID="$(
-      local_runtime_start_owned_service web "${WEB_PORT}" "${WEB_LOG}" env \
-        -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-        MONGO_URL="${MONGO_URL}" \
-        MONGO_DB_NAME="${MONGO_DB_NAME}" \
-        NEXT_GENERATED_ROOT_MANAGED=1 \
-        NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
-        NEXT_PUBLIC_USE_MSW=false \
-        AGENTSMITH_ENABLE_TEST_ROUTES=true \
-        NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
-        NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
-        NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-        KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-        PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-        INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-        bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
-    )"
-  fi
+  info "starting local API on :${API_PORT} for release readiness"
+  LOCAL_API_ROOT_PID="$(
+    local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
+      -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+      PORT="${API_PORT}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+      KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+      MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+      MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
+      MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+      MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+      MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+      MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+      npm run api:node:dev
+  )"
+  LOCAL_API_PID="$(local_runtime_capture_authoritative_service_pid "${LOCAL_API_ROOT_PID}" api "${API_PORT}" 120)"
+
+  info "starting local Web on :${WEB_PORT} for release readiness"
+  LOCAL_WEB_PID="$(
+    local_runtime_start_owned_service web "${WEB_PORT}" "${WEB_LOG}" env \
+      -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      NEXT_GENERATED_ROOT_MANAGED=1 \
+      NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
+      NEXT_PUBLIC_USE_MSW=false \
+      AGENTSMITH_ENABLE_TEST_ROUTES=true \
+      NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
+      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
+      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+      bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
+  )"
 
   gate_wait_for_tcp "${LOCAL_READY_LOG_DIR}" "127.0.0.1" "${API_PORT}" 120 infra_dependency_unready api_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API port did not become ready"
@@ -209,11 +221,70 @@ run_real_cmd() {
 }
 
 run_release_browser_trace_specs() {
-  run_real_cmd 20084 3085 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-system-admin-entry.spec.ts"
-  run_real_cmd 20086 3087 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-public-login.spec.ts"
-  run_real_cmd 20088 3089 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-entry.spec.ts"
-  run_real_cmd 20092 3093 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-publish-usable.spec.ts"
-  run_real_cmd 20094 3095 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-settings-directory.spec.ts"
+  run_release_browser_trace_spec "e2e/integration-system-admin-entry.spec.ts"
+  run_release_browser_trace_spec "e2e/integration-workspace-public-login.spec.ts"
+  run_release_browser_trace_spec "e2e/integration-workspace-entry.spec.ts"
+  run_release_browser_trace_spec "e2e/integration-workspace-publish-usable.spec.ts"
+  run_release_browser_trace_spec "e2e/integration-workspace-settings-directory.spec.ts"
+}
+
+run_release_browser_trace_spec() {
+  local spec_file="$1"
+  local spec_slug
+  spec_slug="$(basename "${spec_file}" .spec.ts)"
+  info "reusing parent-owned release stack for ${spec_file}"
+  (
+    cd "${ROOT_DIR}"
+    export INTEGRATION_PARENT_STACK_REUSE=true
+    export INTEGRATION_PARENT_STACK_DEPS_READY=true
+    export INTEGRATION_PARENT_STACK_DEPS_INIT_READY=true
+    export INTEGRATION_PARENT_STACK_OWNER_TOKEN="${LOCAL_RUNTIME_OWNER_TOKEN}"
+    export INTEGRATION_PARENT_STACK_RUN_ROOT="${RELEASE_RUN_ROOT}"
+    export INTEGRATION_PARENT_STACK_PROCESS_STATE_DIR="${LOCAL_RUNTIME_PROCESS_STATE_DIR}"
+    export INTEGRATION_PARENT_STACK_API_ROOT_PID="${LOCAL_API_ROOT_PID}"
+    export INTEGRATION_PARENT_STACK_API_PID="${LOCAL_API_PID}"
+    export INTEGRATION_PARENT_STACK_WEB_ROOT_PID="${LOCAL_WEB_PID}"
+    export INTEGRATION_PARENT_STACK_API_PORT="${API_PORT}"
+    export INTEGRATION_PARENT_STACK_WEB_PORT="${WEB_PORT}"
+    export INTEGRATION_PARENT_STACK_POSTGRES_PORT="${POSTGRES_PORT}"
+    export INTEGRATION_PARENT_STACK_MONGO_PORT="${MONGO_PORT}"
+    export INTEGRATION_PARENT_STACK_REDIS_PORT="${REDIS_PORT}"
+    export INTEGRATION_PARENT_STACK_MINIO_API_PORT="${MINIO_API_PORT}"
+    export INTEGRATION_PARENT_STACK_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}"
+    export INTEGRATION_PARENT_STACK_KEYCLOAK_PORT="${KEYCLOAK_PORT}"
+    export INTEGRATION_PARENT_STACK_API_BASE="${RUNTIME_HOST_API_BASE_URL}"
+    export INTEGRATION_PARENT_STACK_WEB_BASE_URL="${RUNTIME_BROWSER_WEB_BASE_URL}"
+    export INTEGRATION_PARENT_STACK_HOST_WEB_BASE_URL="${RUNTIME_HOST_WEB_BASE_URL}"
+    export INTEGRATION_PARENT_STACK_KEYCLOAK_BASE_URL="http://127.0.0.1:${KEYCLOAK_PORT}"
+    export INTEGRATION_PARENT_STACK_KEYCLOAK_REALM="${KEYCLOAK_REALM}"
+    export INTEGRATION_PARENT_STACK_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}"
+    export INTEGRATION_PARENT_STACK_MONGO_URL="${MONGO_URL}"
+    export INTEGRATION_PARENT_STACK_MONGO_DB_NAME="${MONGO_DB_NAME}"
+    export INTEGRATION_PARENT_STACK_DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
+    export INTEGRATION_PARENT_STACK_REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+    export INTEGRATION_PARENT_STACK_MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
+    export INTEGRATION_PARENT_STACK_MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}"
+    export INTEGRATION_API_PORT="${API_PORT}"
+    export INTEGRATION_WEB_PORT="${WEB_PORT}"
+    export INTEGRATION_POSTGRES_PORT="${POSTGRES_PORT}"
+    export INTEGRATION_MONGO_PORT="${MONGO_PORT}"
+    export INTEGRATION_REDIS_PORT="${REDIS_PORT}"
+    export INTEGRATION_MINIO_API_PORT="${MINIO_API_PORT}"
+    export INTEGRATION_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}"
+    export INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}"
+    export INTEGRATION_BASE_URL="${RUNTIME_BROWSER_WEB_BASE_URL}"
+    export INTEGRATION_API_BASE="${RUNTIME_HOST_API_BASE_URL}"
+    export INTEGRATION_RUN_ID="${RUN_ID}-${spec_slug}"
+    export INTEGRATION_RUN_ROOT="${RELEASE_RUN_ROOT}/browser-trace-specs/${spec_slug}"
+    export INTEGRATION_LOG_DIR="${RELEASE_RUN_ROOT}/browser-trace-specs/${spec_slug}/integration"
+    export UX_TRACE_OUTPUT_ROOT="${AUTHORITATIVE_UX_TRACE_ROOT}"
+    export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}"
+    export DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
+    export REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+    export MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
+    export MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}"
+    bash scripts/run-integration-e2e-full.sh "${spec_file}"
+  )
 }
 
 run_cmd "POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"

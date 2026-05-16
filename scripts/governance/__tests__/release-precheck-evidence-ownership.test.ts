@@ -173,8 +173,8 @@ describe('release precheck evidence ownership', () => {
     const sourceTexts = releaseOwnerSources();
     sourceTexts['scripts/backend-real-full-gate.sh'] = sourceTexts['scripts/backend-real-full-gate.sh']
       .replace(
-        "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-entry.spec.ts",
-        "UX_TRACE_OUTPUT_ROOT='${VISUAL_REVIEW_ARTIFACT_DIR}/ux-traces' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-entry.spec.ts",
+        'export UX_TRACE_OUTPUT_ROOT="${AUTHORITATIVE_UX_TRACE_ROOT}"',
+        'export UX_TRACE_OUTPUT_ROOT="${VISUAL_REVIEW_ARTIFACT_DIR}/ux-traces"',
       );
 
     expect(validateReleasePrecheckEvidenceOwnership({ sourceTexts })).toEqual(

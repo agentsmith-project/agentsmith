@@ -16,7 +16,7 @@
 
 补充判定规则：
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
-2. `npm run release:status` 是只读入口，只读取 latest summary / status，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
+2. `npm run release:status` 是只读入口，只读取 latest summary 及其中冻结的 status/deploy snapshot，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
 3. 默认 release campaign 使用 `local-kind` 和 focused product-flow producers 证明统一部署；`existing-cluster` 是需要目标集群时显式执行的 operator smoke。
 4. 机器可读报告语境：`gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或最终 release verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
@@ -48,11 +48,11 @@ npm run release:ready
 npm run release:status
 ```
 
-维护者排障语境：`npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 terminal aggregate verdict。结束时优先看短摘要里的 `Evidence` / `Terminal result` / `Summary` 路径；上方原始日志仍保留用于排障。
+维护者排障语境：`npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 terminal aggregate verdict。结束时优先看短摘要里的 `Evidence` / `Summary` 路径；上方原始日志仍保留用于排障。
 
 ### 2. 维护者排障 / Owner Producer Diagnostics
 
-下面命令只在 failure summary、owner runbook 或 manifest 明确指向部署 evidence owner 时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
+下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向部署 evidence owner 时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -68,10 +68,10 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | Role | Surface | 必须证明什么 |
 | --- | --- | --- |
 | human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
-| status reader | `npm run release:status` | 读取 latest/summary 指针；verdict 必须重新读取 campaign-scoped terminal result，不重新聚合 evidence |
-| deploy evidence owner | `npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
-| deploy smoke owner | `npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
-| product evidence owner | focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
+| status reader | `npm run release:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
+| deploy evidence owner | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
+| deploy smoke owner | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
+| product evidence owner | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |

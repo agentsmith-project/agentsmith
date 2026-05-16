@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
@@ -17,8 +17,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 describe('run-integration-e2e-full lifecycle observability contract', () => {
   const ghcrAuthFallbackHint = ['docker', 'login', 'ghcr.io'].join(' ');
   const tempRoots: string[] = [];
+  const parentProcesses: ChildProcess[] = [];
 
   afterEach(() => {
+    while (parentProcesses.length > 0) {
+      const parentProcess = parentProcesses.pop();
+      if (parentProcess?.pid) {
+        parentProcess.kill('SIGTERM');
+      }
+    }
     while (tempRoots.length > 0) {
       const tempRoot = tempRoots.pop();
       if (tempRoot) {
@@ -46,6 +53,7 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     afscpLifecycleLog: string;
     apiEnvLog: string;
     binDir: string;
+    commandsLog: string;
     dockerLog: string;
     playwrightEnvLog: string;
     scriptPath: string;
@@ -62,6 +70,7 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     const apiEnvLog = path.join(tempRoot, 'api-env.log');
     const webEnvLog = path.join(tempRoot, 'web-env.log');
     const playwrightEnvLog = path.join(tempRoot, 'playwright-env.log');
+    const commandsLog = path.join(tempRoot, 'commands.log');
     const dockerLog = path.join(tempRoot, 'docker.log');
     const afscpLifecycleLog = path.join(tempRoot, 'afscp-lifecycle.log');
     const dockerRunMarker = path.join(tempRoot, 'docker-run.marker');
@@ -225,11 +234,12 @@ resolve_loopback_runtime_stack() {
   local keycloak_client_id="$5"
   export RUNTIME_HOST_API_BASE_URL="http://127.0.0.1:\${api_port}"
   export RUNTIME_BROWSER_WEB_BASE_URL="http://127.0.0.1:\${web_port}"
+  export RUNTIME_HOST_WEB_BASE_URL="http://127.0.0.1:\${web_port}"
   export KEYCLOAK_BASE_URL="http://127.0.0.1:\${keycloak_port}"
   export PUBLIC_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
   export INTERNAL_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
   export KEYCLOAK_REALM="\${keycloak_realm}"
-  export KEYCLOAK_CLIENT_ID="\${keycloak_client_id}"
+  export KEYCLOAK_CLIENT_ID="\${KEYCLOAK_CLIENT_ID:-\${keycloak_client_id}}"
   export KEYCLOAK_ISSUER_URL="\${KEYCLOAK_BASE_URL}/realms/\${keycloak_realm}"
 }
 
@@ -290,6 +300,11 @@ done
       path.join(binDir, 'npm'),
       `#!/usr/bin/env bash
 set -euo pipefail
+printf 'npm' >> "${commandsLog}"
+for arg in "$@"; do
+  printf ' %s' "\${arg}" >> "${commandsLog}"
+done
+printf '\\n' >> "${commandsLog}"
 
 if [[ "$1" == "run" && "$2" == "api:node:dev" ]]; then
   cat > "${apiEnvLog}" <<EOF
@@ -321,6 +336,11 @@ exit 0
       path.join(binDir, 'npx'),
       `#!/usr/bin/env bash
 set -euo pipefail
+printf 'npx' >> "${commandsLog}"
+for arg in "$@"; do
+  printf ' %s' "\${arg}" >> "${commandsLog}"
+done
+printf '\\n' >> "${commandsLog}"
 if [[ "$1" == "playwright" && "$2" == "test" ]]; then
   cat > "${playwrightEnvLog}" <<EOF
 BASE_URL=\${BASE_URL:-}
@@ -342,6 +362,19 @@ fi
 if [[ "$1" == "tsx" ]]; then
   exit 0
 fi
+exit 0
+`,
+    );
+
+    writeExecutable(
+      path.join(binDir, 'make'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'make' >> "${commandsLog}"
+for arg in "$@"; do
+  printf ' %s' "\${arg}" >> "${commandsLog}"
+done
+printf '\\n' >> "${commandsLog}"
 exit 0
 `,
     );
@@ -480,6 +513,7 @@ exit 0
       afscpLifecycleLog,
       apiEnvLog,
       binDir,
+      commandsLog,
       dockerLog,
       playwrightEnvLog,
       scriptPath: path.join(scriptsDir, 'run-integration-e2e-full.sh'),
@@ -513,6 +547,123 @@ exit 0
     });
   }
 
+  function startParentOwnedFixtureProcess(ownerToken: string, serviceKind: 'api' | 'web'): ChildProcess {
+    const child = spawn(
+      'bash',
+      [
+        '-c',
+        'export LOCAL_RUNTIME_TREE_ROOT_PID="${BASHPID}"; exec bash -c \'trap "exit 0" TERM INT; while true; do sleep 1; done\'',
+      ],
+      {
+        env: {
+          ...process.env,
+          LOCAL_RUNTIME_OWNER_TOKEN: ownerToken,
+          LOCAL_RUNTIME_SERVICE_KIND: serviceKind,
+        },
+        stdio: 'ignore',
+      },
+    );
+    if (!child.pid) {
+      throw new Error(`failed to start ${serviceKind} parent-owned fixture process`);
+    }
+    parentProcesses.push(child);
+    execFileSync(
+      'bash',
+      [
+        '-c',
+        `for _ in $(seq 1 50); do if tr '\\0' '\\n' </proc/${child.pid}/environ 2>/dev/null | grep -q '^LOCAL_RUNTIME_TREE_ROOT_PID=${child.pid}$'; then exit 0; fi; sleep 0.02; done; exit 1`,
+      ],
+      { stdio: 'pipe' },
+    );
+    return child;
+  }
+
+  function buildParentStackReuseEnv(ownerToken: string, apiPid: number, webPid: number): Record<string, string> {
+    return {
+      INTEGRATION_PARENT_STACK_REUSE: 'true',
+      INTEGRATION_PARENT_STACK_DEPS_READY: 'true',
+      INTEGRATION_PARENT_STACK_DEPS_INIT_READY: 'true',
+      INTEGRATION_PARENT_STACK_OWNER_TOKEN: ownerToken,
+      INTEGRATION_PARENT_STACK_RUN_ROOT: '/tmp/parent-release-run',
+      INTEGRATION_PARENT_STACK_PROCESS_STATE_DIR: '/tmp/parent-release-run/processes',
+      INTEGRATION_PARENT_STACK_API_ROOT_PID: String(apiPid),
+      INTEGRATION_PARENT_STACK_API_PID: String(apiPid),
+      INTEGRATION_PARENT_STACK_WEB_ROOT_PID: String(webPid),
+      INTEGRATION_PARENT_STACK_API_PORT: '28191',
+      INTEGRATION_PARENT_STACK_WEB_PORT: '38191',
+      INTEGRATION_PARENT_STACK_POSTGRES_PORT: '25432',
+      INTEGRATION_PARENT_STACK_MONGO_PORT: '27027',
+      INTEGRATION_PARENT_STACK_REDIS_PORT: '26379',
+      INTEGRATION_PARENT_STACK_MINIO_API_PORT: '29000',
+      INTEGRATION_PARENT_STACK_MINIO_CONSOLE_PORT: '29001',
+      INTEGRATION_PARENT_STACK_KEYCLOAK_PORT: '28081',
+      INTEGRATION_PARENT_STACK_API_BASE: 'http://127.0.0.1:28191',
+      INTEGRATION_PARENT_STACK_WEB_BASE_URL: 'http://127.0.0.1:38191',
+      INTEGRATION_PARENT_STACK_HOST_WEB_BASE_URL: 'http://127.0.0.1:38191',
+      INTEGRATION_PARENT_STACK_KEYCLOAK_BASE_URL: 'http://127.0.0.1:28081',
+      INTEGRATION_PARENT_STACK_KEYCLOAK_REALM: 'mbos',
+      INTEGRATION_PARENT_STACK_KEYCLOAK_CLIENT_ID: 'agentsmith-web',
+      INTEGRATION_PARENT_STACK_MONGO_URL: 'mongodb://mbos:mbos_dev_password@127.0.0.1:27027/admin',
+      INTEGRATION_PARENT_STACK_MONGO_DB_NAME: 'mbos',
+      INTEGRATION_PARENT_STACK_DATABASE_URL: 'postgresql://mbos:mbos_dev_password@localhost:25432/mbos',
+      INTEGRATION_PARENT_STACK_REDIS_URL: 'redis://localhost:26379',
+      INTEGRATION_PARENT_STACK_MINIO_ENDPOINT: 'localhost',
+      INTEGRATION_PARENT_STACK_MINIO_PORT: '29000',
+    };
+  }
+
+  it('fails closed before deps, API/Web, or Playwright when parent stack reuse lacks ownership truth', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-parent-reuse-missing-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      INTEGRATION_PARENT_STACK_REUSE: 'true',
+      INTEGRATION_BOOTSTRAP_DEPS: 'true',
+      INTEGRATION_INIT_DEPS: 'true',
+      INTEGRATION_ENSURE_DEFAULT_WORKSPACE: 'true',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('parent-owned existing stack reuse refused');
+    expect(result.stderr).toContain('INTEGRATION_PARENT_STACK_DEPS_READY');
+    expect(existsSync(fixture.apiEnvLog)).toBe(false);
+    expect(existsSync(fixture.webEnvLog)).toBe(false);
+    expect(existsSync(fixture.playwrightEnvLog)).toBe(false);
+    expect(existsSync(fixture.commandsLog) ? readFileSync(fixture.commandsLog, 'utf8') : '').toBe('');
+  }, 10000);
+
+  it('runs only Playwright against a verified parent-owned stack in reuse mode', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-parent-reuse-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+    const ownerToken = 'parent-stack-reuse-owner';
+    const apiProcess = startParentOwnedFixtureProcess(ownerToken, 'api');
+    const webProcess = startParentOwnedFixtureProcess(ownerToken, 'web');
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      ...buildParentStackReuseEnv(ownerToken, apiProcess.pid ?? 0, webProcess.pid ?? 0),
+      INTEGRATION_BOOTSTRAP_DEPS: 'true',
+      INTEGRATION_INIT_DEPS: 'true',
+      INTEGRATION_ENSURE_DEFAULT_WORKSPACE: 'true',
+    });
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(17);
+    expect(existsSync(fixture.apiEnvLog)).toBe(false);
+    expect(existsSync(fixture.webEnvLog)).toBe(false);
+    expect(existsSync(fixture.dockerLog) ? readFileSync(fixture.dockerLog, 'utf8') : '').toBe('');
+    expect(existsSync(fixture.afscpLifecycleLog)).toBe(false);
+    const commands = readFileSync(fixture.commandsLog, 'utf8');
+    expect(commands).toContain('npx playwright test');
+    expect(commands).not.toContain('make deps-bootstrap');
+    expect(commands).not.toContain('npm run integration:deps:init:postgres');
+    expect(commands).not.toContain('npm run integration:deps:init:keycloak');
+    expect(commands).not.toContain('scripts/ensure-default-workspace.ts');
+    const playwrightEnv = readFileSync(fixture.playwrightEnvLog, 'utf8');
+    expect(playwrightEnv).toContain('BASE_URL=http://127.0.0.1:38191');
+    expect(playwrightEnv).toContain('INTEGRATION_API_BASE=http://127.0.0.1:28191');
+  }, 10000);
+
   it('stays shell-syntax valid and wires next-dev lifecycle capture into the managed web launch', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-integration-e2e-full.sh'])).not.toThrow();
 
@@ -540,6 +691,13 @@ exit 0
     expect(script).toContain('gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_test_routes" "passed"');
     expect(script).toContain('capture_integration_lifecycle_observation "pre-stop"');
     expect(script).toContain('capture_integration_lifecycle_observation "post-stop"');
+    expect(script).toContain('PARENT_STACK_REUSE_MODE="${INTEGRATION_PARENT_STACK_REUSE:-false}"');
+    expect(script).toContain('require_parent_owned_existing_stack_reuse_truth()');
+    expect(script).toContain('require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_API_ROOT_PID" "api"');
+    expect(script).toContain('require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_WEB_ROOT_PID" "web"');
+    expect(script).toContain('if parent_stack_reuse_enabled; then');
+    expect(script).toContain('require_parent_owned_existing_stack_reuse_truth');
+    expect(script).toContain('else\n  preflight_managed_agent_task_sandbox_env');
     expect(script).toContain('next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"');
     expect(script).toContain('next_generated_root_finalize_lane_cleanup');
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED="${INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED:-${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}}"');
@@ -1069,11 +1227,12 @@ resolve_loopback_runtime_stack() {
   local keycloak_client_id="$5"
   export RUNTIME_HOST_API_BASE_URL="http://127.0.0.1:\${api_port}"
   export RUNTIME_BROWSER_WEB_BASE_URL="http://127.0.0.1:\${web_port}"
+  export RUNTIME_HOST_WEB_BASE_URL="http://127.0.0.1:\${web_port}"
   export KEYCLOAK_BASE_URL="http://127.0.0.1:\${keycloak_port}"
   export PUBLIC_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
   export INTERNAL_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
   export KEYCLOAK_ISSUER_URL="\${KEYCLOAK_BASE_URL}/realms/\${keycloak_realm}"
-  export KEYCLOAK_CLIENT_ID="\${keycloak_client_id}"
+  export KEYCLOAK_CLIENT_ID="\${KEYCLOAK_CLIENT_ID:-\${keycloak_client_id}}"
 }
 
 gate_evidence_init() {

@@ -55,6 +55,66 @@ function writeReleaseAggregateResult(campaignRoot: string): void {
   });
 }
 
+function writeReleaseSummarySnapshot(campaignRoot: string): void {
+  writeJson(join(campaignRoot, 'summary.json'), {
+    schema: 'agentsmith_release_summary/v1',
+    campaign_id: 'release-full',
+    campaign_run_id: campaignRoot.split('/').at(-1) ?? 'clean-status-run',
+    campaign_root: campaignRoot,
+    automated_release_verdict: 'PASSED',
+    status: 'passed',
+    failure_class: 'none',
+    stage: 'aggregate',
+    blocked_step: null,
+    why: 'Release-full campaign evidence passed aggregate verification.',
+    next_action: 'Attach summary.md to the release note and complete the operator sign-off checklist.',
+    terminal_result_path: join(campaignRoot, 'gate-release-full', 'result.json'),
+    summary_json_path: join(campaignRoot, 'summary.json'),
+    summary_md_path: join(campaignRoot, 'summary.md'),
+    evidence_package: campaignRoot,
+    manual_operator_signoff: 'not_covered',
+    generated_at: GENERATED_AT,
+    deploy_check_snapshot: {
+      schema: 'agentsmith_release_deploy_check_snapshot/v1',
+      generated_at: GENERATED_AT,
+      items: [
+        {
+          id: 'lane-unified-deploy-substrate',
+          label: 'dependencies',
+          status: 'not_available',
+          evidence_path: join(campaignRoot, 'unified-deploy', 'substrate'),
+          result_path: join(campaignRoot, 'lane-unified-deploy-substrate', 'result.json'),
+          result_digest: null,
+        },
+        {
+          id: 'lane-unified-deploy-local-kind-images',
+          label: 'images',
+          status: 'not_available',
+          evidence_path: join(campaignRoot, 'unified-deploy', 'local-kind-images'),
+          result_path: join(campaignRoot, 'lane-unified-deploy-local-kind-images', 'result.json'),
+          result_digest: null,
+        },
+        {
+          id: 'lane-unified-deploy-local-kind',
+          label: 'rollout',
+          status: 'not_available',
+          evidence_path: join(campaignRoot, 'unified-deploy', 'local-kind'),
+          result_path: join(campaignRoot, 'lane-unified-deploy-local-kind', 'result.json'),
+          result_digest: null,
+        },
+        {
+          id: 'lane-unified-deploy-product-flows',
+          label: 'product flows',
+          status: 'not_available',
+          evidence_path: join(campaignRoot, 'unified-deploy', 'product-flows'),
+          result_path: join(campaignRoot, 'lane-unified-deploy-product-flows', 'result.json'),
+          result_digest: null,
+        },
+      ],
+    },
+  });
+}
+
 function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
   return {
     leaseId: overrides.leaseId ?? 'lease-clean-status-001',
@@ -209,6 +269,7 @@ describe('clean status entrypoints', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-projection-'));
     try {
       writeReleaseAggregateResult(campaignRoot);
+      writeReleaseSummarySnapshot(campaignRoot);
 
       const output = execFileSync('npx', [
         'tsx',
@@ -223,14 +284,19 @@ describe('clean status entrypoints', () => {
       expect(output).toContain('AgentSmith Release Status');
       expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Status: passed');
-      expect(output).toContain('Goal: release-ready');
-      expect(output).toContain('Authority:');
-      expect(output).toContain(`${campaignRoot}/gate-release-full/result.json`);
-      expect(output).toContain('Evidence:');
+      expect(output).toContain(`Evidence: ${campaignRoot}`);
+      expect(output).toContain('Deploy check / 部署检查:');
+      expect(output).toContain('- dependencies: not available');
+      expect(output).toContain('- images: not available');
+      expect(output).toContain('- rollout: not available');
+      expect(output).toContain('- product flows: not available');
       expect(output).toContain('Lease shadow: active_run=not-known; locks=not-known');
       expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
       expect(output).not.toContain('AgentSmith Status Projection');
       expect(output).not.toContain('Projection kind: read-only');
+      expect(output).not.toContain('Goal: release-ready');
+      expect(output).not.toContain('Authority:');
+      expect(output).not.toContain(`${campaignRoot}/gate-release-full/result.json`);
       expect(output).not.toContain('Resume recommendation:');
       expect(output).not.toContain('Commands executed:');
       expect(output).not.toContain('Automated release verdict');

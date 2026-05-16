@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
@@ -92,6 +93,47 @@ type ReleaseReadyDependencies = {
   reusableResourceReadiness?: (env: NodeJS.ProcessEnv, cwd: string) => ReusableResourceReadiness;
 };
 
+type ReleasePrecheckOperationStatus = 'reused' | 'started';
+
+type ReleasePrecheckOperation = {
+  status: ReleasePrecheckOperationStatus;
+  startCount: number;
+};
+
+type ReleasePrecheckParentObservations = {
+  services: {
+    real_services_started: 'ready';
+    api_web_started: 'ready';
+  };
+  counts: {
+    real_service_start_count: number;
+    api_web_start_count: number;
+  };
+};
+
+type ReleasePrecheckSummaryResult =
+  | {
+    ok: true;
+    observations: ReleasePrecheckParentObservations;
+  }
+  | {
+    ok: false;
+    error: string;
+  };
+
+const RELEASE_PRECHECK_SUMMARY_SCHEMA = 'agentsmith.release-local-precheck/v1';
+const RELEASE_PRECHECK_SUMMARY_RELATIVE_PATH = join('release-local-precheck', 'precheck-summary.json');
+const RELEASE_PRECHECK_REQUIRED_CHECKS = [
+  'dependency_services_ready',
+  'api_minimal_ready',
+  'web_minimal_ready',
+  'public_auth_token_smoke',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
 }
@@ -166,6 +208,127 @@ function runToolCommand(cwd: string, env: NodeJS.ProcessEnv, command: string, ar
 
 function firstLine(value: string): string {
   return value.trim().split(/\r?\n/u)[0]?.trim() ?? '';
+}
+
+function parsePrecheckOperation(value: unknown, fieldPath: string): {
+  ok: true;
+  operation: ReleasePrecheckOperation;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (!isRecord(value)) {
+    return { ok: false, error: `${fieldPath} must be an object` };
+  }
+  const status = value.status;
+  if (status !== 'reused' && status !== 'started') {
+    return { ok: false, error: `${fieldPath}.status must be reused or started` };
+  }
+  const startCount = value.start_count;
+  if (typeof startCount !== 'number' || !Number.isInteger(startCount) || startCount < 0) {
+    return { ok: false, error: `${fieldPath}.start_count must be a non-negative integer` };
+  }
+  if (status === 'reused' && startCount !== 0) {
+    return { ok: false, error: `${fieldPath}.start_count must be 0 when status is reused` };
+  }
+  if (status === 'started' && startCount !== 1) {
+    return { ok: false, error: `${fieldPath}.start_count must be 1 when status is started` };
+  }
+  return {
+    ok: true,
+    operation: {
+      status,
+      startCount,
+    },
+  };
+}
+
+function parseReleasePrecheckSummary(
+  value: unknown,
+  expectedCampaign: {
+    runId: string;
+    campaignRoot: string;
+  },
+): ReleasePrecheckSummaryResult {
+  if (!isRecord(value)) {
+    return { ok: false, error: 'release local precheck summary must be a JSON object' };
+  }
+  if (value.schema_version !== RELEASE_PRECHECK_SUMMARY_SCHEMA) {
+    return {
+      ok: false,
+      error: `release local precheck summary schema_version must be ${RELEASE_PRECHECK_SUMMARY_SCHEMA}`,
+    };
+  }
+  if (value.status !== 'passed') {
+    return { ok: false, error: 'release local precheck summary status must be passed' };
+  }
+  if (!Array.isArray(value.checks) || !value.checks.every((entry) => typeof entry === 'string')) {
+    return { ok: false, error: 'release local precheck summary checks must be a string array' };
+  }
+  for (const requiredCheck of RELEASE_PRECHECK_REQUIRED_CHECKS) {
+    if (!value.checks.includes(requiredCheck)) {
+      return { ok: false, error: `release local precheck summary is missing check: ${requiredCheck}` };
+    }
+  }
+  if (!isRecord(value.observed_operations)) {
+    return { ok: false, error: 'release local precheck summary observed_operations must be an object' };
+  }
+
+  const dependencyServices = parsePrecheckOperation(
+    value.observed_operations.dependency_services,
+    'observed_operations.dependency_services',
+  );
+  if (!dependencyServices.ok) {
+    return { ok: false, error: dependencyServices.error };
+  }
+  const apiWeb = parsePrecheckOperation(value.observed_operations.api_web, 'observed_operations.api_web');
+  if (!apiWeb.ok) {
+    return { ok: false, error: apiWeb.error };
+  }
+  if (typeof value.campaign_root !== 'string' || value.campaign_root.trim().length === 0) {
+    return { ok: false, error: 'release local precheck summary campaign_root is required' };
+  }
+  if (resolve(value.campaign_root) !== resolve(expectedCampaign.campaignRoot)) {
+    return { ok: false, error: 'release local precheck summary campaign_root must match current RELEASE_CAMPAIGN_ROOT' };
+  }
+  if (typeof value.campaign_run_id !== 'string' || value.campaign_run_id.trim().length === 0) {
+    return { ok: false, error: 'release local precheck summary campaign_run_id is required' };
+  }
+  if (value.campaign_run_id !== expectedCampaign.runId) {
+    return { ok: false, error: 'release local precheck summary campaign_run_id must match current RELEASE_CAMPAIGN_RUN_ID' };
+  }
+
+  return {
+    ok: true,
+    observations: {
+      services: {
+        real_services_started: 'ready',
+        api_web_started: 'ready',
+      },
+      counts: {
+        real_service_start_count: dependencyServices.operation.startCount,
+        api_web_start_count: apiWeb.operation.startCount,
+      },
+    },
+  };
+}
+
+function readReleasePrecheckSummary(expectedCampaign: {
+  runId: string;
+  campaignRoot: string;
+}): ReleasePrecheckSummaryResult {
+  const campaignRoot = expectedCampaign.campaignRoot;
+  const summaryPath = join(campaignRoot, RELEASE_PRECHECK_SUMMARY_RELATIVE_PATH);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(summaryPath, 'utf8')) as unknown;
+  } catch {
+    return {
+      ok: false,
+      error: `release local precheck summary cannot be read at ${RELEASE_PRECHECK_SUMMARY_RELATIVE_PATH}`,
+    };
+  }
+  return parseReleasePrecheckSummary(parsed, expectedCampaign);
 }
 
 function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
@@ -341,6 +504,20 @@ export function runReleaseReady(
       }));
       return exitCode;
     }
+    const precheckSummary = readReleasePrecheckSummary({
+      runId: campaignContext.runId,
+      campaignRoot: campaignContext.campaignRoot,
+    });
+    if (!precheckSummary.ok) {
+      stdout.write(renderNotStarted({
+        blocker: 'release_precheck_summary',
+        stage: 'preflight',
+        why: precheckSummary.error,
+        next: 'rerun release precheck through npm run release:ready so the campaign records operational counts.',
+        logs: `inspect ${RELEASE_PRECHECK_SUMMARY_RELATIVE_PATH} in the campaign evidence.`,
+      }));
+      return exitCode;
+    }
     updateRunReadinessStateField({
       statePath: readiness.statePath,
       invocationId: readiness.state.invocation_id,
@@ -360,14 +537,8 @@ export function runReleaseReady(
       envDigest: readiness.state.env_digest.digest,
       gitSha: readiness.state.git_sha,
       writerToken: readiness.writerToken,
-      services: {
-        real_services_started: 'ready',
-        api_web_started: 'ready',
-      },
-      counts: {
-        real_service_start_count: 1,
-        api_web_start_count: 1,
-      },
+      services: precheckSummary.observations.services,
+      counts: precheckSummary.observations.counts,
     });
     const reusableResources = reusableResourceReadiness(releaseReadyEnv, cwd);
     if (reusableResources.runnerImage) {

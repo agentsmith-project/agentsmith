@@ -124,6 +124,19 @@ export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-lane-backend-re
 export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-backend_real}"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_RUN_ROOT}")}"
 export UX_TRACE_OUTPUT_ROOT
+PARENT_STACK_REUSE_MODE="${INTEGRATION_PARENT_STACK_REUSE:-false}"
+case "${PARENT_STACK_REUSE_MODE}" in
+  true|1)
+    PARENT_STACK_REUSE_MODE="true"
+    ;;
+  false|0|"")
+    PARENT_STACK_REUSE_MODE="false"
+    ;;
+  *)
+    echo "[integration-e2e-full] INTEGRATION_PARENT_STACK_REUSE must be true or false" >&2
+    exit 1
+    ;;
+esac
 clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "mbos" "agentsmith"
 # Use 127.0.0.1 for the isolated integration Keycloak lane so browser cookies do not collide
@@ -157,7 +170,9 @@ NEXT_DEV_EXIT_MARKER_FILE="${INTEGRATION_RUN_ROOT}/next-dev-exit.json"
 NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
 INTEGRATION_LIFECYCLE_ARTIFACT_DIR="${INTEGRATION_LIFECYCLE_ARTIFACT_DIR:-$(backend_real_state_root)/integration-lifecycle/${INTEGRATION_RUN_ID}}"
 next_generated_root_normalize
-next_generated_root_write_lane_owner "${INTEGRATION_RUN_ROOT}" "backend-real" "$$" "run-integration-e2e-full.sh"
+if [[ "${PARENT_STACK_REUSE_MODE}" != "true" ]]; then
+  next_generated_root_write_lane_owner "${INTEGRATION_RUN_ROOT}" "backend-real" "$$" "run-integration-e2e-full.sh"
+fi
 API_PID=""
 WEB_PID=""
 PROXY_PID=""
@@ -172,6 +187,120 @@ record_service() {
   local status="$2"
   local detail="${3:-}"
   gate_record_service_status "${INTEGRATION_LOG_DIR}" "${service_name}" "${status}" "${detail}"
+}
+
+parent_stack_reuse_enabled() {
+  [[ "${PARENT_STACK_REUSE_MODE}" == "true" ]]
+}
+
+parent_stack_fail_closed() {
+  local message="$1"
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "parent_stack_reuse" "${message}"
+  echo "[integration-e2e-full] parent-owned existing stack reuse refused: ${message}" >&2
+  exit 1
+}
+
+require_parent_stack_value() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    parent_stack_fail_closed "missing ${name}"
+  fi
+}
+
+require_parent_stack_truth_flag() {
+  local name="$1"
+  require_parent_stack_value "${name}"
+  case "${!name}" in
+    true|1) ;;
+    *) parent_stack_fail_closed "${name} must be true" ;;
+  esac
+}
+
+require_parent_stack_equal() {
+  local name="$1"
+  local actual="$2"
+  require_parent_stack_value "${name}"
+  if [[ "${!name}" != "${actual}" ]]; then
+    parent_stack_fail_closed "${name}=${!name} does not match resolved value ${actual}"
+  fi
+}
+
+process_env_value() {
+  local pid="$1"
+  local name="$2"
+  [[ -r "/proc/${pid}/environ" ]] || return 1
+  tr '\0' '\n' <"/proc/${pid}/environ" 2>/dev/null | sed -n "s/^${name}=//p" | head -n 1
+}
+
+require_parent_owned_process_truth() {
+  local pid_var="$1"
+  local service_kind="$2"
+  local root_pid_var="$3"
+  local pid="${!pid_var:-}"
+  local root_pid="${!root_pid_var:-}"
+  local owner_token service_env root_env
+
+  require_parent_stack_value "${pid_var}"
+  require_parent_stack_value "${root_pid_var}"
+  require_parent_stack_value "INTEGRATION_PARENT_STACK_OWNER_TOKEN"
+
+  if ! pid_is_alive "${pid}"; then
+    parent_stack_fail_closed "${pid_var}=${pid} is not alive"
+  fi
+
+  owner_token="$(process_env_value "${pid}" "LOCAL_RUNTIME_OWNER_TOKEN" || true)"
+  service_env="$(process_env_value "${pid}" "LOCAL_RUNTIME_SERVICE_KIND" || true)"
+  root_env="$(process_env_value "${pid}" "LOCAL_RUNTIME_TREE_ROOT_PID" || true)"
+
+  if [[ "${owner_token}" != "${INTEGRATION_PARENT_STACK_OWNER_TOKEN}" ]]; then
+    parent_stack_fail_closed "${pid_var} owner token mismatch"
+  fi
+  if [[ "${service_env}" != "${service_kind}" ]]; then
+    parent_stack_fail_closed "${pid_var} service kind mismatch"
+  fi
+  if [[ "${root_env}" != "${root_pid}" ]]; then
+    parent_stack_fail_closed "${pid_var} tree root mismatch"
+  fi
+}
+
+require_parent_owned_existing_stack_reuse_truth() {
+  if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
+    parent_stack_fail_closed "backend-real sessions cannot use parent stack reuse"
+  fi
+  if managed_agent_task_sandbox_required; then
+    parent_stack_fail_closed "managed Agent Task specs cannot use parent stack reuse"
+  fi
+
+  require_parent_stack_truth_flag "INTEGRATION_PARENT_STACK_DEPS_READY"
+  require_parent_stack_truth_flag "INTEGRATION_PARENT_STACK_DEPS_INIT_READY"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_API_PORT" "${API_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_WEB_PORT" "${WEB_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_POSTGRES_PORT" "${POSTGRES_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MONGO_PORT" "${MONGO_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_REDIS_PORT" "${REDIS_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_API_PORT" "${MINIO_API_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_CONSOLE_PORT" "${MINIO_CONSOLE_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_KEYCLOAK_PORT" "${KEYCLOAK_PORT}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_API_BASE" "${INTEGRATION_API_BASE}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_WEB_BASE_URL" "${PLAYWRIGHT_BASE_URL}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_HOST_WEB_BASE_URL" "${RUNTIME_HOST_WEB_BASE_URL}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_KEYCLOAK_BASE_URL" "${KEYCLOAK_BASE_URL}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_KEYCLOAK_REALM" "${KEYCLOAK_REALM}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_KEYCLOAK_CLIENT_ID" "${KEYCLOAK_CLIENT_ID}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MONGO_URL" "${MONGO_URL}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MONGO_DB_NAME" "${MONGO_DB_NAME}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_DATABASE_URL" "${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_REDIS_URL" "${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_ENDPOINT" "${MINIO_ENDPOINT:-localhost}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_PORT" "${MINIO_PORT:-${MINIO_API_PORT}}"
+  require_parent_stack_value "INTEGRATION_PARENT_STACK_RUN_ROOT"
+  require_parent_stack_value "INTEGRATION_PARENT_STACK_PROCESS_STATE_DIR"
+  require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_API_ROOT_PID" "api" "INTEGRATION_PARENT_STACK_API_ROOT_PID"
+  require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_API_PID" "api" "INTEGRATION_PARENT_STACK_API_ROOT_PID"
+  require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_WEB_ROOT_PID" "web" "INTEGRATION_PARENT_STACK_WEB_ROOT_PID"
+
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "parent_stack_reuse" "passed" "parent-owned release stack truth verified"
+  record_service parent_stack_reuse ready "${PLAYWRIGHT_BASE_URL} -> ${INTEGRATION_API_BASE}"
 }
 
 managed_agent_task_sandbox_required() {
@@ -549,131 +678,147 @@ stop_integration_afscp_local_runtime() {
   stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
 }
 
-preflight_managed_agent_task_sandbox_env
+if parent_stack_reuse_enabled; then
+  require_parent_owned_existing_stack_reuse_truth
+else
+  preflight_managed_agent_task_sandbox_env
 
-if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
-  run_clean_with_integration_env make deps-bootstrap
-  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
-  record_service integration_deps ready "docker compose dependencies bootstrapped"
+  if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
+    run_clean_with_integration_env make deps-bootstrap
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
+    record_service integration_deps ready "docker compose dependencies bootstrapped"
+  fi
+
+  if [[ "${INIT_DEPS}" == "true" ]]; then
+    run_clean_with_integration_env npm run integration:deps:init:postgres
+    run_clean_with_integration_env npm run integration:deps:init:keycloak
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_identity_seed" "passed" "postgres and keycloak initialized"
+    record_service keycloak_seed ready "postgres and keycloak initialized"
+  fi
+
+  if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
+    run_clean_with_integration_env npx tsx scripts/ensure-default-workspace.ts >/dev/null
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "default_workspace" "passed" "default workspace ensured"
+  fi
+
+  if ! ensure_universal_proxy; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "proxy" "universal proxy unavailable"
+    exit 1
+  fi
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "universal_proxy" "passed" "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
+  record_service universal_proxy ready "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
+
+  if port_in_use "${API_PORT}"; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_port" "api port already in use"
+    echo "[integration-e2e-full] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
+    cleanup_universal_proxy
+    exit 1
+  fi
+
+  if port_in_use "${WEB_PORT}"; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_port" "web port already in use"
+    echo "[integration-e2e-full] Web port ${WEB_PORT} is already in use. Stop the process or set INTEGRATION_WEB_PORT." >&2
+    cleanup_universal_proxy
+    exit 1
+  fi
+
+  if ! ensure_integration_afscp_local_runtime; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "afscp_local_runtime" "AFSCP local runtime unavailable"
+    echo "[integration-e2e-full] AFSCP local runtime did not become ready at ${AFSCP_BASE_URL}" >&2
+    stop_integration_afscp_local_runtime || true
+    cleanup_universal_proxy
+    exit 1
+  fi
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "afscp_local_runtime" "passed" "${AFSCP_BASE_URL}"
+  record_service afscp_local_runtime ready "${AFSCP_BASE_URL}"
+
+  rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
+
+  API_PID="$(
+    start_background_job "${API_LOG}" run_clean env \
+      PORT="${API_PORT}" \
+      DEBUG_NOTEBOOK_EXECUTION="${DEBUG_NOTEBOOK_EXECUTION:-}" \
+      PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-${INTEGRATION_API_BASE}/api/v1}" \
+      MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+      KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+      MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+      MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
+      MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+      MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+      MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+      MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+      SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
+      SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+      AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+      AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+      AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+      AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+      AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+      AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+      AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+      AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
+      INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-${INTEGRATION_INTERNAL_AGENT_IMAGE:-}}" \
+      INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
+      INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
+      AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
+      npm run api:node:dev
+  )"
+
+  WEB_PID="$(
+    start_background_job "${WEB_LOG}" run_clean env \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
+      NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${INTEGRATION_RUN_ROOT}" \
+      NEXT_GENERATED_ROOT_MANAGED=1 \
+      NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-validation}" \
+      NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
+      NEXT_DEV_PROCESS_STATE_FILE="${NEXT_WEB_PROCESS_STATE_FILE}" \
+      NEXT_DEV_PROCESS_KIND=web \
+      NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full \
+      NEXT_DEV_EXIT_MARKER_FILE="${NEXT_DEV_EXIT_MARKER_FILE}" \
+      NEXT_PUBLIC_USE_MSW=false \
+      AGENTSMITH_ENABLE_TEST_ROUTES=true \
+      NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
+      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
+      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+      AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
+      AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
+      AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
+      AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
+      AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
+      AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
+      AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
+      AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
+      bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
+  )"
 fi
-
-if [[ "${INIT_DEPS}" == "true" ]]; then
-  run_clean_with_integration_env npm run integration:deps:init:postgres
-  run_clean_with_integration_env npm run integration:deps:init:keycloak
-  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_identity_seed" "passed" "postgres and keycloak initialized"
-  record_service keycloak_seed ready "postgres and keycloak initialized"
-fi
-
-if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
-  run_clean_with_integration_env npx tsx scripts/ensure-default-workspace.ts >/dev/null
-  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "default_workspace" "passed" "default workspace ensured"
-fi
-
-if ! ensure_universal_proxy; then
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "proxy" "universal proxy unavailable"
-  exit 1
-fi
-gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "universal_proxy" "passed" "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
-record_service universal_proxy ready "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
-
-if port_in_use "${API_PORT}"; then
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_port" "api port already in use"
-  echo "[integration-e2e-full] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
-  cleanup_universal_proxy
-  exit 1
-fi
-
-if port_in_use "${WEB_PORT}"; then
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_port" "web port already in use"
-  echo "[integration-e2e-full] Web port ${WEB_PORT} is already in use. Stop the process or set INTEGRATION_WEB_PORT." >&2
-  cleanup_universal_proxy
-  exit 1
-fi
-
-if ! ensure_integration_afscp_local_runtime; then
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "afscp_local_runtime" "AFSCP local runtime unavailable"
-  echo "[integration-e2e-full] AFSCP local runtime did not become ready at ${AFSCP_BASE_URL}" >&2
-  stop_integration_afscp_local_runtime || true
-  cleanup_universal_proxy
-  exit 1
-fi
-gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "afscp_local_runtime" "passed" "${AFSCP_BASE_URL}"
-record_service afscp_local_runtime ready "${AFSCP_BASE_URL}"
-
-rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
-
-API_PID="$(
-  start_background_job "${API_LOG}" run_clean env \
-    PORT="${API_PORT}" \
-    DEBUG_NOTEBOOK_EXECUTION="${DEBUG_NOTEBOOK_EXECUTION:-}" \
-    PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-${INTEGRATION_API_BASE}/api/v1}" \
-    MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
-    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-    PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-    INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-    KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
-    MONGO_URL="${MONGO_URL}" \
-    MONGO_DB_NAME="${MONGO_DB_NAME}" \
-    REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
-    MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-    MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
-    MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
-    MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-    MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-    MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-    SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-    SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
-    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
-    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
-    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
-    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
-    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
-    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
-    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
-    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
-    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
-    INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-${INTEGRATION_INTERNAL_AGENT_IMAGE:-}}" \
-    INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
-    INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
-    AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
-    npm run api:node:dev
-)"
-
-WEB_PID="$(
-  start_background_job "${WEB_LOG}" run_clean env \
-    MONGO_URL="${MONGO_URL}" \
-    MONGO_DB_NAME="${MONGO_DB_NAME}" \
-    NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
-    NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${INTEGRATION_RUN_ROOT}" \
-    NEXT_GENERATED_ROOT_MANAGED=1 \
-    NEXT_DEV_MEMORY_PROFILE="${NEXT_DEV_MEMORY_PROFILE:-validation}" \
-    NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
-    NEXT_DEV_PROCESS_STATE_FILE="${NEXT_WEB_PROCESS_STATE_FILE}" \
-    NEXT_DEV_PROCESS_KIND=web \
-    NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full \
-    NEXT_DEV_EXIT_MARKER_FILE="${NEXT_DEV_EXIT_MARKER_FILE}" \
-    NEXT_PUBLIC_USE_MSW=false \
-    AGENTSMITH_ENABLE_TEST_ROUTES=true \
-    NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
-    NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
-    NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-    AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
-    AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
-    AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
-    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE}" \
-    AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN}" \
-    AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE}" \
-    AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \
-    AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \
-    AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \
-    bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
-)"
 
 cleanup() {
   set +e
+  if parent_stack_reuse_enabled; then
+    stop_background_job "${PLAYWRIGHT_PID}"
+    wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+    if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
+      lane_mark_status "${INTEGRATION_RUN_ROOT}" success
+    else
+      lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
+    fi
+    lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-run
+    lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS}"
+    return 0
+  fi
   capture_integration_lifecycle_observation "pre-stop"
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed

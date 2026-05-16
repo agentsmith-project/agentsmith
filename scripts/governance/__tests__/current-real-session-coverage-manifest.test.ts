@@ -32,6 +32,13 @@ const CHAT_BACKEND_REAL_SESSION_SHARDS = [
     grep: 'stop escalation resyncs authoritative thread truth after refresh and keeps composer ready',
   },
 ] as const;
+const RELEASE_BROWSER_TRACE_SPECS = [
+  'e2e/integration-system-admin-entry.spec.ts',
+  'e2e/integration-workspace-public-login.spec.ts',
+  'e2e/integration-workspace-entry.spec.ts',
+  'e2e/integration-workspace-publish-usable.spec.ts',
+  'e2e/integration-workspace-settings-directory.spec.ts',
+] as const;
 
 type MutableManifestWithSessionCoalescing = CurrentRealSessionCoverageManifest & {
   session_coalescing: Array<Record<string, unknown> & {
@@ -111,6 +118,18 @@ function chatGrepEntry(spec: string, grep: string) {
 
   if (!entry) {
     throw new Error(`Missing chat grep coverage entry: ${spec} --grep ${grep}`);
+  }
+  return entry;
+}
+
+function playwrightSpecEntry(spec: string) {
+  const entry = listCurrentRealSessionCoverageEntries().find((candidate) => (
+    candidate.source_kind === 'playwright_spec'
+    && candidate.spec === spec
+  ));
+
+  if (!entry) {
+    throw new Error(`Missing Playwright spec coverage entry: ${spec}`);
   }
   return entry;
 }
@@ -199,6 +218,9 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({ source_kind: 'npm_script', npm_script: 'test:e2e:integration:universal-proxy:model-profile' }),
       expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-release-user-story.spec.ts' }),
       expect.objectContaining({ source_kind: 'playwright_spec', spec: 'e2e/integration-files-connector-absence.spec.ts' }),
+      ...RELEASE_BROWSER_TRACE_SPECS.map((spec) => (
+        expect.objectContaining({ source_kind: 'playwright_spec', spec })
+      )),
       expect.objectContaining({
         source_kind: 'playwright_grep',
         spec: 'e2e/integration-agent-task-runner.spec.ts',
@@ -240,6 +262,17 @@ describe('current real session coverage manifest', () => {
       'missing current real session coverage source: playwright_grep:e2e/integration-chat.spec.ts',
     );
 
+    for (const spec of RELEASE_BROWSER_TRACE_SPECS) {
+      const missingReleaseBrowserTraceSpec = cloneManifest();
+      missingReleaseBrowserTraceSpec.coverage = missingReleaseBrowserTraceSpec.coverage.filter((entry) => !(
+        entry.source_kind === 'playwright_spec' && entry.spec === spec
+      ));
+      expectValidationFailure(
+        missingReleaseBrowserTraceSpec,
+        `missing current real session coverage source: playwright_spec:${spec}`,
+      );
+    }
+
     expectValidationFailureWithSources(
       cloneManifest(),
       [
@@ -251,6 +284,33 @@ describe('current real session coverage manifest', () => {
       ],
       'missing current real session coverage source: npm_script:test:new-runner:backend-real',
     );
+  });
+
+  it('models release browser trace specs as release backend-real UX trace coverage', () => {
+    const runner = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+
+    for (const spec of RELEASE_BROWSER_TRACE_SPECS) {
+      expect(runner).toContain(`run_release_browser_trace_spec "${spec}"`);
+      expect(playwrightSpecEntry(spec)).toMatchObject({
+        proposed_shard_id: 'release-backend-real',
+        evidence_owner: 'backend-real-release:visual-review',
+        isolation_level: 'process',
+        mutable_resources: expect.arrayContaining([
+          'release_campaign_root',
+          'visual_artifacts',
+          'provider_quota',
+          'shared_local_substrate',
+        ]),
+        lock_ids: expect.arrayContaining([
+          'shared-local-substrate',
+          'fixed-local-ports',
+          'backend-real-provider-quota',
+          'provider-secret-profile',
+          'release-campaign-root-writes',
+        ]),
+        merge_allowed: false,
+      });
+    }
   });
 
   it('discovers specs and greps from shell wrappers referenced by current real npm scripts', () => {

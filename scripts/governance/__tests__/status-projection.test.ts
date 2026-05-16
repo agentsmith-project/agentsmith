@@ -116,6 +116,7 @@ function writeReleaseSummaryWithObservability(campaignRoot: string): void {
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
     generated_at: GENERATED_AT,
+    deploy_check_snapshot: releaseDeployCheckSnapshot(campaignRoot),
     run_observability: {
       total_duration_ms: 5_432_100,
       top_slow_stages: [
@@ -169,6 +170,58 @@ function writeFailedCampaignStepResult(campaignRoot: string, stepId = 'gate-defa
     generated_at: GENERATED_AT,
   });
   return path;
+}
+
+function writeDeployStepResult(campaignRoot: string, stepId: string, status: 'passed' | 'failed'): void {
+  writeJson(join(campaignRoot, stepId, 'result.json'), {
+    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+    gate_id: stepId,
+    gate_adapter: {
+      npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'),
+      ci_job: null,
+    },
+    status,
+    failure_class: status === 'passed' ? 'none' : 'product_regression',
+    stage: 'verify',
+    line_kind: 'release_campaign_step',
+    evidence_dir: join(campaignRoot, stepId),
+    summary: `${stepId} ${status}.`,
+    generated_at: GENERATED_AT,
+  });
+}
+
+function releaseDeployCheckSnapshot(
+  campaignRoot: string,
+  overrides: Partial<Record<string, 'passed' | 'failed' | 'not_available' | 'unknown'>> = {},
+): Record<string, unknown> {
+  const steps = [
+    ['lane-unified-deploy-substrate', 'dependencies', 'substrate'],
+    ['lane-unified-deploy-local-kind-images', 'images', 'local-kind-images'],
+    ['lane-unified-deploy-local-kind', 'rollout', 'local-kind'],
+    ['lane-unified-deploy-product-flows', 'product flows', 'product-flows'],
+  ] as const;
+  return {
+    schema: 'agentsmith_release_deploy_check_snapshot/v1',
+    generated_at: GENERATED_AT,
+    items: steps.map(([id, label, evidenceSegment]) => ({
+      id,
+      label,
+      status: overrides[id] ?? 'passed',
+      evidence_path: join(campaignRoot, 'unified-deploy', evidenceSegment),
+      result_path: join(campaignRoot, id, 'result.json'),
+      result_digest: null,
+    })),
+  };
+}
+
+function expectCleanReleaseStatusSummary(rendered: string): void {
+  expect(rendered).not.toMatch(/\bGoal:/);
+  expect(rendered).not.toMatch(/\bPhase:/);
+  expect(rendered).not.toMatch(/\bAuthority:/);
+  expect(rendered).not.toMatch(/\bCampaign:/);
+  expect(rendered).not.toContain('Automated release verdict');
+  expect(rendered).not.toMatch(/\b(?:gate|lane)-[a-z0-9-]+\b/);
+  expect(rendered).not.toMatch(/\bnpm run (?:gate|lane|backend-real|test):[a-z0-9:_-]+/);
 }
 
 function lease(overrides: Partial<GovernanceRuntimeLockLease>): GovernanceRuntimeLockLease {
@@ -273,12 +326,13 @@ describe('current status projection', () => {
 
   it('renders the release status summary without making benign raw-log warnings the blocker', () => {
     withTempRoot((campaignRoot) => {
-      const aggregatePath = writeAggregateResult(campaignRoot, {
+      writeAggregateResult(campaignRoot, {
         status: 'failed',
         failure_class: 'product_regression',
         stage: 'aggregate',
         summary: 'Campaign step gate-release did not pass.',
       });
+      writeReleaseSummaryWithObservability(campaignRoot);
 
       const projection = buildStatusProjection({
         goal: 'release-ready',
@@ -291,15 +345,22 @@ describe('current status projection', () => {
 
       expect(rendered).toContain('AgentSmith Release Status');
       expect(rendered).toContain('Status: failed');
-      expect(rendered).toContain('Blocker: gate-release');
-      expect(rendered).toContain(`Evidence: ${aggregatePath}`);
+      expect(rendered).toContain('Blocker: Backend-real check');
+      expect(rendered).toContain('Why: Backend-real check did not pass.');
+      expect(rendered).toContain(`Evidence: ${campaignRoot}`);
       expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('Deploy check / 部署检查:');
+      expect(rendered).toContain('- dependencies: passed');
+      expect(rendered).toContain('- images: passed');
+      expect(rendered).toContain('- rollout: passed');
+      expect(rendered).toContain('- product flows: passed');
       expect(rendered).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
       expect(rendered).not.toContain('Blocker: NO_COLOR');
       expect(rendered).not.toContain('Blocker: Postgres already exists');
       expect(rendered).not.toContain('Blocker: containerd deprecation');
       expect(rendered).not.toContain('Resume recommendation:');
       expect(rendered).not.toContain('Commands executed:');
+      expectCleanReleaseStatusSummary(rendered);
     });
   });
 
@@ -336,8 +397,13 @@ describe('current status projection', () => {
       ]);
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
       expect(rendered).toContain('Total duration: 1h 30m 32s');
-      expect(rendered).toContain('Slowest stages: Backend real release check 46m 5s; Full visual check 16m 51s; Deploy product flows 2m 45s');
+      expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Deploy product flows 2m 45s');
       expect(rendered).not.toContain('Slowest stages: gate-release');
+      expect(rendered).toContain('Deploy check / 部署检查:');
+      expect(rendered).toContain('- dependencies: passed');
+      expect(rendered).toContain('- images: passed');
+      expect(rendered).toContain('- rollout: passed');
+      expect(rendered).toContain('- product flows: passed');
       expect(rendered).toContain('Real service starts: 1');
       expect(rendered).toContain('API/Web starts: 1');
       expect(rendered).toContain('Backend real sessions: 2');
@@ -346,6 +412,28 @@ describe('current status projection', () => {
       expect(rendered).not.toContain('Poll/retry attempts: 0');
       expect(rendered).toContain('Report size: 987654 bytes');
       expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expectCleanReleaseStatusSummary(rendered);
+    });
+  });
+
+  it('renders deploy check from the release summary snapshot instead of mutable step result files', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot);
+      writeReleaseSummaryWithObservability(campaignRoot);
+      writeDeployStepResult(campaignRoot, 'lane-unified-deploy-product-flows', 'failed');
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjectionSummary(projection);
+
+      expect(rendered).toContain('Deploy check / 部署检查:');
+      expect(rendered).toContain('- product flows: passed');
+      expect(rendered).not.toContain('- product flows: failed');
     });
   });
 

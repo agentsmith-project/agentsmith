@@ -122,6 +122,27 @@ export interface CurrentStatusProjectionSlowStage {
   status: string;
 }
 
+export type CurrentStatusProjectionDeployCheckSnapshotStatus =
+  | 'passed'
+  | 'failed'
+  | 'not_available'
+  | 'unknown';
+
+export interface CurrentStatusProjectionDeployCheckSnapshotItem {
+  id: string;
+  label: string;
+  status: CurrentStatusProjectionDeployCheckSnapshotStatus;
+  evidence_path: string;
+  result_path: string;
+  result_digest: string | null;
+}
+
+export interface CurrentStatusProjectionDeployCheckSnapshot {
+  schema: 'agentsmith_release_deploy_check_snapshot/v1';
+  generated_at: string;
+  items: readonly CurrentStatusProjectionDeployCheckSnapshotItem[];
+}
+
 export interface CurrentStatusProjectionRunObservability {
   total_duration_ms: number | null;
   top_slow_stages: readonly CurrentStatusProjectionSlowStage[];
@@ -153,6 +174,7 @@ export interface CurrentStatusProjection {
   lock_owner: CurrentStatusProjectionLockOwner | null;
   lease_status_shadow: MinimalLeaseStatusShadow | null;
   run_observability?: CurrentStatusProjectionRunObservability | null;
+  deploy_check_snapshot?: CurrentStatusProjectionDeployCheckSnapshot | null;
   manual_signoff_status: CurrentStatusProjectionManualSignoffStatus;
   evidence_paths: readonly CurrentStatusProjectionPathRef[];
   authority_paths: CurrentStatusProjectionAuthorityPaths;
@@ -200,6 +222,7 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
   'lock_owner',
   'lease_status_shadow',
   'run_observability',
+  'deploy_check_snapshot',
   'manual_signoff_status',
   'evidence_paths',
   'authority_paths',
@@ -211,7 +234,7 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
 ]);
 
 const STATUS_PROJECTION_REQUIRED_TOP_LEVEL_FIELDS = new Set<string>(
-  [...STATUS_PROJECTION_TOP_LEVEL_FIELDS].filter((field) => field !== 'run_observability'),
+  [...STATUS_PROJECTION_TOP_LEVEL_FIELDS].filter((field) => field !== 'run_observability' && field !== 'deploy_check_snapshot'),
 );
 
 const GOALS = new Set<Exclude<CurrentStatusProjectionGoal, null>>([
@@ -257,6 +280,7 @@ const RESUME_RECOMMENDATION_ACTIONS = new Set<string>([
 ]);
 
 const MANUAL_SIGNOFF_STATUSES = new Set<string>(['covered', 'not-covered', 'required']);
+const DEPLOY_CHECK_SNAPSHOT_STATUSES = new Set<string>(['passed', 'failed', 'not_available', 'unknown']);
 const SHA256_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const GIT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
@@ -731,6 +755,56 @@ function validateNonNegativeInteger(
   }
 }
 
+function validateDeployCheckSnapshot(
+  value: unknown,
+  path: string,
+  failures: CurrentStatusProjectionValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    pushFailure(failures, path, `${path} must be an object.`);
+    return;
+  }
+  validateNoUnknownFields(value, path, new Set(['schema', 'generated_at', 'items']), failures);
+  validateRequiredFields(value, path, ['schema', 'generated_at', 'items'], failures);
+  if (value.schema !== 'agentsmith_release_deploy_check_snapshot/v1') {
+    pushFailure(failures, `${path}.schema`, 'deploy_check_snapshot schema is invalid.');
+  }
+  validateIsoTimestamp(value.generated_at, `${path}.generated_at`, failures);
+  if (!Array.isArray(value.items)) {
+    pushFailure(failures, `${path}.items`, `${path}.items must be an array.`);
+    return;
+  }
+  value.items.forEach((item, index) => {
+    const itemPath = `${path}.items[${index}]`;
+    if (!isRecord(item)) {
+      pushFailure(failures, itemPath, `${itemPath} must be an object.`);
+      return;
+    }
+    validateNoUnknownFields(item, itemPath, new Set([
+      'id',
+      'label',
+      'status',
+      'evidence_path',
+      'result_path',
+      'result_digest',
+    ]), failures);
+    validateRequiredFields(item, itemPath, [
+      'id',
+      'label',
+      'status',
+      'evidence_path',
+      'result_path',
+      'result_digest',
+    ], failures);
+    validateString(item.id, `${itemPath}.id`, failures);
+    validateString(item.label, `${itemPath}.label`, failures);
+    validateEnum(item.status, DEPLOY_CHECK_SNAPSHOT_STATUSES, `${itemPath}.status`, failures);
+    validateString(item.evidence_path, `${itemPath}.evidence_path`, failures);
+    validateString(item.result_path, `${itemPath}.result_path`, failures);
+    validateNullableDigest(item.result_digest, `${itemPath}.result_digest`, failures);
+  });
+}
+
 function validateRunObservability(
   value: unknown,
   path: string,
@@ -902,6 +976,9 @@ export function validateCurrentStatusProjection(value: unknown): CurrentStatusPr
   validateLeaseStatusShadow(value.lease_status_shadow, 'projection.lease_status_shadow', failures);
   if ('run_observability' in value) {
     validateRunObservability(value.run_observability, 'projection.run_observability', failures);
+  }
+  if ('deploy_check_snapshot' in value && value.deploy_check_snapshot !== null) {
+    validateDeployCheckSnapshot(value.deploy_check_snapshot, 'projection.deploy_check_snapshot', failures);
   }
   validateEnum(value.manual_signoff_status, MANUAL_SIGNOFF_STATUSES, 'projection.manual_signoff_status', failures);
   validateEvidencePaths(value.evidence_paths, 'projection.evidence_paths', failures);

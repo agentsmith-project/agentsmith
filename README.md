@@ -48,9 +48,9 @@ Before you run commands, choose one entry path:
 | --- | --- | --- |
 | `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run verify` for the dry-run plan. |
 | `local_manual` | You need the real local API, Agent tasks, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
-| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the latest summary. |
+| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the frozen summary/projection snapshot. |
 
-Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when you need the smallest command that can reproduce or narrow a failure. Diagnostic commands help you find the problem; gates give the final verdict for a layer.
+Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when a failure needs maintainer diagnosis and you need the smallest command that can reproduce or narrow it. The catalog is not a default command directory; diagnostic commands help you find the problem, then the clean entrypoint gives the final verdict for a layer.
 
 ```bash
 # Install dependencies
@@ -99,7 +99,7 @@ Command naming rule:
 
 Quick path note:
 - `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.
-- `npm run release:status` is read-only; it only reads the latest release summary.
+- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.
 - `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.
 
 ### 环境

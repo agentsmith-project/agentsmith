@@ -41,7 +41,7 @@ Repo version files:
 
 Quick path note:
 - `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。
-- `npm run release:status` is read-only; it only reads the latest release summary.
+- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.
 - `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。
 
 ### 环境
@@ -74,7 +74,7 @@ npm run release:status
 | --- | --- | --- |
 | `ui_only` | 只改前端 UI、文案、mock 交互、客户端状态。 | `npm run dev`，然后用 `npm run verify` 生成 dry-run plan。 |
 | `local_manual` | 需要真实本地 API / Web / Agent tasks / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
-| `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 summary/status。 |
+| `release_grade` | 大改动收口、发布前、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 frozen summary/status projection。 |
 
 如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`。
 
@@ -103,6 +103,7 @@ Gate adapter fidelity notes:
 - 功能收口：补跑与改动直接相关的 integration、e2e、story、backend-real smoke 或 targeted visual。
 - release-grade 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，日常入口是 `npm run release:ready`。
 - 如果需要理解 wave、证据、rerun 策略与常见误区，再看 [`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)。
+- Diagnostic catalog 里的 internal adapters、unified deploy producers 与 `test:*` owner commands 是维护者诊断，不是普通流程的默认命令目录；诊断变绿后要回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 
 4. 手工 Feishu 操作与自动化 gate 分层
 - `make manual-feishu-*` 属于 release operator 手工联调/验收说明，不属于 machine-readable gate identity。

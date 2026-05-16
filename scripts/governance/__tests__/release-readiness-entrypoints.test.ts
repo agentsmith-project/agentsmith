@@ -51,6 +51,90 @@ function writeJson(path: string, payload: unknown): void {
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
+type PrecheckOperationStatus = 'reused' | 'started';
+
+function writePrecheckSummary(campaignRoot: string, overrides: Partial<{
+  campaignRunId: string;
+  campaignRoot: string;
+  dependencyStatus: PrecheckOperationStatus;
+  dependencyStartCount: number;
+  apiWebStatus: PrecheckOperationStatus;
+  apiWebStartCount: number;
+}> = {}): void {
+  writeJson(join(campaignRoot, 'release-local-precheck', 'precheck-summary.json'), {
+    schema_version: 'agentsmith.release-local-precheck/v1',
+    status: 'passed',
+    campaign_run_id: overrides.campaignRunId ?? basename(campaignRoot),
+    campaign_root: overrides.campaignRoot ?? campaignRoot,
+    checks: [
+      'dependency_services_ready',
+      'api_minimal_ready',
+      'web_minimal_ready',
+      'public_auth_token_smoke',
+    ],
+    observed_operations: {
+      dependency_services: {
+        status: overrides.dependencyStatus ?? 'reused',
+        start_count: overrides.dependencyStartCount ?? 0,
+      },
+      api_web: {
+        status: overrides.apiWebStatus ?? 'started',
+        start_count: overrides.apiWebStartCount ?? 1,
+      },
+    },
+    generated_at: '2026-04-25T12:00:00.000Z',
+  });
+}
+
+function writePrecheckSummaryForEnv(env: NodeJS.ProcessEnv): void {
+  const campaignRoot = env.RELEASE_CAMPAIGN_ROOT;
+  if (!campaignRoot) {
+    throw new Error('test precheck summary requires RELEASE_CAMPAIGN_ROOT');
+  }
+  writePrecheckSummary(campaignRoot, {
+    campaignRunId: env.RELEASE_CAMPAIGN_RUN_ID,
+    campaignRoot: env.RELEASE_CAMPAIGN_ROOT,
+  });
+}
+
+function writePrecheckSummaryForEnvWithOverrides(
+  env: NodeJS.ProcessEnv,
+  overrides: NonNullable<Parameters<typeof writePrecheckSummary>[1]> = {},
+): void {
+  const campaignRoot = env.RELEASE_CAMPAIGN_ROOT;
+  if (!campaignRoot) {
+    throw new Error('test precheck summary requires RELEASE_CAMPAIGN_ROOT');
+  }
+  writePrecheckSummary(campaignRoot, {
+    ...overrides,
+    campaignRunId: overrides.campaignRunId ?? env.RELEASE_CAMPAIGN_RUN_ID,
+    campaignRoot: overrides.campaignRoot ?? env.RELEASE_CAMPAIGN_ROOT,
+  });
+}
+
+const WRITE_PRECHECK_SUMMARY_SHELL = [
+  '  mkdir -p "${RELEASE_CAMPAIGN_ROOT}/release-local-precheck"',
+  '  cat > "${RELEASE_CAMPAIGN_ROOT}/release-local-precheck/precheck-summary.json" <<JSON',
+  '{',
+  '  "schema_version": "agentsmith.release-local-precheck/v1",',
+  '  "status": "passed",',
+  '  "campaign_run_id": "${RELEASE_CAMPAIGN_RUN_ID}",',
+  '  "campaign_root": "${RELEASE_CAMPAIGN_ROOT}",',
+  '  "checks": [',
+  '    "dependency_services_ready",',
+  '    "api_minimal_ready",',
+  '    "web_minimal_ready",',
+  '    "public_auth_token_smoke"',
+  '  ],',
+  '  "observed_operations": {',
+  '    "dependency_services": { "status": "reused", "start_count": 0 },',
+  '    "api_web": { "status": "started", "start_count": 1 }',
+  '  },',
+  '  "generated_at": "2026-04-25T12:00:00.000Z"',
+  '}',
+  'JSON',
+].join('\n');
+
 function writeTerminalResult(campaignRoot: string, overrides: Partial<{
   status: string;
   failure_class: string;
@@ -72,6 +156,31 @@ function writeTerminalResult(campaignRoot: string, overrides: Partial<{
     summary: overrides.summary ?? 'Release-full campaign evidence passed aggregate verification.',
     generated_at: '2026-04-25T12:00:00.000Z',
   });
+}
+
+function writeDeployResult(campaignRoot: string, stepId: string, status: 'passed' | 'failed'): void {
+  writeJson(join(campaignRoot, stepId, 'result.json'), {
+    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+    gate_id: stepId,
+    gate_adapter: {
+      npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'),
+      ci_job: null,
+    },
+    status,
+    failure_class: status === 'passed' ? 'none' : 'product_regression',
+    stage: 'verify',
+    line_kind: 'release_campaign_step',
+    evidence_dir: join(campaignRoot, stepId),
+    summary: `${stepId} ${status}.`,
+    generated_at: '2026-04-25T12:00:00.000Z',
+  });
+}
+
+function writeDeployResults(campaignRoot: string): void {
+  writeDeployResult(campaignRoot, 'lane-unified-deploy-substrate', 'passed');
+  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind-images', 'passed');
+  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind', 'passed');
+  writeDeployResult(campaignRoot, 'lane-unified-deploy-product-flows', 'passed');
 }
 
 function writeSummaryCache(campaignRoot: string, overrides: Partial<Record<string, unknown>> = {}): void {
@@ -283,6 +392,7 @@ describe('release readiness human entrypoints', () => {
     expect(checklist).toContain('npm run release:ready');
     expect(checklist).toContain('npm run release:status');
     expect(checklist).toContain('internal adapter');
+    expect(checklist).not.toMatch(/Terminal result/i);
 
     for (const pattern of RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS) {
       expect(checklist, `release checklist must not expose internal adapter as copyable human path: ${pattern}`).not.toMatch(pattern);
@@ -298,6 +408,7 @@ describe('release readiness human entrypoints', () => {
         failure_class: 'evidence_missing',
         summary: 'Campaign step lane-visual did not pass.',
       });
+      writeDeployResults(root);
 
       const summary = writeReleaseSummaryForCampaign({
         campaignRoot: root,
@@ -309,8 +420,20 @@ describe('release readiness human entrypoints', () => {
       expect(summary.failure_class).toBe('evidence_missing');
       expect(summary.blocked_step).toBe('lane-visual');
       expect(summary.terminal_result_path).toBe(join(root, 'gate-release-full', 'result.json'));
+      expect(summary.deploy_check_snapshot?.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'lane-unified-deploy-product-flows',
+            status: 'passed',
+          }),
+        ]),
+      );
       expect(existsSync(join(root, 'summary.json'))).toBe(true);
       expect(existsSync(join(root, 'summary.md'))).toBe(true);
+      const summaryMarkdown = readFileSync(join(root, 'summary.md'), 'utf8');
+      expect(summaryMarkdown).toContain('- Deploy check / 部署检查:');
+      expect(summaryMarkdown).toContain('- dependencies: passed');
+      expect(summaryMarkdown).not.toContain('- - dependencies');
       const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
       expect(latest).toMatchObject({
         campaign_root: root,
@@ -384,12 +507,14 @@ describe('release readiness human entrypoints', () => {
       expect(summary.next_action).toContain('npm run release:ready');
       expect(summary.next_action).not.toContain('npm run lane:');
       expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
-      expect(rendered).toContain('Blocker: lane-unified-deploy-product-flows');
-      expect(rendered).toContain('Stage: aggregate');
-      expect(rendered).toContain('Why: Campaign step lane-unified-deploy-product-flows did not pass.');
+      expect(rendered).toContain('Blocker: Deploy check / product flows');
+      expect(rendered).toContain('Stage: release result');
+      expect(rendered).toContain('Why: Deploy check / product flows did not pass.');
       expect(rendered).toContain('Inspect:');
       expect(rendered).toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${root}`);
+      expect(rendered).toContain('Deploy check / 部署检查:');
+      expect(rendered).not.toContain('lane-unified-deploy-product-flows');
       expect(rendered).not.toContain('npm run lane:');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -419,7 +544,7 @@ describe('release readiness human entrypoints', () => {
       expect(status.kind).toBe('malformed');
 
       const output = renderReleaseStatus(status);
-      expect(output).toContain('Automated release verdict: UNKNOWN');
+      expect(output).toContain('Status: unknown');
       expect(output).toContain('next_action');
       expect(output).not.toContain('npm run verify:release-real');
     } finally {
@@ -435,7 +560,7 @@ describe('release readiness human entrypoints', () => {
       expect(missing.kind).toBe('missing_latest');
 
       const output = renderReleaseStatus(missing);
-      expect(output).toContain('Automated release verdict: MISSING');
+      expect(output).toContain('Status: missing');
       expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Blocker: release_status_missing_latest');
       expect(output).toContain('Rerun: npm run release:ready');
@@ -471,7 +596,7 @@ describe('release readiness human entrypoints', () => {
         expect(status.error).toContain(field);
 
         const output = renderReleaseStatus(status);
-        expect(output).toContain('Automated release verdict: UNKNOWN');
+        expect(output).toContain('Status: unknown');
         expect(output).not.toContain('Automated release verdict: PASSED');
         expect(output).not.toContain('Campaign:');
       }
@@ -542,7 +667,7 @@ describe('release readiness human entrypoints', () => {
         expect(status.error).toContain(testCase.expectedError);
 
         const output = renderReleaseStatus(status);
-        expect(output).toContain('Automated release verdict: UNKNOWN');
+        expect(output).toContain('Status: unknown');
         expect(output).not.toContain('Automated release verdict: PASSED');
         expect(output).not.toContain('Campaign:');
       }
@@ -562,7 +687,7 @@ describe('release readiness human entrypoints', () => {
       expect(status.kind).not.toBe('ready');
 
       const output = renderReleaseStatus(status);
-      expect(output).toContain('Automated release verdict: UNKNOWN');
+      expect(output).toContain('Status: unknown');
       expect(output).toContain('terminal result');
       expect(output).not.toContain('Automated release verdict: PASSED');
     } finally {
@@ -714,6 +839,100 @@ exit 0
     }
   });
 
+  it('fails closed when release precheck passes but its operational summary is missing or malformed', () => {
+    const cases: Array<{
+      label: string;
+      writeSummary?: (campaignRoot: string) => void;
+      expectedOutput: string;
+    }> = [
+      {
+        label: 'missing summary',
+        expectedOutput: 'release local precheck summary cannot be read',
+      },
+      {
+        label: 'malformed summary',
+        writeSummary: (campaignRoot) => writeJson(join(campaignRoot, 'release-local-precheck', 'precheck-summary.json'), {
+          schema_version: 'agentsmith.release-local-precheck/v1',
+          status: 'passed',
+          campaign_run_id: basename(campaignRoot),
+          campaign_root: campaignRoot,
+          checks: [
+            'dependency_services_ready',
+            'api_minimal_ready',
+            'web_minimal_ready',
+            'public_auth_token_smoke',
+          ],
+          observed_operations: {
+            dependency_services: {
+              status: 'reused',
+              start_count: 0,
+            },
+          },
+        }),
+        expectedOutput: 'observed_operations.api_web',
+      },
+      {
+        label: 'wrong run id',
+        writeSummary: (campaignRoot) => writePrecheckSummary(campaignRoot, {
+          campaignRunId: 'previous-release-run',
+        }),
+        expectedOutput: 'campaign_run_id',
+      },
+      {
+        label: 'wrong campaign root',
+        writeSummary: (campaignRoot) => writePrecheckSummary(campaignRoot, {
+          campaignRoot: join(campaignRoot, '..', 'previous-release-root'),
+        }),
+        expectedOutput: 'campaign_root',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const root = mkdtempSync(join(tmpdir(), `agentsmith-release-ready-precheck-summary-${testCase.label.replaceAll(' ', '-')}-`));
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const scripts: string[] = [];
+      const sentinelProfiles: string[] = [];
+      try {
+        const exitCode = runReleaseReady([], {
+          stdout: { write: (chunk: string) => stdout.push(chunk) },
+          stderr: { write: (chunk: string) => stderr.push(chunk) },
+          env: {
+            ...process.env,
+            RELEASE_CAMPAIGN_ROOT: root,
+          },
+          gitCleanGuard: passingGitGuard,
+          runNpmScript: (script) => {
+            scripts.push(script);
+            if (script === 'test:release:precheck') {
+              testCase.writeSummary?.(root);
+            }
+            return { status: 0, signal: null };
+          },
+          sentinelRunner: (profile) => {
+            sentinelProfiles.push(profile);
+            return passingSentinelResult();
+          },
+          ownerPreflight: passingOwnerPreflight,
+          reusableResourceReadiness: passingReusableResourceReadiness,
+        });
+
+        const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
+
+        expect(exitCode, testCase.label).toBe(1);
+        expect(scripts, testCase.label).toEqual(['test:release:precheck']);
+        expect(sentinelProfiles, testCase.label).toEqual([]);
+        expectCanonicalNotStartedBlocker(combinedOutput, 'release_precheck_summary');
+        expect(combinedOutput, testCase.label).toContain(testCase.expectedOutput);
+        expect(combinedOutput, testCase.label).not.toContain('Automated release verdict: PASSED');
+        expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
+        expect(existsSync(join(root, 'summary.json'))).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('fails fast on fixed-port owner conflicts before release precheck, sentinel, or campaign', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-owner-preflight-'));
     const stdout: string[] = [];
@@ -832,8 +1051,11 @@ exit 0
           RELEASE_CAMPAIGN_ROOT: root,
         },
         gitCleanGuard: passingGitGuard,
-        runNpmScript: (script) => {
+        runNpmScript: (script, _args, env) => {
           scripts.push(script);
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
           return { status: 0, signal: null };
         },
         sentinelRunner: (profile) => {
@@ -877,8 +1099,11 @@ exit 0
         cwd: root,
         env: parentEnv,
         gitCleanGuard: passingGitGuard,
-        runNpmScript: (script) => {
+        runNpmScript: (script, _args, env) => {
           scripts.push(script);
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
           return script === 'release:campaign:full'
             ? { status: 7, signal: null }
             : { status: 0, signal: null };
@@ -1055,6 +1280,7 @@ exit 0
               PRESET_ENDPOINT_MODEL: 'test-child-only-model',
             };
             expect(childOnlyEnv.PRESET_ENDPOINT_API_KEY).toBe('sk-test-child-only-value');
+            writePrecheckSummaryForEnv(env);
           }
           return { status: 0, signal: null };
         },
@@ -1074,6 +1300,90 @@ exit 0
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes release readiness parent observation counts from the precheck summary instead of hardcoding starts', () => {
+    const cases: Array<{
+      label: string;
+      dependencyStatus: PrecheckOperationStatus;
+      dependencyStartCount: number;
+      expectedRealServiceStartCount: number;
+    }> = [
+      {
+        label: 'reused dependencies',
+        dependencyStatus: 'reused',
+        dependencyStartCount: 0,
+        expectedRealServiceStartCount: 0,
+      },
+      {
+        label: 'started bootstrap dependencies',
+        dependencyStatus: 'started',
+        dependencyStartCount: 1,
+        expectedRealServiceStartCount: 1,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const root = mkdtempSync(join(tmpdir(), `agentsmith-release-ready-precheck-counts-${testCase.label.replaceAll(' ', '-')}-`));
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const campaignEnvs: NodeJS.ProcessEnv[] = [];
+      try {
+        const exitCode = runReleaseReady([], {
+          stdout: { write: (chunk: string) => stdout.push(chunk) },
+          stderr: { write: (chunk: string) => stderr.push(chunk) },
+          env: {
+            ...process.env,
+            RELEASE_CAMPAIGN_ROOT: root,
+          },
+          gitCleanGuard: passingGitGuard,
+          runNpmScript: (script, _args, env) => {
+            if (script === 'test:release:precheck') {
+              writePrecheckSummaryForEnvWithOverrides(env, {
+                dependencyStatus: testCase.dependencyStatus,
+                dependencyStartCount: testCase.dependencyStartCount,
+                apiWebStatus: 'started',
+                apiWebStartCount: 1,
+              });
+            }
+            if (script === 'release:campaign:full') {
+              campaignEnvs.push(env);
+              return { status: 7, signal: null };
+            }
+            return { status: 0, signal: null };
+          },
+          sentinelRunner: () => passingSentinelResult(),
+          ownerPreflight: passingOwnerPreflight,
+          reusableResourceReadiness: passingReusableResourceReadiness,
+        });
+
+        expect(exitCode, testCase.label).toBe(7);
+        expect(campaignEnvs, testCase.label).toHaveLength(1);
+        const readinessValidation = validateRunReadinessStateForConsumer({
+          statePath: campaignEnvs[0]?.[READINESS_STATE_ENV.path] ?? '',
+          invocationId: campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId] ?? '',
+          processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
+          inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
+          envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+          gitSha: VALID_RELEASE_READY_GIT_SHA,
+        });
+        expect(readinessValidation).toMatchObject({ ok: true });
+        if (!readinessValidation.ok) {
+          throw new Error(readinessValidation.error);
+        }
+        expect(readinessValidation.state.parent_observations.counts.real_service_start_count).toBe(
+          testCase.expectedRealServiceStartCount,
+        );
+        expect(readinessValidation.state.parent_observations.counts.api_web_start_count).toBe(1);
+        expect(readinessValidation.state.parent_observations.services).toEqual({
+          real_services_started: 'ready',
+          api_web_started: 'ready',
+        });
+        expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('sk-test');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 
@@ -1101,6 +1411,7 @@ exit 0
           scripts.push([script, ...args].join(' '));
           if (script === 'test:release:precheck') {
             precheckEnvs.push(env);
+            writePrecheckSummaryForEnv(env);
           }
           if (script === 'release:campaign:full') {
             campaignEnvs.push(env);
@@ -1227,7 +1538,10 @@ exit 0
           ok: true,
           headSha: VALID_RELEASE_READY_GIT_SHA,
         }),
-        runNpmScript: (script) => {
+        runNpmScript: (script, _args, env) => {
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
           if (script === 'release:campaign:full') {
             writeTerminalResult(root);
             writeSummaryCache(root);
@@ -1243,7 +1557,7 @@ exit 0
 
       expect(exitCode).toBe(0);
       expect(cleanupReasons).toEqual(['success']);
-      expect(stdout.join('')).toContain('Automated release verdict: PASSED');
+      expect(stdout.join('')).toContain('Status: passed');
       expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1348,6 +1662,9 @@ exit 0
         },
         gitCleanGuard: passingGitGuard,
         runNpmScript: (script, _args, env) => {
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
           if (script === 'release:campaign:full') {
             campaignEnvs.push(env);
             return { status: 7, signal: null };
@@ -1388,6 +1705,7 @@ exit 0
 set -euo pipefail
 printf '%s\\n' "$*" >> "${logPath}"
 if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+${WRITE_PRECHECK_SUMMARY_SHELL}
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
@@ -1426,6 +1744,7 @@ exit 0
       writeFakeNpm(fakeBin, `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+${WRITE_PRECHECK_SUMMARY_SHELL}
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
@@ -1519,6 +1838,7 @@ exit 0
 set -euo pipefail
 printf '%s|root=%s|run=%s\\n' "$*" "\${RELEASE_CAMPAIGN_ROOT:-}" "\${RELEASE_CAMPAIGN_RUN_ID:-}" >> "${logPath}"
 if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+${WRITE_PRECHECK_SUMMARY_SHELL}
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then
@@ -1577,8 +1897,8 @@ exit 0
       });
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('Automated release verdict: PASSED');
-      expect(result.stdout).toContain('Current campaign passed.');
+      expect(result.stdout).toContain('Status: passed');
+      expect(result.stdout).toContain('Current release run passed.');
       expect(result.stdout).not.toContain('Old campaign failed');
       expect(readFileSync(logPath, 'utf8')).toMatch(/run release:campaign:full\|root=.*agentsmith-release-ready-current-root-/);
       expect(readFileSync(logPath, 'utf8')).toMatch(/run release:campaign:full\|root=.*\|run=release-ready-/);
@@ -1610,6 +1930,7 @@ exit 0
       writeFakeNpm(fakeBin, `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "run" && "$2" == "test:release:precheck" ]]; then
+${WRITE_PRECHECK_SUMMARY_SHELL}
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "release:campaign:full" ]]; then

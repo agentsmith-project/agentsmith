@@ -16,7 +16,7 @@ const INTERNAL_WORKFLOW_COMMAND_PATTERN =
   /\b(?:npm run (?:(?:test|gate|lane|backend-real):[a-z0-9:_-]+|release:campaign:[a-z0-9:_-]+)|make (?:local-manual|substrate)-[a-z0-9_-]+|RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full|npx tsx scripts\/unified-deploy\/substrate-lifecycle\.ts(?:\s+[a-z0-9:_-]+)?|(?:gate|lane|backend-real|release:campaign):[a-z0-9:_-]+)\b/g;
 
 const INTERNAL_WORKFLOW_CONTEXT_PATTERN =
-  /诊断|维护者排障|机器可读报告|Diagnostic|Diagnostics|Diagnostic Commands|Maintainer Troubleshooting|Machine-Readable Reports|Owner Diagnostics|owner diagnostics|owner runbook|evidence-owner|evidence owner|producer/i;
+  /诊断|维护者诊断|维护者排障|机器可读报告|Diagnostic|Diagnostics|Diagnostic Commands|Maintainer Diagnostic|Maintainer Diagnostics|Maintainer Troubleshooting|Machine-Readable Reports|Owner Diagnostics|owner diagnostics|owner runbook|evidence-owner|evidence owner|producer/i;
 
 function lineNumberAtIndex(content: string, index: number): number {
   return content.slice(0, index).split('\n').length;

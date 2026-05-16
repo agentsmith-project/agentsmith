@@ -623,6 +623,18 @@ function specCoverage(input: {
   });
 }
 
+function specCoverageGroup(
+  specs: readonly string[],
+  defaults: ScriptCoverageDefaults,
+): readonly CurrentRealSessionCoverageEntry[] {
+  return specs.map((spec) =>
+    specCoverage({
+      spec,
+      ...defaults,
+    }),
+  );
+}
+
 function grepCoverage(input: {
   spec: string;
   grep: string;
@@ -662,6 +674,13 @@ const CHAT_BACKEND_REAL_SESSION_SHARDS = [
     spec: "e2e/integration-chat.spec.ts",
     grep: "stop escalation resyncs authoritative thread truth after refresh and keeps composer ready",
   },
+] as const;
+const RELEASE_BROWSER_TRACE_SPECS = [
+  "e2e/integration-system-admin-entry.spec.ts",
+  "e2e/integration-workspace-public-login.spec.ts",
+  "e2e/integration-workspace-entry.spec.ts",
+  "e2e/integration-workspace-publish-usable.spec.ts",
+  "e2e/integration-workspace-settings-directory.spec.ts",
 ] as const;
 
 const CHAT_BACKEND_REAL_SESSION_CONTRACT = defineSessionCoalescingContract({
@@ -1487,6 +1506,24 @@ const SPEC_COVERAGE = [
     lock_ids: RELEASE_BACKEND_REAL_LOCK_IDS,
     reason:
       "Backend-real visual review writes release review screenshots and UX trace artifacts.",
+  }),
+  ...specCoverageGroup(RELEASE_BROWSER_TRACE_SPECS, {
+    proposed_shard_id: "release-backend-real",
+    evidence_owner: "backend-real-release:visual-review",
+    isolation_level: "process",
+    mutable_resources: [
+      "release_campaign_root",
+      "workspace",
+      "project",
+      "fixed_user",
+      "keycloak",
+      "provider_quota",
+      "visual_artifacts",
+      "shared_local_substrate",
+    ],
+    lock_ids: RELEASE_BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Release browser UX trace specs reuse the parent release stack while writing campaign trace artifacts and exercising workspace/project identity scenarios on shared backend-real substrate.",
   }),
   specCoverage({
     spec: "e2e/integration-release-user-story.spec.ts",

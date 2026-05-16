@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -12,7 +13,19 @@ import {
 import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
-import { RELEASE_HUMAN_LOG_NOTE, renderShortFailureProjection } from './status-projection';
+import {
+  RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
+  RELEASE_DEPLOY_CHECK_STEPS,
+  RELEASE_HUMAN_LOG_NOTE,
+  renderDeployCheckLines,
+  renderHumanReleaseStageLabel,
+  renderHumanReleaseStepLabel,
+  renderHumanReleaseText,
+  renderShortFailureProjection,
+  type ReleaseDeployCheckSnapshot,
+  type ReleaseDeployCheckSnapshotItem,
+  type ReleaseDeployCheckSnapshotStatus,
+} from './status-projection';
 import { redactSensitiveText } from './redaction';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
@@ -34,6 +47,7 @@ export interface ReleaseSummary {
   summary_md_path: string;
   evidence_package: string;
   manual_operator_signoff: 'not_covered';
+  deploy_check_snapshot?: ReleaseDeployCheckSnapshot;
   run_observability?: ReleaseRunObservability;
   generated_at: string;
 }
@@ -161,6 +175,10 @@ function terminalResultPath(campaignRoot: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sha256(value: string | Buffer): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -322,12 +340,12 @@ function renderReleaseObservabilityLines(observability?: ReleaseRunObservability
   }
   const slowStages = observability.top_slow_stages.length > 0
     ? observability.top_slow_stages
-      .map((stage) => `${stage.id} ${formatDuration(stage.duration_ms)}`)
+      .map((stage) => `${renderHumanReleaseText(stage.label || renderHumanReleaseStepLabel(stage.id))} ${formatDuration(stage.duration_ms)}`)
       .join('; ')
     : '<none>';
   return [
     `Total duration: ${formatDuration(observability.total_duration_ms)}`,
-    `Slowest stages: ${slowStages}`,
+    `Slowest steps: ${slowStages}`,
     `Real service starts: ${observability.counts.real_service_start_count}`,
     `API/Web starts: ${observability.counts.api_web_start_count}`,
     `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
@@ -428,6 +446,51 @@ function readTerminalResult(campaignRoot: string): ParsedTerminalResult {
   return result;
 }
 
+function readDeployCheckSnapshotItem(input: {
+  campaignRoot: string;
+  step: (typeof RELEASE_DEPLOY_CHECK_STEPS)[number];
+}): ReleaseDeployCheckSnapshotItem {
+  const resultPath = join(input.campaignRoot, input.step.id, 'result.json');
+  let status: ReleaseDeployCheckSnapshotStatus = 'not_available';
+  let resultDigest: string | null = null;
+
+  if (existsSync(resultPath)) {
+    try {
+      const content = readFileSync(resultPath, 'utf8');
+      resultDigest = sha256(content);
+      const parsed = JSON.parse(content) as unknown;
+      status = isRecord(parsed)
+        && parsed.schema_version === CURRENT_GATE_RESULT_SCHEMA_VERSION
+        && parsed.gate_id === input.step.id
+        && (parsed.status === 'passed' || parsed.status === 'failed')
+        ? parsed.status
+        : 'unknown';
+    } catch {
+      status = 'unknown';
+    }
+  }
+
+  return {
+    id: input.step.id,
+    label: input.step.label,
+    status,
+    evidence_path: join(input.campaignRoot, 'unified-deploy', input.step.evidenceSegment),
+    result_path: resultPath,
+    result_digest: resultDigest,
+  };
+}
+
+function buildDeployCheckSnapshot(campaignRoot: string, generatedAt: string): ReleaseDeployCheckSnapshot {
+  return {
+    schema: RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
+    generated_at: generatedAt,
+    items: RELEASE_DEPLOY_CHECK_STEPS.map((step) => readDeployCheckSnapshotItem({
+      campaignRoot,
+      step,
+    })),
+  };
+}
+
 function inferBlockedStep(status: CurrentGateResultStatus, summary: string): string | null {
   if (status === 'passed') {
     return null;
@@ -456,8 +519,8 @@ function nextActionForFailure(
   }
 
   const ownerInspection = blockedStep
-    ? `Inspect campaign evidence for ${blockedStep}, fix the owning issue, then rerun npm run release:ready.`
-    : 'Inspect the campaign evidence, fix the owning issue, then rerun npm run release:ready.';
+    ? `Inspect the release evidence for ${renderHumanReleaseStepLabel(blockedStep)}, fix the owning issue, then rerun npm run release:ready.`
+    : 'Inspect the release evidence, fix the owning issue, then rerun npm run release:ready.';
 
   if (failureClass === 'infra_setup_failure') {
     return 'Fix the local release environment, then rerun npm run release:ready.';
@@ -476,25 +539,26 @@ function nextActionForFailure(
 }
 
 function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
+  const deployCheckLines = renderDeployCheckLines(summary.deploy_check_snapshot)
+    .map((line) => (line.startsWith('- ') ? `  ${line}` : `- ${line}`));
   return [
     '# AgentSmith Release Readiness Summary',
     '',
-    `- automated_release_verdict: ${summary.automated_release_verdict}`,
-    `- campaign_run_id: ${summary.campaign_run_id}`,
-    `- campaign_root: ${summary.campaign_root}`,
-    `- failure_class: ${summary.failure_class}`,
-    `- blocked_step: ${summary.blocked_step ?? '<none>'}`,
-    `- terminal_result: ${summary.terminal_result_path}`,
+    `- status: ${summary.status}`,
+    `- blocker: ${summary.blocked_step ? renderHumanReleaseStepLabel(summary.blocked_step) : '<none>'}`,
+    `- summary: ${summary.summary_md_path}`,
+    `- evidence: ${summary.evidence_package}`,
     `- manual_operator_signoff: ${summary.manual_operator_signoff}`,
     ...renderReleaseObservabilityLines(summary.run_observability).map((line) => `- ${line}`),
+    ...deployCheckLines,
     '',
     '## Why',
     '',
-    redactSensitiveText(summary.why),
+    renderHumanReleaseText(summary.why),
     '',
     '## Next Action',
     '',
-    redactSensitiveText(summary.next_action),
+    renderHumanReleaseText(summary.next_action),
     '',
   ].join('\n');
 }
@@ -509,6 +573,8 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
   const blockedStep = inferBlockedStep(status, terminalResult.summary as string);
   const summaryJsonPath = join(campaignRoot, 'summary.json');
   const summaryMdPath = join(campaignRoot, 'summary.md');
+  const generatedAt = new Date().toISOString();
+  const deployCheckSnapshot = buildDeployCheckSnapshot(campaignRoot, generatedAt);
   const initialObservability = normalizeReleaseRunObservability({
     campaignRoot,
     observability: options.observability,
@@ -531,8 +597,9 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     summary_md_path: summaryMdPath,
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
+    deploy_check_snapshot: deployCheckSnapshot,
     run_observability: initialObservability,
-    generated_at: new Date().toISOString(),
+    generated_at: generatedAt,
   };
 
   mkdirSync(campaignRoot, { recursive: true });
@@ -652,7 +719,50 @@ function parseSummary(path: string): ReleaseSummary {
   if (summary.run_observability !== undefined) {
     validateReleaseRunObservability(summary.run_observability);
   }
+  if (summary.deploy_check_snapshot !== undefined) {
+    validateReleaseDeployCheckSnapshot(summary.deploy_check_snapshot);
+  }
   return summary as unknown as ReleaseSummary;
+}
+
+function validateReleaseDeployCheckSnapshot(value: unknown): void {
+  const snapshot = requireRecord(value, 'release summary deploy_check_snapshot');
+  assertAllowedFields(snapshot, new Set(['schema', 'generated_at', 'items']), 'release summary deploy_check_snapshot');
+  if (snapshot.schema !== RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA) {
+    throw new Error(`release summary deploy_check_snapshot schema must be ${RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA}.`);
+  }
+  requireIsoTimestamp(snapshot, 'generated_at', 'release summary deploy_check_snapshot');
+  if (!Array.isArray(snapshot.items)) {
+    throw new Error('release summary deploy_check_snapshot items must be an array.');
+  }
+  for (const [index, item] of snapshot.items.entries()) {
+    const record = requireRecord(item, `release summary deploy_check_snapshot items[${index}]`);
+    assertAllowedFields(record, new Set([
+      'id',
+      'label',
+      'status',
+      'evidence_path',
+      'result_path',
+      'result_digest',
+    ]), `release summary deploy_check_snapshot items[${index}]`);
+    for (const field of ['id', 'label', 'evidence_path', 'result_path'] as const) {
+      requireNonEmptyStringField(record, field, `release summary deploy_check_snapshot items[${index}]`);
+    }
+    if (
+      record.status !== 'passed'
+      && record.status !== 'failed'
+      && record.status !== 'not_available'
+      && record.status !== 'unknown'
+    ) {
+      throw new Error(`release summary deploy_check_snapshot items[${index}] status is invalid.`);
+    }
+    if (record.result_digest !== null) {
+      const digest = requireNonEmptyStringField(record, 'result_digest', `release summary deploy_check_snapshot items[${index}]`);
+      if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) {
+        throw new Error(`release summary deploy_check_snapshot items[${index}] result_digest must be sha256:<64 lowercase hex> or null.`);
+      }
+    }
+  }
 }
 
 function validateReleaseRunObservability(value: unknown): void {
@@ -818,7 +928,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     return [
       'AgentSmith Release Status',
       '',
-      'Automated release verdict: MISSING',
+      'Status: missing',
       `Latest summary: not found (${status.latestPath})`,
       'Next: run npm run release:ready',
       renderShortFailureProjection({
@@ -839,7 +949,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     return [
       'AgentSmith Release Status',
       '',
-      'Automated release verdict: MISSING',
+      'Status: missing',
       `Summary: not found (${status.summaryPath})`,
       'Next: run npm run release:ready to produce a fresh campaign summary.',
       renderShortFailureProjection({
@@ -860,15 +970,15 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     return [
       'AgentSmith Release Status',
       '',
-      'Automated release verdict: UNKNOWN',
-      `Why: ${status.error}`,
+      'Status: unknown',
+      `Why: ${renderHumanReleaseText(status.error)}`,
       'Next: rerun npm run release:ready after fixing the malformed summary pointer.',
       renderShortFailureProjection({
         readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
         verdict: 'BLOCKED',
         blocker: 'release_status_malformed',
         stage: 'report',
-        why: status.error,
+        why: renderHumanReleaseText(status.error),
         inspectCommand: status.latestPath,
         rerunCommand: 'npm run release:ready',
         evidencePath: status.latestPath,
@@ -883,22 +993,21 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     return [
       'AgentSmith Release Status',
       '',
-      `Automated release verdict: ${summary.automated_release_verdict}`,
-      `Campaign: ${summary.campaign_run_id}`,
+      `Status: ${summary.status}`,
       renderShortFailureProjection({
         readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
         verdict: 'FAILED',
-        blocker: summary.blocked_step ?? summary.failure_class,
-        stage: summary.stage,
-        why: redactSensitiveText(summary.why),
+        blocker: renderHumanReleaseStepLabel(summary.blocked_step ?? summary.failure_class),
+        stage: renderHumanReleaseStageLabel(summary.stage),
+        why: renderHumanReleaseText(summary.why),
         inspectCommand: summary.summary_md_path,
         rerunCommand: 'npm run release:ready',
         evidencePath: summary.evidence_package,
       }).trimEnd(),
       `Summary: ${summary.summary_md_path}`,
-      `Terminal result: ${summary.terminal_result_path}`,
       ...renderReleaseObservabilityLines(summary.run_observability),
-      `Next: ${redactSensitiveText(summary.next_action)}`,
+      ...renderDeployCheckLines(summary.deploy_check_snapshot),
+      `Next: ${renderHumanReleaseText(summary.next_action)}`,
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
@@ -908,14 +1017,13 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     'AgentSmith Release Status',
     '',
     'Read-only: release:status does not rerun checks or revalidate evidence.',
-    `Automated release verdict: ${summary.automated_release_verdict}`,
-    `Campaign: ${summary.campaign_run_id}`,
-    `Why: ${redactSensitiveText(summary.why)}`,
+    `Status: ${summary.status}`,
+    `Why: ${renderHumanReleaseText(summary.why)}`,
     `Summary: ${summary.summary_md_path}`,
     `Evidence: ${summary.evidence_package}`,
-    `Terminal result: ${summary.terminal_result_path}`,
     ...renderReleaseObservabilityLines(summary.run_observability),
-    `Next: ${redactSensitiveText(summary.next_action)}`,
+    ...renderDeployCheckLines(summary.deploy_check_snapshot),
+    `Next: ${renderHumanReleaseText(summary.next_action)}`,
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
     '',
   ].join('\n');

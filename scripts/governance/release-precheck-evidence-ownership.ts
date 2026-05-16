@@ -224,6 +224,18 @@ function sourceLineContaining(source: string, needle: string): string | null {
   return source.split(/\r?\n/u).find((line) => line.includes(needle)) ?? null;
 }
 
+function sourceWritesSpecToAuthoritativeUxTraceRoot(source: string, specFile: string): boolean {
+  const specLine = sourceLineContaining(source, specFile);
+  if (specLine?.includes("UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}'")) {
+    return true;
+  }
+
+  return Boolean(
+    specLine?.includes('run_release_browser_trace_spec')
+      && source.includes('export UX_TRACE_OUTPUT_ROOT="${AUTHORITATIVE_UX_TRACE_ROOT}"'),
+  );
+}
+
 export function validateReleasePrecheckEvidenceOwnership(
   input?: CurrentVerificationCampaignDefinition | ValidateReleasePrecheckEvidenceOwnershipOptions,
 ): ReleasePrecheckEvidenceOwnershipFailure[] {
@@ -336,8 +348,7 @@ export function validateReleasePrecheckEvidenceOwnership(
           });
           continue;
         }
-        const specLine = sourceLineContaining(source, specFile);
-        if (!specLine?.includes("UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}'")) {
+        if (!sourceWritesSpecToAuthoritativeUxTraceRoot(source, specFile)) {
           failures.push({
             movedCheckId: mapping.id,
             ownerStepId: owner.stepId,

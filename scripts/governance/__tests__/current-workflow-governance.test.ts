@@ -36,7 +36,7 @@ function readPackageScripts(): Set<string> {
 }
 
 function extractNpmRunScripts(content: string): string[] {
-  return [...content.matchAll(/\bnpm run ([a-z0-9:_-]+)/g)].map((match) => match[1]);
+  return [...content.matchAll(/\bnpm run ([a-z0-9][a-z0-9:_-]*[a-z0-9_-])(?=[\s`.,;)]|$)/g)].map((match) => match[1]);
 }
 
 function extractGeneratedBlock(relativePath: string, startMarker: string, endMarker: string): string {
@@ -150,7 +150,7 @@ const INTERNAL_WORKFLOW_REFERENCE_PATTERN =
   /`(?:npm run (?:(?:test|gate|lane|backend-real):[a-z0-9:_-]+|release:campaign:[a-z0-9:_-]+)|make (?:local-manual|substrate)-[a-z0-9_-]+|(?:gate|lane|backend-real|release:campaign):[a-z0-9:_-]+)`/g;
 
 const INTERNAL_WORKFLOW_CONTEXT_PATTERN =
-  /诊断命令|维护者排障|机器可读报告|Diagnostic Commands|Maintainer Troubleshooting|Machine-Readable Reports/i;
+  /诊断命令|维护者排障|机器可读报告|diagnostic success|Diagnostic Commands|Maintainer Diagnostics|Focused Commands|Maintainer Troubleshooting|Machine-Readable Reports/i;
 
 function lineNumberAtIndex(content: string, index: number): number {
   return content.slice(0, index).split('\n').length;
@@ -677,6 +677,37 @@ describe('current workflow governance', () => {
       expect(block, `${label} must describe release:status as read-only`).toMatch(/release:status[\s\S]*read-only/i);
       expect(block, `${label} must not describe release:status as a verdict producer`).not.toMatch(
         /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
+      );
+    }
+  });
+
+  it('describes release:status as a frozen read-only projection in generated docs', () => {
+    const generatedDocBlocks = [
+      {
+        label: 'README current workflow block',
+        block: extractGeneratedBlock(
+          'README.md',
+          '<!-- current-workflow:readme:start -->',
+          '<!-- current-workflow:readme:end -->',
+        ),
+      },
+      {
+        label: 'DEVELOPMENT current workflow block',
+        block: extractGeneratedBlock(
+          'DEVELOPMENT.md',
+          '<!-- current-workflow:development:start -->',
+          '<!-- current-workflow:development:end -->',
+        ),
+      },
+    ];
+
+    for (const { label, block } of generatedDocBlocks) {
+      expect(block, `${label} must describe release:status as read-only`).toMatch(/release:status[\s\S]*read-only/i);
+      expect(block, `${label} must describe release:status as frozen projection/snapshot output`).toMatch(
+        /release:status[\s\S]*frozen[\s\S]*(?:projection|snapshot)/i,
+      );
+      expect(block, `${label} must not use the old latest-summary-only wording`).not.toMatch(
+        /release:status[\s\S]*only reads the latest release summary/i,
       );
     }
   });

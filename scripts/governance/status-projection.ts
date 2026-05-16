@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   CURRENT_GATE_RESULT_FAILURE_CLASSES,
@@ -115,6 +115,201 @@ function redactProjectionText(value: string): string {
 
 function redactProjectionPath(path: string): string {
   return path;
+}
+
+const HUMAN_RELEASE_STEP_LABELS: Record<string, string> = {
+  'gate-fast': 'Quick precheck',
+  'gate-default': 'Default verification',
+  'lane-visual': 'Visual check',
+  'gate-release': 'Backend-real check',
+  'lane-unified-deploy-substrate': 'Deploy check / dependencies',
+  'lane-unified-deploy-local-kind-images': 'Deploy check / images',
+  'lane-unified-deploy-local-kind': 'Deploy check / rollout',
+  'lane-unified-deploy-product-flows': 'Deploy check / product flows',
+  'gate-release-full': 'Release summary',
+};
+
+export const RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA = 'agentsmith_release_deploy_check_snapshot/v1' as const;
+
+export type ReleaseDeployCheckSnapshotStatus = 'passed' | 'failed' | 'not_available' | 'unknown';
+
+export interface ReleaseDeployCheckSnapshotItem {
+  id: string;
+  label: string;
+  status: ReleaseDeployCheckSnapshotStatus;
+  evidence_path: string;
+  result_path: string;
+  result_digest: string | null;
+}
+
+export interface ReleaseDeployCheckSnapshot {
+  schema: typeof RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA;
+  generated_at: string;
+  items: readonly ReleaseDeployCheckSnapshotItem[];
+}
+
+export const RELEASE_DEPLOY_CHECK_STEPS = [
+  {
+    id: 'lane-unified-deploy-substrate',
+    label: 'dependencies',
+    evidenceSegment: 'substrate',
+  },
+  {
+    id: 'lane-unified-deploy-local-kind-images',
+    label: 'images',
+    evidenceSegment: 'local-kind-images',
+  },
+  {
+    id: 'lane-unified-deploy-local-kind',
+    label: 'rollout',
+    evidenceSegment: 'local-kind',
+  },
+  {
+    id: 'lane-unified-deploy-product-flows',
+    label: 'product flows',
+    evidenceSegment: 'product-flows',
+  },
+] as const;
+
+function humanReleaseStepLabel(value: string | null | undefined): string {
+  if (!value) {
+    return 'Release check';
+  }
+  return HUMAN_RELEASE_STEP_LABELS[value] ?? value;
+}
+
+function humanReleaseStageLabel(value: string | null | undefined): string {
+  if (value === 'aggregate') {
+    return 'release result';
+  }
+  if (value === 'not-started') {
+    return 'not started';
+  }
+  if (!value) {
+    return 'release check';
+  }
+  return value.replaceAll('-', ' ');
+}
+
+function replaceInternalReleaseTerms(value: string): string {
+  const replacements = Object.entries(HUMAN_RELEASE_STEP_LABELS)
+    .sort(([left], [right]) => right.length - left.length);
+  let output = value;
+  for (const [internalId, label] of replacements) {
+    output = output.replaceAll(internalId, label);
+  }
+  return output
+    .replace(/\brelease-full campaign evidence passed aggregate verification\./gi, 'Release checks passed.')
+    .replace(/\bCampaign step\b/g, 'Release check')
+    .replace(/\bcampaign step\b/g, 'release check')
+    .replace(/\bcampaign evidence\b/g, 'release evidence')
+    .replace(/\bcampaign-scoped\b/g, 'release-run')
+    .replace(/\bcampaign\b/g, 'release run');
+}
+
+function humanReleaseReason(value: string): string {
+  const redacted = redactProjectionText(value);
+  const didNotPass = /^Campaign step ([a-z0-9-]+) did not pass\./i.exec(redacted);
+  if (didNotPass?.[1]) {
+    const rest = redacted.slice(didNotPass[0].length).trim();
+    return [
+      `${humanReleaseStepLabel(didNotPass[1])} did not pass.`,
+      rest ? replaceInternalReleaseTerms(rest) : '',
+    ].filter(Boolean).join(' ');
+  }
+
+  const missingStep = /^Missing campaign step result: ([a-z0-9-]+)/i.exec(redacted);
+  if (missingStep?.[1]) {
+    return `${humanReleaseStepLabel(missingStep[1])} evidence is missing.`;
+  }
+
+  return replaceInternalReleaseTerms(redacted);
+}
+
+export function renderHumanReleaseStepLabel(value: string | null | undefined): string {
+  return humanReleaseStepLabel(value);
+}
+
+export function renderHumanReleaseStageLabel(value: string | null | undefined): string {
+  return humanReleaseStageLabel(value);
+}
+
+export function renderHumanReleaseText(value: string): string {
+  return humanReleaseReason(value);
+}
+
+function campaignRootFromAggregatePath(path: string | null | undefined): string | null {
+  if (!path) {
+    return null;
+  }
+  const normalized = path.replaceAll('\\', '/');
+  if (!normalized.endsWith('/gate-release-full/result.json')) {
+    return null;
+  }
+  return dirname(dirname(path));
+}
+
+function normalizeDeployCheckSnapshot(value: unknown): ReleaseDeployCheckSnapshot | null {
+  if (!isRecord(value) || value.schema !== RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA || !Array.isArray(value.items)) {
+    return null;
+  }
+  const items = value.items
+    .filter(isRecord)
+    .map((item): ReleaseDeployCheckSnapshotItem | null => {
+      if (
+        typeof item.id !== 'string'
+        || typeof item.label !== 'string'
+        || typeof item.evidence_path !== 'string'
+        || typeof item.result_path !== 'string'
+        || (item.result_digest !== null && typeof item.result_digest !== 'string')
+      ) {
+        return null;
+      }
+      if (
+        item.status !== 'passed'
+        && item.status !== 'failed'
+        && item.status !== 'not_available'
+        && item.status !== 'unknown'
+      ) {
+        return null;
+      }
+      return {
+        id: item.id,
+        label: item.label,
+        status: item.status,
+        evidence_path: item.evidence_path,
+        result_path: item.result_path,
+        result_digest: item.result_digest,
+      };
+    })
+    .filter((item): item is ReleaseDeployCheckSnapshotItem => item !== null);
+
+  if (items.length === 0) {
+    return null;
+  }
+  return {
+    schema: RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
+    generated_at: typeof value.generated_at === 'string' ? value.generated_at : DEFAULT_GENERATED_AT,
+    items,
+  };
+}
+
+function renderDeployStatus(status: ReleaseDeployCheckSnapshotStatus): string {
+  return status === 'not_available' ? 'not available' : status;
+}
+
+export function renderDeployCheckLines(
+  snapshot: ReleaseDeployCheckSnapshot | null | undefined,
+): readonly string[] {
+  if (!snapshot || snapshot.items.length === 0) {
+    return [];
+  }
+  return [
+    'Deploy check / 部署检查:',
+    ...snapshot.items.map((item) => (
+      `- ${item.label}: ${renderDeployStatus(item.status)} (evidence: ${redactProjectionPath(item.evidence_path)})`
+    )),
+  ];
 }
 
 function isCleanRerunCommand(command: string): boolean {
@@ -341,6 +536,22 @@ function readReleaseSummaryObservability(campaignRoot?: string | null): CurrentS
     poll_retry_coverage: 'not_covered',
     report_size_bytes: nonNegativeInteger(observability.report_size_bytes) ?? 0,
   };
+}
+
+function readReleaseSummaryDeployCheckSnapshot(campaignRoot?: string | null): ReleaseDeployCheckSnapshot | null {
+  if (!campaignRoot) {
+    return null;
+  }
+  const path = join(resolve(campaignRoot), 'summary.json');
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    return isRecord(parsed) ? normalizeDeployCheckSnapshot(parsed.deploy_check_snapshot) : null;
+  } catch {
+    return null;
+  }
 }
 
 function aggregateStatusRef(result: ParsedAggregateResult): CurrentStatusProjectionAggregateStatusRef {
@@ -787,6 +998,7 @@ function buildMissingAggregateProjection(input: {
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
     run_observability: readReleaseSummaryObservability(input.options.campaignRoot),
+    deploy_check_snapshot: readReleaseSummaryDeployCheckSnapshot(input.options.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: [],
     authority_paths: {
@@ -869,6 +1081,7 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     lock_owner: lockOwnerForInput(input),
     lease_status_shadow: leaseStatusShadowForInput(input),
     run_observability: readReleaseSummaryObservability(input.campaignRoot),
+    deploy_check_snapshot: readReleaseSummaryDeployCheckSnapshot(input.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: evidencePathsForAggregate(aggregate),
     authority_paths: {
@@ -915,12 +1128,12 @@ function renderRunObservabilityLines(
   }
   const slowStages = observability.top_slow_stages.length > 0
     ? observability.top_slow_stages
-      .map((stage) => `${stage.label || stage.id} ${formatDuration(stage.duration_ms)}`)
+      .map((stage) => `${replaceInternalReleaseTerms(stage.label || humanReleaseStepLabel(stage.id))} ${formatDuration(stage.duration_ms)}`)
       .join('; ')
     : '<none>';
   return [
     `Total duration: ${formatDuration(observability.total_duration_ms)}`,
-    `Slowest stages: ${slowStages}`,
+    `Slowest steps: ${slowStages}`,
     `Real service starts: ${observability.counts.real_service_start_count}`,
     `API/Web starts: ${observability.counts.api_web_start_count}`,
     `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
@@ -1088,19 +1301,37 @@ function primaryEvidencePath(projection: CurrentStatusProjection): string | null
     ?? null;
 }
 
-function renderProjectionBlocker(projection: CurrentStatusProjection): string | null {
+function releaseEvidenceRootForProjection(projection: CurrentStatusProjection): string | null {
+  return campaignRootFromAggregatePath(projection.aggregate_status_ref?.path)
+    ?? campaignRootFromAggregatePath(projection.authority_paths.aggregate)
+    ?? campaignRootFromAggregatePath(primaryEvidencePath(projection));
+}
+
+function renderProjectionBlocker(
+  projection: CurrentStatusProjection,
+  options: { humanSummary?: boolean } = {},
+): string | null {
   if (projection.goal !== 'release-ready' || projection.presentation_status === 'passed') {
     return null;
   }
 
   const evidencePath = primaryEvidencePath(projection);
+  const humanEvidencePath = options.humanSummary
+    ? releaseEvidenceRootForProjection(projection) ?? evidencePath
+    : evidencePath;
   return renderShortFailureProjection({
-    blocker: projection.primary_blocker?.owner ?? projection.deepest_reason?.code ?? projection.presentation_status,
-    stage: projection.primary_blocker?.stage ?? projection.phase,
-    why: projection.deepest_reason?.summary ?? projection.presentation_status,
-    inspectCommand: evidencePath ?? 'release status artifacts are not available yet.',
+    blocker: options.humanSummary
+      ? humanReleaseStepLabel(projection.primary_blocker?.owner ?? projection.deepest_reason?.code ?? projection.presentation_status)
+      : projection.primary_blocker?.owner ?? projection.deepest_reason?.code ?? projection.presentation_status,
+    stage: options.humanSummary
+      ? humanReleaseStageLabel(projection.primary_blocker?.stage ?? projection.phase)
+      : projection.primary_blocker?.stage ?? projection.phase,
+    why: options.humanSummary
+      ? humanReleaseReason(projection.deepest_reason?.summary ?? projection.presentation_status)
+      : projection.deepest_reason?.summary ?? projection.presentation_status,
+    inspectCommand: humanEvidencePath ?? 'release status artifacts are not available yet.',
     rerunCommand: releaseReadyRerunCommand(projection),
-    evidencePath,
+    evidencePath: humanEvidencePath,
   }).trimEnd();
 }
 
@@ -1128,19 +1359,17 @@ function renderProjectionAuthority(projection: CurrentStatusProjection): string 
 }
 
 export function renderStatusProjectionSummary(projection: CurrentStatusProjection): string {
-  const blocker = renderProjectionBlocker(projection);
+  const blocker = renderProjectionBlocker(projection, { humanSummary: true });
+  const evidenceRoot = releaseEvidenceRootForProjection(projection) ?? primaryEvidencePath(projection);
   return [
     'AgentSmith Release Status',
     '',
     'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Status: ${projection.presentation_status}`,
-    `Goal: ${renderOptional(projection.goal)}`,
-    `Run: ${renderOptional(projection.run_id)}`,
-    `Phase: ${projection.phase}`,
     ...(blocker ? [blocker] : []),
-    `Authority: ${renderProjectionAuthority(projection)}`,
-    `Evidence: ${renderOptionalPath(primaryEvidencePath(projection))}`,
+    `Evidence: ${renderOptionalPath(evidenceRoot)}`,
     ...renderRunObservabilityLines(projection.run_observability),
+    ...renderDeployCheckLines(projection.deploy_check_snapshot),
     `Next: ${renderOptional(releaseReadyRerunCommand(projection))}`,
     renderCompactLeaseShadow(projection),
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,

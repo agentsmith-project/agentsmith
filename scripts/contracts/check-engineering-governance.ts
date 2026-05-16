@@ -49,6 +49,7 @@ const gateManifestContract = read('docs/contracts/current-gate-manifest-contract
 const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
+const releaseFlowSimplificationV3 = read('docs/engineering/governance-release-flow-simplification-plan-v3.md');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 const internalAgentTaskRealGate = read('scripts/run-internal-agent-task-real-gate.sh');
 const playwrightConfig = read('playwright.config.ts');
@@ -467,6 +468,46 @@ requireMatch(
   releaseLocalPrecheck,
   /KEYCLOAK_PORT="\$\{KEYCLOAK_PORT:-\$\{INTEGRATION_KEYCLOAK_PORT:-18080\}\}"/,
   'release-local-precheck must derive Keycloak port from the backend-real integration port',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /本轮不做 precheck API\/Web 到 `gate-release` 的跨阶段 handoff\/复用/,
+  'governance release flow v3 must explicitly reject precheck API/Web to gate-release cross-stage handoff',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /precheck 成功后仍停止 API\/Web/,
+  'governance release flow v3 must keep precheck API/Web cleanup within precheck',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /`gate-release` 内 backend-real 父流程启动 release-owned API\/Web\/deps/,
+  'governance release flow v3 must scope API/Web reuse to gate-release release-owned services',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /Browser trace 子检查符合 ownership truth 时不得重复启动 API\/Web\/deps/,
+  'governance release flow v3 must limit reuse to ownership-verified browser trace subchecks',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /不对 Agent Task、Files、AFSCP 等重状态路径宣称复用/,
+  'governance release flow v3 must not claim Agent Task, Files, or AFSCP heavy-state reuse',
+);
+requireMatch(
+  releaseFlowSimplificationV3,
+  /precheck API\/Web 到 `gate-release` 的跨阶段 handoff\/复用也暂不作为本计划内容/,
+  'governance release flow v3 must reserve any future precheck API/Web handoff for a separate initiative',
+);
+forbidMatch(
+  releaseFlowSimplificationV3,
+  /同一次发布前总检查中，API\/Web 启动次数不超过 1/,
+  'governance release flow v3 must not require release:ready API/Web startup count to be <= 1 across precheck and gate-release',
+);
+forbidMatch(
+  releaseFlowSimplificationV3,
+  /后续步骤可以读取同一次命令内的运行状态描述以避免重复启动/,
+  'governance release flow v3 must not imply precheck readiness state can drive later API/Web handoff',
 );
 
 for (const failure of validateReleasePrecheckEvidenceOwnership()) {

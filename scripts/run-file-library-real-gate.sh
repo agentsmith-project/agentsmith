@@ -205,6 +205,8 @@ ensure_file_library_afscp_local_runtime() {
     export MINIO_API_PORT="${MINIO_PORT}"
     export MINIO_CONSOLE_PORT
     export KEYCLOAK_PORT
+    export MONGO_URL
+    export MONGO_DB_NAME="${MONGO_DB_NAME:-}"
     export SUBSTRATE_POSTGRES_PORT="${POSTGRES_PORT}"
     export SUBSTRATE_MINIO_API_PORT="${MINIO_PORT}"
     export MINIO_PORT
@@ -214,6 +216,9 @@ ensure_file_library_afscp_local_runtime() {
     export MINIO_BUCKET
     # shellcheck disable=SC1091
     source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    stop_afscp_local_runtime >/dev/null 2>&1 || true
+    export AFSCP_ENVIRONMENT=local-real
+    reset_owned_afscp_local_runtime_data
     ensure_afscp_local_runtime
   )
 }

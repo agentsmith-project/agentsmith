@@ -411,6 +411,24 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('run-internal-agent-task-real-gate.sh');
   });
 
+  it('resets the file-library-owned AFSCP local-real data before ensuring the runtime', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const ensureStart = script.indexOf('ensure_file_library_afscp_local_runtime()');
+    const ensureEnd = script.indexOf('stop_file_library_afscp_local_runtime()', ensureStart);
+    const ensureBody = script.slice(ensureStart, ensureEnd);
+    const stopIndex = ensureBody.indexOf('stop_afscp_local_runtime >/dev/null 2>&1 || true');
+    const markerIndex = ensureBody.indexOf('export AFSCP_ENVIRONMENT=local-real');
+    const resetIndex = ensureBody.indexOf('reset_owned_afscp_local_runtime_data');
+    const ensureRuntimeIndex = ensureBody.indexOf('ensure_afscp_local_runtime', resetIndex + 1);
+
+    expect(ensureStart).toBeGreaterThanOrEqual(0);
+    expect(ensureEnd).toBeGreaterThan(ensureStart);
+    expect(stopIndex).toBeGreaterThanOrEqual(0);
+    expect(markerIndex).toBeGreaterThan(stopIndex);
+    expect(resetIndex).toBeGreaterThan(markerIndex);
+    expect(ensureRuntimeIndex).toBeGreaterThan(resetIndex);
+  });
+
   it('declares isolated file-library AFSCP defaults derived from the gate api port', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 

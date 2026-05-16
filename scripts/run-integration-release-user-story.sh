@@ -191,6 +191,8 @@ with_release_user_story_afscp_runtime_env() {
 ensure_release_user_story_afscp_local_runtime() {
   info "ensuring AFSCP local runtime at ${AFSCP_BASE_URL}"
   RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=1
+  with_release_user_story_afscp_runtime_env stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" >/dev/null 2>&1 || true
+  with_release_user_story_afscp_runtime_env reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
   with_release_user_story_afscp_runtime_env ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
 }
 

@@ -744,7 +744,7 @@ JVS
     expect(values.AFSCP_EXPORT_SESSION_RECONCILE_LIMIT).toBe('10');
   });
 
-  it('enables the file-library save point, restore, and template product profile in local-real AFSCP by default', () => {
+  it('enables the active file-library save point, direct restore, and template product profile in local-real AFSCP by default', () => {
     const result = runInternalCommonSnippet(`
       AFSCP_JVS_ENABLED=false
       write_afscp_local_runtime_env
@@ -757,11 +757,14 @@ JVS
         AFSCP_SAVE_POINT_RECOVERY_ENABLED \
         AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED \
         AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED \
-        AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED \
-        AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED \
-        AFSCP_RESTORE_RUN_RECOVERY_ENABLED; do
+        AFSCP_RESTORE_RECOVERY_ENABLED; do
         printf '%s=%s\\n' "$key" "\${!key}"
       done
+      if grep -Eq 'AFSCP_RESTORE_(PREVIEW|RUN)' "$AFSCP_LOCAL_RUNTIME_ENV_FILE"; then
+        printf 'legacy_restore_env_present=yes\\n'
+      else
+        printf 'legacy_restore_env_present=no\\n'
+      fi
     `);
     const values = Object.fromEntries(
       result.stdout
@@ -778,9 +781,8 @@ JVS
       AFSCP_SAVE_POINT_RECOVERY_ENABLED: 'true',
       AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED: 'true',
       AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED: 'true',
-      AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED: 'true',
-      AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED: 'true',
-      AFSCP_RESTORE_RUN_RECOVERY_ENABLED: 'true',
+      AFSCP_RESTORE_RECOVERY_ENABLED: 'true',
+      legacy_restore_env_present: 'no',
     });
   });
 

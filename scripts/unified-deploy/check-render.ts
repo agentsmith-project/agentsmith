@@ -1027,9 +1027,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     ['AFSCP_SAVE_POINT_RECOVERY_ENABLED', 'true'],
     ['AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED', 'true'],
     ['AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED', 'true'],
-    ['AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED', 'true'],
-    ['AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED', 'true'],
-    ['AFSCP_RESTORE_RUN_RECOVERY_ENABLED', 'true'],
+    ['AFSCP_RESTORE_RECOVERY_ENABLED', 'true'],
   ] as const) {
     if (config[key] !== expected) {
       addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, `${key} must be ${expected}`);

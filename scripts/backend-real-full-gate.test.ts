@@ -752,6 +752,46 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('wait_for_afscp_storage_csi_ready');
   });
 
+  it('exposes a gate-scoped AFSCP local runtime reset helper with the local-real marker', () => {
+    const helper = readFileSync('scripts/lib/afscp-local-runtime.sh', 'utf8');
+
+    expect(helper).toContain('export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"');
+    expect(helper).toContain('reset_afscp_local_runtime_for_gate()');
+    expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_data');
+  });
+
+  it('resets owned integration AFSCP local-real data before ensuring the runtime', () => {
+    const script = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
+    const start = script.indexOf('ensure_integration_afscp_local_runtime()');
+    const end = script.indexOf('stop_integration_afscp_local_runtime()', start);
+    const body = script.slice(start, end);
+    const stopIndex = body.indexOf('stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+    const resetIndex = body.indexOf('reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+    const ensureIndex = body.indexOf('ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(stopIndex).toBeGreaterThanOrEqual(0);
+    expect(resetIndex).toBeGreaterThan(stopIndex);
+    expect(ensureIndex).toBeGreaterThan(resetIndex);
+  });
+
+  it('resets owned release user-story AFSCP local-real data before ensuring the runtime', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const start = script.indexOf('ensure_release_user_story_afscp_local_runtime()');
+    const end = script.indexOf('stop_release_user_story_afscp_local_runtime()', start);
+    const body = script.slice(start, end);
+    const stopIndex = body.indexOf('stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+    const resetIndex = body.indexOf('reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+    const ensureIndex = body.indexOf('ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(stopIndex).toBeGreaterThanOrEqual(0);
+    expect(resetIndex).toBeGreaterThan(stopIndex);
+    expect(ensureIndex).toBeGreaterThan(resetIndex);
+  });
+
   it('captures an authoritative release-ready API pid from the shared local runtime helper while preserving root cleanup ownership', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 

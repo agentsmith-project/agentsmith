@@ -536,6 +536,8 @@ ensure_integration_afscp_local_runtime() {
 
   echo "[integration-e2e-full] ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
   INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED=1
+  stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" >/dev/null 2>&1 || true
+  reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
   ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
 }
 

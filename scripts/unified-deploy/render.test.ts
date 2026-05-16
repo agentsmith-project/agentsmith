@@ -671,9 +671,10 @@ describe('unified deploy render producer', () => {
     expect(config.AFSCP_SAVE_POINT_RECOVERY_ENABLED).toBe('true');
     expect(config.AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED).toBe('true');
     expect(config.AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED).toBe('true');
-    expect(config.AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED).toBe('true');
-    expect(config.AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED).toBe('true');
-    expect(config.AFSCP_RESTORE_RUN_RECOVERY_ENABLED).toBe('true');
+    expect(config.AFSCP_RESTORE_RECOVERY_ENABLED).toBe('true');
+    expect(config).not.toHaveProperty('AFSCP_RESTORE_PREVIEW_RECOVERY_ENABLED');
+    expect(config).not.toHaveProperty('AFSCP_RESTORE_PREVIEW_DISCARD_RECOVERY_ENABLED');
+    expect(config).not.toHaveProperty('AFSCP_RESTORE_RUN_RECOVERY_ENABLED');
     expect(config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL).toBe('http://afscp-export-gateway.agentsmith.svc.cluster.local:8080');
     expect(`${config.AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL}/e/export_render_regression/`).not.toContain('/e/e/');
     expect(config.AFSCP_DEFAULT_VOLUME_ID).toBe('vol_agentsmith_default');

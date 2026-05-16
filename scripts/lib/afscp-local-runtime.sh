@@ -43,6 +43,7 @@ with_afscp_local_runtime_env() {
     export ENV_FILE=/dev/null
     export INTERNAL_REAL_DIR="${runtime_dir}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+    export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
     export AFSCP_DEFAULT_VOLUME_ID
@@ -96,4 +97,9 @@ ensure_afscp_local_runtime_for_gate() {
 stop_afscp_local_runtime_for_gate() {
   local runtime_dir="$1"
   with_afscp_local_runtime_env "${runtime_dir}" stop_afscp_local_runtime
+}
+
+reset_afscp_local_runtime_for_gate() {
+  local runtime_dir="$1"
+  with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_data
 }

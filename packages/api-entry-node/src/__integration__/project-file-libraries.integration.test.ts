@@ -205,13 +205,19 @@ describe.sequential('api-entry-node project file libraries integration', () => {
       `${projectPath}/file-libraries/${sourceLibrary.id}/save-points`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'template-source-save-point',
+        },
         body: JSON.stringify({ message: 'Before restore' }),
       },
     );
-    expect(createSavePointRes.status).toBe(201);
-    const savePoint = (await createSavePointRes.json()) as { id: string; file_library_id: string };
-    expect(savePoint.file_library_id).toBe(sourceLibrary.id);
+    expect(createSavePointRes.status).toBe(202);
+    await expect(createSavePointRes.json()).resolves.toMatchObject({
+      kind: 'save_point_create',
+      file_library_id: sourceLibrary.id,
+      status: expect.stringMatching(/^(accepted|running|succeeded)$/),
+    });
 
     const listSavePointsRes = await apiFetch(
       baseUrl,
@@ -219,7 +225,8 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     );
     expect(listSavePointsRes.status).toBe(200);
     const listedSavePoints = (await listSavePointsRes.json()) as { items: Array<{ id: string }> };
-    expect(listedSavePoints.items.some((item) => item.id === savePoint.id)).toBe(true);
+    const savePoint = listedSavePoints.items[0];
+    expect(savePoint?.id).toBeTruthy();
 
     const restoreRes = await apiFetch(
       baseUrl,
@@ -244,12 +251,12 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     expect(restoreOperation.source_save_point_id).toBe(savePoint.id);
     expect(restoreOperation.status).toBe('succeeded');
 
-    const restoreStatusRes = await apiFetch(
+    const activeOperationRes = await apiFetch(
       baseUrl,
-      `${projectPath}/file-libraries/${sourceLibrary.id}/restore`,
+      `${projectPath}/file-libraries/${sourceLibrary.id}/operations/active`,
     );
-    expect(restoreStatusRes.status).toBe(200);
-    await expect(restoreStatusRes.json()).resolves.toEqual({ restore_operation: null });
+    expect(activeOperationRes.status).toBe(200);
+    await expect(activeOperationRes.json()).resolves.toEqual({ operation: null });
 
     const createTemplateRes = await apiFetch(
       baseUrl,

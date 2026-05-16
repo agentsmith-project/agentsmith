@@ -74,7 +74,7 @@
       "stableMarkers": [
         "files__objects-table",
         "files__download",
-        "files__file-states"
+        "files__version-management"
       ]
     },
     {
@@ -128,7 +128,7 @@
       "sceneId": "project-files",
       "intent": "Create a business save point before cleaning up generated image files.",
       "action": "Create save point",
-      "target": "files__file-states",
+      "target": "files__version-management",
       "expectedFeedback": "Save point list shows the business note for the asset cleanup point.",
       "note": "备注使用业务语义，便于后续恢复时理解为什么要回到这个状态。",
       "evidence": [
@@ -166,7 +166,7 @@
       "action": "Verify task history",
       "target": "agent-task__task-header",
       "expectedFeedback": "Agent Task 仍显示原任务，runner output token 和 trace evidence 仍可通过 API 读取。",
-      "note": "文件库 restore 只恢复文件状态，不应该抹掉任务历史。",
+      "note": "文件库 restore 只恢复文件库内容，不应该抹掉任务历史。",
       "evidence": [
         "trace"
       ]

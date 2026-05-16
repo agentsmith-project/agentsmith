@@ -127,6 +127,15 @@ export interface MoveFileLibraryEntryRequest {
 }
 
 export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
+export type FileLibraryVersionOperationKind =
+  | 'save_point_create'
+  | 'restore';
+export type FileLibraryVersionOperationStatus =
+  | 'accepted'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'recovery_required';
 
 export interface FileLibrarySavePoint {
   id: string;
@@ -157,8 +166,20 @@ export interface FileLibraryRestoreOperation {
   updated_at: string;
 }
 
-export interface GetFileLibraryRestoreOperationResponse {
-  restore_operation: FileLibraryRestoreOperation | null;
+export interface FileLibraryVersionOperation {
+  id: string;
+  kind: FileLibraryVersionOperationKind;
+  status: FileLibraryVersionOperationStatus;
+  file_library_id?: string;
+  source_save_point_id?: string;
+  message?: string;
+  failure_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GetFileLibraryActiveOperationResponse {
+  operation: FileLibraryVersionOperation | null;
 }
 
 export interface ReleaseFileLibraryRuntimeAccessResponse {

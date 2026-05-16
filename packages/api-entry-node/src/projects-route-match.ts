@@ -27,6 +27,7 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibrarySavePoints'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryRestore'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryActiveOperation'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryRuntimeAccessRelease'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryOperation'; workspaceId: string; projectId: string; operationId: string }
   | { kind: 'taskFileTemplates'; workspaceId: string; projectId: string }
@@ -343,6 +344,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(fileLibraryRestoreMatched[1]),
       projectId: decodeURIComponent(fileLibraryRestoreMatched[2]),
       libraryId: decodeURIComponent(fileLibraryRestoreMatched[3]),
+    };
+  }
+
+  const fileLibraryActiveOperationMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/operations\/active\/?$/,
+  );
+  if (fileLibraryActiveOperationMatched) {
+    return {
+      kind: 'fileLibraryActiveOperation',
+      workspaceId: decodeURIComponent(fileLibraryActiveOperationMatched[1]),
+      projectId: decodeURIComponent(fileLibraryActiveOperationMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryActiveOperationMatched[3]),
     };
   }
 

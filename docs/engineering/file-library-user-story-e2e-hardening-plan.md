@@ -15,7 +15,7 @@
 核心目标：
 
 - Files 打开的是 file library HOME root。文件库绑定 task 时，这个 HOME root 等同该 task HOME；未绑定文件库不是某个 task 的 HOME。
-- 用户在 Files、Agent task、terminal 之间切换时，看到的是同一份 HOME payload 文件状态，而不是 `workspace/` 的局部视图。
+- 用户在 Files、Agent task、terminal 之间切换时，看到的是同一份 HOME payload 文件库版本，而不是 `workspace/` 的局部视图。
 - save point、restore、task file template、binding reuse 都按 whole HOME payload 处理；非文件 payload 的 task 消息、trace、terminal、runner binding、artifact metadata 不被继承。
 - 错误与 pending 状态要用 typed blocker copy 表达，不把所有问题都写成 ask admin。
 
@@ -49,7 +49,7 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 
 ### 1.3 Task file template
 
-发布 task file template 时，模板捕获“用户点击发布当下”的文件状态。后续源文件库变化不会改变已发布模板内容。
+发布 task file template 时，模板捕获“用户点击发布当下”的任务文件模板快照。后续源文件库变化不会改变已发布模板内容。
 
 从模板创建 task 是独立克隆：
 
@@ -70,11 +70,11 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 
 | Typed state / error | 用户心智文案边界 | 主要动作 |
 | --- | --- | --- |
-| capability denied | 当前项目不支持这个文件状态能力；如果预期可用，才提示联系管理员启用项目能力 | 返回/重试入口保持安全，不丢表单 |
+| capability denied | 当前项目不支持这个文件库版本管理能力；如果预期可用，才提示联系管理员启用项目能力 | 返回/重试入口保持安全，不丢表单 |
 | project file storage not ready | 项目文件存储正在初始化、重试或暂不可用；只有 blocked-needs-admin 才提示管理员处理 | 等待、刷新、稍后重试 |
 | operation pending / restore pending | 已提交但仍在恢复/收敛，不能立即宣称成功 | 显示进度、轮询终态、必要时允许用户稍后重试 |
 | library in use | 文件库仍被未删除 task 占用；停止运行不释放绑定 | 打开/删除对应 task，等待 release 完成 |
-| restore state changed / active writer | 恢复请求已不再适用，或仍有写入会话 | 重新打开 File states、停止写入会话、稍后重试 |
+| restore state changed / active writer | 恢复请求已不再适用，或仍有写入会话 | 重新打开 Version & templates、停止写入会话、稍后重试 |
 
 ## 2. Reviewer Findings 复核结论
 
@@ -85,7 +85,7 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 | 绑定复用语义需更精确 | 成立 | 未删除 task 独占；删除 task 后释放；停止/结束不释放；复用只继承 HOME payload |
 | save point/restore scope | 成立 | restore 覆盖 whole HOME；direct restore 不隐式创建 current-state save point |
 | restore operation pending 不能立即成功 | 成立 | pending 展示“正在恢复/收敛”，终态成功后才给成功心智 |
-| template 点击时快照与 clone independence | 成立 | 发布模板取点击当下文件状态；后续源变化、unpublish/delete 不影响已克隆 task |
+| template 点击时快照与 clone independence | 成立 | 发布模板取点击当下任务文件模板快照；后续源变化、unpublish/delete 不影响已克隆 task |
 | capability denied 测试不要过度 E2E | 成立 | 保留组件/错误映射测试；只有主路径稳定可复现时加最小 UI E2E |
 | 错误文案不能全是 ask admin | 成立 | 拆分 capability、storage not ready、pending、in-use、out-of-date restore/active writer |
 
@@ -95,7 +95,7 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 
 用户故事：
 
-> 作为使用 Files 管理文件库的人，我创建 save point，修改或删除 HOME payload 文件，再从 save point 恢复。我期望恢复后 Files 里直接看到 whole HOME 文件状态回到保存点。
+> 作为使用 Files 管理文件库的人，我创建 save point，修改或删除 HOME payload 文件，再从 save point 恢复。我期望恢复后 Files 里直接看到 whole HOME 文件库版本回到恢复点。
 
 步骤：
 
@@ -127,7 +127,7 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 步骤：
 
 1. 在源 file library 写入 `template-seed/guide.md`，内容为 `template version 1`。
-2. 打开 File states 里的 Task file templates。
+2. 打开 Version & templates 里的 Task file templates。
 3. 点击发布当前 file library 为项目 task file template。
 4. 发布完成后，把源 file library 同一路径改为 `template source changed`。
 5. 从已发布模板创建新 Agent task。
@@ -140,10 +140,10 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 
 验收标准：
 
-- 模板发布取点击当下文件状态。
+- 模板发布取点击当下任务文件模板快照。
 - clone 后源 file library 与新 task file library 互不影响。
 - unpublish/delete template 只影响未来使用，不影响已克隆 task。
-- 模板只在当前 project 范围可见，不引入成员/组共享。
+- 模板只在当前项目范围可见，不引入成员/组共享。
 
 ### Story C: HOME root 与 dot folders 存在即展示
 
@@ -203,7 +203,7 @@ Direct restore operation 可能是异步操作。UI 不能在 restore 仍 pendin
 
 用户故事：
 
-> 作为普通用户，我遇到文件状态功能不可用、项目文件存储未就绪、恢复未结束、模板发布冲突或文件库被占用时，界面能告诉我原因和下一步，而不是显示内部错误码。
+> 作为普通用户，我遇到文件库版本管理功能不可用、项目文件存储未就绪、恢复未结束、模板发布冲突或文件库被占用时，界面能告诉我原因和下一步，而不是显示内部错误码。
 
 覆盖点：
 

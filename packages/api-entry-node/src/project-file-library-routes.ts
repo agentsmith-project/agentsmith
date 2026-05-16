@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildAfscpTemplateId,
+  JsonDocFileLibraryVersionOperationRepo,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocFileLibrarySavePointMappingRepo,
@@ -24,6 +25,8 @@ import {
   type FileLibrarySavePointPublicRecord,
   type FileLibraryRestoreOperationRecord,
   type FileLibraryRestoreOperationStatus,
+  type FileLibraryVersionOperationRecord,
+  type FileLibraryVersionOperationStatus,
 } from './file-library-persistence.js';
 import {
   createHttpOperationEnvelope,
@@ -44,7 +47,9 @@ import type {
 import {
   FileLibraryStorageOperationPendingError,
   type FileLibraryEntry,
+  type FileLibraryOperationProjection,
   type FileLibraryObjectMeta,
+  type FileLibraryStorageOperationStatus,
 } from './file-library-afscp-storage.js';
 import {
   readProjectPermissionContext,
@@ -100,6 +105,7 @@ type ProjectFileLibraryRouteKind =
   | 'fileLibraryMeta'
   | 'fileLibrarySavePoints'
   | 'fileLibraryRestore'
+  | 'fileLibraryActiveOperation'
   | 'fileLibraryRuntimeAccessRelease'
   | 'fileLibraryOperation'
   | 'taskFileTemplates'
@@ -231,6 +237,109 @@ function isFileLibraryRestoreConflictingMutationRoute(routeKind: ProjectFileLibr
   return isFileLibraryWriteRoute(routeKind, method)
     || (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST')
     || (routeKind === 'fileLibraryItem' && method === 'DELETE');
+}
+
+function presentFileLibraryRestoreActiveOperation(operation: FileLibraryRestoreOperationRecord) {
+  return {
+    id: operation.id,
+    kind: 'restore',
+    file_library_id: operation.file_library_id,
+    source_save_point_id: operation.source_save_point_id,
+    status: operation.status === 'pending'
+      ? 'accepted'
+      : operation.status === 'restoring'
+        ? 'running'
+        : operation.status,
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
+  };
+}
+
+function isFileLibraryVersionOperationActiveStatus(status: FileLibraryVersionOperationStatus): boolean {
+  return status === 'accepted' || status === 'running';
+}
+
+function mapStorageOperationStatusToVersionStatus(
+  status: FileLibraryStorageOperationStatus,
+): FileLibraryVersionOperationStatus {
+  if (status === 'succeeded') return 'succeeded';
+  if (status === 'failed') return 'failed';
+  return 'accepted';
+}
+
+function mapOperationProjectionToVersionStatus(
+  projection: FileLibraryOperationProjection,
+): FileLibraryVersionOperationStatus {
+  const errorCode = projection.error?.code?.trim().toLowerCase() ?? '';
+  if (
+    errorCode.includes('recovery')
+    || errorCode.includes('journal')
+    || errorCode.includes('operator')
+  ) {
+    return 'recovery_required';
+  }
+  const state = projection.operation_state.trim().toLowerCase();
+  if (
+    state === 'succeeded'
+    || state === 'success'
+    || state === 'completed'
+    || state === 'complete'
+    || state === 'done'
+  ) {
+    return 'succeeded';
+  }
+  if (
+    state === 'operator_intervention_required'
+    || state === 'recovery_required'
+    || state.includes('recovery_required')
+    || state.includes('journal_recovery')
+  ) {
+    return 'recovery_required';
+  }
+  if (
+    state === 'failed'
+    || state === 'failure'
+    || state === 'error'
+    || state === 'errored'
+    || state === 'canceled'
+    || state === 'cancelled'
+  ) {
+    return 'failed';
+  }
+  if (
+    state === 'running'
+    || state === 'in_progress'
+    || state === 'executing'
+    || state === 'started'
+    || state.includes('running')
+  ) {
+    return 'running';
+  }
+  return 'accepted';
+}
+
+function versionOperationRank(operation: FileLibraryVersionOperationRecord | FileLibraryRestoreOperationRecord): number {
+  const status = 'kind' in operation
+    ? operation.status
+    : operation.status === 'pending'
+      ? 'accepted'
+      : operation.status === 'restoring'
+        ? 'running'
+        : operation.status;
+  return isFileLibraryVersionOperationActiveStatus(status as FileLibraryVersionOperationStatus) ? 1 : 0;
+}
+
+function pickLatestVersionOperation(
+  candidates: Array<FileLibraryVersionOperationRecord | FileLibraryRestoreOperationRecord>,
+): FileLibraryVersionOperationRecord | FileLibraryRestoreOperationRecord | null {
+  const sorted = candidates.sort((left, right) => {
+    const activeDelta = versionOperationRank(right) - versionOperationRank(left);
+    if (activeDelta !== 0) return activeDelta;
+    const updated = right.updated_at.localeCompare(left.updated_at);
+    return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+  });
+  return sorted[0] ?? null;
 }
 
 const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
@@ -428,14 +537,6 @@ function fileLibraryControlRouteErrorBody(
       ...(error instanceof FileLibraryRestoreOperationActiveError
         ? {
             file_library_id: error.operation.file_library_id,
-            restore_operation: {
-              id: error.operation.id,
-              file_library_id: error.operation.file_library_id,
-              source_save_point_id: error.operation.source_save_point_id,
-              status: error.operation.status,
-              created_at: error.operation.created_at,
-              updated_at: error.operation.updated_at,
-            },
           }
         : {}),
       operation_status: 'pending',
@@ -935,6 +1036,67 @@ async function findReconciledActiveRestoreOperation(input: {
     });
   }
   return isActiveRestoreOperationStatus(reconciled.status) ? reconciled : null;
+}
+
+async function reconcileVersionOperationRecord(input: {
+  deps: NodeApiDeps;
+  operationRepo: JsonDocFileLibraryVersionOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryVersionOperationRecord;
+  requestId?: string;
+}): Promise<FileLibraryVersionOperationRecord> {
+  if (!input.operation.afscp_operation_id) {
+    return input.operation;
+  }
+  if (!isFileLibraryVersionOperationActiveStatus(input.operation.status)) {
+    return input.operation;
+  }
+  const projection = await input.deps.fileLibraryStorageAdapter?.getOperationProjection({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    operationId: input.operation.afscp_operation_id,
+    requestId: input.requestId,
+  });
+  if (!projection) {
+    return input.operation;
+  }
+  const status = mapOperationProjectionToVersionStatus(projection);
+  if (status === input.operation.status && !projection.error?.code) {
+    return input.operation;
+  }
+  return await input.operationRepo.updateStatus({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    operationId: input.operation.id,
+    status,
+    failureReason: projection.error?.code ?? null,
+  }) ?? input.operation;
+}
+
+async function findReconciledActiveVersionOperation(input: {
+  deps: NodeApiDeps;
+  operationRepo: JsonDocFileLibraryVersionOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<FileLibraryVersionOperationRecord | null> {
+  const active = await input.operationRepo.findActiveByLibrary(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+  );
+  if (!active) {
+    return null;
+  }
+  const reconciled = await reconcileVersionOperationRecord({
+    ...input,
+    operation: active,
+  });
+  return isFileLibraryVersionOperationActiveStatus(reconciled.status) ? reconciled : null;
 }
 
 async function ensureNoActiveRestoreOperation(input: {
@@ -1801,7 +1963,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   if (routeKind === 'taskFileTemplates' && method === 'POST') {
     const parsed = CreateTaskFileTemplateRequestSchema.safeParse(await readBody(req));
     if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_task_file_template_create_request' });
+      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_task_file_template_request' });
       return true;
     }
     if (!deps.fileLibraryStorageAdapter?.enabled) {
@@ -2477,38 +2639,62 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_save_point_request' });
       return true;
     }
+    const idempotencyKey = readIdempotencyKey(req);
+    if (!idempotencyKey) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'idempotency_key_required' });
+      return true;
+    }
     if (!deps.fileLibraryStorageAdapter?.enabled) {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    const operationRepo = new JsonDocFileLibraryVersionOperationRepo(deps.docStore);
     try {
       const message = parsed.data.message ?? 'Manual save point';
+      const existingOperation = await operationRepo.findByIdempotencyKey(
+        workspaceId,
+        projectId,
+        libraryId,
+        'save_point_create',
+        idempotencyKey,
+      );
+      if (existingOperation) {
+        json(res, 202, operationRepo.toPublic(existingOperation));
+        return true;
+      }
       const result = await deps.fileLibraryStorageAdapter.createSavePoint({
         workspaceId,
         projectId,
         libraryId,
         message,
+        idempotencyKey,
         actorUserId: user.id,
         requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
       });
-      if (!result.savePointId) {
-        json(res, 502, {
-          error_code: 'FILE_LIBRARY_SAVE_POINT_CREATE_FAILED',
-          message: 'file_library_save_point_create_failed',
-        });
-        return true;
-      }
-      const savePoint = await savePointRepo.upsertFromAfscp({
+      const { operation } = await operationRepo.createOrReuseByIdempotencyKey({
         workspaceId,
         projectId,
         libraryId,
-        afscpSavePointId: result.savePointId,
+        kind: 'save_point_create',
+        status: mapStorageOperationStatusToVersionStatus(result.operationStatus),
+        afscpOperationId: result.operationId,
+        idempotencyKey,
+        createdByUserId: user.id,
         message,
-        createdAt: result.createdAt,
-        purpose: 'user',
       });
-      json(res, 201, savePointRepo.toPublic(savePoint));
+      if (result.savePointId) {
+        await savePointRepo.upsertFromAfscp({
+          workspaceId,
+          projectId,
+          libraryId,
+          afscpSavePointId: result.savePointId,
+          message,
+          createdAt: result.createdAt,
+          purpose: 'user',
+        });
+      }
+      json(res, 202, operationRepo.toPublic(operation));
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,
@@ -2520,26 +2706,44 @@ export async function handleProjectFileLibraryRoutes(args: {
     return true;
   }
 
-  if (routeKind === 'fileLibraryRestore' && method === 'GET') {
+  if (routeKind === 'fileLibraryActiveOperation' && method === 'GET') {
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+    const operationRepo = new JsonDocFileLibraryVersionOperationRepo(deps.docStore);
+    const requestId = readOptionalRequestId(req);
     try {
-      const active = await findReconciledActiveRestoreOperation({
+      const activeRestore = await findReconciledActiveRestoreOperation({
         deps,
         restoreRepo,
         workspaceId,
         projectId,
         libraryId,
-        requestId: readOptionalRequestId(req),
+        requestId,
         continuePreStart: true,
       });
+      const activeVersionOperation = await findReconciledActiveVersionOperation({
+        deps,
+        operationRepo,
+        workspaceId,
+        projectId,
+        libraryId,
+        requestId,
+      });
+      const latest = pickLatestVersionOperation([
+        ...(activeRestore ? [activeRestore] : []),
+        ...(activeVersionOperation ? [activeVersionOperation] : []),
+      ]);
       json(res, 200, {
-        restore_operation: active ? restoreRepo.toPublic(active) : null,
+        operation: latest
+          ? 'kind' in latest
+            ? operationRepo.toPublic(latest)
+            : presentFileLibraryRestoreActiveOperation(latest)
+          : null,
       });
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,
-        'FILE_LIBRARY_RESTORE_FAILED',
-        'file_library_restore_failed',
+        'FILE_LIBRARY_OPERATION_PROJECTION_FAILED',
+        'file_library_operation_projection_failed',
       );
       json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
     }

@@ -6,6 +6,7 @@ import type {
 
 export const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
 const FILE_LIBRARY_SAVE_POINT_MAPPING_COLLECTION = 'project_file_library_save_point_mappings';
+const FILE_LIBRARY_VERSION_OPERATION_COLLECTION = 'project_file_library_version_operations';
 const FILE_LIBRARY_RESTORE_OPERATION_COLLECTION = 'project_file_library_restore_operations';
 const FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION = 'project_file_library_restore_operation_active_locks';
 const TASK_FILE_TEMPLATE_COLLECTION = 'project_task_file_templates';
@@ -906,6 +907,37 @@ export interface FileLibrarySavePointMappingRecord extends FileLibrarySavePointP
 }
 
 export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
+export type FileLibraryVersionOperationKind =
+  | 'save_point_create'
+  | 'restore';
+export type FileLibraryVersionOperationStatus =
+  | 'accepted'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'recovery_required';
+
+export interface FileLibraryVersionOperationPublicRecord {
+  id: string;
+  kind: FileLibraryVersionOperationKind;
+  status: FileLibraryVersionOperationStatus;
+  file_library_id?: string;
+  source_save_point_id?: string;
+  message?: string;
+  failure_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileLibraryVersionOperationRecord extends FileLibraryVersionOperationPublicRecord {
+  workspace_id: string;
+  project_id: string;
+  library_id: string;
+  afscp_operation_id: string | null;
+  idempotency_key?: string;
+  created_by_user_id: string;
+  completed_at?: string;
+}
 
 export interface FileLibraryRestoreOperationPublicRecord {
   id: string;
@@ -1004,6 +1036,26 @@ export function generateFileLibraryRestoreOperationId(): string {
   return `flro_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
 }
 
+export function generateFileLibraryVersionOperationId(): string {
+  return `flop_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+export function buildFileLibraryVersionOperationIdempotencyId(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  kind: FileLibraryVersionOperationKind;
+  idempotencyKey: string;
+}): string {
+  return scopedDigestId('flop', [
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+    input.kind,
+    input.idempotencyKey,
+  ]);
+}
+
 export function buildFileLibraryRestoreOperationIdempotencyId(input: {
   workspaceId: string;
   projectId: string;
@@ -1067,6 +1119,22 @@ function publicRestoreOperation(
     file_library_id: record.file_library_id,
     source_save_point_id: record.source_save_point_id,
     status: record.status,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+function publicVersionOperation(
+  record: FileLibraryVersionOperationRecord,
+): FileLibraryVersionOperationPublicRecord {
+  return {
+    id: record.id,
+    kind: record.kind,
+    status: record.status,
+    ...(record.file_library_id ? { file_library_id: record.file_library_id } : {}),
+    ...(record.source_save_point_id ? { source_save_point_id: record.source_save_point_id } : {}),
+    ...(record.message ? { message: record.message } : {}),
+    ...(record.failure_reason ? { failure_reason: record.failure_reason } : {}),
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
@@ -1177,6 +1245,237 @@ export class JsonDocFileLibrarySavePointMappingRepo {
 
   toPublic(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
     return publicSavePoint(record);
+  }
+}
+
+function isActiveVersionOperationStatus(status: FileLibraryVersionOperationStatus): boolean {
+  return status === 'accepted' || status === 'running';
+}
+
+export class JsonDocFileLibraryVersionOperationRepo {
+  constructor(
+    private readonly docStore: JsonDocStorePort,
+    private readonly nowIso: () => string = () => new Date().toISOString(),
+  ) {}
+
+  async create(input: {
+    id?: string;
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    kind: FileLibraryVersionOperationKind;
+    status: FileLibraryVersionOperationStatus;
+    afscpOperationId?: string | null;
+    idempotencyKey?: string;
+    createdByUserId: string;
+    message?: string;
+    failureReason?: string;
+    sourceSavePointId?: string;
+  }): Promise<FileLibraryVersionOperationRecord> {
+    const now = this.nowIso();
+    const record: FileLibraryVersionOperationRecord = {
+      id: input.id ?? generateFileLibraryVersionOperationId(),
+      kind: input.kind,
+      status: input.status,
+      file_library_id: input.libraryId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+      afscp_operation_id: input.afscpOperationId ?? null,
+      ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+      created_by_user_id: input.createdByUserId,
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
+      ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
+      ...(isActiveVersionOperationStatus(input.status) ? {} : { completed_at: now }),
+      created_at: now,
+      updated_at: now,
+    };
+    await this.docStore.upsert(FILE_LIBRARY_VERSION_OPERATION_COLLECTION, record.id, record);
+    return record;
+  }
+
+  async createOrReuseByIdempotencyKey(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    kind: FileLibraryVersionOperationKind;
+    status: FileLibraryVersionOperationStatus;
+    afscpOperationId?: string | null;
+    idempotencyKey: string;
+    createdByUserId: string;
+    message?: string;
+    failureReason?: string;
+    sourceSavePointId?: string;
+  }): Promise<{
+    operation: FileLibraryVersionOperationRecord;
+    created: boolean;
+  }> {
+    const now = this.nowIso();
+    const record: FileLibraryVersionOperationRecord = {
+      id: buildFileLibraryVersionOperationIdempotencyId(input),
+      kind: input.kind,
+      status: input.status,
+      file_library_id: input.libraryId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+      afscp_operation_id: input.afscpOperationId ?? null,
+      idempotency_key: input.idempotencyKey,
+      created_by_user_id: input.createdByUserId,
+      ...(input.message ? { message: input.message } : {}),
+      ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
+      ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
+      ...(isActiveVersionOperationStatus(input.status) ? {} : { completed_at: now }),
+      created_at: now,
+      updated_at: now,
+    };
+    const result = await this.docStore.createIfAbsent(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      record.id,
+      record,
+    );
+    if (result.ok) {
+      return { operation: record, created: true };
+    }
+    const current = result.current;
+    if (
+      current.workspace_id !== input.workspaceId
+      || current.project_id !== input.projectId
+      || current.library_id !== input.libraryId
+      || current.kind !== input.kind
+      || current.idempotency_key !== input.idempotencyKey
+    ) {
+      throw new Error('file_library_version_operation_idempotency_conflict');
+    }
+    return { operation: current, created: false };
+  }
+
+  async getById(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    operationId: string,
+  ): Promise<FileLibraryVersionOperationRecord | null> {
+    const record = await this.docStore.get<FileLibraryVersionOperationRecord>(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      operationId,
+    );
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
+      || record.library_id !== libraryId
+    ) {
+      return null;
+    }
+    return record;
+  }
+
+  async findLatestByLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryVersionOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryVersionOperationRecord>(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+      },
+    );
+    const sorted = records.sort((left, right) => {
+      const activeDelta = Number(isActiveVersionOperationStatus(right.status))
+        - Number(isActiveVersionOperationStatus(left.status));
+      if (activeDelta !== 0) return activeDelta;
+      const updated = right.updated_at.localeCompare(left.updated_at);
+      return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+    });
+    return sorted[0] ?? null;
+  }
+
+  async findByIdempotencyKey(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    kind: FileLibraryVersionOperationKind,
+    idempotencyKey: string,
+  ): Promise<FileLibraryVersionOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryVersionOperationRecord>(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+        kind,
+        idempotency_key: idempotencyKey,
+      },
+    );
+    return records[0] ?? null;
+  }
+
+  async findActiveByLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryVersionOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryVersionOperationRecord>(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+      },
+    );
+    const active = records
+      .filter((record) => isActiveVersionOperationStatus(record.status))
+      .sort((left, right) => {
+        const updated = right.updated_at.localeCompare(left.updated_at);
+        return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+      });
+    return active[0] ?? null;
+  }
+
+  async updateStatus(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    operationId: string;
+    status: FileLibraryVersionOperationStatus;
+    failureReason?: string | null;
+  }): Promise<FileLibraryVersionOperationRecord | null> {
+    const existing = await this.getById(
+      input.workspaceId,
+      input.projectId,
+      input.libraryId,
+      input.operationId,
+    );
+    if (!existing) {
+      return null;
+    }
+    const now = this.nowIso();
+    const next: FileLibraryVersionOperationRecord = {
+      ...existing,
+      status: input.status,
+      updated_at: now,
+      ...(isActiveVersionOperationStatus(input.status)
+        ? {}
+        : { completed_at: existing.completed_at ?? now }),
+    };
+    if (input.failureReason !== undefined) {
+      if (input.failureReason) {
+        next.failure_reason = input.failureReason;
+      } else {
+        delete next.failure_reason;
+      }
+    }
+    await this.docStore.upsert(FILE_LIBRARY_VERSION_OPERATION_COLLECTION, next.id, next);
+    return next;
+  }
+
+  toPublic(record: FileLibraryVersionOperationRecord): FileLibraryVersionOperationPublicRecord {
+    return publicVersionOperation(record);
   }
 }
 
@@ -1468,6 +1767,28 @@ export class JsonDocFileLibraryRestoreOperationRepo {
         return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
       });
     return active[0] ?? null;
+  }
+
+  async findLatestByLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        library_id: libraryId,
+      },
+    );
+    const sorted = records.sort((left, right) => {
+      const activeDelta = Number(this.isActiveOperation(right)) - Number(this.isActiveOperation(left));
+      if (activeDelta !== 0) return activeDelta;
+      const updated = right.updated_at.localeCompare(left.updated_at);
+      return updated !== 0 ? updated : right.created_at.localeCompare(left.created_at);
+    });
+    return sorted[0] ?? null;
   }
 
   async getById(

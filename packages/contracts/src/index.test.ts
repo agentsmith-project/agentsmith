@@ -20,7 +20,6 @@ import {
   FileLibraryRestoreActiveWriterBlockedErrorSchema,
   FileLibraryRuntimeAccessReleaseBlockedErrorSchema,
   ReleaseFileLibraryRuntimeAccessResponseSchema,
-  GetFileLibraryRestoreResponseSchema,
   FileLibraryTaskInUseErrorSchema,
   TaskFileTemplateNotFoundErrorSchema,
   TaskFileTemplateUnpublishedErrorSchema,
@@ -181,24 +180,6 @@ describe('agent task persistent HOME contracts', () => {
       updated_at: '2026-05-09T00:00:00.000Z',
     }).success).toBe(false);
 
-    expect(GetFileLibraryRestoreResponseSchema.parse({
-      restore_operation: null,
-    })).toEqual({ restore_operation: null });
-    expect(GetFileLibraryRestoreResponseSchema.parse({
-      restore_operation: {
-        id: 'flro_active',
-        file_library_id: 'flib_a',
-        source_save_point_id: 'flsp_safe',
-        status: 'restoring',
-        created_at: '2026-05-09T00:00:00.000Z',
-        updated_at: '2026-05-09T00:00:00.000Z',
-      },
-    })).toMatchObject({
-      restore_operation: {
-        id: 'flro_active',
-        status: 'restoring',
-      },
-    });
     expect(CreateFileLibraryRestoreRequestSchema.parse({
       save_point_id: 'flsp_safe',
     })).toEqual({
@@ -579,12 +560,16 @@ describe('agent task persistent HOME contracts', () => {
       ]));
     }
 
+    expect(openapi.paths?.[
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore'
+    ]).not.toHaveProperty('get');
+
     expect(readResponseSchemaNames(
       openapi.paths ?? {},
-      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active',
       'get',
       '200',
-    )).toEqual(['GetFileLibraryRestoreResponse']);
+    )).toEqual(['GetFileLibraryActiveOperationResponse']);
 
     expect(readResponseSchemaNames(
       openapi.paths ?? {},
@@ -711,17 +696,17 @@ describe('agent task persistent HOME contracts', () => {
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points',
         method: 'post',
-        statuses: ['201', '400', '401', '403', '404', '409', '502', '503'],
-      },
-      {
-        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
-        method: 'get',
-        statuses: ['200', '401', '403', '404', '409', '502', '503'],
+        statuses: ['202', '400', '401', '403', '404', '409', '422', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
         method: 'post',
         statuses: ['200', '400', '401', '403', '404', '409', '422', '502', '503'],
+      },
+      {
+        path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active',
+        method: 'get',
+        statuses: ['200', '401', '403', '404', '409', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release',
@@ -868,8 +853,8 @@ describe('agent task persistent HOME contracts', () => {
     expect(routeKindMap.fileLibraryRestore?.path).toBe(
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore',
     );
-    expect(new Set(routeKindMap.fileLibraryRestore?.methods ?? [])).toEqual(new Set(['get', 'post']));
-    expect(routeKindMap.fileLibraryRestore?.method).toBeUndefined();
+    expect(routeKindMap.fileLibraryRestore?.method).toBe('post');
+    expect(routeKindMap.fileLibraryRestore?.methods).toBeUndefined();
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestorePreview');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreRun');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreCancel');

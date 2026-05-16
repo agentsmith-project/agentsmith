@@ -21,7 +21,7 @@ Applies to:
   - URL state
   - file library CRUD
   - file entry browsing and mutation
-  - File states: save points, direct restore operations, and task file template publication
+  - Version & templates: restore points, direct restore operations, and task file template publication
   - connector routes remain disabled and are not shown as product actions
 
 ## 2. Functional Contract
@@ -77,7 +77,7 @@ Applies to:
 - The normal restore path must not create hidden current-state save points or
   product-level preview records. Users who want to keep current files must cancel
   restore and create an explicit save point first.
-- Published task file templates capture the file state at publish time. Later
+- Published task file templates capture the file library version at publish time. Later
   source library changes, unpublish, or template delete do not mutate already
   cloned task file libraries.
 
@@ -94,7 +94,7 @@ Applies to:
 - The module must not expose local connector setup, backend storage identifiers, export URLs, credentials, or local setup commands.
 - Bound libraries must be labeled in the library list. Deleting a bound library is blocked until the bound task is deleted; redacted bound tasks must not leak title/id/status.
 - Members with read/use access may browse and download project files.
-- New folder, File states, Upload, Rename, Delete, and library mutation controls require `project:files:update` and must be hidden or unusable without that permission.
+- New folder, Version & templates, Upload, Rename, Delete, and library mutation controls require `project:files:update` and must be hidden or unusable without that permission.
 - Dot folders are visible when the backend lists them. The frontend must not
   apply a generic dot-folder hide filter. Examples such as `.codex/`,
   `.agents/`, `.mbos/`, `.cache/`, `.config/`, and `.local/` are common
@@ -103,7 +103,7 @@ Applies to:
   HOME hidden runtime directories. Destructive actions such as delete, move, and rename
   must require a second confirmation, or be disabled when a backend typed
   blocker says the folder/library is protected or in use.
-- File states copy must describe the scope as the whole file library HOME
+- Version & templates copy must describe the scope as the whole file library HOME
   payload, including HOME hidden runtime directories when present; it must not teach
   users to manage implementation folders directly.
 - Restore operation pending states must not be presented as success. The UI shows

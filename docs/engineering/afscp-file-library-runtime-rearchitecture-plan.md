@@ -288,7 +288,7 @@ Safety behavior:
 - Direct restore must bind admission to the selected save point, current file
   library generation, lifecycle state, and writer-session fence. If that state no
   longer allows restore, the operation fails with typed out-of-date restore copy
-  and asks the user to reopen File states or retry later.
+  and asks the user to reopen Version & templates or retry later.
 - Direct restore must not materialize hidden current-state save points in the
   normal path. Users who want to keep current files must cancel and create an
   explicit save point first.
@@ -971,7 +971,7 @@ Examples:
 | `afscp_resource_not_found` | This file library or operation was not found. |
 | `afscp_repo_not_ready` | This file library is still getting ready. |
 | `afscp_active_writer_blocks_restore` | Stop active file sessions before restoring. |
-| `afscp_restore_state_outdated` | Restore state changed. Reopen File states or try again before restoring. |
+| `afscp_restore_state_outdated` | Restore state changed. Reopen Version & templates or try again before restoring. |
 | `afscp_restore_plan_requires_recovery` | This restore needs storage recovery before it can continue. |
 | `afscp_capability_denied` | This storage action is not available for this project. |
 | `afscp_storage_unavailable` | File storage is temporarily unavailable. |
@@ -1302,7 +1302,7 @@ Acceptance:
 
 - user can create save point, change files, restore to save point, and see restored HOME in Files and terminal.
 - user can cancel before confirming restore and leave files unchanged.
-- out-of-date restore state asks the user to reopen File states or retry later.
+- out-of-date restore state asks the user to reopen Version & templates or retry later.
 - restore blocked states are typed and understandable.
 
 ### Slice 7: Project Template Library

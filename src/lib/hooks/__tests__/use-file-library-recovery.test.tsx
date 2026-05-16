@@ -5,18 +5,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const {
   mockCreateSavePoint,
-  mockGetActiveRestoreOperation,
+  mockGetActiveFileLibraryOperation,
   mockListSavePoints,
   mockReleaseRuntimeAccess,
   mockRestoreFileLibrary,
 } = vi.hoisted(() => ({
   mockCreateSavePoint: vi.fn().mockResolvedValue({
-    id: 'sp_new',
+    id: 'flop_save_point_new',
+    kind: 'save_point_create',
+    status: 'accepted',
     file_library_id: 'lib_1',
     message: 'Before edits',
     created_at: '2026-05-09T12:00:00.000Z',
+    updated_at: '2026-05-09T12:00:00.000Z',
   }),
-  mockGetActiveRestoreOperation: vi.fn().mockResolvedValue({ restore_operation: null }),
+  mockGetActiveFileLibraryOperation: vi.fn().mockResolvedValue({ operation: null }),
   mockListSavePoints: vi.fn().mockResolvedValue({ items: [] }),
   mockReleaseRuntimeAccess: vi.fn().mockResolvedValue({ file_library_id: 'lib_1', released: true }),
   mockRestoreFileLibrary: vi.fn().mockResolvedValue({
@@ -34,7 +37,7 @@ vi.mock('@/lib/api', () => ({
   FilesAPI: vi.fn().mockImplementation(function FilesAPIMock() {
     return {
       createSavePoint: mockCreateSavePoint,
-      getActiveRestoreOperation: mockGetActiveRestoreOperation,
+      getActiveFileLibraryOperation: mockGetActiveFileLibraryOperation,
       listSavePoints: mockListSavePoints,
       releaseRuntimeAccess: mockReleaseRuntimeAccess,
       restoreFileLibrary: mockRestoreFileLibrary,
@@ -64,7 +67,7 @@ vi.mock('next-intl', () => ({
 
 import {
   useCreateFileLibrarySavePoint,
-  useFileLibraryActiveRestoreOperation,
+  useFileLibraryActiveVersionOperation,
   useFileLibrarySavePoints,
   useReleaseFileLibraryRuntimeAccess,
   useRestoreFileLibrary,
@@ -76,11 +79,11 @@ const workspaceId = 'ws_test';
 const projectId = 'proj_test';
 const libraryId = 'lib_1';
 
-function createTestHarness() {
+function createTestHarness(options: { mutationRetry?: boolean | number } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
-      mutations: { retry: false },
+      mutations: { retry: options.mutationRetry ?? false },
     },
   });
 
@@ -171,13 +174,14 @@ describe('file library recovery hooks', () => {
     });
   });
 
-  it('loads active direct restore operation projection for one file library', async () => {
-    mockGetActiveRestoreOperation.mockResolvedValueOnce({
-      restore_operation: {
+  it('loads active file-library version operation projection for one file library', async () => {
+    mockGetActiveFileLibraryOperation.mockResolvedValueOnce({
+      operation: {
         id: 'flro_active',
+        kind: 'restore',
         file_library_id: libraryId,
         source_save_point_id: 'sp_1',
-        status: 'restoring',
+        status: 'running',
         created_at: '2026-05-09T12:01:00.000Z',
         updated_at: '2026-05-09T12:01:00.000Z',
       },
@@ -185,31 +189,31 @@ describe('file library recovery hooks', () => {
 
     const { Wrapper } = createTestHarness();
     const { result } = renderHook(
-      () => useFileLibraryActiveRestoreOperation(workspaceId, projectId, libraryId),
+      () => useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId),
       { wrapper: Wrapper },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGetActiveRestoreOperation).toHaveBeenCalledWith(workspaceId, projectId, libraryId);
-    expect(result.current.data?.restore_operation?.status).toBe('restoring');
+    expect(mockGetActiveFileLibraryOperation).toHaveBeenCalledWith(workspaceId, projectId, libraryId);
+    expect(result.current.data?.operation?.status).toBe('running');
   });
 
-  it('clears pending direct restore when the active projection becomes null and refreshes related caches', async () => {
+  it('does not treat null active operation projection as terminal restore success', async () => {
     vi.useFakeTimers();
-    mockGetActiveRestoreOperation
+    mockGetActiveFileLibraryOperation
       .mockResolvedValueOnce({
-        restore_operation: {
+        operation: {
           id: 'flro_active_to_null',
+          kind: 'restore',
           file_library_id: libraryId,
           source_save_point_id: 'sp_1',
-          status: 'restoring',
+          status: 'running',
           created_at: '2026-05-09T12:01:00.000Z',
           updated_at: '2026-05-09T12:01:00.000Z',
         },
       })
-      .mockResolvedValueOnce({ restore_operation: null });
+      .mockResolvedValueOnce({ operation: null });
     const { queryClient, Wrapper } = createTestHarness();
-    const activeOperationKey = ['file-library-active-restore-operation', workspaceId, projectId, libraryId];
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
     const objectsKey = [
       'file-objects',
@@ -223,12 +227,12 @@ describe('file library recovery hooks', () => {
     queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
 
     const { result } = renderHook(
-      () => useFileLibraryActiveRestoreOperation(workspaceId, projectId, libraryId),
+      () => useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId),
       { wrapper: Wrapper },
     );
 
     await act(async () => {
-      await vi.waitFor(() => expect(result.current.data?.restore_operation?.status).toBe('restoring'));
+      await vi.waitFor(() => expect(result.current.data?.operation?.status).toBe('running'));
     });
 
     await act(async () => {
@@ -237,20 +241,16 @@ describe('file library recovery hooks', () => {
     });
 
     await act(async () => {
-      await vi.waitFor(() => expect(result.current.data?.restore_operation).toBeNull());
+      await vi.waitFor(() => expect(result.current.data?.operation).toBeNull());
     });
-    expect(mockGetActiveRestoreOperation.mock.calls.length).toBeGreaterThanOrEqual(2);
-    await act(async () => {
-      await vi.waitFor(() => {
-        expect(queryClient.getQueryCache().find({ queryKey: activeOperationKey })?.isStale()).toBe(true);
-        expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
-        expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
-      });
-    });
+    expect(mockGetActiveFileLibraryOperation.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(false);
+    expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(false);
   });
 
-  it('creates a save point, shows it from cache immediately, and marks the save-point list stale', async () => {
+  it('creates a save point through fast admission and stores the active save operation projection', async () => {
     const { queryClient, Wrapper } = createTestHarness();
+    const activeOperationKey = ['file-library-active-operation', workspaceId, projectId, libraryId];
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
     queryClient.setQueryData(savePointsKey, {
       items: [
@@ -276,17 +276,27 @@ describe('file library recovery hooks', () => {
       });
     });
 
-    expect(mockCreateSavePoint).toHaveBeenCalledWith(workspaceId, projectId, libraryId, {
-      message: 'Before edits',
+    expect(mockCreateSavePoint).toHaveBeenCalledTimes(1);
+    expect(mockCreateSavePoint).toHaveBeenCalledWith(
+      workspaceId,
+      projectId,
+      libraryId,
+      { message: 'Before edits' },
+      { idempotencyKey: expect.stringMatching(/^save_point_/) },
+    );
+    expect(queryClient.getQueryData(activeOperationKey)).toEqual({
+      operation: {
+        id: 'flop_save_point_new',
+        kind: 'save_point_create',
+        status: 'accepted',
+        file_library_id: 'lib_1',
+        message: 'Before edits',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:00.000Z',
+      },
     });
     expect(queryClient.getQueryData(savePointsKey)).toEqual({
       items: [
-        {
-          id: 'sp_new',
-          file_library_id: 'lib_1',
-          message: 'Before edits',
-          created_at: '2026-05-09T12:00:00.000Z',
-        },
         {
           id: 'sp_existing',
           file_library_id: libraryId,
@@ -297,12 +307,47 @@ describe('file library recovery hooks', () => {
     });
     await waitFor(() => {
       expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+      expect(queryClient.getQueryCache().find({ queryKey: activeOperationKey })?.isStale()).toBe(true);
     });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('keeps one save-point idempotency key across mutation retry attempts', async () => {
+    mockCreateSavePoint
+      .mockRejectedValueOnce(new Error('transient save admission failure'))
+      .mockResolvedValueOnce({
+        id: 'flop_save_point_retry',
+        kind: 'save_point_create',
+        status: 'accepted',
+        file_library_id: libraryId,
+        message: 'Before retry',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:00.000Z',
+      });
+    const { Wrapper } = createTestHarness({ mutationRetry: 1 });
+    const { result } = renderHook(() => useCreateFileLibrarySavePoint(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId,
+        message: 'Before retry',
+      });
+    });
+
+    expect(mockCreateSavePoint).toHaveBeenCalledTimes(2);
+    const firstOptions = mockCreateSavePoint.mock.calls[0]?.[4];
+    const secondOptions = mockCreateSavePoint.mock.calls[1]?.[4];
+    expect(firstOptions).toMatchObject({ idempotencyKey: expect.stringMatching(/^save_point_/) });
+    expect(secondOptions).toEqual(firstOptions);
   });
 
   it('starts direct restore once with idempotency and invalidates file/save-point/operation caches', async () => {
     const { queryClient, Wrapper } = createTestHarness();
-    const activeOperationKey = ['file-library-active-restore-operation', workspaceId, projectId, libraryId];
+    const activeOperationKey = ['file-library-active-operation', workspaceId, projectId, libraryId];
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
     const objectsKey = [
       'file-objects',
@@ -312,7 +357,7 @@ describe('file library recovery hooks', () => {
       libraryId,
       { prefix: '', delimiter: '/', page_size: 200 },
     ];
-    queryClient.setQueryData(activeOperationKey, { restore_operation: null });
+    queryClient.setQueryData(activeOperationKey, { operation: null });
     queryClient.setQueryData(savePointsKey, { items: [] });
     queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
 
@@ -339,8 +384,9 @@ describe('file library recovery hooks', () => {
       { idempotencyKey: 'restore-key-1' },
     );
     expect(queryClient.getQueryData(activeOperationKey)).toEqual({
-      restore_operation: {
+      operation: {
         id: 'flro_1',
+        kind: 'restore',
         file_library_id: 'lib_1',
         source_save_point_id: 'sp_1',
         status: 'succeeded',
@@ -366,7 +412,7 @@ describe('file library recovery hooks', () => {
       updated_at: '2026-05-09T12:02:00.000Z',
     });
     const { queryClient, Wrapper } = createTestHarness();
-    const activeOperationKey = ['file-library-active-restore-operation', workspaceId, projectId, libraryId];
+    const activeOperationKey = ['file-library-active-operation', workspaceId, projectId, libraryId];
 
     const { result } = renderHook(() => useRestoreFileLibrary(), {
       wrapper: Wrapper,
@@ -384,9 +430,10 @@ describe('file library recovery hooks', () => {
 
     expect(toast.success).not.toHaveBeenCalled();
     expect(queryClient.getQueryData(activeOperationKey)).toEqual({
-      restore_operation: expect.objectContaining({
+      operation: expect.objectContaining({
         id: 'flro_pending',
-        status: 'pending',
+        kind: 'restore',
+        status: 'accepted',
       }),
     });
   });
@@ -436,7 +483,7 @@ describe('file library recovery hooks', () => {
 
   it('releases file-library runtime access and refreshes restore/file-library caches', async () => {
     const { queryClient, Wrapper } = createTestHarness();
-    const activeOperationKey = ['file-library-active-restore-operation', workspaceId, projectId, libraryId];
+    const activeOperationKey = ['file-library-active-operation', workspaceId, projectId, libraryId];
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
     const fileLibrariesKey = ['file-libraries', workspaceId, projectId];
     const fileLibraryDetailKey = ['file-library', workspaceId, projectId, libraryId];
@@ -448,7 +495,7 @@ describe('file library recovery hooks', () => {
       libraryId,
       { prefix: '', delimiter: '/', page_size: 200 },
     ];
-    queryClient.setQueryData(activeOperationKey, { restore_operation: { id: 'flro_1' } });
+    queryClient.setQueryData(activeOperationKey, { operation: { id: 'flro_1' } });
     queryClient.setQueryData(savePointsKey, { items: [] });
     queryClient.setQueryData(fileLibrariesKey, { items: [{ id: libraryId }] });
     queryClient.setQueryData(fileLibraryDetailKey, { id: libraryId });

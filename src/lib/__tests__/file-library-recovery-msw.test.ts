@@ -65,6 +65,38 @@ async function deletePaths(libraryId: string, paths: string[]) {
   return postJson(`/file-libraries/${libraryId}/delete`, { paths });
 }
 
+async function createSavePointAndReadFirst(libraryId: string, message: string) {
+  const save = await postJsonWithIdempotency(
+    `/file-libraries/${libraryId}/save-points`,
+    { message },
+    `save-point-${libraryId}-${message}`,
+  );
+  expect(save.status).toBe(202);
+  await expect(save.json()).resolves.toMatchObject({
+    kind: 'save_point_create',
+    status: expect.stringMatching(/^(accepted|running|succeeded)$/),
+    file_library_id: libraryId,
+    message,
+  });
+  const active = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+  expect(active.status).toBe(200);
+  await expect(active.json()).resolves.toMatchObject({
+    operation: expect.objectContaining({
+      kind: 'save_point_create',
+      file_library_id: libraryId,
+    }),
+  });
+  const list = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
+  expect(list.status).toBe(200);
+  const listBody = await list.json() as { items?: Array<{ id?: string; file_library_id?: string; message?: string }> };
+  const savePoint = (listBody.items ?? []).find((item) => item.message === message);
+  expect(savePoint).toMatchObject({
+    file_library_id: libraryId,
+    message,
+  });
+  return savePoint ?? {};
+}
+
 async function getFileLibrary(libraryId: string) {
   const response = await fetch(`${baseUrl}/file-libraries/${libraryId}`);
   expect(response.status).toBe(200);
@@ -79,19 +111,71 @@ async function getFileLibrary(libraryId: string) {
 }
 
 describe('file-library recovery and task-template MSW contracts', () => {
+  it('matches backend validation status when save point creation omits Idempotency-Key', async () => {
+    const response = await postJson('/file-libraries/lib_shared_default/save-points', {
+      message: 'Missing idempotency key',
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      error_code: 'VALIDATION_ERROR',
+      message: 'idempotency_key_required',
+    });
+  });
+
+  it('reuses one mock save point operation and save point for repeated Idempotency-Key', async () => {
+    const library = await postJson('/file-libraries', {
+      name: `Save point idempotent ${Date.now()}`,
+    });
+    expect(library.status).toBe(201);
+    const libraryPayload = await library.json() as { id?: string };
+    const libraryId = libraryPayload.id ?? '';
+
+    const first = await postJsonWithIdempotency(
+      `/file-libraries/${libraryId}/save-points`,
+      { message: 'Before idempotent save' },
+      'msw-save-point-key-repeat',
+    );
+    expect(first.status).toBe(202);
+    const firstPayload = await first.json() as { id?: string; message?: string };
+
+    const second = await postJsonWithIdempotency(
+      `/file-libraries/${libraryId}/save-points`,
+      { message: 'Retry should not create a second point' },
+      'msw-save-point-key-repeat',
+    );
+    expect(second.status).toBe(202);
+    await expect(second.json()).resolves.toMatchObject({
+      id: firstPayload.id,
+      message: 'Before idempotent save',
+    });
+
+    const list = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
+    expect(list.status).toBe(200);
+    const listBody = await list.json() as { items?: Array<{ message?: string }> };
+    expect((listBody.items ?? []).filter((item) => item.message === 'Before idempotent save')).toHaveLength(1);
+    expect((listBody.items ?? []).filter((item) => item.message === 'Retry should not create a second point')).toHaveLength(0);
+
+    const firstActive = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+    expect(firstActive.status).toBe(200);
+    await expect(firstActive.json()).resolves.toMatchObject({
+      operation: expect.objectContaining({
+        id: firstPayload.id,
+        kind: 'save_point_create',
+        status: 'running',
+      }),
+    });
+
+    const converged = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+    expect(converged.status).toBe(200);
+    await expect(converged.json()).resolves.toEqual({ operation: null });
+  });
+
   it('creates save points and restores file-library contents through direct restore without hidden save points', async () => {
     const libraryId = 'lib_shared_default';
     const before = await uploadTextFile(libraryId, 'direct-restore-target.txt', 'before restore');
     expect(before.status, await before.text()).toBe(201);
-    const save = await postJson(`/file-libraries/${libraryId}/save-points`, {
-      message: 'Before temporary change',
-    });
-    expect(save.status).toBe(201);
-    const savePoint = await save.json() as { id?: string; file_library_id?: string; message?: string };
-    expect(savePoint).toMatchObject({
-      file_library_id: libraryId,
-      message: 'Before temporary change',
-    });
+    const savePoint = await createSavePointAndReadFirst(libraryId, 'Before temporary change');
 
     const deleteOriginal = await deletePaths(libraryId, ['direct-restore-target.txt']);
     expect(deleteOriginal.status, await deleteOriginal.text()).toBe(200);
@@ -137,11 +221,7 @@ describe('file-library recovery and task-template MSW contracts', () => {
     const libraryId = libraryPayload.id ?? '';
     const upload = await uploadTextFile(libraryId, 'restore-idempotent.txt', 'before restore');
     expect(upload.status, await upload.text()).toBe(201);
-    const save = await postJson(`/file-libraries/${libraryId}/save-points`, {
-      message: 'Before idempotent restore',
-    });
-    expect(save.status).toBe(201);
-    const savePoint = await save.json() as { id?: string };
+    const savePoint = await createSavePointAndReadFirst(libraryId, 'Before idempotent restore');
     const deleteOriginal = await deletePaths(libraryId, ['restore-idempotent.txt']);
     expect(deleteOriginal.status, await deleteOriginal.text()).toBe(200);
     const mutation = await uploadTextFile(libraryId, 'restore-idempotent.txt', 'after restore');
@@ -252,11 +332,7 @@ describe('file-library recovery and task-template MSW contracts', () => {
     const libraryPayload = await library.json() as { id?: string };
     const libraryId = libraryPayload.id ?? '';
 
-    const save = await postJson(`/file-libraries/${libraryId}/save-points`, {
-      message: 'Before task writes',
-    });
-    expect(save.status).toBe(201);
-    const savePoint = await save.json() as { id?: string };
+    const savePoint = await createSavePointAndReadFirst(libraryId, 'Before task writes');
 
     const task = await postJson('/tasks', {
       title: 'Active writer task',
@@ -279,8 +355,8 @@ describe('file-library recovery and task-template MSW contracts', () => {
       blockers: [{ code: 'active_writer_sessions' }],
     });
 
-    const active = await fetch(`${baseUrl}/file-libraries/${libraryId}/restore`);
+    const active = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
     expect(active.status).toBe(200);
-    await expect(active.json()).resolves.toEqual({ restore_operation: null });
+    await expect(active.json()).resolves.toEqual({ operation: null });
   });
 });

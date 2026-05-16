@@ -15,28 +15,28 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type {
   FileLibrary,
-  FileLibraryRestoreOperation,
   FileLibrarySavePoint,
+  FileLibraryVersionOperation,
   ReleaseFileLibraryRuntimeAccessResponse,
   TaskFileTemplate,
 } from '@/lib/api/types';
 import { APIError } from '@/lib/api/errors';
 import {
   useCreateFileLibrarySavePoint,
-  useFileLibraryActiveRestoreOperation,
+  useFileLibraryActiveVersionOperation,
   useFileLibrarySavePoints,
   isFileLibraryOperationPendingError,
+  restoreOperationToVersionOperation,
   useReleaseFileLibraryRuntimeAccess,
   useRestoreFileLibrary,
 } from '@/lib/hooks/use-file-library-recovery';
@@ -59,8 +59,6 @@ type FileLibraryRecoveryDialogProps = {
   workspaceId: string;
   onOpenChange: (open: boolean) => void;
 };
-
-type FileStatesTab = 'save_points' | 'task_templates';
 
 type TemplateActionErrorDisplay = {
   description: string;
@@ -100,6 +98,8 @@ type RestoreOperationDisplay = {
   title: string;
 };
 
+type TemplatePublishMode = 'published' | 'unpublished';
+
 const EMPTY_SAVE_POINTS: FileLibrarySavePoint[] = [];
 
 function formatTimestamp(value: string) {
@@ -118,14 +118,54 @@ function generateRestoreIdempotencyKey(savePointId: string) {
   return `restore_${savePointId}_${randomPart}`;
 }
 
-function isRestoreOperationActive(operation: FileLibraryRestoreOperation | null | undefined) {
-  return operation?.status === 'pending' || operation?.status === 'restoring';
+function isVersionOperationActive(operation: FileLibraryVersionOperation | null | undefined) {
+  return operation?.status === 'accepted' || operation?.status === 'running';
 }
 
 function buildRestoreOperationDisplay(
-  operation: FileLibraryRestoreOperation,
+  operation: FileLibraryVersionOperation,
   t: FileLibraryRecoveryDialogProps['t'],
 ): RestoreOperationDisplay {
+  if (operation.kind === 'save_point_create') {
+    if (operation.status === 'succeeded') {
+      return {
+        description: t('file_manager.save_point_operation_succeeded_summary'),
+        icon: 'success',
+        title: t('file_manager.save_point_operation_succeeded_title'),
+        tone: 'success',
+      };
+    }
+    if (operation.status === 'failed') {
+      return {
+        description: operation.failure_reason?.trim() || t('file_manager.save_point_operation_failed_summary'),
+        icon: 'warning',
+        title: t('file_manager.save_point_operation_failed_title'),
+        tone: 'error',
+      };
+    }
+    if (operation.status === 'recovery_required') {
+      return {
+        description: operation.failure_reason?.trim() || t('file_manager.save_point_operation_recovery_required_summary'),
+        icon: 'warning',
+        title: t('file_manager.save_point_operation_recovery_required_title'),
+        tone: 'error',
+      };
+    }
+    if (operation.status === 'running') {
+      return {
+        description: t('file_manager.save_point_operation_running_summary'),
+        icon: 'loading',
+        title: t('file_manager.save_point_operation_running_title'),
+        tone: 'warning',
+      };
+    }
+    return {
+      description: t('file_manager.save_point_operation_accepted_summary'),
+      icon: 'loading',
+      title: t('file_manager.save_point_operation_accepted_title'),
+      tone: 'warning',
+    };
+  }
   if (operation.status === 'succeeded') {
     return {
       description: t('file_manager.restore_operation_succeeded_summary'),
@@ -140,6 +180,22 @@ function buildRestoreOperationDisplay(
       icon: 'warning',
       title: t('file_manager.restore_operation_failed_title'),
       tone: 'error',
+    };
+  }
+  if (operation.status === 'recovery_required') {
+    return {
+      description: operation.failure_reason?.trim() || t('file_manager.restore_operation_recovery_required_summary'),
+      icon: 'warning',
+      title: t('file_manager.restore_operation_recovery_required_title'),
+      tone: 'error',
+    };
+  }
+  if (operation.status === 'accepted') {
+    return {
+      description: t('file_manager.restore_operation_accepted_summary'),
+      icon: 'loading',
+      title: t('file_manager.restore_operation_accepted_title'),
+      tone: 'warning',
     };
   }
   return {
@@ -466,7 +522,6 @@ export function FileLibraryRecoveryDialog({
   workspaceId,
   onOpenChange,
 }: FileLibraryRecoveryDialogProps) {
-  const [activeTab, setActiveTab] = React.useState<FileStatesTab>('save_points');
   const [savePointMessage, setSavePointMessage] = React.useState('');
   const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
   const [pendingSavePointCreate, setPendingSavePointCreate] = React.useState<{
@@ -475,16 +530,18 @@ export function FileLibraryRecoveryDialog({
     message?: string;
   } | null>(null);
   const [pendingRestoreConfirm, setPendingRestoreConfirm] = React.useState<PendingRestoreConfirm | null>(null);
-  const [restoreOperation, setRestoreOperation] = React.useState<FileLibraryRestoreOperation | null>(null);
-  const [restoreRefreshNoticeVisible, setRestoreRefreshNoticeVisible] = React.useState(false);
+  const [restoreOperation, setRestoreOperation] = React.useState<FileLibraryVersionOperation | null>(null);
+  const [versionOperationIdleVisible, setVersionOperationIdleVisible] = React.useState(false);
   const [restoreActionError, setRestoreActionError] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [restoreActiveWriterBlocker, setRestoreActiveWriterBlocker] = React.useState<RestoreActiveWriterBlocker | null>(null);
   const [restoreReleaseError, setRestoreReleaseError] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [restoreReleasePendingDisplay, setRestoreReleasePendingDisplay] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [templateName, setTemplateName] = React.useState('');
   const [templateDescription, setTemplateDescription] = React.useState('');
+  const [templatePublishMode, setTemplatePublishMode] = React.useState<TemplatePublishMode>('published');
   const [templateActionError, setTemplateActionError] = React.useState<TemplateActionErrorDisplay | null>(null);
   const restoreConfirmInFlightRef = React.useRef(false);
+  const localVersionOperationStartedRef = React.useRef<{ id: string; activeDataUpdatedAt: number } | null>(null);
   const [restoreConfirmSubmitting, setRestoreConfirmSubmitting] = React.useState(false);
 
   const libraryId = library?.id ?? '';
@@ -494,9 +551,10 @@ export function FileLibraryRecoveryDialog({
     enabled: open && !!libraryId,
   });
   const refetchSavePoints = savePointsQuery.refetch;
-  const activeRestoreOperationQuery = useFileLibraryActiveRestoreOperation(workspaceId, projectId, libraryId, {
+  const activeVersionOperationQuery = useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId, {
     enabled: open && !!libraryId,
   });
+  const activeOperationDataUpdatedAt = activeVersionOperationQuery.dataUpdatedAt ?? 0;
   const templatesQuery = useTaskFileTemplates(workspaceId, projectId, {
     enabled: open,
   });
@@ -516,32 +574,43 @@ export function FileLibraryRecoveryDialog({
       setPendingSavePointCreate(null);
       setPendingRestoreConfirm(null);
       setRestoreOperation(null);
-      setRestoreRefreshNoticeVisible(false);
+      setVersionOperationIdleVisible(false);
       setRestoreActionError(null);
       setRestoreActiveWriterBlocker(null);
       setRestoreReleaseError(null);
       setRestoreReleasePendingDisplay(null);
       setTemplateName('');
       setTemplateDescription('');
+      setTemplatePublishMode('published');
       setTemplateActionError(null);
-      setActiveTab('save_points');
       restoreConfirmInFlightRef.current = false;
+      localVersionOperationStartedRef.current = null;
       setRestoreConfirmSubmitting(false);
     }
   }, [open]);
 
   React.useEffect(() => {
-    if (!open || activeRestoreOperationQuery.isLoading) return;
-    const nextOperation = activeRestoreOperationQuery.data?.restore_operation ?? null;
+    if (!open || activeVersionOperationQuery.isLoading) return;
+    const nextOperation = activeVersionOperationQuery.data?.operation ?? null;
     if (!nextOperation) {
-      if (isRestoreOperationActive(restoreOperation)) {
+      if (isVersionOperationActive(restoreOperation)) {
+        const localStarted = localVersionOperationStartedRef.current;
+        if (
+          localStarted?.id === restoreOperation.id
+          && activeOperationDataUpdatedAt <= localStarted.activeDataUpdatedAt
+        ) {
+          return;
+        }
+        if (localStarted?.id === restoreOperation.id) {
+          localVersionOperationStartedRef.current = null;
+        }
         setRestoreOperation(null);
-        setRestoreRefreshNoticeVisible(true);
+        setVersionOperationIdleVisible(true);
         void refetchSavePoints();
       }
       return;
     }
-    setRestoreRefreshNoticeVisible(false);
+    setVersionOperationIdleVisible(false);
     setRestoreOperation((current) => (
       current?.id === nextOperation.id
       && current.status === nextOperation.status
@@ -549,13 +618,14 @@ export function FileLibraryRecoveryDialog({
         ? current
         : nextOperation
     ));
-    if (isRestoreOperationActive(nextOperation)) {
+    if (isVersionOperationActive(nextOperation)) {
       setRestoreActionError(null);
       setRestoreActiveWriterBlocker(null);
     }
   }, [
-    activeRestoreOperationQuery.data?.restore_operation,
-    activeRestoreOperationQuery.isLoading,
+    activeVersionOperationQuery.data?.operation,
+    activeOperationDataUpdatedAt,
+    activeVersionOperationQuery.isLoading,
     open,
     refetchSavePoints,
     restoreOperation,
@@ -563,9 +633,9 @@ export function FileLibraryRecoveryDialog({
 
   const savePoints = savePointsQuery.data?.items ?? EMPTY_SAVE_POINTS;
   const templates = templatesQuery.data?.items ?? [];
-  const templatesForLibrary = templates.filter((template) => template.source_library_id === libraryId);
-  const restoreOperationActive = isRestoreOperationActive(restoreOperation);
-  const taskTemplatesBlocked = restoreOperationActive || activeRestoreOperationQuery.isLoading;
+  const templatesForProject = templates;
+  const restoreOperationActive = isVersionOperationActive(restoreOperation);
+  const taskTemplatesBlocked = restoreOperationActive || activeVersionOperationQuery.isLoading;
   const savePointListOperationPending = isFileLibraryOperationPendingError(savePointsQuery.error);
   const showSavePointListLoading = savePointsQuery.isLoading && savePoints.length === 0;
   const showSavePointListError = savePointsQuery.isError
@@ -573,11 +643,11 @@ export function FileLibraryRecoveryDialog({
     && savePoints.length === 0;
   const restoreDisplay = restoreOperation
     ? buildRestoreOperationDisplay(restoreOperation, t)
-    : restoreRefreshNoticeVisible
+    : versionOperationIdleVisible
       ? {
-          description: t('file_manager.restore_operation_refreshed_summary'),
+          description: t('file_manager.version_operation_idle_summary'),
           icon: 'info' as const,
-          title: t('file_manager.restore_operation_refreshed_title'),
+          title: t('file_manager.version_operation_idle_title'),
           tone: 'info' as const,
         }
       : null;
@@ -605,27 +675,28 @@ export function FileLibraryRecoveryDialog({
     savePointsQuery.isLoading,
   ]);
 
-  React.useEffect(() => {
-    if (taskTemplatesBlocked && activeTab === 'task_templates') {
-      setActiveTab('save_points');
-    }
-  }, [activeTab, taskTemplatesBlocked]);
-
-  const handleTabChange = (value: string) => {
-    if (value === 'task_templates' && taskTemplatesBlocked) return;
-    setActiveTab(value as FileStatesTab);
-  };
-
   const handleCreateSavePoint = async () => {
     if (!library || !libraryReady || restoreOperationActive) return;
     setSavePointActionError(null);
     try {
-      await createSavePoint.mutateAsync({
+      const operation = await createSavePoint.mutateAsync({
         workspaceId,
         projectId,
         libraryId: library.id,
         message: savePointMessage.trim() || undefined,
       });
+      localVersionOperationStartedRef.current = {
+        id: operation.id,
+        activeDataUpdatedAt: activeOperationDataUpdatedAt,
+      };
+      setRestoreOperation(operation);
+      setVersionOperationIdleVisible(false);
+      if (isVersionOperationActive(operation)) {
+        void activeVersionOperationQuery.refetch();
+      }
+      if (operation.status === 'succeeded') {
+        void savePointsQuery.refetch();
+      }
       setPendingSavePointCreate(null);
       setSavePointMessage('');
     } catch (error) {
@@ -647,7 +718,7 @@ export function FileLibraryRecoveryDialog({
     if (!library || !libraryReady || restoreOperationActive) return;
     setRestoreActionError(null);
     setRestoreActiveWriterBlocker(null);
-    setRestoreRefreshNoticeVisible(false);
+    setVersionOperationIdleVisible(false);
     setRestoreReleaseError(null);
     setRestoreReleasePendingDisplay(null);
     setPendingRestoreConfirm({
@@ -668,7 +739,7 @@ export function FileLibraryRecoveryDialog({
     setRestoreConfirmSubmitting(true);
     setRestoreActionError(null);
     setRestoreActiveWriterBlocker(null);
-    setRestoreRefreshNoticeVisible(false);
+    setVersionOperationIdleVisible(false);
     setRestoreReleaseError(null);
     setRestoreReleasePendingDisplay(null);
     try {
@@ -679,17 +750,22 @@ export function FileLibraryRecoveryDialog({
         savePointId: pendingRestoreConfirm.savePoint.id,
         idempotencyKey: pendingRestoreConfirm.idempotencyKey,
       });
-      setRestoreOperation(operation);
-      setRestoreRefreshNoticeVisible(false);
+      const versionOperation = restoreOperationToVersionOperation(operation);
+      localVersionOperationStartedRef.current = {
+        id: versionOperation.id,
+        activeDataUpdatedAt: activeOperationDataUpdatedAt,
+      };
+      setRestoreOperation(versionOperation);
+      setVersionOperationIdleVisible(false);
       setPendingRestoreConfirm(null);
       if (operation.status === 'pending' || operation.status === 'restoring') {
-        void activeRestoreOperationQuery.refetch();
+        void activeVersionOperationQuery.refetch();
       }
     } catch (error) {
       const display = buildRestoreErrorDisplay(error, t);
       setRestoreActionError(display);
       setRestoreOperation(null);
-      setRestoreRefreshNoticeVisible(false);
+      setVersionOperationIdleVisible(false);
       setPendingRestoreConfirm(null);
       if (isFileLibraryActiveWriterBlocked(error)) {
         setRestoreActiveWriterBlocker(buildRestoreActiveWriterBlocker(error, library));
@@ -717,7 +793,7 @@ export function FileLibraryRecoveryDialog({
       setRestoreActiveWriterBlocker(null);
       setRestoreActionError(null);
       await Promise.all([
-        activeRestoreOperationQuery.refetch(),
+        activeVersionOperationQuery.refetch(),
         savePointsQuery.refetch(),
       ]);
     } catch (error) {
@@ -725,11 +801,11 @@ export function FileLibraryRecoveryDialog({
     }
   };
 
-  const handlePublishCurrentState = async () => {
+  const handleSaveTaskFileTemplate = async () => {
     if (!library || !libraryReady || !templateName.trim()) return;
     setTemplateActionError(null);
     if (taskTemplatesBlocked) {
-      setTemplateActionError(activeRestoreOperationQuery.isLoading
+      setTemplateActionError(activeVersionOperationQuery.isLoading
         ? buildRestoreStateCheckingTemplateError(t)
         : buildRestoreActiveTemplateError(t));
       return;
@@ -742,13 +818,16 @@ export function FileLibraryRecoveryDialog({
         name: templateName.trim(),
         description: templateDescription.trim() || undefined,
       });
-      await publishTemplate.mutateAsync({
-        workspaceId,
-        projectId,
-        templateId: template.id,
-      });
+      if (templatePublishMode === 'published') {
+        await publishTemplate.mutateAsync({
+          workspaceId,
+          projectId,
+          templateId: template.id,
+        });
+      }
       setTemplateName('');
       setTemplateDescription('');
+      setTemplatePublishMode('published');
     } catch (error) {
       setTemplateActionError(buildTemplateActionErrorDisplay(error, t));
     }
@@ -757,7 +836,7 @@ export function FileLibraryRecoveryDialog({
   const handleTemplatePublish = async (templateId: string) => {
     setTemplateActionError(null);
     if (taskTemplatesBlocked) {
-      setTemplateActionError(activeRestoreOperationQuery.isLoading
+      setTemplateActionError(activeVersionOperationQuery.isLoading
         ? buildRestoreStateCheckingTemplateError(t)
         : buildRestoreActiveTemplateError(t));
       return;
@@ -776,7 +855,7 @@ export function FileLibraryRecoveryDialog({
   const handleTemplateUnpublish = async (templateId: string) => {
     setTemplateActionError(null);
     if (taskTemplatesBlocked) {
-      setTemplateActionError(activeRestoreOperationQuery.isLoading
+      setTemplateActionError(activeVersionOperationQuery.isLoading
         ? buildRestoreStateCheckingTemplateError(t)
         : buildRestoreActiveTemplateError(t));
       return;
@@ -795,7 +874,7 @@ export function FileLibraryRecoveryDialog({
   const handleTemplateDelete = async (templateId: string) => {
     setTemplateActionError(null);
     if (taskTemplatesBlocked) {
-      setTemplateActionError(activeRestoreOperationQuery.isLoading
+      setTemplateActionError(activeVersionOperationQuery.isLoading
         ? buildRestoreStateCheckingTemplateError(t)
         : buildRestoreActiveTemplateError(t));
       return;
@@ -816,7 +895,7 @@ export function FileLibraryRecoveryDialog({
     || savePointListOperationPending
     || savePointActionError?.kind === 'pending'
     || restoreOperationActive
-    || activeRestoreOperationQuery.isLoading;
+    || activeVersionOperationQuery.isLoading;
   const restorePending = restoreFileLibrary.isPending || restoreConfirmSubmitting;
   const releasePending = releaseRuntimeAccess.isPending;
   const templatePending = createTemplate.isPending || publishTemplate.isPending || unpublishTemplate.isPending || deleteTemplate.isPending;
@@ -824,36 +903,31 @@ export function FileLibraryRecoveryDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[720px]" data-testid="files__dialog__file-states">
-          <DialogHeader>
-            <DialogTitle>{t('file_manager.file_states')}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="right-wide"
+          className="flex h-full flex-col gap-0 overflow-hidden p-0"
+          data-testid="files__dialog__version-management"
+        >
+          <SheetHeader className="border-b border-subtle px-6 py-5">
+            <SheetTitle>{t('file_manager.version_management_title')}</SheetTitle>
+            <SheetDescription>
               {library
-                ? t('file_manager.file_state_dialog_description', { name: library.name })
-                : t('file_manager.file_state_dialog_no_library')}
-            </DialogDescription>
-          </DialogHeader>
+                ? t('file_manager.version_management_dialog_description', { name: library.name })
+                : t('file_manager.version_management_dialog_no_library')}
+            </SheetDescription>
+          </SheetHeader>
 
-          <div className="flex gap-2 rounded-md border border-subtle bg-surface/40 px-3 py-2.5 text-sm text-secondary" data-testid="files__file-states-scope">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
-            <div>{t('file_manager.file_state_scope_notice')}</div>
-          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4">
+            <div className="flex gap-2 rounded-md border border-subtle bg-surface/40 px-3 py-2.5 text-sm text-secondary" data-testid="files__version-management-scope">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
+              <div>{t('file_manager.version_management_scope_notice')}</div>
+            </div>
 
-          <Tabs value={activeTab} onValueChange={handleTabChange}>
-            <TabsList>
-              <TabsTrigger value="save_points">{t('file_manager.save_points')}</TabsTrigger>
-              <TabsTrigger
-                value="task_templates"
-                disabled={taskTemplatesBlocked}
-                data-testid="files__task-templates-tab"
-              >
-                {t('file_manager.task_templates')}
-              </TabsTrigger>
-            </TabsList>
-            {activeRestoreOperationQuery.isLoading ? (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            {activeVersionOperationQuery.isLoading ? (
               <div
-                className="mt-2 flex items-start gap-2 rounded-md border border-subtle bg-surface/45 px-3 py-2 text-sm text-secondary"
+                className="flex items-start gap-2 rounded-md border border-subtle bg-surface/45 px-3 py-2 text-sm text-secondary"
                 data-testid="files__restore-status-checking"
                 role="status"
               >
@@ -862,13 +936,128 @@ export function FileLibraryRecoveryDialog({
               </div>
             ) : null}
 
-            <TabsContent value="save_points" className="space-y-4">
-              <div className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3">
-                <div className="text-sm text-tertiary">{t('file_manager.save_point_scope_hint')}</div>
+            {restorePanelVisible ? (
+              <div
+                className={cn(
+                  'rounded-md border px-3 py-3',
+                  restoreDisplay?.tone === 'success'
+                    ? 'border-success/25 bg-success/10'
+                    : restoreDisplay?.tone === 'error'
+                      ? 'border-error/25 bg-error/10'
+                      : restoreDisplay?.tone === 'info'
+                        ? 'border-subtle bg-surface/45'
+                        : 'border-warning/30 bg-warning/10',
+                )}
+                data-testid="files__restore-operation"
+                role={restoreDisplay?.tone === 'error' || restoreActionError ? 'alert' : 'status'}
+              >
+                <div className="flex gap-2">
+                  {restoreDisplay?.icon === 'loading' ? (
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
+                  ) : restoreDisplay?.icon === 'success' ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                  ) : restoreDisplay?.icon === 'info' ? (
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
+                  ) : (
+                    <AlertTriangle className={cn(
+                      'mt-0.5 h-4 w-4 shrink-0',
+                      restoreDisplay?.tone === 'error' ? 'text-error' : 'text-warning',
+                    )} />
+                  )}
+                  <div className="min-w-0 space-y-2">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-primary" data-testid="files__restore-operation-title">
+                        {restoreActionError?.title ?? restoreDisplay?.title}
+                      </div>
+                      <div className="text-sm text-secondary" data-testid="files__restore-operation-summary">
+                        {restoreActionError?.description ?? restoreDisplay?.description}
+                      </div>
+                      {restoreActiveWriterBlocker?.visibleTask ? (
+                        <div className="text-sm text-secondary">
+                          {t('file_manager.restore_active_writer_task', {
+                            title: restoreActiveWriterBlocker.visibleTask.title,
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                    {restoreActiveWriterBlocker ? (
+                      <div className="flex flex-wrap gap-2">
+                        {restoreActiveWriterBlocker.visibleTask?.id ? (
+                          <Button asChild type="button" variant="outline" size="sm">
+                            <Link
+                              href={buildTaskPath(locale, workspaceId, projectId, restoreActiveWriterBlocker.visibleTask.id)}
+                              data-testid="files__restore-blocker-open-task"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              {t('file_manager.restore_runtime_open_task')}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {restoreActiveWriterBlocker.releaseAction ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleReleaseRuntimeAccess}
+                            disabled={releasePending}
+                            data-testid="files__restore-blocker-release"
+                          >
+                            {releasePending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <UnlockKeyhole className="h-4 w-4" />
+                            )}
+                            {t('file_manager.restore_runtime_release')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {restoreReleaseError ? (
+                      <div
+                        className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
+                        data-testid="files__restore-release-error"
+                        role="alert"
+                      >
+                        <div className="text-sm font-medium text-primary">{restoreReleaseError.title}</div>
+                        <div className="text-sm text-secondary">{restoreReleaseError.description}</div>
+                      </div>
+                    ) : null}
+                    {restoreReleasePendingDisplay ? (
+                      <div
+                        className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
+                        data-testid="files__restore-release-pending"
+                        role="status"
+                      >
+                        <div className="text-sm font-medium text-primary">{restoreReleasePendingDisplay.title}</div>
+                        <div className="text-sm text-secondary">{restoreReleasePendingDisplay.description}</div>
+                      </div>
+                    ) : null}
+                    {restoreOperationActive ? (
+                      <div
+                        className="rounded-md border border-warning/25 bg-surface/45 px-3 py-2 text-sm text-secondary"
+                        data-testid="files__restore-template-blocker"
+                      >
+                        {restoreOperation?.kind === 'restore'
+                          ? t('file_manager.task_template_restore_pending')
+                          : t('file_manager.task_template_operation_pending')}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <section className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3" aria-labelledby="files-save-point-section-title">
+              <div>
+                <h3 id="files-save-point-section-title" className="text-sm font-medium text-primary">
+                  {t('file_manager.save_point_section_title')}
+                </h3>
+                <p className="mt-1 text-sm text-tertiary">{t('file_manager.save_point_section_description')}</p>
+              </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="file-state-save-point-message">{t('file_manager.save_point_message')}</Label>
+                  <Label htmlFor="version-management-save-point-message">{t('file_manager.save_point_message')}</Label>
                   <Input
-                    id="file-state-save-point-message"
+                    id="version-management-save-point-message"
                     value={savePointMessage}
                     onChange={(event) => setSavePointMessage(event.target.value)}
                     placeholder={t('file_manager.save_point_message_placeholder')}
@@ -910,117 +1099,163 @@ export function FileLibraryRecoveryDialog({
                     </div>
                   </div>
                 ) : null}
-              </div>
+            </section>
 
-              {restorePanelVisible ? (
-                <div
+            <section className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3" aria-labelledby="files-template-section-title">
+              <div>
+                <h3 id="files-template-section-title" className="text-sm font-medium text-primary">
+                  {t('file_manager.task_template_section_title')}
+                </h3>
+                <p className="mt-1 text-sm text-tertiary">{t('file_manager.task_template_section_description')}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="version-management-template-name">{t('file_manager.task_template_name')}</Label>
+                  <Input
+                    id="version-management-template-name"
+                    value={templateName}
+                    onChange={(event) => setTemplateName(event.target.value)}
+                    placeholder={t('file_manager.task_template_name_placeholder')}
+                    disabled={!libraryReady || templatePending || taskTemplatesBlocked}
+                    data-testid="files__template__name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="version-management-template-description">{t('file_manager.task_template_description')}</Label>
+                  <Input
+                    id="version-management-template-description"
+                    value={templateDescription}
+                    onChange={(event) => setTemplateDescription(event.target.value)}
+                    placeholder={t('file_manager.task_template_description_placeholder')}
+                    disabled={!libraryReady || templatePending || taskTemplatesBlocked}
+                    data-testid="files__template__description"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={templatePublishMode === 'published'}
                   className={cn(
-                    'rounded-md border px-3 py-3',
-                    restoreDisplay?.tone === 'success'
-                      ? 'border-success/25 bg-success/10'
-                      : restoreDisplay?.tone === 'error'
-                        ? 'border-error/25 bg-error/10'
-                        : restoreDisplay?.tone === 'info'
-                          ? 'border-subtle bg-surface/45'
-                          : 'border-warning/30 bg-warning/10',
+                    templatePublishMode === 'published'
+                      ? 'border-foreground bg-foreground text-background hover:bg-foreground/95 hover:text-background'
+                      : 'bg-transparent',
                   )}
-                  data-testid="files__restore-operation"
-                  role={restoreDisplay?.tone === 'error' || restoreActionError ? 'alert' : 'status'}
+                  onClick={() => setTemplatePublishMode('published')}
+                  disabled={templatePending || taskTemplatesBlocked}
+                  data-testid="files__template__publish-mode-project"
                 >
-                  <div className="flex gap-2">
-                    {restoreDisplay?.icon === 'loading' ? (
-                      <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
-                    ) : restoreDisplay?.icon === 'success' ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                    ) : restoreDisplay?.icon === 'info' ? (
-                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
-                    ) : (
-                      <AlertTriangle className={cn(
-                        'mt-0.5 h-4 w-4 shrink-0',
-                        restoreDisplay?.tone === 'error' ? 'text-error' : 'text-warning',
-                      )} />
-                    )}
-                    <div className="min-w-0 space-y-2">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium text-primary" data-testid="files__restore-operation-title">
-                          {restoreActionError?.title ?? restoreDisplay?.title}
-                        </div>
-                        <div className="text-sm text-secondary" data-testid="files__restore-operation-summary">
-                          {restoreActionError?.description ?? restoreDisplay?.description}
-                        </div>
-                        {restoreActiveWriterBlocker?.visibleTask ? (
-                          <div className="text-sm text-secondary">
-                            {t('file_manager.restore_active_writer_task', {
-                              title: restoreActiveWriterBlocker.visibleTask.title,
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                      {restoreActiveWriterBlocker ? (
-                        <div className="flex flex-wrap gap-2">
-                          {restoreActiveWriterBlocker.visibleTask?.id ? (
-                            <Button asChild type="button" variant="outline" size="sm">
-                              <Link
-                                href={buildTaskPath(locale, workspaceId, projectId, restoreActiveWriterBlocker.visibleTask.id)}
-                                data-testid="files__restore-blocker-open-task"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                                {t('file_manager.restore_runtime_open_task')}
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {restoreActiveWriterBlocker.releaseAction ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={handleReleaseRuntimeAccess}
-                              disabled={releasePending}
-                              data-testid="files__restore-blocker-release"
-                            >
-                              {releasePending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <UnlockKeyhole className="h-4 w-4" />
-                              )}
-                              {t('file_manager.restore_runtime_release')}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {restoreReleaseError ? (
-                        <div
-                          className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
-                          data-testid="files__restore-release-error"
-                          role="alert"
-                        >
-                          <div className="text-sm font-medium text-primary">{restoreReleaseError.title}</div>
-                          <div className="text-sm text-secondary">{restoreReleaseError.description}</div>
-                        </div>
-                      ) : null}
-                      {restoreReleasePendingDisplay ? (
-                        <div
-                          className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2"
-                          data-testid="files__restore-release-pending"
-                          role="status"
-                        >
-                          <div className="text-sm font-medium text-primary">{restoreReleasePendingDisplay.title}</div>
-                          <div className="text-sm text-secondary">{restoreReleasePendingDisplay.description}</div>
-                        </div>
-                      ) : null}
-                      {restoreOperationActive ? (
-                        <div
-                          className="rounded-md border border-warning/25 bg-surface/45 px-3 py-2 text-sm text-secondary"
-                          data-testid="files__restore-template-blocker"
-                        >
-                          {t('file_manager.task_template_restore_pending')}
-                        </div>
-                      ) : null}
+                  {t('file_manager.task_template_publish_project')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={templatePublishMode === 'unpublished'}
+                  className={cn(
+                    templatePublishMode === 'unpublished'
+                      ? 'border-foreground bg-foreground text-background hover:bg-foreground/95 hover:text-background'
+                      : 'bg-transparent',
+                  )}
+                  onClick={() => setTemplatePublishMode('unpublished')}
+                  disabled={templatePending || taskTemplatesBlocked}
+                  data-testid="files__template__publish-mode-draft"
+                >
+                  {t('file_manager.task_template_publish_draft')}
+                </Button>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={handleSaveTaskFileTemplate}
+                  disabled={!libraryReady || !templateName.trim() || templatePending || taskTemplatesBlocked}
+                  data-testid="files__template__save"
+                >
+                  {templatePending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {t('file_manager.task_template_save')}
+                </Button>
+              </div>
+              {templateActionError ? (
+                <div
+                  className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-3"
+                  data-testid="files__template__error"
+                  role="alert"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-sm font-medium text-primary">
+                      {templateActionError.title}
+                    </div>
+                    <div className="text-sm text-secondary">
+                      {templateActionError.description}
                     </div>
                   </div>
                 </div>
               ) : null}
+              <div className="max-h-[220px] overflow-auto rounded-md border border-subtle">
+                {templatesForProject.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-sm text-tertiary">{t('file_manager.task_template_empty')}</div>
+                ) : (
+                  <div className="divide-y divide-subtle">
+                    {templatesForProject.map((template) => (
+                      <div key={template.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="truncate text-sm font-medium text-primary">{template.name}</div>
+                            <TemplateStatusBadge status={template.status} t={t} />
+                          </div>
+                          {template.description ? (
+                            <div className="truncate text-xs text-tertiary">{template.description}</div>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          {template.status === 'published' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleTemplateUnpublish(template.id)}
+                              disabled={templatePending || taskTemplatesBlocked}
+                              data-testid={`files__template__unpublish--${template.id}`}
+                            >
+                              {t('file_manager.template_unpublish')}
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleTemplatePublish(template.id)}
+                              disabled={templatePending || taskTemplatesBlocked}
+                              data-testid={`files__template__publish--${template.id}`}
+                            >
+                              {t('file_manager.template_publish')}
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleTemplateDelete(template.id)}
+                            disabled={templatePending || taskTemplatesBlocked}
+                            data-testid={`files__template__delete--${template.id}`}
+                          >
+                            {t('file_manager.delete')}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
 
+            <section className="space-y-3" aria-labelledby="files-restore-points-section-title">
+              <h3 id="files-restore-points-section-title" className="text-sm font-medium text-primary">
+                {t('file_manager.restore_points_section_title')}
+              </h3>
               {savePointListOperationPending && savePoints.length > 0 ? (
                 <SavePointListRecoveringNotice
                   onRetry={() => void savePointsQuery.refetch()}
@@ -1077,7 +1312,7 @@ export function FileLibraryRecoveryDialog({
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenRestoreConfirm(savePoint)}
-                          disabled={!libraryReady || restorePending || restoreOperationActive || activeRestoreOperationQuery.isLoading}
+                          disabled={!libraryReady || restorePending || restoreOperationActive || activeVersionOperationQuery.isLoading}
                           data-testid={`files__save-point__restore--${savePoint.id}`}
                         >
                           {t('file_manager.restore')}
@@ -1087,125 +1322,11 @@ export function FileLibraryRecoveryDialog({
                   </div>
                 )}
               </div>
-            </TabsContent>
-
-            <TabsContent value="task_templates" className="space-y-4">
-              <div className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3">
-                <div className="text-sm text-tertiary">{t('file_manager.task_template_scope_hint')}</div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="file-state-template-name">{t('file_manager.task_template_name')}</Label>
-                    <Input
-                      id="file-state-template-name"
-                      value={templateName}
-                      onChange={(event) => setTemplateName(event.target.value)}
-                      placeholder={t('file_manager.task_template_name_placeholder')}
-                      disabled={!libraryReady || templatePending}
-                      data-testid="files__template__name"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="file-state-template-description">{t('file_manager.task_template_description')}</Label>
-                    <Input
-                      id="file-state-template-description"
-                      value={templateDescription}
-                      onChange={(event) => setTemplateDescription(event.target.value)}
-                      placeholder={t('file_manager.task_template_description_placeholder')}
-                      disabled={!libraryReady || templatePending}
-                      data-testid="files__template__description"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={handlePublishCurrentState}
-                    disabled={!libraryReady || !templateName.trim() || templatePending}
-                    data-testid="files__template__publish-current"
-                  >
-                    {templatePending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {t('file_manager.task_template_publish_current')}
-                  </Button>
-                </div>
-                {templateActionError ? (
-                  <div
-                    className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-3"
-                    data-testid="files__template__error"
-                    role="alert"
-                  >
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                    <div className="min-w-0 space-y-1">
-                      <div className="text-sm font-medium text-primary">
-                        {templateActionError.title}
-                      </div>
-                      <div className="text-sm text-secondary">
-                        {templateActionError.description}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="max-h-[280px] overflow-auto rounded-md border border-subtle">
-                {templatesForLibrary.length === 0 ? (
-                  <div className="px-3 py-6 text-center text-sm text-tertiary">{t('file_manager.task_template_empty')}</div>
-                ) : (
-                  <div className="divide-y divide-subtle">
-                    {templatesForLibrary.map((template) => (
-                      <div key={template.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div className="truncate text-sm font-medium text-primary">{template.name}</div>
-                            <TemplateStatusBadge status={template.status} t={t} />
-                          </div>
-                          {template.description ? (
-                            <div className="truncate text-xs text-tertiary">{template.description}</div>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 gap-2">
-                          {template.status === 'published' ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void handleTemplateUnpublish(template.id)}
-                              disabled={templatePending}
-                              data-testid={`files__template__unpublish--${template.id}`}
-                            >
-                              {t('file_manager.template_unpublish')}
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void handleTemplatePublish(template.id)}
-                              disabled={templatePending}
-                              data-testid={`files__template__publish--${template.id}`}
-                            >
-                              {t('file_manager.template_publish')}
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void handleTemplateDelete(template.id)}
-                            disabled={templatePending}
-                            data-testid={`files__template__delete--${template.id}`}
-                          >
-                            {t('file_manager.delete')}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
+            </section>
+          </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={!!pendingRestoreConfirm} onOpenChange={handleRestoreConfirmOpenChange}>
         <AlertDialogContent data-testid="files__restore-confirm">

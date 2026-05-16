@@ -208,9 +208,9 @@ describe('matchProjectsRoute', () => {
       libraryId: 'flib_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore?active=true'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/operations/active'),
     ).toEqual({
-      kind: 'fileLibraryRestore',
+      kind: 'fileLibraryActiveOperation',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_1',

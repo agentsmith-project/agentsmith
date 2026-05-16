@@ -476,14 +476,34 @@ async function createSavePointForRestore(input: {
     workspaceId: 'ws_default',
     projectId: 'proj_1',
     libraryId: input.libraryId,
-    req: { headers: { 'x-request-id': 'req_save_point_for_restore' } } as never,
+    req: {
+      headers: {
+        'x-request-id': 'req_save_point_for_restore',
+        'idempotency-key': `save-point-for-restore-${input.libraryId}-${input.message ?? 'default'}`,
+      },
+    } as never,
     res: createMockResponse(),
     deps: input.deps,
     user: OWNER_USER,
     json: savePointJson,
     readBody: vi.fn().mockResolvedValue({ message: input.message ?? 'Before restore' }),
   });
-  return savePointJson.mock.calls[0]?.[2] as Record<string, unknown>;
+  const listJson = vi.fn();
+  await handleProjectFileLibraryRoutes({
+    routeKind: 'fileLibrarySavePoints',
+    method: 'GET',
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    libraryId: input.libraryId,
+    req: { headers: { 'x-request-id': 'req_save_point_for_restore_list' } } as never,
+    res: createMockResponse(),
+    deps: input.deps,
+    user: OWNER_USER,
+    json: listJson,
+    readBody: vi.fn(),
+  });
+  const listBody = listJson.mock.calls[0]?.[2] as { items?: Record<string, unknown>[] };
+  return listBody.items?.[0] ?? {};
 }
 
 function activeRuntimeBinding(libraryId: string): InternalAgentWorkspaceBinding {
@@ -1611,7 +1631,9 @@ describe('project-file-library-routes', () => {
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         libraryId: 'flib_creating',
-        req: routeKind === 'fileLibraryUpload' ? multipartUploadRequest() : {} as never,
+        req: routeKind === 'fileLibraryUpload'
+          ? multipartUploadRequest()
+          : { headers: { 'idempotency-key': `not-ready-${routeKind}` } } as never,
         res: createMockResponse(),
         deps,
         user: OWNER_USER,
@@ -1642,7 +1664,7 @@ describe('project-file-library-routes', () => {
     expect(deps.fileLibraryStorageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
   });
 
-  it('lists and creates product-safe save points and filters template-source save points', async () => {
+  it('admits product-safe save point creation as a version operation and filters template-source save points', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
     const created = await createReadyLibrary(deps);
@@ -1655,7 +1677,12 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
-      req: { headers: { 'x-request-id': 'req_save_point_create' } } as never,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_create',
+          'idempotency-key': 'save-point-create-key-1',
+        },
+      } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
@@ -1667,13 +1694,18 @@ describe('project-file-library-routes', () => {
       libraryId,
       message: 'Before restore',
       actorUserId: 'user_1',
+      idempotencyKey: 'save-point-create-key-1',
       requestId: 'req_save_point_create',
     }));
     const createdBody = createJson.mock.calls[0]?.[2] as Record<string, unknown>;
     expect(createdBody).toMatchObject({
-      id: expect.stringMatching(/^flsp_/),
+      id: expect.stringMatching(/^flop_/),
+      kind: 'save_point_create',
       file_library_id: libraryId,
+      status: expect.stringMatching(/^(accepted|running|succeeded)$/),
       message: 'Before restore',
+      created_at: expect.any(String),
+      updated_at: expect.any(String),
     });
     expect(JSON.stringify(createdBody)).not.toMatch(/repo_|sp_user_|tmpl_|credential|control_root/);
 
@@ -1705,6 +1737,247 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify(listBody)).not.toMatch(/repo_flib|sp_user|tmpl_|storage_credential|control_root/);
   });
 
+  it('rejects save point creation without Idempotency-Key before storage admission', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_missing_idempotency' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    })).resolves.toBe(true);
+
+    expect(createJson).toHaveBeenCalledWith(expect.anything(), 422, {
+      error_code: 'VALIDATION_ERROR',
+      message: 'idempotency_key_required',
+    });
+    expect(storageAdapter.createSavePoint).not.toHaveBeenCalled();
+  });
+
+  it('reuses the local save-point version operation for the same Idempotency-Key', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_idempotent',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const firstJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_idempotent_first',
+          'idempotency-key': 'save-point-idempotent-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: firstJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    })).resolves.toBe(true);
+    const secondJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_idempotent_second',
+          'idempotency-key': 'save-point-idempotent-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: secondJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Different retry body' }),
+    })).resolves.toBe(true);
+
+    const firstBody = firstJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    const secondBody = secondJson.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(secondBody).toEqual(firstBody);
+    expect(secondBody).not.toHaveProperty('idempotency_key');
+    expect(storageAdapter.createSavePoint).toHaveBeenCalledTimes(1);
+    await expect(deps.docStore.list<Record<string, unknown>>(
+      'project_file_library_version_operations',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: libraryId,
+      },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: firstBody.id,
+        idempotency_key: 'save-point-idempotent-key',
+        afscp_operation_id: 'op_save_point_idempotent',
+      }),
+    ]);
+  });
+
+  it('projects active save-point creation operations through the library active operation endpoint', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_active',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_active',
+        operation_state: 'running',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: null,
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_active',
+          'idempotency-key': 'save-point-active-key-1',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before active projection' }),
+    })).resolves.toBe(true);
+
+    expect(createJson).toHaveBeenCalledWith(expect.anything(), 202, expect.objectContaining({
+      id: expect.stringMatching(/^flop_/),
+      kind: 'save_point_create',
+      file_library_id: libraryId,
+      status: 'accepted',
+      message: 'Before active projection',
+    }));
+    const operationId = (createJson.mock.calls[0]?.[2] as { id?: string }).id;
+
+    const activeJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryActiveOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_active_projection' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: activeJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.getOperationProjection).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_save_point_active',
+      requestId: 'req_save_point_active_projection',
+    }));
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: expect.objectContaining({
+        id: operationId,
+        kind: 'save_point_create',
+        file_library_id: libraryId,
+        status: 'running',
+        message: 'Before active projection',
+      }),
+    });
+    expect(JSON.stringify(activeJson.mock.calls[0]?.[2])).not.toMatch(/op_save_point_active|repo_/);
+  });
+
+  it('does not project completed save-point creation operations as permanently active', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_terminal',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_terminal',
+        operation_state: 'succeeded',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: null,
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_terminal',
+          'idempotency-key': 'save-point-terminal-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({ message: 'Before terminal projection' }),
+    })).resolves.toBe(true);
+
+    const activeJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryActiveOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_terminal_projection' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: activeJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, { operation: null });
+  });
+
   it('returns stable save point create blockers without exposing storage internals', async () => {
     for (const [message, errorCode] of [
       ['file_library_save_point_create_pending', 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING'],
@@ -1726,7 +1999,12 @@ describe('project-file-library-routes', () => {
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         libraryId,
-        req: { headers: { 'x-request-id': 'req_save_point_blocker' } } as never,
+        req: {
+          headers: {
+            'x-request-id': 'req_save_point_blocker',
+            'idempotency-key': `save-point-blocker-${message}`,
+          },
+        } as never,
         res: createMockResponse(),
         deps,
         user: OWNER_USER,
@@ -1817,9 +2095,9 @@ describe('project-file-library-routes', () => {
       status: 'restoring',
     });
 
-    const getJson = vi.fn();
+    const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryRestore',
+      routeKind: 'fileLibraryActiveOperation',
       method: 'GET',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -1828,19 +2106,20 @@ describe('project-file-library-routes', () => {
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: getJson,
+      json: activeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
-    expect(getJson.mock.calls[0]?.[2]).toMatchObject({
-      restore_operation: {
+    expect(activeJson.mock.calls[0]?.[2]).toMatchObject({
+      operation: {
         id: restoreBody.id,
+        kind: 'restore',
         file_library_id: libraryId,
         source_save_point_id: savePoint.id,
-        status: 'restoring',
+        status: 'running',
       },
     });
 
-    expect(JSON.stringify([restoreJson.mock.calls, repeatJson.mock.calls, getJson.mock.calls]))
+    expect(JSON.stringify([restoreJson.mock.calls, repeatJson.mock.calls, activeJson.mock.calls]))
       .not.toMatch(/repo_|sp_user_|op_restore|ns_|plan_|credential|control_root/);
   });
 
@@ -1956,12 +2235,6 @@ describe('project-file-library-routes', () => {
     expect(blocked?.body).toMatchObject({
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_restore_operation_active',
-      restore_operation: expect.objectContaining({
-        id: accepted?.body.id,
-        file_library_id: libraryId,
-        source_save_point_id: savePoint.id,
-        status: expect.stringMatching(/^(pending|restoring)$/),
-      }),
       operation_status: 'pending',
       retry_after_ms: 2000,
     });
@@ -2029,9 +2302,9 @@ describe('project-file-library-routes', () => {
     });
     expect(activeOperationSeenByStorage?.afscp_operation_id).toBeNull();
 
-    const getJson = vi.fn();
+    const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryRestore',
+      routeKind: 'fileLibraryActiveOperation',
       method: 'GET',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -2040,15 +2313,16 @@ describe('project-file-library-routes', () => {
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: getJson,
+      json: activeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
-    expect(getJson.mock.calls[0]?.[2]).toMatchObject({
-      restore_operation: {
+    expect(activeJson.mock.calls[0]?.[2]).toMatchObject({
+      operation: {
         id: activeOperationSeenByStorage?.id,
+        kind: 'restore',
         file_library_id: libraryId,
         source_save_point_id: savePoint.id,
-        status: 'pending',
+        status: 'accepted',
       },
     });
 
@@ -2234,9 +2508,9 @@ describe('project-file-library-routes', () => {
       runtime_access_release_restore_correlation_id: restoreCorrelationId,
     });
 
-    const getJson = vi.fn();
+    const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryRestore',
+      routeKind: 'fileLibraryActiveOperation',
       method: 'GET',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -2245,7 +2519,7 @@ describe('project-file-library-routes', () => {
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: getJson,
+      json: activeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
@@ -2254,8 +2528,8 @@ describe('project-file-library-routes', () => {
       operationId: 'op_restore_replayed_pending_start',
       requestId: 'req_restore_pre_start_replay_get',
     }));
-    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
-      restore_operation: null,
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: null,
     });
     await expect(bindingRepo.find({
       workspaceId: 'ws_default',
@@ -2269,7 +2543,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('continues a pre-start direct restore from GET status when the active operation has no storage operation id', async () => {
+  it('continues a pre-start direct restore from the active operation projection when the local operation has no storage operation id', async () => {
     const storageAdapter = createStorageAdapter({
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_pre_start_get',
@@ -2295,9 +2569,9 @@ describe('project-file-library-routes', () => {
     });
     const pendingOperation = pendingOperationResult.operation;
 
-    const getJson = vi.fn();
+    const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryRestore',
+      routeKind: 'fileLibraryActiveOperation',
       method: 'GET',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -2306,7 +2580,7 @@ describe('project-file-library-routes', () => {
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: getJson,
+      json: activeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
@@ -2319,8 +2593,8 @@ describe('project-file-library-routes', () => {
       actorUserId: OWNER_USER.id,
       requestId: 'req_restore_pre_start_get',
     }));
-    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
-      restore_operation: null,
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: null,
     });
     await expect(restoreRepo.getById(
       'ws_default',
@@ -2549,7 +2823,7 @@ describe('project-file-library-routes', () => {
     const libraryId = String(created.id);
     const savePoint = await createSavePointForRestore({ deps, libraryId });
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-    const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
+    await restoreRepo.createOrReuseActiveByLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
@@ -2586,10 +2860,6 @@ describe('project-file-library-routes', () => {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_restore_operation_active',
       file_library_id: libraryId,
-      restore_operation: expect.objectContaining({
-        id: pendingOperationResult.operation.id,
-        status: 'pending',
-      }),
     }));
     expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
   });
@@ -2689,9 +2959,9 @@ describe('project-file-library-routes', () => {
       }),
     });
 
-    const getJson = vi.fn();
+    const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryRestore',
+      routeKind: 'fileLibraryActiveOperation',
       method: 'GET',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -2700,7 +2970,7 @@ describe('project-file-library-routes', () => {
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: getJson,
+      json: activeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
@@ -2709,8 +2979,26 @@ describe('project-file-library-routes', () => {
       operationId: 'op_restore_direct',
       requestId: 'req_restore_terminal_get',
     }));
-    expect(getJson).toHaveBeenCalledWith(expect.anything(), 200, {
-      restore_operation: null,
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: null,
+    });
+
+    const activeVersionJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryActiveOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_terminal_active_version' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: activeVersionJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(activeVersionJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: null,
     });
     await expect(new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).findActiveByLibrary(
       'ws_default',
@@ -3323,7 +3611,6 @@ describe('project-file-library-routes', () => {
         save_point_id: firstSavePoint.id,
       }),
     });
-    const restoreOperation = restoreJson.mock.calls[0]?.[2] as Record<string, unknown>;
     const savePointCreateCallsAfterSetup = vi.mocked(storageAdapter.createSavePoint).mock.calls.length;
 
     const sameSavePointJson = vi.fn();
@@ -3351,10 +3638,6 @@ describe('project-file-library-routes', () => {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_restore_operation_active',
       file_library_id: libraryId,
-      restore_operation: expect.objectContaining({
-        id: restoreOperation.id,
-        status: 'restoring',
-      }),
       operation_status: 'pending',
       retry_after_ms: 2000,
     }));
@@ -3384,10 +3667,6 @@ describe('project-file-library-routes', () => {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_restore_operation_active',
       file_library_id: libraryId,
-      restore_operation: expect.objectContaining({
-        id: restoreOperation.id,
-        status: 'restoring',
-      }),
       operation_status: 'pending',
       retry_after_ms: 2000,
     }));
@@ -3422,7 +3701,12 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
-      req: { headers: { 'x-request-id': 'req_save_point_restore_active' } } as never,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_restore_active',
+          'idempotency-key': 'save-point-restore-active-key',
+        },
+      } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
@@ -3581,7 +3865,7 @@ describe('project-file-library-routes', () => {
   });
 
   it('does not call legacy restore preview/run/fence helpers on the direct restore route', () => {
-    const source = readFileSync('packages/api-entry-node/src/project-file-library-routes.ts', 'utf8');
+    const source = readFileSync(new URL('./project-file-library-routes.ts', import.meta.url), 'utf8');
     const start = source.indexOf("routeKind === 'fileLibraryRestore'");
     const end = source.indexOf("routeKind === 'fileLibraryEntries'", start);
     expect(start).toBeGreaterThanOrEqual(0);

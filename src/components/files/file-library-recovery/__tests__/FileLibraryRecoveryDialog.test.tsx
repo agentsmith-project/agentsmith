@@ -50,11 +50,33 @@ vi.mock('@/lib/hooks/use-file-library-recovery', () => ({
     return value.includes('file_library_operation_pending')
       || value.includes('file_library_restore_operation_pending');
   },
+  restoreOperationToVersionOperation: (operation: {
+    created_at: string;
+    failure_reason?: string;
+    file_library_id: string;
+    id: string;
+    source_save_point_id: string;
+    status: 'pending' | 'restoring' | 'succeeded' | 'failed';
+    updated_at: string;
+  }) => ({
+    id: operation.id,
+    kind: 'restore',
+    file_library_id: operation.file_library_id,
+    source_save_point_id: operation.source_save_point_id,
+    status: operation.status === 'pending'
+      ? 'accepted'
+      : operation.status === 'restoring'
+        ? 'running'
+        : operation.status,
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
+  }),
   useCreateFileLibrarySavePoint: (options?: unknown) => {
     mockUseCreateSavePointOptions(options);
     return { mutateAsync: mockCreateSavePoint, isPending: false };
   },
-  useFileLibraryActiveRestoreOperation: () => mockActiveRestoreOperationQueryState(),
+  useFileLibraryActiveVersionOperation: () => mockActiveRestoreOperationQueryState(),
   useFileLibrarySavePoints: () => mockSavePointsQueryState(),
   useReleaseFileLibraryRuntimeAccess: () => ({ mutateAsync: mockReleaseRuntimeAccess, isPending: false }),
   useRestoreFileLibrary: (options?: unknown) => {
@@ -79,7 +101,6 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.file_state_dialog_description': '{name}. Save points, restore, and task file templates apply to the whole file library.',
     'file_manager.file_state_dialog_no_library': 'No ready file library is selected.',
     'file_manager.file_state_scope_notice': 'Restore changes file library files only; conversations and traces stay unchanged.',
-    'file_manager.file_states': 'File states',
     'file_manager.loading': 'Loading...',
     'file_manager.restore': 'Restore',
     'file_manager.restore_active_writer_description': 'Before restoring files, release task file usage. After it completes, click Restore again.',
@@ -88,14 +109,31 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.restore_confirm': 'Restore files',
     'file_manager.restore_confirm_cancel': 'Cancel',
     'file_manager.restore_confirm_description': 'This will replace the current file library files with the selected save point. Current file changes that were not saved to a save point will be lost. Other save points will remain, but the file library will return to this saved state. Conversations and traces will not change.',
-    'file_manager.restore_confirm_helper': 'If you want to keep the current files, cancel and save the current state first.',
+    'file_manager.restore_confirm_helper': 'If you want to keep the current files, cancel and save a restore point first.',
     'file_manager.restore_confirm_title': 'Restore to "{name}"?',
     'file_manager.restore_error_failed': 'Restore could not start. Check the file library state, then try again.',
     'file_manager.restore_error_title': 'Restore needs attention',
     'file_manager.restore_operation_failed_summary': 'Restore failed. No successful restore was applied. Review the reason and try again.',
     'file_manager.restore_operation_failed_title': 'Restore failed',
-    'file_manager.restore_operation_refreshed_summary': 'No active restore is running now. The file list and save points are refreshing.',
-    'file_manager.restore_operation_refreshed_title': 'Restore state refreshed',
+    'file_manager.save_point_operation_accepted_summary': 'Save point creation has been accepted. The restore point will appear after storage finishes.',
+    'file_manager.save_point_operation_accepted_title': 'Saving restore point...',
+    'file_manager.save_point_operation_failed_summary': 'Save point creation failed. Your files were not saved as a restore point.',
+    'file_manager.save_point_operation_failed_title': 'Save point failed',
+    'file_manager.save_point_operation_recovery_required_summary': 'Save point creation needs system attention before you try again.',
+    'file_manager.save_point_operation_recovery_required_title': 'Save point needs system attention',
+    'file_manager.save_point_operation_running_summary': 'Saving the whole file library as a restore point.',
+    'file_manager.save_point_operation_running_title': 'Saving restore point...',
+    'file_manager.save_point_operation_succeeded_summary': 'The restore point is saved. Refreshing the restore point list.',
+    'file_manager.save_point_operation_succeeded_title': 'Restore point saved.',
+    'file_manager.version_and_templates': 'Version & templates',
+    'file_manager.version_management_dialog_description': '{name}. Save restore points and task file templates for the whole file library.',
+    'file_manager.version_management_dialog_no_library': 'No ready file library is selected.',
+    'file_manager.version_management_scope_notice': 'Versions and templates cover the whole file library. Conversations and traces stay unchanged.',
+    'file_manager.version_management_title': 'File library version management',
+    'file_manager.version_operation_idle_summary': 'There is no active save or restore operation. Check the restore point list for completed versions.',
+    'file_manager.version_operation_idle_title': 'No version operation is running',
+    'file_manager.save_point_section_description': 'Save the current whole file library content so you can restore it later.',
+    'file_manager.save_point_section_title': 'Save as restore point',
     'file_manager.restore_operation_restoring_summary': 'Restore is updating the file library. File-changing actions stay unavailable until it finishes.',
     'file_manager.restore_operation_restoring_title': 'Restoring files...',
     'file_manager.restore_operation_succeeded_summary': 'The file library now matches the selected save point.',
@@ -111,14 +149,14 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
     'file_manager.save_point_action_failed_title': 'Save point needs attention',
     'file_manager.save_point_active_writer_blocked': 'Task files are still in use. Release task file usage, then try again.',
-    'file_manager.save_point_create': 'Save current state',
+    'file_manager.save_point_create': 'Save restore point',
     'file_manager.save_point_default_name': 'Untitled save point',
     'file_manager.save_point_empty': 'No save points yet',
     'file_manager.save_point_load_error_description': 'Save points could not be loaded. Retry before choosing a restore point.',
     'file_manager.save_point_load_error_title': 'Could not load save points',
     'file_manager.save_point_message': 'Save point note',
     'file_manager.save_point_message_placeholder': 'e.g. Before prompt edits',
-    'file_manager.save_point_operation_pending': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+    'file_manager.save_point_operation_pending': 'File library version operation is still running. Wait for it to finish, then try again.',
     'file_manager.save_point_preparing_description': 'Save points are still syncing. Retry in a moment, or use the button to check again now.',
     'file_manager.save_point_preparing_title': 'Save points are syncing',
     'file_manager.save_point_retry': 'Retry',
@@ -134,15 +172,21 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.task_template_empty': 'No task file templates yet',
     'file_manager.task_template_name': 'Template name',
     'file_manager.task_template_name_placeholder': 'e.g. Release notes starter',
-    'file_manager.task_template_operation_pending': 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+    'file_manager.task_template_operation_pending': 'File library version operation is still running. Wait for it to finish, then try again.',
+    'file_manager.task_template_publish_draft': 'Save as unpublished template',
+    'file_manager.task_template_publish_project': 'Save and publish for this project',
     'file_manager.task_template_publish_current': 'Publish current state',
     'file_manager.task_template_restore_active': 'A restore is still running. Wait for it to finish before publishing task file templates.',
     'file_manager.task_template_restore_pending': 'Wait for this restore to finish before publishing task file templates.',
+    'file_manager.task_template_save': 'Save template',
+    'file_manager.task_template_section_description': 'Save this library as a task file template. Published templates are available when creating Agent tasks in this project.',
+    'file_manager.task_template_section_title': 'Save as task file template',
     'file_manager.task_template_scope_hint': 'Publish a reusable task file template from the whole file library.',
     'file_manager.task_template_status_failed': 'Failed',
     'file_manager.task_template_status_published': 'Published',
     'file_manager.task_template_status_unpublished': 'Draft',
     'file_manager.task_templates': 'Task file templates',
+    'file_manager.restore_points_section_title': 'Restore points',
     'file_manager.template_publish': 'Publish',
     'file_manager.template_unpublish': 'Unpublish',
   };
@@ -183,7 +227,7 @@ describe('FileLibraryRecoveryDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockActiveRestoreOperationQueryState.mockImplementation(() => ({
-      data: { restore_operation: null },
+      data: { operation: null },
       error: null,
       isError: false,
       isLoading: false,
@@ -219,12 +263,26 @@ describe('FileLibraryRecoveryDialog', () => {
         created_at: '2026-05-09T12:00:00.000Z',
         updated_at: '2026-05-09T12:00:00.000Z',
       },
+      {
+        id: 'tmpl_project_shared',
+        workspace_id: 'ws_default',
+        project_id: 'proj_001',
+        source_library_id: 'lib_other',
+        name: 'Project shared starter',
+        status: 'published',
+        created_by_user_id: 'user_001',
+        created_at: '2026-05-09T12:01:00.000Z',
+        updated_at: '2026-05-09T12:01:00.000Z',
+      },
     ]);
     mockCreateSavePoint.mockResolvedValue({
-      id: 'sp_new',
+      id: 'flop_save_point_new',
+      kind: 'save_point_create',
       file_library_id: 'lib_1',
+      status: 'accepted',
       message: 'Before prompt edits',
       created_at: '2026-05-09T12:04:00.000Z',
+      updated_at: '2026-05-09T12:04:00.000Z',
     });
     mockRestoreFileLibrary.mockResolvedValue({
       id: 'flro_1',
@@ -251,6 +309,115 @@ describe('FileLibraryRecoveryDialog', () => {
     mockDeleteTemplate.mockResolvedValue(undefined);
   });
 
+  it('renders version management as one panel without tabs', () => {
+    renderDialog();
+
+    const dialog = screen.getByTestId('files__dialog__version-management');
+    expect(dialog).toHaveTextContent('File library version management');
+    expect(dialog).toHaveClass('fixed');
+    expect(dialog).toHaveClass('right-0');
+    expect(dialog).toHaveClass('sm:w-[640px]');
+    expect(dialog).not.toHaveTextContent(['File', 'states'].join(' '));
+    expect(screen.getByTestId('files__version-management-scope')).toBeVisible();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Save points' })).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Save as restore point');
+    expect(dialog).toHaveTextContent('Save as task file template');
+    expect(dialog).toHaveTextContent('Restore points');
+    expect(screen.getByTestId('files__save-point__message')).toBeVisible();
+    expect(screen.getByTestId('files__template__name')).toBeVisible();
+    expect(screen.getByText('Before edits')).toBeVisible();
+    expect(screen.getByText('Draft starter')).toBeVisible();
+  });
+
+  it('shows template publish mode as a visible segmented control', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    const projectButton = screen.getByTestId('files__template__publish-mode-project');
+    const draftButton = screen.getByTestId('files__template__publish-mode-draft');
+    expect(projectButton).toHaveAttribute('aria-pressed', 'true');
+    expect(projectButton).toHaveClass('bg-foreground');
+    expect(draftButton).toHaveAttribute('aria-pressed', 'false');
+    expect(draftButton).not.toHaveClass('bg-foreground');
+
+    await user.click(draftButton);
+
+    expect(projectButton).toHaveAttribute('aria-pressed', 'false');
+    expect(projectButton).not.toHaveClass('bg-foreground');
+    expect(draftButton).toHaveAttribute('aria-pressed', 'true');
+    expect(draftButton).toHaveClass('bg-foreground');
+  });
+
+  it('shows fast save-point admission as an operation instead of waiting for a terminal save point', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByTestId('files__save-point__message'), 'Before prompt edits');
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    await waitFor(() => {
+      expect(mockCreateSavePoint).toHaveBeenCalledWith({
+        workspaceId: 'ws_default',
+        projectId: 'proj_001',
+        libraryId: 'lib_1',
+        message: 'Before prompt edits',
+      });
+    });
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('Saving restore point...');
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
+      'Save point creation has been accepted.',
+    );
+    expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
+    expect(screen.queryByText('Restore point saved.')).not.toBeInTheDocument();
+  });
+
+  it('lists project-visible task file templates without filtering to the current source library', () => {
+    renderDialog();
+
+    expect(screen.getByText('Draft starter')).toBeVisible();
+    expect(screen.getByText('Project shared starter')).toBeVisible();
+  });
+
+  it('saves and publishes a project-visible task file template by default', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByTestId('files__template__name'), 'Release notes starter');
+    await user.click(screen.getByTestId('files__template__save'));
+
+    await waitFor(() => {
+      expect(mockCreateTemplate).toHaveBeenCalledWith({
+        workspaceId: 'ws_default',
+        projectId: 'proj_001',
+        sourceLibraryId: 'lib_1',
+        name: 'Release notes starter',
+        description: undefined,
+      });
+    });
+    expect(mockPublishTemplate).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_001',
+      templateId: 'tmpl_new',
+    });
+  });
+
+  it('can save a task file template as unpublished draft without publishing it', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByTestId('files__template__publish-mode-draft'));
+    await user.type(screen.getByTestId('files__template__name'), 'Draft task starter');
+    await user.click(screen.getByTestId('files__template__save'));
+
+    await waitFor(() => {
+      expect(mockCreateTemplate).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Draft task starter',
+      }));
+    });
+    expect(mockPublishTemplate).not.toHaveBeenCalled();
+  });
+
   it('opens destructive confirm from restore click without creating a preview', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -262,7 +429,11 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__restore-confirm')).toHaveTextContent(
       'Current file changes that were not saved to a save point will be lost.',
     );
+    expect(screen.getByTestId('files__restore-confirm')).toHaveTextContent(
+      'cancel and save a restore point first.',
+    );
     expect(mockRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(mockCreateSavePoint).not.toHaveBeenCalled();
     expect(screen.queryByTestId('files__restore-operation')).not.toBeInTheDocument();
     expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
   });
@@ -334,14 +505,15 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__save-point__message')).toHaveValue('Before prompt edits');
   });
 
-  it('shows active direct restore operation when reopened and blocks destructive file-state writes', () => {
+  it('shows active direct restore operation when reopened and blocks destructive version-management writes', () => {
     mockActiveRestoreOperationQueryState.mockReturnValue({
       data: {
-        restore_operation: {
+        operation: {
           id: 'flro_active',
+          kind: 'restore',
           file_library_id: 'lib_1',
           source_save_point_id: 'sp_1',
-          status: 'restoring',
+          status: 'running',
           created_at: '2026-05-09T12:01:00.000Z',
           updated_at: '2026-05-09T12:02:00.000Z',
         },
@@ -361,20 +533,22 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
     expect(screen.getByTestId('files__save-point__create')).toBeDisabled();
     expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeDisabled();
-    expect(screen.getByRole('tab', { name: 'Task file templates' })).toBeDisabled();
+    expect(screen.getByTestId('files__template__name')).toBeDisabled();
+    expect(screen.getByTestId('files__restore-template-blocker')).toBeVisible();
   });
 
-  it('clears local restoring state when backend reports no active restore and shows a refresh notice', () => {
+  it('does not treat a null active operation projection as restore success', () => {
     let restoreOperation: unknown = {
       id: 'flro_active',
+      kind: 'restore',
       file_library_id: 'lib_1',
       source_save_point_id: 'sp_1',
-      status: 'restoring',
+      status: 'running',
       created_at: '2026-05-09T12:01:00.000Z',
       updated_at: '2026-05-09T12:02:00.000Z',
     };
     mockActiveRestoreOperationQueryState.mockImplementation(() => ({
-      data: { restore_operation: restoreOperation },
+      data: { operation: restoreOperation },
       error: null,
       isError: false,
       isLoading: false,
@@ -397,10 +571,12 @@ describe('FileLibraryRecoveryDialog', () => {
       />,
     );
 
-    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('Restore state refreshed');
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('No version operation is running');
     expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
-      'No active restore is running now. The file list and save points are refreshing.',
+      'There is no active save or restore operation.',
     );
+    expect(screen.getByTestId('files__restore-operation')).not.toHaveTextContent('Restore state refreshed');
+    expect(screen.getByTestId('files__restore-operation')).not.toHaveTextContent('No active restore is running now');
     expect(screen.getByTestId('files__restore-operation')).not.toHaveTextContent('Files restored.');
     expect(screen.getByTestId('files__save-point__restore--sp_1')).toBeEnabled();
     expect(mockRefetchSavePoints).toHaveBeenCalled();

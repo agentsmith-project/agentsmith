@@ -243,31 +243,43 @@ describe('file-library direct restore static guard', () => {
     expect(e2eSource).toContain('/save-points');
     expect(e2eSource).toContain('/restore-');
     expect(e2eSource).toContain("restore_' + 'preview_id");
+    expect(e2eSource).not.toContain('Restore state refreshed');
+    expect(e2eSource).not.toContain('No active restore is running now');
   });
 
-  it('keeps active direct restore GET and POST covered by OpenAPI, generated types, and route-kind map', () => {
+  it('keeps direct restore POST and active version operation covered by OpenAPI, generated types, and route-kind map', () => {
     const routeKindMap = JSON.parse(
       readFileSync('docs/contracts/specs/openapi-route-kind-map.json', 'utf8'),
     ) as Record<string, { path?: string; method?: string; methods?: string[] }>;
     const restorePath = '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore';
+    const activeOperationPath = '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active';
+    const removedRestoreGetOperation = 'get: operations["getActiveFileLibrary' + 'Restore"]';
+    const removedRestoreResponseSchema = 'GetFileLibrary' + 'RestoreResponse';
     const routeKindRestore = routeKindMap.fileLibraryRestore;
+    const routeKindActiveOperation = routeKindMap.fileLibraryActiveOperation;
 
     expect(routeKindRestore?.path).toBe(restorePath);
-    expect(routeKindRestore?.method).toBeUndefined();
-    expect(new Set(routeKindRestore?.methods ?? [])).toEqual(new Set(['get', 'post']));
+    expect(routeKindRestore?.method).toBe('post');
+    expect(routeKindRestore?.methods).toBeUndefined();
+    expect(routeKindActiveOperation?.path).toBe(activeOperationPath);
+    expect(routeKindActiveOperation?.method).toBe('get');
 
     const openApi = JSON.parse(readFileSync('docs/contracts/specs/openapi.json', 'utf8')) as {
       paths?: Record<string, Record<string, unknown>>;
     };
-    expect(openApi.paths?.[restorePath]).toHaveProperty('get');
+    expect(openApi.paths?.[restorePath]).not.toHaveProperty('get');
     expect(openApi.paths?.[restorePath]).toHaveProperty('post');
+    expect(openApi.paths?.[activeOperationPath]).toHaveProperty('get');
 
     const generatedTypes = readFileSync('src/lib/api/types.generated.ts', 'utf8');
     const generatedRestoreSlice = generatedTypes.slice(
       generatedTypes.indexOf(`"${restorePath}"`),
       generatedTypes.indexOf('"/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release"'),
     );
-    expect(generatedRestoreSlice).toContain('get: operations["getActiveFileLibraryRestore"]');
+    expect(generatedRestoreSlice).not.toContain(removedRestoreGetOperation);
     expect(generatedRestoreSlice).toContain('post: operations["createFileLibraryRestore"]');
+    expect(generatedTypes).toContain(`"${activeOperationPath}"`);
+    expect(generatedTypes).toContain('get: operations["getActiveFileLibraryVersionOperation"]');
+    expect(generatedTypes).not.toContain(removedRestoreResponseSchema);
   });
 });

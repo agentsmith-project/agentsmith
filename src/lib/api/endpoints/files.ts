@@ -10,14 +10,14 @@ import type {
   DeleteFileLibraryAcceptedResponse,
   DeleteFileLibraryResult,
   FileLibrary,
+  GetFileLibraryActiveOperationResponse,
   FileLibraryOperationProjection,
   FileLibraryRestoreOperation,
   FileObjectsListParams,
   FileObjectsListResponse,
   FileObjectMeta,
   FileObjectItem,
-  FileLibrarySavePoint,
-  GetFileLibraryRestoreOperationResponse,
+  FileLibraryVersionOperation,
   ListFileLibrarySavePointsResponse,
   ListTaskFileTemplatesResponse,
   ReleaseFileLibraryRuntimeAccessResponse,
@@ -135,20 +135,26 @@ export class FilesAPI {
     projectId: string,
     libraryId: string,
     payload: CreateFileLibrarySavePointRequest,
-  ): Promise<FileLibrarySavePoint> {
-    return this.client.post<FileLibrarySavePoint>(
+    options: { idempotencyKey: string },
+  ): Promise<FileLibraryVersionOperation> {
+    return this.client.post<FileLibraryVersionOperation>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/save-points`,
       payload,
+      {
+        headers: {
+          'Idempotency-Key': options.idempotencyKey,
+        },
+      },
     );
   }
 
-  async getActiveRestoreOperation(
+  async getActiveFileLibraryOperation(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<GetFileLibraryRestoreOperationResponse> {
-    return this.client.get<GetFileLibraryRestoreOperationResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/restore`,
+  ): Promise<GetFileLibraryActiveOperationResponse> {
+    return this.client.get<GetFileLibraryActiveOperationResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/operations/active`,
     );
   }
 

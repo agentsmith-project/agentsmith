@@ -194,6 +194,41 @@ describe('FilesAPI', () => {
     );
   });
 
+  it('routes active file-library version operation requests through the library scoped path', async () => {
+    const activeOperation = {
+      operation: {
+        id: 'flop_restore',
+        kind: 'restore' as const,
+        status: 'running' as const,
+        file_library_id: 'flib_1',
+        source_save_point_id: 'sp_1',
+        created_at: '2026-05-09T00:00:00.000Z',
+        updated_at: '2026-05-09T00:00:01.000Z',
+      },
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn().mockResolvedValue(activeOperation),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.getActiveFileLibraryOperation('ws_1', 'proj_1', 'flib_1'))
+      .resolves.toEqual(activeOperation);
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/operations/active',
+    );
+  });
+
   it('passes object listing aborts through the FetchApiClient fetch path', async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -305,19 +340,19 @@ describe('FilesAPI', () => {
       setToken: () => undefined,
       getToken: () => null,
       clearToken: () => undefined,
-      get: vi
-        .fn()
-        .mockResolvedValueOnce({ items: [] })
-        .mockResolvedValueOnce({ restore_operation: null }),
+      get: vi.fn().mockResolvedValueOnce({ items: [] }),
       getBlob: vi.fn(),
       postMultipart: vi.fn(),
       post: vi
         .fn()
         .mockResolvedValueOnce({
-          id: 'sp_1',
+          id: 'flop_save_point_1',
+          kind: 'save_point_create',
+          status: 'accepted',
           file_library_id: 'flib_1',
           message: 'Before edits',
           created_at: '2026-05-09T12:00:00.000Z',
+          updated_at: '2026-05-09T12:00:00.000Z',
         })
         .mockResolvedValueOnce({
           id: 'flro_1',
@@ -335,8 +370,18 @@ describe('FilesAPI', () => {
     const api = new FilesAPI(client);
 
     await api.listSavePoints('ws_1', 'proj_1', 'flib_1');
-    await api.createSavePoint('ws_1', 'proj_1', 'flib_1', { message: 'Before edits' });
-    await api.getActiveRestoreOperation('ws_1', 'proj_1', 'flib_1');
+    await expect(api.createSavePoint(
+      'ws_1',
+      'proj_1',
+      'flib_1',
+      { message: 'Before edits' },
+      { idempotencyKey: 'save-point-key-1' },
+    ))
+      .resolves.toMatchObject({
+        id: 'flop_save_point_1',
+        kind: 'save_point_create',
+        status: 'accepted',
+      });
     await api.restoreFileLibrary(
       'ws_1',
       'proj_1',
@@ -348,13 +393,15 @@ describe('FilesAPI', () => {
     expect(client.get).toHaveBeenCalledWith(
       '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
     );
-    expect(client.get).toHaveBeenCalledWith(
-      '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore',
-    );
     expect(client.post).toHaveBeenNthCalledWith(
       1,
       '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/save-points',
       { message: 'Before edits' },
+      {
+        headers: {
+          'Idempotency-Key': 'save-point-key-1',
+        },
+      },
     );
     expect(client.post).toHaveBeenNthCalledWith(
       2,

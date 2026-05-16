@@ -620,10 +620,10 @@ describe('FilesPage (object browser)', () => {
     expect(screen.queryByTestId('files__library-status-reason--lib_failed')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__library-desktop-access--lib_failed')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
-    expect(screen.getByTestId('files__file-states')).toBeDisabled();
+    expect(screen.getByTestId('files__version-management')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
-    expect(screen.queryByTestId('files__dialog__file-states')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__dialog__version-management')).not.toBeInTheDocument();
   });
 
   it('shows task workspace binding state without leaking redacted task metadata', async () => {
@@ -747,7 +747,7 @@ describe('FilesPage (object browser)', () => {
     await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
 
     expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('files__file-states')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__version-management')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__rename')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__delete')).not.toBeInTheDocument();

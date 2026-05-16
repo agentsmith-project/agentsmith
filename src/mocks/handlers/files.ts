@@ -3,6 +3,7 @@ import type {
   FileLibrary,
   FileLibraryRestoreOperation,
   FileLibrarySavePoint,
+  FileLibraryVersionOperation,
   TaskFileTemplate,
 } from '@/lib/api/types';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
@@ -39,6 +40,7 @@ type MockTaskHomeBinding = {
 type MockFileLibrarySavePoint = FileLibrarySavePoint & {
   workspace_id: string;
   project_id: string;
+  purpose: 'user' | 'task_template_source';
   snapshot: ObjectRow[];
 };
 
@@ -48,6 +50,14 @@ type MockFileLibraryRestoreOperation = FileLibraryRestoreOperation & {
   idempotency_key: string;
 };
 
+type MockFileLibraryVersionOperation = FileLibraryVersionOperation & {
+  workspace_id: string;
+  project_id: string;
+  library_id: string;
+  idempotency_key?: string;
+  active_projection_count: number;
+};
+
 type MockTaskFileTemplate = TaskFileTemplate & {
   snapshot: ObjectRow[];
 };
@@ -55,6 +65,8 @@ type MockTaskFileTemplate = TaskFileTemplate & {
 const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
 const runtimeAccessByLibrary = new Set<string>();
 const savePointsById = new Map<string, MockFileLibrarySavePoint>();
+const versionOperationsById = new Map<string, MockFileLibraryVersionOperation>();
+const versionOperationIdsByIdempotencyKey = new Map<string, string>();
 const restoreOperationsById = new Map<string, MockFileLibraryRestoreOperation>();
 const restoreOperationIdsByIdempotencyKey = new Map<string, string>();
 const taskFileTemplatesById = new Map<string, MockTaskFileTemplate>();
@@ -320,6 +332,37 @@ function toPublicRestoreOperation(operation: MockFileLibraryRestoreOperation): F
   };
 }
 
+function toPublicVersionOperation(operation: MockFileLibraryRestoreOperation): FileLibraryVersionOperation {
+  return {
+    id: operation.id,
+    kind: 'restore',
+    file_library_id: operation.file_library_id,
+    source_save_point_id: operation.source_save_point_id,
+    status: operation.status === 'pending'
+      ? 'accepted'
+      : operation.status === 'restoring'
+        ? 'running'
+        : operation.status,
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
+  };
+}
+
+function toPublicMockVersionOperation(operation: MockFileLibraryVersionOperation): FileLibraryVersionOperation {
+  return {
+    id: operation.id,
+    kind: operation.kind,
+    status: operation.status,
+    ...(operation.file_library_id ? { file_library_id: operation.file_library_id } : {}),
+    ...(operation.source_save_point_id ? { source_save_point_id: operation.source_save_point_id } : {}),
+    ...(operation.message ? { message: operation.message } : {}),
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
+  };
+}
+
 function toPublicTaskFileTemplate(template: MockTaskFileTemplate): TaskFileTemplate {
   return {
     id: template.id,
@@ -341,6 +384,7 @@ function createMockFileLibrarySavePoint(input: {
   projectId: string;
   libraryId: string;
   message?: string;
+  purpose?: 'user' | 'task_template_source';
 }) {
   const now = nowIso();
   const savePoint: MockFileLibrarySavePoint = {
@@ -348,12 +392,64 @@ function createMockFileLibrarySavePoint(input: {
     workspace_id: input.workspaceId,
     project_id: input.projectId,
     file_library_id: input.libraryId,
+    purpose: input.purpose ?? 'user',
     ...(input.message ? { message: input.message } : {}),
     created_at: now,
     snapshot: cloneObjectRows(objectDbByLibraryId[input.libraryId] ?? []),
   };
   savePointsById.set(savePoint.id, savePoint);
   return savePoint;
+}
+
+function createMockVersionOperation(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  kind: FileLibraryVersionOperation['kind'];
+  status: FileLibraryVersionOperation['status'];
+  message?: string;
+  idempotencyKey?: string;
+}): MockFileLibraryVersionOperation {
+  const now = nowIso();
+  const operation: MockFileLibraryVersionOperation = {
+    id: `flop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    library_id: input.libraryId,
+    file_library_id: input.libraryId,
+    kind: input.kind,
+    status: input.status,
+    ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+    ...(input.message ? { message: input.message } : {}),
+    created_at: now,
+    updated_at: now,
+    active_projection_count: 0,
+  };
+  versionOperationsById.set(operation.id, operation);
+  return operation;
+}
+
+function isMockVersionOperationActive(operation: MockFileLibraryVersionOperation) {
+  return operation.status === 'accepted' || operation.status === 'running';
+}
+
+function advanceMockVersionOperationForActiveProjection(
+  operation: MockFileLibraryVersionOperation,
+): MockFileLibraryVersionOperation | null {
+  if (!isMockVersionOperationActive(operation)) {
+    return null;
+  }
+  operation.active_projection_count += 1;
+  if (operation.status === 'accepted') {
+    operation.status = 'running';
+    operation.updated_at = nowIso();
+    versionOperationsById.set(operation.id, operation);
+    return operation;
+  }
+  operation.status = 'succeeded';
+  operation.updated_at = nowIso();
+  versionOperationsById.set(operation.id, operation);
+  return null;
 }
 
 function getMockTaskFileTemplate(input: {
@@ -884,39 +980,87 @@ export const fileHandlers = [
       .filter((savePoint) =>
         savePoint.workspace_id === workspaceId
         && savePoint.project_id === projectId
-        && savePoint.file_library_id === libraryId,
+        && savePoint.file_library_id === libraryId
+        && savePoint.purpose === 'user',
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map(toPublicSavePoint);
     return HttpResponse.json({ items });
   }),
-  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore`, ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/operations/active`, ({ params }) => {
     const library = getRouteFileLibrary(params);
     if (!library) {
       return fileLibraryNotFoundResponse(String(params.id ?? ''));
     }
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
     const operation = findActiveRestoreOperation({
-      workspaceId: String(params.ws ?? ''),
-      projectId: String(params.prj ?? ''),
-      libraryId: String(params.id ?? ''),
+      workspaceId,
+      projectId,
+      libraryId,
     });
+    const versionOperation = Array.from(versionOperationsById.values())
+      .filter((item) =>
+        item.workspace_id === workspaceId
+        && item.project_id === projectId
+        && item.library_id === libraryId
+        && isMockVersionOperationActive(item),
+      )
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
+    const publicRestore = operation ? toPublicVersionOperation(operation) : null;
+    const reconciledVersionOperation = versionOperation
+      ? advanceMockVersionOperationForActiveProjection(versionOperation)
+      : null;
+    const publicVersion = reconciledVersionOperation
+      ? toPublicMockVersionOperation(reconciledVersionOperation)
+      : null;
+    const latest = [publicRestore, publicVersion]
+      .filter((item): item is FileLibraryVersionOperation => item !== null)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
     return HttpResponse.json({
-      restore_operation: operation ? toPublicRestoreOperation(operation) : null,
+      operation: latest,
     });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
+    const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() ?? '';
+    if (!idempotencyKey) {
+      return HttpResponse.json({
+        error_code: 'VALIDATION_ERROR',
+        message: 'idempotency_key_required',
+      }, { status: 422 });
+    }
     const body = (await request.json().catch(() => ({}))) as { message?: string };
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const libraryId = String(params.id ?? '');
+    const idempotencyScope = `${workspaceId}:${projectId}:${libraryId}:save_point_create:${idempotencyKey}`;
+    const existingOperationId = versionOperationIdsByIdempotencyKey.get(idempotencyScope);
+    const existingOperation = existingOperationId ? versionOperationsById.get(existingOperationId) : null;
+    if (existingOperation) {
+      return HttpResponse.json(toPublicMockVersionOperation(existingOperation), { status: 202 });
+    }
     const savePoint = createMockFileLibrarySavePoint({
-      workspaceId: String(params.ws ?? ''),
-      projectId: String(params.prj ?? ''),
-      libraryId: String(params.id ?? ''),
+      workspaceId,
+      projectId,
+      libraryId,
       message: typeof body.message === 'string' && body.message.trim().length > 0
         ? body.message.trim()
         : undefined,
     });
-    return HttpResponse.json(toPublicSavePoint(savePoint), { status: 201 });
+    const operation = createMockVersionOperation({
+      workspaceId,
+      projectId,
+      libraryId,
+      kind: 'save_point_create',
+      status: 'accepted',
+      message: savePoint.message,
+      idempotencyKey,
+    });
+    versionOperationIdsByIdempotencyKey.set(idempotencyScope, operation.id);
+    return HttpResponse.json(toPublicMockVersionOperation(operation), { status: 202 });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/restore`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
@@ -964,7 +1108,6 @@ export const fileHandlers = [
         error_code: 'FILE_LIBRARY_OPERATION_PENDING',
         message: 'file_library_operation_pending',
         operation_status: activeOperation.status,
-        restore_operation: toPublicRestoreOperation(activeOperation),
         retry_after_ms: 2_000,
       }, { status: 409 });
     }
@@ -1123,6 +1266,7 @@ export const fileHandlers = [
       projectId,
       libraryId: sourceLibrary.id,
       message: `Template source: ${body.name.trim()}`,
+      purpose: 'task_template_source',
     });
     const now = nowIso();
     const template: MockTaskFileTemplate = {

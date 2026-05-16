@@ -5,6 +5,7 @@ import {
   buildFileLibraryRecord,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocFileLibrarySavePointMappingRepo,
+  JsonDocFileLibraryVersionOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
 } from './file-library-persistence.js';
 
@@ -368,6 +369,58 @@ describe('file-library-persistence catalog schema', () => {
       source_save_point_id: 'flsp_restore',
       idempotency_key: 'restore-key-stable',
     });
+  });
+
+  it('creates or reuses one file-library version operation for a stable save-point idempotency key', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryVersionOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_save_idempotent',
+      kind: 'save_point_create' as const,
+      status: 'accepted' as const,
+      afscpOperationId: 'op_save_point_same',
+      idempotencyKey: 'save-point-key-stable',
+      createdByUserId: 'user_1',
+      message: 'Before edits',
+    };
+
+    const first = await repo.createOrReuseByIdempotencyKey(input);
+    const second = await new JsonDocFileLibraryVersionOperationRepo(
+      docStore,
+      () => '2026-05-09T12:01:00.000Z',
+    ).createOrReuseByIdempotencyKey({
+      ...input,
+      status: 'running',
+      message: 'Changed retry body that must not replace original',
+    });
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.operation).toMatchObject({
+      id: first.operation.id,
+      idempotency_key: 'save-point-key-stable',
+      afscp_operation_id: 'op_save_point_same',
+      message: 'Before edits',
+    });
+    await expect(docStore.list<Record<string, unknown>>(
+      'project_file_library_version_operations',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: 'flib_save_idempotent',
+      },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: first.operation.id,
+        idempotency_key: 'save-point-key-stable',
+      }),
+    ]);
+    expect(repo.toPublic(first.operation)).not.toHaveProperty('idempotency_key');
   });
 
   it('creates or reuses one active restore operation for a library across different idempotency keys', async () => {

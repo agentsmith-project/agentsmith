@@ -268,7 +268,7 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__library-unavailable-empty-state')).toBeInTheDocument();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
-    expect(screen.getByTestId('files__file-states')).toBeDisabled();
+    expect(screen.getByTestId('files__version-management')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__rename')).toBeDisabled();
     expect(screen.getByTestId('files__delete')).toBeDisabled();
@@ -290,7 +290,7 @@ describe('FilesPageContent', () => {
     );
 
     expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('files__file-states')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__version-management')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__rename')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__delete')).not.toBeInTheDocument();

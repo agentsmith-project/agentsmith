@@ -49,7 +49,7 @@ The Files page supports:
 - upload and download
 - move and delete entries
 - task attachment display and deletion blocking
-- File states:
+- Version & templates:
   - save points for the whole file library HOME payload
   - direct restore from a save point after confirming unsaved file changes will be discarded
   - task file template create, publish, unpublish, and delete
@@ -105,7 +105,7 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 ### Task File Templates
 
 - task file templates are published starting file sets for Agent task creation
-- draft/unpublished templates are visible only in File states management
+- draft/unpublished templates are visible only in Version & templates management
 - task creation may consume published task file templates through the Agent task creation contract
 - template publication and deletion are file-library mutations
 

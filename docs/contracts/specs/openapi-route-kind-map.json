@@ -101,10 +101,11 @@
   },
   "fileLibraryRestore": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore",
-    "methods": [
-      "get",
-      "post"
-    ]
+    "method": "post"
+  },
+  "fileLibraryActiveOperation": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active",
+    "method": "get"
   },
   "fileLibraryRuntimeAccessRelease": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/runtime-access/release",

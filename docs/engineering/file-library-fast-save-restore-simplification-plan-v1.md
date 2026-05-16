@@ -80,17 +80,17 @@ The save point panel remains explicit and user-owned.
 
 Required behavior:
 
-- Primary action: `Save current state`.
+- Primary action: `Save as restore point`.
 - Optional note remains lightweight.
-- While saving, show `Saving file state...`.
+- While saving, show `Saving restore point...`.
 - If saving is still syncing, show a recoverable pending state and keep the user's note.
 - Do not create any save point as a side effect of restore.
 
 Suggested copy:
 
-- Title: `Save current state`
+- Title: `Save as restore point`
 - Helper: `Create a recovery point for the whole file library before major file changes.`
-- Pending: `Saving file state...`
+- Pending: `Saving restore point...`
 - Success: `Save point created.`
 
 ### 5.2 Restore Entry
@@ -160,7 +160,7 @@ States:
 
 Refresh behavior:
 
-- If the page is refreshed while restore is running, reopening File states must show the active restore operation.
+- If the page is refreshed while restore is running, reopening Version & templates must show the active restore operation.
 - The file table should be disabled or guarded for destructive writes while restore is active.
 - On success, file object caches are invalidated and the browser refetches the current directory.
 
@@ -211,14 +211,14 @@ Successful response:
 Active operation projection:
 
 ```http
-GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore
+GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active
 ```
 
 Returns:
 
 ```json
 {
-  "restore_operation": null
+  "operation": null
 }
 ```
 
@@ -226,10 +226,10 @@ or:
 
 ```json
 {
-  "restore_operation": {
-    "id": "flro_...",
+  "operation": {
+    "id": "flvo_...",
     "file_library_id": "flib_...",
-    "source_save_point_id": "flsp_...",
+    "kind": "restore",
     "status": "restoring",
     "created_at": "2026-05-14T00:00:00.000Z",
     "updated_at": "2026-05-14T00:00:02.000Z"

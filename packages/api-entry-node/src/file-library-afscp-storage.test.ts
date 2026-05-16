@@ -948,7 +948,7 @@ describe('AFSCP File Library storage adapter', () => {
     })));
   });
 
-  it('lists and creates save points through the mapped AFSCP repo without persisting raw ids in public state', async () => {
+  it('admits save point creation without polling terminal clone state or persisting raw ids in public state', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async () => ({
         ...succeededRepoOperation,
@@ -980,26 +980,33 @@ describe('AFSCP File Library storage adapter', () => {
       libraryId: 'flib_123',
       message: 'Before risky change',
       actorUserId: 'user_1',
+      idempotencyKey: 'save-point-key-1',
       requestId: 'req_save_point_create',
     })).resolves.toMatchObject({
       operationId: 'op_save_point',
-      operationStatus: 'succeeded',
-      savePointId: 'sp_user_002',
+      operationStatus: 'pending',
+      savePointId: null,
     });
+    expect(client.pollOperation).not.toHaveBeenCalled();
 
     expect(client.createSavePoint).toHaveBeenCalledWith(expect.objectContaining({
       namespaceId: 'ns_project_1',
       repoId: 'repo_flib_123',
       message: 'Before risky change',
+      idempotencyKey: 'save-point-key-1',
       actor: { type: 'user', id: 'user_1' },
     }));
     await expect(ownershipStore.getResourceOwnership({
-      resourceKind: 'save_point',
-      resourceId: 'sp_user_002',
+      resourceKind: 'operation',
+      resourceId: 'op_save_point',
     })).resolves.toMatchObject({
       workspace_id: 'ws_default',
       project_id: 'proj_1',
     });
+    await expect(ownershipStore.getResourceOwnership({
+      resourceKind: 'save_point',
+      resourceId: 'sp_user_002',
+    })).resolves.toBeNull();
   });
 
   it('preserves typed AFSCP save point list errors instead of collapsing them to list failed', async () => {
@@ -1107,6 +1114,7 @@ describe('AFSCP File Library storage adapter', () => {
         libraryId: 'flib_123',
         message: 'Restore preview current state',
         actorUserId: 'user_1',
+        idempotencyKey: 'save-point-create-busy-key',
         requestId: 'req_save_point_create_busy',
       });
     } catch (error) {
@@ -1119,7 +1127,7 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.pollOperation).not.toHaveBeenCalled();
   });
 
-  it('creates save points from the public operation result when external resource ids are redacted', async () => {
+  it('does not wait for redacted terminal save point ids during admission', async () => {
     const savePointId = '1778481131647-4d2e0211';
     const client = createProductClient({
       pollOperation: vi.fn(async () => ({
@@ -1139,20 +1147,19 @@ describe('AFSCP File Library storage adapter', () => {
       libraryId: 'flib_123',
       message: 'Before risky change',
       actorUserId: 'user_1',
+      idempotencyKey: 'save-point-result-key',
       requestId: 'req_save_point_create_result',
     })).resolves.toMatchObject({
-      operationId: 'op_save_point_result',
-      operationStatus: 'succeeded',
-      savePointId: savePointId,
+      operationId: 'op_save_point',
+      operationStatus: 'pending',
+      savePointId: null,
     });
+    expect(client.pollOperation).not.toHaveBeenCalled();
 
     await expect(ownershipStore.getResourceOwnership({
       resourceKind: 'save_point',
       resourceId: savePointId,
-    })).resolves.toMatchObject({
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-    });
+    })).resolves.toBeNull();
     await expect(ownershipStore.getResourceOwnership({
       resourceKind: 'save_point',
       resourceId: '[REDACTED]',
@@ -1193,7 +1200,7 @@ describe('AFSCP File Library storage adapter', () => {
     ],
   ])('projects typed save point blockers from %s as an active writer blocker', async (_caseName, operationFields) => {
     const client = createProductClient({
-      pollOperation: vi.fn(async () => ({
+      createSavePoint: vi.fn(async () => ({
         ...succeededRepoOperation,
         operation_id: 'op_save_point_busy',
         operation_type: 'save_point_create',
@@ -1212,6 +1219,7 @@ describe('AFSCP File Library storage adapter', () => {
         libraryId: 'flib_123',
         message: 'Before risky change',
         actorUserId: 'user_1',
+        idempotencyKey: 'save-point-busy-key',
         requestId: 'req_save_point_busy',
       });
     } catch (error) {
@@ -1274,6 +1282,7 @@ describe('AFSCP File Library storage adapter', () => {
         libraryId: 'flib_123',
         message: 'Before risky change',
         actorUserId: 'user_1',
+        idempotencyKey: 'save-point-client-error-key',
         requestId: 'req_save_point_busy',
       });
     } catch (error) {

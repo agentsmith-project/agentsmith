@@ -11,26 +11,61 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/components/ui/toast';
 import { FilesAPI, getApiClient } from '@/lib/api';
 import type {
+  FileLibraryVersionOperation,
   FileLibraryRestoreOperation,
-  GetFileLibraryRestoreOperationResponse,
-  ListFileLibrarySavePointsResponse,
+  GetFileLibraryActiveOperationResponse,
 } from '@/lib/api/types';
 import { APIError, handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 
-const ACTIVE_RESTORE_OPERATION_REFETCH_INTERVAL_MS = 2_000;
+const ACTIVE_FILE_LIBRARY_OPERATION_REFETCH_INTERVAL_MS = 2_000;
 const SAVE_POINTS_OPERATION_PENDING_REFETCH_INTERVAL_MS = 2_000;
 
 type FileLibraryRecoveryMutationOptions = {
   suppressErrorToast?: boolean;
 };
 
-function isRestoreOperationActive(operation: FileLibraryRestoreOperation | null | undefined) {
-  return operation?.status === 'pending' || operation?.status === 'restoring';
+type CreateFileLibrarySavePointVariables = {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  message?: string;
+  idempotencyKey?: string;
+};
+
+function generateSavePointIdempotencyKey(): string {
+  const suffix = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `save_point_${suffix}`;
 }
 
-function isRestoreOperationTerminal(operation: FileLibraryRestoreOperation | null | undefined) {
-  return operation?.status === 'succeeded' || operation?.status === 'failed';
+function isVersionOperationActive(operation: FileLibraryVersionOperation | null | undefined) {
+  return operation?.status === 'accepted' || operation?.status === 'running';
+}
+
+function isVersionOperationTerminal(operation: FileLibraryVersionOperation | null | undefined) {
+  return operation?.status === 'succeeded'
+    || operation?.status === 'failed'
+    || operation?.status === 'recovery_required';
+}
+
+export function restoreOperationToVersionOperation(
+  operation: FileLibraryRestoreOperation,
+): FileLibraryVersionOperation {
+  return {
+    id: operation.id,
+    kind: 'restore',
+    file_library_id: operation.file_library_id,
+    source_save_point_id: operation.source_save_point_id,
+    status: operation.status === 'pending'
+      ? 'accepted'
+      : operation.status === 'restoring'
+        ? 'running'
+        : operation.status,
+    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    created_at: operation.created_at,
+    updated_at: operation.updated_at,
+  };
 }
 
 function hasApiErrorCode(error: unknown, codes: string[], rawTokens: string[]): boolean {
@@ -65,10 +100,10 @@ export function isFileLibraryOperationPendingError(error: unknown): boolean {
   );
 }
 
-function activeRestoreOperationResponse(
-  operation: FileLibraryRestoreOperation | null,
-): GetFileLibraryRestoreOperationResponse {
-  return { restore_operation: operation };
+function activeVersionOperationResponse(
+  operation: FileLibraryVersionOperation | null,
+): GetFileLibraryActiveOperationResponse {
+  return { operation };
 }
 
 function fileObjectQueryMatches(
@@ -116,7 +151,7 @@ async function invalidateRestoreRelatedCaches(
       queryKey: queryKeys.fileLibraries.savePoints(workspaceId, projectId, libraryId),
     }),
     queryClient.invalidateQueries({
-      queryKey: queryKeys.fileLibraries.activeRestoreOperation(workspaceId, projectId, libraryId),
+      queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId),
     }),
     queryClient.invalidateQueries({
       queryKey: queryKeys.fileLibraries.detail(workspaceId, projectId, libraryId),
@@ -150,7 +185,7 @@ export function useFileLibrarySavePoints(
   });
 }
 
-export function useFileLibraryActiveRestoreOperation(
+export function useFileLibraryActiveVersionOperation(
   workspaceId: string,
   projectId: string,
   libraryId: string | null | undefined,
@@ -163,30 +198,30 @@ export function useFileLibraryActiveRestoreOperation(
     workspaceId: string;
     projectId: string;
     libraryId: string;
-    operation: FileLibraryRestoreOperation;
+    operation: FileLibraryVersionOperation;
   } | null>(null);
   const query = useQuery({
-    queryKey: queryKeys.fileLibraries.activeRestoreOperation(workspaceId, projectId, safeLibraryId),
-    queryFn: () => filesAPI.getActiveRestoreOperation(workspaceId, projectId, safeLibraryId),
+    queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
+    queryFn: () => filesAPI.getActiveFileLibraryOperation(workspaceId, projectId, safeLibraryId),
     enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!safeLibraryId,
     refetchInterval: (activeQuery) => (
-      isRestoreOperationActive(activeQuery.state.data?.restore_operation)
-        ? ACTIVE_RESTORE_OPERATION_REFETCH_INTERVAL_MS
+      isVersionOperationActive(activeQuery.state.data?.operation)
+        ? ACTIVE_FILE_LIBRARY_OPERATION_REFETCH_INTERVAL_MS
         : false
     ),
     staleTime: 0,
   });
 
-  const operation = query.data?.restore_operation;
+  const operation = query.data?.operation;
   React.useEffect(() => {
     if (!safeLibraryId || query.isLoading) return;
-    if (isRestoreOperationActive(operation)) {
+    if (isVersionOperationActive(operation)) {
       lastActiveOperationRef.current = operation
         ? { workspaceId, projectId, libraryId: safeLibraryId, operation }
         : null;
       return;
     }
-    if (isRestoreOperationTerminal(operation)) {
+    if (isVersionOperationTerminal(operation)) {
       lastActiveOperationRef.current = null;
       void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
       return;
@@ -200,7 +235,6 @@ export function useFileLibraryActiveRestoreOperation(
       && lastActive.libraryId === safeLibraryId
     ) {
       lastActiveOperationRef.current = null;
-      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
       return;
     }
     if (!operation) {
@@ -215,35 +249,52 @@ export function useCreateFileLibrarySavePoint(options: FileLibraryRecoveryMutati
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const t = useTranslations('common.toast');
+  const idempotencyKeysRef = React.useRef(new WeakMap<CreateFileLibrarySavePointVariables, string>());
+
+  function resolveIdempotencyKey(variables: CreateFileLibrarySavePointVariables) {
+    if (variables.idempotencyKey) {
+      idempotencyKeysRef.current.set(variables, variables.idempotencyKey);
+      return variables.idempotencyKey;
+    }
+    const existing = idempotencyKeysRef.current.get(variables);
+    if (existing) return existing;
+    const next = generateSavePointIdempotencyKey();
+    idempotencyKeysRef.current.set(variables, next);
+    return next;
+  }
 
   return useMutation({
-    mutationFn: ({
-      workspaceId,
-      projectId,
-      libraryId,
-      message,
-    }: {
-      workspaceId: string;
-      projectId: string;
-      libraryId: string;
-      message?: string;
-    }) => filesAPI.createSavePoint(workspaceId, projectId, libraryId, { message }),
-    onSuccess: async (savePoint, variables) => {
+    mutationFn: (variables: CreateFileLibrarySavePointVariables) => filesAPI.createSavePoint(
+      variables.workspaceId,
+      variables.projectId,
+      variables.libraryId,
+      { message: variables.message },
+      { idempotencyKey: resolveIdempotencyKey(variables) },
+    ),
+    onSuccess: async (operation, variables) => {
       const savePointsKey = queryKeys.fileLibraries.savePoints(
         variables.workspaceId,
         variables.projectId,
         variables.libraryId,
       );
-      queryClient.setQueryData<ListFileLibrarySavePointsResponse>(savePointsKey, (current) => ({
-        items: [
-          savePoint,
-          ...(current?.items ?? []).filter((item) => item.id !== savePoint.id),
-        ],
-      }));
-      await queryClient.invalidateQueries({
+      const activeOperationKey = queryKeys.fileLibraries.activeOperation(
+        variables.workspaceId,
+        variables.projectId,
+        variables.libraryId,
+      );
+      queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
+        activeOperationKey,
+        activeVersionOperationResponse(operation),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: activeOperationKey,
+      });
+      void queryClient.invalidateQueries({
         queryKey: savePointsKey,
       });
-      toast.success(t('create_success'));
+      if (operation.status === 'succeeded') {
+        toast.success(t('create_success'));
+      }
     },
     onError: async (error: unknown, variables) => {
       if (isFileLibraryOperationPendingError(error)) {
@@ -289,16 +340,16 @@ export function useRestoreFileLibrary(options: FileLibraryRecoveryMutationOption
       { idempotencyKey },
     ),
     onSuccess: async (operation, variables) => {
-      const activeOperationKey = queryKeys.fileLibraries.activeRestoreOperation(
+      const activeOperationKey = queryKeys.fileLibraries.activeOperation(
         variables.workspaceId,
         variables.projectId,
         variables.libraryId,
       );
-      queryClient.setQueryData<GetFileLibraryRestoreOperationResponse>(
+      queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
         activeOperationKey,
-        activeRestoreOperationResponse(operation),
+        activeVersionOperationResponse(restoreOperationToVersionOperation(operation)),
       );
-      await invalidateRestoreRelatedCaches(
+      void invalidateRestoreRelatedCaches(
         queryClient,
         variables.workspaceId,
         variables.projectId,
@@ -332,7 +383,7 @@ export function useReleaseFileLibraryRuntimeAccess(options: FileLibraryRecoveryM
     onSuccess: async (_release, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: queryKeys.fileLibraries.activeRestoreOperation(
+          queryKey: queryKeys.fileLibraries.activeOperation(
             variables.workspaceId,
             variables.projectId,
             variables.libraryId,

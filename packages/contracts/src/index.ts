@@ -59,7 +59,6 @@ export const ErrorResponseSchema = z.object({
   request_id: z.string().optional(),
   file_library_id: z.string().min(1).optional(),
   file_library_status: z.string().min(1).optional(),
-  restore_operation: z.unknown().optional(),
   operation_status: z.string().min(1).optional(),
   retry_after_ms: z.number().int().positive().optional(),
 });
@@ -413,8 +412,33 @@ export const FileLibraryRestoreOperationSchema = z.object({
   updated_at: z.string().datetime(),
 }).strict();
 
-export const GetFileLibraryRestoreResponseSchema = z.object({
-  restore_operation: FileLibraryRestoreOperationSchema.nullable(),
+export const FileLibraryVersionOperationKindSchema = z.enum([
+  'save_point_create',
+  'restore',
+]);
+
+export const FileLibraryVersionOperationStatusSchema = z.enum([
+  'accepted',
+  'running',
+  'succeeded',
+  'failed',
+  'recovery_required',
+]);
+
+export const FileLibraryVersionOperationSchema = z.object({
+  id: z.string().min(1),
+  kind: FileLibraryVersionOperationKindSchema,
+  status: FileLibraryVersionOperationStatusSchema,
+  file_library_id: z.string().min(1).optional(),
+  source_save_point_id: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
+  failure_reason: z.string().min(1).optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+}).strict();
+
+export const GetFileLibraryActiveOperationResponseSchema = z.object({
+  operation: FileLibraryVersionOperationSchema.nullable(),
 }).strict();
 
 export const CreateFileLibraryRestoreRequestSchema = z.object({
@@ -662,7 +686,10 @@ export type ListFileLibrarySavePointsResponse = z.infer<typeof ListFileLibrarySa
 export type CreateFileLibrarySavePointRequest = z.infer<typeof CreateFileLibrarySavePointRequestSchema>;
 export type FileLibraryRestoreOperationStatus = z.infer<typeof FileLibraryRestoreOperationStatusSchema>;
 export type FileLibraryRestoreOperationDTO = z.infer<typeof FileLibraryRestoreOperationSchema>;
-export type GetFileLibraryRestoreResponse = z.infer<typeof GetFileLibraryRestoreResponseSchema>;
+export type FileLibraryVersionOperationKind = z.infer<typeof FileLibraryVersionOperationKindSchema>;
+export type FileLibraryVersionOperationStatus = z.infer<typeof FileLibraryVersionOperationStatusSchema>;
+export type FileLibraryVersionOperationDTO = z.infer<typeof FileLibraryVersionOperationSchema>;
+export type GetFileLibraryActiveOperationResponse = z.infer<typeof GetFileLibraryActiveOperationResponseSchema>;
 export type CreateFileLibraryRestoreRequest = z.infer<typeof CreateFileLibraryRestoreRequestSchema>;
 export type TaskFileTemplateStatus = z.infer<typeof TaskFileTemplateStatusSchema>;
 export type TaskFileTemplateDTO = z.infer<typeof TaskFileTemplateSchema>;

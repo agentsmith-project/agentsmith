@@ -21,7 +21,7 @@ Agent task work uses backend-managed task files. Treat the Files page as the sup
 ## Access Model
 
 - Members with project read/use access can browse file libraries and download files.
-- Members also need Files update access to create libraries, upload files, create folders, rename, move, delete, manage File states, create save points, restore files, or publish task file templates.
+- Members also need Files update access to create libraries, upload files, create folders, rename, move, delete, manage Version & templates, create restore points, restore files, or publish task file templates.
 - Published task file templates are starting file sets for new Agent tasks. Task creation shows them as task file templates, not as generic file templates.
 - Save points and restore apply to the whole file library HOME, not just the currently open folder or `workspace/`.
 - Restoring may take time. Treat "restoring" or "pending" as an in-progress state until the Files page reaches a final success or failure state.
@@ -54,7 +54,7 @@ This is expected. A file library must be empty before it can be deleted.
 
 This is expected. A library attached to a task cannot be deleted until the bound task is deleted.
 
-### File states are not visible
+### Version & templates is not visible
 
 This is expected for members without Files update access. You can still browse and download project files when you have read/use access.
 

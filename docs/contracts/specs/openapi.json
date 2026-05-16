@@ -2990,6 +2990,17 @@
           "Files"
         ],
         "operationId": "createFileLibrarySavePoint",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3001,12 +3012,12 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Save point created",
+          "202": {
+            "description": "Save point creation admitted",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileLibrarySavePoint"
+                  "$ref": "#/components/schemas/FileLibraryVersionOperation"
                 }
               }
             }
@@ -3053,6 +3064,16 @@
               }
             }
           },
+          "422": {
+            "description": "Missing idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Save point create failed",
             "content": {
@@ -3088,80 +3109,6 @@
           "$ref": "#/components/parameters/libraryId"
         }
       ],
-      "get": {
-        "tags": [
-          "Files"
-        ],
-        "operationId": "getActiveFileLibraryRestore",
-        "responses": {
-          "200": {
-            "description": "Active direct restore operation projection, reconciled by the backend without exposing AFSCP operation ids",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetFileLibraryRestoreResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "description": "File library not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "File library storage not ready",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/FileLibraryDeletingError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Restore reconcile failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "File library backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      },
       "post": {
         "tags": [
           "Files"
@@ -3250,6 +3197,93 @@
           },
           "502": {
             "description": "Restore failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "File library backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "getActiveFileLibraryVersionOperation",
+        "responses": {
+          "200": {
+            "description": "Active file library version operation projection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFileLibraryActiveOperationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "File library not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "File library storage not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryDeletingError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryNotReadyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Active operation projection failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -11548,9 +11582,6 @@
           "file_library_status": {
             "type": "string"
           },
-          "restore_operation": {
-            "type": "object"
-          },
           "operation_status": {
             "type": "string"
           },
@@ -13714,17 +13745,70 @@
           }
         }
       },
-      "GetFileLibraryRestoreResponse": {
+      "FileLibraryVersionOperation": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "restore_operation"
+          "id",
+          "kind",
+          "status",
+          "created_at",
+          "updated_at"
         ],
         "properties": {
-          "restore_operation": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "save_point_create",
+              "restore"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "running",
+              "succeeded",
+              "failed",
+              "recovery_required"
+            ]
+          },
+          "file_library_id": {
+            "type": "string"
+          },
+          "source_save_point_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "failure_reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GetFileLibraryActiveOperationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation"
+        ],
+        "properties": {
+          "operation": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/FileLibraryRestoreOperation"
+                "$ref": "#/components/schemas/FileLibraryVersionOperation"
               },
               {
                 "type": "null"

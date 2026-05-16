@@ -64,6 +64,10 @@ type CreateFileLibrarySavePoint409Response = OperationJsonResponse<
   operations['createFileLibrarySavePoint']['responses'],
   409
 >;
+type CreateFileLibrarySavePoint202Response = OperationJsonResponse<
+  operations['createFileLibrarySavePoint']['responses'],
+  202
+>;
 type ExpectedProjectPathParams = {
   projectId: string;
   workspaceId: string;
@@ -287,6 +291,32 @@ describe('Agent task model setting contract', () => {
 });
 
 describe('File library save point pending contract', () => {
+  it('documents save point create admission as a version operation instead of a terminal save point', () => {
+    expectTypeOf<CreateFileLibrarySavePoint202Response>()
+      .toEqualTypeOf<components['schemas']['FileLibraryVersionOperation']>();
+
+    const jsonSource = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+    ) as {
+      paths?: Record<string, {
+        post?: {
+          responses?: Record<string, {
+            content?: {
+              'application/json'?: {
+                schema?: { $ref?: string };
+              };
+            };
+          }>;
+        };
+      }>;
+    };
+    const savePointPath = '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/save-points';
+    expect(jsonSource.paths?.[savePointPath]?.post?.responses?.['202']?.content?.['application/json']?.schema)
+      .toEqual({ $ref: '#/components/schemas/FileLibraryVersionOperation' });
+    expect(jsonSource.paths?.[savePointPath]?.post?.responses?.['201']).toBeUndefined();
+    expect(jsonSource.paths?.[savePointPath]?.post?.responses?.['422']).toBeDefined();
+  });
+
   it('documents pending list/create conflicts as a narrow product response schema', () => {
     expectTypeOf<Extract<'operation_status', keyof components['schemas']['ApiError']>>()
       .toEqualTypeOf<never>();

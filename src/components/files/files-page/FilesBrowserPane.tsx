@@ -249,9 +249,9 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 <FolderPlus className="h-4 w-4 mr-2" />
                 {t('file_manager.new_folder')}
               </Button>
-              <Button type="button" variant="outline" onClick={onManageFileStates} disabled={libraryActionsDisabled} data-testid="files__file-states">
+              <Button type="button" variant="outline" onClick={onManageFileStates} disabled={libraryActionsDisabled} data-testid="files__version-management">
                 <RotateCcw className="h-4 w-4 mr-2" />
-                {t('file_manager.file_states')}
+                {t('file_manager.version_and_templates')}
               </Button>
               <Button type="button" onClick={onUploadClick} disabled={libraryActionsDisabled || uploadInProgress} data-testid="files__upload">
                 <Upload className="h-4 w-4 mr-2" />

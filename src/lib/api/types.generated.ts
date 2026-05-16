@@ -1453,6 +1453,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/operations/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getActiveFileLibraryVersionOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/restore": {
         parameters: {
             query?: never;
@@ -1464,7 +1484,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get: operations["getActiveFileLibraryRestore"];
+        get?: never;
         put?: never;
         post: operations["createFileLibraryRestore"];
         delete?: never;
@@ -3260,7 +3280,6 @@ export interface components {
             /** @enum {string} */
             reason?: "hard_teardown_pending";
             request_id?: string;
-            restore_operation?: Record<string, never>;
             /** @enum {integer} */
             retry_after_ms?: "chat_session_stream_conflict";
         };
@@ -3654,8 +3673,23 @@ export interface components {
             message: "file_library_task_in_use";
             request_id?: string;
         };
-        GetFileLibraryRestoreResponse: {
-            restore_operation: components["schemas"]["FileLibraryRestoreOperation"] | null;
+        FileLibraryVersionOperation: {
+            /** Format: date-time */
+            created_at: string;
+            failure_reason?: string;
+            file_library_id?: string;
+            id: string;
+            /** @enum {string} */
+            kind: "save_point_create" | "restore";
+            message?: string;
+            source_save_point_id?: string;
+            /** @enum {string} */
+            status: "accepted" | "running" | "succeeded" | "failed" | "recovery_required";
+            /** Format: date-time */
+            updated_at: string;
+        };
+        GetFileLibraryActiveOperationResponse: {
+            operation: components["schemas"]["FileLibraryVersionOperation"] | null;
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
@@ -8052,7 +8086,7 @@ export interface operations {
             };
         };
     };
-    getActiveFileLibraryRestore: {
+    getActiveFileLibraryVersionOperation: {
         parameters: {
             query?: never;
             header?: never;
@@ -8065,13 +8099,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Active direct restore operation projection, reconciled by the backend without exposing AFSCP operation ids */
+            /** @description Active file library version operation projection */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GetFileLibraryRestoreResponse"];
+                    "application/json": components["schemas"]["GetFileLibraryActiveOperationResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -8094,7 +8128,7 @@ export interface operations {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
-            /** @description Restore reconcile failed */
+            /** @description Active operation projection failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -8319,7 +8353,9 @@ export interface operations {
     createFileLibrarySavePoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path: {
                 libraryId: components["parameters"]["libraryId"];
                 projectId: components["parameters"]["projectId"];
@@ -8333,13 +8369,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Save point created */
-            201: {
+            /** @description Save point creation admitted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibrarySavePoint"];
+                    "application/json": components["schemas"]["FileLibraryVersionOperation"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -8361,6 +8397,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Missing idempotency key */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point create failed */

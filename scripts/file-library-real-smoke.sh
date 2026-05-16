@@ -124,20 +124,16 @@ wait_restore_operation_terminal() {
   fi
 
   while (( attempt <= max_attempts )); do
-    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore")"
+    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/operations/active")"
     if [[ "${status}" == "200" ]]; then
       assert_no_raw_storage_fields "file library restore operation"
       local operation_status
-      operation_status="$(cat "${BODY_FILE}" | json_field "j.restore_operation && j.restore_operation.id === '${operation_id}' ? j.restore_operation.status : ''" || true)"
+      operation_status="$(cat "${BODY_FILE}" | json_field "j.operation && j.operation.id === '${operation_id}' ? j.operation.status : ''" || true)"
       if [[ -z "${operation_status}" ]]; then
         info "restore operation ${operation_id} is no longer active"
         return 0
       fi
-      if [[ "${operation_status}" == "succeeded" ]]; then
-        info "restore operation ${operation_id} succeeded"
-        return 0
-      fi
-      if [[ "${operation_status}" == "failed" ]]; then
+      if [[ "${operation_status}" == "failed" || "${operation_status}" == "recovery_required" ]]; then
         err "restore operation ${operation_id} failed"
         cat "${BODY_FILE}" >&2
         exit 1

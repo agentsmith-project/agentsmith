@@ -175,6 +175,7 @@ export interface FileLibraryStoragePort {
   }): Promise<FileLibraryAfscpSavePoint[]>;
   createSavePoint(input: FileLibraryStorageLibraryInput & {
     message: string;
+    idempotencyKey: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1365,6 +1366,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
 
   async createSavePoint(input: FileLibraryStorageLibraryInput & {
     message: string;
+    idempotencyKey: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1377,31 +1379,25 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         repoId: mapping.repo_id,
         message: input.message,
         correlationId: resolveCorrelationId(input.requestId, 'file-library-save-point-create'),
-        idempotencyKey: safeIdempotencyKey([
-          'file-library',
-          input.libraryId,
-          'save-point',
-          input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
-        ]),
+        idempotencyKey: input.idempotencyKey,
         actor: { type: 'user', id: input.actorUserId },
         signal: input.signal,
       });
     } catch (error) {
       throw new Error(mapAfscpClientErrorToStorageMessage(error, 'file_library_save_point_create_failed'));
     }
-    const finalOperation = await this.pollMutationOperation({
-      operation,
+    const operationId = readOperationId(operation);
+    const operationStatus = normalizeOperationStatus(operation.operation_state);
+    await this.ensureOperationOwnership({
       workspaceId: input.workspaceId,
       projectId: input.projectId,
       namespaceId: mapping.namespace_id,
-      requestId: input.requestId,
-      signal: input.signal,
-      fallbackPrefix: 'file-library-save-point-create-poll',
-      failureMessage: 'file_library_save_point_create_failed',
+      operationId,
     });
-    const operationId = readOperationId(finalOperation) ?? readOperationId(operation);
-    const operationStatus = normalizeOperationStatus(finalOperation.operation_state);
-    const savePointId = readSavePointId(finalOperation) ?? readSavePointId(operation);
+    if (operationStatus === 'failed') {
+      throw new Error(mapAfscpOperationFailureMessage(operation, 'file_library_save_point_create_failed'));
+    }
+    const savePointId = operationStatus === 'succeeded' ? readSavePointId(operation) : null;
     if (savePointId) {
       await this.ensureSavePointOwnership({
         workspaceId: input.workspaceId,
@@ -1410,16 +1406,11 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         savePointId,
       });
     }
-    if (operationStatus !== 'succeeded') {
-      throw new Error(operationStatus === 'pending'
-        ? 'file_library_save_point_create_pending'
-        : mapAfscpOperationFailureMessage(finalOperation, 'file_library_save_point_create_failed'));
-    }
     return {
       operationId,
       operationStatus,
       savePointId,
-      createdAt: readSavePointCreatedAt(finalOperation) ?? readSavePointCreatedAt(operation),
+      createdAt: readSavePointCreatedAt(operation),
     };
   }
 

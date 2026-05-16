@@ -42,8 +42,8 @@ describe('queryKeys scope contracts', () => {
       'proj_001',
       'lib_1',
     ]);
-    expect(queryKeys.fileLibraries.activeRestoreOperation('ws_default', 'proj_001', 'lib_1')).toEqual([
-      'file-library-active-restore-operation',
+    expect(queryKeys.fileLibraries.activeOperation('ws_default', 'proj_001', 'lib_1')).toEqual([
+      'file-library-active-operation',
       'ws_default',
       'proj_001',
       'lib_1',

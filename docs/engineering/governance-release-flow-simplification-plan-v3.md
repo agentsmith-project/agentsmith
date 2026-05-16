@@ -12,7 +12,7 @@ Owner: Engineering governance maintainers
 
 成功标准：
 
-1. 普通开发者只需要知道少数入口：`npm run verify`、`npm run verify -- --goal=<pr|real|visual> --run`、`npm run release:ready`、`npm run release:status`、`make local-real-*`。
+1. 普通开发者只需要知道少数入口：`npm run verify`、`npm run verify -- --goal=<pr|real|visual> --run`、`npm run release:ready`、`npm run release:status`、`make local-real-up`、`make local-real-status`、`make local-real-down`、`make local-real-reset`。
 2. `release:ready` 的发布级检查不减项，但同一次命令内不重复启动真实服务、不重复初始化依赖、不重复准备同一批镜像。
 3. 检查结束后，摘要直接告诉人：结论、能否继续、主要阻塞项、原因、下一步、最慢步骤、报告位置。
 4. 内部诊断命令仍保留给维护者，但普通流程不再要求人复制这些命令。
@@ -53,7 +53,9 @@ Owner: Engineering governance maintainers
 | 发布前自动化验收 | `npm run release:ready` | 唯一普通发布级自动化入口 |
 | 查看上一次发布前检查 | `npm run release:status` | 只读查看，不重新检查、不修复 |
 | 拉起本机真实服务环境 | `make local-real-up` | 用于手测和局部真实环境验证 |
-| 查看/停止/重置本机真实服务环境 | `make local-real-status/down/reset` | 不作为发布结论 |
+| 查看本机真实服务环境 | `make local-real-status` | 不作为发布结论 |
+| 停止本机真实服务环境 | `make local-real-down` | 不作为发布结论 |
+| 重置本机真实服务环境 | `make local-real-reset` | 不作为发布结论 |
 
 禁止新增新的普通入口，例如 `release:fast`、`release:lite`、`gate:v3`、`campaign:v2`。
 

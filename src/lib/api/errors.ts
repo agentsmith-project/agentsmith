@@ -106,8 +106,9 @@ export class APIError extends Error {
       INTERNAL_ERROR: 'An unexpected error occurred. Please try again later.',
       FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
       FILE_LIBRARY_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+      FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
       FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
-      FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+      FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files are still in use. Release task file usage, then try again.',
       FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     };
 
@@ -176,6 +177,7 @@ const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
   FILE_LIBRARY_NOT_EMPTY: ['file_library_not_empty.description'],
   FILE_LIBRARY_CAPABILITY_DENIED: ['file_library_capability_denied.description'],
   FILE_LIBRARY_OPERATION_PENDING: ['file_library_operation_pending.description'],
+  FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: ['file_library_operation_pending.description'],
   FILE_LIBRARY_RESTORE_OPERATION_PENDING: ['file_library_operation_pending.description'],
   FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: ['file_library_active_writer_blocked.description'],
   FILE_LIBRARY_STORAGE_NOT_READY: ['file_library_storage_not_ready.description'],
@@ -187,8 +189,9 @@ const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
 const FILE_LIBRARY_TYPED_ERROR_DEFAULTS: Record<string, string> = {
   FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
   FILE_LIBRARY_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
+  FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
   FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File state is still being updated. Wait for the current file operation to finish, then try again.',
-  FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+  FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files are still in use. Release task file usage, then try again.',
   FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
 };
 

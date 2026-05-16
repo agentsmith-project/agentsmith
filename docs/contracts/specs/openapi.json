@@ -2953,6 +2953,9 @@
                 "schema": {
                   "oneOf": [
                     {
+                      "$ref": "#/components/schemas/FileLibrarySavePointOperationPendingError"
+                    },
+                    {
                       "$ref": "#/components/schemas/ApiError"
                     }
                   ]
@@ -3033,6 +3036,9 @@
               "application/json": {
                 "schema": {
                   "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibrarySavePointOperationPendingError"
+                    },
                     {
                       "$ref": "#/components/schemas/FileLibraryDeletingError"
                     },
@@ -13166,7 +13172,6 @@
           "project_id",
           "name",
           "source",
-          "file_library_home_segment",
           "status",
           "task_home_binding_status",
           "bound_task_visible",
@@ -13202,10 +13207,6 @@
               "agent_task_files"
             ],
             "description": "Product-facing source. File libraries are project-scoped task files managed by AgentSmith."
-          },
-          "file_library_home_segment": {
-            "type": "string",
-            "description": "Opaque backend-generated task HOME path segment. Clients must not derive storage details from it."
           },
           "status": {
             "type": "string",
@@ -13327,6 +13328,7 @@
         "oneOf": [
           {
             "type": "object",
+            "additionalProperties": false,
             "required": [
               "kind",
               "path",
@@ -13353,6 +13355,7 @@
           },
           {
             "type": "object",
+            "additionalProperties": false,
             "required": [
               "kind",
               "path",
@@ -13382,9 +13385,6 @@
               "modified_at": {
                 "type": "string",
                 "format": "date-time"
-              },
-              "etag": {
-                "type": "string"
               }
             }
           }
@@ -13574,7 +13574,7 @@
           "error_code": {
             "type": "string",
             "enum": [
-              "FILE_LIBRARY_OPERATION_PENDING"
+              "FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING"
             ]
           },
           "message": {
@@ -13737,18 +13737,11 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "save_point_id",
-          "discard_unsaved_changes_confirmed"
+          "save_point_id"
         ],
         "properties": {
           "save_point_id": {
             "type": "string"
-          },
-          "discard_unsaved_changes_confirmed": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         }
       },

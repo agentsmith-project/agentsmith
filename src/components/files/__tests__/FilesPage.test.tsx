@@ -73,11 +73,11 @@ vi.mock('next-intl', () => ({
         'file_manager.home_root_note_bound': 'This is the task HOME root for the attached Agent task. The workspace folder is one directory inside it.',
         'file_manager.empty_home_root_description': 'This file library HOME root is empty. Upload files here or open workspace/.',
         'file_manager.empty_workspace_description': 'The workspace folder is empty.',
-        'file_manager.runtime_system_badge': 'Runtime/system',
-        'file_manager.runtime_system_guard_title': 'Runtime/system folder',
-        'file_manager.runtime_system_delete_guard_description': `This selection includes runtime/system folders: ${values?.names ?? '-'}. Confirm before deleting.`,
-        'file_manager.runtime_system_move_guard_description': `This action renames or moves a runtime/system folder: ${values?.name ?? '-'}. Confirm before saving.`,
-        'file_manager.runtime_system_guard_confirm': 'I understand this can affect the task runtime.',
+        'file_manager.runtime_system_badge': 'HOME hidden runtime',
+        'file_manager.runtime_system_guard_title': 'HOME hidden runtime folder',
+        'file_manager.runtime_system_delete_guard_description': `This selection includes HOME hidden runtime directories: ${values?.names ?? '-'}. Confirm before deleting.`,
+        'file_manager.runtime_system_move_guard_description': `This action renames or moves a HOME hidden runtime folder: ${values?.name ?? '-'}. Confirm before saving.`,
+        'file_manager.runtime_system_guard_confirm': 'I understand this can affect task file behavior.',
       },
       errors: {
         validation_error: 'Validation error',
@@ -422,7 +422,10 @@ describe('FilesPage (object browser)', () => {
     expect(within(table).getByRole('button', { name: '.codex' })).toBeInTheDocument();
     expect(within(table).getByRole('button', { name: '.mbos' })).toBeInTheDocument();
     expect(within(table).getByRole('button', { name: '.env' })).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('hidden runtime');
+    const envRow = within(table).getAllByTestId('files__object-row')
+      .find((row) => row.textContent?.includes('.env'));
+    expect(envRow).toBeDefined();
+    expect(within(envRow as HTMLElement).queryByText('HOME hidden runtime')).not.toBeInTheDocument();
   });
 
   it('marks known top-level runtime/system dot folders without marking other dot paths', async () => {
@@ -465,15 +468,15 @@ describe('FilesPage (object browser)', () => {
     expect(hiddenRow).toBeDefined();
     expect(envRow).toBeDefined();
 
-    expect(within(codexRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--codex')).toHaveTextContent('Runtime/system');
-    expect(within(localRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--local')).toHaveTextContent('Runtime/system');
-    expect(within(workspaceCodexRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
-    expect(within(hiddenRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
-    expect(within(envRow as HTMLElement).queryByText('Runtime/system')).not.toBeInTheDocument();
+    expect(within(codexRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--codex')).toHaveTextContent('HOME hidden runtime');
+    expect(within(localRow as HTMLElement).getByTestId('files__object-row__runtime-system-badge--local')).toHaveTextContent('HOME hidden runtime');
+    expect(within(workspaceCodexRow as HTMLElement).queryByText('HOME hidden runtime')).not.toBeInTheDocument();
+    expect(within(hiddenRow as HTMLElement).queryByText('HOME hidden runtime')).not.toBeInTheDocument();
+    expect(within(envRow as HTMLElement).queryByText('HOME hidden runtime')).not.toBeInTheDocument();
 
     await user.click(within(codexRow as HTMLElement).getByRole('button', { name: '.codex' }));
 
-    expect(await screen.findByTestId('files__details__runtime-system-badge--codex')).toHaveTextContent('Runtime/system');
+    expect(await screen.findByTestId('files__details__runtime-system-badge--codex')).toHaveTextContent('HOME hidden runtime');
   });
 
   it('requires a second confirmation before deleting a runtime/system dot folder', async () => {
@@ -580,7 +583,7 @@ describe('FilesPage (object browser)', () => {
   it('selects the first library by default and only shows active-library actions', async () => {
     mockLibraries = [
       createFileLibrary({ id: 'lib_a', name: 'Library A' }),
-      createFileLibrary({ id: 'lib_b', name: 'Library B', file_library_home_segment: 'task-home-library-b' }),
+      createFileLibrary({ id: 'lib_b', name: 'Library B' }),
     ];
 
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
@@ -2013,7 +2016,7 @@ describe('FilesPage (object browser)', () => {
     const user = userEvent.setup();
     mockLibraries = [
       createFileLibrary({ id: 'lib_1', name: 'Library A' }),
-      createFileLibrary({ id: 'lib_b', name: 'Library B', file_library_home_segment: 'task-home-library-b' }),
+      createFileLibrary({ id: 'lib_b', name: 'Library B' }),
     ];
     const uploadDeferred = createDeferred<{ key: string; name: string }>();
     const observerRefetch = vi.fn().mockRejectedValue(new Error('wrong observer refetch'));

@@ -17,7 +17,6 @@ export type ActiveFileLibraryObjectMeta = {
   key: string;
   content_type?: string;
   size_bytes?: number;
-  etag?: string;
   last_modified?: string;
 };
 
@@ -27,7 +26,6 @@ export type ActiveFileLibraryObjectDownload = {
   cancel: (reason?: unknown) => Promise<void>;
   contentType: string;
   sizeBytes?: number;
-  etag?: string;
   lastModified?: string;
 };
 
@@ -56,7 +54,6 @@ export async function getActiveFileLibraryObjectMeta(
     key: meta.key,
     content_type: meta.content_type,
     size_bytes: meta.size_bytes,
-    ...(meta.etag ? { etag: meta.etag } : {}),
     last_modified: meta.last_modified,
   };
 }
@@ -78,7 +75,6 @@ export async function downloadActiveFileLibraryObject(
     cancel: result.download.cancel,
     contentType: result.meta.content_type,
     sizeBytes: result.meta.size_bytes,
-    ...(result.meta.etag ? { etag: result.meta.etag } : {}),
     lastModified: result.meta.last_modified,
   };
 }

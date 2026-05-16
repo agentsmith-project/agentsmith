@@ -149,7 +149,6 @@ describe('AfscpResourceOwnershipGuard', () => {
       'repo',
       'repo_template',
       'save_point',
-      'restore_plan',
       'export',
       'workload_mount_binding',
       'operation',

@@ -197,6 +197,7 @@ interface AgentSocketState {
   connectionEpoch?: number;
   lifecyclePhase: AgentSocketLifecyclePhase;
   presenceRegistered: boolean;
+  registrationLifecycle?: Promise<void>;
   releasePromise?: Promise<void>;
   refreshChain?: Promise<void>;
   readyChain?: Promise<void>;
@@ -284,6 +285,75 @@ function inferRemoteIp(req: http.IncomingMessage): string | undefined {
 function debugExecution(message: string): void {
   if (process.env.DEBUG_AGENT_EXECUTION !== '1') return;
   process.stdout.write(`[agent-execution] ${message}\n`);
+}
+
+function sanitizeDiagnosticText(input: string): string {
+  const redacted = input
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(
+      /\b(authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|secret|token|key)=([^&\s]+)/gi,
+      '$1=[redacted]',
+    );
+  return redacted.length > 200 ? `${redacted.slice(0, 197)}...` : redacted;
+}
+
+function normalizeCloseReason(reason: Buffer | string | undefined): string | undefined {
+  if (reason === undefined) return undefined;
+  return sanitizeDiagnosticText(Buffer.isBuffer(reason) ? reason.toString('utf-8') : reason);
+}
+
+function logSocketCloseDiagnostic(
+  socket: AgentSocketState,
+  input: {
+    closeKind: 'active_release' | 'passive_close';
+    errorCode: string;
+    closeCode: number;
+    closeReason: string;
+    closeEventCode?: number;
+    closeEventReason?: Buffer;
+  },
+): void {
+  const diagnostic: Record<string, unknown> = {
+    event: 'agent_execution_ws_close',
+    closeKind: input.closeKind,
+    agent_id: socket.agentId,
+    runner_session_id: socket.sessionId ?? null,
+    connection_id: socket.connectionId,
+    errorCode: input.errorCode,
+    closeCode: input.closeCode,
+    closeReason: normalizeCloseReason(input.closeReason) ?? '',
+    lifecyclePhase: socket.lifecyclePhase,
+    socketKey: socket.socketKey,
+  };
+  if (typeof input.closeEventCode === 'number') {
+    diagnostic.closeEventCode = input.closeEventCode;
+  }
+  const closeEventReason = normalizeCloseReason(input.closeEventReason);
+  if (closeEventReason !== undefined) {
+    diagnostic.closeEventReason = closeEventReason;
+  }
+  try {
+    process.stdout.write(`[agent-execution] ws_close_diagnostic ${JSON.stringify(diagnostic)}\n`);
+  } catch {
+    // Diagnostics must never alter websocket release behavior.
+  }
+}
+
+function logRunnerReadyRecoveryDiagnostic(socket: AgentSocketState, error: unknown): void {
+  const diagnostic: Record<string, unknown> = {
+    event: 'agent_execution_runner_ready_recovery_failed',
+    agent_id: socket.agentId,
+    runner_session_id: socket.sessionId ?? null,
+    connection_id: socket.connectionId,
+    lifecyclePhase: socket.lifecyclePhase,
+    socketKey: socket.socketKey,
+    error: sanitizeDiagnosticText(error instanceof Error ? error.message : String(error)),
+  };
+  try {
+    process.stdout.write(`[agent-execution] terminal recovery runner ready failed ${JSON.stringify(diagnostic)}\n`);
+  } catch {
+    // Diagnostics must never alter ready handling.
+  }
 }
 
 function nowIso(): string {
@@ -524,7 +594,7 @@ export class AgentExecutionService {
       );
 
       ws.on('message', (data) => this.handleAgentMessage(ws, data));
-      ws.on('close', () => this.handleSocketClose(ws));
+      ws.on('close', (code, reason) => this.handleSocketClose(ws, code, reason));
       ws.on('error', () => this.handleSocketClose(ws));
     });
   }
@@ -613,12 +683,18 @@ export class AgentExecutionService {
           presenceRegistered: false,
         };
         this.socketsByWebSocket.set(ws, socketState);
-        this.trackBackgroundTask(this.registerSocketLifecycle({
+        const registrationTask = this.registerSocketLifecycle({
           socketKey,
           socket: socketState,
           previousSocket: existing,
           remoteIp: inferRemoteIp(req),
+        });
+        const trackedRegistrationTask = this.trackBackgroundTask(registrationTask.finally(() => {
+          if (socketState.registrationLifecycle === trackedRegistrationTask) {
+            socketState.registrationLifecycle = undefined;
+          }
         }));
+        socketState.registrationLifecycle = trackedRegistrationTask;
         this.wsServer.emit('connection', ws, req);
       });
     }).catch(() => {
@@ -1309,9 +1385,20 @@ export class AgentExecutionService {
       skipCloseFrame?: boolean;
       skipPresenceUpdate?: boolean;
       terminalProcessesTerminated?: boolean;
+      closeKind?: 'active_release' | 'passive_close';
+      closeEventCode?: number;
+      closeEventReason?: Buffer;
     },
   ): void {
     if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') return;
+    logSocketCloseDiagnostic(socket, {
+      closeKind: options.closeKind ?? 'active_release',
+      errorCode: options.errorCode,
+      closeCode: options.closeCode,
+      closeReason: options.closeReason,
+      ...(typeof options.closeEventCode === 'number' ? { closeEventCode: options.closeEventCode } : {}),
+      ...(options.closeEventReason ? { closeEventReason: options.closeEventReason } : {}),
+    });
     socket.lifecyclePhase = 'closing';
 
     this.clearSocketHeartbeat(socket);
@@ -1892,6 +1979,21 @@ export class AgentExecutionService {
     socket.readyChain = trackedReadyTask;
   }
 
+  private async waitForReadyRegistrationLifecycle(socket: AgentSocketState): Promise<boolean> {
+    const registrationLifecycle = socket.registrationLifecycle;
+    if (registrationLifecycle) {
+      try {
+        await registrationLifecycle;
+      } catch (error) {
+        debugExecution(
+          `agent.ready registration lifecycle failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
+        );
+        return false;
+      }
+    }
+    return this.isSocketOpen(socket) && socket.lifecyclePhase === 'active';
+  }
+
   private async recheckReadyAuthority(socket: AgentSocketState): Promise<boolean> {
     if (isTerminalAgentSocketLifecyclePhase(socket.lifecyclePhase)) {
       return false;
@@ -1957,6 +2059,9 @@ export class AgentExecutionService {
     if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') {
       return;
     }
+    if (!(await this.waitForReadyRegistrationLifecycle(socket))) {
+      return;
+    }
     try {
       if (!(await this.recheckReadyAuthority(socket))) {
         return;
@@ -1996,16 +2101,20 @@ export class AgentExecutionService {
         },
       );
       if (recoveryMetadata && this.terminalRecoveryCoordinator.handleRunnerReady) {
-        await this.terminalRecoveryCoordinator.handleRunnerReady({
-          workspaceId: socket.workspaceId,
-          projectId: socket.projectId,
-          agentId: socket.agentId,
-          runnerSessionId: socket.sessionId ?? null,
-          runnerInstanceId: recoveryMetadata.runnerInstanceId,
-          connectionId: socket.connectionId,
-          connectionEpoch: recoveryMetadata.connectionEpoch,
-          activeTerminals,
-        });
+        try {
+          await this.terminalRecoveryCoordinator.handleRunnerReady({
+            workspaceId: socket.workspaceId,
+            projectId: socket.projectId,
+            agentId: socket.agentId,
+            runnerSessionId: socket.sessionId ?? null,
+            runnerInstanceId: recoveryMetadata.runnerInstanceId,
+            connectionId: socket.connectionId,
+            connectionEpoch: recoveryMetadata.connectionEpoch,
+            activeTerminals,
+          });
+        } catch (error) {
+          logRunnerReadyRecoveryDiagnostic(socket, error);
+        }
       }
     } catch (error) {
       debugExecution(
@@ -2074,7 +2183,7 @@ export class AgentExecutionService {
     return descriptors;
   }
 
-  private handleSocketClose(ws: WebSocket): void {
+  private handleSocketClose(ws: WebSocket, closeEventCode?: number, closeEventReason?: Buffer): void {
     const socket = this.socketsByWebSocket.get(ws);
     if (!socket) return;
     this.releaseSocketState(socket, {
@@ -2083,6 +2192,9 @@ export class AgentExecutionService {
       closeCode: 1006,
       closeReason: 'agent_disconnected',
       skipCloseFrame: true,
+      closeKind: 'passive_close',
+      ...(typeof closeEventCode === 'number' ? { closeEventCode } : {}),
+      ...(closeEventReason ? { closeEventReason } : {}),
     });
   }
 

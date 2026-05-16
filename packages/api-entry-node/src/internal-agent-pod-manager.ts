@@ -33,6 +33,7 @@ interface SandboxManagerClientLike {
     workloadId: string,
     cmd: string[],
     timeoutSeconds?: number,
+    signal?: AbortSignal,
   ): Promise<ExecResponse>;
   checkReady(signal?: AbortSignal): Promise<void>;
 }
@@ -73,9 +74,110 @@ const INTERNAL_AGENT_BUILTIN_SKILLS_DIR = process.env.INTERNAL_AGENT_BUILTIN_SKI
 const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?.trim() || 'mbos-context,feishu-docs,jira-ops';
 const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED?.trim() || '1';
 const INTERNAL_AGENT_TASK_RUNNER_MODE = 'managed_platform';
+const INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS = 8_000;
+const DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = [
+  'set +e',
+  "runner_patterns='[a]gent-task-runner|[p]ackages/agent-task-runner|[t]sx .*src/index\\.ts|[n]ode .*agent-task-runner'",
+  'echo "runner_health_probe=process_scan"',
+  'if command -v pgrep >/dev/null 2>&1; then',
+  '  pgrep -af "$runner_patterns"',
+  '  pgrep_status=$?',
+  '  if [ "$pgrep_status" -eq 0 ]; then exit 0; fi',
+  'fi',
+  'if command -v ps >/dev/null 2>&1; then',
+  '  ps_output="$(ps -eo pid,ppid,stat,comm,args 2>/dev/null || ps aux 2>/dev/null || ps 2>/dev/null || true)"',
+  '  printf "%s\\n" "$ps_output" | grep -E "$runner_patterns"',
+  '  grep_status=$?',
+  '  if [ "$grep_status" -eq 0 ]; then exit 0; fi',
+  '  echo "--- ps snapshot ---"',
+  '  printf "%s\\n" "$ps_output" | head -80',
+  'else',
+  '  echo "ps_unavailable"',
+  'fi',
+  'echo "--- task workspace snapshot ---"',
+  'ls -ld "${TASK_HOME:-/home}" "${WORKSPACE_PATH:-${TASK_HOME:-/home}/workspace}" 2>&1 || true',
+  'echo "--- mount snapshot ---"',
+  '(mount 2>/dev/null || cat /proc/mounts 2>/dev/null || true) | head -80',
+  'exit 1',
+].join('\n');
+
+type RunnerHealthStatus = 'runner_process_found' | 'runner_process_missing' | 'exec_failed';
+
+interface DiagnosticError {
+  message: string;
+  name?: string;
+  code?: string;
+  operation?: string;
+  status?: number;
+}
+
+interface RunnerHealthDiagnostic {
+  status: RunnerHealthStatus;
+  command: string[];
+  timeoutSeconds: number;
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  durationMs?: number;
+  error?: DiagnosticError;
+}
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function readRunnerHealthExecTimeoutSeconds(): number {
+  return readPositiveIntegerEnv('INTERNAL_AGENT_RUNNER_HEALTH_EXEC_TIMEOUT_SECONDS', 5);
+}
+
+function readRunnerHealthCommand(): string {
+  return process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND?.trim() || DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+}
+
+function truncateDiagnosticText(value: string): string {
+  if (value.length <= INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS)}\n[truncated]`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  const code = error.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function normalizeDiagnosticError(error: unknown): DiagnosticError {
+  const record = isRecord(error) ? error : {};
+  const name = error instanceof Error
+    ? error.name
+    : (typeof record.name === 'string' ? record.name : undefined);
+  const message = error instanceof Error
+    ? error.message
+    : (typeof error === 'string' && error.trim() ? error : 'unknown_error');
+  const code = typeof record.code === 'string' ? record.code : undefined;
+  const operation = typeof record.operation === 'string' ? record.operation : undefined;
+  const status = typeof record.status === 'number' && Number.isFinite(record.status)
+    ? record.status
+    : undefined;
+  return {
+    message,
+    ...(name ? { name } : {}),
+    ...(code ? { code } : {}),
+    ...(operation ? { operation } : {}),
+    ...(status !== undefined ? { status } : {}),
+  };
 }
 
 function normalizeAgentWebSocketBaseUrl(value: string): string {
@@ -495,6 +597,89 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     return Math.min(deadline, Date.now() + this.sessionReadinessTimeoutMs);
   }
 
+  private async collectRunnerHealth(
+    workspaceId: string,
+    projectId: string,
+    workloadId: string,
+    signal?: AbortSignal,
+  ): Promise<RunnerHealthDiagnostic> {
+    const command = ['sh', '-lc', readRunnerHealthCommand()];
+    const timeoutSeconds = readRunnerHealthExecTimeoutSeconds();
+    try {
+      const result = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.exec(workspaceId, projectId, workloadId, command, timeoutSeconds, rpcSignal),
+        signal,
+      );
+      const exitCode = Number.isFinite(result.exit_code) ? Math.floor(result.exit_code) : 1;
+      const durationMs = Number.isFinite(result.duration_ms) ? Math.floor(result.duration_ms) : undefined;
+      return {
+        status: exitCode === 0 ? 'runner_process_found' : 'runner_process_missing',
+        command,
+        timeoutSeconds,
+        exitCode,
+        stdout: truncateDiagnosticText(result.stdout),
+        stderr: truncateDiagnosticText(result.stderr),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      };
+    } catch (error) {
+      throwIfAborted(signal);
+      return {
+        status: 'exec_failed',
+        command,
+        timeoutSeconds,
+        error: normalizeDiagnosticError(error),
+      };
+    }
+  }
+
+  private async deleteStaleWorkloadPod(
+    workspaceId: string,
+    projectId: string,
+    workloadId: string,
+    signal?: AbortSignal,
+  ): Promise<{ stalePodDeleted: boolean; stalePodDeleteError?: DiagnosticError }> {
+    try {
+      await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal),
+        signal,
+      );
+      return { stalePodDeleted: true };
+    } catch (error) {
+      throwIfAborted(signal);
+      return {
+        stalePodDeleted: false,
+        stalePodDeleteError: normalizeDiagnosticError(error),
+      };
+    }
+  }
+
+  private buildSessionReadinessTimeoutError(input: {
+    workloadId: string;
+    sessionId: string;
+    podPhase: string | undefined;
+    runnerHealth: RunnerHealthDiagnostic;
+    cause: unknown;
+    stalePodDeleted?: boolean;
+    stalePodDeleteError?: DiagnosticError;
+  }): Error {
+    const message = input.runnerHealth.status === 'runner_process_missing'
+      ? 'sandbox_runner_bootstrap_unhealthy'
+      : 'sandbox_startup_timeout';
+    const error = Object.assign(new Error(message), {
+      code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      workloadId: input.workloadId,
+      sessionId: input.sessionId,
+      sandboxOperation: 'wait_for_agent_session_online',
+      podPhase: input.podPhase,
+      runnerHealth: input.runnerHealth,
+      sessionReadinessError: normalizeDiagnosticError(input.cause),
+      ...(input.stalePodDeleted !== undefined ? { stalePodDeleted: input.stalePodDeleted } : {}),
+      ...(input.stalePodDeleteError ? { stalePodDeleteError: input.stalePodDeleteError } : {}),
+    });
+    (error as Error & { cause?: unknown }).cause = input.cause;
+    return error;
+  }
+
   private getOnlineState(agentId: string, sessionId?: string): boolean {
     if (sessionId && typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
       return this.agentExecution.getAgentSessionOnlineState(agentId, sessionId);
@@ -550,98 +735,94 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       sessionId ? `&runner_session_id=${encodeURIComponent(sessionId)}` : ''
     }`;
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    throwIfAborted(signal);
+    this.checkDeadline(deadline);
+    if (isTerminalPodPhase(status.phase)) {
+      await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal).catch(() => undefined),
+        signal,
+      );
       throwIfAborted(signal);
-      this.checkDeadline(deadline);
-      if (isTerminalPodPhase(status.phase)) {
-        await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal).catch(() => undefined),
-          signal,
-        );
-        throwIfAborted(signal);
-        status = { phase: 'offline' };
-      }
-
-      if (status.phase === 'offline') {
-        throwIfAborted(signal);
-        await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
-            image: config.image,
-            env: {
-              MBOS_AGENT_WS_URL: wsUrl,
-              MBOS_AGENT_KEY: config.rawKey,
-              MBOS_RUNNER_MODE: 'k8s_internal',
-              MBOS_AGENT_CODEX_YOLO: '1',
-              MBOS_AGENT_RUNNER_DEBUG: '1',
-              MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
-              MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
-              MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
-              MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
-              ...(config.env ?? {}),
-              TASK_HOME: workspaceMount.taskHomePath,
-              HOME: workspaceMount.taskHomePath,
-              WORKSPACE_PATH: workspaceMount.workspacePath,
-              ARTIFACTS_PATH: workspaceMount.artifactsPath,
-              MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
-            },
-            cpu_request: config.cpuRequest ?? '500m',
-            cpu_limit: config.cpuLimit ?? '2',
-            memory_request: config.memoryRequest ?? '512Mi',
-            memory_limit: config.memoryLimit ?? '4Gi',
-            idle_timeout_sec: idleTimeoutSec,
-            max_lifetime_sec: maxLifetimeSec,
-            workspace_binding_id: workspaceMount.bindingId,
-          }, rpcSignal),
-          signal,
-        );
-        throwIfAborted(signal);
-        status = await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
-          signal,
-        );
-        throwIfAborted(signal);
-      }
-
-      if (status.phase !== 'Running') {
-        await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
-        status = { phase: 'Running' };
-      }
-
-      throwIfAborted(signal);
-      this.checkDeadline(deadline);
-      if (!sessionId) {
-        await this.waitForAgentOnline(agent.id, deadline, signal);
-        return;
-      }
-
-      const sessionReadinessDeadline = this.buildSessionReadinessDeadline(deadline);
-      try {
-        await this.waitForAgentSessionOnline(agent.id, sessionId, sessionReadinessDeadline, signal);
-        return;
-      } catch (error) {
-        throwIfAborted(signal);
-        const code = error && typeof error === 'object' && 'code' in error
-          ? (error as { code?: unknown }).code
-          : undefined;
-        if (code === 'AGENT_SANDBOX_REMOTE_OWNED') {
-          throw error;
-        }
-        if (code !== 'AGENT_SANDBOX_STARTUP_TIMEOUT') {
-          throw error;
-        }
-        if (sessionReadinessDeadline >= deadline || attempt >= 2) {
-          throw error;
-        }
-        await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal),
-          signal,
-        );
-        throwIfAborted(signal);
-        status = { phase: 'offline' };
-      }
+      status = { phase: 'offline' };
     }
 
-    throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
+    if (status.phase === 'offline') {
+      throwIfAborted(signal);
+      await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
+          image: config.image,
+          env: {
+            MBOS_AGENT_WS_URL: wsUrl,
+            MBOS_AGENT_KEY: config.rawKey,
+            MBOS_RUNNER_MODE: 'k8s_internal',
+            MBOS_AGENT_CODEX_YOLO: '1',
+            MBOS_AGENT_RUNNER_DEBUG: '1',
+            MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+            MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
+            MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
+            MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
+            ...(config.env ?? {}),
+            TASK_HOME: workspaceMount.taskHomePath,
+            HOME: workspaceMount.taskHomePath,
+            WORKSPACE_PATH: workspaceMount.workspacePath,
+            ARTIFACTS_PATH: workspaceMount.artifactsPath,
+            MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
+          },
+          cpu_request: config.cpuRequest ?? '500m',
+          cpu_limit: config.cpuLimit ?? '2',
+          memory_request: config.memoryRequest ?? '512Mi',
+          memory_limit: config.memoryLimit ?? '4Gi',
+          idle_timeout_sec: idleTimeoutSec,
+          max_lifetime_sec: maxLifetimeSec,
+          workspace_binding_id: workspaceMount.bindingId,
+        }, rpcSignal),
+        signal,
+      );
+      throwIfAborted(signal);
+      status = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+        signal,
+      );
+      throwIfAborted(signal);
+    }
+
+    if (status.phase !== 'Running') {
+      await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
+      status = { phase: 'Running' };
+    }
+
+    throwIfAborted(signal);
+    this.checkDeadline(deadline);
+    if (!sessionId) {
+      await this.waitForAgentOnline(agent.id, deadline, signal);
+      return;
+    }
+
+    const sessionReadinessDeadline = this.buildSessionReadinessDeadline(deadline);
+    try {
+      await this.waitForAgentSessionOnline(agent.id, sessionId, sessionReadinessDeadline, signal);
+      return;
+    } catch (error) {
+      throwIfAborted(signal);
+      const code = readErrorCode(error);
+      if (code !== 'AGENT_SANDBOX_STARTUP_TIMEOUT') {
+        throw error;
+      }
+      const runnerHealth = await this.collectRunnerHealth(workspaceId, projectId, workloadId, signal);
+      throwIfAborted(signal);
+      const staleCleanup = runnerHealth.status === 'runner_process_missing'
+        ? await this.deleteStaleWorkloadPod(workspaceId, projectId, workloadId, signal)
+        : {};
+      throwIfAborted(signal);
+      throw this.buildSessionReadinessTimeoutError({
+        workloadId,
+        sessionId,
+        podPhase: status.phase,
+        runnerHealth,
+        cause: error,
+        ...staleCleanup,
+      });
+    }
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

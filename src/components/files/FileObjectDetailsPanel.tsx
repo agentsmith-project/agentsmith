@@ -281,7 +281,6 @@ export function FileObjectDetailsPanel({
               <KeyValue label={t('file_manager.type')} value={meta.content_type} />
               <KeyValue label={t('file_manager.size')} value={`${meta.size_bytes.toLocaleString()} (${formatBytes(meta.size_bytes)})`} />
               <KeyValue label={t('file_manager.modified')} value={new Date(meta.last_modified).toLocaleString()} />
-              <KeyValue label={t('file_manager.etag')} value={meta.etag ?? '-'} mono />
             </div>
 
             <div className="space-y-2 border-t border-subtle/60 pt-3">

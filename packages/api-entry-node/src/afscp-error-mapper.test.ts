@@ -156,10 +156,10 @@ describe('mapAfscpErrorEnvelope', () => {
       error: {
         code: 'RESOURCE_NAMESPACE_MISMATCH',
         retryable: false,
-        correlation_id: 'corr-restore-plan',
+        correlation_id: 'corr-operation-resource',
         operation_id: 'op_456',
         details: {
-          resource: { type: 'restore_plan', id: 'rp_hidden_elsewhere' },
+          resource: { type: 'operation', id: 'op_hidden_elsewhere' },
         },
       },
     });
@@ -167,22 +167,21 @@ describe('mapAfscpErrorEnvelope', () => {
     expect(mapped).toMatchObject({
       status: 404,
       code: 'afscp_resource_not_found',
-      resource_kind: 'restore_plan',
-      correlation_id: 'corr-restore-plan',
+      resource_kind: 'operation',
+      correlation_id: 'corr-operation-resource',
       operation_id: 'op_456',
     });
-    expect(JSON.stringify(mapped)).not.toContain('rp_hidden_elsewhere');
+    expect(JSON.stringify(mapped)).not.toContain('op_hidden_elsewhere');
   });
 
-  it('maps stale restore preview recovery envelopes to a stable caller action code', () => {
+  it('maps direct restore recovery envelopes to a stable caller action code', () => {
     const mapped = mapAfscpErrorEnvelope(409, {
       error: {
-        code: 'OPERATION_RECOVERY_REQUIRED',
-        message: 'restore preview plan is not pending',
+        code: 'JVS_JOURNAL_RECOVERY_REQUIRED',
+        message: 'direct restore recovery is required',
         retryable: true,
-        correlation_id: 'corr-restore-stale',
+        correlation_id: 'corr-restore-recovery',
         details: {
-          restore_plan_id: 'plan_hidden',
           repo_id: 'repo_hidden_elsewhere',
           namespace_id: 'ns_hidden',
           metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
@@ -192,13 +191,13 @@ describe('mapAfscpErrorEnvelope', () => {
 
     expect(mapped).toEqual({
       status: 409,
-      code: 'afscp_restore_preview_stale',
-      message: 'afscp_restore_preview_stale',
+      code: 'afscp_operator_recovery_required',
+      message: 'afscp_operator_recovery_required',
       retryable: true,
-      correlation_id: 'corr-restore-stale',
+      correlation_id: 'corr-restore-recovery',
     });
     expectNoSensitiveValues(mapped);
-    expect(JSON.stringify(mapped)).not.toMatch(/plan_hidden|ns_hidden|repo_hidden_elsewhere/);
+    expect(JSON.stringify(mapped)).not.toMatch(/ns_hidden|repo_hidden_elsewhere/);
   });
 
   it('maps restore writer blockers from operation and session families to one stable code', () => {
@@ -264,7 +263,7 @@ describe('mapAfscpErrorEnvelope', () => {
   it('maps repo mutation-in-progress conflicts to a retryable busy state without leaking details', () => {
     for (const [rawCode, mappedCode] of [
       ['REPO_MUTATION_IN_PROGRESS', 'afscp_repo_mutation_in_progress'],
-      ['REPO_JVS_MUTATION_IN_PROGRESS', 'afscp_repo_jvs_mutation_in_progress'],
+      ['REPO_JVS_MUTATION_IN_PROGRESS', 'afscp_repo_mutation_in_progress'],
     ] as const) {
       const mapped = mapAfscpErrorEnvelope(409, {
         error: {

@@ -104,7 +104,6 @@ function getUploadedFileObjectItem(
     content_type: response.content_type ?? 'application/octet-stream',
     last_modified: response.last_modified,
   };
-  if (response.etag) item.etag = response.etag;
   return item;
 }
 

@@ -381,55 +381,232 @@ describe('local-manual internal handoff', () => {
     expect(fullStopBody).toContain('stop_afscp_local_runtime');
   });
 
-  it('resolves AFSCP JVS from verified release artifacts without defaulting to a sibling mutable build', () => {
+  it('resolves AFSCP JVS from the sibling source cache instead of the old release default', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
 
     expect(common).toContain('resolve_afscp_jvs_binary()');
-    expect(common).toContain('prepare_afscp_jvs_release_artifact()');
-    expect(common.indexOf('AFSCP_JVS_RELEASE_VERSION=')).toBeLessThan(
-      common.indexOf('AFSCP_JVS_RELEASE_CACHE_DIR='),
-    );
-    expect(common).toContain('AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-release/${AFSCP_JVS_RELEASE_VERSION}}"');
-    expect(common).toContain('AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS}"');
-    expect(common).toContain('AFSCP_JVS_RELEASE_BASE_URL');
-    expect(common).toContain('AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"');
-    expect(common).toContain('AFSCP_JVS_SHA256SUMS_URL="${AFSCP_JVS_SHA256SUMS_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/SHA256SUMS}"');
-    expect(common).toContain('afscp_jvs_sha256_from_sums "${tmp_sums}" "${AFSCP_JVS_RELEASE_BINARY_NAME}"');
-    expect(common).toContain('sibling mutable builds are not used by default');
-    expect(common).not.toContain('../jvs/bin/jvs-linux-amd64');
-    expect(common).not.toContain('AFSCP_JVS_BINARY_PATH="${AFSCP_JVS_BINARY_PATH:-$(realpath');
+    expect(common).toContain('prepare_afscp_jvs_sibling_artifact()');
+    expect(common).toContain('AFSCP_JVS_ROOT="${AFSCP_JVS_ROOT:-$(realpath -m "${ROOT_DIR}/../jvs")}"');
+    expect(common).toContain('AFSCP_JVS_SIBLING_CACHE_DIR="${AFSCP_JVS_SIBLING_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-sibling}"');
+    expect(common).toContain('afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}"');
+    expect(common).not.toContain('AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.9}"');
+    expect(common).not.toContain('releases/download/v0.4.9');
   });
 
-  it('exposes default JVS release URLs through the local-real internal env', () => {
+  it('keeps the local-real internal env off the old JVS release default', () => {
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
 
-    expect(envSource).toContain('local development/test dependency config');
-    expect(envSource).toContain('AFSCP_JVS_RELEASE_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/jvs-linux-amd64');
-    expect(envSource).toContain('AFSCP_JVS_SHA256SUMS_URL=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
+    expect(envSource).toContain('JVS defaults to the sibling checkout');
+    expect(envSource).not.toContain('releases/download/v0.4.9');
+    expect(envSource).not.toContain('AFSCP_JVS_RELEASE_URL=https://');
+    expect(envSource).not.toContain('AFSCP_JVS_SHA256SUMS_URL=https://');
   });
 
-  it('does not default local-real internal env to the pre-GA sibling direct-restore binary', () => {
+  it('does not default local-real internal env to a hard-coded JVS binary', () => {
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
+    const localManualSample = readFileSync('.env.local-manual.example', 'utf8');
 
     expect(envSource).toContain('AFSCP_RESTORE_RECOVERY_ENABLED=${AFSCP_RESTORE_RECOVERY_ENABLED:-true}');
-    expect(envSource).not.toContain('../jvs/bin/jvs-direct-restore');
+    expect(envSource).toContain('Usually do not set AFSCP_JVS_BINARY_PATH/SHA');
+    expect(envSource).toContain('must pass `jvs afscp --help`');
+    expect(envSource).toContain('must not pin the historical sibling build output ../jvs/bin/jvs-linux-amd64');
+    expect(localManualSample).toContain('usually do not set AFSCP_JVS_BINARY_PATH/SHA');
+    expect(localManualSample).toContain('Explicit overrides are diagnostics only and must pass `jvs afscp --help`');
+    expect(localManualSample).toContain('Do not pin the historical sibling build output ../jvs/bin/jvs-linux-amd64');
     expect(envSource).not.toContain('AFSCP_JVS_BINARY_PATH=${AFSCP_JVS_BINARY_PATH:-');
     expect(envSource).not.toContain('AFSCP_JVS_BINARY_SHA256=${AFSCP_JVS_BINARY_SHA256:-');
     expect(envSource).not.toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256=${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-');
     expect(envSource).not.toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF=${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-');
+    expect(localManualSample).not.toMatch(/^AFSCP_JVS_BINARY_PATH=/mu);
+    expect(localManualSample).not.toMatch(/^AFSCP_JVS_BINARY_SHA256=/mu);
+  });
+
+  it('rebuilds an old cached sibling JVS binary when the afscp direct command is missing', () => {
+    const result = runInternalCommonSnippet(`
+      jvs_root="\${SNIPPET_TEMP_ROOT}/jvs"
+      cache_dir="\${SNIPPET_TEMP_ROOT}/cache"
+      bin_dir="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$jvs_root/cmd/jvs" "$cache_dir" "$bin_dir"
+      printf 'module example.test/jvs\\n\\ngo 1.24\\n' > "$jvs_root/go.mod"
+      printf 'package main\\nfunc main() {}\\n' > "$jvs_root/cmd/jvs/main.go"
+      git -C "$jvs_root" init -q
+      git -C "$jvs_root" add .
+      git -C "$jvs_root" -c user.name=AgentSmith -c user.email=agentsmith@example.test commit -qm init
+      source_ref="jvs@$(git -C "$jvs_root" rev-parse --short=12 HEAD)"
+
+      cached_binary="$cache_dir/jvs-linux-amd64"
+      cat > "$cached_binary" <<'OLDJVS'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" ]]; then
+  echo 'unknown command "afscp" for "jvs"' >&2
+  exit 1
+fi
+exit 0
+OLDJVS
+      chmod +x "$cached_binary"
+      printf '%s\\n' "$source_ref" > "$cache_dir/jvs-linux-amd64.source-ref"
+
+      cat > "$bin_dir/go" <<'FAKEGO'
+#!/usr/bin/env bash
+printf 'cwd=%s args=%s\\n' "$PWD" "$*" >> "$SNIPPET_TEMP_ROOT/go.log"
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ -z "$out" ]]; then
+  exit 2
+fi
+cat > "$out" <<'NEWJVS'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" && "\${2:-}" == "--help" ]]; then
+  echo "Internal AFSCP direct contract"
+  exit 0
+fi
+echo "rebuilt jvs $*"
+NEWJVS
+chmod +x "$out"
+FAKEGO
+      chmod +x "$bin_dir/go"
+      export PATH="$bin_dir:$PATH"
+
+      AFSCP_JVS_ROOT="$jvs_root"
+      AFSCP_JVS_SIBLING_CACHE_DIR="$cache_dir"
+      AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="$cached_binary"
+      AFSCP_JVS_SIBLING_SOURCE_REF_PATH="$cache_dir/jvs-linux-amd64.source-ref"
+      resolve_afscp_jvs_binary
+      "$AFSCP_JVS_BINARY_PATH" afscp --help
+      write_afscp_local_runtime_env
+      set -a
+      source "$AFSCP_LOCAL_RUNTIME_ENV_FILE"
+      set +a
+      printf 'path=%s\\n' "$AFSCP_JVS_BINARY_PATH"
+      printf 'sha=%s\\n' "$AFSCP_JVS_BINARY_SHA256"
+      printf 'direct_sha=%s\\n' "$AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256"
+      printf 'source_ref=%s\\n' "$AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF"
+      cat "$SNIPPET_TEMP_ROOT/go.log"
+    `);
+    const values = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split('\n')
+        .filter((line) => line.includes('='))
+        .map((line) => line.split(/=(.*)/su).slice(0, 2) as [string, string]),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('cached sibling JVS binary is not direct-capable; rebuilding');
+    expect(result.stdout).toContain('Internal AFSCP direct contract');
+    expect(values.path).toContain('/cache/jvs-linux-amd64');
+    expect(values.sha).toMatch(/^[0-9a-f]{64}$/u);
+    expect(values.direct_sha).toBe(values.sha);
+    expect(values.source_ref).toMatch(/^jvs@[0-9a-f]{12}$/u);
+    expect(result.stdout).toContain('/jvs args=build -o ');
+    expect(result.stdout).toContain('./cmd/jvs');
+  });
+
+  it('fails closed when a sibling JVS rebuild still lacks afscp direct help', () => {
+    const result = runInternalCommonSnippet(`
+      jvs_root="\${SNIPPET_TEMP_ROOT}/jvs"
+      cache_dir="\${SNIPPET_TEMP_ROOT}/cache"
+      bin_dir="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$jvs_root/cmd/jvs" "$cache_dir" "$bin_dir"
+      printf 'module example.test/jvs\\n\\ngo 1.24\\n' > "$jvs_root/go.mod"
+      printf 'package main\\nfunc main() {}\\n' > "$jvs_root/cmd/jvs/main.go"
+
+      cat > "$bin_dir/go" <<'FAKEGO'
+#!/usr/bin/env bash
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat > "$out" <<'NODIRECT'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" ]]; then
+  echo 'unknown command "afscp" for "jvs"' >&2
+  exit 1
+fi
+exit 0
+NODIRECT
+chmod +x "$out"
+FAKEGO
+      chmod +x "$bin_dir/go"
+      export PATH="$bin_dir:$PATH"
+
+      AFSCP_JVS_ROOT="$jvs_root"
+      AFSCP_JVS_SIBLING_CACHE_DIR="$cache_dir"
+      AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="$cache_dir/jvs-linux-amd64"
+      AFSCP_JVS_SIBLING_SOURCE_REF_PATH="$cache_dir/jvs-linux-amd64.source-ref"
+      resolve_afscp_jvs_binary
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('does not satisfy AFSCP direct contract');
+    expect(result.stderr).toContain('jvs afscp --help');
+    expect(result.stderr).toContain('local-real fails closed');
+  });
+
+  it('explains how to clear a stale explicit sibling JVS binary pin', () => {
+    const result = runInternalCommonSnippet(`
+      jvs_root="\${SNIPPET_TEMP_ROOT}/jvs"
+      mkdir -p "$jvs_root/bin"
+      old_binary="$jvs_root/bin/jvs-linux-amd64"
+      cat > "$old_binary" <<'OLDJVS'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" ]]; then
+  echo 'unknown command "afscp" for "jvs"' >&2
+  exit 1
+fi
+exit 0
+OLDJVS
+      chmod +x "$old_binary"
+
+      AFSCP_JVS_ROOT="$jvs_root"
+      AFSCP_JVS_BINARY_PATH="$old_binary"
+      AFSCP_JVS_BINARY_SHA256="$(afscp_file_sha256 "$old_binary")"
+      resolve_afscp_jvs_binary
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('historical sibling build output');
+    expect(result.stderr).toContain(
+      'remove AFSCP_JVS_BINARY_PATH/AFSCP_JVS_BINARY_SHA256 from .env.local-manual',
+    );
+    expect(result.stderr).toContain('artifacts/cache/jvs-sibling');
+    expect(result.stderr).toContain("'jvs afscp --help' failed");
   });
 
   it('writes opt-in direct restore readiness evidence into the AFSCP runtime env', () => {
-    const directArtifact = 'direct restore local artifact';
-    const directSha = sha256(directArtifact);
     const result = runInternalCommonSnippet(`
       direct_binary="\${SNIPPET_TEMP_ROOT}/jvs-direct-restore"
-      printf '%s' ${shellSingleQuote(directArtifact)} > "$direct_binary"
+      cat > "$direct_binary" <<'JVS'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" && "\${2:-}" == "--help" ]]; then
+  echo "Internal AFSCP direct contract"
+  exit 0
+fi
+exit 0
+JVS
       chmod +x "$direct_binary"
       AFSCP_JVS_BINARY_PATH="$direct_binary"
-      AFSCP_JVS_BINARY_SHA256="${directSha}"
+      AFSCP_JVS_BINARY_SHA256="$(afscp_file_sha256 "$direct_binary")"
       AFSCP_RESTORE_RECOVERY_ENABLED=true
-      AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${directSha}"
       AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="jvs@test-direct-restore"
       write_afscp_local_runtime_env
       set -a
@@ -455,8 +632,8 @@ describe('local-manual internal handoff', () => {
     expect(result.stderr).toBe('');
     expect(values.AFSCP_RESTORE_RECOVERY_ENABLED).toBe('true');
     expect(values.AFSCP_JVS_BINARY_PATH).toContain('/jvs-direct-restore');
-    expect(values.AFSCP_JVS_BINARY_SHA256).toBe(directSha);
-    expect(values.AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256).toBe(directSha);
+    expect(values.AFSCP_JVS_BINARY_SHA256).toMatch(/^[0-9a-f]{64}$/u);
+    expect(values.AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256).toBe(values.AFSCP_JVS_BINARY_SHA256);
     expect(values.AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF).toBe('jvs@test-direct-restore');
   });
 
@@ -485,26 +662,28 @@ describe('local-manual internal handoff', () => {
     expect(result.stdout).toContain('gateway_prefix=/e/\n');
   });
 
-  it('defaults JVS release URLs and stable versioned cache paths in internal-common when the env file is not carrying them', () => {
+  it('defaults JVS to sibling source cache paths with inactive release URLs', () => {
     const result = runInternalCommonSnippet(`
-      printf 'cache=%s\\n' "$AFSCP_JVS_RELEASE_CACHE_DIR"
-      printf 'binary_cache=%s\\n' "$AFSCP_JVS_RELEASE_BINARY_CACHE_PATH"
-      printf 'sums_cache=%s\\n' "$AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH"
+      printf 'sibling_root=%s\\n' "$AFSCP_JVS_ROOT"
+      printf 'sibling_cache=%s\\n' "$AFSCP_JVS_SIBLING_CACHE_DIR"
+      printf 'sibling_binary_cache=%s\\n' "$AFSCP_JVS_SIBLING_BINARY_CACHE_PATH"
+      printf 'sibling_source_ref=%s\\n' "$AFSCP_JVS_SIBLING_SOURCE_REF_PATH"
       printf 'internal_real_dir=%s\\n' "$INTERNAL_REAL_DIR"
       printf 'release=%s\\n' "$AFSCP_JVS_RELEASE_URL"
       printf 'sums=%s\\n' "$AFSCP_JVS_SHA256SUMS_URL"
     `);
 
     expect(result.status).toBe(0);
-    const stableCacheDir = `${process.cwd()}/artifacts/cache/jvs-release/v0.4.9`;
-    expect(result.stdout).toContain(`cache=${stableCacheDir}\n`);
-    expect(result.stdout).toContain(`binary_cache=${stableCacheDir}/jvs-linux-amd64\n`);
-    expect(result.stdout).toContain(`sums_cache=${stableCacheDir}/SHA256SUMS\n`);
+    const siblingCacheDir = `${process.cwd()}/artifacts/cache/jvs-sibling`;
+    expect(result.stdout).toContain(`sibling_root=${path.dirname(process.cwd())}/jvs\n`);
+    expect(result.stdout).toContain(`sibling_cache=${siblingCacheDir}\n`);
+    expect(result.stdout).toContain(`sibling_binary_cache=${siblingCacheDir}/jvs-linux-amd64\n`);
+    expect(result.stdout).toContain(`sibling_source_ref=${siblingCacheDir}/jvs-linux-amd64.source-ref\n`);
     const internalRealDir = result.stdout.match(/^internal_real_dir=(.+)$/m)?.[1] ?? '';
     expect(internalRealDir).toBeTruthy();
-    expect(stableCacheDir.startsWith(internalRealDir)).toBe(false);
-    expect(result.stdout).toContain('release=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/jvs-linux-amd64');
-    expect(result.stdout).toContain('sums=https://github.com/agentsmith-project/jvs/releases/download/v0.4.9/SHA256SUMS');
+    expect(siblingCacheDir.startsWith(internalRealDir)).toBe(false);
+    expect(result.stdout).toContain('release=\n');
+    expect(result.stdout).toContain('sums=\n');
   });
 
   it('preserves explicit JVS release cache dir overrides while deriving child cache paths from them', () => {
@@ -652,6 +831,307 @@ describe('local-manual internal handoff', () => {
     expect(result.stdout).toContain('AFSCP_EXPORT_SESSION_RECONCILE_LIMIT=25');
   });
 
+  it('resets owned local-real AFSCP and JuiceFS metadata truth through a guarded localhost DSN', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      cat > "$bin/psql" <<'SH'
+#!/usr/bin/env bash
+printf 'psql_args=%s\\n' "$*" > "$SNIPPET_TEMP_ROOT/psql.log"
+cat > "$SNIPPET_TEMP_ROOT/psql.sql"
+SH
+      cat > "$bin/mongosh" <<'SH'
+#!/usr/bin/env bash
+printf 'mongosh_args=%s\\n' "$*" > "$SNIPPET_TEMP_ROOT/mongosh.log"
+printf 'mongo_db=%s\\n' "$AFSCP_RESET_MONGO_DB_NAME" >> "$SNIPPET_TEMP_ROOT/mongosh.log"
+cat > "$SNIPPET_TEMP_ROOT/mongosh.js"
+SH
+      cat > "$bin/mc" <<'SH'
+#!/usr/bin/env bash
+printf 'mc_args=%s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/mc.log"
+SH
+      chmod +x "$bin/psql"
+      chmod +x "$bin/mongosh"
+      chmod +x "$bin/mc"
+      export PATH="$bin:$PATH"
+      AFSCP_ENVIRONMENT=local-real
+      AFSCP_DEFAULT_VOLUME_ID=vol_internal_20040
+      AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://localhost:\${SUBSTRATE_MINIO_API_PORT}/\${MINIO_BUCKET:-mbos-dev}"
+      DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:\${SUBSTRATE_POSTGRES_PORT}/mbos?sslmode=disable"
+      AFSCP_POSTGRES_DSN="$DATABASE_URL"
+      MONGO_URL="mongodb://mbos:mbos_dev_password@localhost:\${SUBSTRATE_MONGO_PORT}/admin"
+      MONGO_DB_NAME="\${SUBSTRATE_MONGO_DB}"
+      reset_owned_afscp_local_runtime_data
+      cat "$SNIPPET_TEMP_ROOT/psql.log"
+      cat "$SNIPPET_TEMP_ROOT/psql.sql"
+      cat "$SNIPPET_TEMP_ROOT/mongosh.log"
+      cat "$SNIPPET_TEMP_ROOT/mongosh.js"
+      cat "$SNIPPET_TEMP_ROOT/mc.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('resetting owned AFSCP local-real runtime/test records');
+    expect(result.stdout).toContain('psql_args=postgresql://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable -v ON_ERROR_STOP=1');
+    expect(result.stdout).toContain('TRUNCATE TABLE');
+    expect(result.stdout).toContain('DROP TABLE');
+    expect(result.stdout).toContain("table_name LIKE 'jfs\\_%'");
+    const clearedRuntimeTables = [
+      'operations',
+      'repo_fences',
+      'audit_outbox',
+      'repos',
+      'export_sessions',
+      'export_runtime_requests',
+      'workload_mount_bindings',
+      'restore_reconciliation_runs',
+      'restore_reconciliation_targets',
+      'restore_reconciliation_observations',
+      'volumes',
+      'namespaces',
+      'namespace_volume_bindings',
+    ];
+    const removedLegacyRestoreTable = `restore_${'plans'}`;
+    for (const tableName of clearedRuntimeTables) {
+      expect(result.stdout).toContain(`'${tableName}'`);
+    }
+    expect(clearedRuntimeTables).toContain('operations');
+    expect(result.stdout).not.toContain(`'${removedLegacyRestoreTable}'`);
+    expect(result.stdout).toContain('operator_intervention_required');
+    expect(result.stdout).not.toContain('operation_state');
+    expect(result.stdout).toContain('resetting AgentSmith-owned AFSCP metadata in Mongo');
+    expect(result.stdout).toContain('mongosh_args=mongodb://mbos:mbos_dev_password@localhost:17017/admin --quiet --eval ');
+    expect(result.stdout).toContain('mongo_db=mbos');
+    expect(result.stdout).toContain('project_afscp_namespace_mappings');
+    expect(result.stdout).toContain('project_file_library_afscp_mappings');
+    expect(result.stdout).toContain('resetting AFSCP local-real JuiceFS object prefix mbos-dev/vol-internal-20040/');
+    expect(result.stdout).not.toContain('resetting AFSCP local-real JuiceFS object prefix mbos-dev/mbos-dev/vol-internal-20040/');
+    expect(result.stdout).toContain('mc_args=alias set agentsmith-afscp-local-reset-');
+    expect(result.stdout).toContain(' http://localhost:19000 mbos mbos_dev_password');
+    expect(result.stdout).toContain('mc_args=rm --recursive --force agentsmith-afscp-local-reset-');
+    expect(result.stdout).toContain('/mbos-dev/vol-internal-20040/');
+    expect(result.stdout).not.toContain('/mbos-dev/mbos-dev/vol-internal-20040/');
+    expect(result.stdout).not.toContain('mc_args=rm --recursive --force agentsmith-afscp-local-reset-/mbos-dev\n');
+  });
+
+  it('appends the current JuiceFS volume under an explicit MinIO object root prefix', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      cat > "$bin/mc" <<'SH'
+#!/usr/bin/env bash
+printf 'mc_args=%s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/mc.log"
+SH
+      chmod +x "$bin/mc"
+      export PATH="$bin:$PATH"
+      AFSCP_ENVIRONMENT=local-real
+      AFSCP_DEFAULT_VOLUME_ID=vol_internal_20040
+      AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://localhost:\${SUBSTRATE_MINIO_API_PORT}/\${MINIO_BUCKET:-mbos-dev}/custom-root"
+      reset_owned_afscp_local_runtime_object_prefix
+      cat "$SNIPPET_TEMP_ROOT/mc.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('resetting AFSCP local-real JuiceFS object prefix mbos-dev/custom-root/vol-internal-20040/');
+    expect(result.stdout).toContain('/mbos-dev/custom-root/vol-internal-20040/');
+    expect(result.stdout).not.toContain('/mbos-dev/mbos-dev/vol-internal-20040/');
+  });
+
+  it('fails closed before resetting a JuiceFS object prefix outside local-real localhost MinIO volume truth', () => {
+    const scenarios = [
+      {
+        setup: `
+          AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://localhost:\${SUBSTRATE_MINIO_API_PORT}/\${MINIO_BUCKET:-mbos-dev}/\${MINIO_BUCKET:-mbos-dev}/vol-local-manual/"
+        `,
+        message: 'AFSCP_ENVIRONMENT=local-real',
+      },
+      {
+        setup: `
+          AFSCP_ENVIRONMENT=local-real
+          AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://minio.example.test:\${SUBSTRATE_MINIO_API_PORT}/\${MINIO_BUCKET:-mbos-dev}/\${MINIO_BUCKET:-mbos-dev}/vol-local-manual/"
+        `,
+        message: 'host minio.example.test must point at localhost or 127.0.0.1',
+      },
+      {
+        setup: `
+          AFSCP_ENVIRONMENT=local-real
+          AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://localhost:\${SUBSTRATE_MINIO_API_PORT}/foreign-bucket/\${MINIO_BUCKET:-mbos-dev}/vol-local-manual/"
+        `,
+        message: 'bucket foreign-bucket must match local MinIO bucket mbos-dev',
+      },
+      {
+        setup: `
+          AFSCP_ENVIRONMENT=local-real
+          AFSCP_LOCAL_RUNTIME_HOST_JUICEFS_BUCKET="http://localhost:\${SUBSTRATE_MINIO_API_PORT}/\${MINIO_BUCKET:-mbos-dev}/\${MINIO_BUCKET:-mbos-dev}/vol-other/"
+        `,
+        message: 'object prefix mbos-dev/vol-other/ must end with current volume vol_local_manual',
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const result = runInternalCommonSnippet(`
+        bin="\${SNIPPET_TEMP_ROOT}/bin"
+        mkdir -p "$bin"
+        cat > "$bin/mc" <<'SH'
+#!/usr/bin/env bash
+printf 'MC_SHOULD_NOT_RUN\\n'
+SH
+        chmod +x "$bin/mc"
+        export PATH="$bin:$PATH"
+        AFSCP_DEFAULT_VOLUME_ID=vol_local_manual
+        ${scenario.setup}
+        reset_owned_afscp_local_runtime_object_prefix
+      `);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('refusing to reset AFSCP local-real JuiceFS object prefix');
+      expect(result.stderr).toContain(scenario.message);
+      expect(result.stdout).not.toContain('MC_SHOULD_NOT_RUN');
+    }
+  });
+
+  it('clears AgentSmith-owned AFSCP metadata when resetting local-real AFSCP runtime', () => {
+    const result = runInternalCommonSnippet(`
+      bin_dir="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin_dir"
+      cat > "$bin_dir/mongosh" <<'FAKEMONGO'
+#!/usr/bin/env bash
+printf 'args=%s\\n' "$*" > "$SNIPPET_TEMP_ROOT/mongosh.args"
+printf 'target_db=%s\\n' "$AFSCP_RESET_MONGO_DB_NAME" > "$SNIPPET_TEMP_ROOT/mongosh.env"
+cat > "$SNIPPET_TEMP_ROOT/mongosh.js"
+FAKEMONGO
+      chmod +x "$bin_dir/mongosh"
+      export PATH="$bin_dir:$PATH"
+
+      AFSCP_ENVIRONMENT=local-real
+      MONGO_URL="mongodb://mbos:mbos_dev_password@localhost:\${SUBSTRATE_MONGO_PORT}/admin"
+      MONGO_DB_NAME="\${SUBSTRATE_MONGO_DB}"
+      reset_owned_agentsmith_afscp_metadata
+
+      cat "$SNIPPET_TEMP_ROOT/mongosh.args"
+      cat "$SNIPPET_TEMP_ROOT/mongosh.env"
+      cat "$SNIPPET_TEMP_ROOT/mongosh.js"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('resetting AgentSmith-owned AFSCP metadata in Mongo');
+    expect(result.stdout).toContain('args=mongodb://mbos:mbos_dev_password@localhost:17017/admin --quiet --eval ');
+    expect(result.stdout).toContain('target_db=mbos');
+    for (const collection of [
+      'project_afscp_namespace_mappings',
+      'project_afscp_resource_ownership_mappings',
+      'project_file_library_afscp_mappings',
+      'agent_task_file_library_bindings',
+      'agent_task_workspace_holders',
+      'project_file_library_save_point_mappings',
+      'project_file_library_restore_operations',
+      'project_file_library_restore_operation_active_locks',
+      'project_task_file_templates',
+    ]) {
+      expect(result.stdout).toContain(collection);
+    }
+    expect(result.stdout).toContain('internal_agent_file_library_workspaces');
+    for (const preservedCollection of [
+      'project_file_libraries',
+      'provider_connections',
+      'project_model_entries',
+      'model_catalog_versions',
+      'workspaces',
+      'user_external_connections',
+    ]) {
+      expect(result.stdout).not.toContain(`'${preservedCollection}'`);
+      expect(result.stdout).not.toContain(`"${preservedCollection}"`);
+    }
+
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
+    const agentTaskGate = readFileSync('scripts/run-internal-agent-task-real-gate.sh', 'utf8');
+    expect(common).toContain('reset_owned_agentsmith_afscp_metadata');
+    expect(reset).toContain('AFSCP_ENVIRONMENT=local-real reset_owned_afscp_local_runtime_data');
+    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_data');
+  });
+
+  it('fails closed before clearing AgentSmith AFSCP metadata on a non-local Mongo URL', () => {
+    const result = runInternalCommonSnippet(`
+      AFSCP_ENVIRONMENT=local-real
+      MONGO_URL="mongodb://mongo.example.test:27017/admin"
+      MONGO_DB_NAME="\${SUBSTRATE_MONGO_DB}"
+      reset_owned_agentsmith_afscp_metadata
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('refusing to reset AgentSmith-owned AFSCP metadata');
+    expect(result.stderr).toContain('Mongo URL host mongo.example.test must point at localhost or 127.0.0.1');
+
+    const fullResetResult = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      cat > "$bin/psql" <<'SH'
+#!/usr/bin/env bash
+cat > "$SNIPPET_TEMP_ROOT/psql.sql"
+SH
+      cat > "$bin/mongosh" <<'SH'
+#!/usr/bin/env bash
+printf 'MONGOSH_SHOULD_NOT_RUN\\n'
+SH
+      chmod +x "$bin/psql" "$bin/mongosh"
+      export PATH="$bin:$PATH"
+      AFSCP_ENVIRONMENT=local-real
+      AFSCP_POSTGRES_DSN="postgresql://mbos:mbos_dev_password@localhost:\${SUBSTRATE_POSTGRES_PORT}/mbos?sslmode=disable"
+      MONGO_URL="mongodb://mongo.example.test:27017/admin"
+      MONGO_DB_NAME="\${SUBSTRATE_MONGO_DB}"
+      reset_owned_afscp_local_runtime_data
+    `);
+
+    expect(fullResetResult.status).not.toBe(0);
+    expect(fullResetResult.stderr).toContain('refusing to reset AgentSmith-owned AFSCP metadata');
+    expect(fullResetResult.stderr).toContain('Mongo URL host mongo.example.test must point at localhost or 127.0.0.1');
+    expect(fullResetResult.stdout).not.toContain('MONGOSH_SHOULD_NOT_RUN');
+  });
+
+  it('fails closed before AFSCP data reset for unsafe DSNs or missing local-real marker', () => {
+    const scenarios = [
+      {
+        dsn: 'postgresql://mbos:mbos_dev_password@postgres.internal:15432/mbos?sslmode=disable',
+        localRealMarker: true,
+        message: 'must point at localhost or 127.0.0.1',
+      },
+      {
+        dsn: 'postgresql://prod_user:prod_password@localhost:15432/prod_db?sslmode=disable',
+        localRealMarker: true,
+        message: 'must use local test database user/database',
+      },
+      {
+        dsn: 'postgresql://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable',
+        localRealMarker: false,
+        message: 'AFSCP_ENVIRONMENT=local-real',
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const result = runInternalCommonSnippet(`
+        bin="\${SNIPPET_TEMP_ROOT}/bin"
+        mkdir -p "$bin"
+        cat > "$bin/psql" <<'SH'
+#!/usr/bin/env bash
+printf 'PSQL_SHOULD_NOT_RUN\\n'
+SH
+        chmod +x "$bin/psql"
+        export PATH="$bin:$PATH"
+        ${scenario.localRealMarker ? 'AFSCP_ENVIRONMENT=local-real' : ''}
+        AFSCP_POSTGRES_DSN=${shellSingleQuote(scenario.dsn)}
+        reset_owned_afscp_local_runtime_data
+      `);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('refusing to reset AFSCP local-real runtime/test records');
+      expect(result.stderr).toContain(scenario.message);
+      expect(result.stdout).not.toContain('PSQL_SHOULD_NOT_RUN');
+    }
+  });
+
   it('does not carry an AgentSmith-side accepted JVS release hash pin', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
@@ -703,7 +1183,13 @@ describe('local-manual internal handoff', () => {
   });
 
   it('downloads the configured release artifact and verifies it from SHA256SUMS before caching', () => {
-    const releaseContent = 'official release asset';
+    const releaseContent = `#!/usr/bin/env bash
+if [[ "\${1:-}" == "afscp" && "\${2:-}" == "--help" ]]; then
+  echo "Internal AFSCP direct contract"
+  exit 0
+fi
+echo "release jvs $*"
+`;
     const releaseSha = sha256(releaseContent);
     const result = runInternalCommonSnippet(`
       bin="\${SNIPPET_TEMP_ROOT}/bin"
@@ -853,6 +1339,19 @@ SH
     expect(result.stdout).toContain('get secret afscp-local-runtime -n agentsmith-sandbox -o json');
   });
 
+  it('fails closed when workload mount SecretRefs point at a non-default local-real volume', () => {
+    const result = runInternalCommonSnippet(`
+      AFSCP_JVS_ENABLED=false
+      AFSCP_DEFAULT_VOLUME_ID=vol_local_manual
+      AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS="vol_internal_20040=agentsmith-sandbox/afscp-local-runtime"
+      write_afscp_local_runtime_env
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use default volume vol_local_manual only');
+    expect(result.stderr).toContain('local-real fails closed');
+  });
+
   it('fails closed when a workload mount SecretRef points at a different JuiceFS volume identity', () => {
     const secretData = b64SecretData({
       name: 'different-volume',
@@ -926,11 +1425,17 @@ SH
       cat > "$bin/juicefs" <<'SH'
 #!/usr/bin/env bash
 printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
-if [[ "$1" == "mount" ]]; then
-  mountpoint="\${@: -1}"
-  mkdir -p "$mountpoint"
-  printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
-fi
+case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    exit 0
+    ;;
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+esac
 exit 0
 SH
       cat > "$bin/mountpoint" <<'SH'
@@ -967,6 +1472,49 @@ SH
     expect(result.stdout).toContain('juicefs mount -d');
     expect(result.stdout).toContain('--storage minio --bucket http://localhost:19000/mbos-dev');
     expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable');
+  });
+
+  it('fails closed before mounting when existing JuiceFS metadata has a stale name or object endpoint', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  format)
+    exit 0
+    ;;
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    ;;
+  mount)
+    printf 'SHOULD_NOT_MOUNT\\n' >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+    exit 0
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+      chmod +x "$bin/juicefs" "$bin/mountpoint"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_DEFAULT_VOLUME_ID=vol_internal_20040
+      AFSCP_VOLUME_ROOT="$mount_root"
+      SUBSTRATE_MINIO_API_PORT=29000
+      ensure_afscp_local_runtime_volume_root
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AFSCP local-real JuiceFS metadata does not match expected identity');
+    expect(result.stderr).toContain('name,bucket');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stderr).not.toContain('mbos_dev_password');
+    expect(result.stdout).not.toContain('SHOULD_NOT_MOUNT');
   });
 
   it.each(['AFSCP_VOLUME_ROOTS', 'AFSCP_API_VOLUME_ROOTS', 'AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS'])(
@@ -1038,6 +1586,10 @@ case "$1" in
   format)
     exit 0
     ;;
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    exit 0
+    ;;
   mount)
     exit 42
     ;;
@@ -1069,6 +1621,9 @@ SH
 #!/usr/bin/env bash
 printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
 case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    ;;
   mount)
     mountpoint="\${@: -1}"
     mkdir -p "$mountpoint"
@@ -1281,6 +1836,9 @@ SH
 #!/usr/bin/env bash
 printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
 case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    ;;
   mount)
     mountpoint="\${@: -1}"
     mkdir -p "$mountpoint"
@@ -1385,6 +1943,9 @@ SH
 #!/usr/bin/env bash
 printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
 case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    ;;
   mount)
     mountpoint="\${@: -1}"
     mkdir -p "$mountpoint"
@@ -1450,8 +2011,13 @@ SH
     const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
 
     expect(reset.indexOf('stop_internal_runtime')).toBeGreaterThanOrEqual(0);
+    expect(reset.indexOf('reset_owned_afscp_local_runtime_data')).toBeGreaterThanOrEqual(0);
     expect(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"')).toBeGreaterThanOrEqual(0);
+    expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('reset_owned_afscp_local_runtime_data'));
     expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"'));
+    expect(reset.indexOf('reset_owned_afscp_local_runtime_data')).toBeLessThan(
+      reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"'),
+    );
   });
 
   it('reports AFSCP API readiness from local-manual internal status and local-real status', () => {

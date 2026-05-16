@@ -93,17 +93,21 @@ AFSCP_VOLUME_ROOT_MOUNT_MARKER="${AFSCP_VOLUME_ROOT_MOUNT_MARKER:-${INTERNAL_REA
 AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG="${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG:-${INTERNAL_REAL_DIR}/afscp-juicefs-mount.log}"
 AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR="${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR:-${INTERNAL_REAL_DIR}/afscp-juicefs-cache}"
 AFSCP_JVS_CWD="${AFSCP_JVS_CWD:-${INTERNAL_REAL_DIR}/afscp-jvs-cwd}"
+AFSCP_JVS_ROOT="${AFSCP_JVS_ROOT:-$(realpath -m "${ROOT_DIR}/../jvs")}"
 AFSCP_JVS_RELEASE_BINARY_NAME="${AFSCP_JVS_RELEASE_BINARY_NAME:-jvs-linux-amd64}"
-AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.9}"
-AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-release/${AFSCP_JVS_RELEASE_VERSION}}"
+AFSCP_JVS_SIBLING_CACHE_DIR="${AFSCP_JVS_SIBLING_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-sibling}"
+AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="${AFSCP_JVS_SIBLING_BINARY_CACHE_PATH:-${AFSCP_JVS_SIBLING_CACHE_DIR}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
+AFSCP_JVS_SIBLING_SOURCE_REF_PATH="${AFSCP_JVS_SIBLING_SOURCE_REF_PATH:-${AFSCP_JVS_SIBLING_CACHE_DIR}/${AFSCP_JVS_RELEASE_BINARY_NAME}.source-ref}"
+AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-}"
+AFSCP_JVS_RELEASE_CACHE_DIR="${AFSCP_JVS_RELEASE_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-release/${AFSCP_JVS_RELEASE_VERSION:-manual}}"
 AFSCP_JVS_RELEASE_BINARY_CACHE_PATH="${AFSCP_JVS_RELEASE_BINARY_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
 AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH="${AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH:-${AFSCP_JVS_RELEASE_CACHE_DIR}/SHA256SUMS}"
-AFSCP_JVS_RELEASE_BASE_URL="${AFSCP_JVS_RELEASE_BASE_URL:-https://github.com/agentsmith-project/jvs/releases/download/${AFSCP_JVS_RELEASE_VERSION}}"
+AFSCP_JVS_RELEASE_BASE_URL="${AFSCP_JVS_RELEASE_BASE_URL:-}"
 AFSCP_JVS_BINARY_PATH="${AFSCP_JVS_BINARY_PATH:-}"
 AFSCP_JVS_BINARY_SHA256="${AFSCP_JVS_BINARY_SHA256:-}"
 AFSCP_JVS_SHA256SUMS_PATH="${AFSCP_JVS_SHA256SUMS_PATH:-}"
-AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
-AFSCP_JVS_SHA256SUMS_URL="${AFSCP_JVS_SHA256SUMS_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/SHA256SUMS}"
+AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-}"
+AFSCP_JVS_SHA256SUMS_URL="${AFSCP_JVS_SHA256SUMS_URL:-}"
 AFSCP_RESTORE_RECOVERY_ENABLED="${AFSCP_RESTORE_RECOVERY_ENABLED:-false}"
 AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-}"
 AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-}"
@@ -349,6 +353,68 @@ afscp_file_sha256() {
   return 1
 }
 
+afscp_stdin_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print tolower($1)}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print tolower($1)}'
+    return 0
+  fi
+  internal_err "sha256sum or shasum is required to fingerprint the JVS source ref"
+  return 1
+}
+
+afscp_jvs_direct_contract_ok() {
+  local binary_path="$1"
+  [[ -x "${binary_path}" ]] || return 1
+  "${binary_path}" afscp --help >/dev/null 2>&1
+}
+
+afscp_verify_jvs_direct_contract() {
+  local binary_path="$1"
+  local source_label="${2:-JVS binary}"
+  local output
+  if [[ ! -x "${binary_path}" ]]; then
+    internal_err "JVS binary at ${binary_path} is not executable for ${source_label}; local-real fails closed"
+    return 1
+  fi
+  if ! output="$("${binary_path}" afscp --help 2>&1)"; then
+    internal_err "JVS binary at ${binary_path} does not satisfy AFSCP direct contract (${source_label}); 'jvs afscp --help' failed; local-real fails closed"
+    if [[ -n "${output}" ]]; then
+      printf '%s\n' "${output}" | sed -n '1,12p' | sed 's/^/[local-manual-internal] JVS: /' >&2
+    fi
+    return 1
+  fi
+}
+
+afscp_set_jvs_direct_evidence() {
+  local binary_sha
+  binary_sha="$(afscp_jvs_normalize_sha256 "$1")"
+  local source_ref="$2"
+  local configured_direct_sha="${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-}"
+
+  if ! afscp_jvs_valid_sha256 "${binary_sha}"; then
+    internal_err "resolved JVS binary SHA-256 is malformed; local-real fails closed"
+    return 1
+  fi
+  if [[ -n "${configured_direct_sha}" ]]; then
+    configured_direct_sha="$(afscp_jvs_normalize_sha256 "${configured_direct_sha}")"
+    if [[ "${configured_direct_sha}" != "${binary_sha}" ]]; then
+      internal_err "AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256 must match AFSCP_JVS_BINARY_SHA256 (${binary_sha}); local-real fails closed"
+      return 1
+    fi
+  fi
+  if [[ -z "${source_ref}" ]]; then
+    internal_err "AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF is required for the resolved JVS binary; local-real fails closed"
+    return 1
+  fi
+
+  AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${binary_sha}"
+  AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="${source_ref}"
+}
+
 afscp_verify_jvs_binary_sha256() {
   local binary_path="$1"
   local expected_sha
@@ -383,6 +449,8 @@ afscp_use_jvs_release_artifact() {
   AFSCP_JVS_BINARY_PATH="$(realpath -m "${binary_path}")"
   AFSCP_JVS_BINARY_SHA256="${expected_sha}"
   chmod 0755 "${AFSCP_JVS_BINARY_PATH}" >/dev/null 2>&1 || true
+  afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}" "release artifact ${binary_name}" || return 1
+  afscp_set_jvs_direct_evidence "${expected_sha}" "release:${binary_name}@${expected_sha}" || return 1
 }
 
 afscp_download_jvs_release_file() {
@@ -461,13 +529,138 @@ prepare_afscp_jvs_release_artifact() {
     chmod 0755 "${cache_binary}" >/dev/null 2>&1 || true
     AFSCP_JVS_BINARY_PATH="$(realpath -m "${cache_binary}")"
     AFSCP_JVS_BINARY_SHA256="${expected_sha}"
+    afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}" "downloaded release artifact ${AFSCP_JVS_RELEASE_BINARY_NAME}" || return 1
+    afscp_set_jvs_direct_evidence "${expected_sha}" "release:${AFSCP_JVS_RELEASE_BINARY_NAME}@${expected_sha}" || return 1
     return 0
   fi
 
   internal_err "missing verified JVS release artifact for the AFSCP local-real dependency"
   internal_err "place ${AFSCP_JVS_RELEASE_BINARY_NAME} at ${cache_binary} with ${cache_sums}, or set AFSCP_JVS_RELEASE_URL and AFSCP_JVS_SHA256SUMS_URL"
-  internal_err "explicit local paths require AFSCP_JVS_BINARY_PATH plus AFSCP_JVS_BINARY_SHA256 or AFSCP_JVS_SHA256SUMS_PATH; sibling mutable builds are not used by default"
+  internal_err "explicit local paths require AFSCP_JVS_BINARY_PATH plus AFSCP_JVS_BINARY_SHA256 or AFSCP_JVS_SHA256SUMS_PATH"
   return 1
+}
+
+afscp_jvs_sibling_source_is_clean() {
+  local jvs_root="$1"
+  git -C "${jvs_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  [[ -z "$(git -C "${jvs_root}" status --porcelain=v1 --untracked-files=normal 2>/dev/null)" ]]
+}
+
+afscp_jvs_sibling_dirty_fingerprint() {
+  local jvs_root="$1"
+  {
+    git -C "${jvs_root}" status --porcelain=v1 --untracked-files=normal
+    git -C "${jvs_root}" diff --binary HEAD --
+    git -C "${jvs_root}" diff --cached --binary HEAD --
+    while IFS= read -r -d '' file_path; do
+      printf 'untracked:%s\n' "${file_path}"
+      if [[ -f "${jvs_root}/${file_path}" ]]; then
+        afscp_file_sha256 "${jvs_root}/${file_path}"
+      fi
+    done < <(git -C "${jvs_root}" ls-files --others --exclude-standard -z | sort -z)
+  } | afscp_stdin_sha256 | cut -c1-12
+}
+
+afscp_jvs_sibling_source_ref() {
+  local jvs_root="$1"
+  local dirty_fingerprint head path_hash
+  if git -C "${jvs_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    head="$(git -C "${jvs_root}" rev-parse --short=12 HEAD 2>/dev/null || true)"
+    if [[ -z "${head}" ]]; then
+      internal_err "unable to resolve JVS git source ref at ${jvs_root}; local-real fails closed"
+      return 1
+    fi
+    if afscp_jvs_sibling_source_is_clean "${jvs_root}"; then
+      printf 'jvs@%s\n' "${head}"
+    else
+      dirty_fingerprint="$(afscp_jvs_sibling_dirty_fingerprint "${jvs_root}")" || return 1
+      printf 'jvs@%s+dirty.%s\n' "${head}" "${dirty_fingerprint}"
+    fi
+    return 0
+  fi
+
+  path_hash="$(printf '%s' "$(realpath -m "${jvs_root}")" | afscp_stdin_sha256 | cut -c1-12)" || return 1
+  printf 'jvs@local.%s\n' "${path_hash}"
+}
+
+afscp_use_jvs_sibling_binary() {
+  local binary_path="$1"
+  local source_ref="$2"
+  local binary_sha
+
+  AFSCP_JVS_BINARY_PATH="$(realpath -m "${binary_path}")"
+  chmod 0755 "${AFSCP_JVS_BINARY_PATH}" >/dev/null 2>&1 || true
+  afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}" "sibling JVS ${source_ref}" || return 1
+  binary_sha="$(afscp_file_sha256 "${AFSCP_JVS_BINARY_PATH}")" || return 1
+  AFSCP_JVS_BINARY_SHA256="${binary_sha}"
+  afscp_set_jvs_direct_evidence "${binary_sha}" "${source_ref}" || return 1
+}
+
+afscp_explicit_jvs_source_label() {
+  local explicit_binary="$1"
+  local historical_sibling_binary
+  historical_sibling_binary="$(realpath -m "${AFSCP_JVS_ROOT}/bin/${AFSCP_JVS_RELEASE_BINARY_NAME}")"
+
+  if [[ "${explicit_binary}" == "${historical_sibling_binary}" ]]; then
+    printf '%s\n' "explicit AFSCP_JVS_BINARY_PATH (historical sibling build output ${historical_sibling_binary}; remove AFSCP_JVS_BINARY_PATH/AFSCP_JVS_BINARY_SHA256 from .env.local-manual so local-real uses artifacts/cache/jvs-sibling, or set a direct-capable explicit override)"
+    return 0
+  fi
+
+  printf '%s\n' "explicit AFSCP_JVS_BINARY_PATH"
+}
+
+prepare_afscp_jvs_sibling_artifact() {
+  local jvs_root cache_binary cache_source_ref source_ref tmp_binary
+  jvs_root="$(realpath -m "${AFSCP_JVS_ROOT}")"
+  AFSCP_JVS_ROOT="${jvs_root}"
+
+  if [[ ! -f "${jvs_root}/cmd/jvs/main.go" ]]; then
+    internal_err "missing sibling JVS checkout at ${jvs_root}; set AFSCP_JVS_ROOT to a checkout with cmd/jvs or set explicit AFSCP_JVS_BINARY_PATH/SHA"
+    return 1
+  fi
+  if [[ ! -f "${jvs_root}/go.mod" ]]; then
+    internal_err "JVS checkout at ${jvs_root} has no go.mod; local-real fails closed"
+    return 1
+  fi
+
+  source_ref="$(afscp_jvs_sibling_source_ref "${jvs_root}")" || return 1
+  cache_binary="$(realpath -m "${AFSCP_JVS_SIBLING_BINARY_CACHE_PATH}")"
+  cache_source_ref="$(realpath -m "${AFSCP_JVS_SIBLING_SOURCE_REF_PATH}")"
+  AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="${cache_binary}"
+  AFSCP_JVS_SIBLING_SOURCE_REF_PATH="${cache_source_ref}"
+
+  if afscp_jvs_sibling_source_is_clean "${jvs_root}" \
+    && [[ -f "${cache_binary}" && -f "${cache_source_ref}" ]] \
+    && [[ "$(cat "${cache_source_ref}" 2>/dev/null || true)" == "${source_ref}" ]]; then
+    chmod 0755 "${cache_binary}" >/dev/null 2>&1 || true
+    if afscp_jvs_direct_contract_ok "${cache_binary}"; then
+      afscp_use_jvs_sibling_binary "${cache_binary}" "${source_ref}"
+      return $?
+    fi
+    internal_info "cached sibling JVS binary is not direct-capable; rebuilding from ${jvs_root}"
+  fi
+
+  if ! command -v go >/dev/null 2>&1; then
+    internal_err "go is required to build the sibling JVS direct binary from ${jvs_root}; local-real fails closed"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "${cache_binary}")" "$(dirname "${cache_source_ref}")"
+  tmp_binary="$(mktemp "$(dirname "${cache_binary}")/.${AFSCP_JVS_RELEASE_BINARY_NAME}.build.XXXXXX")"
+  internal_info "building sibling JVS ${source_ref} for AFSCP direct contract"
+  if ! (cd "${jvs_root}" && go build -o "${tmp_binary}" ./cmd/jvs); then
+    rm -f "${tmp_binary}"
+    internal_err "failed to build sibling JVS from ${jvs_root}; local-real fails closed"
+    return 1
+  fi
+  chmod 0755 "${tmp_binary}" >/dev/null 2>&1 || true
+  if ! afscp_verify_jvs_direct_contract "${tmp_binary}" "sibling JVS build ${source_ref}"; then
+    rm -f "${tmp_binary}"
+    return 1
+  fi
+  mv "${tmp_binary}" "${cache_binary}"
+  printf '%s\n' "${source_ref}" > "${cache_source_ref}"
+  afscp_use_jvs_sibling_binary "${cache_binary}" "${source_ref}"
 }
 
 resolve_afscp_jvs_binary() {
@@ -478,9 +671,10 @@ resolve_afscp_jvs_binary() {
       internal_err "AFSCP_JVS_BINARY_SHA256 was set without AFSCP_JVS_BINARY_PATH"
       return 1
     fi
-    local explicit_binary explicit_sha
+    local explicit_binary explicit_sha explicit_source_label
     explicit_binary="$(realpath -m "${AFSCP_JVS_BINARY_PATH}")"
     explicit_sha="${AFSCP_JVS_BINARY_SHA256}"
+    explicit_source_label="$(afscp_explicit_jvs_source_label "${explicit_binary}")"
     if [[ -z "${explicit_sha}" ]]; then
       if [[ -z "${AFSCP_JVS_SHA256SUMS_PATH}" ]]; then
         internal_err "explicit AFSCP_JVS_BINARY_PATH requires AFSCP_JVS_BINARY_SHA256 or AFSCP_JVS_SHA256SUMS_PATH"
@@ -492,13 +686,21 @@ resolve_afscp_jvs_binary() {
       }
     fi
     explicit_sha="$(afscp_jvs_normalize_sha256 "${explicit_sha}")"
-    afscp_verify_jvs_binary_sha256 "${explicit_binary}" "${explicit_sha}" "explicit AFSCP_JVS_BINARY_PATH" || return 1
+    afscp_verify_jvs_binary_sha256 "${explicit_binary}" "${explicit_sha}" "${explicit_source_label}" || return 1
     AFSCP_JVS_BINARY_PATH="${explicit_binary}"
     AFSCP_JVS_BINARY_SHA256="${explicit_sha}"
+    chmod 0755 "${AFSCP_JVS_BINARY_PATH}" >/dev/null 2>&1 || true
+    afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}" "${explicit_source_label}" || return 1
+    afscp_set_jvs_direct_evidence "${explicit_sha}" "${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-explicit:${AFSCP_JVS_BINARY_PATH}}" || return 1
     return 0
   fi
 
-  prepare_afscp_jvs_release_artifact
+  if [[ -n "${AFSCP_JVS_RELEASE_URL}" || -n "${AFSCP_JVS_SHA256SUMS_URL}" || -n "${AFSCP_JVS_SHA256SUMS_PATH}" ]]; then
+    prepare_afscp_jvs_release_artifact
+    return $?
+  fi
+
+  prepare_afscp_jvs_sibling_artifact
 }
 
 afscp_runtime_export_line() {
@@ -532,6 +734,634 @@ afscp_resolve_local_runtime_postgres_dsn() {
     return 0
   fi
   afscp_default_local_runtime_postgres_dsn
+}
+
+afscp_resolve_local_runtime_reset_dsn() {
+  if [[ -n "${AFSCP_POSTGRES_DSN:-}" ]]; then
+    printf '%s' "${AFSCP_POSTGRES_DSN}"
+    return 0
+  fi
+  if [[ -n "${AFSCP_DATABASE_URL:-}" ]]; then
+    printf '%s' "${AFSCP_DATABASE_URL}"
+    return 0
+  fi
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    printf '%s' "${DATABASE_URL}"
+    return 0
+  fi
+  afscp_default_local_runtime_postgres_dsn
+}
+
+afscp_validate_local_runtime_reset_marker() {
+  if [[ "${AFSCP_ENVIRONMENT:-}" == "local-real" || "${AFSCP_LOCAL_RUNTIME_RESET_MARKER:-}" == "local-real" ]]; then
+    return 0
+  fi
+  internal_err "refusing to reset AFSCP local-real runtime/test records: AFSCP_ENVIRONMENT=local-real or AFSCP_LOCAL_RUNTIME_RESET_MARKER=local-real is required"
+  return 1
+}
+
+afscp_validate_local_runtime_reset_dsn() {
+  local dsn="$1"
+  local validation_result
+  validation_result="$(
+    AFSCP_RESET_DSN="${dsn}" \
+    AFSCP_RESET_EXPECTED_USER="${SUBSTRATE_DB_USER}" \
+    AFSCP_RESET_EXPECTED_DATABASE="${SUBSTRATE_DB_NAME}" \
+    AFSCP_RESET_EXPECTED_PORT="${SUBSTRATE_POSTGRES_PORT}" \
+    node <<'NODE'
+const rawDsn = process.env.AFSCP_RESET_DSN ?? '';
+const expectedUser = process.env.AFSCP_RESET_EXPECTED_USER ?? '';
+const expectedDatabase = process.env.AFSCP_RESET_EXPECTED_DATABASE ?? '';
+const expectedPort = process.env.AFSCP_RESET_EXPECTED_PORT ?? '';
+
+function fail(message) {
+  process.stdout.write(message);
+  process.exit(1);
+}
+
+if (!rawDsn) {
+  fail('Postgres DSN is required');
+}
+
+let parsed;
+try {
+  parsed = new URL(rawDsn);
+} catch {
+  fail('Postgres DSN is malformed');
+}
+
+if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
+  fail('Postgres DSN must use postgres/postgresql protocol');
+}
+
+const host = parsed.hostname.toLowerCase();
+if (host !== 'localhost' && host !== '127.0.0.1') {
+  fail(`Postgres DSN host ${host || '(empty)'} must point at localhost or 127.0.0.1`);
+}
+
+if (!parsed.port) {
+  fail('Postgres DSN must include the local test Postgres port');
+}
+if (expectedPort && parsed.port !== expectedPort) {
+  fail(`Postgres DSN port ${parsed.port} must match local test Postgres port ${expectedPort}`);
+}
+
+const user = decodeURIComponent(parsed.username);
+const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, '').split('/')[0] ?? '');
+if (user !== expectedUser || database !== expectedDatabase) {
+  fail(`Postgres DSN must use local test database user/database ${expectedUser}/${expectedDatabase}; got ${user || '(empty)'}/${database || '(empty)'}`);
+}
+
+const sslmode = parsed.searchParams.get('sslmode') ?? '';
+if (sslmode && sslmode.toLowerCase() !== 'disable') {
+  fail(`Postgres DSN sslmode must be disable for local-real reset; got ${sslmode}`);
+}
+
+process.stdout.write('ok');
+NODE
+  )" || {
+    internal_err "refusing to reset AFSCP local-real runtime/test records: ${validation_result:-unknown DSN validation failure}"
+    return 1
+  }
+}
+
+afscp_resolve_local_runtime_reset_mongo_url() {
+  if [[ -n "${MONGO_URL:-}" ]]; then
+    printf '%s' "${MONGO_URL}"
+    return 0
+  fi
+  printf 'mongodb://%s:%s@localhost:%s/admin' \
+    "${SUBSTRATE_MONGO_USER}" \
+    "${SUBSTRATE_MONGO_PASSWORD}" \
+    "${SUBSTRATE_MONGO_PORT}"
+}
+
+afscp_resolve_local_runtime_reset_mongo_db() {
+  if [[ -n "${MONGO_DB_NAME:-}" ]]; then
+    printf '%s' "${MONGO_DB_NAME}"
+    return 0
+  fi
+  printf '%s' "${SUBSTRATE_MONGO_DB}"
+}
+
+afscp_validate_local_runtime_reset_mongo_url() {
+  local mongo_url="$1"
+  local validation_result
+  validation_result="$(
+    AFSCP_RESET_MONGO_URL="${mongo_url}" \
+    AFSCP_RESET_EXPECTED_MONGO_PORT="${SUBSTRATE_MONGO_PORT}" \
+    node <<'NODE'
+const rawUrl = process.env.AFSCP_RESET_MONGO_URL ?? '';
+const expectedPort = process.env.AFSCP_RESET_EXPECTED_MONGO_PORT ?? '';
+
+function fail(message) {
+  process.stdout.write(message);
+  process.exit(1);
+}
+
+if (!rawUrl) {
+  fail('Mongo URL is required');
+}
+
+let parsed;
+try {
+  parsed = new URL(rawUrl);
+} catch {
+  fail('Mongo URL is malformed');
+}
+
+if (parsed.protocol !== 'mongodb:') {
+  fail('Mongo URL must use mongodb protocol');
+}
+
+const host = parsed.hostname.toLowerCase().replace(/^\[/u, '').replace(/\]$/u, '');
+if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') {
+  fail(`Mongo URL host ${host || '(empty)'} must point at localhost or 127.0.0.1`);
+}
+
+if (!parsed.port) {
+  fail('Mongo URL must include the local test Mongo port');
+}
+if (expectedPort && parsed.port !== expectedPort) {
+  fail(`Mongo URL port ${parsed.port} must match local test Mongo port ${expectedPort}`);
+}
+
+process.stdout.write('ok');
+NODE
+  )" || {
+    internal_err "refusing to reset AgentSmith-owned AFSCP metadata: ${validation_result:-unknown Mongo URL validation failure}"
+    return 1
+  }
+}
+
+afscp_validate_local_runtime_reset_mongo_db() {
+  local mongo_db="$1"
+  local validation_result
+  validation_result="$(
+    AFSCP_RESET_MONGO_DB_NAME="${mongo_db}" \
+    node <<'NODE'
+const dbName = process.env.AFSCP_RESET_MONGO_DB_NAME ?? '';
+
+function fail(message) {
+  process.stdout.write(message);
+  process.exit(1);
+}
+
+if (!/^[A-Za-z0-9_-]{1,64}$/u.test(dbName)) {
+  fail('Mongo DB name must be a non-empty local application database name');
+}
+
+if (['admin', 'config', 'local'].includes(dbName.toLowerCase())) {
+  fail(`Mongo DB name ${dbName} is not an application database`);
+}
+
+process.stdout.write('ok');
+NODE
+  )" || {
+    internal_err "refusing to reset AgentSmith-owned AFSCP metadata: ${validation_result:-unknown Mongo DB validation failure}"
+    return 1
+  }
+}
+
+afscp_validate_local_runtime_object_prefix_reset_marker() {
+  if [[ "${AFSCP_ENVIRONMENT:-}" == "local-real" || "${AFSCP_LOCAL_RUNTIME_RESET_MARKER:-}" == "local-real" ]]; then
+    return 0
+  fi
+  internal_err "refusing to reset AFSCP local-real JuiceFS object prefix: AFSCP_ENVIRONMENT=local-real or AFSCP_LOCAL_RUNTIME_RESET_MARKER=local-real is required"
+  return 1
+}
+
+afscp_resolve_local_runtime_object_prefix_reset_target() {
+  local bucket_url="$1"
+  local expected_bucket="$2"
+  local expected_port="$3"
+  local volume_id="$4"
+  local juicefs_name="$5"
+  local validation_result
+
+  validation_result="$(
+    AFSCP_RESET_JUICEFS_BUCKET_URL="${bucket_url}" \
+    AFSCP_RESET_EXPECTED_MINIO_BUCKET="${expected_bucket}" \
+    AFSCP_RESET_EXPECTED_MINIO_PORT="${expected_port}" \
+    AFSCP_RESET_VOLUME_ID="${volume_id}" \
+    AFSCP_RESET_JUICEFS_NAME="${juicefs_name}" \
+    node <<'NODE'
+const rawUrl = process.env.AFSCP_RESET_JUICEFS_BUCKET_URL ?? '';
+const expectedBucket = process.env.AFSCP_RESET_EXPECTED_MINIO_BUCKET ?? '';
+const expectedPort = process.env.AFSCP_RESET_EXPECTED_MINIO_PORT ?? '';
+const volumeId = process.env.AFSCP_RESET_VOLUME_ID ?? '';
+const juicefsName = process.env.AFSCP_RESET_JUICEFS_NAME ?? '';
+
+function fail(message) {
+  process.stdout.write(message);
+  process.exit(1);
+}
+
+function decodePathSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    fail('JuiceFS bucket URL contains an invalid escaped path segment');
+  }
+}
+
+if (!rawUrl) {
+  fail('JuiceFS bucket URL is required');
+}
+if (!expectedBucket) {
+  fail('local MinIO bucket is required');
+}
+if (!volumeId || !juicefsName) {
+  fail('current AFSCP volume id is required');
+}
+
+let parsed;
+try {
+  parsed = new URL(rawUrl);
+} catch {
+  fail('JuiceFS bucket URL is malformed');
+}
+
+if (parsed.protocol !== 'http:') {
+  fail(`MinIO endpoint protocol must be http for local-real reset; got ${parsed.protocol || '(empty)'}`);
+}
+
+const host = parsed.hostname.toLowerCase().replace(/^\[/u, '').replace(/\]$/u, '');
+if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') {
+  fail(`MinIO endpoint host ${host || '(empty)'} must point at localhost or 127.0.0.1`);
+}
+
+if (!parsed.port) {
+  fail('MinIO endpoint must include the local test MinIO port');
+}
+if (expectedPort && parsed.port !== expectedPort) {
+  fail(`MinIO endpoint port ${parsed.port} must match local test MinIO port ${expectedPort}`);
+}
+if (parsed.username || parsed.password) {
+  fail('MinIO endpoint must not embed credentials');
+}
+
+const segments = parsed.pathname
+  .split('/')
+  .filter(Boolean)
+  .map(decodePathSegment);
+if (segments.length === 0) {
+  fail('JuiceFS bucket URL must include a bucket path');
+}
+
+const bucket = segments[0];
+if (bucket !== expectedBucket) {
+  fail(`bucket ${bucket || '(empty)'} must match local MinIO bucket ${expectedBucket}`);
+}
+
+let prefixSegments = segments.slice(1);
+if (prefixSegments.length === 0) {
+  prefixSegments = [juicefsName];
+}
+
+const unsafeSegment = prefixSegments.find((segment) => {
+  return segment === ''
+    || segment === '.'
+    || segment === '..'
+    || !/^[A-Za-z0-9][A-Za-z0-9._=-]*$/u.test(segment);
+});
+if (unsafeSegment !== undefined) {
+  fail(`object prefix contains unsafe segment ${unsafeSegment || '(empty)'}`);
+}
+
+const allowedVolumeNames = new Set([volumeId, juicefsName].filter(Boolean));
+const rawLastSegment = prefixSegments[prefixSegments.length - 1] ?? '';
+if (prefixSegments.length > 0 && /^vol[-_]/u.test(rawLastSegment) && !allowedVolumeNames.has(rawLastSegment)) {
+  fail(`object prefix ${prefixSegments.join('/')}/ must end with current volume ${volumeId} (${juicefsName})`);
+}
+if (!allowedVolumeNames.has(rawLastSegment)) {
+  prefixSegments = [...prefixSegments, juicefsName];
+}
+
+const finalUnsafeSegment = prefixSegments.find((segment) => {
+  return segment === ''
+    || segment === '.'
+    || segment === '..'
+    || !/^[A-Za-z0-9][A-Za-z0-9._=-]*$/u.test(segment);
+});
+if (finalUnsafeSegment !== undefined) {
+  fail(`object prefix contains unsafe segment ${finalUnsafeSegment || '(empty)'}`);
+}
+
+const prefix = `${prefixSegments.join('/')}/`;
+process.stdout.write([parsed.origin, bucket, prefix].join('\t'));
+NODE
+  )" || {
+    internal_err "refusing to reset AFSCP local-real JuiceFS object prefix: ${validation_result:-unknown object prefix validation failure}"
+    return 1
+  }
+
+  printf '%s' "${validation_result}"
+}
+
+reset_owned_afscp_local_runtime_object_prefix_with_mc() {
+  local endpoint="$1"
+  local bucket="$2"
+  local prefix="$3"
+  local access_key="$4"
+  local secret_key="$5"
+  local alias_name="agentsmith-afscp-local-reset-$$"
+  local status=0
+
+  if ! mc alias set "${alias_name}" "${endpoint}" "${access_key}" "${secret_key}" >/dev/null; then
+    internal_err "failed to configure MinIO client for AFSCP local-real object prefix reset; local-real fails closed"
+    return 1
+  fi
+  if ! mc rm --recursive --force "${alias_name}/${bucket}/${prefix}" >/dev/null; then
+    internal_err "failed to reset AFSCP local-real JuiceFS object prefix ${bucket}/${prefix}; local-real fails closed"
+    status=1
+  fi
+  mc alias remove "${alias_name}" >/dev/null 2>&1 || true
+  return "${status}"
+}
+
+reset_owned_afscp_local_runtime_object_prefix_with_docker_mc() {
+  local endpoint="$1"
+  local bucket="$2"
+  local prefix="$3"
+  local access_key="$4"
+  local secret_key="$5"
+  local expected_port="${SUBSTRATE_MINIO_API_PORT:-${MINIO_PORT:-${MINIO_API_PORT:-}}}"
+
+  if [[ -z "${expected_port}" ]]; then
+    internal_err "local MinIO port is required for Docker MinIO reset fallback; local-real fails closed"
+    return 1
+  fi
+  if ! docker port mbos-minio 9000/tcp 2>/dev/null | awk -F: -v port="${expected_port}" '$NF == port { found = 1 } END { exit found ? 0 : 1 }'; then
+    internal_err "mbos-minio does not publish the expected local MinIO port ${expected_port}; refusing Docker MinIO reset fallback"
+    return 1
+  fi
+
+  docker run --rm --network host --entrypoint /bin/sh \
+    -e AFSCP_OBJECT_RESET_ENDPOINT="${endpoint}" \
+    -e AFSCP_OBJECT_RESET_BUCKET="${bucket}" \
+    -e AFSCP_OBJECT_RESET_PREFIX="${prefix}" \
+    -e AFSCP_OBJECT_RESET_ACCESS_KEY="${access_key}" \
+    -e AFSCP_OBJECT_RESET_SECRET_KEY="${secret_key}" \
+    minio/mc:latest -lc 'mc alias set local "$AFSCP_OBJECT_RESET_ENDPOINT" "$AFSCP_OBJECT_RESET_ACCESS_KEY" "$AFSCP_OBJECT_RESET_SECRET_KEY" >/dev/null && mc rm --recursive --force "local/$AFSCP_OBJECT_RESET_BUCKET/$AFSCP_OBJECT_RESET_PREFIX" >/dev/null'
+}
+
+reset_owned_afscp_local_runtime_object_prefix() {
+  ensure_internal_common_runtime_env
+  afscp_validate_local_runtime_object_prefix_reset_marker || return 1
+
+  local storage bucket_url expected_bucket expected_port volume_id juicefs_name target
+  local endpoint bucket prefix access_key secret_key
+  storage="$(afscp_local_runtime_juicefs_storage)"
+  if [[ "${storage}" != "minio" ]]; then
+    internal_err "refusing to reset AFSCP local-real JuiceFS object prefix: storage ${storage} is not minio"
+    return 1
+  fi
+
+  bucket_url="$(afscp_local_runtime_host_juicefs_bucket)"
+  expected_bucket="${MINIO_BUCKET:-${SUBSTRATE_MINIO_BUCKET:-mbos-dev}}"
+  expected_port="${SUBSTRATE_MINIO_API_PORT:-${MINIO_PORT:-${MINIO_API_PORT:-}}}"
+  if [[ -z "${expected_port}" ]]; then
+    internal_err "refusing to reset AFSCP local-real JuiceFS object prefix: local MinIO port is required"
+    return 1
+  fi
+  volume_id="${AFSCP_DEFAULT_VOLUME_ID}"
+  juicefs_name="$(afscp_local_runtime_juicefs_name)"
+  target="$(afscp_resolve_local_runtime_object_prefix_reset_target "${bucket_url}" "${expected_bucket}" "${expected_port}" "${volume_id}" "${juicefs_name}")" || return 1
+  IFS=$'\t' read -r endpoint bucket prefix <<< "${target}"
+
+  access_key="${MINIO_ACCESS_KEY:-${SUBSTRATE_MINIO_ACCESS_KEY:-mbos}}"
+  secret_key="${MINIO_SECRET_KEY:-${SUBSTRATE_MINIO_SECRET_KEY:-mbos_dev_password}}"
+
+  internal_info "resetting AFSCP local-real JuiceFS object prefix ${bucket}/${prefix}"
+  if command -v mc >/dev/null 2>&1; then
+    reset_owned_afscp_local_runtime_object_prefix_with_mc "${endpoint}" "${bucket}" "${prefix}" "${access_key}" "${secret_key}"
+    return $?
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    reset_owned_afscp_local_runtime_object_prefix_with_docker_mc "${endpoint}" "${bucket}" "${prefix}" "${access_key}" "${secret_key}"
+    return $?
+  fi
+
+  internal_err "mc or docker is required to reset AFSCP local-real JuiceFS object prefix; local-real fails closed"
+  return 1
+}
+
+afscp_js_string_literal() {
+  AFSCP_JS_STRING_VALUE="$1" node <<'NODE'
+process.stdout.write(JSON.stringify(process.env.AFSCP_JS_STRING_VALUE ?? ''));
+NODE
+}
+
+afscp_agentsmith_metadata_reset_mongo_eval_script() {
+  local mongo_db="$1"
+  local js_mongo_db
+  js_mongo_db="$(afscp_js_string_literal "${mongo_db}")" || return 1
+  cat <<MONGOJS
+const targetDbName = ${js_mongo_db};
+const targetDb = db.getSiblingDB(targetDbName);
+const exactRuntimeCollections = [
+  'project_afscp_namespace_mappings',
+  'project_afscp_resource_ownership_mappings',
+  'project_file_library_afscp_mappings',
+  'agent_task_file_library_bindings',
+  'agent_task_workspace_holders',
+  'project_file_library_save_point_mappings',
+  'project_file_library_restore_operations',
+  'project_file_library_restore_operation_active_locks',
+  'project_task_file_templates',
+];
+const scopedRuntimeCollections = targetDb
+  .getCollectionNames()
+  .filter((name) => name === 'internal_agent_file_library_workspaces' || name.endsWith('_internal_agent_file_library_workspaces'));
+const resetCollections = [...new Set([...exactRuntimeCollections, ...scopedRuntimeCollections])];
+const summary = [];
+for (const collectionName of resetCollections) {
+  const result = targetDb.getCollection(collectionName).deleteMany({});
+  summary.push({ collection: collectionName, deleted_count: result.deletedCount ?? 0 });
+}
+print(JSON.stringify({
+  event: 'agentsmith_afscp_metadata_reset',
+  db: targetDbName,
+  collections: summary,
+}));
+MONGOJS
+}
+
+reset_owned_agentsmith_afscp_metadata_with_mongosh() {
+  local mongo_url="$1"
+  local mongo_db="$2"
+  local mongo_script
+  mongo_script="$(afscp_agentsmith_metadata_reset_mongo_eval_script "${mongo_db}")" || return 1
+  AFSCP_RESET_MONGO_DB_NAME="${mongo_db}" mongosh "${mongo_url}" --quiet --eval "${mongo_script}"
+}
+
+reset_owned_agentsmith_afscp_metadata_with_docker_mongosh() {
+  local mongo_db="$1"
+  local container_mongo_url mongo_script
+  mongo_script="$(afscp_agentsmith_metadata_reset_mongo_eval_script "${mongo_db}")" || return 1
+  container_mongo_url="mongodb://${SUBSTRATE_MONGO_USER}:${SUBSTRATE_MONGO_PASSWORD}@localhost:27017/admin"
+  if ! docker port mbos-mongo 27017/tcp 2>/dev/null | awk -F: -v port="${SUBSTRATE_MONGO_PORT}" '$NF == port { found = 1 } END { exit found ? 0 : 1 }'; then
+    internal_err "mbos-mongo does not publish the expected local Mongo port ${SUBSTRATE_MONGO_PORT}; refusing Docker Mongo reset fallback"
+    return 1
+  fi
+  docker exec -i -e AFSCP_RESET_MONGO_DB_NAME="${mongo_db}" mbos-mongo mongosh "${container_mongo_url}" --quiet --eval "${mongo_script}"
+}
+
+reset_owned_agentsmith_afscp_metadata() {
+  local requested_mongo_url="${MONGO_URL:-}"
+  local requested_mongo_db="${MONGO_DB_NAME:-}"
+  ensure_internal_common_runtime_env
+  afscp_validate_local_runtime_reset_marker || return 1
+  if [[ -n "${requested_mongo_url}" ]]; then
+    MONGO_URL="${requested_mongo_url}"
+  fi
+  if [[ -n "${requested_mongo_db}" ]]; then
+    MONGO_DB_NAME="${requested_mongo_db}"
+  fi
+
+  local mongo_url mongo_db
+  mongo_url="$(afscp_resolve_local_runtime_reset_mongo_url)"
+  mongo_db="$(afscp_resolve_local_runtime_reset_mongo_db)"
+  afscp_validate_local_runtime_reset_mongo_url "${mongo_url}" || return 1
+  afscp_validate_local_runtime_reset_mongo_db "${mongo_db}" || return 1
+
+  internal_info "resetting AgentSmith-owned AFSCP metadata in Mongo"
+  if command -v mongosh >/dev/null 2>&1; then
+    reset_owned_agentsmith_afscp_metadata_with_mongosh "${mongo_url}" "${mongo_db}"
+    return $?
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    reset_owned_agentsmith_afscp_metadata_with_docker_mongosh "${mongo_db}"
+    return $?
+  fi
+
+  internal_err "mongosh or docker is required to reset AgentSmith-owned AFSCP metadata; local-real fails closed"
+  return 1
+}
+
+reset_owned_afscp_local_runtime_data() {
+  local requested_mongo_url="${MONGO_URL:-}"
+  local requested_mongo_db="${MONGO_DB_NAME:-}"
+  ensure_internal_common_runtime_env
+  afscp_validate_local_runtime_reset_marker || return 1
+  if [[ -n "${requested_mongo_url}" ]]; then
+    MONGO_URL="${requested_mongo_url}"
+  fi
+  if [[ -n "${requested_mongo_db}" ]]; then
+    MONGO_DB_NAME="${requested_mongo_db}"
+  fi
+
+  local dsn
+  dsn="$(afscp_resolve_local_runtime_reset_dsn)"
+  afscp_validate_local_runtime_reset_dsn "${dsn}" || return 1
+
+  internal_info "resetting owned AFSCP local-real runtime/test records"
+  if command -v psql >/dev/null 2>&1; then
+    PGPASSWORD="${SUBSTRATE_DB_PASSWORD}" psql "${dsn}" -v ON_ERROR_STOP=1 <<'SQL'
+DO $agentsmith_afscp_local_reset$
+DECLARE
+  -- Pre-GA local-real reset owns both runtime records and bootstrap identity.
+  -- Preserving these tables across port/volume-id changes can mix old volume
+  -- truth with the current JuiceFS metadata and workload SecretRef.
+  -- Operations include manual recovery blockers such as operator_intervention_required.
+  afscp_runtime_tables constant text[] := ARRAY[
+    'operations',
+    'repo_fences',
+    'audit_outbox',
+    'repos',
+    'export_sessions',
+    'export_runtime_requests',
+    'workload_mount_bindings',
+    'restore_reconciliation_runs',
+    'restore_reconciliation_targets',
+    'restore_reconciliation_observations',
+    'volumes',
+    'namespaces',
+    'namespace_volume_bindings'
+  ];
+  existing_table_list text;
+  juicefs_metadata_table_list text;
+BEGIN
+  SELECT string_agg(format('%I.%I', 'public', table_name), ', ' ORDER BY array_position(afscp_runtime_tables, table_name))
+    INTO existing_table_list
+    FROM unnest(afscp_runtime_tables) AS candidate(table_name)
+   WHERE to_regclass(format('%I.%I', 'public', table_name)) IS NOT NULL;
+
+  IF existing_table_list IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || existing_table_list || ' RESTART IDENTITY CASCADE';
+  END IF;
+
+  SELECT string_agg(format('%I.%I', table_schema, table_name), ', ' ORDER BY table_name)
+    INTO juicefs_metadata_table_list
+    FROM information_schema.tables
+   WHERE table_schema = 'public'
+     AND table_type = 'BASE TABLE'
+     AND table_name LIKE 'jfs\_%' ESCAPE '\';
+
+  IF juicefs_metadata_table_list IS NOT NULL THEN
+    EXECUTE 'DROP TABLE ' || juicefs_metadata_table_list || ' CASCADE';
+  END IF;
+END
+$agentsmith_afscp_local_reset$;
+SQL
+  elif command -v docker >/dev/null 2>&1; then
+    docker exec -i mbos-postgres psql -v ON_ERROR_STOP=1 -U "${SUBSTRATE_DB_USER}" -d "${SUBSTRATE_DB_NAME}" <<'SQL'
+DO $agentsmith_afscp_local_reset$
+DECLARE
+  -- Pre-GA local-real reset owns both runtime records and bootstrap identity.
+  -- Preserving these tables across port/volume-id changes can mix old volume
+  -- truth with the current JuiceFS metadata and workload SecretRef.
+  -- Operations include manual recovery blockers such as operator_intervention_required.
+  afscp_runtime_tables constant text[] := ARRAY[
+    'operations',
+    'repo_fences',
+    'audit_outbox',
+    'repos',
+    'export_sessions',
+    'export_runtime_requests',
+    'workload_mount_bindings',
+    'restore_reconciliation_runs',
+    'restore_reconciliation_targets',
+    'restore_reconciliation_observations',
+    'volumes',
+    'namespaces',
+    'namespace_volume_bindings'
+  ];
+  existing_table_list text;
+  juicefs_metadata_table_list text;
+BEGIN
+  SELECT string_agg(format('%I.%I', 'public', table_name), ', ' ORDER BY array_position(afscp_runtime_tables, table_name))
+    INTO existing_table_list
+    FROM unnest(afscp_runtime_tables) AS candidate(table_name)
+   WHERE to_regclass(format('%I.%I', 'public', table_name)) IS NOT NULL;
+
+  IF existing_table_list IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || existing_table_list || ' RESTART IDENTITY CASCADE';
+  END IF;
+
+  SELECT string_agg(format('%I.%I', table_schema, table_name), ', ' ORDER BY table_name)
+    INTO juicefs_metadata_table_list
+    FROM information_schema.tables
+   WHERE table_schema = 'public'
+     AND table_type = 'BASE TABLE'
+     AND table_name LIKE 'jfs\_%' ESCAPE '\';
+
+  IF juicefs_metadata_table_list IS NOT NULL THEN
+    EXECUTE 'DROP TABLE ' || juicefs_metadata_table_list || ' CASCADE';
+  END IF;
+END
+$agentsmith_afscp_local_reset$;
+SQL
+  else
+    internal_err "psql or docker is required to reset AFSCP local-real runtime/test records; local-real fails closed"
+    return 1
+  fi
+
+  reset_owned_agentsmith_afscp_metadata || return 1
+  reset_owned_afscp_local_runtime_object_prefix
 }
 
 afscp_resolve_webdav_export_public_base_url() {
@@ -605,6 +1435,7 @@ prepare_afscp_local_runtime_env() {
   AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${AFSCP_EXPORT_GATEWAY_POSTGRES_DSN:-${AFSCP_POSTGRES_DSN}}"
   AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS="${AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS:-${AFSCP_VOLUME_ROOTS}}"
   afscp_validate_local_runtime_volume_root_maps || return 1
+  afscp_validate_local_runtime_workload_mount_secret_ref_map || return 1
 }
 
 write_afscp_local_runtime_env() {
@@ -754,6 +1585,55 @@ afscp_validate_local_runtime_volume_root_maps() {
   done
 }
 
+afscp_validate_local_runtime_workload_mount_secret_ref_map() {
+  local raw_refs="${AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS:-}"
+  if [[ -z "$(afscp_trim "${raw_refs}")" ]]; then
+    internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS is required for local-real workload mounts; local-real fails closed"
+    return 1
+  fi
+
+  local configured=0 normalized=""
+  local -a ref_pairs
+  local IFS=','
+  read -r -a ref_pairs <<< "${raw_refs}"
+
+  local ref_pair
+  for ref_pair in "${ref_pairs[@]}"; do
+    local pair volume_id secret_ref secret_namespace secret_name
+    pair="$(afscp_trim "${ref_pair}")"
+    [[ -n "${pair}" ]] || continue
+    if [[ "${pair}" != *=* ]]; then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use volume_id=namespace/name pairs; local-real fails closed"
+      return 1
+    fi
+    volume_id="$(afscp_trim "${pair%%=*}")"
+    secret_ref="$(afscp_trim "${pair#*=}")"
+    secret_namespace="$(afscp_trim "${secret_ref%%/*}")"
+    secret_name="$(afscp_trim "${secret_ref#*/}")"
+    if [[ -z "${volume_id}" || "${secret_ref}" != */* || -z "${secret_namespace}" || -z "${secret_name}" || "${secret_name}" == */* ]]; then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use volume_id=namespace/name pairs; local-real fails closed"
+      return 1
+    fi
+    if [[ "${volume_id}" != "${AFSCP_DEFAULT_VOLUME_ID}" ]]; then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must use default volume ${AFSCP_DEFAULT_VOLUME_ID} only; local-real fails closed"
+      return 1
+    fi
+
+    configured=$((configured + 1))
+    if (( configured > 1 )); then
+      internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must contain default volume ${AFSCP_DEFAULT_VOLUME_ID} only once; local-real fails closed"
+      return 1
+    fi
+    normalized="${volume_id}=${secret_namespace}/${secret_name}"
+  done
+
+  if (( configured != 1 )); then
+    internal_err "AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS must include default volume ${AFSCP_DEFAULT_VOLUME_ID}; local-real fails closed"
+    return 1
+  fi
+  AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS="${normalized}"
+}
+
 afscp_default_local_runtime_juicefs_metaurl() {
   printf 'postgres://%s:%s@%s:5432/%s?sslmode=disable' \
     "${SUBSTRATE_DB_USER}" \
@@ -818,6 +1698,92 @@ afscp_local_runtime_workload_juicefs_metaurl() {
 
 afscp_local_runtime_workload_juicefs_bucket() {
   printf '%s' "${AFSCP_LOCAL_RUNTIME_JUICEFS_BUCKET:-$(afscp_default_local_runtime_juicefs_bucket)}"
+}
+
+afscp_validate_local_runtime_juicefs_format() {
+  local metaurl="$1"
+  local expected_name="$2"
+  local expected_storage="$3"
+  local expected_bucket="$4"
+  local config_json validation_result
+
+  if ! config_json="$(juicefs config "${metaurl}" 2>/dev/null)"; then
+    internal_err "failed to read AFSCP local-real JuiceFS metadata identity; local-real fails closed"
+    return 1
+  fi
+
+  validation_result="$(
+    AFSCP_JUICEFS_CONFIG_JSON="${config_json}" \
+    AFSCP_EXPECTED_JUICEFS_NAME="${expected_name}" \
+    AFSCP_EXPECTED_JUICEFS_STORAGE="${expected_storage}" \
+    AFSCP_EXPECTED_JUICEFS_BUCKET="${expected_bucket}" \
+    node <<'NODE'
+function fail(message) {
+  process.stdout.write(message);
+  process.exit(1);
+}
+
+function parseConfig(raw) {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end < start) {
+    fail('invalid-json');
+  }
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    fail('invalid-json');
+  }
+}
+
+function bucketIdentity(raw) {
+  const value = String(raw ?? '').trim();
+  try {
+    const url = new URL(value);
+    return {
+      protocol: url.protocol.toLowerCase(),
+      hostname: url.hostname.toLowerCase(),
+      port: url.port,
+      bucket: url.pathname.replace(/^\/+/, '').replace(/\/+$/u, ''),
+    };
+  } catch {
+    return { raw: value.replace(/\/+$/u, '') };
+  }
+}
+
+function addMismatch(mismatches, key) {
+  if (!mismatches.includes(key)) {
+    mismatches.push(key);
+  }
+}
+
+const config = parseConfig(process.env.AFSCP_JUICEFS_CONFIG_JSON ?? '');
+const mismatches = [];
+if (config.Name !== process.env.AFSCP_EXPECTED_JUICEFS_NAME) {
+  addMismatch(mismatches, 'name');
+}
+if (config.Storage !== process.env.AFSCP_EXPECTED_JUICEFS_STORAGE) {
+  addMismatch(mismatches, 'storage');
+}
+if (JSON.stringify(bucketIdentity(config.Bucket)) !== JSON.stringify(bucketIdentity(process.env.AFSCP_EXPECTED_JUICEFS_BUCKET ?? ''))) {
+  addMismatch(mismatches, 'bucket');
+}
+if (mismatches.length > 0) {
+  fail(`mismatch:${mismatches.join(',')}`);
+}
+process.stdout.write('ok');
+NODE
+  )" || {
+    case "${validation_result}" in
+      mismatch:*)
+        internal_err "AFSCP local-real JuiceFS metadata does not match expected identity (${validation_result#mismatch:}); reset local-real before starting; local-real fails closed"
+        ;;
+      *)
+        internal_err "failed to read AFSCP local-real JuiceFS metadata identity; local-real fails closed"
+        ;;
+    esac
+    return 1
+  }
 }
 
 afscp_mountpoint_state() {
@@ -944,6 +1910,7 @@ ensure_afscp_local_runtime_volume_root() {
     internal_err "failed to format or validate AFSCP local-real JuiceFS volume; local-real fails closed"
     return 1
   fi
+  afscp_validate_local_runtime_juicefs_format "${metaurl}" "${juicefs_name}" "${storage}" "${bucket}" || return 1
   if ! printf '%s\n' "${AFSCP_VOLUME_ROOT}" > "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}"; then
     internal_err "failed to record AFSCP local-real mount marker; local-real fails closed"
     return 1
@@ -1245,6 +2212,7 @@ ensure_afscp_local_runtime_prerequisites() {
   fi
   if [[ "${AFSCP_JVS_ENABLED}" == "true" ]]; then
     afscp_verify_jvs_binary_sha256 "${AFSCP_JVS_BINARY_PATH}" "${AFSCP_JVS_BINARY_SHA256}" "resolved AFSCP_JVS_BINARY_PATH" || exit 1
+    afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}" "resolved AFSCP_JVS_BINARY_PATH" || exit 1
   fi
 }
 

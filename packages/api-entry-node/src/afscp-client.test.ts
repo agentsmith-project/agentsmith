@@ -518,7 +518,7 @@ describe('AfscpClient', () => {
     }
   });
 
-  it('calls save point, restore admit, restore, and repo template APIs through the product namespace boundary', async () => {
+  it('calls save point, durable restore, and repo template APIs through the product namespace boundary', async () => {
     const captured: CapturedRequest[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       captured.push({ url: String(input), init: init ?? {} });
@@ -532,14 +532,6 @@ describe('AfscpClient', () => {
               created_at: '2026-05-09T00:00:00.000Z',
             },
           ],
-        });
-      }
-      if (String(input).endsWith('/restore:admit') && init?.method === 'POST') {
-        return createJsonResponse({
-          admitted: true,
-          repo_id: 'repo_file_library_1',
-          save_point_id: 'sp_001',
-          operation_type: 'restore',
         });
       }
       return createJsonResponse({
@@ -574,25 +566,10 @@ describe('AfscpClient', () => {
         },
       ],
     });
-    await expect(client.admitRestoreRepo({
-      namespaceId: 'ns_project_1',
-      repoId: 'repo_file_library_1',
-      savePointId: 'sp_001',
-      discardUnsavedChangesConfirmed: true,
-      correlationId: 'corr-restore-admit',
-      idempotencyKey: 'idem-restore',
-      actor: { type: 'user', id: 'user_1' },
-    })).resolves.toEqual({
-      admitted: true,
-      repo_id: 'repo_file_library_1',
-      save_point_id: 'sp_001',
-      operation_type: 'restore',
-    });
     await client.restoreRepo({
       namespaceId: 'ns_project_1',
       repoId: 'repo_file_library_1',
       savePointId: 'sp_001',
-      discardUnsavedChangesConfirmed: true,
       correlationId: 'corr-restore',
       idempotencyKey: 'idem-restore',
       actor: { type: 'user', id: 'user_1' },
@@ -617,7 +594,6 @@ describe('AfscpClient', () => {
     expect(captured.map((entry) => [entry.init.method, entry.url])).toEqual([
       ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/save-points'],
       ['GET', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/save-points'],
-      ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore:admit'],
       ['POST', 'https://afscp.internal/internal/v1/repos/repo_file_library_1/restore'],
       ['POST', 'https://afscp.internal/internal/v1/repo-templates'],
       ['POST', 'https://afscp.internal/internal/v1/repo-templates/tmpl_template_1:clone'],
@@ -625,19 +601,14 @@ describe('AfscpClient', () => {
     expect(JSON.parse(String(captured[0]?.init.body))).toEqual({ message: 'before restore' });
     expect(JSON.parse(String(captured[2]?.init.body))).toEqual({
       save_point_id: 'sp_001',
-      discard_unsaved_changes_confirmed: true,
     });
     expect(JSON.parse(String(captured[3]?.init.body))).toEqual({
-      save_point_id: 'sp_001',
-      discard_unsaved_changes_confirmed: true,
-    });
-    expect(JSON.parse(String(captured[4]?.init.body))).toEqual({
       namespace_id: 'ns_project_1',
       source_repo_id: 'repo_file_library_1',
       target_template_id: 'tmpl_template_1',
       clone_history_mode: 'main',
     });
-    expect(JSON.parse(String(captured[5]?.init.body))).toEqual({
+    expect(JSON.parse(String(captured[4]?.init.body))).toEqual({
       namespace_id: 'ns_project_1',
       template_id: 'tmpl_template_1',
       target_repo_id: 'repo_clone_1',
@@ -719,6 +690,33 @@ describe('AfscpClient', () => {
       Authorization: 'Bearer bootstrap-svc-secret-token',
       'X-AFSCP-Caller-Service': 'agentsmith-bootstrap',
     });
+  });
+
+  it('offers a namespace binding runtime check through the product namespace boundary', async () => {
+    const captured: CapturedRequest[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      captured.push({ url: String(input), init: init ?? {} });
+      return createJsonResponse({ repos: [] });
+    }) as unknown as typeof fetch;
+
+    const client = new AfscpBootstrapClient(createClient(fetchMock));
+    await client.checkNamespaceVolumeBinding({
+      namespaceId: 'ns_project_1',
+      correlationId: 'corr-bootstrap-runtime-check',
+    });
+
+    const headers = headersToRecord(captured[0]?.init.headers);
+    expect(captured[0]?.url).toBe('https://afscp.internal/internal/v1/repos?namespace_id=ns_project_1');
+    expect(captured[0]?.init.method).toBe('GET');
+    expect(headers).toMatchObject({
+      Authorization: 'Bearer svc-secret-token',
+      'X-AFSCP-Caller-Service': 'agentsmith-api',
+      'X-AFSCP-Namespace-Id': 'ns_project_1',
+      'X-Correlation-Id': 'corr-bootstrap-runtime-check',
+    });
+    expect(headers).not.toHaveProperty('Idempotency-Key');
+    expect(headers).not.toHaveProperty('X-AFSCP-Actor-Type');
+    expect(headers).not.toHaveProperty('X-AFSCP-Actor-Id');
   });
 
   it('offers a runtime product-only adapter without bootstrap methods or caller override', async () => {

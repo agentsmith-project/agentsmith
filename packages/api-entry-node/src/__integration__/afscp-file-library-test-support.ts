@@ -297,18 +297,11 @@ export function createInMemoryAfscpFileLibraryStorageAdapter(options: {
         createdAt,
       };
     },
-    async preflightRestoreFileLibrary(input) {
-      requireRepo(input);
-    },
-    async admitRestoreFileLibrary(input) {
-      requireRepo(input);
-    },
     async restoreFileLibrary(input) {
       requireRepo(input);
       return {
         operationId: `op_${sanitizeNamespaceSegment(input.libraryId)}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       };
     },
@@ -317,7 +310,6 @@ export function createInMemoryAfscpFileLibraryStorageAdapter(options: {
       return {
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: null,
       };
     },

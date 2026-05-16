@@ -1034,6 +1034,7 @@ const NPM_SCRIPT_COVERAGE = [
     [
       "test:e2e:integration:files:connector-absence",
       "test:e2e:integration:files:management-ux",
+      "test:e2e:integration:files:user-stories:restore-continue",
       "test:files:backend-real:smoke",
       "test:files:backend-real:home-binding",
       "test:files:backend-real:ui-home-binding",
@@ -1523,6 +1524,26 @@ const SPEC_COVERAGE = [
     lock_ids: BACKEND_REAL_LOCK_IDS,
     reason:
       "Files management UX spec mutates file library UI state on shared backend-real substrate.",
+  }),
+  grepCoverage({
+    spec: "e2e/integration-files-user-stories.spec.ts",
+    grep: "same task can continue after Files restore",
+    proposed_shard_id: "files",
+    evidence_owner: "backend-real-files:file-library",
+    isolation_level: "serialized",
+    mutable_resources: [
+      "files",
+      "project",
+      "runner_task",
+      "runner_mount",
+      "task_home_binding",
+      "terminal_session",
+      "provider_quota",
+      "shared_local_substrate",
+    ],
+    lock_ids: BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Restore-continuation grep mutates a real Agent task HOME, hidden runtime directories, terminal sessions, and provider-backed task output on shared backend-real substrate.",
   }),
   specCoverage({
     spec: "e2e/integration-preset-agent-task-file-library.spec.ts",

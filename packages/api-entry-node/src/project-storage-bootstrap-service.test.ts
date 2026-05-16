@@ -246,6 +246,162 @@ describe('ProjectStorageBootstrapService', () => {
     });
   });
 
+  it('revalidates ready project storage against AFSCP runtime and reboots bootstrap when the binding disappeared', async () => {
+    const { namespaceStore, resourceOwnershipStore } = createStores();
+    const upsertNamespace = vi.fn<ProjectStorageBootstrapAfscpClient['upsertNamespace']>()
+      .mockImplementationOnce(async (input) => createOperationEnvelope('op_namespace_initial', input.namespaceId))
+      .mockImplementationOnce(async (input) => createOperationEnvelope('op_namespace_repaired', input.namespaceId));
+    const putNamespaceVolumeBinding = vi.fn<ProjectStorageBootstrapAfscpClient['putNamespaceVolumeBinding']>()
+      .mockImplementationOnce(async (input) => createOperationEnvelope('op_binding_initial', input.namespaceId))
+      .mockImplementationOnce(async (input) => createOperationEnvelope('op_binding_repaired', input.namespaceId));
+    const checkNamespaceVolumeBinding = vi.fn(async () => {
+      throw new AfscpClientError({
+        status: 404,
+        code: 'afscp_resource_not_found',
+        message: 'afscp_resource_not_found',
+        retryable: false,
+        correlation_id: 'corr-afscp',
+        resource_kind: 'namespace',
+      });
+    });
+    const service = new ProjectStorageBootstrapService({
+      namespaceStore,
+      resourceOwnershipStore,
+      client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn(), checkNamespaceVolumeBinding },
+      defaultVolumeId: 'vol_default',
+      productCallerService: 'agentsmith-api',
+      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      correlationIdFactory: () => 'corr-generated',
+    });
+    const projectKey = {
+      workspaceId: 'ws_alpha',
+      projectId: 'proj_runtime_drift',
+    };
+
+    await service.bootstrapProjectStorage({
+      ...projectKey,
+      actorUserId: 'user_creator',
+      requestId: 'req-create-runtime-drift',
+    });
+    const readyMapping = await namespaceStore.getProjectNamespace(projectKey);
+    expect(readyMapping).toMatchObject({
+      status: 'ready',
+      generation: 1,
+      namespace_upsert_operation_id: 'op_namespace_initial',
+      volume_binding_operation_id: 'op_binding_initial',
+      volume_binding_signature: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    upsertNamespace.mockClear();
+    putNamespaceVolumeBinding.mockClear();
+
+    await expect(service.ensureProjectStorageReady({
+      ...projectKey,
+      actorUserId: 'user_reader',
+      requestId: 'req-preflight-runtime-drift',
+    })).resolves.toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      generation: 2,
+      nextAction: 'none',
+      retryable: false,
+      lastErrorCode: null,
+    });
+
+    expect(checkNamespaceVolumeBinding).toHaveBeenCalledWith({
+      namespaceId: readyMapping?.namespace_id,
+      correlationId: 'req-preflight-runtime-drift',
+      signal: undefined,
+    });
+    expect(upsertNamespace).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: readyMapping?.namespace_id,
+      actor: { type: 'user', id: 'user_reader' },
+      correlationId: 'req-preflight-runtime-drift',
+    }));
+    expect(putNamespaceVolumeBinding).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: readyMapping?.namespace_id,
+      actor: { type: 'user', id: 'user_reader' },
+      correlationId: 'req-preflight-runtime-drift',
+    }));
+    await expect(namespaceStore.getProjectNamespace(projectKey)).resolves.toMatchObject({
+      status: 'ready',
+      stage: 'ready',
+      generation: 2,
+      namespace_upsert_operation_id: 'op_namespace_repaired',
+      volume_binding_operation_id: 'op_binding_repaired',
+      volume_binding_signature: expect.stringMatching(/^[a-f0-9]{64}$/),
+      last_error_code: null,
+    });
+  });
+
+  it('fails closed when ready project storage runtime validation is temporarily unavailable', async () => {
+    const { namespaceStore, resourceOwnershipStore } = createStores();
+    const upsertNamespace = vi.fn<ProjectStorageBootstrapAfscpClient['upsertNamespace']>(
+      async (input) => createOperationEnvelope('op_namespace_initial', input.namespaceId),
+    );
+    const putNamespaceVolumeBinding = vi.fn<ProjectStorageBootstrapAfscpClient['putNamespaceVolumeBinding']>(
+      async (input) => createOperationEnvelope('op_binding_initial', input.namespaceId),
+    );
+    const checkNamespaceVolumeBinding = vi.fn(async () => {
+      throw new AfscpClientError({
+        status: 503,
+        code: 'unavailable',
+        message: 'unavailable',
+        retryable: true,
+        correlation_id: 'corr-afscp',
+      });
+    });
+    const service = new ProjectStorageBootstrapService({
+      namespaceStore,
+      resourceOwnershipStore,
+      client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn(), checkNamespaceVolumeBinding },
+      defaultVolumeId: 'vol_default',
+      productCallerService: 'agentsmith-api',
+      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      correlationIdFactory: () => 'corr-generated',
+    });
+    const projectKey = {
+      workspaceId: 'ws_alpha',
+      projectId: 'proj_runtime_check_unavailable',
+    };
+
+    await service.bootstrapProjectStorage({
+      ...projectKey,
+      actorUserId: 'user_creator',
+      requestId: 'req-create-runtime-check',
+    });
+    upsertNamespace.mockClear();
+    putNamespaceVolumeBinding.mockClear();
+
+    const result = await service.ensureProjectStorageReady({
+      ...projectKey,
+      actorUserId: 'user_reader',
+      requestId: 'req-preflight-runtime-check',
+    });
+
+    expect(result).toEqual({
+      status: 'pending',
+      stage: 'namespace_upsert',
+      generation: 2,
+      nextAction: 'retry_now',
+      retryable: true,
+      lastErrorCode: 'unavailable',
+    });
+    expectNoStorageIdentity(result);
+    expect(upsertNamespace).not.toHaveBeenCalled();
+    expect(putNamespaceVolumeBinding).not.toHaveBeenCalled();
+    await expect(namespaceStore.getProjectNamespace(projectKey)).resolves.toMatchObject({
+      status: 'pending',
+      stage: 'namespace_upsert',
+      generation: 2,
+      next_action: 'retry_now',
+      retryable: true,
+      namespace_upsert_operation_id: null,
+      volume_binding_operation_id: null,
+      volume_binding_signature: null,
+      last_error_code: 'unavailable',
+    });
+  });
+
   it('blocks storage preflight for deleting and tombstoned namespace mappings without creating new AFSCP resources', async () => {
     const { namespaceStore, resourceOwnershipStore } = createStores();
     const upsertNamespace = vi.fn<ProjectStorageBootstrapAfscpClient['upsertNamespace']>(

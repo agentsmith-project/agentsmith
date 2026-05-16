@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
-  "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片、说明文件和 manifest、再通过 restore 找回文件；回到同一个 Agent Task 后，成员还能从输入框继续发消息，managed runner 通过运行时 task metadata 证明仍在同一任务 HOME 中，读取恢复后的文件、manifest 和 hash，并写出新的 post-restore evidence；API 侧仍显示该任务绑定同一个 workspaceFileLibraryId。",
+  "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片、说明文件和 manifest、再通过 restore 找回文件；回到同一个 Agent Task 后，成员还能从输入框继续发消息，managed runner 通过运行时 task metadata 证明仍在同一任务 HOME 中，读取恢复后的文件、manifest 和固定短文本，并写出新的 post-restore evidence；API 侧仍显示该任务绑定同一个 workspaceFileLibraryId。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -114,7 +114,7 @@
     {
       "stepId": "download-and-verify-assets",
       "sceneId": "project-files",
-      "intent": "Open Files, find the generated image assets, download them, and verify token, SVG structure, manifest hashes, and explanation content.",
+      "intent": "Open Files, find the generated image assets, download them, and verify token, SVG structure, manifest markers, and explanation content.",
       "action": "Download generated assets",
       "target": "files__download",
       "expectedFeedback": "Files 中图片、说明和 manifest 可见可下载，内容与 Agent Task 生成结果一致。",
@@ -153,8 +153,8 @@
       "intent": "Restore the save point through Files UI and confirm the restore operation reaches a terminal state.",
       "action": "Restore save point",
       "target": "files__restore-confirm",
-      "expectedFeedback": "Restore confirm appears before the request, restore operation settles, and deleted image, note, and manifest return with the same content hashes.",
-      "note": "restore 验证用户确认、终态和内容一致性。",
+      "expectedFeedback": "Restore confirm appears before the request, restore operation settles, and deleted image, note, and manifest return with the expected file names, token, SVG marker, and note text.",
+      "note": "restore 验证用户确认、终态和用户可理解的文件/文本结果。",
       "evidence": [
         "trace"
       ]
@@ -177,7 +177,7 @@
       "intent": "Return to the same Agent Task page and send a follow-up message from the UI input after Files restore.",
       "action": "Send follow-up message",
       "target": "agent-tasks__conversation-input",
-      "expectedFeedback": "The follow-up run starts from the same task, records runner-observed task metadata, reads the restored image, note, manifest, and hashes, writes post-restore-continue evidence in .artifacts, the API task binding still points to the same workspaceFileLibraryId, and the run finishes with successful runner output and final answer.",
+      "expectedFeedback": "The follow-up run starts from the same task, records runner-observed task metadata, reads the restored image, note, manifest, and fixed markers, writes post-restore-continue evidence in .artifacts, the API task binding still points to the same workspaceFileLibraryId, and the run finishes with successful runner output and final answer.",
       "note": "这一步覆盖真实用户心智：用户不是只检查历史，而是回到原任务继续工作；不能只断言历史存在，必须断言第二次 managed runner 成功执行。",
       "evidence": [
         "trace"

@@ -924,7 +924,6 @@ export interface FileLibraryRestoreOperationRecord extends FileLibraryRestoreOpe
   source_afscp_save_point_id: string;
   idempotency_key: string;
   created_by_user_id: string;
-  discard_unsaved_changes_confirmed: true;
   failure_reason?: string;
   runtime_access_release_task_id?: string;
   runtime_access_release_binding_generation?: number;
@@ -943,7 +942,6 @@ type FileLibraryRestoreOperationCreateInput = {
   status: FileLibraryRestoreOperationStatus;
   idempotencyKey: string;
   createdByUserId: string;
-  discardUnsavedChangesConfirmed?: true;
   failureReason?: string;
   runtimeAccessReleaseTaskId?: string;
   runtimeAccessReleaseBindingGeneration?: number;
@@ -1205,7 +1203,6 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       status: input.status,
       idempotency_key: input.idempotencyKey,
       created_by_user_id: input.createdByUserId,
-      discard_unsaved_changes_confirmed: input.discardUnsavedChangesConfirmed ?? true,
       ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
       ...(input.runtimeAccessReleaseTaskId ? { runtime_access_release_task_id: input.runtimeAccessReleaseTaskId } : {}),
       ...(typeof input.runtimeAccessReleaseBindingGeneration === 'number'
@@ -1300,7 +1297,6 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     status: FileLibraryRestoreOperationStatus;
     idempotencyKey: string;
     createdByUserId: string;
-    discardUnsavedChangesConfirmed?: true;
     failureReason?: string;
   }): Promise<{
     operation: FileLibraryRestoreOperationRecord;

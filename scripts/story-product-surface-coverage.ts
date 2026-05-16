@@ -208,6 +208,7 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     storyIds: [
       'files-crud-and-sync',
       'files-library-access-and-recovery',
+      'agent-task-image-asset-savepoint-delete-restore',
       'unicode-filename-round-trip',
       'workspace-project-personal-context',
       'workspace-shared-context-continuity',

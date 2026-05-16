@@ -11,7 +11,7 @@ This document defines the product-facing Files contract.
 - Local client connector access is not part of the current product surface.
 - AgentSmith consumes AFSCP APIs and redacted operation projections only. JVS is an AFSCP-internal implementation detail or local bootstrap detail; AgentSmith product code must not parse JVS fields, command output, paths, hashes, or control-root settings.
 
-Implementation detail: backend records and runner contracts may still use `HOME` or `task_home_*` field names for the sandbox path binding. Product UI and user-facing guides must describe this as task files, system folders, file library status, or file-library attachment.
+Implementation detail: backend records and runner contracts may still use `HOME` or `task_home_*` field names for the sandbox path binding. Product UI and user-facing guides must describe this as task files, HOME hidden runtime directories, file library status, or file-library attachment.
 
 ## Public DTO
 
@@ -22,7 +22,6 @@ Required product fields:
 - `name`
 - `description`
 - `source`
-- `file_library_home_segment`
 - `status`
 - `task_home_binding_status`
 - `bound_task_visible`
@@ -36,8 +35,7 @@ Optional product status fields:
 - `status_reason`
 
 Do not add or expose backend storage fields such as storage backend names, buckets, provider names, metadata endpoints, export URLs, credentials, or setup commands.
-
-`file_library_home_segment` and `task_home_binding_status` are DTO implementation fields. They may be used for backend-owned attachment state, but the frontend must not render them as user-facing storage paths.
+`task_home_binding_status` is a DTO implementation field for backend-owned attachment state. Do not expose backend HOME path segments or render any attachment identifier as a user-facing storage path.
 
 ## Access Surfaces
 
@@ -76,8 +74,8 @@ Status fields must not include namespace, repository, volume, export id, credent
 
 - The backend is the authority for listed folders and files.
 - The frontend must render the returned directory entries faithfully and must not filter dot folders or dot files.
-- The normal Files entry opens `workspace/`; the file-library root remains reachable and may contain system folders.
-- User-facing copy should describe these entries as task files, system folders, and file library status. It must not expose backend storage paths, internal execution wording, or local connector concepts.
+- The normal Files entry opens the file library HOME root. `workspace/` is a normal child directory and the agent/terminal default working directory.
+- User-facing copy should describe these entries as task files, HOME hidden runtime directories, and file library status. It must not expose backend storage paths, internal execution wording, or local connector concepts.
 
 ### Library Status
 

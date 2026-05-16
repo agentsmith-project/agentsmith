@@ -224,6 +224,13 @@ function createDeferred<T = void>() {
   return { promise, resolve, reject };
 }
 
+function parseSocketCloseDiagnostics(output: string): Array<Record<string, unknown>> {
+  return output
+    .split('\n')
+    .filter((line) => line.includes('ws_close_diagnostic'))
+    .map((line) => JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>);
+}
+
 interface ExecutionRacePause {
   entered: Promise<void>;
   resume: () => void;
@@ -616,6 +623,57 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('keeps the runner websocket open when handleRunnerReady persistence fails', async () => {
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      interactionKind: 'notebook',
+    });
+    const handleRunnerReady = vi.fn(async () => {
+      throw new Error('terminal_recovery_persist_failed');
+    });
+    (executionService as unknown as {
+      registerTerminalRecoveryCoordinator: (coordinator: {
+        handleRunnerReady?: typeof handleRunnerReady;
+      }) => void;
+    }).registerTerminalRecoveryCoordinator({ handleRunnerReady });
+    let closed = false;
+    ws.once('close', () => {
+      closed = true;
+    });
+
+    try {
+      ws.send(JSON.stringify({
+        type: 'agent.ready',
+        payload: {
+          runner_instance_id: 'runner_instance_recovery_failure',
+          connection_epoch: 9,
+          active_terminals: [],
+        },
+      }));
+
+      await waitForAssertion(() => {
+        expect(handleRunnerReady).toHaveBeenCalledTimes(1);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(closed).toBe(false);
+      expect(ws.readyState).toBe(ws.OPEN);
+      await expect(agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id)).resolves.toEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            runner_instance_id: 'runner_instance_recovery_failure',
+            ready_at: expect.any(String),
+          }),
+        }),
+      );
+      const output = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(output).toContain('terminal recovery runner ready failed');
+      expect(output).toContain('terminal_recovery_persist_failed');
+      expect(output).not.toContain('AGENT_READY_VALIDATION_FAILED');
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
   it('accepts runner_spec metadata without mutating execution preferences or matching interaction kind', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { agentResourceService, agent, ws } = await setupExecutionService({
@@ -900,6 +958,122 @@ describe('AgentExecutionService', () => {
     } finally {
       await executionService.shutdown();
     }
+  });
+
+  it('waits for session replacement registration lifecycle before processing agent.ready', async () => {
+    const { agentResourceService, executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const sessionId = 'task_ready_registration_lifecycle';
+    const first = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId,
+    });
+    const initialConnection = await waitForSessionConnectionInfo(
+      agentResourceService,
+      agent.id,
+      sessionId,
+      (connection) => connection?.session_id === sessionId,
+    );
+    expect(executionService.getAgentSessionOnlineState(agent.id, sessionId)).toBe(true);
+
+    const originalRegister = agentResourceService.registerAgentConnection.bind(agentResourceService);
+    const secondRegistrationEntered = createDeferred<void>();
+    const releaseSecondRegistration = createDeferred<void>();
+    let shouldPauseReplacement = true;
+    vi.spyOn(agentResourceService, 'registerAgentConnection').mockImplementation(async (input) => {
+      if (
+        input.sessionId === sessionId
+        && input.connectionId !== initialConnection?.connection_id
+        && shouldPauseReplacement
+      ) {
+        shouldPauseReplacement = false;
+        secondRegistrationEntered.resolve();
+        await releaseSecondRegistration.promise;
+      }
+      return originalRegister(input);
+    });
+
+    const replacementUrl = new URL(`${wsBase}/api/v1/agent-execution/ws`);
+    replacementUrl.searchParams.set('agent_runner_id', agent.id);
+    replacementUrl.searchParams.set('runner_session_id', sessionId);
+    const replacement = new WebSocket(replacementUrl.toString(), {
+      headers: { Authorization: `Bearer ${keyPair.key}` },
+    });
+    sockets.push(replacement);
+    const replacementHello = new Promise<Record<string, unknown>>((resolve) => {
+      replacement.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.hello') {
+          resolve(message);
+        }
+      });
+    });
+    const replacementClosed = new Promise<{ code: number; reason: string }>((resolve) => {
+      replacement.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      replacement.once('open', () => resolve());
+      replacement.once('error', reject);
+    });
+    await secondRegistrationEntered.promise;
+    await expect(replacementHello).resolves.toMatchObject({ type: 'server.hello' });
+
+    replacement.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        capabilities: {
+          registration_lifecycle_waited: true,
+        },
+      },
+    }));
+
+    await expect(Promise.race([
+      replacementClosed.then(() => 'closed' as const),
+      new Promise<'still_open'>((resolve) => {
+        setTimeout(() => resolve('still_open'), 50);
+      }),
+    ])).resolves.toBe('still_open');
+
+    releaseSecondRegistration.resolve();
+
+    await waitForSessionConnectionInfo(
+      agentResourceService,
+      agent.id,
+      sessionId,
+      (connection) => (
+        connection?.session_id === sessionId
+        && connection.connection_id !== initialConnection?.connection_id
+      ),
+    );
+    await waitForAssertion(() => {
+      expect(executionService.getAgentSessionOnlineState(agent.id, sessionId)).toBe(true);
+    });
+    await expect(executionService.getAgentSessionDispatchAuthority(agent.id, sessionId)).resolves.toBe(
+      'local_dispatchable',
+    );
+    await waitForAssertion(async () => {
+      await expect(agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id)).resolves.toEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            capabilities: {
+              registration_lifecycle_waited: true,
+            },
+            ready_at: expect.any(String),
+          }),
+        }),
+      );
+    });
+    expect(replacement.readyState).toBe(replacement.OPEN);
+    first.close();
   });
 
   it('does not write runtime truth when agent.ready loses authority to a remote owner before persistence', async () => {
@@ -2260,6 +2434,103 @@ describe('AgentExecutionService', () => {
     await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
       presence: 'online',
     }));
+  });
+
+  it('logs diagnostic fields when release closes a runner websocket', async () => {
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const { agentResourceService, executionService, agent, keyPair, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.auth_key_id === keyPair.record.id,
+    );
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    try {
+      expect(executionService.disconnectAgentRunner(agent.id, 'agent_key_revoked')).toBe(1);
+
+      await expect(closed).resolves.toEqual({
+        code: 4003,
+        reason: 'agent_key_revoked',
+      });
+      const diagnostics = parseSocketCloseDiagnostics(
+        stdoutWrite.mock.calls.map((call) => String(call[0])).join(''),
+      );
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        event: 'agent_execution_ws_close',
+        closeKind: 'active_release',
+        agent_id: agent.id,
+        runner_session_id: null,
+        errorCode: 'AGENT_KEY_REVOKED',
+        closeCode: 4003,
+        closeReason: 'agent_key_revoked',
+        lifecyclePhase: 'active',
+        socketKey: agent.id,
+      });
+      expect(typeof diagnostics[0]?.connection_id).toBe('string');
+      expect(stdoutWrite.mock.calls.map((call) => String(call[0])).join('')).not.toContain(keyPair.key);
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it('logs diagnostic fields when the runner websocket passively closes', async () => {
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const { agentResourceService, executionService, agent, keyPair, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.auth_key_id === keyPair.record.id,
+    );
+    const closed = new Promise<void>((resolve) => {
+      ws.once('close', () => resolve());
+    });
+
+    try {
+      ws.close(4002, 'runner_lost token=secret-token');
+      await closed;
+
+      await waitForAssertion(() => {
+        const diagnostics = parseSocketCloseDiagnostics(
+          stdoutWrite.mock.calls.map((call) => String(call[0])).join(''),
+        );
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0]).toMatchObject({
+          event: 'agent_execution_ws_close',
+          closeKind: 'passive_close',
+          agent_id: agent.id,
+          runner_session_id: null,
+          errorCode: 'AGENT_DISCONNECTED',
+          closeCode: 1006,
+          closeReason: 'agent_disconnected',
+          closeEventCode: 4002,
+          closeEventReason: 'runner_lost token=[redacted]',
+          lifecyclePhase: 'active',
+          socketKey: agent.id,
+        });
+        expect(typeof diagnostics[0]?.connection_id).toBe('string');
+      });
+      const output = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(output).not.toContain('secret-token');
+      expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+    } finally {
+      stdoutWrite.mockRestore();
+    }
   });
 
   it('self-heals a stale socket claim after another API instance owns the same socket key', async () => {

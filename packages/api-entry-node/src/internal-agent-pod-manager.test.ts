@@ -617,16 +617,16 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
 
-  it('recreates a running workload pod when session dispatch readiness never arrives for that pod', async () => {
+  it('preserves a running workload pod when the runner process exists but session dispatch readiness never arrives', async () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
-    let podGeneration = 1;
-    const deletePod = vi.fn().mockImplementation(async () => {
-      podGeneration = 0;
-    });
-    const createOrEnsurePod = vi.fn().mockImplementation(async () => {
-      podGeneration = 2;
-      return { httpStatus: 201, pod: { phase: 'Running' } };
+    const deletePod = vi.fn().mockResolvedValue(undefined);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const exec = vi.fn().mockResolvedValue({
+      exit_code: 0,
+      stdout: '123 npm run dev -w @mbos/agent-task-runner\n',
+      stderr: '',
+      duration_ms: 8,
     });
     const options: ConstructorParameters<typeof InternalAgentPodManagerImpl>[3] & {
       sessionReadinessTimeoutMs: number;
@@ -645,27 +645,22 @@ describe('internal-agent-pod-manager', () => {
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
-            .mockImplementation(async () => {
-              if (podGeneration === 0) return { phase: 'offline' };
-              return { phase: 'Running' };
-            }),
+            .mockResolvedValue({ phase: 'Running' }),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
-          exec: vi.fn(),
+          exec,
         },
         {
           getAgentOnlineState: vi.fn().mockReturnValue(false),
           getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
-          getAgentSessionDispatchAuthority: vi.fn().mockImplementation(async () => (
-            podGeneration >= 2 ? 'local_dispatchable' : 'offline'
-          )),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('offline'),
         },
         'ws://api:20000',
         options,
       );
 
-      await manager.ensureAgentReady({
+      await expect(manager.ensureAgentReady({
         workspaceId: 'ws_1',
         projectId: 'proj_1',
         workloadId: 'task_1',
@@ -675,11 +670,188 @@ describe('internal-agent-pod-manager', () => {
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
+      })).rejects.toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_startup_timeout',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        sandboxOperation: 'wait_for_agent_session_online',
+        podPhase: 'Running',
+        runnerHealth: expect.objectContaining({
+          status: 'runner_process_found',
+          exitCode: 0,
+          stdout: '123 npm run dev -w @mbos/agent-task-runner\n',
+          stderr: '',
+          durationMs: 8,
+        }),
       });
 
+      expect(exec).toHaveBeenCalledTimes(1);
+      expect(exec).toHaveBeenCalledWith(
+        'ws_1',
+        'proj_1',
+        'task_1',
+        expect.arrayContaining(['sh', '-lc']),
+        expect.any(Number),
+        undefined,
+      );
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('ps');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('agent-task-runner');
+      expect(deletePod).not.toHaveBeenCalled();
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it('deletes a stale running workload pod when session readiness times out and runner process is missing', async () => {
+    let now = 0;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const deletePod = vi.fn().mockResolvedValue(undefined);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const exec = vi.fn().mockResolvedValue({
+      exit_code: 1,
+      stdout: 'runner_health_probe=process_scan\n--- ps snapshot ---\n1 tini\n',
+      stderr: 'runner process not found\n',
+      duration_ms: 12,
+    });
+    const options: ConstructorParameters<typeof InternalAgentPodManagerImpl>[3] & {
+      sessionReadinessTimeoutMs: number;
+    } = {
+      startupTimeoutMs: 50,
+      phasePollIntervalMs: 1,
+      onlinePollIntervalMs: 1,
+      sessionReadinessTimeoutMs: 5,
+      sleep: vi.fn(async (delayMs: number) => {
+        now += delayMs;
+      }),
+    };
+
+    try {
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockResolvedValue({ phase: 'Running' }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec,
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('offline'),
+        },
+        'ws://api:20000',
+        options,
+      );
+
+      await expect(manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      })).rejects.toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_runner_bootstrap_unhealthy',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        sandboxOperation: 'wait_for_agent_session_online',
+        podPhase: 'Running',
+        stalePodDeleted: true,
+        runnerHealth: expect.objectContaining({
+          status: 'runner_process_missing',
+          exitCode: 1,
+          stdout: 'runner_health_probe=process_scan\n--- ps snapshot ---\n1 tini\n',
+          stderr: 'runner process not found\n',
+          durationMs: 12,
+        }),
+      });
+
+      expect(exec).toHaveBeenCalledTimes(1);
       expect(deletePod).toHaveBeenCalledTimes(1);
       expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
-      expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it('includes runner health exec failures in the timeout error without treating them as process-missing proof', async () => {
+    let now = 0;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const deletePod = vi.fn().mockResolvedValue(undefined);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const exec = vi.fn().mockRejectedValue(Object.assign(new Error('exec transport unavailable'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+    }));
+    const options: ConstructorParameters<typeof InternalAgentPodManagerImpl>[3] & {
+      sessionReadinessTimeoutMs: number;
+    } = {
+      startupTimeoutMs: 50,
+      phasePollIntervalMs: 1,
+      onlinePollIntervalMs: 1,
+      sessionReadinessTimeoutMs: 5,
+      sleep: vi.fn(async (delayMs: number) => {
+        now += delayMs;
+      }),
+    };
+
+    try {
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockResolvedValue({ phase: 'Running' }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec,
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('offline'),
+        },
+        'ws://api:20000',
+        options,
+      );
+
+      await expect(manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      })).rejects.toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_startup_timeout',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        sandboxOperation: 'wait_for_agent_session_online',
+        podPhase: 'Running',
+        runnerHealth: expect.objectContaining({
+          status: 'exec_failed',
+          error: expect.objectContaining({
+            code: 'AGENT_SANDBOX_UNAVAILABLE',
+            message: 'exec transport unavailable',
+          }),
+        }),
+      });
+
+      expect(exec).toHaveBeenCalledTimes(1);
+      expect(deletePod).not.toHaveBeenCalled();
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {
       dateNowSpy.mockRestore();
     }

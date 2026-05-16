@@ -48,6 +48,7 @@ describe('story product surface coverage', () => {
     expect(MAJOR_PRODUCT_SURFACE_COVERAGE.find((entry) => entry.surfaceId === 'files_and_context')?.storyIds).toEqual([
       'files-crud-and-sync',
       'files-library-access-and-recovery',
+      'agent-task-image-asset-savepoint-delete-restore',
       'unicode-filename-round-trip',
       'workspace-project-personal-context',
       'workspace-shared-context-continuity',

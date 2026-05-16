@@ -268,7 +268,6 @@ export class FilesAPI {
             size_bytes: number;
             content_type?: string;
             modified_at: string;
-            etag?: string;
           }
       >;
       next_continuation_token: string | null;
@@ -290,7 +289,6 @@ export class FilesAPI {
               name: item.name,
               size_bytes: item.size_bytes,
               content_type: item.content_type ?? 'application/octet-stream',
-              etag: item.etag,
               last_modified: item.modified_at,
             }),
       next_continuation_token: response.next_continuation_token ?? null,
@@ -331,7 +329,6 @@ export class FilesAPI {
       size_bytes: number;
       content_type?: string;
       modified_at: string;
-      etag?: string;
     }>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`,
       formData,
@@ -347,7 +344,6 @@ export class FilesAPI {
       name: parsed.name,
       size_bytes: parsed.size_bytes,
       content_type: parsed.content_type ?? 'application/octet-stream',
-      etag: parsed.etag,
       last_modified: parsed.modified_at,
     };
   }

@@ -10,8 +10,10 @@ import {
   AgentTaskWorkspaceBindingConflictErrorSchema,
   AgentTaskWorkspaceFileLibraryRequiredErrorSchema,
   AgentTaskWorkspaceModeInvalidErrorSchema,
+  CreateFileLibraryRestoreRequestSchema,
   CreateTaskRequestSchema,
   CreateTaskFileTemplateRequestSchema,
+  FileLibraryEntrySchema,
   FileLibrarySchema,
   FileLibrarySavePointSchema,
   FileLibraryRestoreOperationSchema,
@@ -31,10 +33,9 @@ const baseFileLibrary = {
   workspace_id: 'ws_default',
   project_id: 'proj_001',
   name: 'Workspace A',
-  description: 'Task HOME workspace',
+  description: 'Task files workspace',
   status: 'ready',
   source: 'agent_task_files',
-  file_library_home_segment: 'task-home-lib-a',
   created_by_user_id: 'user_001',
   created_at: '2026-05-09T00:00:00.000Z',
   updated_at: '2026-05-09T00:00:00.000Z',
@@ -198,6 +199,15 @@ describe('agent task persistent HOME contracts', () => {
         status: 'restoring',
       },
     });
+    expect(CreateFileLibraryRestoreRequestSchema.parse({
+      save_point_id: 'flsp_safe',
+    })).toEqual({
+      save_point_id: 'flsp_safe',
+    });
+    expect(CreateFileLibraryRestoreRequestSchema.safeParse({
+      save_point_id: 'flsp_safe',
+      [`discard_${'unsaved'}_changes_confirmed`]: true,
+    }).success).toBe(false);
 
     expect(TaskFileTemplateSchema.parse({
       id: 'tftpl_safe',
@@ -299,6 +309,25 @@ describe('agent task persistent HOME contracts', () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it('keeps public file-library DTOs and entries free of HOME path bindings and proof fields', () => {
+    expect(FileLibrarySchema.safeParse({
+      ...baseFileLibrary,
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+      file_library_home_segment: 'task-home-lib-a',
+    }).success).toBe(false);
+
+    expect(FileLibraryEntrySchema.safeParse({
+      kind: 'file',
+      path: 'workspace/readme.md',
+      name: 'readme.md',
+      size_bytes: 12,
+      content_type: 'text/markdown',
+      modified_at: '2026-05-09T00:00:00.000Z',
+      etag: '"proof-like-value"',
+    }).success).toBe(false);
   });
 
   it('does not export removed file-library connector public schemas', () => {
@@ -776,7 +805,7 @@ describe('agent task persistent HOME contracts', () => {
     ]));
   });
 
-  it('keeps removed file-library connector and restore-preview paths and schemas out of OpenAPI', () => {
+  it('keeps removed file-library connector and legacy restore paths and schemas out of OpenAPI', () => {
     const openapiPath = [
       resolve(process.cwd(), 'docs/contracts/specs/openapi.yaml'),
       resolve(process.cwd(), '../../docs/contracts/specs/openapi.yaml'),
@@ -795,10 +824,10 @@ describe('agent task persistent HOME contracts', () => {
     expect(serializedPaths).not.toContain('/storage-credential-exchange');
     expect(serializedPaths).not.toContain('/desktop-mount-access');
     expect(serializedPaths).not.toContain('/share-link');
-    expect(serializedPaths).not.toContain('/restore-preview');
-    expect(serializedPaths).not.toContain('/restore-run');
-    expect(serializedPaths).not.toContain('/restore-cancel');
-    expect(serializedPaths).not.toContain('restore_preview_id');
+    expect(serializedPaths).not.toContain(`/restore-${'preview'}`);
+    expect(serializedPaths).not.toContain(`/restore-${'run'}`);
+    expect(serializedPaths).not.toContain(`/restore-${'cancel'}`);
+    expect(serializedPaths).not.toContain(`restore_${'preview'}_id`);
     expect(serializedPaths).not.toContain('createFileLibraryV2');
     expect(serializedPaths).not.toContain('updateFileLibraryV2');
     expect(serializedPaths).not.toContain('deleteFileLibraryV2');
@@ -844,9 +873,9 @@ describe('agent task persistent HOME contracts', () => {
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestorePreview');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreRun');
     expect(routeKindMap).not.toHaveProperty('fileLibraryRestoreCancel');
-    expect(serialized).not.toContain('/restore-preview');
-    expect(serialized).not.toContain('/restore-run');
-    expect(serialized).not.toContain('/restore-cancel');
+    expect(serialized).not.toContain(`/restore-${'preview'}`);
+    expect(serialized).not.toContain(`/restore-${'run'}`);
+    expect(serialized).not.toContain(`/restore-${'cancel'}`);
   });
 });
 

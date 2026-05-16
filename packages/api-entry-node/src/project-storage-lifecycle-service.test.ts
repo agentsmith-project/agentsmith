@@ -21,8 +21,6 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
     assertEmpty: vi.fn(),
     listSavePoints: vi.fn(),
     createSavePoint: vi.fn(),
-    admitRestoreFileLibrary: vi.fn(),
-    preflightRestoreFileLibrary: vi.fn(),
     restoreFileLibrary: vi.fn(),
     reconcileRestoreOperation: vi.fn(),
     createTemplateFromLibrary: vi.fn(),

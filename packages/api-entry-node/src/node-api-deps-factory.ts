@@ -374,18 +374,11 @@ function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePor
         createdAt,
       };
     },
-    async preflightRestoreFileLibrary(input) {
-      requireRepo(input);
-    },
-    async admitRestoreFileLibrary(input) {
-      requireRepo(input);
-    },
     async restoreFileLibrary(input) {
       requireRepo(input);
       return {
         operationId: `op_${sanitizeDefaultAfscpSegment(input.libraryId)}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       };
     },
@@ -394,7 +387,6 @@ function createDefaultInMemoryFileLibraryStorageAdapter(): FileLibraryStoragePor
       return {
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: null,
       };
     },

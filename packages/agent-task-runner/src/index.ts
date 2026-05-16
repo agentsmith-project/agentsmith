@@ -577,9 +577,8 @@ function scheduleReconnect(reason: string): void {
     reconnectTimer = null;
     connectWebSocket();
   }, delayMs);
-  if (typeof reconnectTimer.unref === 'function') {
-    reconnectTimer.unref();
-  }
+  // Keep unexpected transport-loss reconnects ref'ed so Node does not exit
+  // before the runner can reattach to the task control channel.
 }
 
 function handleTransportLost(reason: 'websocket_close'): void {

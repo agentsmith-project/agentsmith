@@ -79,11 +79,13 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
     expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
     expect(agentTaskGate).toContain(
-      '\nreset_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
+      '\nstop_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
     );
     expect(agentTaskGate).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
     expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
     expect(agentTaskGate).toContain('export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"');
+    expect(agentTaskGate).toContain('export AFSCP_ENVIRONMENT=local-real');
+    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_data');
     expect(agentTaskGate).toContain('export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"');
     expect(agentTaskGate).toContain('export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"');
     expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"');
@@ -245,6 +247,11 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
     expect(agentTaskGate).toContain('AGENT_EXECUTION_WS_BASE_URL="${spec_agent_execution_ws_base_url}" \\');
     expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
+    expect(agentTaskGate).toContain('export ENV_FILE=/dev/null');
+    expect(agentTaskGate).toContain(
+      'export ENV_FILE=/dev/null\n'
+      + '    export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"',
+    );
     expect(backendRealRun).not.toContain('test:e2e:integration:files:user-stories:restore-continue');
     expect(backendRealRun).not.toContain('e2e/integration-files-user-stories.spec.ts');
   });
@@ -260,6 +267,7 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(agentTaskGate).toContain(
       '\nwait_for_internal_integration_deps_for_afscp\n'
+      + 'reset_internal_afscp_local_runtime\n'
       + 'enable_files_restore_continuation_afscp_restore_recovery\n'
       + 'prepare_internal_backend_real_gate_runtime',
     );

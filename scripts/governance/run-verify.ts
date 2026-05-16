@@ -734,7 +734,6 @@ export function runVerificationCli(
       const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath);
       if (!ownerPreflightResult.ok) {
         stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
-          title: 'AgentSmith Verification',
           rerunCommand: 'npm run verify -- --goal=real --run',
         }));
         return 1;

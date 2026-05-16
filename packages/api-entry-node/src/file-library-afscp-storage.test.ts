@@ -53,7 +53,13 @@ const succeededRepoOperation = {
   finished_at: '2026-05-09T00:00:01.000Z',
 };
 
-function createProductClient(overrides: Partial<AfscpProductClientPort> = {}): AfscpProductClientPort {
+type LegacyRestoreAdmissionClient = {
+  admitRestoreRepo: ReturnType<typeof vi.fn>;
+};
+
+function createProductClient(
+  overrides: Partial<AfscpProductClientPort & LegacyRestoreAdmissionClient> = {},
+): AfscpProductClientPort & LegacyRestoreAdmissionClient {
   return {
     createRepo: vi.fn(async () => repoOperation),
     listRepos: vi.fn(async () => ({ repos: [] })),
@@ -173,7 +179,7 @@ function createProductClient(overrides: Partial<AfscpProductClientPort> = {}): A
     getOperation: vi.fn(async () => succeededRepoOperation),
     pollOperation: vi.fn(async () => succeededRepoOperation),
     ...overrides,
-  };
+  } as AfscpProductClientPort & LegacyRestoreAdmissionClient;
 }
 
 async function markNamespaceReady(input: {
@@ -1026,7 +1032,7 @@ describe('AFSCP File Library storage adapter', () => {
   ] as const)('maps AFSCP save point list %s conflicts to pending instead of list failed', async (afscpCode) => {
     const client = createProductClient({
       listSavePoints: vi.fn(async () => {
-        throw new AfscpClientError(mapAfscpErrorEnvelope(409, {
+        const mapped = mapAfscpErrorEnvelope(409, {
           error: {
             code: afscpCode,
             message: afscpCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
@@ -1041,7 +1047,9 @@ describe('AFSCP File Library storage adapter', () => {
               metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
             },
           },
-        }));
+        });
+        expect(mapped.code).toBe('afscp_repo_mutation_in_progress');
+        throw new AfscpClientError(mapped);
       }),
     });
     const { adapter } = await createMappedAdapter({ client });
@@ -1069,7 +1077,7 @@ describe('AFSCP File Library storage adapter', () => {
   ] as const)('maps AFSCP save point create %s conflicts to pending instead of create failed', async (afscpCode) => {
     const client = createProductClient({
       createSavePoint: vi.fn(async () => {
-        throw new AfscpClientError(mapAfscpErrorEnvelope(409, {
+        const mapped = mapAfscpErrorEnvelope(409, {
           error: {
             code: afscpCode,
             message: afscpCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
@@ -1084,7 +1092,9 @@ describe('AFSCP File Library storage adapter', () => {
               metadata_url: 'postgres://postgres:postgres@db:5432/juicefs',
             },
           },
-        }));
+        });
+        expect(mapped.code).toBe('afscp_repo_mutation_in_progress');
+        throw new AfscpClientError(mapped);
       }),
     });
     const { adapter } = await createMappedAdapter({ client });
@@ -1276,7 +1286,7 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.pollOperation).not.toHaveBeenCalled();
   });
 
-  it('directly restores a save point through AFSCP with save-point ownership anchors', async () => {
+  it('directly restores a save point through durable AFSCP restore once with save-point ownership anchors', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async (input) => ({
         ...succeededRepoOperation,
@@ -1298,7 +1308,6 @@ describe('AFSCP File Library storage adapter', () => {
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: 'sp_user_001',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-direct',
       actorUserId: 'user_1',
       requestId: 'req_restore_direct',
@@ -1311,9 +1320,10 @@ describe('AFSCP File Library storage adapter', () => {
       namespaceId: 'ns_project_1',
       repoId: 'repo_flib_123',
       savePointId: 'sp_user_001',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-direct',
     }));
+    expect(client.restoreRepo).toHaveBeenCalledTimes(1);
+    expect(client.admitRestoreRepo).not.toHaveBeenCalled();
     await expect(ownershipStore.getResourceOwnership({
       resourceKind: 'save_point',
       resourceId: 'sp_user_001',
@@ -1323,7 +1333,7 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
-  it('preflights direct restore admission through mapping readiness without creating an AFSCP restore operation', async () => {
+  it('maps restore readiness failures before calling durable AFSCP restore or legacy admit', async () => {
     const docStore = new InMemoryJsonDocStore();
     const client = createProductClient();
     const mappingRepo = new JsonDocProjectFileLibraryAfscpMappingRepo(docStore);
@@ -1344,12 +1354,11 @@ describe('AFSCP File Library storage adapter', () => {
       fetchFn: vi.fn() as unknown as typeof fetch,
     });
 
-    await expect(adapter.preflightRestoreFileLibrary({
+    await expect(adapter.restoreFileLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: 'sp_user_001',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-preflight-not-ready',
       actorUserId: 'user_1',
       requestId: 'req_restore_preflight_not_ready',
@@ -1358,7 +1367,7 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.restoreRepo).not.toHaveBeenCalled();
   });
 
-  it('maps direct restore preflight capability denials before creating an AFSCP restore operation', async () => {
+  it('maps durable restore capability denials without calling legacy admit', async () => {
     const client = createProductClient({
       listSavePoints: vi.fn(async () => ({
         save_points: [
@@ -1370,7 +1379,7 @@ describe('AFSCP File Library storage adapter', () => {
           },
         ],
       })),
-      admitRestoreRepo: vi.fn(async () => {
+      restoreRepo: vi.fn(async () => {
         throw new AfscpClientError({
           status: 403,
           code: 'afscp_capability_denied',
@@ -1383,25 +1392,24 @@ describe('AFSCP File Library storage adapter', () => {
     });
     const { adapter } = await createMappedAdapter({ client });
 
-    await expect(adapter.preflightRestoreFileLibrary({
+    await expect(adapter.restoreFileLibrary({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: 'sp_user_001',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-preflight-capability',
       actorUserId: 'user_1',
       requestId: 'req_restore_preflight_capability',
     })).rejects.toThrow('file_library_capability_denied');
-    expect(client.admitRestoreRepo).toHaveBeenCalledWith(expect.objectContaining({
+    expect(client.restoreRepo).toHaveBeenCalledWith(expect.objectContaining({
       namespaceId: 'ns_project_1',
       repoId: 'repo_flib_123',
       savePointId: 'sp_user_001',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-preflight-capability',
     }));
+    expect(client.restoreRepo).toHaveBeenCalledTimes(1);
+    expect(client.admitRestoreRepo).not.toHaveBeenCalled();
     expect(client.listSavePoints).not.toHaveBeenCalled();
-    expect(client.restoreRepo).not.toHaveBeenCalled();
   });
 
   it('returns pending direct restore when AFSCP polling has not reached a terminal operation', async () => {
@@ -1429,7 +1437,6 @@ describe('AFSCP File Library storage adapter', () => {
       projectId: 'proj_1',
       libraryId: 'flib_123',
       savePointId: '1778481131647-4d2e0211',
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-pending',
       actorUserId: 'user_1',
       requestId: 'req_restore_pending',
@@ -1534,7 +1541,6 @@ describe('AFSCP File Library storage adapter', () => {
         projectId: 'proj_1',
         libraryId: 'flib_123',
         savePointId: 'sp_user_001',
-        discardUnsavedChangesConfirmed: true,
         idempotencyKey: 'restore-key-writer-blocked',
         actorUserId: 'user_1',
         requestId: 'req_writer_blocked',

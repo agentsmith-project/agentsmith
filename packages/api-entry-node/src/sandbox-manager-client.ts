@@ -352,6 +352,7 @@ export class SandboxManagerClient {
     workloadId: string,
     cmd: string[],
     timeoutSeconds = 30,
+    signal?: AbortSignal,
   ): Promise<ExecResponse> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -365,8 +366,8 @@ export class SandboxManagerClient {
         cmd,
         timeout_seconds: timeoutSeconds,
       }),
-      signal: AbortSignal.timeout((timeoutSeconds + 10) * 1_000),
-    }));
+      signal: this.buildRequestSignal((timeoutSeconds + 10) * 1_000, signal),
+    }), signal);
     return await resp.json() as ExecResponse;
   }
 }

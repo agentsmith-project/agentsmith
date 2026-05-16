@@ -24,7 +24,8 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('api_json_with_idempotency()');
     expect(script).toContain('Idempotency-Key: ${idempotency_key}');
     expect(script).toContain('/file-libraries/${LIBRARY_ID}/restore"');
-    expect(script).toContain('\\"discard_unsaved_changes_confirmed\\":true');
+    expect(script).toContain('"{\\"save_point_id\\":\\"${SAVE_POINT_ID}\\"}"');
+    expect(script).not.toContain(`discard_${'unsaved'}_changes_confirmed`);
     expect(script).toContain('RESTORE_OPERATION_SOURCE_SAVE_POINT_ID');
     expect(script).toContain('direct restore operation did not reference the requested save point');
     expect(script).toContain('wait_restore_operation_terminal()');

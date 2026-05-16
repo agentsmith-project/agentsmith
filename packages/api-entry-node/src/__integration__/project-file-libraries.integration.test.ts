@@ -232,7 +232,6 @@ describe.sequential('api-entry-node project file libraries integration', () => {
         },
         body: JSON.stringify({
           save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
         }),
       },
     );

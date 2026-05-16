@@ -110,7 +110,6 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     const restore = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-      discard_unsaved_changes_confirmed: true,
     }, 'msw-direct-restore-key-1');
     expect(restore.status).toBe(200);
     await expect(restore.json()).resolves.toMatchObject({
@@ -150,7 +149,6 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     const first = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-      discard_unsaved_changes_confirmed: true,
     }, 'msw-direct-restore-key-repeat');
     expect(first.status).toBe(200);
     const firstPayload = await first.json() as { id?: string; source_save_point_id?: string; status?: string };
@@ -161,7 +159,6 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     const second = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-      discard_unsaved_changes_confirmed: true,
     }, 'msw-direct-restore-key-repeat');
     expect(second.status).toBe(200);
     await expect(second.json()).resolves.toMatchObject({
@@ -174,7 +171,6 @@ describe('file-library recovery and task-template MSW contracts', () => {
   it('matches backend validation status when direct restore omits Idempotency-Key', async () => {
     const restore = await postJson('/file-libraries/lib_shared_default/restore', {
       save_point_id: 'sp_missing_key_check',
-      discard_unsaved_changes_confirmed: true,
     });
 
     expect(restore.status).toBe(422);
@@ -272,7 +268,6 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     const restore = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
-      discard_unsaved_changes_confirmed: true,
     }, 'msw-direct-restore-blocked');
     expect(restore.status).toBe(409);
     await expect(restore.json()).resolves.toMatchObject({

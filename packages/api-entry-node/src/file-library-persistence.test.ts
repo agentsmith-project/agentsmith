@@ -330,7 +330,6 @@ describe('file-library-persistence catalog schema', () => {
       status: 'pending' as const,
       idempotencyKey: 'restore-key-stable',
       createdByUserId: 'user_1',
-      discardUnsavedChangesConfirmed: true as const,
     };
 
     const [first, second] = await Promise.all([
@@ -386,7 +385,6 @@ describe('file-library-persistence catalog schema', () => {
       sourceAfscpSavePointId: 'sp_restore',
       status: 'pending' as const,
       createdByUserId: 'user_1',
-      discardUnsavedChangesConfirmed: true as const,
     };
 
     const first = await repo.createOrReuseActiveByLibrary({
@@ -447,7 +445,6 @@ describe('file-library-persistence catalog schema', () => {
       status: 'pending' as const,
       idempotencyKey: 'restore-key-lock-failure',
       createdByUserId: 'user_1',
-      discardUnsavedChangesConfirmed: true as const,
     };
 
     await expect(repo.createOrReuseActiveByLibrary(input)).rejects.toThrow('operation_create_failed');
@@ -486,7 +483,6 @@ describe('file-library-persistence catalog schema', () => {
       status: 'pending' as const,
       idempotencyKey: 'restore-key-stale-lock',
       createdByUserId: 'user_1',
-      discardUnsavedChangesConfirmed: true as const,
     };
 
     const first = await repo.createOrReuseActiveByLibrary(input);

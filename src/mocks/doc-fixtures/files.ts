@@ -6,7 +6,6 @@ type DocObjectRow =
       name: string;
       size_bytes: number;
       content_type: string;
-      etag?: string;
       last_modified: string;
       content?: string;
     };
@@ -24,7 +23,6 @@ export const docObjectDbByLibraryId: Record<string, DocObjectRow[]> = {
       size_bytes: 3220,
       content_type: 'text/markdown',
       last_modified: now,
-      etag: '"doc-readme"',
       content: '# 运营周报文件库\n\n用于沉淀巡检周报、用量摘要、截图与导出的任务产物。',
     },
     {
@@ -34,7 +32,6 @@ export const docObjectDbByLibraryId: Record<string, DocObjectRow[]> = {
       size_bytes: 18420,
       content_type: 'text/markdown',
       last_modified: now,
-      etag: '"doc-usage-summary"',
       content: '## 2026 W11 用量摘要\n\n- placeholder-model 请求量 18,420\n- Claude 复杂推理请求量 4,180\n- 高峰时段 10:00-11:00 / 15:00-16:00',
     },
     {
@@ -44,7 +41,6 @@ export const docObjectDbByLibraryId: Record<string, DocObjectRow[]> = {
       size_bytes: 268420,
       content_type: 'image/png',
       last_modified: now,
-      etag: '"doc-usage-png"',
     },
   ],
   lib_policy_rules: [
@@ -56,9 +52,7 @@ export const docObjectDbByLibraryId: Record<string, DocObjectRow[]> = {
       size_bytes: 9231,
       content_type: 'text/markdown',
       last_modified: now,
-      etag: '"doc-policy-baseline"',
       content: '## Endpoint 默认治理基线\n\n- 每分钟请求上限\n- 每 5 小时请求上限\n- 每日费用上限\n- 指定成员白名单',
     },
   ],
 };
-

@@ -75,7 +75,6 @@ const PROJECT_AFSCP_OWNED_RESOURCE_KINDS = new Set<ProjectAfscpOwnedResourceKind
   'repo',
   'repo_template',
   'save_point',
-  'restore_plan',
   'export',
   'workload_mount_binding',
   'operation',
@@ -302,6 +301,79 @@ export class ProjectAfscpNamespaceStore {
         return updated.doc;
       }
       if (updated.current?.status === 'ready') {
+        return updated.current;
+      }
+    }
+  }
+
+  async markProjectNamespaceBootstrapInvalidated(input: ProjectAfscpNamespaceKey & {
+    lastErrorCode?: string | null;
+  }): Promise<ProjectAfscpNamespaceMapping> {
+    for (;;) {
+      const existing = await this.ensureProjectNamespace(input);
+      if (existing.status !== 'ready') {
+        return existing;
+      }
+      const next: ProjectAfscpNamespaceMapping = {
+        ...existing,
+        status: 'pending',
+        stage: 'namespace_upsert',
+        generation: existing.generation + 1,
+        next_action: 'retry_now',
+        retryable: true,
+        namespace_upsert_operation_id: null,
+        volume_binding_operation_id: null,
+        volume_binding_signature: null,
+        last_error_code: input.lastErrorCode ?? null,
+        updated_at: this.nowIso(),
+      };
+      const updated = await this.docStore.updateIfMatch<ProjectAfscpNamespaceMapping>(
+        PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        next.id,
+        {
+          expected: projectNamespaceCasCondition(existing),
+          replace: next,
+        },
+      );
+      if (updated.ok) {
+        return updated.doc;
+      }
+      if (updated.current && updated.current.status !== 'ready') {
+        return updated.current;
+      }
+    }
+  }
+
+  async markReadyProjectNamespaceRuntimeBlocked(input: ProjectAfscpNamespaceKey & {
+    lastErrorCode: string;
+  }): Promise<ProjectAfscpNamespaceMapping> {
+    for (;;) {
+      const existing = await this.ensureProjectNamespace(input);
+      if (existing.status !== 'ready') {
+        return existing;
+      }
+      const next: ProjectAfscpNamespaceMapping = {
+        ...existing,
+        status: 'blocked',
+        stage: 'volume_binding',
+        generation: existing.generation + 1,
+        next_action: 'admin_repair',
+        retryable: false,
+        last_error_code: input.lastErrorCode,
+        updated_at: this.nowIso(),
+      };
+      const updated = await this.docStore.updateIfMatch<ProjectAfscpNamespaceMapping>(
+        PROJECT_AFSCP_NAMESPACE_COLLECTION,
+        next.id,
+        {
+          expected: projectNamespaceCasCondition(existing),
+          replace: next,
+        },
+      );
+      if (updated.ok) {
+        return updated.doc;
+      }
+      if (updated.current && updated.current.status !== 'ready') {
         return updated.current;
       }
     }

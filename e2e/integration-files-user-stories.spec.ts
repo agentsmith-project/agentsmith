@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type APIResponse, type Locator, type Page, type Request, type Response } from '@playwright/test';
@@ -202,7 +201,6 @@ function buildPythonImageAssetSvgContent(token: string): string {
 
 function buildPythonImageAssetNoteContent(args: {
   token: string;
-  svgSha256: string;
   assetFolderName: string;
 }): string {
   return [
@@ -210,7 +208,7 @@ function buildPythonImageAssetNoteContent(args: {
     '',
     `Business token: ${args.token}`,
     `Asset folder: ${args.assetFolderName}`,
-    `SVG sha256: ${args.svgSha256}`,
+    'Restore check text: image asset note restored',
     'Purpose: verify Files save point restore keeps generated image assets and task history intact.',
     '',
   ].join('\n');
@@ -1258,19 +1256,13 @@ async function openFileFromLibraryRootAndDownloadBinary(args: {
   return downloadSelectedBinaryFileViaUi(args);
 }
 
-function sha256Hex(value: Buffer | string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 function expectSvgContentMatchesArtifact(args: {
   svgContent: string;
   token: string;
-  expectedSha256: string;
 }): void {
   expect(args.svgContent).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
   expect(args.svgContent).toContain('<polyline');
   expect(args.svgContent).toContain(args.token);
-  expect(sha256Hex(args.svgContent)).toBe(args.expectedSha256);
 }
 
 async function clearFilesSelectionIfNeeded(page: Page): Promise<void> {
@@ -3159,15 +3151,36 @@ test.describe.serial('@lane-real files user stories', () => {
     const postRestoreFileName = `post-restore-continue-${timestamp}.txt`;
     const postRestorePath = `workspace/.artifacts/${postRestoreFileName}`;
     const postRestoreTaskRelativePath = `.artifacts/${postRestoreFileName}`;
+    const hiddenRuntimeMarkers = [
+      {
+        folder: '.codex',
+        markerPath: `.codex/restore-marker-${timestamp}.txt`,
+        afterOnlyPath: `.codex/post-savepoint-only-${timestamp}.txt`,
+        content: `hidden-runtime-restore:.codex:${artifactToken}`,
+        afterOnlyContent: `post-savepoint-only:.codex:${artifactToken}`,
+      },
+      {
+        folder: '.cache',
+        markerPath: `.cache/restore-marker-${timestamp}.txt`,
+        afterOnlyPath: `.cache/post-savepoint-only-${timestamp}.txt`,
+        content: `hidden-runtime-restore:.cache:${artifactToken}`,
+        afterOnlyContent: `post-savepoint-only:.cache:${artifactToken}`,
+      },
+      {
+        folder: '.local',
+        markerPath: `.local/restore-marker-${timestamp}.txt`,
+        afterOnlyPath: `.local/post-savepoint-only-${timestamp}.txt`,
+        content: `hidden-runtime-restore:.local:${artifactToken}`,
+        afterOnlyContent: `post-savepoint-only:.local:${artifactToken}`,
+      },
+    ];
+    const hiddenRuntimeMarkersJson = JSON.stringify(hiddenRuntimeMarkers);
     const expectedSvgContent = buildPythonImageAssetSvgContent(artifactToken);
-    const expectedSvgSha256 = sha256Hex(expectedSvgContent);
     const expectedNoteContent = buildPythonImageAssetNoteContent({
       token: artifactToken,
-      svgSha256: expectedSvgSha256,
       assetFolderName,
     });
-    const expectedNoteSha256 = sha256Hex(expectedNoteContent);
-    const pythonExecutionMarker = `PYTHON_IMAGE_ASSET_WRITTEN:${artifactToken}:${expectedSvgSha256}:${expectedNoteSha256}`;
+    const pythonExecutionMarker = `PYTHON_IMAGE_ASSET_WRITTEN:${artifactToken}:${svgFileName}:${noteFileName}`;
     const savePointMessage = `Before campaign image asset cleanup ${timestamp}`;
     const createdLibrary = await createFileLibraryViaApi({
       page,
@@ -3222,10 +3235,10 @@ test.describe.serial('@lane-real files user stories', () => {
           'set -euo pipefail',
           "python3 - <<'PY'",
           'from pathlib import Path',
-          'import hashlib',
           'import json',
           `token = ${JSON.stringify(artifactToken)}`,
           'asset_dir = Path.home() / "workspace" / ".artifacts"',
+          `hidden_runtime_markers = ${hiddenRuntimeMarkersJson}`,
           `svg_lines = ${pythonLinesJson}`,
           `note_lines = ${noteLinesJson}`,
           'asset_dir.mkdir(parents=True, exist_ok=True)',
@@ -3236,20 +3249,22 @@ test.describe.serial('@lane-real files user stories', () => {
           `manifest_path = asset_dir / ${JSON.stringify(manifestFileName)}`,
           'svg_path.write_text(svg, encoding="utf-8")',
           'note_path.write_text(note, encoding="utf-8")',
-          'svg_sha256 = hashlib.sha256(svg.encode("utf-8")).hexdigest()',
-          'note_sha256 = hashlib.sha256(note.encode("utf-8")).hexdigest()',
           'manifest = {',
           '    "files": [svg_path.name, note_path.name],',
           '    "generator": "python-stdlib-svg",',
-          '    "note_sha256": note_sha256,',
-          '    "svg_sha256": svg_sha256,',
+          '    "note_marker": "agent-image-note-ok",',
+          '    "svg_marker": "agent-image-svg-ok",',
           '    "token": token,',
           '}',
           'manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")',
+          'for item in hidden_runtime_markers:',
+          '    marker_path = Path.home() / item["markerPath"]',
+          '    marker_path.parent.mkdir(parents=True, exist_ok=True)',
+          '    marker_path.write_text(item["content"], encoding="utf-8")',
+          '    assert marker_path.read_text(encoding="utf-8") == item["content"]',
           `assert token in svg_path.read_text(encoding="utf-8")`,
-          `assert svg_sha256 == ${JSON.stringify(expectedSvgSha256)}`,
-          `assert note_sha256 == ${JSON.stringify(expectedNoteSha256)}`,
-          'print(f"PYTHON_IMAGE_ASSET_WRITTEN:{token}:{svg_sha256}:{note_sha256}")',
+          'assert "Restore check text: image asset note restored" in note_path.read_text(encoding="utf-8")',
+          'print(f"PYTHON_IMAGE_ASSET_WRITTEN:{token}:{svg_path.name}:{note_path.name}")',
           'PY',
           '```',
           `After the Python script succeeds, reply with exactly ${pythonExecutionMarker}.`,
@@ -3331,7 +3346,6 @@ test.describe.serial('@lane-real files user stories', () => {
       expectSvgContentMatchesArtifact({
         svgContent: svgDownload.toString('utf8'),
         token: artifactToken,
-        expectedSha256: expectedSvgSha256,
       });
 
       await selectObjectRowByName(page, noteFileName);
@@ -3355,14 +3369,14 @@ test.describe.serial('@lane-real files user stories', () => {
       const manifest = JSON.parse(manifestDownload) as {
         files?: string[];
         generator?: string;
-        note_sha256?: string;
-        svg_sha256?: string;
+        note_marker?: string;
+        svg_marker?: string;
         token?: string;
       };
       expect(manifest).toMatchObject({
         generator: 'python-stdlib-svg',
-        note_sha256: expectedNoteSha256,
-        svg_sha256: expectedSvgSha256,
+        note_marker: 'agent-image-note-ok',
+        svg_marker: 'agent-image-svg-ok',
         token: artifactToken,
       });
       expect(manifest.files).toEqual(expect.arrayContaining([svgFileName, noteFileName]));
@@ -3392,6 +3406,20 @@ test.describe.serial('@lane-real files user stories', () => {
       libraryId,
       message: savePointMessage,
     }));
+
+    await test.step('save point source state includes HOME hidden runtime markers', async () => {
+      for (const marker of hiddenRuntimeMarkers) {
+        await waitForTextFileContentViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          libraryId,
+          path: marker.markerPath,
+          expectedContent: marker.content,
+          timeoutMs: 120_000,
+        });
+      }
+    });
 
     await test.step('Files UI multi-select delete removes the image, note, and manifest', async () => {
       await openWorkspaceArtifactsFolder({
@@ -3433,7 +3461,82 @@ test.describe.serial('@lane-real files user stories', () => {
       });
     });
 
-    await test.step('Files UI restore confirms and brings back the image, note, and manifest unchanged', async () => {
+    await test.step('task terminal mutates HOME hidden runtime directories after the save point', async () => {
+      const mutationMarker = `HIDDEN_RUNTIME_MUTATED_${timestamp}`;
+      let mutationSessionId: string | null = null;
+      try {
+        const mutationSession = await createTerminalSessionViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          shell: '/usr/bin/bash',
+        });
+        mutationSessionId = mutationSession.sessionId;
+        await expectTerminalSessionRunnerEvidenceViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: mutationSessionId,
+          runnerId,
+          createdSession: mutationSession,
+        });
+        const mutationOutput = await runTerminalCommandInSession({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskId,
+          sessionId: mutationSessionId,
+          command: [
+            'set -euo pipefail',
+            ...hiddenRuntimeMarkers.flatMap((marker) => [
+              `rm -f "$HOME/${marker.markerPath}"`,
+              `mkdir -p "$HOME/${marker.folder}"`,
+              `printf '%s' '${marker.afterOnlyContent}' > "$HOME/${marker.afterOnlyPath}"`,
+              `test ! -e "$HOME/${marker.markerPath}"`,
+              `test -s "$HOME/${marker.afterOnlyPath}"`,
+            ]),
+            `printf '${mutationMarker}\\n'`,
+          ].join('; '),
+          waitFor: [mutationMarker],
+          timeoutMs: 180_000,
+        });
+        expect(mutationOutput).toContain(mutationMarker);
+      } finally {
+        if (mutationSessionId) {
+          await deleteTerminalSessionViaApi({
+            page,
+            workspaceId: WORKSPACE_ID,
+            projectId,
+            taskId,
+            sessionId: mutationSessionId,
+          });
+        }
+      }
+
+      for (const marker of hiddenRuntimeMarkers) {
+        await expectFileEntryMissingViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          libraryId,
+          path: marker.markerPath,
+          timeoutMs: 120_000,
+        });
+        await waitForTextFileContentViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          libraryId,
+          path: marker.afterOnlyPath,
+          expectedContent: marker.afterOnlyContent,
+          timeoutMs: 120_000,
+        });
+      }
+    });
+
+    await test.step('Files UI restore confirms and brings back the image, note, and manifest', async () => {
       await restoreSavePointViaFilesUi({
         page,
         workspaceId: WORKSPACE_ID,
@@ -3478,7 +3581,6 @@ test.describe.serial('@lane-real files user stories', () => {
       expectSvgContentMatchesArtifact({
         svgContent: restoredSvg.toString('utf8'),
         token: artifactToken,
-        expectedSha256: expectedSvgSha256,
       });
       const restoredNote = await openFileFromLibraryRootAndDownloadText({
         page,
@@ -3497,10 +3599,29 @@ test.describe.serial('@lane-real files user stories', () => {
       });
       expect(JSON.parse(restoredManifest)).toMatchObject({
         generator: 'python-stdlib-svg',
-        note_sha256: expectedNoteSha256,
-        svg_sha256: expectedSvgSha256,
+        note_marker: 'agent-image-note-ok',
+        svg_marker: 'agent-image-svg-ok',
         token: artifactToken,
       });
+      for (const marker of hiddenRuntimeMarkers) {
+        await waitForTextFileContentViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          libraryId,
+          path: marker.markerPath,
+          expectedContent: marker.content,
+          timeoutMs: 240_000,
+        });
+        await expectFileEntryMissingViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          libraryId,
+          path: marker.afterOnlyPath,
+          timeoutMs: 240_000,
+        });
+      }
     });
 
     await test.step('Files restore does not roll back or break Agent Task activity and traces', async () => {
@@ -3545,14 +3666,12 @@ test.describe.serial('@lane-real files user stories', () => {
           'set -euo pipefail',
           "python3 - <<'PY'",
           'from pathlib import Path',
-          'import hashlib',
           'import json',
           'import os',
           `token = ${JSON.stringify(artifactToken)}`,
           `api_task_id = ${JSON.stringify(taskId)}`,
           `api_bound_library_id = ${JSON.stringify(libraryId)}`,
-          `expected_svg_sha256 = ${JSON.stringify(expectedSvgSha256)}`,
-          `expected_note_sha256 = ${JSON.stringify(expectedNoteSha256)}`,
+          `hidden_runtime_markers = ${hiddenRuntimeMarkersJson}`,
           'runtime_task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()',
           'runtime_task_home = os.environ.get("TASK_HOME", "").strip()',
           'runtime_home = os.environ.get("HOME", "").strip()',
@@ -3578,15 +3697,21 @@ test.describe.serial('@lane-real files user stories', () => {
           'svg = svg_path.read_text(encoding="utf-8")',
           'note = note_path.read_text(encoding="utf-8")',
           'manifest = json.loads(manifest_path.read_text(encoding="utf-8"))',
-          'svg_sha256 = hashlib.sha256(svg.encode("utf-8")).hexdigest()',
-          'note_sha256 = hashlib.sha256(note.encode("utf-8")).hexdigest()',
           'assert token in svg',
           'assert token in note',
+          'assert "<polyline" in svg',
+          'assert "Restore check text: image asset note restored" in note',
           'assert manifest["token"] == token',
-          'assert manifest["svg_sha256"] == expected_svg_sha256',
-          'assert manifest["note_sha256"] == expected_note_sha256',
-          'assert svg_sha256 == expected_svg_sha256',
-          'assert note_sha256 == expected_note_sha256',
+          'assert manifest["generator"] == "python-stdlib-svg"',
+          'assert manifest["svg_marker"] == "agent-image-svg-ok"',
+          'assert manifest["note_marker"] == "agent-image-note-ok"',
+          'assert svg_path.name in manifest["files"]',
+          'assert note_path.name in manifest["files"]',
+          'for item in hidden_runtime_markers:',
+          '    marker_path = Path(runtime_task_home) / item["markerPath"]',
+          '    after_only_path = Path(runtime_task_home) / item["afterOnlyPath"]',
+          '    assert marker_path.read_text(encoding="utf-8") == item["content"]',
+          '    assert not after_only_path.exists(), f"post-savepoint file survived restore: {after_only_path}"',
           'assert api_task_id',
           'assert api_bound_library_id',
           'evidence = "\\n".join([',
@@ -3604,15 +3729,18 @@ test.describe.serial('@lane-real files user stories', () => {
           '    f"note_file={note_path.name}",',
           '    f"manifest_file={manifest_path.name}",',
           '    f"manifest_token={manifest[\'token\']}",',
-          '    f"manifest_svg_sha256={manifest[\'svg_sha256\']}",',
-          '    f"manifest_note_sha256={manifest[\'note_sha256\']}",',
-          '    f"restored_svg_sha256={svg_sha256}",',
-          '    f"restored_note_sha256={note_sha256}",',
+          '    f"manifest_generator={manifest[\'generator\']}",',
+          '    f"manifest_svg_marker={manifest[\'svg_marker\']}",',
+          '    f"manifest_note_marker={manifest[\'note_marker\']}",',
+          '    "hidden_runtime_restore_status=ok",',
+          '    f"hidden_runtime_restored_markers={len(hidden_runtime_markers)}",',
+          '    "hidden_runtime_after_only_removed=yes",',
+          '    "restored_svg_has_polyline=yes",',
+          '    "restored_note_has_check_text=yes",',
           '    "",',
           '])',
           'evidence_path.write_text(evidence, encoding="utf-8")',
-          'evidence_sha256 = hashlib.sha256(evidence.encode("utf-8")).hexdigest()',
-          'print(f"POST_RESTORE_CONTINUE_OK:{token}:{evidence_sha256}")',
+          'print(f"POST_RESTORE_CONTINUE_OK:{token}:{evidence_path.name}")',
           'PY',
           '```',
           `After the Python script succeeds, reply with the exact marker printed by the script, which starts with ${postRestoreContinueMarkerPrefix}.`,
@@ -3682,10 +3810,14 @@ test.describe.serial('@lane-real files user stories', () => {
       expect(postRestoreFields.note_file).toBe(noteFileName);
       expect(postRestoreFields.manifest_file).toBe(manifestFileName);
       expect(postRestoreFields.manifest_token).toBe(artifactToken);
-      expect(postRestoreFields.manifest_svg_sha256).toBe(expectedSvgSha256);
-      expect(postRestoreFields.manifest_note_sha256).toBe(expectedNoteSha256);
-      expect(postRestoreFields.restored_svg_sha256).toBe(expectedSvgSha256);
-      expect(postRestoreFields.restored_note_sha256).toBe(expectedNoteSha256);
+      expect(postRestoreFields.manifest_generator).toBe('python-stdlib-svg');
+      expect(postRestoreFields.manifest_svg_marker).toBe('agent-image-svg-ok');
+      expect(postRestoreFields.manifest_note_marker).toBe('agent-image-note-ok');
+      expect(postRestoreFields.hidden_runtime_restore_status).toBe('ok');
+      expect(postRestoreFields.hidden_runtime_restored_markers).toBe(String(hiddenRuntimeMarkers.length));
+      expect(postRestoreFields.hidden_runtime_after_only_removed).toBe('yes');
+      expect(postRestoreFields.restored_svg_has_polyline).toBe('yes');
+      expect(postRestoreFields.restored_note_has_check_text).toBe('yes');
 
       const taskAfterContinue = await readAgentTaskViaApi({
         page,

@@ -3451,10 +3451,19 @@ export async function waitForRunnerOutputToken(args: {
   runnerOutputActivityId?: string;
   runId?: string;
   minRunnerOutputs?: number;
+  namespace?: string;
+  workloadId?: string;
   timeoutMs?: number;
 }): Promise<void> {
   const authToken = await readStoredAuthToken(args.page);
   const timeoutMs = args.timeoutMs ?? 300_000;
+  const failureContextTarget = {
+    namespace:
+      args.namespace?.trim() ||
+      process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim() ||
+      undefined,
+    workloadId: args.workloadId?.trim() || sanitizeWorkloadId(args.taskId),
+  };
   const startedAt = Date.now();
   let attempt = 0;
 
@@ -3490,6 +3499,8 @@ export async function waitForRunnerOutputToken(args: {
         taskId: args.taskId,
         runnerOutputActivityId: args.runnerOutputActivityId,
         runId: args.runId,
+        namespace: failureContextTarget.namespace,
+        workloadId: failureContextTarget.workloadId,
         authToken,
       });
       throw new Error(
@@ -3511,6 +3522,8 @@ export async function waitForRunnerOutputToken(args: {
     taskId: args.taskId,
     runnerOutputActivityId: args.runnerOutputActivityId,
     runId: args.runId,
+    namespace: failureContextTarget.namespace,
+    workloadId: failureContextTarget.workloadId,
     authToken,
   });
   throw new Error(`runner_output_token_timeout:${args.taskId}\n\n${context}`);

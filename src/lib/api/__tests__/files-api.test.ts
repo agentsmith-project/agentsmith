@@ -287,7 +287,6 @@ describe('FilesAPI', () => {
       name: 'guide.txt',
       size_bytes: 12,
       content_type: 'text/plain',
-      etag: 'etag-1',
       last_modified: '2026-04-02T10:00:00.000Z',
     });
 
@@ -342,10 +341,7 @@ describe('FilesAPI', () => {
       'ws_1',
       'proj_1',
       'flib_1',
-      {
-        save_point_id: 'sp_1',
-        discard_unsaved_changes_confirmed: true,
-      },
+      { save_point_id: 'sp_1' },
       { idempotencyKey: 'restore-key-1' },
     );
 
@@ -363,10 +359,7 @@ describe('FilesAPI', () => {
     expect(client.post).toHaveBeenNthCalledWith(
       2,
       '/workspaces/ws_1/projects/proj_1/file-libraries/flib_1/restore',
-      {
-        save_point_id: 'sp_1',
-        discard_unsaved_changes_confirmed: true,
-      },
+      { save_point_id: 'sp_1' },
       {
         headers: {
           'Idempotency-Key': 'restore-key-1',

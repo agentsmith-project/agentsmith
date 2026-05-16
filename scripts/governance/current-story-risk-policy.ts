@@ -88,6 +88,9 @@ export const CURRENT_STORY_RISK_POLICY = {
     'agent-task-first-success': {
       policy_refs: ['core_ai_workflow'],
     },
+    'agent-task-image-asset-savepoint-delete-restore': {
+      policy_refs: ['file_continuity_integrity', 'runtime_agent_control'],
+    },
     'agent-task-terminal-reentry-recovery': {
       policy_refs: ['runtime_agent_control'],
     },

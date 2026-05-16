@@ -15,7 +15,7 @@ const MOCK_SAVE_POINTS_PENDING_HEADER = 'x-mock-file-library-save-points-pending
 
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
-  | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
+  | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; last_modified: string; content?: string };
 
 type MockUploadFile = {
   name: string;
@@ -116,10 +116,6 @@ export function getMockFileLibrary(input: {
   ) ?? null;
 }
 
-function buildFileLibraryHomeSegment(libraryId: string) {
-  return `task-home-${libraryId.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'library'}`.slice(0, 63);
-}
-
 function withTaskHomeBinding(library: FileLibrary): FileLibrary {
   const binding = getMockFileLibraryTaskHomeBinding({
     workspaceId: library.workspace_id,
@@ -169,7 +165,6 @@ export function ensureMockFileLibraryForTask(input: {
     description: '',
     visibility: 'shared',
     source: 'agent_task_files',
-    file_library_home_segment: buildFileLibraryHomeSegment(input.libraryId),
     status: 'ready',
     storage_status: 'available',
     storage_next_action: null,
@@ -193,7 +188,6 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     description: 'Default shared library',
     visibility: 'shared' as const,
     source: 'agent_task_files' as const,
-    file_library_home_segment: 'task-home-shared-default',
     status: 'ready' as const,
     storage_status: 'available' as const,
     storage_next_action: null,
@@ -211,7 +205,6 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     description: 'Shared policy and governance references',
     visibility: 'shared' as const,
     source: 'agent_task_files' as const,
-    file_library_home_segment: 'task-home-policy-rules',
     status: 'ready' as const,
     storage_status: 'available' as const,
     storage_next_action: null,
@@ -229,7 +222,6 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     description: 'Shared product and API specifications',
     visibility: 'shared' as const,
     source: 'agent_task_files' as const,
-    file_library_home_segment: 'task-home-product-specs',
     status: 'ready' as const,
     storage_status: 'available' as const,
     storage_next_action: null,
@@ -247,7 +239,6 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
     description: 'Large directory benchmark fixture',
     visibility: 'shared' as const,
     source: 'agent_task_files' as const,
-    file_library_home_segment: 'task-home-large-bench',
     status: 'ready' as const,
     storage_status: 'available' as const,
     storage_next_action: null,
@@ -280,15 +271,15 @@ const objectDbByLibraryId: Record<string, ObjectRow[]> = DOC_FIXTURES_ENABLED
   lib_shared_default: [
     { kind: 'prefix', prefix: 'docs/', name: 'docs' },
     { kind: 'prefix', prefix: 'images/', name: 'images' },
-    { kind: 'object', key: 'README.txt', name: 'README.txt', size_bytes: 42, content_type: 'text/plain', etag: '"etag1"', last_modified: nowIso(), content: 'Hello from Shared Docs\n' },
-    { kind: 'object', key: 'docs/mbos-contracts.md', name: 'mbos-contracts.md', size_bytes: 1200, content_type: 'text/markdown', etag: '"etag2"', last_modified: nowIso(), content: '# Contracts\n' },
-    { kind: 'object', key: 'images/logo.png', name: 'logo.png', size_bytes: 2048, content_type: 'image/png', etag: '"etag3"', last_modified: nowIso() },
+    { kind: 'object', key: 'README.txt', name: 'README.txt', size_bytes: 42, content_type: 'text/plain', last_modified: nowIso(), content: 'Hello from Shared Docs\n' },
+    { kind: 'object', key: 'docs/mbos-contracts.md', name: 'mbos-contracts.md', size_bytes: 1200, content_type: 'text/markdown', last_modified: nowIso(), content: '# Contracts\n' },
+    { kind: 'object', key: 'images/logo.png', name: 'logo.png', size_bytes: 2048, content_type: 'image/png', last_modified: nowIso() },
   ],
   lib_policy_rules: [
-    { kind: 'object', key: 'policies/README.md', name: 'README.md', size_bytes: 900, content_type: 'text/markdown', etag: '"etag4"', last_modified: nowIso(), content: '# Policies\n' },
+    { kind: 'object', key: 'policies/README.md', name: 'README.md', size_bytes: 900, content_type: 'text/markdown', last_modified: nowIso(), content: '# Policies\n' },
   ],
   lib_product_specs: [
-    { kind: 'object', key: 'specs/api/openapi.json', name: 'openapi.json', size_bytes: 1500, content_type: 'application/json', etag: '"etag5"', last_modified: nowIso(), content: '{\"openapi\":\"3.0.0\"}' },
+    { kind: 'object', key: 'specs/api/openapi.json', name: 'openapi.json', size_bytes: 1500, content_type: 'application/json', last_modified: nowIso(), content: '{\"openapi\":\"3.0.0\"}' },
   ],
   lib_large_bench: Array.from({ length: 260 }).map((_, index) => {
     const name = `bulk-${String(index + 1).padStart(4, '0')}.txt`;
@@ -298,7 +289,6 @@ const objectDbByLibraryId: Record<string, ObjectRow[]> = DOC_FIXTURES_ENABLED
       name,
       size_bytes: 100 + index,
       content_type: 'text/plain',
-      etag: `"bulk-${index + 1}"`,
       last_modified: nowIso(),
       content: `bulk file ${index + 1}`,
     };
@@ -439,7 +429,6 @@ function buildFixtureLibrary(input: {
     description: '',
     visibility: 'shared',
     source: 'agent_task_files',
-    file_library_home_segment: buildFileLibraryHomeSegment(input.id),
     status: input.status ?? 'ready',
     storage_status: input.status === 'ready' ? 'available' : 'unavailable',
     storage_next_action: input.status === 'ready' ? null : 'retry',
@@ -485,7 +474,6 @@ ensureSourceLibraryFixture(buildFixtureLibrary({
     name: 'README.txt',
     size_bytes: 42,
     content_type: 'text/plain',
-    etag: '"msw-nonempty"',
     last_modified: nowIso(),
     content: 'non-empty',
   },
@@ -749,7 +737,6 @@ function toFileLibraryEntries(items: ReturnType<typeof listObjects>) {
           size_bytes: item.size_bytes,
           content_type: item.content_type,
           modified_at: item.last_modified,
-          etag: item.etag,
         });
 }
 
@@ -813,7 +800,6 @@ function listObjects(
       name: (o as Extract<ObjectRow, { kind: 'object' }>).name,
       size_bytes: (o as Extract<ObjectRow, { kind: 'object' }>).size_bytes,
       content_type: (o as Extract<ObjectRow, { kind: 'object' }>).content_type,
-      etag: (o as Extract<ObjectRow, { kind: 'object' }>).etag,
       last_modified: (o as Extract<ObjectRow, { kind: 'object' }>).last_modified,
     }));
 
@@ -856,7 +842,6 @@ export const fileHandlers = [
       description: body.description ?? '',
       visibility: 'shared' as const,
       source: 'agent_task_files' as const,
-      file_library_home_segment: buildFileLibraryHomeSegment(id),
       status: 'ready' as const,
       storage_status: 'available' as const,
       storage_next_action: null,
@@ -888,8 +873,8 @@ export const fileHandlers = [
     const forcedPendingLibraryId = request.headers.get(MOCK_SAVE_POINTS_PENDING_HEADER)?.trim();
     if (forcedPendingLibraryId === '*' || forcedPendingLibraryId === libraryId) {
       return HttpResponse.json({
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-        message: 'file_library_operation_pending',
+        error_code: 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING',
+        message: 'file_library_save_point_list_pending',
         request_id: 'mock-save-points-pending',
         operation_status: 'pending',
         retry_after_ms: 2_000,
@@ -937,7 +922,6 @@ export const fileHandlers = [
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
     const body = (await request.json().catch(() => ({}))) as {
-      discard_unsaved_changes_confirmed?: boolean;
       save_point_id?: string;
     };
     const workspaceId = String(params.ws ?? '');
@@ -955,10 +939,7 @@ export const fileHandlers = [
     if (existingOperation) {
       return HttpResponse.json(toPublicRestoreOperation(existingOperation));
     }
-    if (
-      !body.save_point_id
-      || body.discard_unsaved_changes_confirmed !== true
-    ) {
+    if (!body.save_point_id) {
       return HttpResponse.json({
         error_code: 'VALIDATION_ERROR',
         message: 'invalid_restore_request',
@@ -1250,7 +1231,6 @@ export const fileHandlers = [
         name: basename(prefix),
         size_bytes: 0,
         content_type: 'application/x-directory',
-        etag: `"${Date.now()}"`,
         last_modified: nowIso(),
       });
     }
@@ -1316,7 +1296,6 @@ export const fileHandlers = [
       key: obj.key,
       size_bytes: obj.size_bytes,
       content_type: obj.content_type,
-      etag: obj.etag,
       last_modified: obj.last_modified,
       user_metadata: {},
     });
@@ -1350,7 +1329,6 @@ export const fileHandlers = [
       name: basename(path),
       size_bytes: file.size,
       content_type: contentType,
-      etag: `"${Date.now()}"`,
       last_modified: nowIso(),
       content,
     };
@@ -1362,7 +1340,6 @@ export const fileHandlers = [
       name: row.name,
       size_bytes: row.size_bytes,
       content_type: row.content_type,
-      etag: row.etag,
       modified_at: row.last_modified,
     }, { status: 201 });
   }),

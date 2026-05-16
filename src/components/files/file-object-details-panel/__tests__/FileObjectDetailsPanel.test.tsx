@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FileObjectDetailsPanel } from '../../FileObjectDetailsPanel';
@@ -82,5 +82,9 @@ describe('FileObjectDetailsPanel', () => {
     expect(screen.getByTestId('files__details-panel')).toBeInTheDocument();
     await expect(screen.findByTestId('files__details-inspector')).resolves.toBeInTheDocument();
     expect(screen.queryByTestId('files__details-hero')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /technical/i }));
+    expect(screen.queryByText('ETag')).not.toBeInTheDocument();
+    expect(screen.queryByText('etag_1')).not.toBeInTheDocument();
   });
 });

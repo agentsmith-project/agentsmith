@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/root/.npm \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
     'cd /opt/agentsmith' \
-    'exec npm run dev -w @mbos/agent-task-runner -- "$@"' \
+    'exec node packages/agent-task-runner/dist/index.js "$@"' \
     > /usr/local/bin/agent-task-runner; \
   chmod +x /usr/local/bin/agent-task-runner
 

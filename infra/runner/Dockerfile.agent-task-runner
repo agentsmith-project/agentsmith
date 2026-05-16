@@ -5,3 +5,6 @@ FROM ${RUNNER_BASE_IMAGE}
 COPY packages/agent-runner/src ./packages/agent-runner/src
 COPY packages/agent-task-runner/src ./packages/agent-task-runner/src
 COPY packages/agent-task-runner/builtin-skills /etc/codex/skills
+
+RUN set -eux; \
+  npm run build -w @mbos/agent-task-runner

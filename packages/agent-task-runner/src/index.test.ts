@@ -2354,6 +2354,48 @@ describe('agent-task-runner entry lifecycle', () => {
     }
   });
 
+  it('keeps unexpected websocket reconnect timer refed so transport loss cannot end runner lifecycle early', async () => {
+    process.env.MBOS_AGENT_RECONNECT_BASE_MS = '10';
+    process.env.MBOS_AGENT_RECONNECT_MAX_MS = '10';
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const unrefSpy = vi.fn();
+    const scheduledReconnect: { callback?: () => void } = {};
+    let scheduledDelayMs: number | undefined;
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: (...args: unknown[]) => void,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      scheduledDelayMs = delay;
+      scheduledReconnect.callback = () => callback(...args);
+      return { unref: unrefSpy } as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+
+    try {
+      await import('./index.js');
+      const socket = websocketInstances.at(-1);
+      if (!socket) {
+        throw new Error('websocket_instance_missing');
+      }
+
+      socket.emit('open');
+      socket.emit('close');
+
+      expect(scheduledDelayMs).toBe(10);
+      expect(unrefSpy).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+
+      scheduledReconnect.callback?.();
+
+      const reconnectSocket = websocketInstances.at(-1);
+      expect(reconnectSocket).toBeDefined();
+      expect(reconnectSocket).not.toBe(socket);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      randomSpy.mockRestore();
+    }
+  });
+
   it('sends SIGKILL to running children after process shutdown grace expires', async () => {
     vi.useFakeTimers();
     process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS = '1000';

@@ -300,7 +300,6 @@ export const FileLibraryCatalogSchema = z.object({
   description: z.string().optional(),
   visibility: z.literal('shared'),
   source: FileLibrarySourceSchema,
-  file_library_home_segment: z.string().min(1),
   storage_status: FileLibraryStorageStatusSchema.optional(),
   storage_next_action: FileLibraryStorageNextActionSchema.optional(),
   status_reason: z.string().min(1).optional(),
@@ -344,7 +343,6 @@ export const FileLibrarySchema = z.object({
   description: z.string().optional(),
   visibility: z.literal('shared').optional(),
   source: FileLibrarySourceSchema,
-  file_library_home_segment: z.string().min(1),
   status: FileLibraryStatusSchema,
   storage_status: FileLibraryStorageStatusSchema.optional(),
   storage_next_action: FileLibraryStorageNextActionSchema.optional(),
@@ -421,7 +419,6 @@ export const GetFileLibraryRestoreResponseSchema = z.object({
 
 export const CreateFileLibraryRestoreRequestSchema = z.object({
   save_point_id: z.string().min(1),
-  discard_unsaved_changes_confirmed: z.literal(true),
 }).strict();
 
 export const TaskFileTemplateStatusSchema = z.enum(['unpublished', 'published', 'failed']);
@@ -511,7 +508,7 @@ export const FileLibraryEntrySchema = z.union([
     path: z.string().min(1),
     name: z.string().min(1),
     modified_at: z.string().datetime().optional(),
-  }),
+  }).strict(),
   z.object({
     kind: z.literal('file'),
     path: z.string().min(1),
@@ -519,8 +516,7 @@ export const FileLibraryEntrySchema = z.union([
     size_bytes: z.number().int().nonnegative(),
     content_type: z.string().min(1).optional(),
     modified_at: z.string().datetime(),
-    etag: z.string().optional(),
-  }),
+  }).strict(),
 ]);
 
 export const ListFileLibraryEntriesQuerySchema = z.object({

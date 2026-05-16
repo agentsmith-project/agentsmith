@@ -3334,8 +3334,6 @@ export interface components {
             name: string;
         };
         CreateFileLibraryRestoreRequest: {
-            /** @enum {boolean} */
-            discard_unsaved_changes_confirmed: true;
             save_point_id: string;
         };
         CreateFileLibrarySavePointRequest: {
@@ -3452,8 +3450,6 @@ export interface components {
             created_at: string;
             created_by_user_id: string;
             description?: string;
-            /** @description Opaque backend-generated task HOME path segment. Clients must not derive storage details from it. */
-            file_library_home_segment: string;
             id: string;
             name: string;
             project_id: string;
@@ -3505,7 +3501,6 @@ export interface components {
             path: string;
         } | {
             content_type?: string;
-            etag?: string;
             /** @enum {string} */
             kind: "file";
             /** Format: date-time */
@@ -3633,7 +3628,7 @@ export interface components {
         };
         FileLibrarySavePointOperationPendingError: {
             /** @enum {string} */
-            error_code: "FILE_LIBRARY_OPERATION_PENDING";
+            error_code: "FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING";
             message: string;
             /** @enum {string} */
             operation_status: "pending";
@@ -8298,7 +8293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point list failed */
@@ -8365,7 +8360,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibrarySavePointOperationPendingError"] | components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Save point create failed */

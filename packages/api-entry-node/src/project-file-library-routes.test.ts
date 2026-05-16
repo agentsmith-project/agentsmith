@@ -23,7 +23,6 @@ import {
 import {
   buildRuntimeAccessReleaseBeginCorrelationId,
   buildRuntimeAccessReleaseCompleteCorrelationId,
-  buildRuntimeAccessReleaseRollbackCorrelationId,
   buildRuntimeAccessRestoreStartedCorrelationId,
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
@@ -47,9 +46,20 @@ function readyProjectStorage(): ProjectStoragePreflightResult {
   };
 }
 
-function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): FileLibraryStoragePort {
+type LegacyRestoreAdmissionSpies = {
+  admitRestoreFileLibrary: ReturnType<typeof vi.fn>;
+  preflightRestoreFileLibrary: ReturnType<typeof vi.fn>;
+};
+
+function createStorageAdapter(
+  overrides: Partial<FileLibraryStoragePort & LegacyRestoreAdmissionSpies> = {},
+): FileLibraryStoragePort & LegacyRestoreAdmissionSpies {
   let createdSavePointCount = 1;
-  const adapter: FileLibraryStoragePort = {
+  const legacyRestoreAdmission = {
+    admitRestoreFileLibrary: vi.fn(async () => undefined),
+    preflightRestoreFileLibrary: vi.fn(async () => undefined),
+  };
+  const adapter = {
     enabled: true,
     createRepoForLibrary: vi.fn(async (input) => ({
       namespaceId: input.namespaceId,
@@ -132,18 +142,15 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
         createdAt: '2026-05-09T00:01:00.000Z',
       };
     }),
-    admitRestoreFileLibrary: vi.fn(async () => undefined),
-    preflightRestoreFileLibrary: vi.fn(async () => undefined),
+    ...legacyRestoreAdmission,
     restoreFileLibrary: vi.fn(async () => ({
       operationId: 'op_restore_direct',
       operationStatus: 'pending',
-      restorePlanId: null,
       sourceSavePointId: 'sp_user_001',
     })),
     reconcileRestoreOperation: vi.fn(async () => ({
       operationId: 'op_restore_direct',
       operationStatus: 'pending',
-      restorePlanId: null,
       sourceSavePointId: 'sp_user_001',
     })),
     createTemplateFromLibrary: vi.fn(async () => ({
@@ -168,7 +175,7 @@ function createStorageAdapter(overrides: Partial<FileLibraryStoragePort> = {}): 
       lastErrorCode: null,
     })),
     ...overrides,
-  };
+  } as FileLibraryStoragePort & LegacyRestoreAdmissionSpies;
   return adapter;
 }
 
@@ -555,10 +562,11 @@ describe('project-file-library-routes', () => {
         name: 'Shared Docs',
         status: 'ready',
         source: 'agent_task_files',
-        file_library_home_segment: expect.stringMatching(/^flibhome_/),
         created_by_user_id: 'user_1',
       }),
     );
+    expect(created).not.toHaveProperty('file_library_home_segment');
+    expect(created).not.toHaveProperty('version');
     expect(created).not.toHaveProperty('filesystem_name');
     expect(JSON.stringify(created)).not.toContain('metadata_url');
     expect(JSON.stringify(created)).not.toContain('storage_bucket_url');
@@ -1613,7 +1621,7 @@ describe('project-file-library-routes', () => {
             : routeKind === 'fileLibraryMove'
               ? { from_path: 'docs/readme.txt', to_path: 'docs/new.txt' }
               : routeKind === 'fileLibraryRestore'
-                ? { save_point_id: 'flsp_before_restore', discard_unsaved_changes_confirmed: true }
+                ? { save_point_id: 'flsp_before_restore' }
               : { path: 'docs' }),
       })).resolves.toBe(true);
 
@@ -1699,7 +1707,7 @@ describe('project-file-library-routes', () => {
 
   it('returns stable save point create blockers without exposing storage internals', async () => {
     for (const [message, errorCode] of [
-      ['file_library_save_point_create_pending', 'FILE_LIBRARY_OPERATION_PENDING'],
+      ['file_library_save_point_create_pending', 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING'],
       ['file_library_active_writer_blocked', 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED'],
     ] as const) {
       const storageAdapter = createStorageAdapter({
@@ -1764,14 +1772,12 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
     expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
       libraryId,
       savePointId: expect.stringMatching(/^sp_user_/),
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-1',
       actorUserId: 'user_1',
       requestId: 'req_restore_direct',
@@ -1803,7 +1809,6 @@ describe('project-file-library-routes', () => {
       json: repeatJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
@@ -1866,7 +1871,6 @@ describe('project-file-library-routes', () => {
       json,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     });
     const firstJson = vi.fn();
@@ -1926,7 +1930,6 @@ describe('project-file-library-routes', () => {
       json,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     });
     const firstJson = vi.fn();
@@ -2013,7 +2016,6 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     });
 
@@ -2053,7 +2055,6 @@ describe('project-file-library-routes', () => {
     storageResult.resolve({
       operationId: 'op_restore_direct',
       operationStatus: 'succeeded',
-      restorePlanId: null,
       sourceSavePointId: 'sp_user_001',
     });
     await expect(restorePromise).resolves.toBe(true);
@@ -2080,7 +2081,6 @@ describe('project-file-library-routes', () => {
         metadata_json: {
           file_library_id: libraryId,
           source_save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
           restore_operation_id: activeOperationSeenByStorage?.id,
           restore_operation_status: 'pending',
           final_result: 'started',
@@ -2099,7 +2099,6 @@ describe('project-file-library-routes', () => {
         metadata_json: {
           file_library_id: libraryId,
           source_save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
           restore_operation_id: activeOperationSeenByStorage?.id,
           restore_operation_status: 'succeeded',
           final_result: 'succeeded',
@@ -2114,13 +2113,11 @@ describe('project-file-library-routes', () => {
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_replayed_pending_start',
         operationStatus: 'pending',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
       reconcileRestoreOperation: vi.fn(async () => ({
         operationId: 'op_restore_replayed_pending_start',
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
     });
@@ -2159,7 +2156,6 @@ describe('project-file-library-routes', () => {
       status: 'pending',
       idempotencyKey: 'restore-key-pre-start-replay',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
     const pendingOperation = pendingOperationResult.operation;
     const restoreCorrelationId = buildRuntimeAccessRestoreStartedCorrelationId({
@@ -2208,7 +2204,6 @@ describe('project-file-library-routes', () => {
       json: replayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -2279,7 +2274,6 @@ describe('project-file-library-routes', () => {
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_pre_start_get',
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
     });
@@ -2298,7 +2292,6 @@ describe('project-file-library-routes', () => {
       status: 'pending',
       idempotencyKey: 'restore-key-pre-start-get',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
     const pendingOperation = pendingOperationResult.operation;
 
@@ -2358,7 +2351,6 @@ describe('project-file-library-routes', () => {
       status: 'pending',
       idempotencyKey: 'restore-key-pre-start-active-writer',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
     const pendingOperation = pendingOperationResult.operation;
     const seededTask = await seedBoundTask({
@@ -2388,7 +2380,6 @@ describe('project-file-library-routes', () => {
       json: replayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -2417,7 +2408,6 @@ describe('project-file-library-routes', () => {
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_after_release_pre_start_active_writer',
         operationStatus: 'pending',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
     });
@@ -2436,7 +2426,6 @@ describe('project-file-library-routes', () => {
       status: 'pending',
       idempotencyKey: 'restore-key-pre-start-release-active-writer',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
     const pendingOperation = pendingOperationResult.operation;
     const seededTask = await seedBoundTask({
@@ -2470,7 +2459,6 @@ describe('project-file-library-routes', () => {
       json: blockedReplayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(blockedReplayJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
@@ -2524,7 +2512,6 @@ describe('project-file-library-routes', () => {
       json: resumedReplayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -2572,7 +2559,6 @@ describe('project-file-library-routes', () => {
       status: 'pending',
       idempotencyKey: 'restore-key-pre-start-release-no-writer',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
     await seedBoundTask({
       deps,
@@ -2608,7 +2594,7 @@ describe('project-file-library-routes', () => {
     expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
   });
 
-  it('fails direct restore validation without idempotency key or explicit discard confirmation', async () => {
+  it('fails direct restore validation without idempotency key or save point id', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
     const created = await createReadyLibrary(deps);
@@ -2630,7 +2616,6 @@ describe('project-file-library-routes', () => {
       json: missingKeyJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(missingKeyJson).toHaveBeenCalledWith(expect.anything(), 422, {
@@ -2638,7 +2623,7 @@ describe('project-file-library-routes', () => {
       message: 'idempotency_key_required',
     });
 
-    const missingConfirmationJson = vi.fn();
+    const missingSavePointJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraryRestore',
       method: 'POST',
@@ -2647,19 +2632,17 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         headers: {
-          'x-request-id': 'req_restore_missing_confirm',
-          'idempotency-key': 'restore-key-missing-confirm',
+          'x-request-id': 'req_restore_missing_save_point',
+          'idempotency-key': 'restore-key-missing-save-point',
         },
       } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: missingConfirmationJson,
-      readBody: vi.fn().mockResolvedValue({
-        save_point_id: savePoint.id,
-      }),
+      json: missingSavePointJson,
+      readBody: vi.fn().mockResolvedValue({}),
     })).resolves.toBe(true);
-    expect(missingConfirmationJson).toHaveBeenCalledWith(expect.anything(), 400, {
+    expect(missingSavePointJson).toHaveBeenCalledWith(expect.anything(), 400, {
       error_code: 'BAD_REQUEST',
       message: 'bad_request',
     });
@@ -2676,7 +2659,6 @@ describe('project-file-library-routes', () => {
     const reconcileRestoreOperation = vi.fn(async () => ({
       operationId: 'op_restore_direct',
       operationStatus: 'succeeded' as const,
-      restorePlanId: null,
       sourceSavePointId: 'sp_user_001',
     }));
     const storageAdapter = createStorageAdapter({ reconcileRestoreOperation });
@@ -2704,7 +2686,6 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     });
 
@@ -2738,8 +2719,8 @@ describe('project-file-library-routes', () => {
     )).resolves.toBeNull();
   });
 
-  it('blocks direct restore admission before durable operation creation or terminal audit', async () => {
-    for (const admissionBlocker of [
+  it('maps durable restore blockers without calling legacy preflight/admit restore', async () => {
+    for (const restoreBlocker of [
       {
         name: 'storage_not_ready',
         errorMessage: 'file_library_project_storage_not_ready repo_hidden ns_hidden',
@@ -2763,8 +2744,8 @@ describe('project-file-library-routes', () => {
       },
     ] as const) {
       const storageAdapter = createStorageAdapter({
-        preflightRestoreFileLibrary: vi.fn(async () => {
-          throw new Error(admissionBlocker.errorMessage);
+        restoreFileLibrary: vi.fn(async () => {
+          throw new Error(restoreBlocker.errorMessage);
         }),
       });
       const deps = createDeps({ storageAdapter });
@@ -2781,8 +2762,8 @@ describe('project-file-library-routes', () => {
         libraryId,
         req: {
           headers: {
-            'x-request-id': `req_restore_${admissionBlocker.name}`,
-            'idempotency-key': `restore-key-${admissionBlocker.name}`,
+            'x-request-id': `req_restore_${restoreBlocker.name}`,
+            'idempotency-key': `restore-key-${restoreBlocker.name}`,
           },
         } as never,
         res: createMockResponse(),
@@ -2791,46 +2772,58 @@ describe('project-file-library-routes', () => {
         json: restoreJson,
         readBody: vi.fn().mockResolvedValue({
           save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
         }),
       })).resolves.toBe(true);
 
-      expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+      expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
+      expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
+      expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
         libraryId,
         savePointId: expect.stringMatching(/^sp_user_/),
-        discardUnsavedChangesConfirmed: true,
         actorUserId: 'user_1',
-        requestId: `req_restore_${admissionBlocker.name}`,
+        requestId: `req_restore_${restoreBlocker.name}`,
       }));
-      expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
-      expect(restoreJson).toHaveBeenCalledWith(expect.anything(), admissionBlocker.statusCode, {
-        error_code: admissionBlocker.errorCode,
-        message: admissionBlocker.publicMessage,
+      expect(restoreJson).toHaveBeenCalledWith(expect.anything(), restoreBlocker.statusCode, {
+        error_code: restoreBlocker.errorCode,
+        message: restoreBlocker.publicMessage,
       });
       const restoreRecords = await deps.docStore.list<Record<string, unknown>>(
         'project_file_library_restore_operations',
         { workspace_id: 'ws_default', project_id: 'proj_1', library_id: libraryId },
       );
-      expect(restoreRecords).toEqual([]);
-      await expect(new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).findActiveByLibrary(
-        'ws_default',
-        'proj_1',
-        libraryId,
-      )).resolves.toBeNull();
+      expect(restoreRecords).toEqual([
+        expect.objectContaining({
+          file_library_id: libraryId,
+          source_save_point_id: savePoint.id,
+          status: 'failed',
+          idempotency_key: `restore-key-${restoreBlocker.name}`,
+          created_by_user_id: 'user_1',
+          failure_reason: restoreBlocker.publicMessage,
+        }),
+      ]);
       const auditEvents = await deps.docStore.list<Record<string, unknown>>(
         auditEventsCollection('ws_default'),
         { workspace_id: 'ws_default', project_id: 'proj_1' },
       );
-      expect(auditEvents).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ action: 'project.file_library.restore.start' }),
-        expect.objectContaining({ action: 'project.file_library.restore.failed' }),
+      expect(auditEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          action: 'project.file_library.restore.start',
+          result: 'ok',
+        }),
+        expect.objectContaining({
+          action: 'project.file_library.restore.failed',
+          result: 'error',
+          error_code: restoreBlocker.errorCode,
+          error_message: restoreBlocker.publicMessage,
+        }),
       ]));
       expect(JSON.stringify(restoreJson.mock.calls)).not.toMatch(/repo_hidden|ns_hidden|credential|control_root/);
       expect(JSON.stringify([restoreRecords, auditEvents])).not.toMatch(/repo_hidden|ns_hidden|credential|control_root/);
     }
   });
 
-  it('fails direct restore before local operation creation when save-point listing succeeds but restore admit denies capability', async () => {
+  it('maps durable restore capability denial after save-point listing without legacy admit', async () => {
     const storageAdapter = createStorageAdapter({
       listSavePoints: vi.fn(async () => [
         {
@@ -2840,7 +2833,7 @@ describe('project-file-library-routes', () => {
           createdAt: '2026-05-09T00:00:00.000Z',
         },
       ]),
-      preflightRestoreFileLibrary: vi.fn(async () => {
+      restoreFileLibrary: vi.fn(async () => {
         throw new Error('file_library_capability_denied repo_hidden ns_hidden direct restore disabled');
       }),
     });
@@ -2892,19 +2885,19 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
-    expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
       libraryId,
       savePointId: expect.stringMatching(/^sp_user_/),
-      discardUnsavedChangesConfirmed: true,
       idempotencyKey: 'restore-key-admit-capability-denied',
       actorUserId: 'user_1',
       requestId: 'req_restore_admit_capability_denied',
     }));
-    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
     expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 403, {
       error_code: 'FILE_LIBRARY_CAPABILITY_DENIED',
       message: 'file_library_capability_denied',
@@ -2913,15 +2906,28 @@ describe('project-file-library-routes', () => {
       'project_file_library_restore_operations',
       { workspace_id: 'ws_default', project_id: 'proj_1', library_id: libraryId },
     );
-    expect(restoreRecords).toEqual([]);
+    expect(restoreRecords).toEqual([
+      expect.objectContaining({
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: 'failed',
+        idempotency_key: 'restore-key-admit-capability-denied',
+        created_by_user_id: 'user_1',
+        failure_reason: 'file_library_capability_denied',
+      }),
+    ]);
     const auditEvents = await deps.docStore.list<Record<string, unknown>>(
       auditEventsCollection('ws_default'),
       { workspace_id: 'ws_default', project_id: 'proj_1' },
     );
-    expect(auditEvents).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ action: 'project.file_library.restore.start' }),
-      expect.objectContaining({ action: 'project.file_library.restore.succeeded' }),
-      expect.objectContaining({ action: 'project.file_library.restore.failed' }),
+    expect(auditEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'project.file_library.restore.start', result: 'ok' }),
+      expect.objectContaining({
+        action: 'project.file_library.restore.failed',
+        result: 'error',
+        error_code: 'FILE_LIBRARY_CAPABILITY_DENIED',
+        error_message: 'file_library_capability_denied',
+      }),
     ]));
     expect(JSON.stringify([restoreJson.mock.calls, restoreRecords, auditEvents]))
       .not.toMatch(/repo_hidden|ns_hidden|credential|control_root/);
@@ -2957,12 +2963,12 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
-    expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalled();
-    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalled();
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
     expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 502, {
       error_code: 'FILE_LIBRARY_RESTORE_FAILED',
       message: 'file_library_restore_failed',
@@ -2978,7 +2984,6 @@ describe('project-file-library-routes', () => {
         status: 'failed',
         idempotency_key: 'restore-key-storage-failure',
         created_by_user_id: 'user_1',
-        discard_unsaved_changes_confirmed: true,
         failure_reason: 'file_library_restore_failed',
       }),
     ]);
@@ -2999,7 +3004,6 @@ describe('project-file-library-routes', () => {
         metadata_json: expect.objectContaining({
           file_library_id: libraryId,
           source_save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
           restore_operation_id: failedOperation?.id,
           restore_operation_status: 'pending',
           final_result: 'started',
@@ -3018,7 +3022,6 @@ describe('project-file-library-routes', () => {
         metadata_json: expect.objectContaining({
           file_library_id: libraryId,
           source_save_point_id: savePoint.id,
-          discard_unsaved_changes_confirmed: true,
           restore_operation_id: failedOperation?.id,
           restore_operation_status: 'failed',
           final_result: 'failed',
@@ -3053,7 +3056,6 @@ describe('project-file-library-routes', () => {
       json: notFoundJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: 'flsp_missing',
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(notFoundJson).toHaveBeenCalledWith(expect.anything(), 404, {
@@ -3072,7 +3074,7 @@ describe('project-file-library-routes', () => {
     )).resolves.toEqual([]);
   });
 
-  it('preflights direct restore against active writers and redacts storage/runtime internals', async () => {
+  it('blocks direct restore against active writers and redacts storage/runtime internals', async () => {
     const storageAdapter = createStorageAdapter();
     const deps = createDeps({ storageAdapter });
     const created = await createReadyLibrary(deps);
@@ -3095,7 +3097,7 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         headers: {
-          'x-request-id': 'req_restore_preflight_blocked',
+          'x-request-id': 'req_restore_writer_blocked',
           'idempotency-key': 'restore-key-active-writer',
         },
       } as never,
@@ -3105,7 +3107,6 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -3183,7 +3184,6 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -3265,16 +3265,11 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
-    expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
-      libraryId,
-      savePointId: expect.stringMatching(/^sp_user_/),
-      idempotencyKey: `restore-key-${runtimeStatus}-terminal-mount`,
-      requestId: `req_restore_${runtimeStatus}_terminal_mount`,
-    }));
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
     expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
       libraryId,
       savePointId: expect.stringMatching(/^sp_user_/),
@@ -3326,7 +3321,6 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: firstSavePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     });
     const restoreOperation = restoreJson.mock.calls[0]?.[2] as Record<string, unknown>;
@@ -3351,7 +3345,6 @@ describe('project-file-library-routes', () => {
       json: sameSavePointJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: firstSavePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(sameSavePointJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
@@ -3385,7 +3378,6 @@ describe('project-file-library-routes', () => {
       json: differentSavePointJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: secondSavePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(differentSavePointJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
@@ -4099,7 +4091,6 @@ describe('project-file-library-routes', () => {
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_terminal_success',
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
     });
@@ -4162,11 +4153,12 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
-    expect(storageAdapter.preflightRestoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
@@ -4245,7 +4237,6 @@ describe('project-file-library-routes', () => {
       status: 'succeeded',
       idempotencyKey: 'restore-key-missing-release-association',
       createdByUserId: OWNER_USER.id,
-      discardUnsavedChangesConfirmed: true,
     });
 
     const replayJson = vi.fn();
@@ -4267,7 +4258,6 @@ describe('project-file-library-routes', () => {
       json: replayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -4302,7 +4292,6 @@ describe('project-file-library-routes', () => {
       restoreFileLibrary: vi.fn(async () => ({
         operationId: 'op_restore_old_terminal_success',
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: 'sp_user_002',
       })),
     });
@@ -4330,7 +4319,6 @@ describe('project-file-library-routes', () => {
       json: oldRestoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
     expect(oldRestoreJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
@@ -4388,7 +4376,6 @@ describe('project-file-library-routes', () => {
       json: replayJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
@@ -4477,9 +4464,9 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('rolls back a completed runtime release fence immediately after restore preflight capability denial before operation creation', async () => {
+  it('rolls back a completed runtime release fence after durable restore capability denial', async () => {
     const storageAdapter = createStorageAdapter({
-      preflightRestoreFileLibrary: vi.fn(async () => {
+      restoreFileLibrary: vi.fn(async () => {
         throw new Error('file_library_capability_denied repo_hidden ns_hidden direct restore disabled');
       }),
     });
@@ -4490,8 +4477,8 @@ describe('project-file-library-routes', () => {
     const seededTask = await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_release_before_restore_preflight_failure',
-      title: 'Release before restore preflight failure task',
+      taskId: 'task_release_before_restore_failure',
+      title: 'Release before restore failure task',
     });
     let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
@@ -4499,7 +4486,7 @@ describe('project-file-library-routes', () => {
         ...activeRuntimeBinding(libraryId),
         status: 'released',
         mount_binding_status: 'released',
-        release_operation_id: 'op_release_before_preflight_failure',
+        release_operation_id: 'op_release_before_restore_failure',
         drain_completed_at: '2026-05-09T12:00:00.000Z',
       };
     });
@@ -4512,7 +4499,7 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
-      req: { headers: { 'x-request-id': 'req_release_before_preflight_failure' } } as never,
+      req: { headers: { 'x-request-id': 'req_release_before_restore_failure' } } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
@@ -4525,7 +4512,7 @@ describe('project-file-library-routes', () => {
       runtime_access_status: 'released',
     });
     const releaseBeginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
-      requestId: 'req_release_before_preflight_failure',
+      requestId: 'req_release_before_restore_failure',
     });
     const releaseCompleteCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({
       beginCorrelationId: releaseBeginCorrelationId,
@@ -4550,8 +4537,8 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         headers: {
-          'x-request-id': 'req_restore_preflight_failure_after_release',
-          'idempotency-key': 'restore-key-preflight-failure-after-release',
+          'x-request-id': 'req_restore_failure_after_release',
+          'idempotency-key': 'restore-key-failure-after-release',
         },
       } as never,
       res: createMockResponse(),
@@ -4560,11 +4547,12 @@ describe('project-file-library-routes', () => {
       json: restoreJson,
       readBody: vi.fn().mockResolvedValue({
         save_point_id: savePoint.id,
-        discard_unsaved_changes_confirmed: true,
       }),
     })).resolves.toBe(true);
 
-    expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.preflightRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.admitRestoreFileLibrary).not.toHaveBeenCalled();
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
     expect(restoreJson).toHaveBeenCalledWith(expect.anything(), 403, {
       error_code: 'FILE_LIBRARY_CAPABILITY_DENIED',
       message: 'file_library_capability_denied',
@@ -4572,7 +4560,15 @@ describe('project-file-library-routes', () => {
     await expect(deps.docStore.list<Record<string, unknown>>(
       'project_file_library_restore_operations',
       { workspace_id: 'ws_default', project_id: 'proj_1', library_id: libraryId },
-    )).resolves.toEqual([]);
+    )).resolves.toEqual([
+      expect.objectContaining({
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: 'failed',
+        idempotency_key: 'restore-key-failure-after-release',
+        failure_reason: 'file_library_capability_denied',
+      }),
+    ]);
     await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -4581,16 +4577,13 @@ describe('project-file-library-routes', () => {
       taskId: seededTask.taskId,
       bindingGeneration: seededTask.bindingGeneration,
       bindingState: 'bound',
-      correlationId: buildRuntimeAccessReleaseRollbackCorrelationId({
-        beginCorrelationId: releaseCompleteCorrelationId,
-        reason: 'failed',
-      }),
+      correlationId: expect.stringMatching(/^restore:.*:terminal:req_restore_failure_after_release$/),
     });
     expect(runtimeBinding).toMatchObject({
       file_library_id: libraryId,
       status: 'released',
       mount_binding_status: 'released',
-      release_operation_id: 'op_release_before_preflight_failure',
+      release_operation_id: 'op_release_before_restore_failure',
     });
     expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
     expect(deps.internalAgentWorkspaceBindingManager.ensureWorkspaceBinding).not.toHaveBeenCalled();

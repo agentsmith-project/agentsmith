@@ -290,7 +290,7 @@ export function pipeObjectDownloadToHttpResponse(args: {
   download.stream.pipe(res);
 }
 
-export async function parseMultipartUploadAndExecute(
+export async function parseMultipartUploadAndExecute<T>(
   req: http.IncomingMessage,
   execute: (input: {
     fileName: string;
@@ -300,7 +300,7 @@ export async function parseMultipartUploadAndExecute(
     prefix?: string;
     overwrite?: boolean;
     signal: AbortSignal;
-  }) => Promise<unknown>,
+  }) => Promise<T>,
   createBusboy: (
     headers: http.IncomingHttpHeaders,
     maxFileSizeBytes?: number,
@@ -320,13 +320,13 @@ export async function parseMultipartUploadAndExecute(
   options: {
     signal?: AbortSignal;
   } = {},
-): Promise<unknown> {
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const abortController = new AbortController();
     const busboy = createBusboy(req.headers);
     let prefix: string | undefined;
     let overwrite = false;
-    let uploadPromise: Promise<unknown> | null = null;
+    let uploadPromise: Promise<T> | null = null;
     let fileSeen = false;
     let settled = false;
     let requestDetached = false;

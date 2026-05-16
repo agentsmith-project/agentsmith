@@ -170,18 +170,14 @@ describe('task-route-handler workspace access', () => {
         savePointId: `sp_${input.libraryId}`,
         createdAt: new Date().toISOString(),
       })),
-      admitRestoreFileLibrary: vi.fn(async () => undefined),
-      preflightRestoreFileLibrary: vi.fn(async () => undefined),
       restoreFileLibrary: vi.fn(async (input) => ({
         operationId: `op_${input.libraryId}_restore`,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: input.savePointId,
       })),
       reconcileRestoreOperation: vi.fn(async (input) => ({
         operationId: input.operationId,
         operationStatus: 'succeeded',
-        restorePlanId: null,
         sourceSavePointId: null,
       })),
       createTemplateFromLibrary: vi.fn(async (input) => ({

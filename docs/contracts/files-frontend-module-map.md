@@ -98,13 +98,13 @@ Applies to:
 - Dot folders are visible when the backend lists them. The frontend must not
   apply a generic dot-folder hide filter. Examples such as `.codex/`,
   `.agents/`, `.mbos/`, `.cache/`, `.config/`, and `.local/` are common
-  runtime/system folders, not guaranteed contents of every HOME.
-- Known top-level runtime/system dot folders must be labeled as
-  runtime/system folders. Destructive actions such as delete, move, and rename
+  HOME hidden runtime directories, not guaranteed contents of every HOME.
+- Known top-level HOME hidden runtime dot directories must be labeled as
+  HOME hidden runtime directories. Destructive actions such as delete, move, and rename
   must require a second confirmation, or be disabled when a backend typed
   blocker says the folder/library is protected or in use.
 - File states copy must describe the scope as the whole file library HOME
-  payload, including runtime/system folders when present; it must not teach
+  payload, including HOME hidden runtime directories when present; it must not teach
   users to manage implementation folders directly.
 - Restore operation pending states must not be presented as success. The UI shows
   restoring/converging copy until the backend reaches a terminal success or
@@ -142,5 +142,5 @@ Applies to:
   - file library binding exclusivity, release after task delete, and reuse without old task state
   - out-of-date restore state is handled with typed copy
   - active writer/session blocks direct restore with typed copy
-  - known top-level runtime/system dot folder destructive guard
+  - known top-level HOME hidden runtime dot directory destructive guard
   - typed blocker copy for capability denied, storage not ready, restore pending, and library in use; capability denied may stay at component/error-mapping coverage unless the UI path is stable and non-racy

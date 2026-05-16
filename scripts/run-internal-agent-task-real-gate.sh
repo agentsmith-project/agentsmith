@@ -222,6 +222,7 @@ ensure_internal_afscp_local_runtime() {
   info "ensuring AFSCP local runtime at ${AFSCP_BASE_URL}"
   (
     export INTERNAL_REAL_DIR
+    export ENV_FILE=/dev/null
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
@@ -268,6 +269,7 @@ ensure_internal_afscp_local_runtime() {
 stop_internal_afscp_local_runtime() {
   (
     export INTERNAL_REAL_DIR
+    export ENV_FILE=/dev/null
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
@@ -294,6 +296,52 @@ stop_internal_afscp_local_runtime() {
 reset_internal_afscp_local_runtime() {
   info "resetting owned AFSCP local runtime before gate start"
   stop_internal_afscp_local_runtime
+  (
+    export INTERNAL_REAL_DIR
+    export ENV_FILE=/dev/null
+    export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
+    export AFSCP_BASE_URL
+    export AFSCP_EXPORT_GATEWAY_BASE_URL
+    export AFSCP_DEFAULT_VOLUME_ID
+    export AFSCP_CALLER_SERVICE
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE
+    export AFSCP_SERVICE_TOKEN
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+    export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
+    export DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:${INTEGRATION_POSTGRES_PORT}/mbos?sslmode=disable"
+    export AFSCP_DATABASE_URL="${DATABASE_URL}"
+    export AFSCP_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_API_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"
+    export AFSCP_ENVIRONMENT=local-real
+    export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
+    export MONGO_PORT="${INTEGRATION_MONGO_PORT}"
+    export REDIS_PORT="${INTEGRATION_REDIS_PORT}"
+    export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}"
+    export KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
+    export SUBSTRATE_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
+    export SUBSTRATE_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_PORT="${INTEGRATION_MINIO_API_PORT}"
+    export MINIO_ENDPOINT="localhost"
+    export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
+    export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
+    export MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+    export AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
+    export AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
+    export AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
+    export AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
+    export AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
+    export AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+    export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}"
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    reset_owned_afscp_local_runtime_data
+  )
 }
 
 record_service() {
@@ -331,9 +379,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-reset_internal_afscp_local_runtime
+stop_internal_afscp_local_runtime
 ensure_internal_integration_deps_for_afscp
 wait_for_internal_integration_deps_for_afscp
+reset_internal_afscp_local_runtime
 enable_files_restore_continuation_afscp_restore_recovery
 prepare_internal_backend_real_gate_runtime
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"

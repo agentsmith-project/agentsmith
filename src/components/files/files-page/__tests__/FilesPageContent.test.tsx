@@ -20,7 +20,6 @@ const defaultLibrary = {
   name: 'Shared library',
   status: 'ready',
   source: 'agent_task_files',
-  file_library_home_segment: 'task-home-shared-library',
 } as FilesPageContentProps['libraries'][number];
 
 function libraryFixture(overrides: Partial<FilesPageContentProps['libraries'][number]> = {}) {

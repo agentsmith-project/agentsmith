@@ -20,7 +20,6 @@ export interface FileLibrary {
   description?: string;
   visibility?: 'shared';
   source: FileLibrarySource;
-  file_library_home_segment: string;
   status: FileLibraryStatus;
   storage_status?: FileLibraryStorageStatus;
   storage_next_action?: FileLibraryStorageNextAction;
@@ -49,7 +48,6 @@ export type FileLibraryEntry =
       size_bytes: number;
       content_type?: string;
       modified_at: string;
-      etag?: string;
     };
 
 export interface FileLibraryEntriesListParams {
@@ -147,7 +145,6 @@ export interface CreateFileLibrarySavePointRequest {
 
 export interface RestoreFileLibraryRequest {
   save_point_id: string;
-  discard_unsaved_changes_confirmed: true;
 }
 
 export interface FileLibraryRestoreOperation {
@@ -207,7 +204,6 @@ export interface FileItem {
   file_size: number;
   object_ref?: {
     key: string;
-    etag?: string;
     version?: string;
   };
   version: number;
@@ -251,7 +247,6 @@ export interface FileObjectItem {
   name: string;
   size_bytes: number;
   content_type: string;
-  etag?: string;
   last_modified: string;
 }
 
@@ -277,7 +272,6 @@ export interface FileObjectMeta {
   key: string;
   size_bytes: number;
   content_type: string;
-  etag?: string;
   last_modified: string;
   user_metadata?: Record<string, string>;
 }

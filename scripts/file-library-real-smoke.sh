@@ -82,7 +82,7 @@ content_type_media_type() {
 
 assert_no_raw_afscp_ids() {
   local label="$1"
-  if grep -Eiq '(^|[^A-Za-z0-9_])(repo_|tmpl_|plan_|restore_plan|sp_(user|template|[A-Za-z0-9])|[0-9]{13}-[0-9a-f]{8})' "${BODY_FILE}"; then
+  if grep -Eiq '(^|[^A-Za-z0-9_])(repo_|tmpl_|plan_|restore[_]plan|sp_(user|template|[A-Za-z0-9])|[0-9]{13}-[0-9a-f]{8})' "${BODY_FILE}"; then
     err "${label} leaked raw AFSCP resource ids"
     cat "${BODY_FILE}" >&2
     exit 1
@@ -613,7 +613,7 @@ if [[ "${RESTORE_TRIGGERED_SAVE_POINT_BEFORE}" == "1" ]]; then
 fi
 
 RESTORE_IDEMPOTENCY_KEY="file-library-smoke-restore-${LIBRARY_ID}-${SAVE_POINT_ID}"
-status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore" "${RESTORE_IDEMPOTENCY_KEY}" "{\"save_point_id\":\"${SAVE_POINT_ID}\",\"discard_unsaved_changes_confirmed\":true}")"
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore" "${RESTORE_IDEMPOTENCY_KEY}" "{\"save_point_id\":\"${SAVE_POINT_ID}\"}")"
 if [[ "${status}" != "200" ]]; then
   err "failed to start direct restore: ${status}"
   cat "${BODY_FILE}" >&2

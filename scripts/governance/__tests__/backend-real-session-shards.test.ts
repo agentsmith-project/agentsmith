@@ -256,6 +256,29 @@ gate_run_auth_preflight() { printf 'integration-token\\n'; }
     'utf8',
   );
 
+  writeFileSync(
+    path.join(scriptsLibDir, 'afscp-local-runtime.sh'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_afscp_local_runtime_defaults() {
+  export AFSCP_BASE_URL="http://127.0.0.1:28090"
+  export AFSCP_EXPORT_GATEWAY_BASE_URL="http://127.0.0.1:28091"
+  export AFSCP_DEFAULT_VOLUME_ID="\${AFSCP_DEFAULT_VOLUME_ID:-vol_integration}"
+  export AFSCP_CALLER_SERVICE="\${AFSCP_CALLER_SERVICE:-agentsmith-api}"
+  export AFSCP_SERVICE_TOKEN="\${AFSCP_SERVICE_TOKEN:-fixture-afscp-service-token}"
+  export AFSCP_BOOTSTRAP_CALLER_SERVICE="\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
+  export AFSCP_BOOTSTRAP_SERVICE_TOKEN="\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-fixture-afscp-bootstrap-token}"
+  export AFSCP_ORCHESTRATOR_CALLER_SERVICE="\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+  export AFSCP_ORCHESTRATOR_SERVICE_TOKEN="\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-fixture-afscp-orchestrator-token}"
+}
+
+ensure_afscp_local_runtime_for_gate() { :; }
+stop_afscp_local_runtime_for_gate() { :; }
+`,
+    'utf8',
+  );
+
   writeExecutable(
     path.join(scriptsDir, 'run-next-dev-safe.sh'),
     `#!/usr/bin/env bash
@@ -345,12 +368,15 @@ case "\${url}" in
   */api/v1/workspaces*)
     status="${options.startFails ? '000' : '401'}"
     ;;
-  */api/v1/me/profile)
-    status="200"
-    ;;
-  */admin/state)
-    status="200"
-    ;;
+	  */api/v1/me/profile)
+	    status="200"
+	    ;;
+	  */api/test/system/workspaces/seed)
+	    status="200"
+	    ;;
+	  */admin/state)
+	    status="200"
+	    ;;
   */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
     status="200"
     ;;

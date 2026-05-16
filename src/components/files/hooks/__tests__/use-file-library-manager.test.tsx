@@ -13,7 +13,6 @@ const sampleLibrary: FileLibrary = {
   description: 'desc',
   visibility: 'shared',
   source: 'agent_task_files',
-  file_library_home_segment: 'task-home-lib-a',
   status: 'ready',
   task_home_binding_status: 'unbound',
   bound_task_visible: false,

@@ -120,6 +120,43 @@ function parseClientFrame(raw: Buffer): Record<string, unknown> {
   return JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
 }
 
+async function withMockKubectlPodSnapshot<T>(
+  payload: Record<string, unknown>,
+  run: (input: { argLogPath: string }) => Promise<T>,
+): Promise<T> {
+  const previousPath = process.env.PATH;
+  const previousNamespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE;
+  const previousKubectlArgLog = process.env.KUBECTL_ARG_LOG;
+  const binDir = await mkdtemp(path.join(tmpdir(), 'agentsmith-kubectl-'));
+  const kubectlPath = path.join(binDir, 'kubectl');
+  const argLogPath = path.join(binDir, 'kubectl-args.log');
+  const script = [
+    '#!/usr/bin/env node',
+    'const fs = require("node:fs");',
+    'const logPath = process.env.KUBECTL_ARG_LOG;',
+    'if (logPath) fs.appendFileSync(logPath, process.argv.slice(2).join(" ") + "\\n");',
+    `process.stdout.write(${JSON.stringify(JSON.stringify(payload))});`,
+    'process.stdout.write("\\n");',
+  ].join('\n');
+
+  await writeFile(kubectlPath, script, { mode: 0o755 });
+  process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ''}`;
+  process.env.KUBECTL_ARG_LOG = argLogPath;
+  process.env.INTERNAL_AGENT_K8S_NAMESPACE = 'agentsmith-sandbox';
+
+  try {
+    return await run({ argLogPath });
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousNamespace === undefined) delete process.env.INTERNAL_AGENT_K8S_NAMESPACE;
+    else process.env.INTERNAL_AGENT_K8S_NAMESPACE = previousNamespace;
+    if (previousKubectlArgLog === undefined) delete process.env.KUBECTL_ARG_LOG;
+    else process.env.KUBECTL_ARG_LOG = previousKubectlArgLog;
+    await rm(binDir, { recursive: true, force: true });
+  }
+}
+
 afterEach(async () => {
   vi.clearAllMocks();
   const servers = terminalTestServers.splice(0);
@@ -2466,6 +2503,140 @@ describe('integration-real-helpers', () => {
       token: 'EXPECTED_TOKEN',
     })).rejects.toThrow('runner_output_token_failed:runner_output_error');
     expect(page.waitForTimeout).not.toHaveBeenCalled();
+  });
+
+  it('adds derived workload pod context when runner output token waits fast-fail', async () => {
+    const taskId = 'task_6d3e6b9c5a6444988cf15bc1eb9663c9';
+    const workloadId = 'task-6d3e6b9c5a6444988cf15bc1eb9663c9';
+    const podName = `workload-${workloadId}`;
+
+    await withMockKubectlPodSnapshot({
+      items: [
+        {
+          metadata: { name: podName, uid: 'pod-uid-derived' },
+          status: {
+            phase: 'Running',
+            conditions: [{ type: 'Ready', status: 'True' }],
+            containerStatuses: [{ ready: true, state: { running: {} } }],
+          },
+        },
+      ],
+    }, async ({ argLogPath }) => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/activity')) {
+          return okResponse([
+            {
+              id: 'activity_runner',
+              kind: 'runner_output',
+              actor: 'runner',
+              content: 'Execution failed before any visible output was produced.\nError code: AGENT_UPSTREAM_ERROR',
+            },
+          ]);
+        }
+        if (url.includes('/traces?')) {
+          return okResponse({ items: [] });
+        }
+        if (url.endsWith(`/tasks/${taskId}`)) {
+          return okResponse({ id: taskId, run_state: 'idle' });
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+        waitForTimeout: vi.fn(),
+      } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
+
+      let thrown: Error | null = null;
+      try {
+        await waitForRunnerOutputToken({
+          page,
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+          token: 'EXPECTED_TOKEN',
+        });
+      } catch (error) {
+        thrown = error instanceof Error ? error : new Error(String(error));
+      }
+
+      expect(thrown?.message).toContain('runner_output_token_failed:runner_output_error');
+      expect(thrown?.message).toContain(`pod=${podName}`);
+      expect(thrown?.message).toContain('uid=pod-uid-derived');
+      expect(thrown?.message).toContain('ready=true');
+      expect(thrown?.message).not.toContain('pod: <missing>');
+      expect(await readFile(argLogPath, 'utf8')).toContain(
+        `get pods -n agentsmith-sandbox -l workload_id=${workloadId} -o json`,
+      );
+      expect(page.waitForTimeout).not.toHaveBeenCalled();
+    });
+  });
+
+  it('adds derived workload pod context when runner output token waits time out', async () => {
+    const taskId = 'task_timeout_diag';
+    const workloadId = 'task-timeout-diag';
+    const podName = `workload-${workloadId}`;
+
+    await withMockKubectlPodSnapshot({
+      items: [
+        {
+          metadata: { name: podName, uid: 'pod-uid-timeout' },
+          status: {
+            phase: 'Pending',
+            conditions: [{ type: 'Ready', status: 'False', reason: 'ContainersNotReady' }],
+            containerStatuses: [
+              {
+                ready: false,
+                state: { waiting: { reason: 'ContainerCreating' } },
+              },
+            ],
+          },
+        },
+      ],
+    }, async ({ argLogPath }) => {
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/activity')) {
+          return okResponse([]);
+        }
+        if (url.includes('/traces?')) {
+          return okResponse({ items: [] });
+        }
+        if (url.endsWith(`/tasks/${taskId}`)) {
+          return okResponse({ id: taskId, run_state: 'running' });
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: { get },
+        waitForTimeout: vi.fn(),
+      } as unknown as Parameters<typeof waitForRunnerOutputToken>[0]['page'];
+
+      let thrown: Error | null = null;
+      try {
+        await waitForRunnerOutputToken({
+          page,
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+          token: 'EXPECTED_TOKEN',
+          timeoutMs: 0,
+        });
+      } catch (error) {
+        thrown = error instanceof Error ? error : new Error(String(error));
+      }
+
+      expect(thrown?.message).toContain(`runner_output_token_timeout:${taskId}`);
+      expect(thrown?.message).toContain(`pod=${podName}`);
+      expect(thrown?.message).toContain('uid=pod-uid-timeout');
+      expect(thrown?.message).toContain('ready=false');
+      expect(thrown?.message).toContain('ready_reason=ContainersNotReady');
+      expect(thrown?.message).not.toContain('pod: <missing>');
+      expect(await readFile(argLogPath, 'utf8')).toContain(
+        `get pods -n agentsmith-sandbox -l workload_id=${workloadId} -o json`,
+      );
+      expect(page.waitForTimeout).not.toHaveBeenCalled();
+    });
   });
 
   it('creates Agent Task runner bundles without external mode, legacy selectors, or chat session side effects', async () => {

@@ -4,6 +4,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-common.sh"
 
 stop_internal_runtime
+AFSCP_ENVIRONMENT=local-real reset_owned_afscp_local_runtime_data
 kubectl delete namespace "${K8S_NAMESPACE}" --ignore-not-found >/dev/null 2>&1 || true
 rm -rf "${INTERNAL_REAL_DIR}"
 

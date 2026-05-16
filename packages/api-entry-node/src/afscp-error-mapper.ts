@@ -5,10 +5,8 @@ export type AfscpPublicErrorCode =
   | 'conflict'
   | 'unavailable'
   | 'afscp_resource_not_found'
-  | 'afscp_restore_preview_stale'
   | 'afscp_active_writer_blocks_restore'
   | 'afscp_repo_mutation_in_progress'
-  | 'afscp_repo_jvs_mutation_in_progress'
   | 'afscp_template_clone_not_allowed'
   | 'afscp_capability_denied'
   | 'afscp_service_permission_denied'
@@ -23,7 +21,6 @@ export type AfscpResourceKind =
   | 'repo'
   | 'repo_template'
   | 'save_point'
-  | 'restore_plan'
   | 'export'
   | 'workload_mount_binding'
   | 'operation';
@@ -43,7 +40,7 @@ const NOT_FOUND_ERROR_CODES = new Set([
   'REPO_NOT_FOUND',
   'REPO_TEMPLATE_NOT_FOUND',
   'SAVE_POINT_NOT_FOUND',
-  'RESTORE_PLAN_NOT_FOUND',
+  'JVS_SAVE_POINT_NOT_FOUND',
   'EXPORT_NOT_FOUND',
   'WORKLOAD_MOUNT_BINDING_NOT_FOUND',
   'VOLUME_NOT_FOUND',
@@ -56,7 +53,6 @@ const RESOURCE_KINDS = new Set<AfscpResourceKind>([
   'repo',
   'repo_template',
   'save_point',
-  'restore_plan',
   'export',
   'workload_mount_binding',
   'operation',
@@ -232,15 +228,6 @@ function isTemplateCloneDenied(parsed: ParsedAfscpError): boolean {
     || parsedMessageIncludes(parsed, 'cross-namespace template clone is not allowed');
 }
 
-function isRestorePreviewStale(parsed: ParsedAfscpError): boolean {
-  return parsed.code === 'RESTORE_PREVIEW_STALE'
-    || (parsed.code === 'OPERATION_RECOVERY_REQUIRED' && (
-      parsedMessageIncludes(parsed, 'restore preview plan requires operator recovery')
-      || parsedMessageIncludes(parsed, 'restore preview plan is not pending')
-      || parsedMessageIncludes(parsed, 'restore preview metadata does not match durable plan')
-    ));
-}
-
 function isWriterBlocker(parsed: ParsedAfscpError): boolean {
   return parsed.code === 'ACTIVE_WRITER_SESSIONS'
     || parsed.code === 'STALE_WRITER_SESSION_UNCERTAIN'
@@ -264,17 +251,6 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
     });
   }
 
-  if (isRestorePreviewStale(parsed)) {
-    return buildMappedError({
-      status: 409,
-      code: 'afscp_restore_preview_stale',
-      retryable: parsed.retryable ?? false,
-      correlation_id: parsed.correlation_id,
-      operation_id: parsed.operation_id,
-      resource_kind: parsed.resource_kind,
-    });
-  }
-
   if (isWriterBlocker(parsed)) {
     return buildMappedError({
       status: 409,
@@ -289,9 +265,7 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
   if (parsed.code === 'REPO_MUTATION_IN_PROGRESS' || parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS') {
     return buildMappedError({
       status: 409,
-      code: parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS'
-        ? 'afscp_repo_jvs_mutation_in_progress'
-        : 'afscp_repo_mutation_in_progress',
+      code: 'afscp_repo_mutation_in_progress',
       retryable: parsed.retryable ?? true,
       correlation_id: parsed.correlation_id,
       operation_id: parsed.operation_id,
@@ -346,7 +320,11 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
     });
   }
 
-  if (parsed.code === 'OPERATION_RECOVERY_REQUIRED') {
+  if (
+    parsed.code === 'OPERATION_RECOVERY_REQUIRED'
+    || parsed.code === 'JVS_JOURNAL_RECOVERY_REQUIRED'
+    || parsed.code === 'JVS_METADATA_INVALID'
+  ) {
     return buildMappedError({
       status: 409,
       code: 'afscp_operator_recovery_required',

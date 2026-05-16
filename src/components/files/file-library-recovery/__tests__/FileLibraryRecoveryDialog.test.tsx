@@ -82,8 +82,8 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.file_states': 'File states',
     'file_manager.loading': 'Loading...',
     'file_manager.restore': 'Restore',
-    'file_manager.restore_active_writer_description': 'Before restoring files, release task workspace usage. After it completes, click Restore again.',
-    'file_manager.restore_active_writer_task': 'Task using this workspace: {title}',
+    'file_manager.restore_active_writer_description': 'Before restoring files, release task file usage. After it completes, click Restore again.',
+    'file_manager.restore_active_writer_task': 'Task using these files: {title}',
     'file_manager.restore_active_writer_title': 'Restore blocked',
     'file_manager.restore_confirm': 'Restore files',
     'file_manager.restore_confirm_cancel': 'Cancel',
@@ -101,16 +101,16 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.restore_operation_succeeded_summary': 'The file library now matches the selected save point.',
     'file_manager.restore_operation_succeeded_title': 'Files restored.',
     'file_manager.restore_runtime_open_task': 'Open task',
-    'file_manager.restore_runtime_release': 'Release task workspace usage',
-    'file_manager.restore_runtime_release_blocked': 'Task workspace usage is still blocked by active task activity. Stop the active run or terminal, then try again.',
-    'file_manager.restore_runtime_release_failed': 'Task workspace usage could not be released. Check the task, then try again.',
-    'file_manager.restore_runtime_release_failed_title': 'Could not release task workspace usage',
-    'file_manager.restore_runtime_release_pending': 'Task workspace usage is being released. Restore after it finishes, or retry in a moment.',
+    'file_manager.restore_runtime_release': 'Release task file usage',
+    'file_manager.restore_runtime_release_blocked': 'Task file usage is still blocked by active task activity. Stop the active run or terminal, then try again.',
+    'file_manager.restore_runtime_release_failed': 'Task file usage could not be released. Check the task, then try again.',
+    'file_manager.restore_runtime_release_failed_title': 'Could not release task file usage',
+    'file_manager.restore_runtime_release_pending': 'Task file usage is being released. Restore after it finishes, or retry in a moment.',
     'file_manager.restore_runtime_release_pending_title': 'Release pending',
     'file_manager.restore_status_checking': 'Checking restore state before template publishing.',
     'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
     'file_manager.save_point_action_failed_title': 'Save point needs attention',
-    'file_manager.save_point_active_writer_blocked': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+    'file_manager.save_point_active_writer_blocked': 'Task files are still in use. Release task file usage, then try again.',
     'file_manager.save_point_create': 'Save current state',
     'file_manager.save_point_default_name': 'Untitled save point',
     'file_manager.save_point_empty': 'No save points yet',
@@ -127,7 +127,7 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_points': 'Save points',
     'file_manager.task_template_action_failed': 'Task file template could not be updated. Your form is still here; try again after the project is ready.',
     'file_manager.task_template_action_failed_title': 'Template action needs attention',
-    'file_manager.task_template_active_writer_blocked': 'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+    'file_manager.task_template_active_writer_blocked': 'Task files are still in use. Release task file usage, then try again.',
     'file_manager.task_template_capability_denied': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
     'file_manager.task_template_description': 'Description',
     'file_manager.task_template_description_placeholder': 'Optional',
@@ -157,7 +157,6 @@ const library = {
   project_id: 'proj_001',
   name: 'Shared Docs',
   source: 'agent_task_files' as const,
-  file_library_home_segment: 'task-home-shared-docs',
   status: 'ready' as const,
   task_home_binding_status: 'unbound' as const,
   bound_task_visible: false,
@@ -327,7 +326,7 @@ describe('FileLibraryRecoveryDialog', () => {
       'Save point needs attention',
     );
     expect(screen.getByTestId('files__save-point__error')).toHaveTextContent(
-      'Task files and workspace are still being used by the task runtime. Release task workspace usage, then try again.',
+      'Task files are still in use. Release task file usage, then try again.',
     );
     expect(screen.getByTestId('files__save-point__error')).not.toHaveTextContent(
       'file_library_active_writer_blocked',
@@ -429,10 +428,10 @@ describe('FileLibraryRecoveryDialog', () => {
 
     expect(await screen.findByTestId('files__restore-operation')).toHaveTextContent('Restore blocked');
     expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
-      'Before restoring files, release task workspace usage.',
+      'Before restoring files, release task file usage.',
     );
     expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
-      'Task using this workspace: Visible Task',
+      'Task using these files: Visible Task',
     );
     expect(screen.getByTestId('files__restore-blocker-open-task')).toHaveAttribute(
       'href',

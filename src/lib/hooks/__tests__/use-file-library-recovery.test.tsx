@@ -335,10 +335,7 @@ describe('file library recovery hooks', () => {
       workspaceId,
       projectId,
       libraryId,
-      {
-        save_point_id: 'sp_1',
-        discard_unsaved_changes_confirmed: true,
-      },
+      { save_point_id: 'sp_1' },
       { idempotencyKey: 'restore-key-1' },
     );
     expect(queryClient.getQueryData(activeOperationKey)).toEqual({

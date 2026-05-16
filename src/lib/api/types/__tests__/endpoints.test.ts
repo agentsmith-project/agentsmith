@@ -294,7 +294,7 @@ describe('File library save point pending contract', () => {
       .toEqualTypeOf<never>();
     expectTypeOf<components['schemas']['FileLibrarySavePointOperationPendingError']>()
       .toEqualTypeOf<{
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING';
+        error_code: 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING';
         message: string;
         operation_status: 'pending';
         retry_after_ms: number;
@@ -328,7 +328,7 @@ describe('File library save point pending contract', () => {
       'retry_after_ms',
     ]);
     expect(pendingSchema?.properties?.error_code).toMatchObject({
-      enum: ['FILE_LIBRARY_OPERATION_PENDING'],
+      enum: ['FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING'],
       type: 'string',
     });
     expect(pendingSchema?.properties?.operation_status).toMatchObject({

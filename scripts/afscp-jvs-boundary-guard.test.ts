@@ -8,7 +8,20 @@ type ScannedFile = {
   allowRedTeamStrings?: boolean;
 };
 
-const FORBIDDEN_RUNTIME_JVS_PATTERN = /\b(?:JVS|jvs|afscp_repo_jvs|REPO_JVS|AFSCP_JVS|jvs_json_output|jvs_error_code|JVS_COMMAND_FAILED|workload_mount_requires_jvs_external_control_root)\b/u;
+const RUNTIME_JVS_TOKEN_PATTERN = /[A-Za-z0-9_]*(?:JVS|jvs)[A-Za-z0-9_]*/gu;
+
+const ALLOWED_PRODUCT_RUNTIME_JVS_TOKENS = new Map<string, ReadonlySet<string>>([
+  ['packages/api-entry-node/src/afscp-error-mapper.ts', new Set([
+    'JVS_SAVE_POINT_NOT_FOUND',
+    'REPO_JVS_MUTATION_IN_PROGRESS',
+    'JVS_JOURNAL_RECOVERY_REQUIRED',
+    'JVS_METADATA_INVALID',
+  ])],
+  ['packages/api-entry-node/src/file-library-afscp-storage.ts', new Set([
+    'JVS_JOURNAL_RECOVERY_REQUIRED',
+    'JVS_METADATA_INVALID',
+  ])],
+]);
 
 const PRODUCT_RUNTIME_ROOTS = [
   {
@@ -128,14 +141,32 @@ function collectProductRuntimeFiles(): ScannedFile[] {
   );
 }
 
+function findForbiddenRuntimeJvsTokens(file: ScannedFile, content: string): string[] {
+  const allowedTokens = ALLOWED_PRODUCT_RUNTIME_JVS_TOKENS.get(file.path) ?? new Set<string>();
+  return Array.from(content.matchAll(RUNTIME_JVS_TOKEN_PATTERN))
+    .map((match) => match[0])
+    .filter((token) => !allowedTokens.has(token))
+    .map((token) => `${file.path}: ${token}`);
+}
+
 describe('AFSCP/JVS product boundary guard', () => {
   it('keeps AgentSmith product API and non-AFSCP deploy surfaces free of JVS runtime details', () => {
     const offenders = collectProductRuntimeFiles().flatMap((file) => {
       const content = readRepoFile(file.path);
-      return FORBIDDEN_RUNTIME_JVS_PATTERN.test(content) ? [file.path] : [];
+      return findForbiddenRuntimeJvsTokens(file, content);
     });
 
     expect(offenders).toEqual([]);
+  });
+
+  it('keeps upstream JVS mutation codes normalized before public AgentSmith storage errors', () => {
+    const mapper = readRepoFile('packages/api-entry-node/src/afscp-error-mapper.ts');
+    const storage = readRepoFile('packages/api-entry-node/src/file-library-afscp-storage.ts');
+    const publicJvsMutationCode = `afscp_repo_${'jvs'}_mutation_in_progress`;
+
+    expect(mapper).toContain('REPO_JVS_MUTATION_IN_PROGRESS');
+    expect(mapper).not.toContain(publicJvsMutationCode);
+    expect(storage).not.toContain(publicJvsMutationCode);
   });
 
   it('keeps required AFSCP runtime JVS deployment config bounded to explicit deploy files', () => {

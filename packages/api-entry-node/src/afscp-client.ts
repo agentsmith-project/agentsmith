@@ -127,6 +127,10 @@ export interface GetNamespaceVolumeBindingInput extends AfscpBaseRequest {
   namespaceId: string;
 }
 
+export interface CheckNamespaceVolumeBindingInput extends AfscpBaseRequest {
+  namespaceId: string;
+}
+
 export interface GetOperationInput extends AfscpBaseRequest {
   operationId: string;
 }
@@ -167,16 +171,6 @@ export interface RestoreRepoInput extends AfscpMutationRequest {
   namespaceId: string;
   repoId: string;
   savePointId: string;
-  discardUnsavedChangesConfirmed: true;
-}
-
-export type AdmitRestoreRepoInput = RestoreRepoInput;
-
-export interface AfscpRestoreAdmitResponse {
-  admitted: true;
-  repo_id: string;
-  save_point_id: string;
-  operation_type: 'restore';
 }
 
 export interface CreateRepoTemplateInput extends AfscpMutationRequest {
@@ -235,11 +229,13 @@ export interface PollOperationInput extends GetOperationInput {
 export type AfscpBootstrapUpsertNamespaceInput = Omit<UpsertNamespaceInput, 'caller'>;
 export type AfscpBootstrapPutNamespaceVolumeBindingInput = Omit<PutNamespaceVolumeBindingInput, 'caller'>;
 export type AfscpBootstrapGetOperationInput = Omit<GetOperationInput, 'caller'>;
+export type AfscpBootstrapCheckNamespaceVolumeBindingInput = Omit<CheckNamespaceVolumeBindingInput, 'caller'>;
 
 export interface AfscpBootstrapClientPort {
   upsertNamespace(input: AfscpBootstrapUpsertNamespaceInput): Promise<AfscpOperationEnvelope>;
   putNamespaceVolumeBinding(input: AfscpBootstrapPutNamespaceVolumeBindingInput): Promise<AfscpOperationEnvelope>;
   getOperation(input: AfscpBootstrapGetOperationInput): Promise<AfscpOperationRecord>;
+  checkNamespaceVolumeBinding(input: AfscpBootstrapCheckNamespaceVolumeBindingInput): Promise<void>;
 }
 
 export interface AfscpProductClientPort {
@@ -249,7 +245,6 @@ export interface AfscpProductClientPort {
   deleteRepo(input: Omit<DeleteRepoInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   listSavePoints(input: Omit<ListSavePointsInput, 'caller'>): Promise<{ save_points: AfscpSavePoint[] }>;
   createSavePoint(input: Omit<CreateSavePointInput, 'caller'>): Promise<AfscpOperationEnvelope>;
-  admitRestoreRepo(input: Omit<AdmitRestoreRepoInput, 'caller'>): Promise<AfscpRestoreAdmitResponse>;
   restoreRepo(input: Omit<RestoreRepoInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   createRepoTemplate(input: Omit<CreateRepoTemplateInput, 'caller'>): Promise<AfscpOperationEnvelope>;
   cloneRepoTemplate(input: Omit<CloneRepoTemplateInput, 'caller'>): Promise<AfscpOperationEnvelope>;
@@ -533,28 +528,6 @@ export class AfscpClient {
     });
   }
 
-  async admitRestoreRepo(input: AdmitRestoreRepoInput): Promise<AfscpRestoreAdmitResponse> {
-    const namespaceId = this.requireValidatedValue('namespace_id', input.namespaceId, input.correlationId);
-    const repoId = this.requireValidatedValue('repo_id', input.repoId, input.correlationId);
-    const savePointId = this.requireValidatedValue('save_point_id', input.savePointId, input.correlationId);
-    return this.requestJson<AfscpRestoreAdmitResponse>({
-      method: 'POST',
-      path: `/internal/v1/repos/${encodeURIComponent(repoId)}/restore:admit`,
-      correlationId: input.correlationId,
-      namespaceId,
-      caller: input.caller,
-      mutation: {
-        idempotencyKey: input.idempotencyKey,
-        actor: input.actor,
-      },
-      body: {
-        save_point_id: savePointId,
-        discard_unsaved_changes_confirmed: true,
-      },
-      signal: input.signal,
-    });
-  }
-
   async restoreRepo(input: RestoreRepoInput): Promise<AfscpOperationEnvelope> {
     const namespaceId = this.requireValidatedValue('namespace_id', input.namespaceId, input.correlationId);
     const repoId = this.requireValidatedValue('repo_id', input.repoId, input.correlationId);
@@ -571,7 +544,6 @@ export class AfscpClient {
       },
       body: {
         save_point_id: savePointId,
-        discard_unsaved_changes_confirmed: true,
       },
       signal: input.signal,
     });
@@ -875,7 +847,12 @@ export class AfscpClient {
 }
 
 export class AfscpBootstrapClient implements AfscpBootstrapClientPort {
-  constructor(private readonly client: Pick<AfscpClient, 'upsertNamespace' | 'putNamespaceVolumeBinding' | 'getOperation'>) {}
+  constructor(
+    private readonly client: Pick<
+      AfscpClient,
+      'upsertNamespace' | 'putNamespaceVolumeBinding' | 'getOperation' | 'listRepos'
+    >,
+  ) {}
 
   async upsertNamespace(input: AfscpBootstrapUpsertNamespaceInput): Promise<AfscpOperationEnvelope> {
     return this.client.upsertNamespace({
@@ -897,6 +874,14 @@ export class AfscpBootstrapClient implements AfscpBootstrapClientPort {
       caller: 'bootstrap',
     });
   }
+
+  async checkNamespaceVolumeBinding(input: AfscpBootstrapCheckNamespaceVolumeBindingInput): Promise<void> {
+    // Repo listing is the side-effect-free product boundary probe that exercises the namespace binding policy.
+    await this.client.listRepos({
+      ...input,
+      caller: 'product',
+    });
+  }
 }
 
 export class AfscpProductClient implements AfscpProductClientPort {
@@ -909,7 +894,6 @@ export class AfscpProductClient implements AfscpProductClientPort {
       | 'deleteRepo'
       | 'listSavePoints'
       | 'createSavePoint'
-      | 'admitRestoreRepo'
       | 'restoreRepo'
       | 'createRepoTemplate'
       | 'cloneRepoTemplate'
@@ -961,13 +945,6 @@ export class AfscpProductClient implements AfscpProductClientPort {
 
   async createSavePoint(input: Omit<CreateSavePointInput, 'caller'>): Promise<AfscpOperationEnvelope> {
     return this.client.createSavePoint({
-      ...input,
-      caller: 'product',
-    });
-  }
-
-  async admitRestoreRepo(input: Omit<AdmitRestoreRepoInput, 'caller'>): Promise<AfscpRestoreAdmitResponse> {
-    return this.client.admitRestoreRepo({
       ...input,
       caller: 'product',
     });

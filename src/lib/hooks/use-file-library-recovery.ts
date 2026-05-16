@@ -50,8 +50,18 @@ function hasApiErrorCode(error: unknown, codes: string[], rawTokens: string[]): 
 export function isFileLibraryOperationPendingError(error: unknown): boolean {
   return hasApiErrorCode(
     error,
-    ['FILE_LIBRARY_OPERATION_PENDING', 'FILE_LIBRARY_RESTORE_OPERATION_PENDING'],
-    ['file_library_operation_pending', 'file_library_restore_operation_pending'],
+    [
+      'FILE_LIBRARY_OPERATION_PENDING',
+      'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING',
+      'FILE_LIBRARY_RESTORE_OPERATION_PENDING',
+    ],
+    [
+      'file_library_operation_pending',
+      'file_library_restore_operation_pending',
+      'file_library_save_point_operation_pending',
+      'file_library_save_point_create_pending',
+      'file_library_save_point_list_pending',
+    ],
   );
 }
 
@@ -275,7 +285,6 @@ export function useRestoreFileLibrary(options: FileLibraryRecoveryMutationOption
       libraryId,
       {
         save_point_id: savePointId,
-        discard_unsaved_changes_confirmed: true,
       },
       { idempotencyKey },
     ),

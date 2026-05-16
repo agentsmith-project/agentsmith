@@ -260,6 +260,15 @@ function normalizeBootstrapFailure(error: unknown): {
   };
 }
 
+type ReadyRuntimeCheckResult =
+  | { status: 'ready' }
+  | { status: 'stale'; lastErrorCode: string }
+  | { status: 'failed'; lastErrorCode: string; retryable: boolean };
+
+function isAfscpResourceNotFound(error: unknown): boolean {
+  return error instanceof AfscpClientError && error.code === 'afscp_resource_not_found';
+}
+
 function resolvePendingStage(mapping: ProjectAfscpNamespaceMapping): BootstrapOperationStage {
   return mapping.stage === 'volume_binding' ? 'volume_binding' : 'namespace_upsert';
 }
@@ -465,7 +474,7 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
     signal?: AbortSignal;
     actor: AfscpActor;
   }): Promise<ProjectAfscpNamespaceMapping> {
-    const mapping = await this.namespaceStore.ensureProjectNamespace({
+    let mapping = await this.namespaceStore.ensureProjectNamespace({
       workspaceId: input.workspaceId,
       projectId: input.projectId,
     });
@@ -476,15 +485,41 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
       orchestratorCallerService: this.orchestratorCallerService,
     });
     const desiredVolumeBindingSignature = buildVolumeBindingSignature(desiredVolumeBinding);
+    const namespaceId = mapping.namespace_id;
+    const correlationId = this.resolveCorrelationId(input.requestId);
     if (mapping.status === 'ready' && readVolumeBindingSignature(mapping) === desiredVolumeBindingSignature) {
-      return mapping;
+      const runtimeCheck = await this.checkReadyProjectStorageRuntime({
+        namespaceId,
+        correlationId,
+        signal: input.signal,
+      });
+      if (runtimeCheck.status === 'ready') {
+        return mapping;
+      }
+      if (runtimeCheck.status === 'stale') {
+        mapping = await this.namespaceStore.markProjectNamespaceBootstrapInvalidated({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          lastErrorCode: runtimeCheck.lastErrorCode,
+        });
+      } else if (runtimeCheck.retryable) {
+        return this.namespaceStore.markProjectNamespaceBootstrapInvalidated({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          lastErrorCode: runtimeCheck.lastErrorCode,
+        });
+      } else {
+        return this.namespaceStore.markReadyProjectNamespaceRuntimeBlocked({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          lastErrorCode: runtimeCheck.lastErrorCode,
+        });
+      }
     }
     if (mapping.status !== 'pending' && mapping.status !== 'ready') {
       return mapping;
     }
 
-    const namespaceId = mapping.namespace_id;
-    const correlationId = this.resolveCorrelationId(input.requestId);
     let operationStage: BootstrapOperationStage = mapping.status === 'ready'
       ? 'volume_binding'
       : resolvePendingStage(mapping);
@@ -631,6 +666,42 @@ export class ProjectStorageBootstrapService implements ProjectStorageBootstrapSe
         volumeBindingOperationId,
         lastErrorCode: normalized.lastErrorCode,
       });
+    }
+  }
+
+  private async checkReadyProjectStorageRuntime(input: {
+    namespaceId: string;
+    correlationId: string;
+    signal?: AbortSignal;
+  }): Promise<ReadyRuntimeCheckResult> {
+    if (typeof this.client.checkNamespaceVolumeBinding !== 'function') {
+      return {
+        status: 'failed',
+        lastErrorCode: 'project_storage_runtime_check_unavailable',
+        retryable: false,
+      };
+    }
+
+    try {
+      await this.client.checkNamespaceVolumeBinding({
+        namespaceId: input.namespaceId,
+        correlationId: input.correlationId,
+        signal: input.signal,
+      });
+      return { status: 'ready' };
+    } catch (error) {
+      const normalized = normalizeBootstrapFailure(error);
+      if (isAfscpResourceNotFound(error)) {
+        return {
+          status: 'stale',
+          lastErrorCode: normalized.lastErrorCode,
+        };
+      }
+      return {
+        status: 'failed',
+        lastErrorCode: normalized.lastErrorCode,
+        retryable: normalized.retryable,
+      };
     }
   }
 

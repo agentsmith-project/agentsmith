@@ -11,7 +11,6 @@ export function createFileLibrary(overrides: Record<string, unknown> = {}) {
     description: '',
     visibility: 'shared',
     source: 'agent_task_files',
-    file_library_home_segment: 'task-home-shared-docs',
     status: 'ready',
     task_home_binding_status: 'unbound',
     bound_task_visible: false,
@@ -38,7 +37,6 @@ export function createObjectItem(overrides: Record<string, unknown> = {}) {
     name: 'README.txt',
     size_bytes: 10,
     content_type: 'text/plain',
-    etag: '"etag"',
     last_modified: new Date().toISOString(),
     ...overrides,
   };

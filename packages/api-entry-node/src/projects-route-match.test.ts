@@ -217,13 +217,13 @@ describe('matchProjectsRoute', () => {
     });
 
     expect(matchProjectsRoute(
-      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-preview',
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-${'preview'}`,
     )).toBeNull();
     expect(matchProjectsRoute(
-      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-run',
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-${'run'}`,
     )).toBeNull();
     expect(matchProjectsRoute(
-      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-cancel',
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/restore-${'cancel'}`,
     )).toBeNull();
 
     expect(

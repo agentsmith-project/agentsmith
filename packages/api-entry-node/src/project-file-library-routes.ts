@@ -43,6 +43,8 @@ import type {
 } from './file-library-model.js';
 import {
   FileLibraryStorageOperationPendingError,
+  type FileLibraryEntry,
+  type FileLibraryObjectMeta,
 } from './file-library-afscp-storage.js';
 import {
   readProjectPermissionContext,
@@ -142,13 +144,22 @@ async function hydrateFileLibraryTaskBindings(args: {
   });
 }
 
-function withTaskHomeBindingFields(input: {
+function presentFileLibraryWithTaskHomeBinding(input: {
   library: FileLibraryRecord;
   binding: TaskFileLibraryBinding | null;
   actorUserId: string;
-}): FileLibraryRecord & ReturnType<typeof buildFileLibraryTaskHomeBindingFields> {
+}): Omit<FileLibraryRecord, 'file_library_home_segment' | 'version'> & ReturnType<typeof buildFileLibraryTaskHomeBindingFields> {
   return {
-    ...input.library,
+    id: input.library.id,
+    workspace_id: input.library.workspace_id,
+    project_id: input.library.project_id,
+    name: input.library.name,
+    ...(input.library.description !== undefined ? { description: input.library.description } : {}),
+    status: input.library.status,
+    source: input.library.source,
+    created_by_user_id: input.library.created_by_user_id,
+    created_at: input.library.created_at,
+    updated_at: input.library.updated_at,
     ...buildFileLibraryTaskHomeBindingFields({
       binding: input.binding,
       actorUserId: input.actorUserId,
@@ -156,12 +167,28 @@ function withTaskHomeBindingFields(input: {
   };
 }
 
-function presentFileLibraryWithTaskHomeBinding(input: {
-  library: FileLibraryRecord;
-  binding: TaskFileLibraryBinding | null;
-  actorUserId: string;
-}): FileLibraryRecord & ReturnType<typeof buildFileLibraryTaskHomeBindingFields> {
-  return withTaskHomeBindingFields(input);
+function presentFileLibraryEntry(entry: FileLibraryEntry): FileLibraryEntry {
+  if (entry.kind === 'directory') {
+    return entry;
+  }
+  return {
+    kind: 'file',
+    path: entry.path,
+    name: entry.name,
+    size_bytes: entry.size_bytes,
+    content_type: entry.content_type,
+    modified_at: entry.modified_at,
+  };
+}
+
+function presentFileLibraryObjectMeta(meta: FileLibraryObjectMeta): FileLibraryObjectMeta {
+  return {
+    key: meta.key,
+    size_bytes: meta.size_bytes,
+    content_type: meta.content_type,
+    last_modified: meta.last_modified,
+    user_metadata: meta.user_metadata,
+  };
 }
 
 function isDeletingFileLibraryStatus(status: FileLibraryRecord['status']): boolean {
@@ -377,15 +404,22 @@ function fileLibraryControlRouteErrorBody(
   mapped: { errorCode: string; message: string },
   error: unknown,
 ): Record<string, unknown> {
+  const isSavePointOperationPending =
+    mapped.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+    && (
+      mapped.message === 'file_library_save_point_create_pending'
+      || mapped.message === 'file_library_save_point_list_pending'
+    );
   const base = {
-    error_code: mapped.errorCode,
+    error_code: isSavePointOperationPending
+      ? 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING'
+      : mapped.errorCode,
     message: mapped.message,
   };
   if (
     mapped.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
     && (
-      mapped.message === 'file_library_save_point_create_pending'
-      || mapped.message === 'file_library_save_point_list_pending'
+      isSavePointOperationPending
       || mapped.message === 'file_library_restore_operation_active'
     )
   ) {
@@ -489,7 +523,6 @@ async function writeFileLibraryRestoreAuditEvent(input: {
     metadata: {
       file_library_id: input.operation.file_library_id,
       source_save_point_id: input.operation.source_save_point_id,
-      discard_unsaved_changes_confirmed: input.operation.discard_unsaved_changes_confirmed,
       restore_operation_id: input.operation.id,
       restore_operation_status: input.operation.status,
       final_result: input.finalResult ?? (
@@ -714,7 +747,6 @@ async function continuePreStartRestoreOperationReplay(input: {
         projectId: input.projectId,
         libraryId: input.libraryId,
         savePointId: operation.source_afscp_save_point_id,
-        discardUnsavedChangesConfirmed: true,
         idempotencyKey: operation.idempotency_key,
         actorUserId: operation.created_by_user_id,
         requestId: input.requestId,
@@ -808,43 +840,6 @@ async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
       requestId: input.requestId,
     }),
   });
-}
-
-async function rollbackCompletedRuntimeAccessReleaseFenceAfterRestoreAdmissionFailure(input: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-}): Promise<void> {
-  const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore);
-  try {
-    const binding = await bindingRepo.find({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      fileLibraryId: input.libraryId,
-    });
-    if (
-      !binding
-      || binding.bindingState !== 'releasing'
-      || !isRuntimeAccessReleaseCompleteCorrelation(binding.correlationId)
-    ) {
-      return;
-    }
-    await bindingRepo.rollbackRuntimeAccessRelease({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      fileLibraryId: input.libraryId,
-      taskId: binding.taskId,
-      bindingGeneration: binding.bindingGeneration,
-      expectedCorrelationId: binding.correlationId,
-      correlationId: buildRuntimeAccessReleaseRollbackCorrelationId({
-        beginCorrelationId: binding.correlationId,
-        reason: 'failed',
-      }),
-    });
-  } catch {
-    // Preserve the original restore admission error; later reconciliation can observe any surviving fence.
-  }
 }
 
 async function associateRuntimeAccessReleaseFenceWithRestoreOperation(input: {
@@ -1093,10 +1088,6 @@ function isTerminalRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBindin
 
 function isRuntimeAccessReleaseBeginCorrelation(correlationId: string): boolean {
   return correlationId.startsWith('release:begin:');
-}
-
-function isRuntimeAccessReleaseCompleteCorrelation(correlationId: string): boolean {
-  return correlationId.startsWith('release:complete:');
 }
 
 type RuntimeAccessReleaseRouteResponse = {
@@ -2640,27 +2631,6 @@ export async function handleProjectFileLibraryRoutes(args: {
         return true;
       }
 
-      try {
-        await deps.fileLibraryStorageAdapter.preflightRestoreFileLibrary({
-          workspaceId,
-          projectId,
-          libraryId,
-          savePointId: savePoint.afscp_save_point_id,
-          discardUnsavedChangesConfirmed: true,
-          idempotencyKey,
-          actorUserId: user.id,
-          requestId: requestId ?? undefined,
-        });
-      } catch (error) {
-        await rollbackCompletedRuntimeAccessReleaseFenceAfterRestoreAdmissionFailure({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-        });
-        throw error;
-      }
-
       const pendingOperationResult = await restoreRepo.createOrReuseActiveByLibrary({
         workspaceId,
         projectId,
@@ -2671,7 +2641,6 @@ export async function handleProjectFileLibraryRoutes(args: {
         status: 'pending',
         idempotencyKey,
         createdByUserId: user.id,
-        discardUnsavedChangesConfirmed: true,
       });
       const pendingOperation = pendingOperationResult.operation;
       if (!pendingOperationResult.created) {
@@ -2738,7 +2707,6 @@ export async function handleProjectFileLibraryRoutes(args: {
           projectId,
           libraryId,
           savePointId: savePoint.afscp_save_point_id,
-          discardUnsavedChangesConfirmed: true,
           idempotencyKey,
           actorUserId: user.id,
           requestId: requestId ?? undefined,
@@ -2899,7 +2867,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       json(res, 200, {
         path: listed.path,
-        items: listed.items,
+        items: listed.items.map(presentFileLibraryEntry),
         next_continuation_token: listed.nextContinuationToken,
       });
     } catch (error) {
@@ -3072,7 +3040,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       if (operation.signal.aborted) {
         return true;
       }
-      json(res, 201, uploaded);
+      json(res, 201, presentFileLibraryEntry(uploaded));
     } catch (error) {
       if (operation.signal.aborted) {
         return true;
@@ -3166,7 +3134,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       if (operation.signal.aborted) {
         return true;
       }
-      json(res, 200, meta);
+      json(res, 200, presentFileLibraryObjectMeta(meta));
     } catch (error) {
       if (operation?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         return true;

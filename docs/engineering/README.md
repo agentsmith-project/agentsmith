@@ -12,6 +12,7 @@ Current guidance and implementation plans:
 - [Agent Task Terminal Runtime Recovery Engineering Guidance](./agent-task-terminal-runtime-recovery-guidance.md) - `current_engineering_guidance`; active guidance and implementation rationale for terminal runtime recovery, separating browser disconnect, runner transport recovery, closing tombstones, and typed terminal failures
 - [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - current deploy implementation plan for local-kind and existing-cluster profiles
 - [Governance Lean Closure Plan v1](./governance-lean-closure-plan-v1.md) - `team_reviewed_handoff_ready`; convergent plan for reducing repeated governance work, clarifying clean entrypoints, and avoiding new governance lines
+- [Governance Release Flow Simplification Plan v3](./governance-release-flow-simplification-plan-v3.md) - `team_reviewed_handoff_ready`; low-mind follow-up plan for reducing repeated release/bootstrap work while preserving release evidence authority
 - [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)
 
 Decision-required analyses:

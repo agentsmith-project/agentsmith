@@ -24,6 +24,7 @@ type CommandCall = {
   command: string;
   args: string[];
   input: string;
+  timeoutMs?: number;
 };
 
 const APP_DIGEST = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -285,7 +286,7 @@ function failedJob(name: string, reason: string, message: string): Record<string
 
 function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'): LocalKindCommandRunner {
   return async (command, args, options = {}) => {
-    calls.push({ command, args, input: options.input ?? '' });
+    calls.push({ command, args, input: options.input ?? '', timeoutMs: options.timeoutMs });
     const joined = args.join(' ');
 
     if (command === 'docker') {
@@ -1329,6 +1330,9 @@ describe('unified deploy local-kind live rollout producer', () => {
       command.includes('rollout status deployment/afscp-api')
       && command.includes('--timeout=180s'),
     )).toBe(true);
+    expect(rolloutCalls.find((call) =>
+      call.args.join(' ').includes('rollout status deployment/afscp-api'),
+    )?.timeoutMs).toBeGreaterThanOrEqual(180_000);
     expect(rolloutCommands.some((command) =>
       command.includes('rollout status deployment/afscp-worker')
       && command.includes('--timeout=180s'),

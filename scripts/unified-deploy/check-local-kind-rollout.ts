@@ -280,6 +280,7 @@ const KUBECTL_TIMEOUT_MS = 45_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const ROLLOUT_TIMEOUT = '30s';
 const AFSCP_WORKLOAD_ROLLOUT_TIMEOUT = '180s';
+const ROLLOUT_COMMAND_TIMEOUT_BUFFER_MS = 30_000;
 const INGRESS_ROLLOUT_TIMEOUT = '240s';
 const LOCAL_KIND_NAMESPACE = 'agentsmith';
 const LOCAL_KIND_INGRESS_NAMESPACE = 'ingress-nginx';
@@ -332,6 +333,15 @@ function rolloutTimeoutForDeployment(deployment: string): string {
   return (AFSCP_WORKLOAD_DEPLOYMENTS as readonly string[]).includes(deployment)
     ? AFSCP_WORKLOAD_ROLLOUT_TIMEOUT
     : ROLLOUT_TIMEOUT;
+}
+
+function rolloutCommandTimeoutMsForDeployment(deployment: string): number {
+  const timeout = rolloutTimeoutForDeployment(deployment);
+  const seconds = /^(\d+)s$/u.exec(timeout)?.[1];
+  if (!seconds) {
+    return KUBECTL_TIMEOUT_MS;
+  }
+  return (Number(seconds) * 1_000) + ROLLOUT_COMMAND_TIMEOUT_BUFFER_MS;
 }
 
 function addFailure(failures: CheckFailure[], failurePath: string, message: string): void {
@@ -917,7 +927,7 @@ async function rolloutDeployment(options: {
       ...options.env,
       KUBECONFIG: options.kubeconfigPath,
     },
-    timeoutMs: KUBECTL_TIMEOUT_MS,
+    timeoutMs: rolloutCommandTimeoutMsForDeployment(options.deployment),
   });
   const evidence: RolloutEvidence = {
     deployment: options.deployment,

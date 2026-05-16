@@ -15,7 +15,15 @@ import {
   listCurrentPureCheckIdentities,
   listCurrentPureCheckInputDigestRules,
 } from '../governance/current-pure-check-identity-manifest';
+import {
+  RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP,
+  validateReleasePrecheckEvidenceOwnership,
+} from '../governance/release-precheck-evidence-ownership';
 import { buildVerificationCatalog } from '../governance/verification-catalog';
+import {
+  DEFAULT_WORKFLOW_SURFACE_DOC_PATHS,
+  findInternalWorkflowReferenceViolations,
+} from './engineering-governance-doc-guard';
 
 const rootDir = process.cwd();
 
@@ -297,6 +305,25 @@ for (const [label, block] of humanCopyableWorkflowBlocks) {
   }
 }
 
+const workflowSurfaceDocContent = new Map<string, string>([
+  ['README.md', readme],
+  ['DEVELOPMENT.md', development],
+  ['docs/user-guides/release-readiness-checklist.md', releaseChecklist],
+  ['docs/testing/diagnostic-catalog-v1.md', diagnosticCatalog],
+]);
+for (const relativePath of DEFAULT_WORKFLOW_SURFACE_DOC_PATHS) {
+  const content = workflowSurfaceDocContent.get(relativePath);
+  if (!content) {
+    failures.push(`workflow surface doc guard is missing content for ${relativePath}`);
+    continue;
+  }
+  for (const violation of findInternalWorkflowReferenceViolations({ relativePath, content })) {
+    failures.push(
+      `${violation.relativePath}:${violation.lineNumber} internal workflow command reference ${violation.command} must be inside diagnostic, maintainer troubleshooting, or machine-readable report context`,
+    );
+  }
+}
+
 for (const command of listCurrentWorkflowCommands()) {
   if (command.npmScript && !packageJson.scripts?.[command.npmScript]) {
     failures.push(`package.json is missing current workflow script: ${command.npmScript}`);
@@ -441,20 +468,47 @@ requireMatch(
   /KEYCLOAK_PORT="\$\{KEYCLOAK_PORT:-\$\{INTEGRATION_KEYCLOAK_PORT:-18080\}\}"/,
   'release-local-precheck must derive Keycloak port from the backend-real integration port',
 );
+
+for (const failure of validateReleasePrecheckEvidenceOwnership()) {
+  failures.push(
+    `release-local-precheck moved-check evidence ownership invalid: ${failure.movedCheckId}`
+    + `${failure.ownerStepId ? `/${failure.ownerStepId}` : ''}: ${failure.reason}`,
+  );
+}
 requireMatch(
   releaseLocalPrecheck,
-  /BASE_URL="\$\{PLAYWRIGHT_BASE_URL\}"[\s\S]*INTEGRATION_API_BASE="\$\{INTEGRATION_API_BASE\}"[\s\S]*MONGO_URL="\$\{MONGO_URL\}"[\s\S]*MONGO_DB_NAME="\$\{MONGO_DB_NAME\}"[\s\S]*run_clean npx playwright test[\s\S]*e2e\/integration-workspace-settings-directory\.spec\.ts/,
-  'release-local-precheck must pass Mongo env to its direct Playwright precheck process',
+  /deps_ready\(\)[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{POSTGRES_PORT\}"[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{MONGO_PORT\}"[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{REDIS_PORT\}"[\s\S]*minio\/health\/live/,
+  'release-local-precheck must keep lightweight dependency availability checks',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /api_ready=0[\s\S]*"\$\{INTEGRATION_API_BASE\}\/api\/v1\/workspaces"[\s\S]*web_ready=0[\s\S]*"\$\{WEB_BASE_URL\}\/en-US\/login\/workspace"/,
+  'release-local-precheck must keep lightweight API and Web readiness checks',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /protocol\/openid-connect\/token[\s\S]*ACCESS_TOKEN[\s\S]*"\$\{INTEGRATION_API_BASE\}\/api\/v1\/me\/profile"[\s\S]*public-auth gate passed/,
+  'release-local-precheck must keep lightweight public auth token smoke',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /RELEASE_PRECHECK_EVIDENCE_DIR="\$\{RELEASE_CAMPAIGN_ROOT\}\/release-local-precheck"[\s\S]*write_precheck_success_report\(\)[\s\S]*agentsmith\.release-local-precheck\/v1[\s\S]*write_precheck_success_report[\s\S]*PRECHECK_STATUS=0/,
+  'release-local-precheck must write a successful lightweight precheck summary into the release campaign root',
+);
+for (const movedCheck of RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP) {
+  if (movedCheck.formalOwners.length === 0) {
+    failures.push(`release-local-precheck moved-check mapping ${movedCheck.id} must have formal release evidence owners`);
+  }
+}
+forbidMatch(
+  releaseLocalPrecheck,
+  /run_clean npx playwright test|playwright test|e2e\/integration-(?:system-admin-entry|workspace-public-login|workspace-entry|workspace-publish-usable|workspace-settings-directory)\.spec\.ts/,
+  'release-local-precheck must not run Playwright product scenarios; release evidence ownership is mapped separately',
 );
 forbidMatch(
   releaseLocalPrecheck,
-  /run_clean npx playwright test[\s\S]*e2e\/integration-agent-task-runner\.spec\.ts/,
-  'release-local-precheck must not run Agent Task backend-real directly in its lightweight API/Web stack',
-);
-requireMatch(
-  releaseLocalPrecheck,
-  /run_agent_task_backend_real_precheck\(\)[\s\S]*INTEGRATION_POSTGRES_PORT="\$\{POSTGRES_PORT\}"[\s\S]*INTEGRATION_MONGO_PORT="\$\{MONGO_PORT\}"[\s\S]*MONGO_URL="\$\{MONGO_URL\}"[\s\S]*AFSCP_BASE_URL="\$\{afscp_base_url\}"[\s\S]*bash scripts\/run-internal-agent-task-real-gate\.sh --skills-runtime/,
-  'release-local-precheck must delegate Agent Task backend-real coverage to the internal owner gate with explicit substrate and AFSCP env',
+  /run_agent_task_backend_real_precheck|run-internal-agent-task-real-gate\.sh|--skills-runtime|--files-restore-continue|run-file-library-real-gate\.sh|test:agent-task:backend-real|test:agent-runners:lifecycle:evidence/,
+  'release-local-precheck must not run Agent Task, Files, or Runner business assertions directly',
 );
 requireMatch(
   integrationE2EFull,

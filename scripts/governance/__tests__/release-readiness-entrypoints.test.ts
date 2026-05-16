@@ -328,8 +328,8 @@ describe('release readiness human entrypoints', () => {
     }
   });
 
-  it('uses the governed release-real run command in release summary next actions', () => {
-    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-release-real-command-'));
+  it('keeps release summary next actions on release:ready instead of release-real owner diagnostics', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-public-next-action-'));
     const latestPath = join(root, 'latest.json');
     try {
       writeTerminalResult(root, {
@@ -345,8 +345,15 @@ describe('release readiness human entrypoints', () => {
       });
 
       expect(summary.blocked_step).toBe('gate-release');
-      expect(summary.next_action).toContain('npm run verify -- --goal=release-real --run');
+      expect(summary.next_action).toContain('npm run release:ready');
+      expect(summary.next_action).not.toContain('npm run verify -- --goal=release-real --run');
       expect(summary.next_action).not.toContain('npm run verify:release-real');
+      expect(summary.next_action).not.toMatch(/\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/);
+      expect(renderReleaseStatus({
+        kind: 'ready',
+        latestPath,
+        summary,
+      })).toContain('Rerun: npm run release:ready');
       expect(readFileSync(join(root, 'summary.md'), 'utf8')).not.toContain('npm run verify:release-real');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1145,16 +1152,12 @@ exit 0
       }
       expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
       expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('ready');
-      expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('ready');
+      expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('unknown');
       expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared?.values).toMatchObject({
         runner_image_ref: 'agentsmith-agent-task-runner:local',
         runner_image_id: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       });
-      expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed?.values).toMatchObject({
-        local_kind_context: 'kind-agentsmith',
-        local_kind_cluster_uid: 'cluster-uid-release-ready',
-        local_kind_control_plane_container_id: 'kind-control-plane-container',
-      });
+      expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed).toBeUndefined();
       expect(stdout.join('')).not.toContain('state/readiness.json');
       expect(stderr.join('')).toBe('');
     } finally {

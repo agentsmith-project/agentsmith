@@ -227,14 +227,25 @@ describe('current gate governance', () => {
     expect(traceArtifact).toBeDefined();
     expect(traceArtifact?.minCount).toBeGreaterThan(0);
     expect(traceArtifact).toMatchObject({
-      expectedMembership: [
+      expectedMembership: expect.arrayContaining([
         {
           suite: 'integration-release-user-story',
           storyId: 'release-user-story-end-to-end',
           scenarioId: 'integration-release-user-story',
         },
-      ],
+        {
+          suite: 'integration-workspace-entry',
+          storyId: 'workspace-entry-and-project-discovery',
+          scenarioId: 'integration-workspace-entry',
+        },
+        {
+          suite: 'integration-workspace-settings-directory',
+          storyId: 'workspace-settings-save-and-effect',
+          scenarioId: 'integration-workspace-settings-directory',
+        },
+      ]),
     });
+    expect(traceArtifact?.expectedMembership).toHaveLength(9);
   });
 
   it('keeps generated gate contracts in sync with the repository state', () => {

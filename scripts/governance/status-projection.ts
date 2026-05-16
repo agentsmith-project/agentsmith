@@ -22,6 +22,7 @@ import {
   type CurrentStatusProjectionPresentationStatus,
   type CurrentStatusProjectionReason,
   type CurrentStatusProjectionResumeRecommendation,
+  type CurrentStatusProjectionRunObservability,
 } from './current-status-projection-schema';
 import {
   findCurrentVerificationCampaignById,
@@ -283,6 +284,65 @@ function readReleaseAggregateResult(campaignRoot?: string | null): AggregateResu
   };
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function sanitizeObservabilityText(value: string): string {
+  return redactSensitiveText(value).slice(0, 160);
+}
+
+function readReleaseSummaryObservability(campaignRoot?: string | null): CurrentStatusProjectionRunObservability | null {
+  if (!campaignRoot) {
+    return null;
+  }
+  const path = join(resolve(campaignRoot), 'summary.json');
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.run_observability)) {
+    return null;
+  }
+  const observability = parsed.run_observability;
+  const counts = isRecord(observability.counts) ? observability.counts : {};
+  const countValue = (field: string): number => nonNegativeInteger(counts[field]) ?? 0;
+  const topSlowStages = Array.isArray(observability.top_slow_stages)
+    ? observability.top_slow_stages
+      .filter(isRecord)
+      .map((stage) => ({
+        id: sanitizeObservabilityText(typeof stage.id === 'string' ? stage.id : 'unknown'),
+        label: sanitizeObservabilityText(typeof stage.label === 'string' ? stage.label : String(stage.id ?? 'unknown')),
+        duration_ms: nonNegativeInteger(stage.duration_ms) ?? 0,
+        status: sanitizeObservabilityText(typeof stage.status === 'string' ? stage.status : 'unknown'),
+      }))
+      .sort((left, right) => right.duration_ms - left.duration_ms)
+      .slice(0, 3)
+    : [];
+
+  return {
+    total_duration_ms: observability.total_duration_ms === null
+      ? null
+      : nonNegativeInteger(observability.total_duration_ms),
+    top_slow_stages: topSlowStages,
+    counts_source: 'parent_flow',
+    counts: {
+      real_service_start_count: countValue('real_service_start_count'),
+      api_web_start_count: countValue('api_web_start_count'),
+      backend_real_check_session_count: countValue('backend_real_check_session_count'),
+      image_import_count: countValue('image_import_count'),
+    },
+    poll_retry_coverage: 'not_covered',
+    report_size_bytes: nonNegativeInteger(observability.report_size_bytes) ?? 0,
+  };
+}
+
 function aggregateStatusRef(result: ParsedAggregateResult): CurrentStatusProjectionAggregateStatusRef {
   return {
     path: redactProjectionPath(result.path),
@@ -340,6 +400,9 @@ function inferBlockedOwner(summary: string): string | null {
 }
 
 function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjectionGoal): string | null {
+  if (goal === 'release-ready') {
+    return 'npm run release:ready';
+  }
   if (owner === 'lane-visual') {
     return 'npm run verify -- --goal=visual --run';
   }
@@ -362,9 +425,6 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
   }
   if (goal === 'local-real') {
     return 'make local-real-status';
-  }
-  if (goal === 'release-ready') {
-    return 'npm run release:ready';
   }
   return null;
 }
@@ -726,6 +786,7 @@ function buildMissingAggregateProjection(input: {
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
+    run_observability: readReleaseSummaryObservability(input.options.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: [],
     authority_paths: {
@@ -807,6 +868,7 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input),
     lease_status_shadow: leaseStatusShadowForInput(input),
+    run_observability: readReleaseSummaryObservability(input.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: evidencePathsForAggregate(aggregate),
     authority_paths: {
@@ -824,6 +886,48 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
 
 function renderOptional(value: string | number | null | undefined): string {
   return value === null || value === undefined ? '<none>' : String(value);
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null) {
+    return '<unknown>';
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 || hours > 0) {
+    parts.push(`${minutes}m`);
+  }
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
+function renderRunObservabilityLines(
+  observability: CurrentStatusProjectionRunObservability | null | undefined,
+): readonly string[] {
+  if (!observability) {
+    return [];
+  }
+  const slowStages = observability.top_slow_stages.length > 0
+    ? observability.top_slow_stages
+      .map((stage) => `${stage.label || stage.id} ${formatDuration(stage.duration_ms)}`)
+      .join('; ')
+    : '<none>';
+  return [
+    `Total duration: ${formatDuration(observability.total_duration_ms)}`,
+    `Slowest stages: ${slowStages}`,
+    `Real service starts: ${observability.counts.real_service_start_count}`,
+    `API/Web starts: ${observability.counts.api_web_start_count}`,
+    `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
+    `Image imports: ${observability.counts.image_import_count}`,
+    'Poll/retry coverage: not covered',
+    `Report size: ${observability.report_size_bytes} bytes`,
+  ];
 }
 
 function renderOptionalPath(value: string | null | undefined): string {
@@ -1036,6 +1140,7 @@ export function renderStatusProjectionSummary(projection: CurrentStatusProjectio
     ...(blocker ? [blocker] : []),
     `Authority: ${renderProjectionAuthority(projection)}`,
     `Evidence: ${renderOptionalPath(primaryEvidencePath(projection))}`,
+    ...renderRunObservabilityLines(projection.run_observability),
     `Next: ${renderOptional(releaseReadyRerunCommand(projection))}`,
     renderCompactLeaseShadow(projection),
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
@@ -1060,11 +1165,12 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Deepest reason: ${renderDeepestReason(projection.deepest_reason)}`,
     `Next action: ${renderOptional(projection.safe_next_command)}`,
     `Safe action: ${renderOptional(projection.safe_next_command)}`,
-    `Resume recommendation: ${renderResumeRecommendation(projection.resume_recommendation)}`,
+    `Diagnostic context: ${renderResumeRecommendation(projection.resume_recommendation)}`,
     `Recovery: ${renderOptional(projection.destructive_recovery_command)}`,
     `Freshness: current_git_sha=${renderOptional(projection.current_git_sha)}; evidence_git_sha=${renderOptional(projection.evidence_git_sha)}; run_age_seconds=${renderOptional(projection.run_age_seconds)}`,
     `Locks: ${renderLocks(projection.lock_owner)}`,
     ...renderStatusProjectionLeaseShadowLines(projection),
+    ...renderRunObservabilityLines(projection.run_observability),
     `Manual sign-off: ${projection.manual_signoff_status}`,
     `Evidence: ${renderPathRefs(projection.evidence_paths)}`,
     `Authority: aggregate=${renderOptionalPath(projection.authority_paths.aggregate)}; stage=${renderOptionalPath(projection.authority_paths.stage)}; evidence=${projection.authority_paths.evidence.length > 0 ? projection.authority_paths.evidence.map(redactProjectionPath).join('; ') : '<none>'}`,

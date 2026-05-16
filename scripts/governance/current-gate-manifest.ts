@@ -29,6 +29,12 @@ export type CurrentGateUxTraceExpectedMembership = {
   storyId: string;
   scenarioId?: string;
 };
+export type CurrentReleaseBrowserProductSpec = {
+  specFile: string;
+  suite: string;
+  scenarioId: string;
+  storyIds: readonly string[];
+};
 export type CurrentGateEvidenceArtifactKind =
   | 'file'
   | 'directory'
@@ -166,7 +172,80 @@ export const CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP = [
     storyId: 'release-user-story-end-to-end',
     scenarioId: 'integration-release-user-story',
   },
+  {
+    suite: 'integration-system-admin-entry',
+    storyId: 'system-admin-entry',
+    scenarioId: 'integration-system-admin-entry',
+  },
+  {
+    suite: 'integration-system-admin-entry',
+    storyId: 'system-admin-multi-workspace-handoff',
+    scenarioId: 'integration-system-admin-entry',
+  },
+  {
+    suite: 'integration-workspace-public-login',
+    storyId: 'workspace-public-entry-and-login-truth',
+    scenarioId: 'integration-workspace-public-login',
+  },
+  {
+    suite: 'integration-workspace-public-login',
+    storyId: 'workspace-identity-switch-truth',
+    scenarioId: 'integration-workspace-public-login',
+  },
+  {
+    suite: 'integration-workspace-entry',
+    storyId: 'workspace-entry-and-project-discovery',
+    scenarioId: 'integration-workspace-entry',
+  },
+  {
+    suite: 'integration-workspace-publish-usable',
+    storyId: 'workspace-publish-to-usable-access',
+    scenarioId: 'integration-workspace-publish-usable',
+  },
+  {
+    suite: 'integration-workspace-publish-usable',
+    storyId: 'workspace-idp-and-admin-handoff',
+    scenarioId: 'integration-workspace-publish-usable',
+  },
+  {
+    suite: 'integration-workspace-settings-directory',
+    storyId: 'workspace-settings-save-and-effect',
+    scenarioId: 'integration-workspace-settings-directory',
+  },
 ] as const satisfies readonly CurrentGateUxTraceExpectedMembership[];
+
+export const CURRENT_RELEASE_PRECHECK_MOVED_BROWSER_SPECS = [
+  {
+    specFile: 'e2e/integration-system-admin-entry.spec.ts',
+    suite: 'integration-system-admin-entry',
+    scenarioId: 'integration-system-admin-entry',
+    storyIds: ['system-admin-entry', 'system-admin-multi-workspace-handoff'],
+  },
+  {
+    specFile: 'e2e/integration-workspace-public-login.spec.ts',
+    suite: 'integration-workspace-public-login',
+    scenarioId: 'integration-workspace-public-login',
+    storyIds: ['workspace-public-entry-and-login-truth', 'workspace-identity-switch-truth'],
+  },
+  {
+    specFile: 'e2e/integration-workspace-entry.spec.ts',
+    suite: 'integration-workspace-entry',
+    scenarioId: 'integration-workspace-entry',
+    storyIds: ['workspace-entry-and-project-discovery'],
+  },
+  {
+    specFile: 'e2e/integration-workspace-publish-usable.spec.ts',
+    suite: 'integration-workspace-publish-usable',
+    scenarioId: 'integration-workspace-publish-usable',
+    storyIds: ['workspace-publish-to-usable-access', 'workspace-idp-and-admin-handoff'],
+  },
+  {
+    specFile: 'e2e/integration-workspace-settings-directory.spec.ts',
+    suite: 'integration-workspace-settings-directory',
+    scenarioId: 'integration-workspace-settings-directory',
+    storyIds: ['workspace-settings-save-and-effect'],
+  },
+] as const satisfies readonly CurrentReleaseBrowserProductSpec[];
 
 export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
   laneVisual: [

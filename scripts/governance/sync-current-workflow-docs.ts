@@ -59,7 +59,7 @@ function renderCurrentWorkflowDocBlock(): string {
     '- `npm run dev` is the canonical frontend/mock development entrypoint',
     '- `make` is the canonical entrypoint for local-real environment orchestration',
     '- `npm run` is the canonical entrypoint for clean verification and release wrappers',
-    '- `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints',
+    '- Maintainer troubleshooting: `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints',
     '',
     'Quick path note:',
     '- `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.',
@@ -91,7 +91,7 @@ function renderDevelopmentWorkflowBlock(): string {
     '- `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth',
     '- gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`',
     '- `npm run dev` 是前端/mock 开发入口；local-real 环境编排走 `make`',
-    '- `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 保留为内部 adapter / evidence producer，不作为默认人工入口',
+    '- 维护者排障：`gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 保留为内部 adapter / evidence producer，不作为默认人工入口',
     '',
     'Quick path note:',
     '- `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。',
@@ -133,7 +133,7 @@ function renderMakeHelpExtendedBlock(): string {
     '\t@echo "Current path (lowest cognitive load):"',
     '\t@echo "  make quick-help     # show only the recommended day-to-day commands"',
     '\t@echo "  make help-glossary  # explain common testing/engineering terms in plain language"',
-    '\t@echo "  note: gate/lane/backend-real/release:campaign scripts are internal adapters, not default human entrypoints"',
+    '\t@echo "  note: maintainer diagnostics keep gate/lane/backend-real/release:campaign scripts out of default human entrypoints"',
     '\t@echo ""',
   ];
 
@@ -154,7 +154,7 @@ function renderMakeHelpExtendedBlock(): string {
     lines.push('\t@echo ""');
   }
 
-  lines.push('\t@echo "Internal adapters:"');
+  lines.push('\t@echo "Maintainer diagnostics (internal adapter context):"');
   lines.push('\t@echo "  package.json keeps gate/lane/backend-real/release:campaign scripts for CI, release:ready, and evidence owners."');
   lines.push('\t@echo "  They are intentionally omitted from help output as copyable human defaults."');
   lines.push('\t@echo ""');
@@ -167,8 +167,6 @@ function renderMakeQuickHelpBlock(): string {
   const lines = [
     'quick-help:',
     '\t@echo "MBOS Quick Human Commands"',
-    '\t@echo ""',
-    '\t@echo "  note: quick-help shows clean human entrypoints only; internal adapters stay behind release:ready, CI, or owner runbooks"',
     '\t@echo ""',
   ];
 

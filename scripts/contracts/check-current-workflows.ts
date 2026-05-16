@@ -6,6 +6,8 @@ import {
   CURRENT_CI_WORKFLOW_MANIFEST,
   CURRENT_WORKFLOW_DOCUMENT_FILES,
   listCurrentGovernanceSurfaceInventory,
+  listQuickHumanCurrentWorkflowCommands,
+  type CurrentWorkflowCommand,
 } from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
@@ -161,6 +163,17 @@ function readMakeTargetBlock(content: string, target: string): string {
   return lines.slice(start, next === -1 ? lines.length : next).join('\n');
 }
 
+function renderMakeQuickDisplay(command: CurrentWorkflowCommand): string {
+  return command.makeTarget ? `make ${command.makeTarget}` : command.command;
+}
+
+function extractMakeQuickHelpCommands(block: string): string[] {
+  return block
+    .split('\n')
+    .map((line) => line.match(/^\s*@echo "  ((?:npm run|make) [^"]+)"$/)?.[1])
+    .filter((command): command is string => Boolean(command));
+}
+
 function dependencyCallerKey(pathName: string, calls: readonly string[]): string {
   return `${pathName}:${calls.join('|')}`;
 }
@@ -214,6 +227,23 @@ function assertArrayEqual(
 
 const failures: string[] = [];
 const governanceSurfaceInventory = listCurrentGovernanceSurfaceInventory();
+const makefile = readFileSync(path.join(rootDir, 'Makefile'), 'utf8');
+const makeQuickHelpWorkflowBlock = readMakeTargetBlock(makefile, 'quick-help');
+const expectedQuickHelpCommands = listQuickHumanCurrentWorkflowCommands().map(renderMakeQuickDisplay);
+const actualQuickHelpCommands = extractMakeQuickHelpCommands(makeQuickHelpWorkflowBlock);
+
+assertArrayEqual(
+  actualQuickHelpCommands,
+  expectedQuickHelpCommands,
+  'make quick-help must expose only public human entrypoints',
+  failures,
+);
+if (/\binternal adapters?\b/i.test(makeQuickHelpWorkflowBlock)) {
+  failures.push('make quick-help must not explain internal adapters in the public quick path');
+}
+if (/\blocal-manual adapter\b/i.test(makeQuickHelpWorkflowBlock)) {
+  failures.push('make quick-help must not expose local-manual adapter wording in the public quick path');
+}
 
 for (const relativePath of listTrackedFiles()) {
   const absPath = path.join(rootDir, relativePath);

@@ -25,6 +25,7 @@ import {
 import { renderShortFailureProjection } from './status-projection';
 import {
   createRunReadinessState,
+  updateRunReadinessStateParentObservations,
   updateRunReadinessStateField,
 } from './run-readiness-state';
 import {
@@ -347,8 +348,26 @@ export function runReleaseReady(
       inputDigest: readiness.state.input_digest,
       envDigest: readiness.state.env_digest.digest,
       gitSha: readiness.state.git_sha,
+      writerToken: readiness.writerToken,
       field: 'integration_deps_ready',
       status: 'ready',
+    });
+    updateRunReadinessStateParentObservations({
+      statePath: readiness.statePath,
+      invocationId: readiness.state.invocation_id,
+      processNonce: readiness.state.process_nonce,
+      inputDigest: readiness.state.input_digest,
+      envDigest: readiness.state.env_digest.digest,
+      gitSha: readiness.state.git_sha,
+      writerToken: readiness.writerToken,
+      services: {
+        real_services_started: 'ready',
+        api_web_started: 'ready',
+      },
+      counts: {
+        real_service_start_count: 1,
+        api_web_start_count: 1,
+      },
     });
     const reusableResources = reusableResourceReadiness(releaseReadyEnv, cwd);
     if (reusableResources.runnerImage) {
@@ -359,6 +378,7 @@ export function runReleaseReady(
         inputDigest: readiness.state.input_digest,
         envDigest: readiness.state.env_digest.digest,
         gitSha: readiness.state.git_sha,
+        writerToken: readiness.writerToken,
         field: 'runner_image_digest_prepared',
         status: 'ready',
         identity: {
@@ -367,32 +387,6 @@ export function runReleaseReady(
         },
       });
     }
-    if (reusableResources.localKind) {
-      updateRunReadinessStateField({
-        statePath: readiness.statePath,
-        invocationId: readiness.state.invocation_id,
-        processNonce: readiness.state.process_nonce,
-        inputDigest: readiness.state.input_digest,
-        envDigest: readiness.state.env_digest.digest,
-        gitSha: readiness.state.git_sha,
-        field: 'local_kind_image_import_completed',
-        status: 'ready',
-        identity: {
-          local_kind_context: reusableResources.localKind.context,
-          local_kind_cluster_uid: reusableResources.localKind.clusterUid,
-          ...(reusableResources.localKind.controlPlaneContainerId
-            ? { local_kind_control_plane_container_id: reusableResources.localKind.controlPlaneContainerId }
-            : {}),
-          ...(reusableResources.runnerImage
-            ? {
-              runner_image_ref: reusableResources.runnerImage.imageRef,
-              runner_image_id: reusableResources.runnerImage.imageId,
-            }
-            : {}),
-        },
-      });
-    }
-
     let sentinelResult: SentinelPreflightResult;
     try {
       sentinelResult = sentinelRunner('release-ready', releaseReadyEnv, cwd);

@@ -108,6 +108,29 @@ export interface CurrentStatusProjectionAuthorityPaths {
   evidence: readonly string[];
 }
 
+export interface CurrentStatusProjectionRunObservabilityCounts {
+  real_service_start_count: number;
+  api_web_start_count: number;
+  backend_real_check_session_count: number;
+  image_import_count: number;
+}
+
+export interface CurrentStatusProjectionSlowStage {
+  id: string;
+  label: string;
+  duration_ms: number;
+  status: string;
+}
+
+export interface CurrentStatusProjectionRunObservability {
+  total_duration_ms: number | null;
+  top_slow_stages: readonly CurrentStatusProjectionSlowStage[];
+  counts_source: 'parent_flow';
+  counts: CurrentStatusProjectionRunObservabilityCounts;
+  poll_retry_coverage: 'not_covered';
+  report_size_bytes: number;
+}
+
 export interface CurrentStatusProjection {
   schema: typeof CURRENT_STATUS_PROJECTION_SCHEMA;
   version: typeof CURRENT_STATUS_PROJECTION_VERSION;
@@ -129,6 +152,7 @@ export interface CurrentStatusProjection {
   destructive_recovery_command: string | null;
   lock_owner: CurrentStatusProjectionLockOwner | null;
   lease_status_shadow: MinimalLeaseStatusShadow | null;
+  run_observability?: CurrentStatusProjectionRunObservability | null;
   manual_signoff_status: CurrentStatusProjectionManualSignoffStatus;
   evidence_paths: readonly CurrentStatusProjectionPathRef[];
   authority_paths: CurrentStatusProjectionAuthorityPaths;
@@ -175,6 +199,7 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
   'destructive_recovery_command',
   'lock_owner',
   'lease_status_shadow',
+  'run_observability',
   'manual_signoff_status',
   'evidence_paths',
   'authority_paths',
@@ -184,6 +209,10 @@ const STATUS_PROJECTION_TOP_LEVEL_FIELDS = new Set<string>([
   'leases_acquired',
   'leases_released',
 ]);
+
+const STATUS_PROJECTION_REQUIRED_TOP_LEVEL_FIELDS = new Set<string>(
+  [...STATUS_PROJECTION_TOP_LEVEL_FIELDS].filter((field) => field !== 'run_observability'),
+);
 
 const GOALS = new Set<Exclude<CurrentStatusProjectionGoal, null>>([
   'verify',
@@ -692,6 +721,88 @@ function validateLeaseStatusShadow(
   }
 }
 
+function validateNonNegativeInteger(
+  value: unknown,
+  path: string,
+  failures: CurrentStatusProjectionValidationFailure[],
+): void {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    pushFailure(failures, path, `${path} must be a non-negative integer.`);
+  }
+}
+
+function validateRunObservability(
+  value: unknown,
+  path: string,
+  failures: CurrentStatusProjectionValidationFailure[],
+): void {
+  if (value === null) {
+    return;
+  }
+  if (!isRecord(value)) {
+    pushFailure(failures, path, `${path} must be an object or null.`);
+    return;
+  }
+  validateNoUnknownFields(value, path, new Set([
+    'total_duration_ms',
+    'top_slow_stages',
+    'counts_source',
+    'counts',
+    'poll_retry_coverage',
+    'report_size_bytes',
+  ]), failures);
+  validateRequiredFields(value, path, [
+    'total_duration_ms',
+    'top_slow_stages',
+    'counts_source',
+    'counts',
+    'poll_retry_coverage',
+    'report_size_bytes',
+  ], failures);
+  if (value.total_duration_ms !== null) {
+    validateNonNegativeInteger(value.total_duration_ms, `${path}.total_duration_ms`, failures);
+  }
+  if (value.counts_source !== 'parent_flow') {
+    pushFailure(failures, `${path}.counts_source`, 'counts_source must be parent_flow.');
+  }
+  if (value.poll_retry_coverage !== 'not_covered') {
+    pushFailure(failures, `${path}.poll_retry_coverage`, 'poll_retry_coverage must be not_covered.');
+  }
+  if (!Array.isArray(value.top_slow_stages)) {
+    pushFailure(failures, `${path}.top_slow_stages`, `${path}.top_slow_stages must be an array.`);
+  } else {
+    value.top_slow_stages.forEach((stage, index) => {
+      const stagePath = `${path}.top_slow_stages[${index}]`;
+      if (!isRecord(stage)) {
+        pushFailure(failures, stagePath, `${stagePath} must be an object.`);
+        return;
+      }
+      validateNoUnknownFields(stage, stagePath, new Set(['id', 'label', 'duration_ms', 'status']), failures);
+      validateRequiredFields(stage, stagePath, ['id', 'label', 'duration_ms', 'status'], failures);
+      validateString(stage.id, `${stagePath}.id`, failures);
+      validateString(stage.label, `${stagePath}.label`, failures);
+      validateNonNegativeInteger(stage.duration_ms, `${stagePath}.duration_ms`, failures);
+      validateString(stage.status, `${stagePath}.status`, failures);
+    });
+  }
+  if (!isRecord(value.counts)) {
+    pushFailure(failures, `${path}.counts`, `${path}.counts must be an object.`);
+  } else {
+    const countFields = [
+      'real_service_start_count',
+      'api_web_start_count',
+      'backend_real_check_session_count',
+      'image_import_count',
+    ] as const;
+    validateNoUnknownFields(value.counts, `${path}.counts`, new Set(countFields), failures);
+    validateRequiredFields(value.counts, `${path}.counts`, countFields, failures);
+    for (const field of countFields) {
+      validateNonNegativeInteger(value.counts[field], `${path}.counts.${field}`, failures);
+    }
+  }
+  validateNonNegativeInteger(value.report_size_bytes, `${path}.report_size_bytes`, failures);
+}
+
 function validateAuthorityPaths(
   value: unknown,
   path: string,
@@ -751,7 +862,7 @@ export function validateCurrentStatusProjection(value: unknown): CurrentStatusPr
   }
 
   validateNoUnknownFields(value, 'projection', STATUS_PROJECTION_TOP_LEVEL_FIELDS, failures);
-  validateRequiredFields(value, 'projection', [...STATUS_PROJECTION_TOP_LEVEL_FIELDS], failures);
+  validateRequiredFields(value, 'projection', [...STATUS_PROJECTION_REQUIRED_TOP_LEVEL_FIELDS], failures);
 
   if (value.schema !== CURRENT_STATUS_PROJECTION_SCHEMA) {
     pushFailure(failures, 'projection.schema', `schema must be ${CURRENT_STATUS_PROJECTION_SCHEMA}.`);
@@ -789,6 +900,9 @@ export function validateCurrentStatusProjection(value: unknown): CurrentStatusPr
   validateNullableString(value.destructive_recovery_command, 'projection.destructive_recovery_command', failures);
   validateLockOwner(value.lock_owner, 'projection.lock_owner', failures);
   validateLeaseStatusShadow(value.lease_status_shadow, 'projection.lease_status_shadow', failures);
+  if ('run_observability' in value) {
+    validateRunObservability(value.run_observability, 'projection.run_observability', failures);
+  }
   validateEnum(value.manual_signoff_status, MANUAL_SIGNOFF_STATUSES, 'projection.manual_signoff_status', failures);
   validateEvidencePaths(value.evidence_paths, 'projection.evidence_paths', failures);
   validateAuthorityPaths(value.authority_paths, 'projection.authority_paths', failures);

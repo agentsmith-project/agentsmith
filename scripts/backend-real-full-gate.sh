@@ -208,6 +208,14 @@ run_real_cmd() {
   )
 }
 
+run_release_browser_trace_specs() {
+  run_real_cmd 20084 3085 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-system-admin-entry.spec.ts"
+  run_real_cmd 20086 3087 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-public-login.spec.ts"
+  run_real_cmd 20088 3089 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-entry.spec.ts"
+  run_real_cmd 20092 3093 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-publish-usable.spec.ts"
+  run_real_cmd 20094 3095 "UX_TRACE_OUTPUT_ROOT='${AUTHORITATIVE_UX_TRACE_ROOT}' bash scripts/run-integration-e2e-full.sh e2e/integration-workspace-settings-directory.spec.ts"
+}
+
 run_cmd "POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 prewarm_internal_kind_cluster
@@ -221,6 +229,7 @@ record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "npm run backend-real:run"
 run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"
 run_real_cmd 20080 3081 "RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+run_release_browser_trace_specs
 run_real_cmd 20074 3074 "ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
 UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"

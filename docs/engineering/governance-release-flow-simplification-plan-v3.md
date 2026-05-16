@@ -170,14 +170,14 @@ AgentSmith 发布前总检查
 
 | 被移出早失败检查的内容 | 正式检查归属 | 报告路径 | 验收测试 |
 | --- | --- | --- | --- |
-| 浏览器产品场景 | 发布前总检查中的正式浏览器/真实后端检查 | 待实现时填写 | 待实现时填写 |
-| Agent task 发布级检查 | 发布前总检查中的 Agent task/真实后端检查 | 待实现时填写 | 待实现时填写 |
-| Files/Runner 业务断言 | 发布前总检查中的 Files/Runner 真实后端检查 | 待实现时填写 | 待实现时填写 |
+| 浏览器产品场景 | `release-full/gate-release` 的 backend-real UX trace 必须运行并声明这 5 个 spec：`e2e/integration-system-admin-entry.spec.ts`、`e2e/integration-workspace-public-login.spec.ts`、`e2e/integration-workspace-entry.spec.ts`、`e2e/integration-workspace-publish-usable.spec.ts`、`e2e/integration-workspace-settings-directory.spec.ts`；`release-full/lane-unified-deploy-product-flows` 仍保留 `workspace_project` product flow | `<campaign-root>/gate-release/backend-real-visual/ux-traces`；`<campaign-root>/unified-deploy/product-flows` | `scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts` |
+| Agent task 发布级检查 | `release-full/gate-release` 必须通过 `npm run backend-real:run` → `npm run test:agent-task:backend-real:runner` → `scripts/run-backend-real-session-shards.sh --skills-runtime` 保留 internal Agent Task skills runtime 断言；`release-full/lane-unified-deploy-product-flows` 仍保留 `agent_task_managed_runner` product flow | `<campaign-root>/gate-release/backend-real-visual/ux-traces`；`<campaign-root>/unified-deploy/product-flows` | `scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts` |
+| Files/Runner 业务断言 | `release-full/gate-release` 的 backend-real UX trace；`release-full/lane-unified-deploy-product-flows` 的 `files` / `agent_task_managed_runner` product flows | `<campaign-root>/gate-release/backend-real-visual/ux-traces`；`<campaign-root>/unified-deploy/product-flows` | `scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts` |
 
 完成标准：
 
 - 每个准备移出早失败检查的项目都有正式检查归属。
-- 每个正式检查归属都有报告路径和测试守护。
+- 每个正式检查归属都有报告路径和测试守护；浏览器场景必须守护具体 spec，Agent Task 必须守护 `--skills-runtime` source assertion。
 - 找不到正式归属的项目不能移出早失败检查。
 
 停止条件：
@@ -187,7 +187,7 @@ AgentSmith 发布前总检查
 先失败测试：
 
 - 测试早失败检查减重前必须存在证据归属映射。
-- 测试映射中的正式报告路径缺失时，发布流程不能把该检查视为已覆盖。
+- 测试映射中的正式报告路径、UX trace membership、owner 脚本 spec 调用或 `--skills-runtime` source assertion 缺失时，发布流程不能把该检查视为已覆盖。
 
 建议命令：
 
@@ -203,6 +203,7 @@ npm run test:run -- scripts/governance/__tests__/release-readiness-entrypoints.t
 
 - 只保留 git 工作区是否干净检查（只读，不自动清理）、资源冲突检查、依赖服务可用检查、API/Web 最小可用检查、认证 token smoke。
 - 移出浏览器产品场景、Agent task 发布级检查、Files/Runner 业务断言。
+- 同步更新 `scripts/contracts/check-engineering-governance.ts`，把旧的 heavy precheck 要求改为轻量 precheck 边界和证据归属映射守护。
 - 成功后的检查报告保留在本次发布目录中。
 - 后续步骤可以读取同一次命令内的运行状态描述以避免重复启动，但不能把它当发布结论。
 

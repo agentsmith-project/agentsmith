@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP,
   CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
   type CurrentGateEvidenceArtifact,
 } from '../current-gate-manifest';
@@ -291,7 +292,7 @@ function createManifestEvidenceForCheck(
   check: CurrentVerificationCampaignEvidenceCheck,
 ): void {
   if (check.semantic === 'ux_trace_bundle') {
-    writeSemanticUxTraceBundle(campaignRoot);
+    writeRequiredSemanticUxTraceBundles(campaignRoot);
     return;
   }
   if (check.semantic === 'unified_deploy_evidence') {
@@ -740,20 +741,37 @@ function writeSemanticUxTraceBundle(
     manifest,
     verdict: options.reviewVerdict ?? 'accepted',
   }));
+  let preservedBundles: Record<string, unknown>[] = [];
+  try {
+    const indexPayload = JSON.parse(readFileSync(join(traceRoot, 'ux-trace-index.json'), 'utf8')) as { bundles?: unknown };
+    preservedBundles = Array.isArray(indexPayload.bundles)
+      ? indexPayload.bundles.filter((entry): entry is Record<string, unknown> => (
+        Boolean(entry)
+        && typeof entry === 'object'
+        && (entry as { bundle_relpath?: unknown }).bundle_relpath !== `backend-real/${suite}/${storyId}/${runId}`
+      ))
+      : [];
+  } catch {
+    preservedBundles = [];
+  }
+
   writeJson(join(traceRoot, 'ux-trace-index.json'), {
     version: 1,
     generated_at: '2026-04-12T12:00:01.000Z',
-    bundles: [{
-      lane: manifest.lane,
-      suite: manifest.suite,
-      story_id: manifest.story_id,
-      scenario_id: manifest.scenario_id,
-      run_id: manifest.run_id,
-      bundle_relpath: `backend-real/${suite}/${storyId}/${runId}`,
-      review_relpath: `backend-real/${suite}/${storyId}/${runId}/review.md`,
-      manifest_relpath: `backend-real/${suite}/${storyId}/${runId}/manifest.json`,
-      contract_snapshot_relpath: `backend-real/${suite}/${storyId}/${runId}/contract-snapshot.json`,
-    }],
+    bundles: [
+      ...preservedBundles,
+      {
+        lane: manifest.lane,
+        suite: manifest.suite,
+        story_id: manifest.story_id,
+        scenario_id: manifest.scenario_id,
+        run_id: manifest.run_id,
+        bundle_relpath: `backend-real/${suite}/${storyId}/${runId}`,
+        review_relpath: `backend-real/${suite}/${storyId}/${runId}/review.md`,
+        manifest_relpath: `backend-real/${suite}/${storyId}/${runId}/manifest.json`,
+        contract_snapshot_relpath: `backend-real/${suite}/${storyId}/${runId}/contract-snapshot.json`,
+      },
+    ].sort((left, right) => String(left.bundle_relpath).localeCompare(String(right.bundle_relpath))),
   });
 
   for (const step of requiredSteps) {
@@ -764,6 +782,33 @@ function writeSemanticUxTraceBundle(
     if (!stepTargetMatches(step.target, event.target, step.targetMatch ?? 'exact')) {
       throw new Error(`invalid trace fixture target for ${step.stepId}`);
     }
+  }
+}
+
+function writesUnexpectedUxTraceMembership(options: SemanticUxTraceFixtureOptions): boolean {
+  if (!options.suite && !options.storyId && !options.scenarioId) {
+    return false;
+  }
+  return !CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP.some((membership) => (
+    membership.suite === (options.suite ?? 'integration-release-user-story')
+    && membership.storyId === (options.storyId ?? getReleaseStoryDefinition().storyId)
+    && membership.scenarioId === (options.scenarioId ?? 'integration-release-user-story')
+  ));
+}
+
+function writeRequiredSemanticUxTraceBundles(
+  campaignRoot: string,
+  releaseUserStoryOptions: SemanticUxTraceFixtureOptions = {},
+): void {
+  for (const membership of CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP) {
+    const isReleaseUserStory = membership.suite === 'integration-release-user-story'
+      && membership.storyId === 'release-user-story-end-to-end';
+    writeSemanticUxTraceBundle(campaignRoot, {
+      ...(isReleaseUserStory ? releaseUserStoryOptions : {}),
+      suite: membership.suite,
+      storyId: membership.storyId,
+      scenarioId: membership.scenarioId,
+    });
   }
 }
 
@@ -779,7 +824,11 @@ function replaceGateReleaseUxTraceWithSemanticBundle(
 ): void {
   const traceRoot = getGateReleaseUxTraceRoot(campaignRoot);
   rmSync(traceRoot, { recursive: true, force: true });
-  writeSemanticUxTraceBundle(campaignRoot, options);
+  if (writesUnexpectedUxTraceMembership(options)) {
+    writeSemanticUxTraceBundle(campaignRoot, options);
+    return;
+  }
+  writeRequiredSemanticUxTraceBundles(campaignRoot, options);
 }
 
 function writeLegacyDummyEvidencePointer(campaignRoot: string, step: CurrentVerificationCampaignStep): void {

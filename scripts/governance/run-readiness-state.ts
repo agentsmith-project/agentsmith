@@ -57,6 +57,23 @@ export interface RunReadinessIdentityRecord {
   values: Record<string, string>;
 }
 
+export interface RunReadinessParentObservationCounts {
+  real_service_start_count: number;
+  api_web_start_count: number;
+  backend_real_check_session_count: number;
+  image_import_count: number;
+}
+
+export interface RunReadinessParentObservations {
+  counts_source: 'parent_flow';
+  services: {
+    real_services_started: ReadinessStatus;
+    api_web_started: ReadinessStatus;
+  };
+  counts: RunReadinessParentObservationCounts;
+  poll_retry_coverage: 'not_covered';
+}
+
 export interface RunReadinessState {
   schema: typeof RUN_READINESS_STATE_SCHEMA;
   kind: 'operational_state';
@@ -64,6 +81,7 @@ export interface RunReadinessState {
   scope: ReadinessStateScope;
   invocation_id: string;
   process_nonce: string;
+  parent_writer_token_hash: string;
   git_sha: string;
   input_digest: string;
   env_digest: RunReadinessEnvDigest;
@@ -76,6 +94,7 @@ export interface RunReadinessState {
     afscp_image_digest_prepared: ReadinessStatus;
     local_kind_image_import_completed: ReadinessStatus;
   };
+  parent_observations: RunReadinessParentObservations;
   readiness_identities?: Partial<Record<RunReadinessField, RunReadinessIdentityRecord>>;
 }
 
@@ -94,6 +113,7 @@ export interface RunReadinessStateContext {
   statePath: string;
   state: RunReadinessState;
   env: NodeJS.ProcessEnv;
+  writerToken?: string;
 }
 
 export type RunReadinessStateValidationResult =
@@ -147,6 +167,27 @@ function createProcessNonce(): string {
   return `nonce-${randomBytes(16).toString('hex')}`;
 }
 
+function createParentWriterToken(): string {
+  return `writer-${randomBytes(24).toString('hex')}`;
+}
+
+function defaultParentObservations(): RunReadinessParentObservations {
+  return {
+    counts_source: 'parent_flow',
+    services: {
+      real_services_started: 'unknown',
+      api_web_started: 'unknown',
+    },
+    counts: {
+      real_service_start_count: 0,
+      api_web_start_count: 0,
+      backend_real_check_session_count: 0,
+      image_import_count: 0,
+    },
+    poll_retry_coverage: 'not_covered',
+  };
+}
+
 export function buildReadinessStatePath(root: string): string {
   return join(root, 'state', 'readiness.json');
 }
@@ -188,6 +229,7 @@ export function buildRunReadinessChildEnv(input: {
 export function createRunReadinessState(input: CreateRunReadinessStateInput): RunReadinessStateContext {
   const now = input.now ?? new Date();
   const statePath = buildReadinessStatePath(input.root);
+  const writerToken = createParentWriterToken();
   const state: RunReadinessState = {
     schema: RUN_READINESS_STATE_SCHEMA,
     kind: 'operational_state',
@@ -195,6 +237,7 @@ export function createRunReadinessState(input: CreateRunReadinessStateInput): Ru
     scope: input.scope,
     invocation_id: input.invocationId ?? createReadinessInvocationId(input.scope, now),
     process_nonce: input.processNonce ?? createProcessNonce(),
+    parent_writer_token_hash: sha256(writerToken),
     git_sha: input.gitSha,
     input_digest: buildRunReadinessInputDigest(input.input),
     env_digest: buildRunReadinessEnvDigest(input.env),
@@ -207,6 +250,7 @@ export function createRunReadinessState(input: CreateRunReadinessStateInput): Ru
       afscp_image_digest_prepared: 'unknown',
       local_kind_image_import_completed: 'unknown',
     },
+    parent_observations: defaultParentObservations(),
   };
 
   mkdirSync(dirname(statePath), { recursive: true });
@@ -216,6 +260,7 @@ export function createRunReadinessState(input: CreateRunReadinessStateInput): Ru
     statePath,
     state,
     env: buildRunReadinessChildEnv({ statePath, state }),
+    writerToken,
   };
 }
 
@@ -232,6 +277,35 @@ function validateIdentityValues(value: unknown): value is Record<string, string>
     && Object.entries(value).every(([key, entry]) => key.length > 0 && typeof entry === 'string');
 }
 
+function validateNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function validateParentObservations(value: unknown): value is RunReadinessParentObservations {
+  if (!isRecord(value) || value.counts_source !== 'parent_flow') {
+    return false;
+  }
+  if (!isRecord(value.services)) {
+    return false;
+  }
+  if (
+    !validateReadinessStatus(value.services.real_services_started)
+    || !validateReadinessStatus(value.services.api_web_started)
+  ) {
+    return false;
+  }
+  if (!isRecord(value.counts)) {
+    return false;
+  }
+  return [
+    'real_service_start_count',
+    'api_web_start_count',
+    'backend_real_check_session_count',
+    'image_import_count',
+  ].every((field) => validateNonNegativeInteger(value.counts[field]))
+    && value.poll_retry_coverage === 'not_covered';
+}
+
 function parseRunReadinessState(value: unknown): RunReadinessStateValidationResult {
   if (!isRecord(value)) {
     return { ok: false, error: 'readiness state must be a JSON object' };
@@ -243,6 +317,7 @@ function parseRunReadinessState(value: unknown): RunReadinessStateValidationResu
     'scope',
     'invocation_id',
     'process_nonce',
+    'parent_writer_token_hash',
     'git_sha',
     'input_digest',
     'created_at',
@@ -285,6 +360,9 @@ function parseRunReadinessState(value: unknown): RunReadinessStateValidationResu
     if (!validateReadinessStatus(value.readiness[field])) {
       return { ok: false, error: `required readiness state readiness field is missing: ${field}` };
     }
+  }
+  if (!validateParentObservations(value.parent_observations)) {
+    return { ok: false, error: 'readiness state parent_observations is invalid' };
   }
   if (value.readiness_identities !== undefined) {
     if (!isRecord(value.readiness_identities)) {
@@ -356,6 +434,18 @@ export function validateRunReadinessStateForConsumer(input: {
   return result;
 }
 
+function assertParentWriterToken(input: {
+  state: RunReadinessState;
+  writerToken?: string;
+}): void {
+  if (!input.writerToken) {
+    throw new Error('readiness state parent writer token is required for writes');
+  }
+  if (sha256(input.writerToken) !== input.state.parent_writer_token_hash) {
+    throw new Error('readiness state parent writer token mismatch');
+  }
+}
+
 export function updateRunReadinessStateField(input: {
   statePath: string;
   invocationId: string;
@@ -363,6 +453,7 @@ export function updateRunReadinessStateField(input: {
   inputDigest?: string;
   envDigest?: string;
   gitSha?: string;
+  writerToken?: string;
   field: RunReadinessField;
   status: ReadinessStatus;
   identity?: Record<string, string>;
@@ -377,6 +468,10 @@ export function updateRunReadinessStateField(input: {
   if (!validation.ok) {
     throw new Error(`readiness state validation failed: ${validation.error}`);
   }
+  assertParentWriterToken({
+    state: validation.state,
+    writerToken: input.writerToken,
+  });
   const readinessIdentities: Partial<Record<RunReadinessField, RunReadinessIdentityRecord>> = {
     ...(validation.state.readiness_identities ?? {}),
   };
@@ -401,8 +496,59 @@ export function updateRunReadinessStateField(input: {
     },
     readiness_identities: readinessIdentities,
   };
+  const mergedValidation = parseRunReadinessState(updated);
+  if (!mergedValidation.ok) {
+    throw new Error(`merged readiness state validation failed: ${mergedValidation.error}`);
+  }
   writeFileSync(input.statePath, `${JSON.stringify(updated, null, 2)}\n`);
   return updated;
+}
+
+export function updateRunReadinessStateParentObservations(input: {
+  statePath: string;
+  invocationId: string;
+  processNonce: string;
+  inputDigest?: string;
+  envDigest?: string;
+  gitSha?: string;
+  writerToken?: string;
+  services?: Partial<RunReadinessParentObservations['services']>;
+  counts?: Partial<RunReadinessParentObservationCounts>;
+}): RunReadinessState {
+  const validation = validateRunReadinessStateForConsumer(input);
+  if (!validation.ok) {
+    throw new Error(`readiness state validation failed: ${validation.error}`);
+  }
+  assertParentWriterToken({
+    state: validation.state,
+    writerToken: input.writerToken,
+  });
+
+  const updated: RunReadinessState = {
+    ...validation.state,
+    parent_observations: {
+      counts_source: 'parent_flow',
+      services: {
+        ...validation.state.parent_observations.services,
+        ...(input.services ?? {}),
+      },
+      counts: {
+        ...validation.state.parent_observations.counts,
+        ...(input.counts ?? {}),
+      },
+      poll_retry_coverage: 'not_covered',
+    },
+  };
+  const mergedValidation = parseRunReadinessState(updated);
+  if (!mergedValidation.ok) {
+    throw new Error(`merged readiness state validation failed: ${mergedValidation.error}`);
+  }
+  writeFileSync(input.statePath, `${JSON.stringify(updated, null, 2)}\n`);
+  const persisted = validateRunReadinessStateForConsumer(input);
+  if (!persisted.ok) {
+    throw new Error(`persisted readiness state validation failed: ${persisted.error}`);
+  }
+  return persisted.state;
 }
 
 function readinessEnvIsPresent(env: NodeJS.ProcessEnv): boolean {

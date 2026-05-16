@@ -26,10 +26,9 @@ KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-18080}}"
 clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
-PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
+WEB_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
 AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL="${AGENT_RUNNER_DEVELOPER_EXECUTION_HTTP_BASE_URL:-${INTEGRATION_API_BASE}}"
-INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
@@ -45,14 +44,17 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id release-local-precheck)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-release-precheck)}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/release-local-precheck}"
+RELEASE_PRECHECK_EVIDENCE_DIR="${RELEASE_PRECHECK_EVIDENCE_DIR:-}"
+if [[ -z "${RELEASE_PRECHECK_EVIDENCE_DIR}" && -n "${RELEASE_CAMPAIGN_ROOT:-}" ]]; then
+  RELEASE_PRECHECK_EVIDENCE_DIR="${RELEASE_CAMPAIGN_ROOT}/release-local-precheck"
+fi
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 NEXT_WEB_PID_FILE="${INTEGRATION_RUN_ROOT}/next-dev.pid"
 API_PID=""
 WEB_PID=""
-PLAYWRIGHT_PID=""
-PLAYWRIGHT_STATUS=1
+PRECHECK_STATUS=1
 
 info() {
   echo "[release-local-precheck] $*"
@@ -139,26 +141,6 @@ integration_compose_postgres_running() {
   docker compose -f "${ROOT_DIR}/infra/integration/docker-compose.yml" ps --status running postgres | grep -q postgres
 }
 
-warm_route() {
-  local path="$1"
-  local attempts="${2:-20}"
-  local url="${PLAYWRIGHT_BASE_URL}${path}"
-  local last_code=""
-  for _ in $(seq 1 "${attempts}"); do
-    last_code="$(curl_status "${url}")"
-    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
-      sleep 1
-      last_code="$(curl_status "${url}")"
-      if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
-        return 0
-      fi
-    fi
-    sleep 1
-  done
-  echo "[release-local-precheck] failed to warm route ${path} (last status: ${last_code})" >&2
-  return 1
-}
-
 port_in_use() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -176,6 +158,43 @@ json_extract_access_token() {
   python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("access_token",""))'
 }
 
+write_precheck_success_report() {
+  [[ -n "${RELEASE_PRECHECK_EVIDENCE_DIR}" ]] || return 0
+  mkdir -p "${RELEASE_PRECHECK_EVIDENCE_DIR}"
+  INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID}" \
+  INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+  WEB_BASE_URL="${WEB_BASE_URL}" \
+  API_PORT="${API_PORT}" \
+  WEB_PORT="${WEB_PORT}" \
+  python3 - "${RELEASE_PRECHECK_EVIDENCE_DIR}/precheck-summary.json" <<'PY'
+import datetime
+import json
+import os
+import sys
+
+path = sys.argv[1]
+payload = {
+    "schema_version": "agentsmith.release-local-precheck/v1",
+    "status": "passed",
+    "checks": [
+        "dependency_services_ready",
+        "api_minimal_ready",
+        "web_minimal_ready",
+        "public_auth_token_smoke",
+    ],
+    "run_id": os.environ.get("INTEGRATION_RUN_ID", ""),
+    "api_base": os.environ.get("INTEGRATION_API_BASE", ""),
+    "web_base": os.environ.get("WEB_BASE_URL", ""),
+    "api_port": os.environ.get("API_PORT", ""),
+    "web_port": os.environ.get("WEB_PORT", ""),
+    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+}
+with open(path, "w", encoding="utf-8") as output:
+    json.dump(payload, output, indent=2)
+    output.write("\n")
+PY
+}
+
 stop_api_web_stack() {
   local next_pid
   next_pid="$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
@@ -191,10 +210,8 @@ stop_api_web_stack() {
 }
 
 cleanup() {
-  stop_background_job "${PLAYWRIGHT_PID}"
-  [[ -z "${PLAYWRIGHT_PID}" ]] || wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
   stop_api_web_stack
-  if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
+  if [[ "${PRECHECK_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"
   else
@@ -205,43 +222,6 @@ cleanup() {
   lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS:-5}"
 }
 trap cleanup EXIT
-
-run_agent_task_backend_real_precheck() {
-  local agent_task_api_port agent_task_web_port sandbox_port afscp_base_url afscp_export_gateway_base_url afscp_default_volume_id
-  agent_task_api_port="${RELEASE_PRECHECK_AGENT_TASK_COORDINATOR_API_PORT:-20072}"
-  agent_task_web_port="${RELEASE_PRECHECK_AGENT_TASK_COORDINATOR_WEB_PORT:-3072}"
-  sandbox_port="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
-  afscp_base_url="${RELEASE_PRECHECK_AFSCP_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9030))}"
-  afscp_export_gateway_base_url="${RELEASE_PRECHECK_AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9031))}"
-  afscp_default_volume_id="${RELEASE_PRECHECK_AFSCP_DEFAULT_VOLUME_ID:-vol_release_precheck_${agent_task_api_port}}"
-
-  info "running Agent Task backend-real precheck via internal owner gate"
-  INTEGRATION_API_PORT="${agent_task_api_port}" \
-  INTEGRATION_WEB_PORT="${agent_task_web_port}" \
-  INTEGRATION_POSTGRES_PORT="${POSTGRES_PORT}" \
-  INTEGRATION_MONGO_PORT="${MONGO_PORT}" \
-  INTEGRATION_REDIS_PORT="${REDIS_PORT}" \
-  INTEGRATION_MINIO_API_PORT="${MINIO_API_PORT}" \
-  INTEGRATION_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
-  INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
-  INTERNAL_SANDBOX_MANAGER_PORT="${sandbox_port}" \
-  SANDBOX_MANAGER_URL="http://127.0.0.1:${sandbox_port}" \
-  SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}" \
-  MONGO_URL="${MONGO_URL}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  AFSCP_BASE_URL="${afscp_base_url}" \
-  AFSCP_EXPORT_GATEWAY_BASE_URL="${afscp_export_gateway_base_url}" \
-  AFSCP_DEFAULT_VOLUME_ID="${afscp_default_volume_id}" \
-  AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}" \
-  AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}" \
-  AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}" \
-  AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}" \
-  AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}" \
-  AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}" \
-  run_clean bash scripts/run-internal-agent-task-real-gate.sh --skills-runtime
-}
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   if deps_ready; then
@@ -264,7 +244,7 @@ if [[ "${INIT_DEPS}" == "true" ]]; then
     info "skipping compose-specific postgres init while reusing existing local dependencies"
   fi
   INTEGRATION_WEB_PORT="${WEB_PORT}" \
-  INTEGRATION_PUBLIC_WEB_BASES="${PLAYWRIGHT_BASE_URL}" \
+  INTEGRATION_PUBLIC_WEB_BASES="${WEB_BASE_URL}" \
   PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
   KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
@@ -343,7 +323,7 @@ fi
 
 web_ready=0
 for _ in $(seq 1 120); do
-  code="$(curl -s -o /dev/null -w "%{http_code}" "${PLAYWRIGHT_BASE_URL}/en-US/login/workspace" || true)"
+  code="$(curl -s -o /dev/null -w "%{http_code}" "${WEB_BASE_URL}/en-US/login/workspace" || true)"
   if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
     web_ready=1
     break
@@ -356,11 +336,6 @@ if [[ "${web_ready}" -ne 1 ]]; then
   tail -n 120 "${WEB_LOG}" >&2 || true
   exit 1
 fi
-
-warm_route "/${INTEGRATION_LOCALE}/login/workspace"
-warm_route "/${INTEGRATION_LOCALE}/system/login"
-warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/login"
-warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
 
 token_json="$(
   curl -fsS "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
@@ -385,41 +360,7 @@ curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" \
   }
 
 info "public-auth gate passed"
-info "running system admin entry, workspace public/login truth, workspace entry, publish usable, and directory search precheck"
-
-BASE_URL="${PLAYWRIGHT_BASE_URL}" \
-INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-MONGO_URL="${MONGO_URL}" \
-MONGO_DB_NAME="${MONGO_DB_NAME}" \
-BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
-BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
-BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
-BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-run_clean npx playwright test \
-  --config playwright.config.integration.ts \
-  e2e/integration-system-admin-entry.spec.ts \
-  e2e/integration-workspace-public-login.spec.ts \
-  e2e/integration-workspace-entry.spec.ts \
-  e2e/integration-workspace-publish-usable.spec.ts \
-  e2e/integration-workspace-settings-directory.spec.ts \
-  --project=chromium \
-  --workers=1 &
-PLAYWRIGHT_PID=$!
-set +e
-wait "${PLAYWRIGHT_PID}"
-PLAYWRIGHT_STATUS=$?
-set -e
-if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
-  exit "${PLAYWRIGHT_STATUS}"
-fi
-
-PLAYWRIGHT_PID=""
-PLAYWRIGHT_STATUS=1
-stop_api_web_stack
-run_agent_task_backend_real_precheck
-PLAYWRIGHT_STATUS=0
+write_precheck_success_report
+PRECHECK_STATUS=0
 
 info "release local precheck passed"

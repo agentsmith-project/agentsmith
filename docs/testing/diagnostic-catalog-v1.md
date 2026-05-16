@@ -50,13 +50,13 @@ Do not use a diagnostic success as a release sign-off. If `npm run test:integrat
 | `npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner` | You need minimal deployed product proof without a heavy release campaign. | This proves project setup, file library upload/list/download, and managed runner task completion only. |
 | Internal verifier `gate:release:full` | You already have explicit campaign context and only need to understand the terminal aggregate verifier. | This verifier is aggregate-only and does not execute suites; without explicit context, run `npm run release:ready` instead. |
 
-## 4. Do / Don't
+## 4. Diagnostic Commands Do / Don't
 
 Do:
 - Start with the cheapest command that can reproduce the failure.
 - Keep the failing command and the final clean entrypoint separate in your notes.
 - Preserve evidence when an evidence owner fails.
-- Rerun `npm run verify -- --goal=... --run` after a diagnostic command turns green; use `npm run release:ready` for release-grade scope.
+- After a diagnostic command turns green, return to `npm run verify -- --goal=... --run`; use `npm run release:ready` for release-grade scope.
 
 Don't:
 - Do not update visual baselines without reading the screenshots.

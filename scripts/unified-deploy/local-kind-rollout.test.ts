@@ -931,6 +931,7 @@ describe('unified deploy local-kind live rollout producer', () => {
       inputDigest: readiness.state.input_digest,
       envDigest: readiness.state.env_digest.digest,
       gitSha: readiness.state.git_sha,
+      writerToken: readiness.writerToken,
       field: 'local_kind_image_import_completed',
       status: 'ready',
       identity: {

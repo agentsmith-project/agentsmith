@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-describe('release local precheck AFSCP contract', () => {
+describe('release local precheck lightweight contract', () => {
   const script = readFileSync('scripts/run-release-local-precheck.sh', 'utf8');
   const internalGate = readFileSync('scripts/run-internal-agent-task-real-gate.sh', 'utf8');
   const fullGate = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
@@ -18,36 +18,51 @@ describe('release local precheck AFSCP contract', () => {
     expect(script).toContain('MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"');
   });
 
-  it('delegates Agent Task coverage to the internal backend-real gate instead of the lightweight Playwright API', () => {
-    const helperIndex = script.indexOf('run_agent_task_backend_real_precheck()');
-    const preGateStopIndex = script.indexOf('stop_api_web_stack', script.lastIndexOf('PLAYWRIGHT_PID=""'));
-    const helperCallIndex = script.indexOf('run_agent_task_backend_real_precheck', helperIndex + 1);
-
-    expect(helperIndex).toBeGreaterThanOrEqual(0);
-    expect(preGateStopIndex).toBeGreaterThan(helperIndex);
-    expect(helperCallIndex).toBeGreaterThan(preGateStopIndex);
-    expect(script).toContain('run_clean bash scripts/run-internal-agent-task-real-gate.sh --skills-runtime');
-    expect(script).not.toContain('e2e/integration-agent-task-runner.spec.ts');
-    expect(script).not.toContain('file_library_backend_unavailable || true');
+  it('keeps only lightweight early-fail dependency, API, Web, and auth checks', () => {
+    expect(script).toContain('deps_ready()');
+    expect(script).toContain('run_clean make deps-bootstrap');
+    expect(script).toContain('npm run integration:deps:init:postgres');
+    expect(script).toContain('npm run integration:deps:init:keycloak');
+    expect(script).toContain('cleanup_gate_ports "${API_PORT}" "${WEB_PORT}" "release-local-precheck"');
+    expect(script).toContain('api_ready=0');
+    expect(script).toContain('"${INTEGRATION_API_BASE}/api/v1/workspaces"');
+    expect(script).toContain('web_ready=0');
+    expect(script).toContain('/en-US/login/workspace');
+    expect(script).toContain('/protocol/openid-connect/token');
+    expect(script).toContain('"${INTEGRATION_API_BASE}/api/v1/me/profile"');
+    expect(script).toContain('public-auth gate passed');
   });
 
-  it('passes the AFSCP product, bootstrap, and orchestrator client contract to the owner gate', () => {
-    expect(script).toContain('afscp_base_url="${RELEASE_PRECHECK_AFSCP_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9030))}"');
-    expect(script).toContain('afscp_export_gateway_base_url="${RELEASE_PRECHECK_AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:$((agent_task_api_port + 9031))}"');
-    expect(script).toContain('afscp_default_volume_id="${RELEASE_PRECHECK_AFSCP_DEFAULT_VOLUME_ID:-vol_release_precheck_${agent_task_api_port}}"');
-    expect(script).toContain('AFSCP_BASE_URL="${afscp_base_url}"');
-    expect(script).toContain('AFSCP_EXPORT_GATEWAY_BASE_URL="${afscp_export_gateway_base_url}"');
-    expect(script).toContain('AFSCP_DEFAULT_VOLUME_ID="${afscp_default_volume_id}"');
-    expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"');
-    expect(script).toContain('AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"');
-    expect(script).toContain('AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"');
-    expect(script).toContain('AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"');
-    expect(script).toContain('AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"');
-    expect(script).toContain('AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"');
-    expect(script).toContain('INTEGRATION_POSTGRES_PORT="${POSTGRES_PORT}"');
-    expect(script).toContain('INTEGRATION_MONGO_PORT="${MONGO_PORT}"');
-    expect(script).toContain('INTEGRATION_REDIS_PORT="${REDIS_PORT}"');
-    expect(script).toContain('INTEGRATION_MINIO_API_PORT="${MINIO_API_PORT}"');
+  it('keeps a successful precheck summary in the release campaign root without secrets', () => {
+    expect(script).toContain('RELEASE_PRECHECK_EVIDENCE_DIR="${RELEASE_PRECHECK_EVIDENCE_DIR:-}"');
+    expect(script).toContain('RELEASE_PRECHECK_EVIDENCE_DIR="${RELEASE_CAMPAIGN_ROOT}/release-local-precheck"');
+    expect(script).toContain('write_precheck_success_report()');
+    expect(script).toContain('"schema_version": "agentsmith.release-local-precheck/v1"');
+    expect(script).toContain('"dependency_services_ready"');
+    expect(script).toContain('"api_minimal_ready"');
+    expect(script).toContain('"web_minimal_ready"');
+    expect(script).toContain('"public_auth_token_smoke"');
+    expect(script.lastIndexOf('\nwrite_precheck_success_report\n')).toBeLessThan(script.lastIndexOf('PRECHECK_STATUS=0'));
+    expect(script).not.toContain('BACKEND_REAL_API_KEY_VALUE",');
+    expect(script).not.toContain('ACCESS_TOKEN",');
+  });
+
+  it('does not run release-owned browser product scenarios, Agent Task gates, or Files/Runner assertions', () => {
+    expect(script).not.toContain('run_clean npx playwright test');
+    expect(script).not.toContain('playwright test');
+    expect(script).not.toContain('e2e/integration-system-admin-entry.spec.ts');
+    expect(script).not.toContain('e2e/integration-workspace-public-login.spec.ts');
+    expect(script).not.toContain('e2e/integration-workspace-entry.spec.ts');
+    expect(script).not.toContain('e2e/integration-workspace-publish-usable.spec.ts');
+    expect(script).not.toContain('e2e/integration-workspace-settings-directory.spec.ts');
+    expect(script).not.toContain('run_agent_task_backend_real_precheck');
+    expect(script).not.toContain('scripts/run-internal-agent-task-real-gate.sh');
+    expect(script).not.toContain('--skills-runtime');
+    expect(script).not.toContain('--files-restore-continue');
+    expect(script).not.toContain('run-file-library-real-gate.sh');
+    expect(script).not.toContain('test:agent-task:backend-real');
+    expect(script).not.toContain('test:agent-runners:lifecycle:evidence');
+    expect(script).not.toContain('file_library_backend_unavailable || true');
   });
 
   it('preserves caller-selected substrate ports through backend-real env loading in owner gates', () => {

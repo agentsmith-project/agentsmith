@@ -850,7 +850,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'make local-real-up',
-        description: 'start the real local environment through the local-manual adapter',
+        description: 'start the real local environment',
         canonical: 'make',
         makeTarget: 'local-real-up',
         recommended: true,
@@ -858,7 +858,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'make local-real-status',
-        description: 'show substrate and local-manual adapter status',
+        description: 'show the real local environment status',
         canonical: 'make',
         makeTarget: 'local-real-status',
         recommended: true,
@@ -866,7 +866,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'make local-real-down',
-        description: 'stop the real local environment through the local-manual adapter',
+        description: 'stop the real local environment',
         canonical: 'make',
         makeTarget: 'local-real-down',
         recommended: true,
@@ -874,7 +874,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'make local-real-reset',
-        description: 'reset the real local environment through the local-manual adapter',
+        description: 'reset the real local environment',
         canonical: 'make',
         makeTarget: 'local-real-reset',
         recommended: true,

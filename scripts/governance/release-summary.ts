@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import {
@@ -13,6 +13,7 @@ import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
 import { RELEASE_HUMAN_LOG_NOTE, renderShortFailureProjection } from './status-projection';
+import { redactSensitiveText } from './redaction';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
 
@@ -33,7 +34,45 @@ export interface ReleaseSummary {
   summary_md_path: string;
   evidence_package: string;
   manual_operator_signoff: 'not_covered';
+  run_observability?: ReleaseRunObservability;
   generated_at: string;
+}
+
+export interface ReleaseRunObservabilityCounts {
+  real_service_start_count: number;
+  api_web_start_count: number;
+  backend_real_check_session_count: number;
+  image_import_count: number;
+}
+
+export interface ReleaseRunSlowStage {
+  id: string;
+  label: string;
+  duration_ms: number;
+  status: string;
+}
+
+export interface ReleaseRunObservability {
+  total_duration_ms: number | null;
+  top_slow_stages: readonly ReleaseRunSlowStage[];
+  counts_source: 'parent_flow';
+  counts: ReleaseRunObservabilityCounts;
+  poll_retry_coverage: 'not_covered';
+  report_size_bytes: number;
+}
+
+export interface ReleaseSummaryStageObservationInput {
+  id: string;
+  label?: string;
+  durationMs: number;
+  status?: string;
+}
+
+export interface ReleaseSummaryObservabilityInput {
+  totalDurationMs?: number | null;
+  stages?: readonly ReleaseSummaryStageObservationInput[];
+  counts?: Partial<ReleaseRunObservabilityCounts>;
+  reportSizeBytes?: number;
 }
 
 export interface ReleaseLatestPointer {
@@ -94,6 +133,7 @@ export interface WriteReleaseSummaryOptions {
   latestPath?: string;
   writeLatest?: boolean;
   resolveGitSha?: () => string;
+  observability?: ReleaseSummaryObservabilityInput;
 }
 
 export interface ReadReleaseStatusOptions {
@@ -119,6 +159,10 @@ function terminalResultPath(campaignRoot: string): string {
   return join(resolve(campaignRoot), 'gate-release-full', 'result.json');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${label} must be a JSON object.`);
@@ -128,6 +172,169 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+}
+
+function defaultReleaseRunObservabilityCounts(): ReleaseRunObservabilityCounts {
+  return {
+    real_service_start_count: 0,
+    api_web_start_count: 0,
+    backend_real_check_session_count: 0,
+    image_import_count: 0,
+  };
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function sanitizeObservabilityText(value: string): string {
+  return redactSensitiveText(value).slice(0, 160);
+}
+
+function normalizeObservationCount(value: unknown): number | undefined {
+  const parsed = nonNegativeInteger(value);
+  return parsed === null ? undefined : parsed;
+}
+
+function readReadinessParentCounts(campaignRoot: string): Partial<ReleaseRunObservabilityCounts> {
+  const path = join(campaignRoot, 'state', 'readiness.json');
+  if (!existsSync(path)) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = readJson(path);
+  } catch {
+    return {};
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.parent_observations) || !isRecord(parsed.parent_observations.counts)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(defaultReleaseRunObservabilityCounts())
+      .map(([field]) => [field, normalizeObservationCount(parsed.parent_observations.counts[field])])
+      .filter((entry): entry is [string, number] => entry[1] !== undefined),
+  );
+}
+
+function listFilesForSize(root: string): readonly string[] {
+  if (!existsSync(root)) {
+    return [];
+  }
+  const files: string[] = [];
+  const visit = (path: string): void => {
+    let stat: ReturnType<typeof lstatSync>;
+    try {
+      stat = lstatSync(path);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink()) {
+      return;
+    }
+    if (stat.isFile()) {
+      files.push(path);
+      return;
+    }
+    if (!stat.isDirectory()) {
+      return;
+    }
+    for (const entry of readdirSync(path)) {
+      visit(join(path, entry));
+    }
+  };
+  visit(root);
+  return files;
+}
+
+function reportSizeBytes(root: string): number {
+  return listFilesForSize(root).reduce((sum, path) => {
+    try {
+      return sum + lstatSync(path).size;
+    } catch {
+      return sum;
+    }
+  }, 0);
+}
+
+function normalizeReleaseRunObservability(input: {
+  campaignRoot: string;
+  observability?: ReleaseSummaryObservabilityInput;
+  reportSizeBytes?: number;
+}): ReleaseRunObservability {
+  const readinessCounts = readReadinessParentCounts(input.campaignRoot);
+  const suppliedCounts = input.observability?.counts ?? {};
+  const counts = {
+    ...defaultReleaseRunObservabilityCounts(),
+    ...readinessCounts,
+    ...Object.fromEntries(
+      Object.entries(suppliedCounts)
+        .map(([field, value]) => [field, normalizeObservationCount(value)])
+        .filter((entry): entry is [string, number] => entry[1] !== undefined),
+    ),
+  };
+
+  const topSlowStages = (input.observability?.stages ?? [])
+    .filter((stage) => nonNegativeInteger(stage.durationMs) !== null)
+    .map((stage) => ({
+      id: sanitizeObservabilityText(stage.id),
+      label: sanitizeObservabilityText(stage.label ?? stage.id),
+      duration_ms: stage.durationMs,
+      status: sanitizeObservabilityText(stage.status ?? 'unknown'),
+    }))
+    .sort((left, right) => right.duration_ms - left.duration_ms)
+    .slice(0, 3);
+
+  const totalDuration = input.observability?.totalDurationMs ?? null;
+  return {
+    total_duration_ms: totalDuration === null ? null : nonNegativeInteger(totalDuration),
+    top_slow_stages: topSlowStages,
+    counts_source: 'parent_flow',
+    counts,
+    poll_retry_coverage: 'not_covered',
+    report_size_bytes: input.reportSizeBytes ?? input.observability?.reportSizeBytes ?? 0,
+  };
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null) {
+    return '<unknown>';
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 || hours > 0) {
+    parts.push(`${minutes}m`);
+  }
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
+function renderReleaseObservabilityLines(observability?: ReleaseRunObservability): readonly string[] {
+  if (!observability) {
+    return [];
+  }
+  const slowStages = observability.top_slow_stages.length > 0
+    ? observability.top_slow_stages
+      .map((stage) => `${stage.id} ${formatDuration(stage.duration_ms)}`)
+      .join('; ')
+    : '<none>';
+  return [
+    `Total duration: ${formatDuration(observability.total_duration_ms)}`,
+    `Slowest stages: ${slowStages}`,
+    `Real service starts: ${observability.counts.real_service_start_count}`,
+    `API/Web starts: ${observability.counts.api_web_start_count}`,
+    `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
+    `Image imports: ${observability.counts.image_import_count}`,
+    'Poll/retry coverage: not covered',
+    `Report size: ${observability.report_size_bytes} bytes`,
+  ];
 }
 
 export function resolveCurrentGitSha(cwd = process.cwd()): string {
@@ -248,13 +455,6 @@ function nextActionForFailure(
     return 'Attach summary.md to the release note and complete the operator sign-off checklist.';
   }
 
-  const ownerCommandByStep: Record<string, string> = {
-    'lane-visual': 'npm run verify -- --goal=visual --run',
-    'gate-release': 'npm run verify -- --goal=release-real --run',
-    'gate-fast': 'npm run verify -- --goal=debug --run',
-    'gate-default': 'npm run verify -- --goal=pr --run',
-  };
-  const ownerCommand = blockedStep ? ownerCommandByStep[blockedStep] : undefined;
   const ownerInspection = blockedStep
     ? `Inspect campaign evidence for ${blockedStep}, fix the owning issue, then rerun npm run release:ready.`
     : 'Inspect the campaign evidence, fix the owning issue, then rerun npm run release:ready.';
@@ -266,17 +466,13 @@ function nextActionForFailure(
     return 'Resolve the active runtime or port conflict, then run npm run release:status before retrying npm run release:ready.';
   }
   if (failureClass === 'evidence_missing') {
-    return ownerCommand
-      ? `Run the owning diagnostic (${ownerCommand}), then rerun npm run release:ready.`
-      : ownerInspection;
+    return ownerInspection;
   }
   if (failureClass === 'contract_drift') {
     return 'Do not blindly rerun. Hand this to the governance maintainer to repair manifest/schema/evidence drift.';
   }
 
-  return ownerCommand
-    ? `Fix the product regression, run ${ownerCommand}, then rerun npm run release:ready.`
-    : ownerInspection;
+  return ownerInspection;
 }
 
 function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
@@ -290,14 +486,15 @@ function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
     `- blocked_step: ${summary.blocked_step ?? '<none>'}`,
     `- terminal_result: ${summary.terminal_result_path}`,
     `- manual_operator_signoff: ${summary.manual_operator_signoff}`,
+    ...renderReleaseObservabilityLines(summary.run_observability).map((line) => `- ${line}`),
     '',
     '## Why',
     '',
-    summary.why,
+    redactSensitiveText(summary.why),
     '',
     '## Next Action',
     '',
-    summary.next_action,
+    redactSensitiveText(summary.next_action),
     '',
   ].join('\n');
 }
@@ -312,6 +509,10 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
   const blockedStep = inferBlockedStep(status, terminalResult.summary as string);
   const summaryJsonPath = join(campaignRoot, 'summary.json');
   const summaryMdPath = join(campaignRoot, 'summary.md');
+  const initialObservability = normalizeReleaseRunObservability({
+    campaignRoot,
+    observability: options.observability,
+  });
 
   const summary: ReleaseSummary = {
     schema: 'agentsmith_release_summary/v1',
@@ -323,19 +524,39 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     failure_class: failureClass,
     stage: terminalResult.stage as string,
     blocked_step: blockedStep,
-    why: terminalResult.summary as string,
-    next_action: nextActionForFailure(failureClass, blockedStep),
+    why: redactSensitiveText(terminalResult.summary as string),
+    next_action: redactSensitiveText(nextActionForFailure(failureClass, blockedStep)),
     terminal_result_path: terminalPath,
     summary_json_path: summaryJsonPath,
     summary_md_path: summaryMdPath,
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
+    run_observability: initialObservability,
     generated_at: new Date().toISOString(),
   };
 
   mkdirSync(campaignRoot, { recursive: true });
   writeFileSync(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`);
   writeFileSync(summaryMdPath, renderReleaseSummaryMarkdown(summary));
+  summary.run_observability = normalizeReleaseRunObservability({
+    campaignRoot,
+    observability: options.observability,
+    reportSizeBytes: reportSizeBytes(campaignRoot),
+  });
+  writeFileSync(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`);
+  writeFileSync(summaryMdPath, renderReleaseSummaryMarkdown(summary));
+  for (let index = 0; index < 3; index += 1) {
+    const stableReportSize = reportSizeBytes(campaignRoot);
+    if (summary.run_observability.report_size_bytes === stableReportSize) {
+      break;
+    }
+    summary.run_observability = {
+      ...summary.run_observability,
+      report_size_bytes: stableReportSize,
+    };
+    writeFileSync(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`);
+    writeFileSync(summaryMdPath, renderReleaseSummaryMarkdown(summary));
+  }
 
   if (options.writeLatest !== false) {
     const latestPath = resolve(options.latestPath ?? defaultLatestPath());
@@ -428,7 +649,55 @@ function parseSummary(path: string): ReleaseSummary {
   if (!CURRENT_GATE_RESULT_FAILURE_CLASSES.includes(summary.failure_class as CurrentGateResultFailureClass)) {
     throw new Error('release summary cache failure_class is invalid.');
   }
+  if (summary.run_observability !== undefined) {
+    validateReleaseRunObservability(summary.run_observability);
+  }
   return summary as unknown as ReleaseSummary;
+}
+
+function validateReleaseRunObservability(value: unknown): void {
+  const observability = requireRecord(value, 'release summary run_observability');
+  const allowed = new Set([
+    'total_duration_ms',
+    'top_slow_stages',
+    'counts_source',
+    'counts',
+    'poll_retry_coverage',
+    'report_size_bytes',
+  ]);
+  assertAllowedFields(observability, allowed, 'release summary run_observability');
+  if (observability.total_duration_ms !== null && nonNegativeInteger(observability.total_duration_ms) === null) {
+    throw new Error('release summary run_observability total_duration_ms must be a non-negative integer or null.');
+  }
+  if (observability.counts_source !== 'parent_flow') {
+    throw new Error('release summary run_observability counts_source must be parent_flow.');
+  }
+  if (observability.poll_retry_coverage !== 'not_covered') {
+    throw new Error('release summary run_observability poll_retry_coverage must be not_covered.');
+  }
+  if (!Array.isArray(observability.top_slow_stages)) {
+    throw new Error('release summary run_observability top_slow_stages must be an array.');
+  }
+  for (const [index, stage] of observability.top_slow_stages.entries()) {
+    const record = requireRecord(stage, `release summary run_observability top_slow_stages[${index}]`);
+    assertAllowedFields(record, new Set(['id', 'label', 'duration_ms', 'status']), `release summary run_observability top_slow_stages[${index}]`);
+    for (const field of ['id', 'label', 'status'] as const) {
+      requireNonEmptyStringField(record, field, `release summary run_observability top_slow_stages[${index}]`);
+    }
+    if (nonNegativeInteger(record.duration_ms) === null) {
+      throw new Error(`release summary run_observability top_slow_stages[${index}] duration_ms must be a non-negative integer.`);
+    }
+  }
+  const counts = requireRecord(observability.counts, 'release summary run_observability counts');
+  assertAllowedFields(counts, new Set(Object.keys(defaultReleaseRunObservabilityCounts())), 'release summary run_observability counts');
+  for (const field of Object.keys(defaultReleaseRunObservabilityCounts())) {
+    if (nonNegativeInteger(counts[field]) === null) {
+      throw new Error(`release summary run_observability counts ${field} must be a non-negative integer.`);
+    }
+  }
+  if (nonNegativeInteger(observability.report_size_bytes) === null) {
+    throw new Error('release summary run_observability report_size_bytes must be a non-negative integer.');
+  }
 }
 
 function summaryMatchesTerminal(args: {
@@ -451,12 +720,12 @@ function summaryMatchesTerminal(args: {
     [args.summary.status === terminalStatus, 'status'],
     [args.summary.failure_class === terminalFailureClass, 'failure_class'],
     [args.summary.stage === args.terminalResult.stage, 'stage'],
-    [args.summary.why === args.terminalResult.summary, 'why'],
+    [args.summary.why === redactSensitiveText(args.terminalResult.summary as string), 'why'],
     [resolve(args.summary.terminal_result_path) === resolve(expectedTerminalPath), 'terminal_result_path'],
     [resolve(args.summary.summary_json_path) === resolve(args.summaryPath), 'summary_json_path'],
     [resolve(args.summary.evidence_package) === resolve(args.campaignRoot), 'evidence_package'],
     [args.summary.blocked_step === expectedBlockedStep, 'blocked_step'],
-    [args.summary.next_action === expectedNextAction, 'next_action'],
+    [args.summary.next_action === redactSensitiveText(expectedNextAction), 'next_action'],
   ];
 
   const failed = checks.find(([ok]) => !ok);
@@ -621,14 +890,15 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         verdict: 'FAILED',
         blocker: summary.blocked_step ?? summary.failure_class,
         stage: summary.stage,
-        why: summary.why,
+        why: redactSensitiveText(summary.why),
         inspectCommand: summary.summary_md_path,
         rerunCommand: 'npm run release:ready',
         evidencePath: summary.evidence_package,
       }).trimEnd(),
       `Summary: ${summary.summary_md_path}`,
       `Terminal result: ${summary.terminal_result_path}`,
-      `Next: ${summary.next_action}`,
+      ...renderReleaseObservabilityLines(summary.run_observability),
+      `Next: ${redactSensitiveText(summary.next_action)}`,
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
     ].join('\n');
@@ -640,11 +910,12 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Automated release verdict: ${summary.automated_release_verdict}`,
     `Campaign: ${summary.campaign_run_id}`,
-    `Why: ${summary.why}`,
+    `Why: ${redactSensitiveText(summary.why)}`,
     `Summary: ${summary.summary_md_path}`,
     `Evidence: ${summary.evidence_package}`,
     `Terminal result: ${summary.terminal_result_path}`,
-    `Next: ${summary.next_action}`,
+    ...renderReleaseObservabilityLines(summary.run_observability),
+    `Next: ${redactSensitiveText(summary.next_action)}`,
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
     '',
   ].join('\n');

@@ -11,6 +11,7 @@ import {
   createRunReadinessState,
   ensureRunReadinessState,
   updateRunReadinessStateField,
+  updateRunReadinessStateParentObservations,
   validateRunReadinessStateForConsumer,
 } from '../run-readiness-state';
 
@@ -131,6 +132,18 @@ describe('run-local readiness state', () => {
         ok: false,
         error: expect.stringContaining('env_digest'),
       });
+
+      expect(validateRunReadinessStateForConsumer({
+        statePath,
+        invocationId: state.invocation_id,
+        processNonce: state.process_nonce,
+        inputDigest: state.input_digest,
+        envDigest: state.env_digest.digest,
+        gitSha: 'git-sha-from-another-command',
+      })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('git_sha'),
+      });
     });
   });
 
@@ -187,6 +200,43 @@ describe('run-local readiness state', () => {
     });
   });
 
+  it('does not expose the parent writer token to children and rejects child writes', () => {
+    withTempRoot((root) => {
+      const context = createRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-parent-writer',
+        input: {
+          campaign_root: root,
+          run_id: 'release-run-parent-writer',
+        },
+        env: {
+          NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+        },
+        invocationId: 'parent-writer-invocation',
+        processNonce: 'parent-writer-process-nonce',
+      });
+      const before = readFileSync(context.statePath, 'utf8');
+
+      expect(context.writerToken).toMatch(/^writer-/);
+      expect(JSON.stringify(context.env)).not.toContain(context.writerToken);
+      expect(before).not.toContain(context.writerToken);
+
+      expect(() => updateRunReadinessStateField({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        field: 'integration_deps_ready',
+        status: 'ready',
+      })).toThrow(/parent writer token/);
+
+      expect(readFileSync(context.statePath, 'utf8')).toBe(before);
+    });
+  });
+
   it('lets the parent writer mark integration deps ready and exposes a read-only CLI check', () => {
     withTempRoot((root) => {
       const context = createRunReadinessState({
@@ -220,6 +270,7 @@ describe('run-local readiness state', () => {
         inputDigest: context.state.input_digest,
         envDigest: context.state.env_digest.digest,
         gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
         field: 'integration_deps_ready',
         status: 'ready',
       });
@@ -253,6 +304,72 @@ describe('run-local readiness state', () => {
     });
   });
 
+  it('validates merged parent observations before persisting them', () => {
+    withTempRoot((root) => {
+      const context = createRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-parent-observations',
+        input: {
+          campaign_root: root,
+          run_id: 'release-run-parent-observations',
+        },
+        env: {
+          NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+        },
+        invocationId: 'parent-observations-invocation',
+        processNonce: 'parent-observations-process-nonce',
+      });
+      const before = readFileSync(context.statePath, 'utf8');
+
+      expect(() => updateRunReadinessStateParentObservations({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
+        services: {
+          real_services_started: 'ready',
+          api_web_started: 'not-a-readiness-status' as never,
+        },
+        counts: {
+          image_import_count: -1,
+        },
+      })).toThrow(/merged readiness state validation failed/);
+
+      expect(readFileSync(context.statePath, 'utf8')).toBe(before);
+
+      const updated = updateRunReadinessStateParentObservations({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
+        services: {
+          real_services_started: 'ready',
+          api_web_started: 'ready',
+        },
+        counts: {
+          real_service_start_count: 1,
+          api_web_start_count: 1,
+        },
+      });
+
+      expect(updated.parent_observations.services).toEqual({
+        real_services_started: 'ready',
+        api_web_started: 'ready',
+      });
+      expect(updated.parent_observations.counts).toMatchObject({
+        real_service_start_count: 1,
+        api_web_start_count: 1,
+      });
+    });
+  });
+
   it('requires matching resource identity before reusing a ready field', () => {
     withTempRoot((root) => {
       const context = createRunReadinessState({
@@ -277,6 +394,7 @@ describe('run-local readiness state', () => {
         inputDigest: context.state.input_digest,
         envDigest: context.state.env_digest.digest,
         gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
         field: 'runner_image_digest_prepared',
         status: 'ready',
         identity: {

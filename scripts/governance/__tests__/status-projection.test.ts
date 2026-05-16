@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -95,6 +95,60 @@ function writeAggregateResult(campaignRoot: string, overrides: Partial<{
   const path = join(campaignRoot, 'gate-release-full', 'result.json');
   writeJson(path, payload);
   return path;
+}
+
+function writeReleaseSummaryWithObservability(campaignRoot: string): void {
+  writeJson(join(campaignRoot, 'summary.json'), {
+    schema: 'agentsmith_release_summary/v1',
+    campaign_id: 'release-full',
+    campaign_run_id: campaignRoot.split('/').at(-1) ?? 'release-status-observability',
+    campaign_root: campaignRoot,
+    automated_release_verdict: 'PASSED',
+    status: 'passed',
+    failure_class: 'none',
+    stage: 'aggregate',
+    blocked_step: null,
+    why: 'Release-full campaign evidence passed aggregate verification.',
+    next_action: 'Attach summary.md to the release note and complete the operator sign-off checklist.',
+    terminal_result_path: join(campaignRoot, 'gate-release-full', 'result.json'),
+    summary_json_path: join(campaignRoot, 'summary.json'),
+    summary_md_path: join(campaignRoot, 'summary.md'),
+    evidence_package: campaignRoot,
+    manual_operator_signoff: 'not_covered',
+    generated_at: GENERATED_AT,
+    run_observability: {
+      total_duration_ms: 5_432_100,
+      top_slow_stages: [
+        {
+          id: 'gate-release',
+          label: 'Backend real release check',
+          duration_ms: 2_765_000,
+          status: 'passed',
+        },
+        {
+          id: 'lane-visual',
+          label: 'Full visual check',
+          duration_ms: 1_011_000,
+          status: 'passed',
+        },
+        {
+          id: 'lane-unified-deploy-product-flows',
+          label: 'Deploy product flows',
+          duration_ms: 165_000,
+          status: 'passed',
+        },
+      ],
+      counts_source: 'parent_flow',
+      counts: {
+        real_service_start_count: 1,
+        api_web_start_count: 1,
+        backend_real_check_session_count: 2,
+        image_import_count: 3,
+      },
+      poll_retry_coverage: 'not_covered',
+      report_size_bytes: 987_654,
+    },
+  });
 }
 
 function writeFailedCampaignStepResult(campaignRoot: string, stepId = 'gate-default'): string {
@@ -246,6 +300,70 @@ describe('current status projection', () => {
       expect(rendered).not.toContain('Blocker: containerd deprecation');
       expect(rendered).not.toContain('Resume recommendation:');
       expect(rendered).not.toContain('Commands executed:');
+    });
+  });
+
+  it('projects release duration, slow stages, parent counts, and report size as read-only status', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot);
+      writeReleaseSummaryWithObservability(campaignRoot);
+
+      const projection = buildStatusProjection({
+        goal: 'release-ready',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjectionSummary(projection);
+
+      expect(projection.run_observability).toMatchObject({
+        total_duration_ms: 5_432_100,
+        counts_source: 'parent_flow',
+        counts: {
+          real_service_start_count: 1,
+          api_web_start_count: 1,
+          backend_real_check_session_count: 2,
+          image_import_count: 3,
+        },
+        poll_retry_coverage: 'not_covered',
+        report_size_bytes: 987_654,
+      });
+      expect(projection.run_observability?.top_slow_stages.map((stage) => stage.id)).toEqual([
+        'gate-release',
+        'lane-visual',
+        'lane-unified-deploy-product-flows',
+      ]);
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(rendered).toContain('Total duration: 1h 30m 32s');
+      expect(rendered).toContain('Slowest stages: Backend real release check 46m 5s; Full visual check 16m 51s; Deploy product flows 2m 45s');
+      expect(rendered).not.toContain('Slowest stages: gate-release');
+      expect(rendered).toContain('Real service starts: 1');
+      expect(rendered).toContain('API/Web starts: 1');
+      expect(rendered).toContain('Backend real sessions: 2');
+      expect(rendered).toContain('Image imports: 3');
+      expect(rendered).toContain('Poll/retry coverage: not covered');
+      expect(rendered).not.toContain('Poll/retry attempts: 0');
+      expect(rendered).toContain('Report size: 987654 bytes');
+      expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+    });
+  });
+
+  it('accepts v1 status projections that omit additive run observability', () => {
+    const projection = buildStatusProjection({
+      goal: 'release-ready',
+      currentGitSha: CURRENT_GIT_SHA,
+      generatedAt: GENERATED_AT,
+    });
+    const {
+      run_observability: _additive,
+      ...legacyProjection
+    } = projection;
+
+    expect(legacyProjection).not.toHaveProperty('run_observability');
+    expect(validateCurrentStatusProjection(legacyProjection)).toEqual({
+      ok: true,
+      value: legacyProjection,
     });
   });
 
@@ -605,7 +723,8 @@ describe('current status projection', () => {
         code: 'evidence_missing',
         summary: 'Missing campaign step result: lane-visual',
       });
-      expect(blocked.safe_next_command).toBe('npm run verify -- --goal=visual --run');
+      expect(blocked.safe_next_command).toBe('npm run release:ready');
+      expect(blocked.resume_recommendation.safe_next_command).toBe('npm run release:ready');
       expectNoInternalVerifyAlias(blocked);
 
       const running = buildStatusProjection({
@@ -629,7 +748,7 @@ describe('current status projection', () => {
     })));
   });
 
-  it('uses the governed release-real run command as the gate-release safe next action', () => {
+  it('uses the public release-ready wrapper as the gate-release safe next action', () => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -647,8 +766,9 @@ describe('current status projection', () => {
 
       expect(projection.presentation_status).toBe('failed');
       expect(projection.primary_blocker?.owner).toBe('gate-release');
-      expect(projection.safe_next_command).toBe('npm run verify -- --goal=release-real --run');
+      expect(projection.safe_next_command).toBe('npm run release:ready');
       expect(projection.safe_next_command).not.toBe('npm run verify:release-real');
+      expect(JSON.stringify(projection)).not.toContain('npm run verify -- --goal=release-real --run');
       expect(JSON.stringify(projection)).not.toContain('npm run verify:release-real');
     });
   });
@@ -698,12 +818,12 @@ describe('current status projection', () => {
           path: stepResultPath,
           digest: sha256(stepResultContent),
         },
-        safe_next_command: 'npm run verify -- --goal=pr --run',
+        safe_next_command: 'npm run release:ready',
         reason_codes: ['campaign_step_failed'],
         automatic_rerun: false,
         automatic_skip: false,
       });
-      expect(projection.safe_next_command).toBe('npm run verify -- --goal=pr --run');
+      expect(projection.safe_next_command).toBe('npm run release:ready');
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
       expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
       expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
@@ -814,7 +934,7 @@ describe('current status projection', () => {
       expect(projection.primary_blocker).toMatchObject({
         owner: 'lane-visual',
       });
-      expect(projection.safe_next_command).toBe('npm run verify -- --goal=visual --run');
+      expect(projection.safe_next_command).toBe('npm run release:ready');
       expect(projection.resume_recommendation).toEqual({
         projection_kind: 'read_only',
         source: 'terminal_aggregate',
@@ -824,7 +944,7 @@ describe('current status projection', () => {
         producer_job_ids: ['lane-visual'],
         downstream_aggregate_job_id: 'gate-release-full',
         step_result_pointer: null,
-        safe_next_command: 'npm run verify -- --goal=visual --run',
+        safe_next_command: 'npm run release:ready',
         reason_codes: ['terminal_aggregate_failed'],
         automatic_rerun: false,
         automatic_skip: false,
@@ -840,11 +960,11 @@ describe('current status projection', () => {
   });
 
   it.each([
-    ['lane-visual', 'npm run verify -- --goal=visual --run'],
-    ['gate-fast', 'npm run verify -- --goal=debug --run'],
-    ['gate-default', 'npm run verify -- --goal=pr --run'],
-    ['gate-release', 'npm run verify -- --goal=release-real --run'],
-  ])('uses governed verify command for failed release owner %s', (owner, expectedCommand) => {
+    ['lane-visual'],
+    ['gate-fast'],
+    ['gate-default'],
+    ['gate-release'],
+  ])('uses release:ready as the public next action for failed release owner %s', (owner) => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -863,8 +983,12 @@ describe('current status projection', () => {
 
       expect(projection.presentation_status).toBe('failed');
       expect(projection.primary_blocker?.owner).toBe(owner);
-      expect(projection.safe_next_command).toBe(expectedCommand);
-      expect(rendered).toContain(`Next action: ${expectedCommand}`);
+      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.resume_recommendation.safe_next_command).toBe('npm run release:ready');
+      expect(rendered).toContain('Next action: npm run release:ready');
+      expect(rendered).not.toContain('Next action: npm run verify');
+      expect(rendered).toContain('Diagnostic context:');
+      expect(rendered).not.toContain('Resume recommendation:');
       expectNoInternalVerifyAlias(projection);
       expectNoInternalVerifyAlias(rendered);
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
@@ -1064,6 +1188,70 @@ describe('current status projection', () => {
       expect(existsSync(join(campaignRoot, 'summary.json'))).toBe(false);
       expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
     });
+  });
+
+  it('keeps release-status --json next action on release:ready for failed owner diagnostics', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot, {
+        status: 'failed',
+        failure_class: 'product_regression',
+        summary: 'Campaign step gate-release did not pass.',
+      });
+
+      const output = execFileSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--json',
+        '--campaign-root',
+        campaignRoot,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(output) as {
+        safe_next_command?: unknown;
+        primary_blocker?: { owner?: unknown };
+        resume_recommendation?: { safe_next_command?: unknown };
+      };
+
+      expect(projection.primary_blocker?.owner).toBe('gate-release');
+      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.resume_recommendation?.safe_next_command).toBe('npm run release:ready');
+      expect(output).not.toContain('npm run verify -- --goal=release-real --run');
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+    });
+  });
+
+  it('does not run checks when rendering release-status', () => {
+    withTempRoot((campaignRoot) => withTempRoot((fakeBinRoot) => {
+      writeAggregateResult(campaignRoot);
+      writeReleaseSummaryWithObservability(campaignRoot);
+      const logPath = join(fakeBinRoot, 'npm.log');
+      writeFileSync(join(fakeBinRoot, 'npm'), [
+        '#!/usr/bin/env bash',
+        `printf '%s\\n' "$*" >> "${logPath}"`,
+        'exit 99',
+        '',
+      ].join('\n'));
+      chmodSync(join(fakeBinRoot, 'npm'), 0o755);
+
+      const output = execFileSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--campaign-root',
+        campaignRoot,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBinRoot}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(existsSync(logPath)).toBe(false);
+    }));
   });
 
   it('keeps release-status --json from replaying redacted terminal summary secrets', () => {

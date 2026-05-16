@@ -140,6 +140,35 @@ function extractMakeQuickHelpCommands(block: string): string[] {
     .filter((command): command is string => Boolean(command));
 }
 
+const WORKFLOW_SURFACE_DOCS = [
+  'DEVELOPMENT.md',
+  'docs/user-guides/release-readiness-checklist.md',
+  'docs/testing/diagnostic-catalog-v1.md',
+] as const;
+
+const INTERNAL_WORKFLOW_REFERENCE_PATTERN =
+  /`(?:npm run (?:(?:test|gate|lane|backend-real):[a-z0-9:_-]+|release:campaign:[a-z0-9:_-]+)|make (?:local-manual|substrate)-[a-z0-9_-]+|(?:gate|lane|backend-real|release:campaign):[a-z0-9:_-]+)`/g;
+
+const INTERNAL_WORKFLOW_CONTEXT_PATTERN =
+  /诊断命令|维护者排障|机器可读报告|Diagnostic Commands|Maintainer Troubleshooting|Machine-Readable Reports/i;
+
+function lineNumberAtIndex(content: string, index: number): number {
+  return content.slice(0, index).split('\n').length;
+}
+
+function internalReferenceContext(content: string, lineNumber: number): string {
+  const lines = content.split('\n');
+  const lineIndex = lineNumber - 1;
+  const currentHeading = [...lines]
+    .slice(0, lineIndex + 1)
+    .reverse()
+    .find((line) => /^#{1,4}\s+/.test(line.trim())) ?? '';
+  const surrounding = lines
+    .slice(Math.max(0, lineIndex - 2), Math.min(lines.length, lineIndex + 3))
+    .join('\n');
+  return `${currentHeading}\n${surrounding}`;
+}
+
 function readTrackedWorkflowFiles(): string[] {
   const stdout = execSync('git ls-files .github/workflows/*.yml', {
     cwd: rootDir,
@@ -650,6 +679,43 @@ describe('current workflow governance', () => {
         /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
       );
     }
+  });
+
+  it('renders make quick-help with public entrypoints only', () => {
+    const output = execSync('make quick-help', {
+      cwd: rootDir,
+      encoding: 'utf8',
+    });
+    const commands = output
+      .split('\n')
+      .map((line) => line.match(/^  ((?:npm run|make) [^\s]+)$/)?.[1])
+      .filter((command): command is string => Boolean(command));
+
+    expect(commands).toEqual([...HUMAN_ENTRYPOINT_COMMANDS]);
+    expect(output).not.toMatch(/\binternal adapters?\b/i);
+    expect(output).not.toMatch(/\blocal-manual adapter\b/i);
+    for (const pattern of QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS) {
+      expect(output, `make quick-help must not expose ${pattern}`).not.toMatch(pattern);
+    }
+  });
+
+  it('keeps internal workflow command references in diagnostic, maintainer, or machine-readable doc contexts', () => {
+    const failures: string[] = [];
+
+    for (const doc of WORKFLOW_SURFACE_DOCS) {
+      const content = readRepoFile(doc);
+      for (const match of content.matchAll(INTERNAL_WORKFLOW_REFERENCE_PATTERN)) {
+        const reference = match[0];
+        const index = match.index ?? 0;
+        const lineNumber = lineNumberAtIndex(content, index);
+        const context = internalReferenceContext(content, lineNumber);
+        if (!INTERNAL_WORKFLOW_CONTEXT_PATTERN.test(context)) {
+          failures.push(`${doc}:${lineNumber} ${reference}`);
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
   });
 
   it('marks workflow commands with stable roles and keeps lane:mock as a diagnostic lane surface', () => {

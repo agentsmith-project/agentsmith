@@ -142,6 +142,8 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - official release trace root must include `ux-trace-index.json`, and each bundle under it must include `contract-snapshot.json`
 - for release-tier evidence, bundle membership is authoritative only through the current `gate-release` topology declaration in `scripts/governance/current-gate-manifest.ts`
+- when `test:release:precheck` removes browser product scenarios, the `gate-release` topology must explicitly declare the moved specs' UX trace memberships for `integration-system-admin-entry`, `integration-workspace-public-login`, `integration-workspace-entry`, `integration-workspace-publish-usable`, and `integration-workspace-settings-directory`
+- when `test:release:precheck` removes the internal Agent Task `--skills-runtime` assertion, `scripts/governance/release-precheck-evidence-ownership.ts` must fail closed unless the `gate-release` owner source chain still contains that assertion
 
 ## 4. Missing-evidence semantics
 

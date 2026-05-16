@@ -95,7 +95,7 @@ Command naming rule:
 - `npm run dev` is the canonical frontend/mock development entrypoint
 - `make` is the canonical entrypoint for local-real environment orchestration
 - `npm run` is the canonical entrypoint for clean verification and release wrappers
-- `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints
+- Maintainer troubleshooting: `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints
 
 Quick path note:
 - `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.

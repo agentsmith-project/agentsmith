@@ -37,7 +37,7 @@ Repo version files:
 - `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth
 - gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`
 - `npm run dev` 是前端/mock 开发入口；local-real 环境编排走 `make`
-- `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 保留为内部 adapter / evidence producer，不作为默认人工入口
+- 维护者排障：`gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 保留为内部 adapter / evidence producer，不作为默认人工入口
 
 Quick path note:
 - `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。
@@ -86,11 +86,11 @@ Gate adapter fidelity notes:
 
 给新开发者的执行边界：
 
-1. 先区分诊断路径和 authoritative verdict
+1. 先区分诊断命令和 authoritative verdict
 - `test` family commands、某个 focused Playwright spec、owner runbook 里的 targeted internal adapter，主要用于诊断、复现和缩小问题范围。
 - 普通开发者先用 `npm run verify` 生成计划，并用 `npm run verify -- --goal=... --run` 执行正式验证；不从 gate adapter 目录手工拼流程。
-- `gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
-- `gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
+- 诊断命令语境：`gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
+- 维护者排障语境：`gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
 - 对 evidence-owning internal adapters，证据完整性与命令返回同级。
@@ -541,7 +541,7 @@ For focused owner diagnostics on the default workspace/project evidence producer
 npm run test:default-e2e
 ```
 
-Treat `npm run test:default-e2e` as a focused diagnostics / evidence-owner producer rerun, not as the default PR gate entry.
+Treat `npm run test:default-e2e` as a focused 诊断命令 / evidence-owner producer rerun, not as the default PR gate entry.
 
 If daily verification also needs the real backend lane:
 
@@ -566,10 +566,10 @@ npm run release:ready
 npm run release:status
 ```
 
-Notes:
+Machine-readable Reports / Maintainer Troubleshooting Notes:
 
-1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence lanes, and the terminal aggregate verdict.
-2. `gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
+1. 机器可读报告语境：`npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence lanes, and the terminal aggregate verdict.
+2. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
 5. Unified deploy evidence roots derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
@@ -642,7 +642,7 @@ For focused owner diagnostics on the governance evidence producer, rerun:
 npm run test:governance
 ```
 
-Treat `npm run test:governance` as a focused diagnostics / evidence-owner producer rerun, not as the default PR gate entry.
+Treat `npm run test:governance` as a focused 诊断命令 / evidence-owner producer rerun, not as the default PR gate entry.
 
 ## API 合约与文档入口
 
@@ -788,7 +788,7 @@ See also:
 - Artifact collection displays files from `$TASK_HOME/workspace/.artifacts` only.
 - Chat model selection remains Endpoint-backed and does not dispatch Agent Runners.
 
-### Current Diagnostics
+### Diagnostic Commands
 
 - UI-focused Agent task changes should start with focused component tests under `src/components/agent-tasks/__tests__/`.
 - Runner/context owner diagnostics use `npm run test:agent-task:runner:fast`.

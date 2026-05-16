@@ -43,6 +43,7 @@ import {
 } from './release-campaign-io';
 import {
   isDefaultReleaseRunsCampaignRoot,
+  type ReleaseSummaryObservabilityInput,
   writeReleaseSummaryForCampaign,
 } from './release-summary';
 import {
@@ -78,6 +79,12 @@ export interface ReleaseCampaignExecutionResult {
 interface CampaignStepWriteOutcome {
   passed: boolean;
   failureClass: CurrentGateResultFailureClass;
+}
+
+interface ReleaseCampaignStageObservation {
+  id: string;
+  durationMs: number;
+  status: string;
 }
 
 interface AcquiredLeases {
@@ -405,6 +412,9 @@ function markReadinessField(input: {
   field: Parameters<typeof updateRunReadinessStateField>[0]['field'];
   identity?: Record<string, string>;
 }): void {
+  if (!input.readiness.writerToken) {
+    return;
+  }
   updateRunReadinessStateField({
     statePath: input.readiness.statePath,
     invocationId: input.readiness.state.invocation_id,
@@ -412,6 +422,7 @@ function markReadinessField(input: {
     inputDigest: input.readiness.state.input_digest,
     envDigest: input.readiness.state.env_digest.digest,
     gitSha: input.readiness.state.git_sha,
+    writerToken: input.readiness.writerToken,
     field: input.field,
     status: 'ready',
     ...(input.identity ? { identity: input.identity } : {}),
@@ -676,7 +687,44 @@ function failedAdapterOutcome(
   };
 }
 
+function recordStageObservation(input: {
+  observations: ReleaseCampaignStageObservation[];
+  step: CurrentVerificationCampaignStep;
+  startedMs: number;
+  status: string;
+}): void {
+  input.observations.push({
+    id: input.step.id,
+    durationMs: Math.max(0, Date.now() - input.startedMs),
+    status: input.status,
+  });
+}
+
+function campaignObservability(input: {
+  startedMs: number;
+  stages: readonly ReleaseCampaignStageObservation[];
+}): ReleaseSummaryObservabilityInput {
+  const executedStageIds = new Set(input.stages
+    .filter((stage) => stage.status !== 'skipped')
+    .map((stage) => stage.id));
+
+  return {
+    totalDurationMs: Math.max(0, Date.now() - input.startedMs),
+    stages: input.stages.map((stage) => ({
+      id: stage.id,
+      label: stage.id,
+      durationMs: stage.durationMs,
+      status: stage.status,
+    })),
+    counts: {
+      backend_real_check_session_count: executedStageIds.has('gate-release') ? 1 : 0,
+      image_import_count: executedStageIds.has('lane-unified-deploy-local-kind-images') ? 1 : 0,
+    },
+  };
+}
+
 export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput): ReleaseCampaignExecutionResult {
+  const campaignStartedMs = Date.now();
   const cwd = input.cwd ?? process.cwd();
   const env = input.env ?? process.env;
   const stdio = input.stdio ?? 'inherit';
@@ -715,6 +763,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
   const terminalState: { outcome: TerminalAggregateOutcome | null } = {
     outcome: null,
   };
+  const stageObservations: ReleaseCampaignStageObservation[] = [];
 
   runGovernanceDagScheduler({
     jobs: schedulerJobs(input.campaign),
@@ -726,6 +775,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
         if (!step) {
           throw new Error(`Unknown release campaign step: ${job.id}`);
         }
+        const stepStartedMs = Date.now();
 
         const leaseResult = acquireLeases(
           lockManager,
@@ -751,6 +801,12 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             });
             hadExecutableStepFailure = true;
           }
+          recordStageObservation({
+            observations: stageObservations,
+            step,
+            startedMs: stepStartedMs,
+            status: 'failed',
+          });
           return failedAdapterOutcome(leaseResult.failureClass, leaseResult.summary);
         }
 
@@ -776,6 +832,12 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               campaignRoot,
               terminalStep: step,
               outcome: terminalState.outcome,
+            });
+            recordStageObservation({
+              observations: stageObservations,
+              step,
+              startedMs: stepStartedMs,
+              status: terminalState.outcome.exitCode === 0 ? 'passed' : 'failed',
             });
 
             return {
@@ -810,6 +872,12 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
                 readiness,
               });
             }
+            recordStageObservation({
+              observations: stageObservations,
+              step,
+              startedMs: stepStartedMs,
+              status: outcome.passed ? 'passed' : 'failed',
+            });
             return {
               status: outcome.passed ? 'passed' : 'failed',
               failureClass: outcome.failureClass,
@@ -831,6 +899,12 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
           });
           hadExecutableStepFailure = true;
+          recordStageObservation({
+            observations: stageObservations,
+            step,
+            startedMs: stepStartedMs,
+            status: 'failed',
+          });
           return {
             status: 'failed',
             failureClass: writtenFailureClass(campaignRoot, step),
@@ -850,6 +924,11 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
         }
         writeSkippedStep(campaignRoot, step, reason);
         hadExecutableStepFailure = true;
+        stageObservations.push({
+          id: step.id,
+          durationMs: 0,
+          status: 'skipped',
+        });
         return {
           status: 'failed',
           failureClass: reason.failureClass,
@@ -885,6 +964,10 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
       writeReleaseSummaryForCampaign({
         campaignRoot,
         writeLatest: shouldWriteLatest,
+        observability: campaignObservability({
+          startedMs: campaignStartedMs,
+          stages: stageObservations,
+        }),
       });
     } catch (error) {
       console.error(`[release:campaign:full] failed to write release summary: ${error instanceof Error ? error.message : String(error)}`);

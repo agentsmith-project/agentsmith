@@ -18,6 +18,7 @@ import {
   resolveUxTraceBundleDir,
   type UxTraceBundleManifest,
 } from '../e2e/trace-bundle-support';
+import { CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP } from './governance/current-gate-manifest';
 
 type ValidatorResult = ReturnType<typeof spawnSync>;
 
@@ -28,6 +29,15 @@ function createFile(path: string, content = 'fixture\n'): void {
 
 function writeJson(path: string, payload: unknown): void {
   createFile(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function readTraceIndexBundles(root: string): unknown[] {
+  try {
+    const payload = JSON.parse(readFileSync(join(root, 'ux-trace-index.json'), 'utf8')) as { bundles?: unknown };
+    return Array.isArray(payload.bundles) ? payload.bundles : [];
+  } catch {
+    return [];
+  }
 }
 
 function requiredTraceSteps(story: StoryDefinition): readonly StoryStepDefinition[] {
@@ -161,26 +171,45 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
     })),
   });
   const bundleRelpath = relative(root, bundleDir).split('\\').join('/');
+  const preservedBundles = readTraceIndexBundles(root)
+    .filter((entry): entry is Record<string, unknown> => (
+      Boolean(entry)
+      && typeof entry === 'object'
+      && (entry as { bundle_relpath?: unknown }).bundle_relpath !== bundleRelpath
+    ));
   writeJson(join(root, 'ux-trace-index.json'), {
     version: 1,
     generated_at: '2026-04-12T12:00:01.000Z',
-    bundles: [{
-      lane: manifest.lane,
-      suite: manifest.suite,
-      story_id: manifest.story_id,
-      scenario_id: manifest.scenario_id,
-      run_id: manifest.run_id,
-      bundle_relpath: bundleRelpath,
-      manifest_relpath: `${bundleRelpath}/manifest.json`,
-      review_relpath: `${bundleRelpath}/review.md`,
-      contract_snapshot_relpath: `${bundleRelpath}/contract-snapshot.json`,
-    }],
+    bundles: [
+      ...preservedBundles,
+      {
+        lane: manifest.lane,
+        suite: manifest.suite,
+        story_id: manifest.story_id,
+        scenario_id: manifest.scenario_id,
+        run_id: manifest.run_id,
+        bundle_relpath: bundleRelpath,
+        manifest_relpath: `${bundleRelpath}/manifest.json`,
+        review_relpath: `${bundleRelpath}/review.md`,
+        contract_snapshot_relpath: `${bundleRelpath}/contract-snapshot.json`,
+      },
+    ].sort((left, right) => String(left.bundle_relpath).localeCompare(String(right.bundle_relpath))),
   });
   if (!options.omitEvents) {
     createFile(join(bundleDir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
   }
   createFile(join(bundleDir, 'review.md'), renderReview(manifest));
   return bundleDir;
+}
+
+function writeRequiredSemanticTraceBundles(root: string): string[] {
+  return CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP
+    .map((membership) => writeSemanticTraceBundle(root, {
+      suite: membership.suite,
+      storyId: membership.storyId,
+      scenarioId: membership.scenarioId,
+    }))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function runTraceValidator(root: string, reportPath = join(root, 'validation.json')): ValidatorResult {
@@ -849,19 +878,26 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('MINIO_PORT="${MINIO_PORT:-19000}"');
   });
 
-  it('keeps authoritative release ux traces scoped to the release user story and isolates visual review traces under a side artifact dir', () => {
+  it('keeps authoritative release ux traces scoped to release-owned browser specs and isolates visual review traces under a side artifact dir', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
     const visualReviewIndex = script.indexOf("RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review");
+    const browserSpecsIndex = script.indexOf('\nrun_release_browser_trace_specs\n', visualReviewIndex);
     const releaseStoryIndex = script.indexOf("ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh");
 
     expect(script).toContain('AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"');
     expect(script).toContain('VISUAL_REVIEW_ARTIFACT_DIR="${ARTIFACT_DIR}/visual-review"');
     expect(script).toContain("RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}'");
     expect(script).toContain('npm run test:visual:backend-real:review');
+    expect(script).toContain('e2e/integration-system-admin-entry.spec.ts');
+    expect(script).toContain('e2e/integration-workspace-public-login.spec.ts');
+    expect(script).toContain('e2e/integration-workspace-entry.spec.ts');
+    expect(script).toContain('e2e/integration-workspace-publish-usable.spec.ts');
+    expect(script).toContain('e2e/integration-workspace-settings-directory.spec.ts');
     expect(script).toContain("ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh");
     expect(script).toContain("--path '${AUTHORITATIVE_UX_TRACE_ROOT}'");
     expect(visualReviewIndex).toBeGreaterThanOrEqual(0);
-    expect(releaseStoryIndex).toBeGreaterThan(visualReviewIndex);
+    expect(browserSpecsIndex).toBeGreaterThan(visualReviewIndex);
+    expect(releaseStoryIndex).toBeGreaterThan(browserSpecsIndex);
   });
 
   it('includes Files restore continuation in the release-grade backend-real lane after core coverage', () => {
@@ -910,19 +946,21 @@ describe('backend-real full gate runtime ownership contract', () => {
     const root = mkdtempSync(join(tmpdir(), 'backend-real-trace-valid-'));
     try {
       const reportPath = join(root, 'validation.json');
-      const bundleDir = writeSemanticTraceBundle(root);
+      const bundleDirs = writeRequiredSemanticTraceBundles(root);
 
       const result = runTraceValidator(root, reportPath);
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain(bundleDir);
+      for (const bundleDir of bundleDirs) {
+        expect(result.stdout).toContain(bundleDir);
+      }
       const report = JSON.parse(readFileSync(reportPath, 'utf8')) as {
         valid_count: number;
         valid_bundle_paths: string[];
       };
-      expect(report.valid_count).toBe(1);
-      expect(report.valid_bundle_paths).toEqual([bundleDir]);
-      expect(readFileSync(join(root, 'valid-bundles.txt'), 'utf8')).toBe(`${bundleDir}\n`);
+      expect(report.valid_count).toBe(bundleDirs.length);
+      expect(report.valid_bundle_paths).toEqual(bundleDirs);
+      expect(readFileSync(join(root, 'valid-bundles.txt'), 'utf8')).toBe(`${bundleDirs.join('\n')}\n`);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -13,6 +13,7 @@ const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraryMeta',
   'fileLibrarySavePoints',
   'fileLibraryRestore',
+  'fileLibraryActiveOperation',
   'fileLibraryRuntimeAccessRelease',
   'fileLibraryOperation',
   'taskFileTemplates',

@@ -544,7 +544,11 @@ describe('FileLibraryRecoveryDialog', () => {
         expect.objectContaining({ enabled: true }),
       );
     });
-    expect(screen.queryByText('Restore point saved.')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent('Restore point saved.');
+    expect(screen.getByTestId('files__restore-operation')).toHaveTextContent(
+      'The restore point is saved. Refreshing the restore point list.',
+    );
+    expect(screen.getByTestId('files__restore-operation')).not.toHaveTextContent('Saving restore point...');
     expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
 
     savePoints = [
@@ -573,6 +577,78 @@ describe('FileLibraryRecoveryDialog', () => {
       expect(screen.getByText('Before prompt edits')).toBeVisible();
       expect(screen.getByTestId('files__save-point__message')).toBeEnabled();
       expect(screen.getByTestId('files__save-point__message')).toHaveValue('');
+    });
+  });
+
+  it('keeps a save-point lookup terminal success ahead of same-id stale active running state while the list refreshes', async () => {
+    const user = userEvent.setup();
+    const terminalOperation = {
+      id: 'flop_save_point_new',
+      kind: 'save_point_create',
+      file_library_id: 'lib_1',
+      status: 'succeeded',
+      result_save_point_id: 'sp_created_from_operation',
+      message: 'Before prompt edits',
+      created_at: '2026-05-09T12:04:00.000Z',
+      updated_at: '2026-05-09T12:04:02.000Z',
+    };
+    let activeOperation: unknown = null;
+    let activeOperationUpdatedAt = 2;
+    mockActiveRestoreOperationQueryState.mockImplementation(() => ({
+      data: { operation: activeOperation },
+      dataUpdatedAt: activeOperationUpdatedAt,
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: mockRefetchActiveRestoreOperation,
+    }));
+    mockVersionOperationLookupState.mockImplementation((_workspaceId, _projectId, _libraryId, operationId) => ({
+      data: operationId === 'flop_save_point_new' ? terminalOperation : null,
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    }));
+
+    const view = renderDialog();
+
+    await user.type(screen.getByTestId('files__save-point__message'), 'Before prompt edits');
+    await user.click(screen.getByTestId('files__save-point__create'));
+
+    await waitFor(() => {
+      const operationStatus = screen.getByTestId('files__restore-operation');
+      expect(operationStatus).toHaveTextContent('Restore point saved.');
+      expect(operationStatus).toHaveTextContent('The restore point is saved. Refreshing the restore point list.');
+      expect(operationStatus).not.toHaveTextContent('Saving restore point...');
+    });
+
+    activeOperation = {
+      id: 'flop_save_point_new',
+      kind: 'save_point_create',
+      file_library_id: 'lib_1',
+      status: 'running',
+      message: 'Before prompt edits',
+      created_at: '2026-05-09T12:04:00.000Z',
+      updated_at: '2026-05-09T12:04:01.000Z',
+    };
+    activeOperationUpdatedAt = 3;
+    view.rerender(
+      <FileLibraryRecoveryDialog
+        open
+        library={library}
+        projectId="proj_001"
+        t={t}
+        workspaceId="ws_default"
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      const operationStatus = screen.getByTestId('files__restore-operation');
+      expect(operationStatus).toHaveTextContent('Restore point saved.');
+      expect(operationStatus).toHaveTextContent('The restore point is saved. Refreshing the restore point list.');
+      expect(operationStatus).not.toHaveTextContent('Saving restore point...');
+      expect(screen.getByTestId('files__save-point__message')).toBeDisabled();
     });
   });
 

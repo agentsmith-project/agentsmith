@@ -543,6 +543,78 @@ describe('file library recovery hooks', () => {
     });
   });
 
+  for (const terminalStatus of ['succeeded', 'failed'] as const) {
+    it(`keeps operation-id lookup terminal ${terminalStatus} ahead of same-id stale active state`, async () => {
+      const operationId = `flop_lookup_terminal_${terminalStatus}`;
+      mockGetFileLibraryVersionOperation.mockResolvedValueOnce({
+        id: operationId,
+        kind: 'save_point_create',
+        file_library_id: libraryId,
+        status: terminalStatus,
+        ...(terminalStatus === 'succeeded'
+          ? { result_save_point_id: 'sp_created_from_operation' }
+          : { failure_reason: 'safe failure' }),
+        message: 'Before prompt edits',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:02.000Z',
+      });
+      mockGetActiveFileLibraryOperation.mockResolvedValueOnce({
+        operation: {
+          id: operationId,
+          kind: 'save_point_create',
+          file_library_id: libraryId,
+          status: 'running',
+          message: 'Before prompt edits',
+          created_at: '2026-05-09T12:00:00.000Z',
+          updated_at: '2026-05-09T12:00:01.000Z',
+        },
+      });
+
+      const { queryClient, Wrapper } = createTestHarness();
+      const activeOperationKey = queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId);
+      const lookup = renderHook(
+        () => useFileLibraryVersionOperationLookup(
+          workspaceId,
+          projectId,
+          libraryId,
+          operationId,
+        ),
+        { wrapper: Wrapper },
+      );
+
+      await waitFor(() => expect(lookup.result.current.data?.status).toBe(terminalStatus));
+      await waitFor(() => {
+        expect(queryClient.getQueryData(activeOperationKey)).toEqual({
+          operation: expect.objectContaining({
+            id: operationId,
+            status: terminalStatus,
+          }),
+        });
+      });
+
+      const active = renderHook(
+        () => useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId),
+        { wrapper: Wrapper },
+      );
+
+      await waitFor(() => {
+        expect(mockGetActiveFileLibraryOperation).toHaveBeenCalledWith(workspaceId, projectId, libraryId);
+      });
+      await waitFor(() => {
+        expect(active.result.current.data?.operation).toEqual(expect.objectContaining({
+          id: operationId,
+          status: terminalStatus,
+        }));
+        expect(queryClient.getQueryData(activeOperationKey)).toEqual({
+          operation: expect.objectContaining({
+            id: operationId,
+            status: terminalStatus,
+          }),
+        });
+      });
+    });
+  }
+
   it('does not treat terminal save-point success without result_save_point_id as a completed save point', async () => {
     mockGetFileLibraryVersionOperation.mockResolvedValueOnce({
       id: 'flop_missing_result',

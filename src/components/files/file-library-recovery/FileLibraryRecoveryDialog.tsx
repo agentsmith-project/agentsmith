@@ -202,6 +202,17 @@ function isVersionOperationTerminal(operation: FileLibraryVersionOperation | nul
     || operation?.status === 'recovery_required';
 }
 
+function shouldKeepTerminalVersionOperation(
+  current: FileLibraryVersionOperation | null | undefined,
+  next: FileLibraryVersionOperation | null | undefined,
+) {
+  return !!current
+    && !!next
+    && current.id === next.id
+    && isVersionOperationTerminal(current)
+    && isVersionOperationActive(next);
+}
+
 function normalizeVersionOperation(
   operation: FileLibraryVersionOperation | FileLibraryRestoreOperation | null | undefined,
 ): FileLibraryVersionOperation | null {
@@ -212,7 +223,6 @@ function normalizeVersionOperation(
 function buildRestoreOperationDisplay(
   operation: FileLibraryVersionOperation,
   t: FileLibraryRecoveryDialogProps['t'],
-  options: { savePointResultVisible?: boolean } = {},
 ): RestoreOperationDisplay {
   if (operation.kind === 'save_point_create') {
     if (operation.status === 'succeeded') {
@@ -222,14 +232,6 @@ function buildRestoreOperationDisplay(
           icon: 'warning',
           title: t('file_manager.save_point_operation_missing_result_title'),
           tone: 'error',
-        };
-      }
-      if (!options.savePointResultVisible) {
-        return {
-          description: t('file_manager.save_point_operation_accepted_summary'),
-          icon: 'loading',
-          title: t('file_manager.save_point_operation_running_title'),
-          tone: 'warning',
         };
       }
       return {
@@ -732,14 +734,16 @@ export function FileLibraryRecoveryDialog({
       return;
     }
     setVersionOperationIdleVisible(false);
-    setRestoreOperation((current) => (
-      current?.id === nextOperation.id
-      && current.status === nextOperation.status
-      && current.updated_at === nextOperation.updated_at
-        ? current
-        : nextOperation
-    ));
-    if (isVersionOperationActive(nextOperation)) {
+    const activeOperationStaleBehindTerminal = shouldKeepTerminalVersionOperation(restoreOperation, nextOperation);
+    setRestoreOperation((current) => {
+      if (shouldKeepTerminalVersionOperation(current, nextOperation)) return current;
+      return current?.id === nextOperation.id
+        && current.status === nextOperation.status
+        && current.updated_at === nextOperation.updated_at
+          ? current
+          : nextOperation;
+    });
+    if (!activeOperationStaleBehindTerminal && isVersionOperationActive(nextOperation)) {
       setRestoreActionError(null);
       setRestoreActiveWriterBlocker(null);
     }
@@ -759,13 +763,14 @@ export function FileLibraryRecoveryDialog({
     if (!trackedOperation) return;
     if (trackedOperation.file_library_id && trackedOperation.file_library_id !== libraryId) return;
     setVersionOperationIdleVisible(false);
-    setRestoreOperation((current) => (
-      current?.id === trackedOperation.id
-      && current.status === trackedOperation.status
-      && current.updated_at === trackedOperation.updated_at
-        ? current
-        : trackedOperation
-    ));
+    setRestoreOperation((current) => {
+      if (shouldKeepTerminalVersionOperation(current, trackedOperation)) return current;
+      return current?.id === trackedOperation.id
+        && current.status === trackedOperation.status
+        && current.updated_at === trackedOperation.updated_at
+          ? current
+          : trackedOperation;
+    });
     if (trackedOperation.kind === 'save_point_create') {
       const resultSavePointId = getVersionOperationResultSavePointId(trackedOperation);
       if (resultSavePointId) {
@@ -796,8 +801,6 @@ export function FileLibraryRecoveryDialog({
   const savePointResultSavePointId = restoreOperation?.kind === 'save_point_create'
     ? getVersionOperationResultSavePointId(restoreOperation)
     : null;
-  const savePointResultVisible = !!savePointResultSavePointId
-    && savePoints.some((savePoint) => savePoint.id === savePointResultSavePointId);
   const taskTemplatesBlocked = restoreOperationActive || activeVersionOperationQuery.isLoading;
   const showTemplateListLoading = templatesQuery.isLoading && templates.length === 0;
   const showTemplateListError = templatesQuery.isError && templates.length === 0;
@@ -807,9 +810,7 @@ export function FileLibraryRecoveryDialog({
     && !savePointListOperationPending
     && savePoints.length === 0;
   const restoreDisplay = restoreOperation
-    ? buildRestoreOperationDisplay(restoreOperation, t, {
-        savePointResultVisible,
-      })
+    ? buildRestoreOperationDisplay(restoreOperation, t)
     : versionOperationIdleVisible
       ? {
           description: t('file_manager.version_operation_idle_summary'),

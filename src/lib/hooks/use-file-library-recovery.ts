@@ -55,6 +55,17 @@ function isVersionOperationTerminal(operation: FileLibraryVersionOperation | nul
     || operation?.status === 'recovery_required';
 }
 
+function shouldKeepTerminalVersionOperation(
+  current: FileLibraryVersionOperation | null | undefined,
+  next: FileLibraryVersionOperation | null | undefined,
+) {
+  return !!current
+    && !!next
+    && current.id === next.id
+    && isVersionOperationTerminal(current)
+    && isVersionOperationActive(next);
+}
+
 type FileLibraryVersionOperationLookup =
   | FileLibraryOperationProjection
   | FileLibraryVersionOperation
@@ -127,6 +138,23 @@ function activeVersionOperationResponse(
   operation: FileLibraryVersionOperation | null,
 ): GetFileLibraryActiveOperationResponse {
   return { operation };
+}
+
+function setActiveVersionOperationQueryData(
+  queryClient: ReturnType<typeof useQueryClient>,
+  queryKey: ReturnType<typeof queryKeys.fileLibraries.activeOperation>,
+  operation: FileLibraryVersionOperation | null,
+) {
+  queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
+    queryKey,
+    (current) => {
+      const currentOperation = normalizeActiveVersionOperation(current?.operation);
+      if (shouldKeepTerminalVersionOperation(currentOperation, operation)) {
+        return activeVersionOperationResponse(currentOperation);
+      }
+      return activeVersionOperationResponse(operation);
+    },
+  );
 }
 
 function normalizeActiveVersionOperation(
@@ -249,9 +277,23 @@ export function useFileLibraryActiveVersionOperation(
     operation: FileLibraryVersionOperation;
   } | null>(null);
   const operationLookupInFlightRef = React.useRef<string | null>(null);
+  const activeOperationKey = React.useMemo(
+    () => queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
+    [projectId, safeLibraryId, workspaceId],
+  );
   const query = useQuery({
-    queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
-    queryFn: () => filesAPI.getActiveFileLibraryOperation(workspaceId, projectId, safeLibraryId),
+    queryKey: activeOperationKey,
+    queryFn: async () => {
+      const response = await filesAPI.getActiveFileLibraryOperation(workspaceId, projectId, safeLibraryId);
+      const nextOperation = normalizeActiveVersionOperation(response.operation);
+      const currentOperation = normalizeActiveVersionOperation(
+        queryClient.getQueryData<GetFileLibraryActiveOperationResponse>(activeOperationKey)?.operation,
+      );
+      if (shouldKeepTerminalVersionOperation(currentOperation, nextOperation)) {
+        return activeVersionOperationResponse(currentOperation);
+      }
+      return response;
+    },
     enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!safeLibraryId,
     refetchInterval: (activeQuery) => (
       isVersionOperationActive(normalizeActiveVersionOperation(activeQuery.state.data?.operation))
@@ -316,9 +358,10 @@ export function useFileLibraryActiveVersionOperation(
               lastActiveOperationRef.current = null;
               return;
             }
-            queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
-              queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
-              activeVersionOperationResponse(normalizedResolvedOperation),
+            setActiveVersionOperationQueryData(
+              queryClient,
+              activeOperationKey,
+              normalizedResolvedOperation,
             );
             if (isVersionOperationActive(normalizedResolvedOperation)) {
               lastActiveOperationRef.current = {
@@ -349,7 +392,17 @@ export function useFileLibraryActiveVersionOperation(
     if (!operation) {
       lastActiveOperationRef.current = null;
     }
-  }, [operation, operation?.id, operation?.status, projectId, query.isLoading, queryClient, safeLibraryId, workspaceId]);
+  }, [
+    activeOperationKey,
+    operation,
+    operation?.id,
+    operation?.status,
+    projectId,
+    query.isLoading,
+    queryClient,
+    safeLibraryId,
+    workspaceId,
+  ]);
 
   return query;
 }
@@ -366,16 +419,29 @@ export function useFileLibraryVersionOperationLookup(
   const safeLibraryId = libraryId ?? '';
   const safeOperationId = operationId ?? '';
   const terminalHandledRef = React.useRef<string | null>(null);
-  const query = useQuery<FileLibraryVersionOperationWithResult | null>({
-    queryKey: [
+  const versionOperationKey = React.useMemo(
+    () => [
       'file-library-version-operation',
       workspaceId,
       projectId,
       safeOperationId,
-    ],
-    queryFn: async () => normalizeActiveVersionOperation(
-      await filesAPI.getFileLibraryVersionOperation(workspaceId, projectId, safeOperationId),
-    ),
+    ] as const,
+    [projectId, safeOperationId, workspaceId],
+  );
+  const query = useQuery<FileLibraryVersionOperationWithResult | null>({
+    queryKey: versionOperationKey,
+    queryFn: async () => {
+      const nextOperation = normalizeActiveVersionOperation(
+        await filesAPI.getFileLibraryVersionOperation(workspaceId, projectId, safeOperationId),
+      );
+      const currentOperation = queryClient.getQueryData<FileLibraryVersionOperationWithResult | null>(
+        versionOperationKey,
+      );
+      if (shouldKeepTerminalVersionOperation(currentOperation, nextOperation)) {
+        return currentOperation;
+      }
+      return nextOperation;
+    },
     enabled: (options?.enabled ?? true)
       && !!workspaceId
       && !!projectId
@@ -407,9 +473,11 @@ export function useFileLibraryVersionOperationLookup(
     terminalHandledRef.current = terminalKey;
     if (operation.file_library_id && operation.file_library_id !== safeLibraryId) return;
 
+    const activeOperationKey = queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId);
+    setActiveVersionOperationQueryData(queryClient, activeOperationKey, operation);
     const invalidations = [
       queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
+        queryKey: activeOperationKey,
       }),
     ];
     if (
@@ -487,9 +555,10 @@ export function useCreateFileLibrarySavePoint(options: FileLibraryRecoveryMutati
         variables.projectId,
         variables.libraryId,
       );
-      queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
+      setActiveVersionOperationQueryData(
+        queryClient,
         activeOperationKey,
-        activeVersionOperationResponse(operation),
+        operation,
       );
       void queryClient.invalidateQueries({
         queryKey: activeOperationKey,
@@ -550,9 +619,10 @@ export function useRestoreFileLibrary(options: FileLibraryRecoveryMutationOption
         variables.projectId,
         variables.libraryId,
       );
-      queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
+      setActiveVersionOperationQueryData(
+        queryClient,
         activeOperationKey,
-        activeVersionOperationResponse(restoreOperationToVersionOperation(operation)),
+        restoreOperationToVersionOperation(operation),
       );
       void invalidateRestoreRelatedCaches(
         queryClient,

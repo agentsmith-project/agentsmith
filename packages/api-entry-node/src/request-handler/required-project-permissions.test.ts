@@ -216,13 +216,6 @@ describe('requiredProjectPermissions', () => {
     expect(
       requiredProjectPermissions(
         { kind: 'fileLibraryRestore', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
-        'GET',
-      ),
-    ).toEqual(['project:endpoint:use']);
-
-    expect(
-      requiredProjectPermissions(
-        { kind: 'fileLibraryRestore', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' } as never,
         'POST',
       ),
     ).toEqual(['project:files:update']);
@@ -249,17 +242,24 @@ describe('requiredProjectPermissions', () => {
     ).toEqual(['project:files:update']);
   });
 
-  it('gates file-library operation projections by project files update', () => {
-    expect(
-      requiredProjectPermissions(
-        {
-          kind: 'fileLibraryOperation',
-          workspaceId: 'ws_default',
-          projectId: 'proj_1',
-          operationId: 'op_repo_create',
-        } as never,
-        'GET',
-      ),
-    ).toEqual(['project:files:update']);
+  it.each([
+    {
+      route: {
+        kind: 'fileLibraryActiveOperation',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'lib_1',
+      },
+    },
+    {
+      route: {
+        kind: 'fileLibraryOperation',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        operationId: 'op_repo_create',
+      },
+    },
+  ] as const)('gates file-library operation projections by project files update: $route.kind', ({ route }) => {
+    expect(requiredProjectPermissions(route as never, 'GET')).toEqual(['project:files:update']);
   });
 });

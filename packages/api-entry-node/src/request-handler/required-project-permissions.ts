@@ -92,6 +92,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     || route.kind === 'fileLibraryMeta'
     || route.kind === 'fileLibrarySavePoints'
     || route.kind === 'fileLibraryRestore'
+    || route.kind === 'fileLibraryActiveOperation'
     || route.kind === 'fileLibraryRuntimeAccessRelease'
     || route.kind === 'taskFileTemplates'
     || route.kind === 'taskFileTemplateItem'

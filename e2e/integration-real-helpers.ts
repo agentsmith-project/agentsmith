@@ -3088,6 +3088,7 @@ export async function deleteTerminalSessionViaApi(args: {
   projectId: string;
   taskId: string;
   sessionId: string;
+  timeoutMs?: number;
 }): Promise<void> {
   const token = await readStoredAuthToken(args.page);
   const response = await args.page.request.delete(
@@ -3096,6 +3097,7 @@ export async function deleteTerminalSessionViaApi(args: {
       `/tasks/${args.taskId}` +
       `/terminal/sessions/${args.sessionId}`,
     {
+      timeout: args.timeoutMs ?? 60_000,
       headers: {
         Authorization: `Bearer ${token}`,
       },

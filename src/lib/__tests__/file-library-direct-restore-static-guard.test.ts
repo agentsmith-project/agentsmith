@@ -249,6 +249,24 @@ describe('file-library direct restore static guard', () => {
     expect(e2eSource).toContain('hidden_runtime_restore_status=ok');
   });
 
+  it('keeps restore-continue e2e self-contained instead of depending on demo project seed data', () => {
+    const e2eSource = readFileSync('e2e/integration-files-user-stories.spec.ts', 'utf8');
+    const storyStart = e2eSource.indexOf(
+      "test('same task can continue after Files restore of agent-task generated image assets'",
+    );
+    const nextStoryStart = e2eSource.indexOf(
+      "\n  test('task file-library binding releases on task delete",
+      storyStart,
+    );
+    const storySource = e2eSource.slice(storyStart, nextStoryStart);
+
+    expect(storyStart).toBeGreaterThanOrEqual(0);
+    expect(nextStoryStart).toBeGreaterThan(storyStart);
+    expect(storySource).toContain('prepareRestoreContinuationAgentTaskProject');
+    expect(storySource).not.toContain('resolveDemoProjectAndRunner');
+    expect(storySource).not.toContain('DEMO_PROJECT_NAME');
+  });
+
   it('keeps text download polling retryable while Files export catches up', () => {
     const e2eSource = readFileSync('e2e/integration-files-user-stories.spec.ts', 'utf8');
 

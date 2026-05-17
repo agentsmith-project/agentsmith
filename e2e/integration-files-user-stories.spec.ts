@@ -6,9 +6,13 @@ import {
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
+  createCredentialViaUi,
+  createEndpointViaApi,
+  createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   createTerminalSessionViaApi,
   deleteTerminalSessionViaApi,
+  ensureAgentTaskModelSettingViaApi,
   expectTerminalSessionRunnerEvidenceViaApi,
   keycloakLoginToWorkspace,
   readAgentTaskViaApi,
@@ -77,6 +81,13 @@ type TaskHistoryEvidence = {
 type AgentTaskRunStartEvidence = {
   runnerOutputActivityId: string;
   runId?: string;
+};
+
+type PreparedRestoreContinuationAgentTaskProject = {
+  projectId: string;
+  runnerId: string;
+  endpointId: string;
+  model: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -239,6 +250,28 @@ function readBackendRealEnvValue(key: string): string | null {
 function isPlaceholderModel(value: string | null | undefined): boolean {
   const normalized = value?.trim().toLowerCase() ?? '';
   return !normalized || normalized === 'placeholder-model';
+}
+
+function requireBackendRealConfigValue(args: {
+  label: string;
+  keys: string[];
+  rejectPlaceholderModel?: boolean;
+  rejectPlaceholderProviderUrl?: boolean;
+}): string {
+  const value = args.keys
+    .map((key) => readBackendRealEnvValue(key))
+    .find((candidate): candidate is string => Boolean(candidate));
+  expect(
+    value,
+    `${args.label} must be configured for backend-real restore continuation; checked ${args.keys.join(', ')}`,
+  ).toBeTruthy();
+  if (args.rejectPlaceholderModel) {
+    expect(isPlaceholderModel(value), `${args.label} must not be the placeholder model`).toBe(false);
+  }
+  if (args.rejectPlaceholderProviderUrl) {
+    expect(value, `${args.label} must not use provider.example placeholder URL`).not.toMatch(/provider\.example/i);
+  }
+  return value ?? '';
 }
 
 async function authHeaders(page: Page): Promise<{ Authorization: string }> {
@@ -804,6 +837,71 @@ async function resolveDemoProjectAndRunner(page: Page): Promise<{
   return {
     projectId: projectId ?? '',
     runnerId: runner?.id ?? '',
+    endpointId,
+    model,
+  };
+}
+
+async function prepareRestoreContinuationAgentTaskProject(
+  page: Page,
+  timestamp: number,
+): Promise<PreparedRestoreContinuationAgentTaskProject> {
+  const providerApiKey = requireBackendRealConfigValue({
+    label: 'provider API key',
+    keys: ['BACKEND_REAL_API_KEY', 'PRESET_ENDPOINT_API_KEY'],
+  });
+  const model = requireBackendRealConfigValue({
+    label: 'backend-real endpoint model',
+    keys: ['BACKEND_REAL_MODEL', 'PRESET_ENDPOINT_MODEL', 'BACKEND_REAL_OPENAI_MODEL'],
+    rejectPlaceholderModel: true,
+  });
+  const upstreamBaseUrl = requireBackendRealConfigValue({
+    label: 'backend-real endpoint base URL',
+    keys: ['BACKEND_REAL_OPENAI_BASE_URL', 'PRESET_OPENAI_ENDPOINT_BASE_URL'],
+    rejectPlaceholderProviderUrl: true,
+  });
+
+  await keycloakLoginToWorkspace(
+    page,
+    WORKSPACE_ID,
+    KEYCLOAK_DEV_ADMIN_USERNAME,
+    KEYCLOAK_DEV_ADMIN_PASSWORD,
+    { ensureProjectCreatorAccess: true },
+  );
+  const { projectId } = await createProjectInWorkspace(
+    page,
+    WORKSPACE_ID,
+    'Files Restore Continuation',
+  );
+  const credentialName = `Restore Continuation Provider Credential ${timestamp}`;
+  await createCredentialViaUi(page, WORKSPACE_ID, projectId, credentialName, providerApiKey);
+  const endpointId = await createEndpointViaApi(page, WORKSPACE_ID, projectId, {
+    endpointName: `Restore Continuation Endpoint ${timestamp}`,
+    endpointModel: model,
+    upstreamBaseUrl,
+    credentialName,
+  });
+  const modelSetting = await ensureAgentTaskModelSettingViaApi(page, {
+    workspaceId: WORKSPACE_ID,
+    projectId,
+    endpointId,
+  });
+  expect(modelSetting.endpointId).toBe(endpointId);
+  expect(isPlaceholderModel(modelSetting.defaultModel ?? model)).toBe(false);
+
+  const runner = await createManagedAgentRunnerViaApi(page, {
+    workspaceId: WORKSPACE_ID,
+    projectId,
+    endpointId,
+    title: `files-restore-continuation-runner-${timestamp}`,
+  });
+  expect(runner.runnerId).toBeTruthy();
+  expect(runner.status).toMatch(/ready|connected/i);
+  expect(runner.isDefault).toBe(true);
+
+  return {
+    projectId,
+    runnerId: runner.runnerId,
     endpointId,
     model,
   };
@@ -3199,10 +3297,11 @@ test.describe.serial('@lane-real files user stories', () => {
   test('same task can continue after Files restore of agent-task generated image assets', async ({ page }) => {
     test.setTimeout(900_000);
 
-    await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-
     const timestamp = Date.now();
-    const { projectId, runnerId, endpointId, model } = await resolveDemoProjectAndRunner(page);
+    const { projectId, runnerId, endpointId, model } = await test.step(
+      'prepare backend-real project endpoint model setting and managed runner for this story',
+      async () => prepareRestoreContinuationAgentTaskProject(page, timestamp),
+    );
     expect(runnerId).toBeTruthy();
     expect(endpointId).toBeTruthy();
     expect(isPlaceholderModel(model)).toBe(false);

@@ -29,13 +29,16 @@
   "preconditions": [
     "backend-real stack is ready",
     "workspace ws_default is accessible",
-    "default project Agent Task runner and endpoint are ready"
+    "backend-real provider API key, model, and endpoint base URL are configured"
   ],
   "seedData": [
-    "ws_default"
+    "ws_default only; the story creates its own project, credential, endpoint, Agent Task model setting, and managed runner"
   ],
   "runtimeData": {
     "agentTaskImageAssetSavepoint": {
+      "projectNamePrefix": "Files Restore Continuation",
+      "endpointNamePrefix": "Restore Continuation Endpoint",
+      "runnerNamePrefix": "files-restore-continuation-runner",
       "workspaceLibraryNamePrefix": "Image Asset Savepoint Library",
       "taskTitlePrefix": "Image asset savepoint task",
       "assetDirectory": "workspace/.artifacts",

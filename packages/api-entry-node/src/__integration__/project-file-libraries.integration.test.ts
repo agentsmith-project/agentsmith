@@ -94,6 +94,51 @@ async function grantProjectPermissions(
   });
 }
 
+type RestoreOperationResponse = {
+  id: string;
+  kind?: string;
+  file_library_id: string;
+  source_save_point_id: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRestoreOperationSucceeded(input: {
+  baseUrl: string;
+  projectPath: string;
+  operationId: string;
+  sourceSavePointId: string;
+}): Promise<RestoreOperationResponse> {
+  const deadline = Date.now() + 2_000;
+  let lastStatus = 'not_polled';
+
+  while (Date.now() < deadline) {
+    const operationRes = await apiFetch(
+      input.baseUrl,
+      `${input.projectPath}/file-library-operations/${input.operationId}`,
+    );
+    expect(operationRes.status).toBe(200);
+    const operation = (await operationRes.json()) as RestoreOperationResponse;
+    expect(operation).toMatchObject({
+      id: input.operationId,
+      source_save_point_id: input.sourceSavePointId,
+    });
+    lastStatus = operation.status;
+    if (operation.status === 'succeeded') {
+      return operation;
+    }
+    expect(operation.status).toEqual(expect.stringMatching(/^(accepted|running|pending|restoring)$/));
+    await sleep(10);
+  }
+
+  throw new Error(`restore operation ${input.operationId} did not succeed; last_status=${lastStatus}`);
+}
+
 describe.sequential('api-entry-node project file libraries integration', () => {
   it('supports file libraries CRUD flow through the AFSCP storage adapter', async () => {
     const { baseUrl } = startServer();
@@ -224,9 +269,15 @@ describe.sequential('api-entry-node project file libraries integration', () => {
       `${projectPath}/file-libraries/${sourceLibrary.id}/save-points`,
     );
     expect(listSavePointsRes.status).toBe(200);
-    const listedSavePoints = (await listSavePointsRes.json()) as { items: Array<{ id: string }> };
+    const listedSavePoints = (await listSavePointsRes.json()) as {
+      items: Array<{ id: string; message?: string; created_at: string }>;
+    };
     const savePoint = listedSavePoints.items[0];
-    expect(savePoint?.id).toBeTruthy();
+    expect(savePoint).toMatchObject({
+      id: expect.stringMatching(/^flsp_/),
+      message: 'Before restore',
+      created_at: expect.any(String),
+    });
 
     const restoreRes = await apiFetch(
       baseUrl,
@@ -243,27 +294,76 @@ describe.sequential('api-entry-node project file libraries integration', () => {
       },
     );
     expect(restoreRes.status).toBe(200);
-    const restoreOperation = (await restoreRes.json()) as {
-      id: string;
-      source_save_point_id: string;
-      status: string;
-    };
+    const restoreOperation = (await restoreRes.json()) as RestoreOperationResponse;
     expect(restoreOperation.source_save_point_id).toBe(savePoint.id);
-    expect(restoreOperation.status).toBe('succeeded');
+    expect(restoreOperation.status).toBe('pending');
+    const completedRestoreOperation = await waitForRestoreOperationSucceeded({
+      baseUrl,
+      projectPath,
+      operationId: restoreOperation.id,
+      sourceSavePointId: savePoint.id,
+    });
+    expect(completedRestoreOperation).toMatchObject({
+      id: restoreOperation.id,
+      file_library_id: sourceLibrary.id,
+      source_save_point_id: savePoint.id,
+      status: 'succeeded',
+    });
 
     const activeOperationRes = await apiFetch(
       baseUrl,
       `${projectPath}/file-libraries/${sourceLibrary.id}/operations/active`,
     );
     expect(activeOperationRes.status).toBe(200);
-    await expect(activeOperationRes.json()).resolves.toEqual({ operation: null });
+    await expect(activeOperationRes.json()).resolves.toEqual({
+      operation: expect.objectContaining({
+        id: restoreOperation.id,
+        kind: 'restore',
+        file_library_id: sourceLibrary.id,
+        source_save_point_id: savePoint.id,
+        status: 'succeeded',
+      }),
+    });
+
+    const restoredLibraryRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/file-libraries/${sourceLibrary.id}`,
+    );
+    expect(restoredLibraryRes.status).toBe(200);
+    await expect(restoredLibraryRes.json()).resolves.toMatchObject({
+      id: sourceLibrary.id,
+      last_restore: {
+        source_save_point_id: savePoint.id,
+        source_save_point_label: 'Before restore',
+        source_save_point_created_at: savePoint.created_at,
+        restored_at: expect.any(String),
+        restore_operation_id: restoreOperation.id,
+      },
+    });
+
+    const listSavePointsAfterRestoreRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/file-libraries/${sourceLibrary.id}/save-points`,
+    );
+    expect(listSavePointsAfterRestoreRes.status).toBe(200);
+    await expect(listSavePointsAfterRestoreRes.json()).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: savePoint.id,
+          message: 'Before restore',
+        }),
+      ]),
+    });
 
     const createTemplateRes = await apiFetch(
       baseUrl,
       `${projectPath}/task-file-templates`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'template-source-create',
+        },
         body: JSON.stringify({
           name: 'Published Template Source',
           source_library_id: sourceLibrary.id,

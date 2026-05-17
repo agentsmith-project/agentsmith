@@ -216,12 +216,87 @@ require_parent_stack_truth_flag() {
   esac
 }
 
+parent_stack_normalize_loopback_host() {
+  local host="$1"
+  host="${host#[}"
+  host="${host%]}"
+  local lower_host="${host,,}"
+
+  case "${lower_host}" in
+    localhost|127.0.0.1|::1|0:0:0:0:0:0:0:1)
+      printf '__loopback__'
+      ;;
+    *)
+      printf '%s' "${lower_host}"
+      ;;
+  esac
+}
+
+parent_stack_normalize_loopback_url() {
+  local raw="$1"
+  local prefix authority suffix userinfo hostport host remainder normalized_host
+
+  if [[ ! "${raw}" =~ ^([^:/?#]+://)([^/?#]*)(.*)$ ]]; then
+    printf '%s' "${raw}"
+    return 0
+  fi
+
+  prefix="${BASH_REMATCH[1]}"
+  authority="${BASH_REMATCH[2]}"
+  suffix="${BASH_REMATCH[3]}"
+  userinfo=""
+  hostport="${authority}"
+
+  if [[ "${hostport}" == *@* ]]; then
+    userinfo="${hostport%@*}@"
+    hostport="${hostport##*@}"
+  fi
+
+  if [[ "${hostport}" == \[*\]* ]]; then
+    host="${hostport%%]*}"
+    host="${host#\[}"
+    remainder="${hostport#*\]}"
+  elif [[ "${hostport}" == *:* ]]; then
+    host="${hostport%%:*}"
+    remainder="${hostport#"${host}"}"
+  else
+    host="${hostport}"
+    remainder=""
+  fi
+
+  normalized_host="$(parent_stack_normalize_loopback_host "${host}")"
+  printf '%s%s%s%s%s' "${prefix}" "${userinfo}" "${normalized_host}" "${remainder}" "${suffix}"
+}
+
+parent_stack_normalize_comparable_value() {
+  local name="$1"
+  local value="$2"
+
+  case "${name}" in
+    INTEGRATION_PARENT_STACK_API_BASE|INTEGRATION_PARENT_STACK_WEB_BASE_URL|INTEGRATION_PARENT_STACK_HOST_WEB_BASE_URL|INTEGRATION_PARENT_STACK_KEYCLOAK_BASE_URL|INTEGRATION_PARENT_STACK_MONGO_URL|INTEGRATION_PARENT_STACK_DATABASE_URL|INTEGRATION_PARENT_STACK_REDIS_URL)
+      parent_stack_normalize_loopback_url "${value}"
+      ;;
+    INTEGRATION_PARENT_STACK_MINIO_ENDPOINT)
+      parent_stack_normalize_loopback_host "${value}"
+      ;;
+    *)
+      printf '%s' "${value}"
+      ;;
+  esac
+}
+
 require_parent_stack_equal() {
   local name="$1"
   local actual="$2"
+  local expected normalized_expected normalized_actual
   require_parent_stack_value "${name}"
-  if [[ "${!name}" != "${actual}" ]]; then
-    parent_stack_fail_closed "${name}=${!name} does not match resolved value ${actual}"
+  expected="${!name}"
+  if [[ "${expected}" != "${actual}" ]]; then
+    normalized_expected="$(parent_stack_normalize_comparable_value "${name}" "${expected}")"
+    normalized_actual="$(parent_stack_normalize_comparable_value "${name}" "${actual}")"
+    if [[ "${normalized_expected}" != "${normalized_actual}" ]]; then
+      parent_stack_fail_closed "${name}=${expected} does not match resolved value ${actual}"
+    fi
   fi
 }
 

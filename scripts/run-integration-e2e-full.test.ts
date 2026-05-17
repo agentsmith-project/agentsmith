@@ -664,6 +664,56 @@ exit 0
     expect(playwrightEnv).toContain('INTEGRATION_API_BASE=http://127.0.0.1:28191');
   }, 10000);
 
+  it('allows parent-owned stack reuse when Mongo URLs differ only by equivalent loopback hostnames', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-parent-reuse-mongo-loopback-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+    const ownerToken = 'parent-stack-reuse-mongo-loopback-owner';
+    const apiProcess = startParentOwnedFixtureProcess(ownerToken, 'api');
+    const webProcess = startParentOwnedFixtureProcess(ownerToken, 'web');
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      ...buildParentStackReuseEnv(ownerToken, apiProcess.pid ?? 0, webProcess.pid ?? 0),
+      INTEGRATION_PARENT_STACK_MONGO_URL: 'mongodb://mbos:mbos_dev_password@localhost:27027/admin',
+      INTEGRATION_BOOTSTRAP_DEPS: 'true',
+      INTEGRATION_INIT_DEPS: 'true',
+      INTEGRATION_ENSURE_DEFAULT_WORKSPACE: 'true',
+    });
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(17);
+    expect(existsSync(fixture.apiEnvLog)).toBe(false);
+    expect(existsSync(fixture.webEnvLog)).toBe(false);
+    const playwrightEnv = readFileSync(fixture.playwrightEnvLog, 'utf8');
+    expect(playwrightEnv).toContain('MONGO_URL=mongodb://mbos:mbos_dev_password@127.0.0.1:27027/admin');
+  }, 10000);
+
+  it.each([
+    ['non-loopback host', 'mongodb://mbos:mbos_dev_password@mongo.example.test:27027/admin'],
+    ['different port', 'mongodb://mbos:mbos_dev_password@localhost:27999/admin'],
+  ])('refuses parent-owned stack reuse when Mongo URL has %s', (_caseName, parentMongoUrl) => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'run-integration-e2e-full-parent-reuse-mongo-refused-'));
+    tempRoots.push(tempRoot);
+    const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'candidate-reachable' });
+    const ownerToken = `parent-stack-reuse-mongo-refused-${_caseName.replace(/[^a-z]/g, '-')}`;
+    const apiProcess = startParentOwnedFixtureProcess(ownerToken, 'api');
+    const webProcess = startParentOwnedFixtureProcess(ownerToken, 'web');
+
+    const result = runManagedProxyFixture(tempRoot, fixture, {
+      ...buildParentStackReuseEnv(ownerToken, apiProcess.pid ?? 0, webProcess.pid ?? 0),
+      INTEGRATION_PARENT_STACK_MONGO_URL: parentMongoUrl,
+      INTEGRATION_BOOTSTRAP_DEPS: 'true',
+      INTEGRATION_INIT_DEPS: 'true',
+      INTEGRATION_ENSURE_DEFAULT_WORKSPACE: 'true',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('parent-owned existing stack reuse refused');
+    expect(result.stderr).toContain('INTEGRATION_PARENT_STACK_MONGO_URL');
+    expect(existsSync(fixture.apiEnvLog)).toBe(false);
+    expect(existsSync(fixture.webEnvLog)).toBe(false);
+    expect(existsSync(fixture.playwrightEnvLog)).toBe(false);
+  }, 10000);
+
   it('stays shell-syntax valid and wires next-dev lifecycle capture into the managed web launch', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-integration-e2e-full.sh'])).not.toThrow();
 

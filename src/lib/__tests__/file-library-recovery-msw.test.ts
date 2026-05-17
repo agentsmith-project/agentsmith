@@ -102,6 +102,13 @@ async function getFileLibrary(libraryId: string) {
   expect(response.status).toBe(200);
   return response.json() as Promise<{
     id: string;
+    last_restore?: {
+      source_save_point_id: string;
+      source_save_point_label: string;
+      source_save_point_created_at: string;
+      restored_at: string;
+      restore_operation_id: string;
+    } | null;
     task_home_binding_status: 'bound' | 'unbound';
     bound_task_visible: boolean;
     bound_task_id?: string;
@@ -221,6 +228,7 @@ describe('file-library recovery and task-template MSW contracts', () => {
       status: 'succeeded',
       file_library_id: libraryId,
       message: 'Terminal save point projection',
+      result_save_point_id: expect.stringMatching(/^sp_/),
     });
   });
 
@@ -265,6 +273,15 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     await expect(downloadTextFile(libraryId, 'direct-restore-target.txt')).resolves.toBe('before restore');
     await expect(listEntryNames(libraryId)).resolves.not.toContain('post-savepoint-only.txt');
+    await expect(getFileLibrary(libraryId)).resolves.toMatchObject({
+      last_restore: {
+        source_save_point_id: savePoint.id,
+        source_save_point_label: 'Before temporary change',
+        source_save_point_created_at: savePoint.created_at,
+        restored_at: expect.any(String),
+        restore_operation_id: expect.any(String),
+      },
+    });
 
     const savePointListAfter = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
     expect(savePointListAfter.status).toBe(200);
@@ -345,6 +362,12 @@ describe('file-library recovery and task-template MSW contracts', () => {
       source_save_point_id: savePoint.id,
       status: 'succeeded',
     });
+    const firstLibrary = await getFileLibrary(libraryId);
+    expect(firstLibrary.last_restore).toMatchObject({
+      source_save_point_id: savePoint.id,
+      restored_at: expect.any(String),
+      restore_operation_id: firstPayload.id,
+    });
 
     const second = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
       save_point_id: savePoint.id,
@@ -354,6 +377,9 @@ describe('file-library recovery and task-template MSW contracts', () => {
       id: firstPayload.id,
       source_save_point_id: savePoint.id,
       status: 'succeeded',
+    });
+    await expect(getFileLibrary(libraryId)).resolves.toMatchObject({
+      last_restore: firstLibrary.last_restore,
     });
   });
 

@@ -12,6 +12,14 @@ export type FileLibraryStorageStatus =
   | 'admin_action_required';
 export type FileLibraryStorageNextAction = 'wait' | 'retry' | 'contact_admin' | 'contact_support' | null;
 
+export interface FileLibraryLastRestore {
+  source_save_point_id: string;
+  source_save_point_label: string;
+  source_save_point_created_at: string;
+  restored_at: string;
+  restore_operation_id: string;
+}
+
 export interface FileLibrary {
   id: string;
   workspace_id: string;
@@ -24,6 +32,7 @@ export interface FileLibrary {
   storage_status?: FileLibraryStorageStatus;
   storage_next_action?: FileLibraryStorageNextAction;
   status_reason?: string;
+  last_restore?: FileLibraryLastRestore | null;
   task_home_binding_status: FileLibraryTaskHomeBindingStatus;
   bound_task_id?: string;
   bound_task_title?: string;
@@ -182,6 +191,7 @@ export interface FileLibraryVersionOperation {
   status: FileLibraryVersionOperationStatus;
   file_library_id?: string;
   source_save_point_id?: string;
+  result_save_point_id?: string;
   message?: string;
   failure_reason?: string;
   created_at: string;

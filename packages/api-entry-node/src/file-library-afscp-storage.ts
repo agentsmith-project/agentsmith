@@ -64,6 +64,8 @@ export interface FileLibraryOperationProjection {
   resource?: {
     type: string;
   };
+  /** Internal-only raw AFSCP save point id used by API routes to map to public ids. */
+  resultSavePointId?: string;
   error: {
     code: string;
     retryable?: boolean;
@@ -467,7 +469,7 @@ function buildOperationProjection(operation: AfscpOperationEnvelope | AfscpOpera
   const startedAt = readOperationProjectionString(operation, 'started_at');
   const updatedAt = readOperationProjectionString(operation, 'updated_at');
   const finishedAt = readOperationProjectionString(operation, 'finished_at');
-  return {
+  const projection: FileLibraryOperationProjection = {
     operation_id: operationId,
     operation_state: operationState,
     ...(operationType ? { operation_type: operationType } : {}),
@@ -478,6 +480,15 @@ function buildOperationProjection(operation: AfscpOperationEnvelope | AfscpOpera
     ...(updatedAt ? { updated_at: updatedAt } : {}),
     ...(finishedAt ? { finished_at: finishedAt } : {}),
   };
+  const resultSavePointId = readSavePointId(operation);
+  if (resultSavePointId) {
+    Object.defineProperty(projection, 'resultSavePointId', {
+      value: resultSavePointId,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return projection;
 }
 
 function readOperationErrorCode(

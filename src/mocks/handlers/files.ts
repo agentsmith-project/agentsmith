@@ -57,6 +57,7 @@ type MockFileLibraryVersionOperation = FileLibraryVersionOperation & {
   library_id: string;
   idempotency_key?: string;
   active_projection_count: number;
+  pending_result_save_point_id?: string;
 };
 
 type MockTaskFileTemplate = TaskFileTemplate & {
@@ -162,6 +163,41 @@ function withTaskHomeBinding(library: FileLibrary): FileLibrary {
         }
       : {}),
   };
+}
+
+function updateMockFileLibraryLastRestore(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  savePoint: MockFileLibrarySavePoint;
+  operation: MockFileLibraryRestoreOperation;
+}) {
+  const library = getMockFileLibrary({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+  });
+  if (!library) return;
+  const existingRestoredAt = library.last_restore?.restored_at
+    ? Date.parse(library.last_restore.restored_at)
+    : null;
+  const nextRestoredAt = Date.parse(input.operation.updated_at);
+  if (
+    existingRestoredAt !== null
+    && Number.isFinite(existingRestoredAt)
+    && Number.isFinite(nextRestoredAt)
+    && existingRestoredAt > nextRestoredAt
+  ) {
+    return;
+  }
+  library.last_restore = {
+    source_save_point_id: input.savePoint.id,
+    source_save_point_label: input.savePoint.message?.trim() || 'Manual save point',
+    source_save_point_created_at: input.savePoint.created_at,
+    restored_at: input.operation.updated_at,
+    restore_operation_id: input.operation.id,
+  };
+  library.updated_at = input.operation.updated_at;
 }
 
 export function ensureMockFileLibraryForTask(input: {
@@ -361,6 +397,9 @@ function toPublicMockVersionOperation(operation: MockFileLibraryVersionOperation
     status: operation.status,
     ...(operation.file_library_id ? { file_library_id: operation.file_library_id } : {}),
     ...(operation.source_save_point_id ? { source_save_point_id: operation.source_save_point_id } : {}),
+    ...(operation.status === 'succeeded' && operation.result_save_point_id
+      ? { result_save_point_id: operation.result_save_point_id }
+      : {}),
     ...(operation.message ? { message: operation.message } : {}),
     ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
     created_at: operation.created_at,
@@ -414,6 +453,7 @@ function createMockVersionOperation(input: {
   status: FileLibraryVersionOperation['status'];
   message?: string;
   idempotencyKey?: string;
+  resultSavePointId?: string;
 }): MockFileLibraryVersionOperation {
   const now = nowIso();
   const operation: MockFileLibraryVersionOperation = {
@@ -426,6 +466,8 @@ function createMockVersionOperation(input: {
     status: input.status,
     ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
     ...(input.message ? { message: input.message } : {}),
+    ...(input.status === 'succeeded' && input.resultSavePointId ? { result_save_point_id: input.resultSavePointId } : {}),
+    ...(input.resultSavePointId ? { pending_result_save_point_id: input.resultSavePointId } : {}),
     created_at: now,
     updated_at: now,
     active_projection_count: 0,
@@ -452,6 +494,9 @@ function advanceMockVersionOperationForActiveProjection(
     return operation;
   }
   operation.status = 'succeeded';
+  if (operation.pending_result_save_point_id) {
+    operation.result_save_point_id = operation.pending_result_save_point_id;
+  }
   operation.updated_at = nowIso();
   versionOperationsById.set(operation.id, operation);
   return null;
@@ -1125,6 +1170,7 @@ export const fileHandlers = [
       status: 'accepted',
       message: savePoint.message,
       idempotencyKey,
+      resultSavePointId: savePoint.id,
     });
     versionOperationIdsByIdempotencyKey.set(idempotencyScope, operation.id);
     return HttpResponse.json(toPublicMockVersionOperation(operation), { status: 202 });
@@ -1209,6 +1255,13 @@ export const fileHandlers = [
       terminal_projection_expires_at_ms: Date.now() + RECENT_TERMINAL_RESTORE_OPERATION_PROJECTION_WINDOW_MS,
     };
     objectDbByLibraryId[libraryId] = cloneObjectRows(savePoint.snapshot);
+    updateMockFileLibraryLastRestore({
+      workspaceId,
+      projectId,
+      libraryId,
+      savePoint,
+      operation,
+    });
     restoreOperationsById.set(operation.id, operation);
     restoreOperationIdsByIdempotencyKey.set(`${workspaceId}:${projectId}:${libraryId}:${idempotencyKey}`, operation.id);
     return HttpResponse.json(toPublicRestoreOperation(operation));

@@ -233,10 +233,9 @@
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
       "stableMarkers": [
-        "files__dialog__version-management",
-        "files__version-management-scope",
-        "files__save-point__message",
-        "files__template__name"
+        "files__dialog__version-save-restore",
+        "files__version-save-restore-scope",
+        "files__save-point__message"
       ]
     },
     {
@@ -245,7 +244,7 @@
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
       "stableMarkers": [
-        "files__dialog__version-management",
+        "files__dialog__version-save-restore",
         "files__restore-operation",
         "files__restore-operation-summary"
       ]
@@ -256,7 +255,7 @@
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
       "stableMarkers": [
-        "files__dialog__version-management",
+        "files__dialog__version-save-restore",
         "files__restore-operation",
         "files__restore-operation-summary"
       ]
@@ -681,7 +680,7 @@
         {
           "sceneId": "files-version-management-sheet",
           "scenarioId": "files-version-management-sheet",
-          "scenario": "File updates Sheet with save point and task template forms visible.",
+          "scenario": "Version save/restore Sheet with save point controls visible.",
           "group": "overlay_drawers",
           "codeRefs": [
             "e2e/visual.spec.ts",
@@ -702,10 +701,9 @@
               "Review the reason and try again"
             ],
             "requiredViewportTestIds": [
-              "files__dialog__version-management",
-              "files__version-management-scope",
-              "files__save-point__message",
-              "files__template__name"
+              "files__dialog__version-save-restore",
+              "files__version-save-restore-scope",
+              "files__save-point__message"
             ]
           }
         },
@@ -732,7 +730,7 @@
               "Review the reason and try again"
             ],
             "requiredViewportTestIds": [
-              "files__dialog__version-management",
+              "files__dialog__version-save-restore",
               "files__restore-operation",
               "files__restore-operation-summary"
             ]
@@ -759,7 +757,7 @@
               "/control-root"
             ],
             "requiredViewportTestIds": [
-              "files__dialog__version-management",
+              "files__dialog__version-save-restore",
               "files__restore-operation",
               "files__restore-operation-summary"
             ]

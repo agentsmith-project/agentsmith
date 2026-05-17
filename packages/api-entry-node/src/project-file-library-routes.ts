@@ -166,6 +166,7 @@ function presentFileLibraryWithTaskHomeBinding(input: {
     ...(input.library.description !== undefined ? { description: input.library.description } : {}),
     status: input.library.status,
     source: input.library.source,
+    ...(input.library.last_restore ? { last_restore: input.library.last_restore } : {}),
     created_by_user_id: input.library.created_by_user_id,
     created_at: input.library.created_at,
     updated_at: input.library.updated_at,
@@ -198,6 +199,12 @@ function presentFileLibraryObjectMeta(meta: FileLibraryObjectMeta): FileLibraryO
     last_modified: meta.last_modified,
     user_metadata: meta.user_metadata,
   };
+}
+
+function presentStorageOperationProjection(projection: FileLibraryOperationProjection): FileLibraryOperationProjection {
+  const publicProjection = { ...projection };
+  delete publicProjection.resultSavePointId;
+  return publicProjection;
 }
 
 function isDeletingFileLibraryStatus(status: FileLibraryRecord['status']): boolean {
@@ -395,6 +402,42 @@ function restoreFailureStatusForPublicMessage(message: string): FileLibraryResto
   return message === 'file_library_storage_admin_action_required'
     ? 'recovery_required'
     : 'failed';
+}
+
+function publicSavePointLabel(savePoint: FileLibrarySavePointPublicRecord): string {
+  return savePoint.message?.trim() || 'Manual save point';
+}
+
+async function recordSuccessfulFileLibraryRestore(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryRestoreOperationRecord;
+}): Promise<void> {
+  if (input.operation.status !== 'succeeded') {
+    return;
+  }
+  const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(input.deps.docStore);
+  const savePoint = await savePointRepo.getById(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+    input.operation.source_save_point_id,
+  );
+  if (!savePoint) {
+    return;
+  }
+  await new JsonDocProjectFileLibraryCatalogRepo(input.deps.docStore).recordSuccessfulRestore({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    sourceSavePointId: savePoint.id,
+    sourceSavePointLabel: publicSavePointLabel(savePoint),
+    sourceSavePointCreatedAt: savePoint.created_at,
+    restoredAt: input.operation.updated_at,
+    restoreOperationId: input.operation.id,
+  });
 }
 
 function versionOperationRank(operation: FileLibraryVersionOperationRecord | FileLibraryRestoreOperationRecord): number {
@@ -790,6 +833,13 @@ async function reconcileRestoreOperationRecord(input: {
         ...input,
         operation,
       });
+      await recordSuccessfulFileLibraryRestore({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        operation,
+      });
     }
     return operation;
   }
@@ -819,6 +869,13 @@ async function reconcileRestoreOperationRecord(input: {
   if (isTerminalRestoreOperationStatus(next.status)) {
     await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
       ...input,
+      operation: next,
+    });
+    await recordSuccessfulFileLibraryRestore({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
       operation: next,
     });
   }
@@ -1006,6 +1063,13 @@ async function continuePreStartRestoreOperationReplay(input: {
           libraryId: input.libraryId,
           operation: updatedOperation,
           requestId: input.requestId,
+        });
+        await recordSuccessfulFileLibraryRestore({
+          deps: input.deps,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          libraryId: input.libraryId,
+          operation: updatedOperation,
         });
         await writeFileLibraryRestoreAuditEvent({
           deps: input.deps,
@@ -1264,8 +1328,21 @@ async function reconcileVersionOperationRecord(input: {
     return input.operation;
   }
   const status = mapOperationProjectionToVersionStatus(projection);
+  const resultSavePoint = status === 'succeeded' && projection.resultSavePointId
+    ? await new JsonDocFileLibrarySavePointMappingRepo(input.deps.docStore).upsertFromAfscp({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        afscpSavePointId: projection.resultSavePointId,
+        message: input.operation.message,
+        createdAt: projection.finished_at ?? projection.updated_at ?? projection.created_at,
+        purpose: 'user',
+      })
+    : null;
   if (status === input.operation.status && !projection.error?.code) {
-    return input.operation;
+    if (!resultSavePoint || input.operation.result_save_point_id === resultSavePoint.id) {
+      return input.operation;
+    }
   }
   return await input.operationRepo.updateStatus({
     workspaceId: input.workspaceId,
@@ -1273,6 +1350,7 @@ async function reconcileVersionOperationRecord(input: {
     libraryId: input.libraryId,
     operationId: input.operation.id,
     status,
+    resultSavePointId: resultSavePoint?.id,
     failureReason: publicVersionOperationFailureReason({
       status,
       projection,
@@ -2088,7 +2166,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         operationId,
         requestId,
       });
-      json(res, 200, projection);
+      json(res, 200, presentStorageOperationProjection(projection));
     } catch (error) {
       const message = readErrorMessage(error);
       if (message === 'file_library_operation_not_found') {
@@ -2909,6 +2987,17 @@ export async function handleProjectFileLibraryRoutes(args: {
         actorUserId: user.id,
         requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
       });
+      const resultSavePoint = result.savePointId
+        ? await savePointRepo.upsertFromAfscp({
+            workspaceId,
+            projectId,
+            libraryId,
+            afscpSavePointId: result.savePointId,
+            message,
+            createdAt: result.createdAt,
+            purpose: 'user',
+          })
+        : null;
       const { operation } = await operationRepo.createOrReuseByIdempotencyKey({
         workspaceId,
         projectId,
@@ -2923,18 +3012,8 @@ export async function handleProjectFileLibraryRoutes(args: {
           status: mapStorageOperationStatusToVersionStatus(result.operationStatus),
           fallback: 'file_library_save_point_create_failed',
         }) ?? undefined,
+        resultSavePointId: resultSavePoint?.id,
       });
-      if (result.savePointId) {
-        await savePointRepo.upsertFromAfscp({
-          workspaceId,
-          projectId,
-          libraryId,
-          afscpSavePointId: result.savePointId,
-          message,
-          createdAt: result.createdAt,
-          purpose: 'user',
-        });
-      }
       json(res, 202, operationRepo.toPublic(operation));
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(

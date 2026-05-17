@@ -164,7 +164,7 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
   });
 
-  test('Version and templates reflects pending save-point list after refresh and blocks duplicate create', async ({ authedPage }) => {
+  test('Version save/restore reflects pending save-point list after refresh and blocks duplicate create', async ({ authedPage }) => {
     await authedPage.reload();
     await authedPage.evaluate((libraryId) => {
       const win = window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> };
@@ -174,8 +174,8 @@ test.describe('Files Page (file library browser)', () => {
       };
     }, 'lib_shared_default');
 
-    await authedPage.getByTestId('files__version-management').click();
-    const fileStatesDialog = authedPage.getByTestId('files__dialog__version-management');
+    await authedPage.getByTestId('files__version-entry').click();
+    const fileStatesDialog = authedPage.getByTestId('files__dialog__version-save-restore');
     await expect(fileStatesDialog).toBeVisible();
     await expect(fileStatesDialog.getByTestId('files__save-point__list-recovering')).toBeVisible();
     await expect(fileStatesDialog.getByTestId('files__save-point__list-error')).toHaveCount(0);

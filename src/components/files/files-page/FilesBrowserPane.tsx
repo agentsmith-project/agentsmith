@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, FolderPlus, Pencil, RefreshCw, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, FileText, FolderPlus, Pencil, RefreshCw, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import { Virtuoso } from 'react-virtuoso';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,7 +59,8 @@ type FilesBrowserPaneProps = {
   onGoUp: () => void;
   onRefresh: () => void;
   onCreateFolder: () => void;
-  onManageFileStates: () => void;
+  onOpenTemplateManagement: () => void;
+  onOpenVersionManagement: () => void;
   onUploadClick: () => void;
   onCancelUpload: () => void;
   onRename: () => void;
@@ -133,7 +134,8 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     onGoUp,
     onRefresh,
     onCreateFolder,
-    onManageFileStates,
+    onOpenTemplateManagement,
+    onOpenVersionManagement,
     onUploadClick,
     onCancelUpload,
     onRename,
@@ -256,9 +258,13 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 <FolderPlus className="h-4 w-4 mr-2" />
                 {t('file_manager.new_folder')}
               </Button>
-              <Button type="button" variant="outline" onClick={onManageFileStates} disabled={libraryActionsDisabled} data-testid="files__version-management">
+              <Button type="button" variant="outline" onClick={onOpenVersionManagement} disabled={libraryActionsDisabled} data-testid="files__version-entry">
                 <RotateCcw className="h-4 w-4 mr-2" />
-                {t('file_manager.version_and_templates')}
+                {t('file_manager.version_save_restore_entry')}
+              </Button>
+              <Button type="button" variant="outline" onClick={onOpenTemplateManagement} disabled={libraryActionsDisabled} data-testid="files__template-entry">
+                <FileText className="h-4 w-4 mr-2" />
+                {t('file_manager.template_save_publish_entry')}
               </Button>
               <Button type="button" onClick={onUploadClick} disabled={libraryActionsDisabled || uploadInProgress} data-testid="files__upload">
                 <Upload className="h-4 w-4 mr-2" />

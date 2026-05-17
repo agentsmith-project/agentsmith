@@ -17,6 +17,7 @@ import {
   FileLibrarySchema,
   FileLibrarySavePointSchema,
   FileLibraryRestoreOperationSchema,
+  FileLibraryVersionOperationSchema,
   FileLibraryRestoreActiveWriterBlockedErrorSchema,
   FileLibraryRuntimeAccessReleaseBlockedErrorSchema,
   GetFileLibraryActiveOperationResponseSchema,
@@ -208,6 +209,20 @@ describe('agent task persistent HOME contracts', () => {
       updated_at: '2026-05-09T00:00:00.000Z',
     }).success).toBe(false);
 
+    expect(FileLibraryVersionOperationSchema.parse({
+      id: 'flop_safe',
+      kind: 'save_point_create',
+      status: 'succeeded',
+      file_library_id: 'flib_a',
+      result_save_point_id: 'flsp_safe',
+      message: 'Before migration',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    })).toMatchObject({
+      id: 'flop_safe',
+      result_save_point_id: 'flsp_safe',
+    });
+
     expect(CreateFileLibraryRestoreRequestSchema.parse({
       save_point_id: 'flsp_safe',
     })).toEqual({
@@ -275,9 +290,20 @@ describe('agent task persistent HOME contracts', () => {
       ...baseFileLibrary,
       task_home_binding_status: 'unbound',
       bound_task_visible: false,
+      last_restore: {
+        source_save_point_id: 'flsp_safe',
+        source_save_point_label: 'Before migration',
+        source_save_point_created_at: '2026-05-09T00:00:00.000Z',
+        restored_at: '2026-05-09T00:05:00.000Z',
+        restore_operation_id: 'flro_safe',
+      },
     })).toMatchObject({
       task_home_binding_status: 'unbound',
       bound_task_visible: false,
+      last_restore: {
+        source_save_point_id: 'flsp_safe',
+        restored_at: '2026-05-09T00:05:00.000Z',
+      },
     });
 
     expect(FileLibrarySchema.parse({
@@ -316,6 +342,8 @@ describe('agent task persistent HOME contracts', () => {
       bucket: 'legacy_storage_location',
       metadata_url: 'legacy_metadata_endpoint',
       storage_bucket_url: 'legacy_storage_endpoint',
+      last_restored_save_point_id: 'flsp_internal',
+      last_restored_at: '2026-05-09T00:05:00.000Z',
     });
 
     expect(parsed.success).toBe(false);

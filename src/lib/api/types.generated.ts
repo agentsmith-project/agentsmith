@@ -3471,6 +3471,8 @@ export interface components {
             created_by_user_id: string;
             description?: string;
             id: string;
+            /** @description Last successful restore source recorded by the AgentSmith file library catalog. */
+            last_restore?: components["schemas"]["FileLibraryLastRestore"] | null;
             name: string;
             project_id: string;
             /**
@@ -3536,6 +3538,16 @@ export interface components {
             /** @enum {string} */
             message: "file_library_forbidden";
             request_id?: string;
+        };
+        FileLibraryLastRestore: {
+            restore_operation_id: string;
+            /** Format: date-time */
+            restored_at: string;
+            /** Format: date-time */
+            source_save_point_created_at: string;
+            source_save_point_id: string;
+            /** @description Public-safe display label snapshotted when the restore completes. */
+            source_save_point_label: string;
         };
         FileLibraryNotEmptyError: {
             /** @enum {string} */
@@ -3684,6 +3696,8 @@ export interface components {
             /** @enum {string} */
             kind: "save_point_create" | "restore";
             message?: string;
+            /** @description Public save point id produced by a terminal successful save-point create operation. */
+            result_save_point_id?: string;
             source_save_point_id?: string;
             /** @enum {string} */
             status: "accepted" | "running" | "succeeded" | "failed" | "recovery_required";

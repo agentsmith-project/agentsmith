@@ -46,7 +46,8 @@ interface FilesPageContentProps {
   onCreateLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onCreateLibrary'];
   onDeleteLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onDeleteLibrary'];
   onGoUp: React.ComponentProps<typeof FilesBrowserPane>['onGoUp'];
-  onManageFileStates: React.ComponentProps<typeof FilesBrowserPane>['onManageFileStates'];
+  onOpenTemplateManagement: React.ComponentProps<typeof FilesBrowserPane>['onOpenTemplateManagement'];
+  onOpenVersionManagement: React.ComponentProps<typeof FilesBrowserPane>['onOpenVersionManagement'];
   onNavigateToPrefix: React.ComponentProps<typeof FilesBrowserPane>['onNavigateToPrefix'];
   onRenameLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onRenameLibrary'];
   onSelectLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onSelectLibrary'];
@@ -110,7 +111,8 @@ export function FilesPageContent({
   onCreateLibrary,
   onDeleteLibrary,
   onGoUp,
-  onManageFileStates,
+  onOpenTemplateManagement,
+  onOpenVersionManagement,
   onNavigateToPrefix,
   onRenameLibrary,
   onSelectLibrary,
@@ -240,7 +242,8 @@ export function FilesPageContent({
               onGoUp={onGoUp}
               onRefresh={handleRefresh}
               onCreateFolder={onCreateFolder}
-              onManageFileStates={onManageFileStates}
+              onOpenTemplateManagement={onOpenTemplateManagement}
+              onOpenVersionManagement={onOpenVersionManagement}
               onUploadClick={handleUploadClick}
               onCancelUpload={handleCancelUpload}
               onRename={handleRename}

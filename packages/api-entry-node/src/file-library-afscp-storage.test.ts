@@ -382,6 +382,36 @@ describe('AFSCP File Library storage adapter', () => {
     expect(serialized).not.toContain('stdout');
   });
 
+  it('keeps terminal save point ids internal on operation projections for public-id mapping', async () => {
+    const client = createProductClient({
+      getOperation: vi.fn(async () => ({
+        ...succeededRepoOperation,
+        operation_id: 'op_save_point_terminal',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        verification_result: { save_point_id: 'sp_raw_terminal_result' },
+      })),
+    });
+    const { ownershipStore, adapter } = await createMappedAdapter({ client });
+    await ownershipStore.ensureResourceOwnership({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      resourceKind: 'operation',
+      resourceId: 'op_save_point_terminal',
+      namespaceId: 'ns_project_1',
+    });
+
+    const projection = await adapter.getOperationProjection({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_save_point_terminal',
+      requestId: 'req_save_point_terminal_projection',
+    });
+
+    expect(projection.resultSavePointId).toBe('sp_raw_terminal_result');
+    expect(JSON.stringify(projection)).not.toContain('sp_raw_terminal_result');
+  });
+
   it('hides operation projection for cross-project ownership before calling AFSCP', async () => {
     const client = createProductClient({
       getOperation: vi.fn(async () => succeededRepoOperation),

@@ -574,15 +574,15 @@ async function openVisualFilesVersionManagementSheet(
 ) {
   await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
   await page.waitForTimeout(1200);
-  await expect(page.getByTestId('files__version-management')).toBeEnabled();
-  await page.getByTestId('files__version-management').click();
-  await expect(page.getByTestId('files__dialog__version-management')).toBeVisible();
-  await expect(page.getByTestId('files__version-management-scope')).toBeVisible();
+  await expect(page.getByTestId('files__version-entry')).toBeEnabled();
+  await page.getByTestId('files__version-entry').click();
+  await expect(page.getByTestId('files__dialog__version-save-restore')).toBeVisible();
+  await expect(page.getByTestId('files__version-save-restore-scope')).toBeVisible();
   if (options.expectRestoreOperation) {
     await expect(page.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
   }
   await expect(page.getByTestId('files__save-point__message')).toBeVisible();
-  await expect(page.getByTestId('files__template__name')).toBeVisible();
+  await expect(page.getByTestId('files__template__name')).toBeHidden();
   await page.waitForTimeout(400);
 }
 
@@ -1722,7 +1722,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
   'files-version-management-sheet': {
     afterNavigate: async ({ page }) => {
       await openVisualFilesVersionManagementSheet(page);
-      await expect(page.getByRole('heading', { name: 'File updates' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Save / restore versions' })).toBeVisible();
     },
     screenshotOptions: {
       stabilizeAttempts: 2,

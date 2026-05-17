@@ -852,6 +852,86 @@ describe('project-file-library-routes', () => {
       .not.toMatch(new RegExp(`${projection.operation_id}|${projection.error.code}`));
   });
 
+  it('maps save point terminal operation lookup result to a public save point id', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_terminal_result',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_terminal_result',
+        operation_state: 'succeeded',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: null,
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+        resultSavePointId: 'sp_raw_terminal_result',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_terminal_result',
+          'idempotency-key': 'save-point-terminal-result-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before terminal result' }),
+    })).resolves.toBe(true);
+    const operationId = (createJson.mock.calls[0]?.[2] as { id?: string }).id;
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId,
+      req: { headers: { 'x-request-id': 'req_save_point_terminal_result_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const lookupBody = lookupJson.mock.calls[0]?.[2] as { result_save_point_id?: string };
+    expect(lookupBody).toMatchObject({
+      result_save_point_id: expect.stringMatching(/^flsp_/),
+    });
+    expect(JSON.stringify(lookupBody)).not.toMatch(/sp_raw_terminal_result|op_save_point_terminal_result|repo_/);
+    await expect(deps.docStore.list<Record<string, unknown>>(
+      'project_file_library_save_point_mappings',
+      {
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        library_id: libraryId,
+      },
+    )).resolves.toEqual([
+      expect.objectContaining({
+        id: lookupBody.result_save_point_id,
+        afscp_save_point_id: 'sp_raw_terminal_result',
+        message: 'Before terminal result',
+        purpose: 'user',
+      }),
+    ]);
+  });
+
   it('serves local restore failed projections through public operation lookup', async () => {
     const storageAdapter = createStorageAdapter({
       reconcileRestoreOperation: vi.fn(async (input) => {
@@ -1972,6 +2052,61 @@ describe('project-file-library-routes', () => {
       ],
     });
     expect(JSON.stringify(listBody)).not.toMatch(/repo_flib|sp_user|tmpl_|storage_credential|control_root/);
+  });
+
+  it('returns the public result_save_point_id when save point creation succeeds immediately', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_immediate_result',
+          'idempotency-key': 'save-point-immediate-result-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before immediate result' }),
+    })).resolves.toBe(true);
+
+    const createdBody = createJson.mock.calls[0]?.[2] as { id?: string; result_save_point_id?: string };
+    expect(createdBody).toMatchObject({
+      id: expect.stringMatching(/^flop_/),
+      result_save_point_id: expect.stringMatching(/^flsp_/),
+    });
+    expect(JSON.stringify(createdBody)).not.toMatch(/sp_user_|op_save_point_|repo_/);
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: createdBody.id,
+      req: { headers: { 'x-request-id': 'req_save_point_immediate_result_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(lookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: createdBody.id,
+      status: 'succeeded',
+      result_save_point_id: createdBody.result_save_point_id,
+    }));
   });
 
   it('rejects save point creation without Idempotency-Key before storage admission', async () => {
@@ -3397,6 +3532,169 @@ describe('project-file-library-routes', () => {
       'proj_1',
       libraryId,
     )).resolves.toBeNull();
+  });
+
+  it('writes last_restore into file library list and detail after restore terminal success', async () => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: 'op_restore_last_restore_success',
+        operationStatus: 'succeeded',
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({
+      deps,
+      libraryId,
+      message: 'Before last restore',
+    });
+
+    const restoreJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_last_restore_success',
+          'idempotency-key': 'restore-key-last-restore-success',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: restoreJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+      }),
+    })).resolves.toBe(true);
+    await flushAsyncWork();
+
+    const expectedLastRestore = {
+      source_save_point_id: savePoint.id,
+      source_save_point_label: 'Before last restore',
+      source_save_point_created_at: savePoint.created_at,
+      restored_at: expect.any(String),
+      restore_operation_id: expect.stringMatching(/^flro_/),
+    };
+
+    const detailJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {} as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: detailJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(detailJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: libraryId,
+      last_restore: expectedLastRestore,
+    }));
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(listJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      items: [
+        expect.objectContaining({
+          id: libraryId,
+          last_restore: expectedLastRestore,
+        }),
+      ],
+    });
+
+    const stored = await deps.docStore.get<Record<string, unknown>>('project_file_libraries', libraryId);
+    expect(stored).toMatchObject({
+      last_restored_save_point_id: savePoint.id,
+      last_restored_save_point_label: 'Before last restore',
+      last_restored_save_point_created_at: savePoint.created_at,
+      last_restore_operation_id: expect.stringMatching(/^flro_/),
+    });
+    expect(stored).not.toHaveProperty('last_restore');
+  });
+
+  it.each([
+    ['failed', 'failed'],
+    ['recovery_required', 'recovery_required'],
+    ['pending', 'pending'],
+  ] as const)('does not overwrite last_restore when restore remains %s', async (_label, operationStatus) => {
+    const storageAdapter = createStorageAdapter({
+      restoreFileLibrary: vi.fn(async () => ({
+        operationId: `op_restore_last_restore_${operationStatus}`,
+        operationStatus,
+        sourceSavePointId: 'sp_user_002',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).recordSuccessfulRestore({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      sourceSavePointId: 'flsp_existing',
+      sourceSavePointLabel: 'Existing restore',
+      sourceSavePointCreatedAt: '2026-05-09T00:00:00.000Z',
+      restoredAt: '2026-05-09T00:05:00.000Z',
+      restoreOperationId: 'flro_existing_restore',
+    });
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': `req_restore_last_restore_${operationStatus}`,
+          'idempotency-key': `restore-key-last-restore-${operationStatus}`,
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: savePoint.id,
+      }),
+    })).resolves.toBe(true);
+    await flushAsyncWork();
+
+    await expect(new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
+      'ws_default',
+      'proj_1',
+      libraryId,
+    )).resolves.toMatchObject({
+      last_restore: {
+        source_save_point_id: 'flsp_existing',
+        source_save_point_label: 'Existing restore',
+        source_save_point_created_at: '2026-05-09T00:00:00.000Z',
+        restored_at: '2026-05-09T00:05:00.000Z',
+        restore_operation_id: 'flro_existing_restore',
+      },
+    });
   });
 
   it('does not project stale terminal direct restore operations as active history', async () => {

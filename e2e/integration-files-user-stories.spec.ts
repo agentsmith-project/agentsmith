@@ -1599,11 +1599,10 @@ async function createSavePointViaFilesUi(args: {
   message: string;
 }): Promise<string> {
   await openWorkspaceFilesRoot(args);
-  await args.page.getByTestId('files__version-management').click();
-  const fileStatesDialog = args.page.getByTestId('files__dialog__version-management');
+  await args.page.getByTestId('files__version-entry').click();
+  const fileStatesDialog = args.page.getByTestId('files__dialog__version-save-restore');
   await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
   await expect(fileStatesDialog.getByText(/^Save as restore point$/i)).toBeVisible();
-  await expect(fileStatesDialog.getByText(/^Save as task file template$/i)).toBeVisible();
 
   const savePointId = await createSavePointFromOpenDialogWithPendingAssertions({
     page: args.page,
@@ -2000,8 +1999,8 @@ async function restoreSavePointViaFilesUi(args: {
   message: string;
 }): Promise<void> {
   await openWorkspaceFilesRoot(args);
-  await args.page.getByTestId('files__version-management').click();
-  const fileStatesDialog = args.page.getByTestId('files__dialog__version-management');
+  await args.page.getByTestId('files__version-entry').click();
+  const fileStatesDialog = args.page.getByTestId('files__dialog__version-save-restore');
   await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
   await expect(fileStatesDialog.getByText(args.message)).toBeVisible({ timeout: 10_000 });
 
@@ -2161,7 +2160,7 @@ test.describe.serial('@lane-real files user stories', () => {
     }
   });
 
-  test('Version and templates save point reloads from backend list after refresh', async ({ page }) => {
+  test('Version save/restore save point reloads from backend list after refresh', async ({ page }) => {
     test.setTimeout(240_000);
 
     await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
@@ -2205,8 +2204,8 @@ test.describe.serial('@lane-real files user stories', () => {
       projectId,
       libraryId,
     });
-    await page.getByTestId('files__version-management').click();
-    const fileStatesDialog = page.getByTestId('files__dialog__version-management');
+    await page.getByTestId('files__version-entry').click();
+    const fileStatesDialog = page.getByTestId('files__dialog__version-save-restore');
     await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
     const savePointId = await createSavePointFromOpenDialogWithPendingAssertions({
       page,
@@ -2238,8 +2237,8 @@ test.describe.serial('@lane-real files user stories', () => {
         method: 'GET',
       })
     ), { timeout: 120_000 });
-    await page.getByTestId('files__version-management').click();
-    const reopenedDialog = page.getByTestId('files__dialog__version-management');
+    await page.getByTestId('files__version-entry').click();
+    const reopenedDialog = page.getByTestId('files__dialog__version-save-restore');
     await expect(reopenedDialog).toBeVisible({ timeout: 10_000 });
     const savePointListResponse = await savePointListResponsePromise;
     const savePointListBody = await savePointListResponse.text();
@@ -2355,11 +2354,10 @@ test.describe.serial('@lane-real files user stories', () => {
       projectId,
       libraryId,
     });
-    await page.getByTestId('files__version-management').click();
-    const fileStatesDialog = page.getByTestId('files__dialog__version-management');
+    await page.getByTestId('files__version-entry').click();
+    const fileStatesDialog = page.getByTestId('files__dialog__version-save-restore');
     await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
     await expect(fileStatesDialog.getByText(/^Save as restore point$/i)).toBeVisible();
-    await expect(fileStatesDialog.getByText(/^Save as task file template$/i)).toBeVisible();
 
     await fileStatesDialog.getByTestId('files__save-point__message').fill(savePointMessage);
     const savePointResponsePromise = page.waitForResponse((response) => (
@@ -2431,9 +2429,9 @@ test.describe.serial('@lane-real files user stories', () => {
       timeoutMs: 30_000,
     });
 
-    const restoreFileStatesDialog = page.getByTestId('files__dialog__version-management');
+    const restoreFileStatesDialog = page.getByTestId('files__dialog__version-save-restore');
     if (!(await restoreFileStatesDialog.isVisible().catch(() => false))) {
-      await page.getByTestId('files__version-management').click();
+      await page.getByTestId('files__version-entry').click();
     }
     await expect(restoreFileStatesDialog).toBeVisible({ timeout: 10_000 });
     await expect(restoreFileStatesDialog.getByText(savePointMessage)).toBeVisible({ timeout: 10_000 });
@@ -2489,8 +2487,15 @@ test.describe.serial('@lane-real files user stories', () => {
     expect(restorePayload.status).toMatch(/^(pending|restoring|succeeded)$/);
     await expect(restoreFileStatesDialog.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
     if (restorePayload.status === 'pending' || restorePayload.status === 'restoring') {
-      await expect(restoreFileStatesDialog.getByTestId('files__template__name')).toBeDisabled();
-      await expect(restoreFileStatesDialog.getByTestId('files__restore-template-blocker')).toBeVisible();
+      await restoreFileStatesDialog.getByLabel('Close', { exact: true }).click();
+      await expect(restoreFileStatesDialog).toBeHidden({ timeout: 10_000 });
+      await page.getByTestId('files__template-entry').click();
+      const templateDialogDuringRestore = page.getByTestId('files__dialog__template-save-publish');
+      await expect(templateDialogDuringRestore).toBeVisible({ timeout: 10_000 });
+      await expect(templateDialogDuringRestore.getByTestId('files__template__name')).toBeDisabled();
+      await expect(templateDialogDuringRestore.getByTestId('files__restore-template-blocker')).toBeVisible();
+      await templateDialogDuringRestore.getByLabel('Close', { exact: true }).click();
+      await expect(templateDialogDuringRestore).toBeHidden({ timeout: 10_000 });
       await page.reload({ waitUntil: 'domcontentloaded' });
       await openWorkspaceFilesRoot({
         page,
@@ -2498,8 +2503,8 @@ test.describe.serial('@lane-real files user stories', () => {
         projectId,
         libraryId,
       });
-      await page.getByTestId('files__version-management').click();
-      const reopenedDuringRestore = page.getByTestId('files__dialog__version-management');
+      await page.getByTestId('files__version-entry').click();
+      const reopenedDuringRestore = page.getByTestId('files__dialog__version-save-restore');
       await expect(reopenedDuringRestore.getByTestId('files__restore-operation')).toBeVisible({ timeout: 30_000 });
       await waitForRestoreOperationTerminalIfVisible(reopenedDuringRestore);
     } else {
@@ -2561,10 +2566,15 @@ test.describe.serial('@lane-real files user stories', () => {
     });
     expect(restoredWorkspaceContent.trim()).toBe('before restore');
 
-    await page.getByTestId('files__version-management').click();
-    const restoredFileStatesDialog = page.getByTestId('files__dialog__version-management');
-    await expect(restoredFileStatesDialog).toBeVisible({ timeout: 10_000 });
-    await expect(restoredFileStatesDialog.getByTestId('files__template__name')).toBeEnabled();
+    const activeVersionDialog = page.getByTestId('files__dialog__version-save-restore');
+    if (await activeVersionDialog.isVisible().catch(() => false)) {
+      await activeVersionDialog.getByLabel('Close', { exact: true }).click();
+      await expect(activeVersionDialog).toBeHidden({ timeout: 10_000 });
+    }
+    await page.getByTestId('files__template-entry').click();
+    const templateDialog = page.getByTestId('files__dialog__template-save-publish');
+    await expect(templateDialog).toBeVisible({ timeout: 10_000 });
+    await expect(templateDialog.getByTestId('files__template__name')).toBeEnabled();
 
     await createFolderViaApi({
       page,
@@ -2588,21 +2598,21 @@ test.describe.serial('@lane-real files user stories', () => {
       libraryId,
       path: templatePath,
     });
-    await restoredFileStatesDialog.getByTestId('files__template__name').fill(templateName);
-    await restoredFileStatesDialog.getByTestId('files__template__description').fill('Reusable files for a new task.');
+    await templateDialog.getByTestId('files__template__name').fill(templateName);
+    await templateDialog.getByTestId('files__template__description').fill('Reusable files for a new task.');
     const publishResponsePromise = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && response.url().includes(`/workspaces/${WORKSPACE_ID}/projects/${projectId}/task-file-templates/`)
       && response.url().endsWith('/publish')
       && response.ok()
     ), { timeout: 60_000 });
-    await restoredFileStatesDialog.getByTestId('files__template__save').click();
+    await templateDialog.getByTestId('files__template__save').click();
     const publishResponse = await publishResponsePromise;
     const publishBody = await publishResponse.text();
     const templateId = resolveTaskFileTemplateIdFromPublishResponse(publishResponse, publishBody);
-    await expect(restoredFileStatesDialog.getByText(templateName)).toBeVisible({ timeout: 10_000 });
+    await expect(templateDialog.getByText(templateName)).toBeVisible({ timeout: 10_000 });
 
-    await restoredFileStatesDialog.getByLabel('Close', { exact: true }).click();
+    await templateDialog.getByLabel('Close', { exact: true }).click();
     await uploadTextFileViaApi({
       page,
       workspaceId: WORKSPACE_ID,

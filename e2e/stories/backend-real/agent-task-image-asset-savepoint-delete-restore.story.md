@@ -74,7 +74,7 @@
       "stableMarkers": [
         "files__objects-table",
         "files__download",
-        "files__version-management"
+        "files__version-entry"
       ]
     },
     {
@@ -128,7 +128,7 @@
       "sceneId": "project-files",
       "intent": "Create a business save point before cleaning up generated image files.",
       "action": "Create save point",
-      "target": "files__version-management",
+      "target": "files__version-entry",
       "expectedFeedback": "Save point list shows the business note for the asset cleanup point.",
       "note": "备注使用业务语义，便于后续恢复时理解为什么要回到这个状态。",
       "evidence": [

@@ -1643,17 +1643,15 @@ describe('visual baseline support', () => {
       recipeFamily: 'overlay_sheet',
       route: '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
       stableMarkers: expect.arrayContaining([
-        'files__dialog__version-management',
-        'files__version-management-scope',
+        'files__dialog__version-save-restore',
+        'files__version-save-restore-scope',
         'files__save-point__message',
-        'files__template__name',
       ]),
       semanticAssertions: {
         requiredViewportTestIds: expect.arrayContaining([
-          'files__dialog__version-management',
-          'files__version-management-scope',
+          'files__dialog__version-save-restore',
+          'files__version-save-restore-scope',
           'files__save-point__message',
-          'files__template__name',
         ]),
         forbiddenVisibleText: expect.arrayContaining([
           'version operation',
@@ -1673,13 +1671,13 @@ describe('visual baseline support', () => {
         recipeFamily: 'overlay_sheet',
         route: '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
         stableMarkers: expect.arrayContaining([
-          'files__dialog__version-management',
+          'files__dialog__version-save-restore',
           'files__restore-operation',
           'files__restore-operation-summary',
         ]),
         semanticAssertions: {
           requiredViewportTestIds: expect.arrayContaining([
-            'files__dialog__version-management',
+            'files__dialog__version-save-restore',
             'files__restore-operation',
             'files__restore-operation-summary',
           ]),

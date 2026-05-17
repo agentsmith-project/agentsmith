@@ -36,6 +36,8 @@ import {
   useCreateFileLibrarySavePoint,
   useFileLibraryActiveVersionOperation,
   useFileLibrarySavePoints,
+  useFileLibraryVersionOperationLookup,
+  getVersionOperationResultSavePointId,
   isFileLibraryOperationPendingError,
   restoreOperationToVersionOperation,
   useReleaseFileLibraryRuntimeAccess,
@@ -54,6 +56,7 @@ import { buildTaskPath } from '@/components/agent-tasks/task-list/navigation';
 type FileLibraryRecoveryDialogProps = {
   library: FileLibrary | null;
   locale?: string;
+  mode?: 'version' | 'template';
   open: boolean;
   projectId: string;
   t: (key: string, values?: Record<string, string>) => string;
@@ -92,6 +95,14 @@ type PendingRestoreConfirm = {
   savePoint: FileLibrarySavePoint;
 };
 
+type PendingSavePointCreate = {
+  existingIds: ReadonlySet<string>;
+  initialDataUpdatedAt: number;
+  message?: string;
+  operationId?: string;
+  resultSavePointId?: string;
+};
+
 type PendingTemplateCreateAction = {
   key: string;
   signature: string;
@@ -106,6 +117,14 @@ type RestoreOperationDisplay = {
 
 type TemplatePublishMode = 'published' | 'unpublished';
 
+type FileLibraryLastRestoreView = {
+  source_save_point_id: string;
+  source_save_point_label: string;
+  source_save_point_created_at: string;
+  restored_at: string;
+  restore_operation_id: string;
+};
+
 const EMPTY_SAVE_POINTS: FileLibrarySavePoint[] = [];
 
 function formatTimestamp(value: string) {
@@ -116,6 +135,35 @@ function formatTimestamp(value: string) {
 
 function savePointLabel(savePoint: FileLibrarySavePoint, t: FileLibraryRecoveryDialogProps['t']) {
   return savePoint.message?.trim() || t('file_manager.save_point_default_name');
+}
+
+function readLastRestoreString(
+  record: Record<string, unknown> | null | undefined,
+  key: keyof FileLibraryLastRestoreView,
+) {
+  const value = record?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getFileLibraryLastRestore(library: FileLibrary | null): FileLibraryLastRestoreView | null {
+  const record = (library as (FileLibrary & { last_restore?: unknown }) | null)?.last_restore;
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const candidate = record as Record<string, unknown>;
+  const sourceSavePointId = readLastRestoreString(candidate, 'source_save_point_id');
+  const sourceSavePointLabel = readLastRestoreString(candidate, 'source_save_point_label');
+  const sourceSavePointCreatedAt = readLastRestoreString(candidate, 'source_save_point_created_at');
+  const restoredAt = readLastRestoreString(candidate, 'restored_at');
+  const restoreOperationId = readLastRestoreString(candidate, 'restore_operation_id');
+  if (!sourceSavePointId || !sourceSavePointLabel || !sourceSavePointCreatedAt || !restoredAt || !restoreOperationId) {
+    return null;
+  }
+  return {
+    source_save_point_id: sourceSavePointId,
+    source_save_point_label: sourceSavePointLabel,
+    source_save_point_created_at: sourceSavePointCreatedAt,
+    restored_at: restoredAt,
+    restore_operation_id: restoreOperationId,
+  };
 }
 
 function generateRestoreIdempotencyKey(savePointId: string) {
@@ -164,9 +212,26 @@ function normalizeVersionOperation(
 function buildRestoreOperationDisplay(
   operation: FileLibraryVersionOperation,
   t: FileLibraryRecoveryDialogProps['t'],
+  options: { savePointResultVisible?: boolean } = {},
 ): RestoreOperationDisplay {
   if (operation.kind === 'save_point_create') {
     if (operation.status === 'succeeded') {
+      if (!getVersionOperationResultSavePointId(operation)) {
+        return {
+          description: t('file_manager.save_point_operation_missing_result_summary'),
+          icon: 'warning',
+          title: t('file_manager.save_point_operation_missing_result_title'),
+          tone: 'error',
+        };
+      }
+      if (!options.savePointResultVisible) {
+        return {
+          description: t('file_manager.save_point_operation_accepted_summary'),
+          icon: 'loading',
+          title: t('file_manager.save_point_operation_running_title'),
+          tone: 'warning',
+        };
+      }
       return {
         description: t('file_manager.save_point_operation_succeeded_summary'),
         icon: 'success',
@@ -555,21 +620,21 @@ function SavePointListRecoveringNotice({
 export function FileLibraryRecoveryDialog({
   library,
   locale = 'en-US',
+  mode = 'version',
   open,
   projectId,
   t,
   workspaceId,
   onOpenChange,
 }: FileLibraryRecoveryDialogProps) {
+  const versionMode = mode === 'version';
+  const templateMode = mode === 'template';
   const [savePointMessage, setSavePointMessage] = React.useState('');
   const [savePointActionError, setSavePointActionError] = React.useState<SavePointActionErrorDisplay | null>(null);
-  const [pendingSavePointCreate, setPendingSavePointCreate] = React.useState<{
-    existingIds: ReadonlySet<string>;
-    initialDataUpdatedAt: number;
-    message?: string;
-  } | null>(null);
+  const [pendingSavePointCreate, setPendingSavePointCreate] = React.useState<PendingSavePointCreate | null>(null);
   const [pendingRestoreConfirm, setPendingRestoreConfirm] = React.useState<PendingRestoreConfirm | null>(null);
   const [restoreOperation, setRestoreOperation] = React.useState<FileLibraryVersionOperation | null>(null);
+  const [trackedVersionOperationId, setTrackedVersionOperationId] = React.useState<string | null>(null);
   const [versionOperationIdleVisible, setVersionOperationIdleVisible] = React.useState(false);
   const [restoreActionError, setRestoreActionError] = React.useState<RestoreActionErrorDisplay | null>(null);
   const [restoreActiveWriterBlocker, setRestoreActiveWriterBlocker] = React.useState<RestoreActiveWriterBlocker | null>(null);
@@ -588,15 +653,22 @@ export function FileLibraryRecoveryDialog({
   const libraryReady = library?.status === 'ready';
 
   const savePointsQuery = useFileLibrarySavePoints(workspaceId, projectId, libraryId, {
-    enabled: open && !!libraryId,
+    enabled: open && versionMode && !!libraryId,
   });
   const refetchSavePoints = savePointsQuery.refetch;
   const activeVersionOperationQuery = useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId, {
     enabled: open && !!libraryId,
   });
   const activeOperationDataUpdatedAt = activeVersionOperationQuery.dataUpdatedAt ?? 0;
+  const trackedVersionOperationQuery = useFileLibraryVersionOperationLookup(
+    workspaceId,
+    projectId,
+    libraryId,
+    trackedVersionOperationId,
+    { enabled: open && versionMode && !!trackedVersionOperationId },
+  );
   const templatesQuery = useTaskFileTemplates(workspaceId, projectId, {
-    enabled: open,
+    enabled: open && templateMode,
   });
 
   const createSavePoint = useCreateFileLibrarySavePoint({ suppressErrorToast: true });
@@ -614,6 +686,7 @@ export function FileLibraryRecoveryDialog({
       setPendingSavePointCreate(null);
       setPendingRestoreConfirm(null);
       setRestoreOperation(null);
+      setTrackedVersionOperationId(null);
       setVersionOperationIdleVisible(false);
       setRestoreActionError(null);
       setRestoreActiveWriterBlocker(null);
@@ -651,6 +724,13 @@ export function FileLibraryRecoveryDialog({
       }
       return;
     }
+    if (
+      trackedVersionOperationId
+      && nextOperation.id !== trackedVersionOperationId
+      && restoreOperation?.id === trackedVersionOperationId
+    ) {
+      return;
+    }
     setVersionOperationIdleVisible(false);
     setRestoreOperation((current) => (
       current?.id === nextOperation.id
@@ -670,12 +750,54 @@ export function FileLibraryRecoveryDialog({
     open,
     refetchSavePoints,
     restoreOperation,
+    trackedVersionOperationId,
+  ]);
+
+  React.useEffect(() => {
+    if (!open || !versionMode) return;
+    const trackedOperation = trackedVersionOperationQuery.data;
+    if (!trackedOperation) return;
+    if (trackedOperation.file_library_id && trackedOperation.file_library_id !== libraryId) return;
+    setVersionOperationIdleVisible(false);
+    setRestoreOperation((current) => (
+      current?.id === trackedOperation.id
+      && current.status === trackedOperation.status
+      && current.updated_at === trackedOperation.updated_at
+        ? current
+        : trackedOperation
+    ));
+    if (trackedOperation.kind === 'save_point_create') {
+      const resultSavePointId = getVersionOperationResultSavePointId(trackedOperation);
+      if (resultSavePointId) {
+        setPendingSavePointCreate((current) => (
+          current?.operationId === trackedOperation.id
+          && current.resultSavePointId !== resultSavePointId
+            ? { ...current, resultSavePointId }
+            : current
+        ));
+      }
+    }
+  }, [
+    libraryId,
+    open,
+    trackedVersionOperationQuery.data,
+    versionMode,
   ]);
 
   const savePoints = savePointsQuery.data?.items ?? EMPTY_SAVE_POINTS;
   const templates = templatesQuery.data?.items ?? [];
   const templatesForProject = templates;
   const restoreOperationActive = isVersionOperationActive(restoreOperation);
+  const savePointCreateOperationTerminal = restoreOperation?.kind === 'save_point_create'
+    && isVersionOperationTerminal(restoreOperation);
+  const savePointCreateOperationStatus = restoreOperation?.kind === 'save_point_create'
+    ? restoreOperation.status
+    : null;
+  const savePointResultSavePointId = restoreOperation?.kind === 'save_point_create'
+    ? getVersionOperationResultSavePointId(restoreOperation)
+    : null;
+  const savePointResultVisible = !!savePointResultSavePointId
+    && savePoints.some((savePoint) => savePoint.id === savePointResultSavePointId);
   const taskTemplatesBlocked = restoreOperationActive || activeVersionOperationQuery.isLoading;
   const showTemplateListLoading = templatesQuery.isLoading && templates.length === 0;
   const showTemplateListError = templatesQuery.isError && templates.length === 0;
@@ -685,7 +807,9 @@ export function FileLibraryRecoveryDialog({
     && !savePointListOperationPending
     && savePoints.length === 0;
   const restoreDisplay = restoreOperation
-    ? buildRestoreOperationDisplay(restoreOperation, t)
+    ? buildRestoreOperationDisplay(restoreOperation, t, {
+        savePointResultVisible,
+      })
     : versionOperationIdleVisible
       ? {
           description: t('file_manager.version_operation_idle_summary'),
@@ -694,23 +818,30 @@ export function FileLibraryRecoveryDialog({
           tone: 'info' as const,
         }
       : null;
+  const lastRestore = versionMode ? getFileLibraryLastRestore(library) : null;
 
   React.useEffect(() => {
-    if (savePointActionError?.kind !== 'pending' || !pendingSavePointCreate) return;
+    if (!pendingSavePointCreate) return;
     if (savePointsQuery.isError || savePointsQuery.isLoading) return;
     if (savePointsQuery.dataUpdatedAt <= pendingSavePointCreate.initialDataUpdatedAt) return;
-    const pendingMessage = pendingSavePointCreate.message;
-    const createdSavePointVisible = savePoints.some((savePoint) => (
-      !pendingSavePointCreate.existingIds.has(savePoint.id)
-      && (!pendingMessage || savePoint.message === pendingMessage)
-    ));
+    const resultSavePointId = pendingSavePointCreate.resultSavePointId
+      ?? (
+        restoreOperation?.kind === 'save_point_create'
+          ? getVersionOperationResultSavePointId(restoreOperation)
+          : null
+      );
+    if (!resultSavePointId) return;
+    const createdSavePointVisible = savePoints.some((savePoint) => savePoint.id === resultSavePointId);
     if (!createdSavePointVisible) return;
     setSavePointActionError(null);
     setPendingSavePointCreate(null);
+    if (!pendingSavePointCreate.operationId) {
+      setTrackedVersionOperationId(null);
+    }
     setSavePointMessage('');
   }, [
     pendingSavePointCreate,
-    savePointActionError?.kind,
+    restoreOperation,
     savePoints,
     savePointsQuery.dataUpdatedAt,
     savePointsQuery.isError,
@@ -718,34 +849,65 @@ export function FileLibraryRecoveryDialog({
   ]);
 
   React.useEffect(() => {
-    if (!pendingSavePointCreate || restoreOperation?.kind !== 'save_point_create') return;
-    if (!isVersionOperationTerminal(restoreOperation)) return;
+    if (!pendingSavePointCreate || !savePointCreateOperationTerminal) return;
+    if (savePointCreateOperationStatus === 'succeeded') {
+      const resultSavePointId = savePointResultSavePointId;
+      if (!resultSavePointId) {
+        setSavePointActionError(null);
+        setPendingSavePointCreate(null);
+        setTrackedVersionOperationId(null);
+        return;
+      }
+      setPendingSavePointCreate((current) => (
+        current && current.resultSavePointId !== resultSavePointId
+          ? { ...current, resultSavePointId }
+          : current
+      ));
+      if (savePoints.some((savePoint) => savePoint.id === resultSavePointId)) {
+        setSavePointActionError(null);
+        setPendingSavePointCreate(null);
+        if (!pendingSavePointCreate.operationId) {
+          setTrackedVersionOperationId(null);
+        }
+        setSavePointMessage('');
+      }
+      return;
+    }
     setSavePointActionError(null);
     setPendingSavePointCreate(null);
-    if (restoreOperation.status === 'succeeded') {
-      setSavePointMessage('');
-    }
+    setTrackedVersionOperationId(null);
   }, [
     pendingSavePointCreate,
-    restoreOperation?.id,
-    restoreOperation?.kind,
-    restoreOperation?.status,
+    savePointCreateOperationStatus,
+    savePointCreateOperationTerminal,
+    savePointResultSavePointId,
+    savePoints,
   ]);
 
   const handleCreateSavePoint = async () => {
     if (!library || !libraryReady || restoreOperationActive) return;
     setSavePointActionError(null);
+    const message = savePointMessage.trim() || undefined;
     try {
       const operation = await createSavePoint.mutateAsync({
         workspaceId,
         projectId,
         libraryId: library.id,
-        message: savePointMessage.trim() || undefined,
+        message,
       });
       localVersionOperationStartedRef.current = {
         id: operation.id,
         activeDataUpdatedAt: activeOperationDataUpdatedAt,
       };
+      const resultSavePointId = getVersionOperationResultSavePointId(operation);
+      setPendingSavePointCreate({
+        existingIds: new Set(savePoints.map((savePoint) => savePoint.id)),
+        initialDataUpdatedAt: savePointsQuery.dataUpdatedAt,
+        message,
+        operationId: operation.id,
+        ...(resultSavePointId ? { resultSavePointId } : {}),
+      });
+      setTrackedVersionOperationId(operation.id);
       setRestoreOperation(operation);
       setVersionOperationIdleVisible(false);
       if (isVersionOperationActive(operation)) {
@@ -754,8 +916,6 @@ export function FileLibraryRecoveryDialog({
       if (operation.status === 'succeeded') {
         void savePointsQuery.refetch();
       }
-      setPendingSavePointCreate(null);
-      setSavePointMessage('');
     } catch (error) {
       if (isFileLibraryOperationPendingError(error)) {
         setPendingSavePointCreate({
@@ -960,6 +1120,7 @@ export function FileLibraryRecoveryDialog({
 
   const savePointPending = createSavePoint.isPending;
   const savePointCreateBlocked = savePointPending
+    || !!pendingSavePointCreate
     || savePointListOperationPending
     || savePointActionError?.kind === 'pending'
     || restoreOperationActive
@@ -976,21 +1137,38 @@ export function FileLibraryRecoveryDialog({
           side="right-wide"
           closeLabel={t('file_manager.close')}
           className="flex h-full max-w-full flex-col gap-0 overflow-hidden overflow-x-hidden p-0"
-          data-testid="files__dialog__version-management"
+          data-testid={versionMode
+            ? 'files__dialog__version-save-restore'
+            : 'files__dialog__template-save-publish'}
         >
           <SheetHeader className="border-b border-subtle px-6 py-5">
-            <SheetTitle>{t('file_manager.version_management_title')}</SheetTitle>
+            <SheetTitle>
+              {versionMode
+                ? t('file_manager.version_save_restore_title')
+                : t('file_manager.template_save_publish_title')}
+            </SheetTitle>
             <SheetDescription>
               {library
-                ? t('file_manager.version_management_dialog_description', { name: library.name })
-                : t('file_manager.version_management_dialog_no_library')}
+                ? t(versionMode
+                    ? 'file_manager.version_save_restore_dialog_description'
+                    : 'file_manager.template_save_publish_dialog_description', { name: library.name })
+                : t(versionMode
+                    ? 'file_manager.version_save_restore_dialog_no_library'
+                    : 'file_manager.template_save_publish_dialog_no_library')}
             </SheetDescription>
           </SheetHeader>
 
           <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4">
-            <div className="flex gap-2 rounded-md border border-subtle bg-surface/40 px-3 py-2.5 text-sm text-secondary" data-testid="files__version-management-scope">
+            <div
+              className="flex gap-2 rounded-md border border-subtle bg-surface/40 px-3 py-2.5 text-sm text-secondary"
+              data-testid={versionMode ? 'files__version-save-restore-scope' : 'files__template-save-publish-scope'}
+            >
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
-              <div>{t('file_manager.version_management_scope_notice')}</div>
+              <div>
+                {t(versionMode
+                  ? 'file_manager.version_save_restore_scope_notice'
+                  : 'file_manager.template_save_publish_scope_notice')}
+              </div>
             </div>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
@@ -1017,7 +1195,7 @@ export function FileLibraryRecoveryDialog({
                         ? 'border-subtle bg-surface/45'
                         : 'border-warning/30 bg-warning/10',
                 )}
-                data-testid="files__restore-operation"
+                data-testid={templateMode ? 'files__template__operation-status' : 'files__restore-operation'}
                 role={restoreDisplay?.tone === 'error' || restoreActionError ? 'alert' : 'status'}
               >
                 <div className="flex gap-2">
@@ -1101,7 +1279,7 @@ export function FileLibraryRecoveryDialog({
                         <div className="text-sm text-secondary">{restoreReleasePendingDisplay.description}</div>
                       </div>
                     ) : null}
-                    {restoreOperationActive ? (
+                    {templateMode && restoreOperationActive ? (
                       <div
                         className="rounded-md border border-warning/25 bg-surface/45 px-3 py-2 text-sm text-secondary"
                         data-testid="files__restore-template-blocker"
@@ -1116,6 +1294,31 @@ export function FileLibraryRecoveryDialog({
               </div>
             ) : null}
 
+            {versionMode && lastRestore ? (
+              <section
+                className="grid gap-1.5 rounded-md border border-subtle bg-surface/30 p-3"
+                data-testid="files__version__last-restore"
+                aria-labelledby="files-last-restore-title"
+              >
+                <h3 id="files-last-restore-title" className="text-sm font-medium text-primary">
+                  {t('file_manager.version_last_restore_title', {
+                    label: lastRestore.source_save_point_label,
+                  })}
+                </h3>
+                <div className="text-sm text-secondary">
+                  {t('file_manager.version_last_restore_restored_at', {
+                    time: formatTimestamp(lastRestore.restored_at),
+                  })}
+                </div>
+                <div className="text-sm text-tertiary">
+                  {t('file_manager.version_last_restore_source_created_at', {
+                    time: formatTimestamp(lastRestore.source_save_point_created_at),
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            {versionMode ? (
             <section className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3" aria-labelledby="files-save-point-section-title">
               <div>
                 <h3 id="files-save-point-section-title" className="text-sm font-medium text-primary">
@@ -1169,7 +1372,9 @@ export function FileLibraryRecoveryDialog({
                   </div>
                 ) : null}
             </section>
+            ) : null}
 
+            {templateMode ? (
             <section className="grid gap-3 rounded-md border border-subtle bg-surface/30 p-3" aria-labelledby="files-template-section-title">
               <div>
                 <h3 id="files-template-section-title" className="text-sm font-medium text-primary">
@@ -1366,7 +1571,9 @@ export function FileLibraryRecoveryDialog({
                 )}
               </div>
             </section>
+            ) : null}
 
+            {versionMode ? (
             <section className="space-y-3" aria-labelledby="files-restore-points-section-title">
               <h3 id="files-restore-points-section-title" className="text-sm font-medium text-primary">
                 {t('file_manager.restore_points_section_title')}
@@ -1438,6 +1645,7 @@ export function FileLibraryRecoveryDialog({
                 )}
               </div>
             </section>
+            ) : null}
           </div>
           </div>
         </SheetContent>

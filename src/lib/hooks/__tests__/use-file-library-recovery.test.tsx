@@ -80,11 +80,13 @@ import {
   useCreateFileLibrarySavePoint,
   useFileLibraryActiveVersionOperation,
   useFileLibrarySavePoints,
+  useFileLibraryVersionOperationLookup,
   useReleaseFileLibraryRuntimeAccess,
   useRestoreFileLibrary,
 } from '../use-file-library-recovery';
 import { toast } from '@/components/ui/toast';
 import { APIError, handleErrorForToast } from '@/lib/api/errors';
+import { queryKeys } from '@/lib/query-keys';
 
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -453,6 +455,126 @@ describe('file library recovery hooks', () => {
       expect(queryClient.getQueryCache().find({ queryKey: activeOperationKey })?.isStale()).toBe(true);
     });
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('tracks a submitted save-point operation by POST operation id until terminal result save point id', async () => {
+    vi.useFakeTimers();
+    mockGetFileLibraryVersionOperation
+      .mockResolvedValueOnce({
+        id: 'flop_post_save_point',
+        kind: 'save_point_create',
+        file_library_id: libraryId,
+        status: 'running',
+        message: 'Before prompt edits',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:01.000Z',
+      })
+      .mockResolvedValueOnce({
+        id: 'flop_post_save_point',
+        kind: 'save_point_create',
+        file_library_id: libraryId,
+        status: 'succeeded',
+        result_save_point_id: 'sp_created_from_operation',
+        message: 'Before prompt edits',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:02.000Z',
+      } as never);
+
+    const { queryClient, Wrapper } = createTestHarness();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    queryClient.setQueryData(queryKeys.fileLibraries.savePoints(workspaceId, projectId, libraryId), { items: [] });
+    queryClient.setQueryData(queryKeys.fileLibraries.list(workspaceId, projectId), { items: [{ id: libraryId }] });
+    queryClient.setQueryData(queryKeys.fileLibraries.detail(workspaceId, projectId, libraryId), { id: libraryId });
+    queryClient.setQueryData(queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId), {
+      operation: {
+        id: 'flop_active_blocker',
+        kind: 'save_point_create',
+        file_library_id: libraryId,
+        status: 'running',
+        created_at: '2026-05-09T12:00:00.000Z',
+        updated_at: '2026-05-09T12:00:01.000Z',
+      },
+    });
+
+    const { result } = renderHook(
+      () => useFileLibraryVersionOperationLookup(
+        workspaceId,
+        projectId,
+        libraryId,
+        'flop_post_save_point',
+      ),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.status).toBe('running'));
+    });
+    expect(mockGetFileLibraryVersionOperation).toHaveBeenCalledWith(
+      workspaceId,
+      projectId,
+      'flop_post_save_point',
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.status).toBe('succeeded'));
+    });
+    expect(result.current.data).toMatchObject({
+      id: 'flop_post_save_point',
+      kind: 'save_point_create',
+      status: 'succeeded',
+      result_save_point_id: 'sp_created_from_operation',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.savePoints(workspaceId, projectId, libraryId),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.detail(workspaceId, projectId, libraryId),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId),
+    });
+  });
+
+  it('does not treat terminal save-point success without result_save_point_id as a completed save point', async () => {
+    mockGetFileLibraryVersionOperation.mockResolvedValueOnce({
+      id: 'flop_missing_result',
+      kind: 'save_point_create',
+      file_library_id: libraryId,
+      status: 'succeeded',
+      message: 'Before prompt edits',
+      created_at: '2026-05-09T12:00:00.000Z',
+      updated_at: '2026-05-09T12:00:02.000Z',
+    });
+
+    const { queryClient, Wrapper } = createTestHarness();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(
+      () => useFileLibraryVersionOperationLookup(
+        workspaceId,
+        projectId,
+        libraryId,
+        'flop_missing_result',
+      ),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(result.current.data?.status).toBe('succeeded'));
+    expect(result.current.data).not.toHaveProperty('result_save_point_id');
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.savePoints(workspaceId, projectId, libraryId),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId),
+    });
   });
 
   it('keeps one save-point idempotency key across mutation retry attempts', async () => {

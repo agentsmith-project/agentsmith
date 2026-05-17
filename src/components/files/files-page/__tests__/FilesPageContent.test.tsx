@@ -70,7 +70,8 @@ function buildProps(overrides: Partial<FilesPageContentProps> = {}): FilesPageCo
     onCreateLibrary: vi.fn(),
     onDeleteLibrary: vi.fn(),
     onGoUp: vi.fn(),
-    onManageFileStates: vi.fn(),
+    onOpenTemplateManagement: vi.fn(),
+    onOpenVersionManagement: vi.fn(),
     onNavigateToPrefix: vi.fn(),
     onRenameLibrary: vi.fn(),
     onSelectLibrary: vi.fn(),
@@ -302,7 +303,8 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__library-unavailable-empty-state')).toBeInTheDocument();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
-    expect(screen.getByTestId('files__version-management')).toBeDisabled();
+    expect(screen.getByTestId('files__version-entry')).toBeDisabled();
+    expect(screen.getByTestId('files__template-entry')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__rename')).toBeDisabled();
     expect(screen.getByTestId('files__delete')).toBeDisabled();
@@ -324,7 +326,8 @@ describe('FilesPageContent', () => {
     );
 
     expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('files__version-management')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__version-entry')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__template-entry')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__rename')).not.toBeInTheDocument();
     expect(screen.queryByTestId('files__delete')).not.toBeInTheDocument();
@@ -333,6 +336,27 @@ describe('FilesPageContent', () => {
     expect(screen.getByText('file_manager.empty_read_only_description')).toBeInTheDocument();
     expect(screen.getByTestId('files__download')).toBeEnabled();
     expect(screen.getByTestId('files__refresh')).toBeEnabled();
+  });
+
+  it('opens version and template management from separate file-library entries', async () => {
+    const user = userEvent.setup();
+    const onOpenVersionManagement = vi.fn();
+    const onOpenTemplateManagement = vi.fn();
+
+    render(
+      <FilesPageContent
+        {...buildProps({
+          onOpenVersionManagement,
+          onOpenTemplateManagement,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByTestId('files__version-entry'));
+    await user.click(screen.getByTestId('files__template-entry'));
+
+    expect(onOpenVersionManagement).toHaveBeenCalledTimes(1);
+    expect(onOpenTemplateManagement).toHaveBeenCalledTimes(1);
   });
 
   it('flattens the details shell into the main files surface', () => {

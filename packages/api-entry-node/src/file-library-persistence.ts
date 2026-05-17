@@ -1,6 +1,7 @@
 import type { JsonDocConditionalCreateResult, JsonDocStorePort } from '@mbos/ports';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
+  FileLibraryLastRestore,
   FileLibraryRecord,
 } from './file-library-model.js';
 
@@ -32,7 +33,15 @@ type FileLibraryProvisioningFields = {
   provisioning_error_code?: string | null;
 };
 
-type FileLibraryStoredRecord = FileLibraryRecord & FileLibraryLifecycleFenceFields & FileLibraryProvisioningFields;
+type FileLibraryLastRestoreStoredFields = {
+  last_restored_save_point_id?: string | null;
+  last_restored_save_point_label?: string | null;
+  last_restored_save_point_created_at?: string | null;
+  last_restored_at?: string | null;
+  last_restore_operation_id?: string | null;
+};
+
+type FileLibraryStoredRecord = Omit<FileLibraryRecord, 'last_restore'> & FileLibraryLastRestoreStoredFields & FileLibraryLifecycleFenceFields & FileLibraryProvisioningFields;
 
 export type FileLibraryLifecycleFence = {
   token: string;
@@ -60,13 +69,19 @@ const FILE_LIBRARY_PUBLIC_RECORD_KEYS = new Set<string>([
   'file_library_home_segment',
   'source',
   'delete_correlation_id',
+  'last_restore',
   'created_by_user_id',
   'created_at',
   'updated_at',
 ]);
 
 const FILE_LIBRARY_STORED_RECORD_KEYS = new Set<string>([
-  ...FILE_LIBRARY_PUBLIC_RECORD_KEYS,
+  ...[...FILE_LIBRARY_PUBLIC_RECORD_KEYS].filter((key) => key !== 'last_restore'),
+  'last_restored_save_point_id',
+  'last_restored_save_point_label',
+  'last_restored_save_point_created_at',
+  'last_restored_at',
+  'last_restore_operation_id',
   'lifecycle_fence_token',
   'lifecycle_fence_kind',
   'lifecycle_fence_owner_task_id',
@@ -77,6 +92,11 @@ const FILE_LIBRARY_STORED_RECORD_KEYS = new Set<string>([
   'provisioning_template_id',
   'provisioning_request_id',
   'provisioning_error_code',
+]);
+
+const FILE_LIBRARY_STORED_INPUT_RECORD_KEYS = new Set<string>([
+  ...FILE_LIBRARY_STORED_RECORD_KEYS,
+  'last_restore',
 ]);
 
 const FILE_LIBRARY_STATUSES = new Set<FileLibraryRecord['status']>([
@@ -149,6 +169,88 @@ function optionalStringField(raw: Record<string, unknown>, key: string): string 
   return value;
 }
 
+function optionalNonEmptyStringField(raw: Record<string, unknown>, key: string): string | undefined {
+  const value = optionalStringField(raw, key);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value.trim() !== value || value.length === 0) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value;
+}
+
+function requireNonEmptyStringField(raw: Record<string, unknown>, key: string): string {
+  const value = optionalNonEmptyStringField(raw, key);
+  if (value === undefined) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return value;
+}
+
+function normalizePublicLastRestore(value: unknown): FileLibraryLastRestore | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  const raw = value as Record<string, unknown>;
+  assertCatalogRecordKeys(raw, new Set([
+    'source_save_point_id',
+    'source_save_point_label',
+    'source_save_point_created_at',
+    'restored_at',
+    'restore_operation_id',
+  ]));
+  return {
+    source_save_point_id: requireNonEmptyStringField(raw, 'source_save_point_id'),
+    source_save_point_label: requireNonEmptyStringField(raw, 'source_save_point_label'),
+    source_save_point_created_at: requireNonEmptyStringField(raw, 'source_save_point_created_at'),
+    restored_at: requireNonEmptyStringField(raw, 'restored_at'),
+    restore_operation_id: requireNonEmptyStringField(raw, 'restore_operation_id'),
+  };
+}
+
+function readStoredLastRestore(raw: Record<string, unknown>): FileLibraryLastRestore | undefined {
+  const values = {
+    source_save_point_id: optionalNonEmptyStringField(raw, 'last_restored_save_point_id'),
+    source_save_point_label: optionalNonEmptyStringField(raw, 'last_restored_save_point_label'),
+    source_save_point_created_at: optionalNonEmptyStringField(raw, 'last_restored_save_point_created_at'),
+    restored_at: optionalNonEmptyStringField(raw, 'last_restored_at'),
+    restore_operation_id: optionalNonEmptyStringField(raw, 'last_restore_operation_id'),
+  };
+  const presentCount = Object.values(values).filter((value) => value !== undefined).length;
+  if (presentCount === 0) {
+    return undefined;
+  }
+  if (presentCount !== 5) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return values as FileLibraryLastRestore;
+}
+
+function readCatalogLastRestore(raw: Record<string, unknown>): FileLibraryLastRestore | undefined {
+  const publicLastRestore = normalizePublicLastRestore(raw.last_restore);
+  const storedLastRestore = readStoredLastRestore(raw);
+  if (publicLastRestore && storedLastRestore) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return publicLastRestore ?? storedLastRestore;
+}
+
+function toStoredLastRestoreFields(
+  lastRestore: FileLibraryLastRestore | null | undefined,
+): Required<FileLibraryLastRestoreStoredFields> {
+  return {
+    last_restored_save_point_id: lastRestore?.source_save_point_id ?? null,
+    last_restored_save_point_label: lastRestore?.source_save_point_label ?? null,
+    last_restored_save_point_created_at: lastRestore?.source_save_point_created_at ?? null,
+    last_restored_at: lastRestore?.restored_at ?? null,
+    last_restore_operation_id: lastRestore?.restore_operation_id ?? null,
+  };
+}
+
 function requireVersion(raw: Record<string, unknown>): number {
   const value = raw.version;
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
@@ -176,6 +278,7 @@ function normalizeFileLibraryPublicFields(raw: Record<string, unknown>): FileLib
   const fileLibraryHomeSegment = assertFileLibraryHomeSegment(
     requireStringField(raw, 'file_library_home_segment'),
   );
+  const lastRestore = readCatalogLastRestore(raw);
   return {
     id: requireStringField(raw, 'id'),
     workspace_id: requireStringField(raw, 'workspace_id'),
@@ -187,6 +290,7 @@ function normalizeFileLibraryPublicFields(raw: Record<string, unknown>): FileLib
     file_library_home_segment: fileLibraryHomeSegment,
     source: requireCurrentSource(raw),
     delete_correlation_id: optionalStringField(raw, 'delete_correlation_id'),
+    ...(lastRestore ? { last_restore: lastRestore } : {}),
     created_by_user_id: requireStringField(raw, 'created_by_user_id'),
     created_at: requireStringField(raw, 'created_at'),
     updated_at: requireStringField(raw, 'updated_at'),
@@ -201,8 +305,9 @@ export function normalizeFileLibraryRecord(record: FileLibraryRecord): FileLibra
 
 function normalizeFileLibraryStoredRecord(record: FileLibraryRecord | FileLibraryStoredRecord): FileLibraryStoredRecord {
   const raw = assertCatalogRecordObject(record);
-  assertCatalogRecordKeys(raw, FILE_LIBRARY_STORED_RECORD_KEYS);
+  assertCatalogRecordKeys(raw, FILE_LIBRARY_STORED_INPUT_RECORD_KEYS);
   const publicRecord = normalizeFileLibraryPublicFields(raw);
+  const storedLastRestoreFields = toStoredLastRestoreFields(publicRecord.last_restore);
   const tokenValue = raw.lifecycle_fence_token;
   const token = tokenValue === undefined || tokenValue === null ? null : requireStringField(raw, 'lifecycle_fence_token');
   if (token !== null && token.trim() !== token) {
@@ -278,8 +383,11 @@ function normalizeFileLibraryStoredRecord(record: FileLibraryRecord | FileLibrar
   ) {
     throw new Error('invalid_file_library_catalog_record');
   }
+  const publicStoredRecord = { ...publicRecord };
+  delete publicStoredRecord.last_restore;
   return {
-    ...publicRecord,
+    ...publicStoredRecord,
+    ...storedLastRestoreFields,
     lifecycle_fence_token: token,
     lifecycle_fence_kind: token === null ? null : 'binding_acquire',
     lifecycle_fence_owner_task_id: lifecycleFenceOwnerTaskId,
@@ -474,6 +582,44 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     };
     await this.saveStored(updated);
     return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(updated));
+  }
+
+  async recordSuccessfulRestore(input: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    sourceSavePointId: string;
+    sourceSavePointLabel: string;
+    sourceSavePointCreatedAt: string;
+    restoredAt: string;
+    restoreOperationId: string;
+  }): Promise<FileLibraryRecord | null> {
+    const existing = await this.getStoredById(input.workspaceId, input.projectId, input.libraryId);
+    if (!existing) {
+      return null;
+    }
+    const existingRestoredAtMs = existing.last_restored_at ? Date.parse(existing.last_restored_at) : null;
+    const nextRestoredAtMs = Date.parse(input.restoredAt);
+    if (
+      existingRestoredAtMs !== null
+      && Number.isFinite(existingRestoredAtMs)
+      && Number.isFinite(nextRestoredAtMs)
+      && existingRestoredAtMs > nextRestoredAtMs
+    ) {
+      return toPublicFileLibraryRecord(existing);
+    }
+    const next: FileLibraryStoredRecord = {
+      ...existing,
+      version: existing.version + 1,
+      last_restored_save_point_id: input.sourceSavePointId,
+      last_restored_save_point_label: input.sourceSavePointLabel,
+      last_restored_save_point_created_at: input.sourceSavePointCreatedAt,
+      last_restored_at: input.restoredAt,
+      last_restore_operation_id: input.restoreOperationId,
+      updated_at: input.restoredAt,
+    };
+    await this.saveStored(next);
+    return toPublicFileLibraryRecord(normalizeFileLibraryStoredRecord(next));
   }
 
   async markTemplateCloneProvisioning(input: {
@@ -928,6 +1074,7 @@ export interface FileLibraryVersionOperationPublicRecord {
   status: FileLibraryVersionOperationStatus;
   file_library_id?: string;
   source_save_point_id?: string;
+  result_save_point_id?: string;
   message?: string;
   failure_reason?: string;
   created_at: string;
@@ -1211,6 +1358,7 @@ function publicVersionOperation(
     status: record.status,
     ...(record.file_library_id ? { file_library_id: record.file_library_id } : {}),
     ...(record.source_save_point_id ? { source_save_point_id: record.source_save_point_id } : {}),
+    ...(record.result_save_point_id ? { result_save_point_id: record.result_save_point_id } : {}),
     ...(record.message ? { message: record.message } : {}),
     ...(failureReason ? { failure_reason: failureReason } : {}),
     created_at: record.created_at,
@@ -1360,6 +1508,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
     message?: string;
     failureReason?: string;
     sourceSavePointId?: string;
+    resultSavePointId?: string;
   }): Promise<FileLibraryVersionOperationRecord> {
     const now = this.nowIso();
     const record: FileLibraryVersionOperationRecord = {
@@ -1376,6 +1525,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
       ...(input.message ? { message: input.message } : {}),
       ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
       ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
+      ...(input.resultSavePointId ? { result_save_point_id: input.resultSavePointId } : {}),
       ...(isActiveVersionOperationStatus(input.status) ? {} : { completed_at: now }),
       created_at: now,
       updated_at: now,
@@ -1396,6 +1546,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
     message?: string;
     failureReason?: string;
     sourceSavePointId?: string;
+    resultSavePointId?: string;
   }): Promise<{
     operation: FileLibraryVersionOperationRecord;
     created: boolean;
@@ -1415,6 +1566,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
       ...(input.message ? { message: input.message } : {}),
       ...(input.failureReason ? { failure_reason: input.failureReason } : {}),
       ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
+      ...(input.resultSavePointId ? { result_save_point_id: input.resultSavePointId } : {}),
       ...(isActiveVersionOperationStatus(input.status) ? {} : { completed_at: now }),
       created_at: now,
       updated_at: now,
@@ -1553,6 +1705,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
     operationId: string;
     status: FileLibraryVersionOperationStatus;
     failureReason?: string | null;
+    resultSavePointId?: string | null;
   }): Promise<FileLibraryVersionOperationRecord | null> {
     const existing = await this.getById(
       input.workspaceId,
@@ -1577,6 +1730,13 @@ export class JsonDocFileLibraryVersionOperationRepo {
         next.failure_reason = input.failureReason;
       } else {
         delete next.failure_reason;
+      }
+    }
+    if (input.resultSavePointId !== undefined) {
+      if (input.resultSavePointId) {
+        next.result_save_point_id = input.resultSavePointId;
+      } else {
+        delete next.result_save_point_id;
       }
     }
     await this.docStore.upsert(FILE_LIBRARY_VERSION_OPERATION_COLLECTION, next.id, next);

@@ -472,21 +472,33 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   );
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
-  const [fileStatesOpen, setFileStatesOpen] = React.useState(false);
-  const openFileStates = React.useCallback(() => {
+  const [versionDrawerOpen, setVersionDrawerOpen] = React.useState(false);
+  const [templateDrawerOpen, setTemplateDrawerOpen] = React.useState(false);
+  const openVersionDrawer = React.useCallback(() => {
     if (!canManage || !selectedLibraryReady) return;
-    setFileStatesOpen(true);
+    setVersionDrawerOpen(true);
   }, [canManage, selectedLibraryReady]);
-  const handleFileStatesOpenChange = React.useCallback((nextOpen: boolean) => {
+  const openTemplateDrawer = React.useCallback(() => {
+    if (!canManage || !selectedLibraryReady) return;
+    setTemplateDrawerOpen(true);
+  }, [canManage, selectedLibraryReady]);
+  const handleVersionDrawerOpenChange = React.useCallback((nextOpen: boolean) => {
     if (nextOpen && (!canManage || !selectedLibraryReady)) return;
-    setFileStatesOpen(nextOpen);
+    setVersionDrawerOpen(nextOpen);
+  }, [canManage, selectedLibraryReady]);
+  const handleTemplateDrawerOpenChange = React.useCallback((nextOpen: boolean) => {
+    if (nextOpen && (!canManage || !selectedLibraryReady)) return;
+    setTemplateDrawerOpen(nextOpen);
   }, [canManage, selectedLibraryReady]);
 
   React.useEffect(() => {
-    if (fileStatesOpen && (!canManage || !selectedLibraryReady)) {
-      setFileStatesOpen(false);
+    if (versionDrawerOpen && (!canManage || !selectedLibraryReady)) {
+      setVersionDrawerOpen(false);
     }
-  }, [canManage, fileStatesOpen, selectedLibraryReady]);
+    if (templateDrawerOpen && (!canManage || !selectedLibraryReady)) {
+      setTemplateDrawerOpen(false);
+    }
+  }, [canManage, selectedLibraryReady, templateDrawerOpen, versionDrawerOpen]);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const deleteRuntimeSystemTargets = React.useMemo(
@@ -1030,7 +1042,8 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         onCreateLibrary={openCreateLibraryDialog}
         onDeleteLibrary={openDeleteLibraryDialog}
         onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
-        onManageFileStates={openFileStates}
+        onOpenTemplateManagement={openTemplateDrawer}
+        onOpenVersionManagement={openVersionDrawer}
         onNavigateToPrefix={navigateToPrefix}
         onRenameLibrary={openRenameLibraryDialog}
         onSelectLibrary={selectLibrary}
@@ -1073,11 +1086,22 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
           <FileLibraryRecoveryDialog
             library={selectedLibraryReady ? selectedLibrary : null}
             locale={locale}
-            open={fileStatesOpen && selectedLibraryReady}
+            mode="version"
+            open={versionDrawerOpen && selectedLibraryReady}
             projectId={projectId}
             t={t}
             workspaceId={workspaceId}
-            onOpenChange={handleFileStatesOpenChange}
+            onOpenChange={handleVersionDrawerOpenChange}
+          />
+          <FileLibraryRecoveryDialog
+            library={selectedLibraryReady ? selectedLibrary : null}
+            locale={locale}
+            mode="template"
+            open={templateDrawerOpen && selectedLibraryReady}
+            projectId={projectId}
+            t={t}
+            workspaceId={workspaceId}
+            onOpenChange={handleTemplateDrawerOpenChange}
           />
 
           <LibraryDialogs

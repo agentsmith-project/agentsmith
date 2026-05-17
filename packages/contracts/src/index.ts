@@ -334,6 +334,14 @@ export const FileLibraryStatusSchema = z.enum([
   'deleting',
 ]);
 
+export const FileLibraryLastRestoreSchema = z.object({
+  source_save_point_id: z.string().min(1),
+  source_save_point_label: z.string().min(1),
+  source_save_point_created_at: z.string().datetime(),
+  restored_at: z.string().datetime(),
+  restore_operation_id: z.string().min(1),
+}).strict();
+
 export const FileLibrarySchema = z.object({
   id: z.string().min(1),
   workspace_id: z.string().min(1),
@@ -346,6 +354,7 @@ export const FileLibrarySchema = z.object({
   storage_status: FileLibraryStorageStatusSchema.optional(),
   storage_next_action: FileLibraryStorageNextActionSchema.optional(),
   status_reason: z.string().min(1).optional(),
+  last_restore: FileLibraryLastRestoreSchema.nullable().optional(),
   task_home_binding_status: FileLibraryTaskHomeBindingStatusSchema,
   bound_task_id: z.string().min(1).optional(),
   bound_task_title: z.string().min(1).optional(),
@@ -433,6 +442,7 @@ export const FileLibraryVersionOperationSchema = z.object({
   status: FileLibraryVersionOperationStatusSchema,
   file_library_id: z.string().min(1).optional(),
   source_save_point_id: z.string().min(1).optional(),
+  result_save_point_id: z.string().min(1).optional(),
   message: z.string().min(1).optional(),
   failure_reason: z.string().min(1).optional(),
   created_at: z.string().datetime(),
@@ -681,6 +691,7 @@ export type ListFileLibraryCatalogsResponse = z.infer<typeof ListFileLibraryCata
 export type CreateFileLibraryCatalogRequest = z.infer<typeof CreateFileLibraryCatalogRequestSchema>;
 export type UpdateFileLibraryCatalogRequest = z.infer<typeof UpdateFileLibraryCatalogRequestSchema>;
 export type FileLibraryDTO = z.infer<typeof FileLibrarySchema>;
+export type FileLibraryLastRestoreDTO = z.infer<typeof FileLibraryLastRestoreSchema>;
 export type FileLibrarySource = z.infer<typeof FileLibrarySourceSchema>;
 export type FileLibraryStorageStatus = z.infer<typeof FileLibraryStorageStatusSchema>;
 export type FileLibraryStorageNextAction = z.infer<typeof FileLibraryStorageNextActionSchema>;

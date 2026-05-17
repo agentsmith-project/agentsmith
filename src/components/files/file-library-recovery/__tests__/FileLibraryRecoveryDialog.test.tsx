@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -168,7 +168,7 @@ const t = (key: string, values?: Record<string, string>) => {
     'file_manager.save_point_action_failed': 'Save point could not be created. Your note is still here; try again after the file library is ready.',
     'file_manager.save_point_action_failed_title': 'Save point needs attention',
     'file_manager.save_point_active_writer_blocked': 'Task files are still in use. Release task file usage, then try again.',
-    'file_manager.save_point_create': 'Save restore point',
+    'file_manager.save_point_create': 'Save as restore point',
     'file_manager.save_point_default_name': 'Untitled save point',
     'file_manager.save_point_empty': 'No save points yet',
     'file_manager.save_point_load_error_description': 'Save points could not be loaded. Retry before choosing a restore point.',
@@ -368,6 +368,8 @@ describe('FileLibraryRecoveryDialog', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Save points' })).not.toBeInTheDocument();
     expect(dialog).toHaveTextContent('Save as restore point');
+    expect(within(dialog).getByRole('heading', { name: 'Save as restore point' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Save as restore point' })).toBeVisible();
     expect(dialog).toHaveTextContent('Restore points');
     expect(screen.getByTestId('files__save-point__message')).toBeVisible();
     expect(screen.getByText('Before edits')).toBeVisible();

@@ -1602,7 +1602,7 @@ async function createSavePointViaFilesUi(args: {
   await args.page.getByTestId('files__version-entry').click();
   const fileStatesDialog = args.page.getByTestId('files__dialog__version-save-restore');
   await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
-  await expect(fileStatesDialog.getByText(/^Save as restore point$/i)).toBeVisible();
+  await expect(fileStatesDialog.getByRole('heading', { name: /^Save as restore point$/i })).toBeVisible();
 
   const savePointId = await createSavePointFromOpenDialogWithPendingAssertions({
     page: args.page,
@@ -2357,7 +2357,7 @@ test.describe.serial('@lane-real files user stories', () => {
     await page.getByTestId('files__version-entry').click();
     const fileStatesDialog = page.getByTestId('files__dialog__version-save-restore');
     await expect(fileStatesDialog).toBeVisible({ timeout: 10_000 });
-    await expect(fileStatesDialog.getByText(/^Save as restore point$/i)).toBeVisible();
+    await expect(fileStatesDialog.getByRole('heading', { name: /^Save as restore point$/i })).toBeVisible();
 
     await fileStatesDialog.getByTestId('files__save-point__message').fill(savePointMessage);
     const savePointResponsePromise = page.waitForResponse((response) => (

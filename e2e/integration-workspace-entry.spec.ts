@@ -41,9 +41,10 @@ test.describe('@lane-real integration workspace entry', () => {
       await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
       await trace.capture(page, { stepId: 'workspace-projects' });
       await expect(page.getByText('permission_denied_title')).not.toBeVisible();
-      await trace.note({
+      await trace.capture(page, {
         stepId: 'project-discovery',
-        note: '项目列表与创建入口稳定可见',
+        target: 'projects__create-btn',
+        assertion: 'project list and creation entry remain visible without a permission denied flicker',
       });
       outcome = 'pass';
     } finally {

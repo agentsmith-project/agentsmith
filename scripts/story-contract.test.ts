@@ -8,6 +8,10 @@ import {
   type StoryDefinition,
 } from '../e2e/story-contract';
 import { loadAllStoryDefinitions, loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
+import {
+  CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP,
+  CURRENT_RELEASE_PRECHECK_MOVED_BROWSER_SPECS,
+} from './governance/current-gate-manifest';
 
 function expectStableStory(story: StoryDefinition) {
   expect(story.filePath.endsWith('.story.md')).toBe(true);
@@ -19,6 +23,48 @@ function expectStableStory(story: StoryDefinition) {
   expect(story.steps.length).toBeGreaterThan(0);
   expect(new Set(story.steps.map((step) => step.stepId)).size).toBe(story.steps.length);
   expect(new Set(story.scenes.map((scene) => scene.sceneId)).size).toBe(story.scenes.length);
+}
+
+function requiredScreenshotStepIds(story: StoryDefinition): string[] {
+  return story.steps
+    .filter((step) => step.evidence.includes('trace') && !step.optional && step.sceneId)
+    .map((step) => step.stepId);
+}
+
+function collectStringLiterals(value: string): string[] {
+  return [...value.matchAll(/['"`]([^'"`]+)['"`]/g)].map((match) => match[1]);
+}
+
+function collectTraceStepUsage(source: string): {
+  capturedStepIds: Set<string>;
+  notedStepIds: Set<string>;
+} {
+  const capturedStepIds = new Set<string>();
+  const notedStepIds = new Set<string>();
+
+  for (const match of source.matchAll(/trace\.capture\([\s\S]*?\bstepId:\s*['"`]([^'"`]+)['"`][\s\S]*?\}\s*\)/g)) {
+    capturedStepIds.add(match[1]);
+  }
+  for (const match of source.matchAll(/trace\.note\(\s*\{[\s\S]*?\bstepId:\s*['"`]([^'"`]+)['"`]/g)) {
+    notedStepIds.add(match[1]);
+  }
+
+  const captureWrapperNames = [...source.matchAll(
+    /const\s+([A-Za-z_$][\w$]*)\s*=\s*async\s*\([^)]*\bstepId\b[^)]*\)[\s\S]*?=>\s*\{[\s\S]*?trace\.capture\(/g,
+  )].map((match) => match[1]);
+  for (const wrapperName of captureWrapperNames) {
+    const wrapperCallPattern = new RegExp(`\\b${wrapperName}\\s*\\(([^;\\n]+)\\)`, 'g');
+    for (const match of source.matchAll(wrapperCallPattern)) {
+      for (const literal of collectStringLiterals(match[1])) {
+        capturedStepIds.add(literal);
+      }
+    }
+  }
+
+  return {
+    capturedStepIds,
+    notedStepIds,
+  };
 }
 
 describe('story contract', () => {
@@ -59,6 +105,34 @@ describe('story contract', () => {
       mode: 'strict_sequence',
       orderedStepIds: expectedOrderedStepIds,
     });
+  });
+
+  it('keeps release UX trace membership screenshot steps captured by their owning specs', async () => {
+    const releaseMembershipStoryIds = new Set(
+      CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP.map((membership) => membership.storyId),
+    );
+    const failures: string[] = [];
+
+    for (const spec of CURRENT_RELEASE_PRECHECK_MOVED_BROWSER_SPECS) {
+      const source = await readFile(path.resolve(spec.specFile), 'utf-8');
+      const usage = collectTraceStepUsage(source);
+
+      for (const storyId of spec.storyIds) {
+        expect(releaseMembershipStoryIds.has(storyId)).toBe(true);
+        const story = await loadStoryDefinition(storyId);
+
+        for (const stepId of requiredScreenshotStepIds(story)) {
+          if (usage.notedStepIds.has(stepId)) {
+            failures.push(`${spec.specFile} ${storyId}/${stepId} must use trace.capture, not trace.note`);
+          }
+          if (!usage.capturedStepIds.has(stepId)) {
+            failures.push(`${spec.specFile} ${storyId}/${stepId} is missing trace.capture screenshot evidence`);
+          }
+        }
+      }
+    }
+
+    expect(failures).toEqual([]);
   });
 
   it('loads story markdown parsing through story-loader instead of story-contract', () => {

@@ -221,6 +221,19 @@ test.describe('@lane-real integration workspace public login truth', () => {
         assertion: 'target workspace login opens without carrying over the source workspace continuation',
       });
 
+      await trace.capture(page, {
+        stepId: 'confirm-target-login',
+        target: 'workspace-login__heading',
+        assertion: 'target workspace login identity and return path belong only to the newly selected workspace',
+      });
+      await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: LONG_HORIZON_TIMEOUT_MS });
+      await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeEnabled({ timeout: LONG_HORIZON_TIMEOUT_MS });
+      await trace.capture(page, {
+        stepId: 'sign-in-to-target-workspace',
+        target: 'workspace-login__keycloak-btn',
+        assertion: 'target workspace sign-in action is visible and enabled before entering the new workspace',
+      });
+
       await keycloakLoginToWorkspace(page, targetWorkspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD, { preserveCurrentWorkspaceLoginPage: true });
       await expect(page).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${targetWorkspaceId}/projects(?:$|/)`), { timeout: LONG_HORIZON_TIMEOUT_MS });
       await expect(page.getByTestId('projects__page')).toBeVisible({ timeout: LONG_HORIZON_TIMEOUT_MS });

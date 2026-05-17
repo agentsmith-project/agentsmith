@@ -809,13 +809,12 @@ async function waitForReadExportDownloadRetry(delayMs: number, signal?: AbortSig
     throw createAbortError(signal.reason, 'file_library_download_aborted');
   }
   await new Promise<void>((resolve, reject) => {
-    let timeout: ReturnType<typeof setTimeout>;
     const handleAbort = () => {
       clearTimeout(timeout);
       signal?.removeEventListener('abort', handleAbort);
       reject(createAbortError(signal?.reason, 'file_library_download_aborted'));
     };
-    timeout = setTimeout(() => {
+    const timeout = setTimeout(() => {
       signal?.removeEventListener('abort', handleAbort);
       resolve();
     }, delayMs);

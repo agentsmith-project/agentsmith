@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildAfscpTemplateId,
+  buildTaskFileTemplateIdempotencyId,
   JsonDocFileLibraryVersionOperationRepo,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
@@ -81,6 +82,7 @@ type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknow
 const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
 const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
 const FILE_LIBRARY_RETRY_AFTER_MS = 2_000;
+const RECENT_TERMINAL_RESTORE_OPERATION_PROJECTION_WINDOW_MS = 30_000;
 const PRE_START_RESTORE_STARTS_IN_FLIGHT = new Set<string>();
 
 class FileLibraryRestoreOperationActiveError extends Error {
@@ -566,6 +568,36 @@ function isTerminalRestoreOperationStatus(status: FileLibraryRestoreOperationSta
   return status === 'succeeded' || status === 'failed';
 }
 
+function isRecentTerminalRestoreOperation(operation: FileLibraryRestoreOperationRecord): boolean {
+  if (!isTerminalRestoreOperationStatus(operation.status)) {
+    return false;
+  }
+  const updatedAtMs = Date.parse(operation.updated_at);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+  const nowMs = Date.now();
+  return updatedAtMs <= nowMs + 1_000
+    && nowMs - updatedAtMs <= RECENT_TERMINAL_RESTORE_OPERATION_PROJECTION_WINDOW_MS;
+}
+
+async function findRecentTerminalRestoreOperation(input: {
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<FileLibraryRestoreOperationRecord | null> {
+  const latest = await input.restoreRepo.findLatestByLibrary(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+  );
+  if (!latest || !isRecentTerminalRestoreOperation(latest)) {
+    return null;
+  }
+  return latest;
+}
+
 function preStartRestoreStartInFlightKey(input: {
   workspaceId: string;
   projectId: string;
@@ -903,6 +935,74 @@ async function continuePreStartRestoreOperationReplay(input: {
   }
 }
 
+async function preparePreStartRestoreOperationContinuation(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryRestoreOperationRecord;
+}): Promise<FileLibraryRestoreOperationRecord> {
+  if (
+    !isActiveRestoreOperationStatus(input.operation.status)
+    || input.operation.afscp_operation_id
+    || !input.deps.fileLibraryStorageAdapter?.enabled
+  ) {
+    return input.operation;
+  }
+  return await ensurePreStartRestoreOperationCanStart(input);
+}
+
+function schedulePreStartRestoreOperationContinuation(input: {
+  deps: NodeApiDeps;
+  restoreRepo: JsonDocFileLibraryRestoreOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  operation: FileLibraryRestoreOperationRecord;
+  requestId?: string;
+}): void {
+  void Promise.resolve()
+    .then(() => continuePreStartRestoreOperationReplay(input))
+    .catch(async (error) => {
+      const mapped = mapFileLibraryControlRouteError(
+        error,
+        'FILE_LIBRARY_RESTORE_FAILED',
+        'file_library_restore_failed',
+      );
+      const failedOperation = await input.restoreRepo.updateStatus({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        operationId: input.operation.id,
+        status: 'failed',
+        failureReason: mapped.message,
+      }) ?? input.operation;
+      await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        operation: failedOperation,
+        requestId: input.requestId,
+      });
+      await writeFileLibraryRestoreAuditEvent({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        actorUserId: input.operation.created_by_user_id,
+        requestId: input.requestId,
+        operation: failedOperation,
+        action: 'project.file_library.restore.failed',
+        result: 'error',
+        errorCode: mapped.errorCode,
+        errorMessage: mapped.message,
+        failureCategory: mapped.message,
+      });
+    })
+    .catch(() => undefined);
+}
+
 async function restoreRuntimeAccessReleaseFenceAfterTerminalRestore(input: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -1025,12 +1125,12 @@ async function findReconciledActiveRestoreOperation(input: {
   if (!active) {
     return null;
   }
-  let reconciled = await reconcileRestoreOperationRecord({
+  const reconciled = await reconcileRestoreOperationRecord({
     ...input,
     operation: active,
   });
   if (input.continuePreStart) {
-    reconciled = await continuePreStartRestoreOperationReplay({
+    schedulePreStartRestoreOperationContinuation({
       ...input,
       operation: reconciled,
     });
@@ -1966,6 +2066,11 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_task_file_template_request' });
       return true;
     }
+    const idempotencyKey = readIdempotencyKey(req);
+    if (!idempotencyKey) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'idempotency_key_required' });
+      return true;
+    }
     if (!deps.fileLibraryStorageAdapter?.enabled) {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
@@ -1982,7 +2087,22 @@ export async function handleProjectFileLibraryRoutes(args: {
     const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-    const templateId = generateTaskFileTemplateId();
+    const existingTemplate = await templateRepo.findByIdempotencyKey({
+      workspaceId,
+      projectId,
+      sourceLibraryId: sourceLibrary.id,
+      idempotencyKey,
+    });
+    if (existingTemplate) {
+      json(res, 200, templateRepo.toPublic(existingTemplate));
+      return true;
+    }
+    const templateId = buildTaskFileTemplateIdempotencyId({
+      workspaceId,
+      projectId,
+      sourceLibraryId: sourceLibrary.id,
+      idempotencyKey,
+    });
     const afscpTemplateId = buildAfscpTemplateId(templateId);
     try {
       await ensureNoActiveRestoreOperation({
@@ -1998,6 +2118,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         projectId,
         libraryId: sourceLibrary.id,
         templateId: afscpTemplateId,
+        idempotencyKey,
         actorUserId: user.id,
         requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
       });
@@ -2014,8 +2135,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             purpose: 'task_template_source',
           })
         : null;
-      const template = await templateRepo.create({
-        id: templateId,
+      const { template, created } = await templateRepo.createOrReuseByIdempotencyKey({
         workspaceId,
         projectId,
         name: parsed.data.name,
@@ -2026,8 +2146,9 @@ export async function handleProjectFileLibraryRoutes(args: {
         createdByUserId: user.id,
         afscpTemplateId: result.templateId,
         afscpCreateOperationId: result.operationId ?? undefined,
+        idempotencyKey,
       });
-      json(res, 201, templateRepo.toPublic(template));
+      json(res, created ? 201 : 200, templateRepo.toPublic(template));
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,
@@ -2728,9 +2849,18 @@ export async function handleProjectFileLibraryRoutes(args: {
         libraryId,
         requestId,
       });
+      const recentTerminalRestore = (!activeRestore && !activeVersionOperation)
+        ? await findRecentTerminalRestoreOperation({
+            restoreRepo,
+            workspaceId,
+            projectId,
+            libraryId,
+          })
+        : null;
       const latest = pickLatestVersionOperation([
         ...(activeRestore ? [activeRestore] : []),
         ...(activeVersionOperation ? [activeVersionOperation] : []),
+        ...(recentTerminalRestore ? [recentTerminalRestore] : []),
       ]);
       json(res, 200, {
         operation: latest
@@ -2794,16 +2924,24 @@ export async function handleProjectFileLibraryRoutes(args: {
           operation: existing,
           requestId,
         });
-        const replayed = await continuePreStartRestoreOperationReplay({
+        const prepared = await preparePreStartRestoreOperationContinuation({
           deps,
           restoreRepo,
           workspaceId,
           projectId,
           libraryId,
           operation: reconciled,
+        });
+        schedulePreStartRestoreOperationContinuation({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation: prepared,
           requestId,
         });
-        json(res, 200, restoreRepo.toPublic(replayed));
+        json(res, 200, restoreRepo.toPublic(prepared));
         return true;
       }
 
@@ -2857,22 +2995,30 @@ export async function handleProjectFileLibraryRoutes(args: {
           operation: pendingOperation,
           requestId,
         });
-        const replayed = await continuePreStartRestoreOperationReplay({
+        if (
+          pendingOperationResult.reason === 'active'
+          && isActiveRestoreOperationStatus(reconciled.status)
+        ) {
+          throw new FileLibraryRestoreOperationActiveError(reconciled);
+        }
+        const prepared = await preparePreStartRestoreOperationContinuation({
           deps,
           restoreRepo,
           workspaceId,
           projectId,
           libraryId,
           operation: reconciled,
+        });
+        schedulePreStartRestoreOperationContinuation({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          operation: prepared,
           requestId,
         });
-        if (
-          pendingOperationResult.reason === 'active'
-          && isActiveRestoreOperationStatus(replayed.status)
-        ) {
-          throw new FileLibraryRestoreOperationActiveError(replayed);
-        }
-        json(res, 200, restoreRepo.toPublic(replayed));
+        json(res, 200, restoreRepo.toPublic(prepared));
         return true;
       }
       startedOperation = pendingOperation;
@@ -2895,105 +3041,16 @@ export async function handleProjectFileLibraryRoutes(args: {
         action: 'project.file_library.restore.start',
       });
 
-      const clearInFlight = markPreStartRestoreStartInFlight({
+      schedulePreStartRestoreOperationContinuation({
+        deps,
+        restoreRepo,
         workspaceId,
         projectId,
         libraryId,
-        operationId: startedOperation.id,
+        operation: startedOperation,
+        requestId,
       });
-      if (!clearInFlight) {
-        json(res, 200, restoreRepo.toPublic(startedOperation));
-        return true;
-      }
-      try {
-        const result = await deps.fileLibraryStorageAdapter.restoreFileLibrary({
-          workspaceId,
-          projectId,
-          libraryId,
-          savePointId: savePoint.afscp_save_point_id,
-          idempotencyKey,
-          actorUserId: user.id,
-          requestId: requestId ?? undefined,
-        });
-        if (!result.operationId) {
-          const failedOperation = await restoreRepo.updateStatus({
-            workspaceId,
-            projectId,
-            libraryId,
-            operationId: startedOperation.id,
-            status: 'failed',
-            failureReason: 'file_library_restore_failed',
-          }) ?? startedOperation;
-          await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
-            deps,
-            workspaceId,
-            projectId,
-            libraryId,
-            operation: failedOperation,
-            requestId,
-          });
-          await writeFileLibraryRestoreAuditEvent({
-            deps,
-            workspaceId,
-            projectId,
-            actorUserId: user.id,
-            requestId,
-            operation: failedOperation,
-            action: 'project.file_library.restore.failed',
-            result: 'error',
-            errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
-            errorMessage: 'file_library_restore_failed',
-            failureCategory: 'file_library_restore_failed',
-          });
-          json(res, 502, {
-            error_code: 'FILE_LIBRARY_RESTORE_FAILED',
-            message: 'file_library_restore_failed',
-          });
-          return true;
-        }
-        const nextStatus = storageStatusToRestoreOperationStatus(result.operationStatus);
-        const operation = await restoreRepo.updateStatus({
-          workspaceId,
-          projectId,
-          libraryId,
-          operationId: startedOperation.id,
-          afscpOperationId: result.operationId,
-          status: nextStatus,
-          failureReason: nextStatus === 'failed' ? 'file_library_restore_failed' : null,
-        }) ?? startedOperation;
-        if (isTerminalRestoreOperationStatus(operation.status)) {
-          await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
-            deps,
-            workspaceId,
-            projectId,
-            libraryId,
-            operation,
-            requestId,
-          });
-          await writeFileLibraryRestoreAuditEvent({
-            deps,
-            workspaceId,
-            projectId,
-            actorUserId: user.id,
-            requestId,
-            operation,
-            action: operation.status === 'succeeded'
-              ? 'project.file_library.restore.succeeded'
-              : 'project.file_library.restore.failed',
-            result: operation.status === 'succeeded' ? 'ok' : 'error',
-            ...(operation.status === 'failed'
-              ? {
-                  errorCode: 'FILE_LIBRARY_RESTORE_FAILED',
-                  errorMessage: 'file_library_restore_failed',
-                  failureCategory: operation.failure_reason ?? 'file_library_restore_failed',
-                }
-              : {}),
-          });
-        }
-        json(res, 200, restoreRepo.toPublic(operation));
-      } finally {
-        clearInFlight();
-      }
+      json(res, 200, restoreRepo.toPublic(startedOperation));
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(
         error,

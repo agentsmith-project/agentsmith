@@ -24,10 +24,29 @@ BODY_FILE="${TMP_DIR}/body.json"
 HEADERS_FILE="${TMP_DIR}/headers.txt"
 UPLOAD_FILE="${TMP_DIR}/guide.txt"
 DOWNLOAD_FILE="${TMP_DIR}/download.txt"
+FILE_LIBRARY_REAL_SMOKE_EVIDENCE_DIR="${FILE_LIBRARY_REAL_SMOKE_EVIDENCE_DIR:-${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real/current/file-library-real-gate}}"
+TIMING_EVIDENCE_PATH="${FILE_LIBRARY_REAL_SMOKE_TIMING_EVIDENCE_PATH:-${FILE_LIBRARY_REAL_SMOKE_EVIDENCE_DIR}/file-library-real-smoke-timing.json}"
 LIBRARY_ID=""
 TASK_FILE_TEMPLATE_ID=""
 TEMPLATE_TASK_ID=""
 TEMPLATE_LIBRARY_ID=""
+SAVE_POINT_ID=""
+SAVE_POINT_OPERATION_ID=""
+SAVE_POINT_ADMISSION_LATENCY_MS=""
+MUTATION_SAVE_POINT_ID=""
+MUTATION_SAVE_POINT_OPERATION_ID=""
+MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS=""
+RESTORE_ADMITTED_AT_MS=""
+RESTORE_ADMISSION_LATENCY_MS=""
+RESTORE_ACTIVE_FIRST_SEEN_AT_MS=""
+RESTORE_ACTIVE_FIRST_SEEN_LAG_MS=""
+RESTORE_TERMINAL_PROJECTION_LAG_MS=""
+RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="false"
+RESTORE_OPERATION_ID=""
+RESTORE_OPERATION_STATUS=""
+RESTORE_OPERATION_SOURCE_SAVE_POINT_ID=""
+RESTORE_CLONE_EVIDENCE_PRESENT="false"
+RESTORE_CLONE_DURATION_MS=""
 
 info() { echo "[file-library-real-smoke] $*"; }
 err() { echo "[file-library-real-smoke] ERROR: $*" >&2; }
@@ -80,6 +99,154 @@ content_type_media_type() {
   node -e "process.stdout.write(String(process.argv[1] ?? '').split(';')[0].trim().toLowerCase())" "$1"
 }
 
+now_ms() {
+  node -e "process.stdout.write(String(Date.now()))"
+}
+
+elapsed_ms() {
+  local started="$1"
+  local finished="$2"
+  if [[ "${started}" =~ ^[0-9]+$ && "${finished}" =~ ^[0-9]+$ && "${finished}" -ge "${started}" ]]; then
+    printf '%s' "$((finished - started))"
+    return 0
+  fi
+  printf ''
+}
+
+capture_restore_clone_evidence_from_body() {
+  local has_clone
+  has_clone="$(cat "${BODY_FILE}" | json_field "(()=>{const sources=[j.clone_evidence,j.cloneEvidence,j.operation&&j.operation.clone_evidence,j.operation&&j.operation.cloneEvidence,j.data&&j.data.clone_evidence,j.data&&j.data.cloneEvidence];return sources.some((value)=>Array.isArray(value)?value.length>0:Boolean(value))?'1':''})()" || true)"
+  if [[ "${has_clone}" == "1" ]]; then
+    RESTORE_CLONE_EVIDENCE_PRESENT="true"
+  fi
+  local clone_duration
+  clone_duration="$(cat "${BODY_FILE}" | json_field "(()=>{const sources=[j.clone_evidence,j.cloneEvidence,j.operation&&j.operation.clone_evidence,j.operation&&j.operation.cloneEvidence,j.data&&j.data.clone_evidence,j.data&&j.data.cloneEvidence];for(const source of sources){const items=Array.isArray(source)?source:(source?[source]:[]);for(const item of items){const duration=Number(item&&((item.duration_ms??item.durationMs)));if(Number.isFinite(duration)&&duration>=0)return String(Math.trunc(duration));}}return ''})()" || true)"
+  if [[ -n "${clone_duration}" ]]; then
+    RESTORE_CLONE_DURATION_MS="${clone_duration}"
+  fi
+}
+
+write_timing_evidence() {
+  local stage="${1:-snapshot}"
+  mkdir -p "$(dirname "${TIMING_EVIDENCE_PATH}")"
+  FILE_LIBRARY_REAL_SMOKE_TIMING_STAGE="${stage}" \
+  FILE_LIBRARY_REAL_SMOKE_WORKSPACE_ID="${WORKSPACE_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_PROJECT_ID="${PROJECT_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_LIBRARY_ID="${LIBRARY_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_ID="${SAVE_POINT_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_OPERATION_ID="${SAVE_POINT_OPERATION_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_ADMISSION_LATENCY_MS="${SAVE_POINT_ADMISSION_LATENCY_MS}" \
+  FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_ID="${MUTATION_SAVE_POINT_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_OPERATION_ID="${MUTATION_SAVE_POINT_OPERATION_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS="${MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_OPERATION_ID="${RESTORE_OPERATION_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_OPERATION_STATUS="${RESTORE_OPERATION_STATUS}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_SOURCE_SAVE_POINT_ID="${RESTORE_OPERATION_SOURCE_SAVE_POINT_ID}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_ADMISSION_LATENCY_MS="${RESTORE_ADMISSION_LATENCY_MS}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_ACTIVE_FIRST_SEEN_LAG_MS="${RESTORE_ACTIVE_FIRST_SEEN_LAG_MS}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS="${RESTORE_TERMINAL_PROJECTION_LAG_MS}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="${RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_CLONE_EVIDENCE_PRESENT="${RESTORE_CLONE_EVIDENCE_PRESENT}" \
+  FILE_LIBRARY_REAL_SMOKE_RESTORE_CLONE_DURATION_MS="${RESTORE_CLONE_DURATION_MS}" \
+  node - "${TIMING_EVIDENCE_PATH}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const outputPath = process.argv[2];
+const stringEnv = (name) => {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+};
+const integerEnv = (name) => {
+  const value = stringEnv(name);
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null;
+};
+const booleanEnv = (name) => process.env[name] === 'true';
+const cloneEvidencePresent = booleanEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_CLONE_EVIDENCE_PRESENT');
+const cloneDurationMs = integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_CLONE_DURATION_MS');
+const cloneEvidenceAvailability =
+  cloneDurationMs !== null ? 'available' : cloneEvidencePresent ? 'present_without_duration' : 'unavailable';
+
+const evidence = {
+  schema_version: 2,
+  producer: 'scripts/file-library-real-smoke.sh',
+  stage: stringEnv('FILE_LIBRARY_REAL_SMOKE_TIMING_STAGE'),
+  generated_at: new Date().toISOString(),
+  workspace_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_WORKSPACE_ID'),
+  project_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_PROJECT_ID'),
+  library_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_LIBRARY_ID'),
+  timings: {
+    save_point_admission_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_ADMISSION_LATENCY_MS'),
+    mutation_save_point_admission_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS'),
+    restore_admission_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_ADMISSION_LATENCY_MS'),
+    restore_active_projection_first_seen_lag_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_ACTIVE_FIRST_SEEN_LAG_MS'),
+    restore_terminal_projection_lag_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS'),
+  },
+  timing_breakdown: {
+    agentsmith_admission: {
+      save_point_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_ADMISSION_LATENCY_MS'),
+      mutation_save_point_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS'),
+      restore_latency_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_ADMISSION_LATENCY_MS'),
+      source: 'agentsmith_product_api_http_client',
+      availability: 'available',
+    },
+    active_projection_first_seen: {
+      restore_lag_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_ACTIVE_FIRST_SEEN_LAG_MS'),
+      source: 'agentsmith_operations_active_projection',
+      availability:
+        integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_ACTIVE_FIRST_SEEN_LAG_MS') !== null ? 'available' : 'not_observed',
+    },
+    terminal_projection: {
+      restore_lag_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS'),
+      source: 'agentsmith_operations_active_projection',
+      availability:
+        integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS') !== null ? 'available' : 'not_observed',
+    },
+    afscp_worker_hop: {
+      duration_ms: null,
+      source: 'not_exposed_by_agentsmith_product_api',
+      availability: 'unavailable',
+    },
+    jvs_clone: {
+      duration_ms: cloneDurationMs,
+      source: cloneEvidencePresent ? 'operator_safe_clone_evidence_from_restore_projection' : 'not_exposed_by_agentsmith_product_api',
+      availability: cloneEvidenceAvailability,
+    },
+  },
+  save_point: {
+    id: stringEnv('FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_ID'),
+    operation_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_SAVE_POINT_OPERATION_ID'),
+  },
+  mutation_save_point: {
+    id: stringEnv('FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_ID'),
+    operation_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_MUTATION_SAVE_POINT_OPERATION_ID'),
+  },
+  restore_operation: {
+    id: stringEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_OPERATION_ID'),
+    status: stringEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_OPERATION_STATUS'),
+    source_save_point_id: stringEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_SOURCE_SAVE_POINT_ID'),
+    terminal_seen_in_active_projection: booleanEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION'),
+  },
+  afscp_operation: {
+    id: null,
+    source: 'not_exposed_by_agentsmith_product_api',
+    availability: 'unavailable',
+  },
+  clone_evidence: {
+    present: cloneEvidencePresent,
+    duration_ms: cloneDurationMs,
+    source: cloneEvidencePresent ? 'operator_safe_clone_evidence_from_restore_projection' : 'not_exposed_by_agentsmith_product_api',
+    availability: cloneEvidenceAvailability,
+  },
+};
+
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+fs.writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
+NODE
+}
+
 assert_no_raw_afscp_ids() {
   local label="$1"
   if grep -Eiq '(^|[^A-Za-z0-9_])(repo_|tmpl_|plan_|restore[_]plan|sp_(user|template|[A-Za-z0-9])|[0-9]{13}-[0-9a-f]{8})' "${BODY_FILE}"; then
@@ -115,6 +282,12 @@ is_operation_failed_state() {
   [[ "${normalized}" == "failed" || "${normalized}" == "failure" || "${normalized}" == "error" || "${normalized}" == "errored" || "${normalized}" == "cancelled" || "${normalized}" == "canceled" ]]
 }
 
+is_restore_operation_succeeded_state() {
+  local normalized
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [[ "${normalized}" == "succeeded" ]]
+}
+
 wait_restore_operation_terminal() {
   local operation_id="$1"
   local max_attempts="${FILE_LIBRARY_RESTORE_OPERATION_ATTEMPTS:-90}"
@@ -130,11 +303,29 @@ wait_restore_operation_terminal() {
       local operation_status
       operation_status="$(cat "${BODY_FILE}" | json_field "j.operation && j.operation.id === '${operation_id}' ? j.operation.status : ''" || true)"
       if [[ -z "${operation_status}" ]]; then
-        info "restore operation ${operation_id} is no longer active"
+        RESTORE_OPERATION_STATUS="missing"
+        write_timing_evidence "restore_active_projection_missing"
+        err "restore operation ${operation_id} disappeared from active projection before terminal succeeded"
+        cat "${BODY_FILE}" >&2
+        exit 1
+      fi
+      local projection_seen_at_ms
+      projection_seen_at_ms="$(now_ms)"
+      if [[ -z "${RESTORE_ACTIVE_FIRST_SEEN_AT_MS}" ]]; then
+        RESTORE_ACTIVE_FIRST_SEEN_AT_MS="${projection_seen_at_ms}"
+        RESTORE_ACTIVE_FIRST_SEEN_LAG_MS="$(elapsed_ms "${RESTORE_ADMITTED_AT_MS}" "${projection_seen_at_ms}")"
+      fi
+      RESTORE_OPERATION_STATUS="${operation_status}"
+      capture_restore_clone_evidence_from_body
+      if is_restore_operation_succeeded_state "${operation_status}"; then
+        RESTORE_TERMINAL_PROJECTION_LAG_MS="$(elapsed_ms "${RESTORE_ADMITTED_AT_MS}" "${projection_seen_at_ms}")"
+        RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="true"
+        write_timing_evidence "restore_terminal_projection_succeeded"
         return 0
       fi
-      if [[ "${operation_status}" == "failed" || "${operation_status}" == "recovery_required" ]]; then
-        err "restore operation ${operation_id} failed"
+      if [[ "${operation_status}" == "recovery_required" ]] || is_operation_failed_state "${operation_status}"; then
+        write_timing_evidence "restore_terminal_projection_failed"
+        err "restore operation ${operation_id} failed with status ${operation_status}"
         cat "${BODY_FILE}" >&2
         exit 1
       fi
@@ -187,6 +378,41 @@ api_json_with_idempotency() {
     --data "${body}" \
     "${API_BASE%/}${path}")"
   printf '%s' "${status}"
+}
+
+json_save_point_id_by_message() {
+  local message="$1"
+  node -e "let s='';const message=process.argv[1];process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);const item=Array.isArray(j.items)?j.items.find((entry)=>entry&&entry.message===message):null;if(!item||typeof item.id!=='string'||!item.id){process.exit(2)}process.stdout.write(item.id)})" "${message}"
+}
+
+wait_save_point_id_by_message() {
+  local message="$1"
+  local label="$2"
+  local max_attempts="${FILE_LIBRARY_SAVE_POINT_PROJECTION_ATTEMPTS:-60}"
+  local attempt=1
+  if ! [[ "${max_attempts}" =~ ^[0-9]+$ ]] || [[ "${max_attempts}" -lt 1 ]]; then
+    max_attempts=60
+  fi
+
+  while (( attempt <= max_attempts )); do
+    local status
+    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
+    if [[ "${status}" == "200" ]]; then
+      assert_no_raw_storage_fields "${label}"
+      local save_point_id
+      save_point_id="$(cat "${BODY_FILE}" | json_save_point_id_by_message "${message}" || true)"
+      if [[ -n "${save_point_id}" ]]; then
+        printf '%s' "${save_point_id}"
+        return 0
+      fi
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  err "created save point missing from save point list: ${message}"
+  cat "${BODY_FILE}" >&2
+  exit 1
 }
 
 upload_guide_file() {
@@ -548,28 +774,20 @@ if ! grep -q 'hello from file-library smoke' "${DOWNLOAD_FILE}"; then
   exit 1
 fi
 
-status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" '{"message":"Smoke save point before template publish"}')"
-if [[ "${status}" != "201" ]]; then
+SAVE_POINT_IDEMPOTENCY_KEY="file-library-smoke-save-point-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}-before-template-publish"
+SAVE_POINT_ADMISSION_STARTED_AT_MS="$(now_ms)"
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" "${SAVE_POINT_IDEMPOTENCY_KEY}" '{"message":"Smoke save point before template publish"}')"
+SAVE_POINT_ADMISSION_FINISHED_AT_MS="$(now_ms)"
+SAVE_POINT_ADMISSION_LATENCY_MS="$(elapsed_ms "${SAVE_POINT_ADMISSION_STARTED_AT_MS}" "${SAVE_POINT_ADMISSION_FINISHED_AT_MS}")"
+if [[ "${status}" != "202" ]]; then
+  write_timing_evidence "save_point_admission_failed"
   err "failed to create save point: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
 fi
 assert_no_raw_storage_fields "file library save point create"
-SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
-
-status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
-if [[ "${status}" != "200" ]]; then
-  err "failed to list save points: ${status}"
-  cat "${BODY_FILE}" >&2
-  exit 1
-fi
-assert_no_raw_storage_fields "file library save point list"
-SAVE_POINT_LIST_HAS_CREATED="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => item.id === '${SAVE_POINT_ID}') ? '1' : ''" || true)"
-if [[ "${SAVE_POINT_LIST_HAS_CREATED}" != "1" ]]; then
-  err "created save point missing from save point list"
-  cat "${BODY_FILE}" >&2
-  exit 1
-fi
+SAVE_POINT_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+SAVE_POINT_ID="$(wait_save_point_id_by_message "Smoke save point before template publish" "file library save point list")"
 
 status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/delete" '{"paths":["docs/guide.txt"]}')"
 if [[ "${status}" != "200" ]]; then
@@ -579,14 +797,20 @@ if [[ "${status}" != "200" ]]; then
 fi
 assert_no_raw_storage_fields "post-save-point mutation delete"
 
-status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" '{"message":"Smoke save point after mutation"}')"
-if [[ "${status}" != "201" ]]; then
+MUTATION_SAVE_POINT_IDEMPOTENCY_KEY="file-library-smoke-save-point-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}-after-mutation"
+MUTATION_SAVE_POINT_ADMISSION_STARTED_AT_MS="$(now_ms)"
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points" "${MUTATION_SAVE_POINT_IDEMPOTENCY_KEY}" '{"message":"Smoke save point after mutation"}')"
+MUTATION_SAVE_POINT_ADMISSION_FINISHED_AT_MS="$(now_ms)"
+MUTATION_SAVE_POINT_ADMISSION_LATENCY_MS="$(elapsed_ms "${MUTATION_SAVE_POINT_ADMISSION_STARTED_AT_MS}" "${MUTATION_SAVE_POINT_ADMISSION_FINISHED_AT_MS}")"
+if [[ "${status}" != "202" ]]; then
+  write_timing_evidence "mutation_save_point_admission_failed"
   err "failed to create mutation save point: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
 fi
 assert_no_raw_storage_fields "file library mutation save point create"
-MUTATION_SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+MUTATION_SAVE_POINT_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+MUTATION_SAVE_POINT_ID="$(wait_save_point_id_by_message "Smoke save point after mutation" "file library mutation save point list")"
 if [[ "${MUTATION_SAVE_POINT_ID}" == "${SAVE_POINT_ID}" ]]; then
   err "mutation save point reused original save point id"
   cat "${BODY_FILE}" >&2
@@ -609,8 +833,13 @@ if [[ "${RESTORE_TRIGGERED_SAVE_POINT_BEFORE}" == "1" ]]; then
 fi
 
 RESTORE_IDEMPOTENCY_KEY="file-library-smoke-restore-${LIBRARY_ID}-${SAVE_POINT_ID}"
+RESTORE_ADMISSION_STARTED_AT_MS="$(now_ms)"
 status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/restore" "${RESTORE_IDEMPOTENCY_KEY}" "{\"save_point_id\":\"${SAVE_POINT_ID}\"}")"
+RESTORE_ADMISSION_FINISHED_AT_MS="$(now_ms)"
+RESTORE_ADMITTED_AT_MS="${RESTORE_ADMISSION_FINISHED_AT_MS}"
+RESTORE_ADMISSION_LATENCY_MS="$(elapsed_ms "${RESTORE_ADMISSION_STARTED_AT_MS}" "${RESTORE_ADMISSION_FINISHED_AT_MS}")"
 if [[ "${status}" != "200" ]]; then
+  write_timing_evidence "restore_admission_failed"
   err "failed to start direct restore: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
@@ -619,7 +848,9 @@ assert_no_raw_storage_fields "file library direct restore"
 RESTORE_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
 RESTORE_OPERATION_STATUS="$(cat "${BODY_FILE}" | json_field "j.status" || true)"
 RESTORE_OPERATION_SOURCE_SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.source_save_point_id" || true)"
+capture_restore_clone_evidence_from_body
 if [[ "${RESTORE_OPERATION_SOURCE_SAVE_POINT_ID}" != "${SAVE_POINT_ID}" ]]; then
+  write_timing_evidence "restore_admission_source_mismatch"
   err "direct restore operation did not reference the requested save point"
   cat "${BODY_FILE}" >&2
   exit 1
@@ -627,10 +858,14 @@ fi
 if [[ "${RESTORE_OPERATION_STATUS}" == "pending" || "${RESTORE_OPERATION_STATUS}" == "restoring" ]]; then
   wait_restore_operation_terminal "${RESTORE_OPERATION_ID}"
 elif [[ "${RESTORE_OPERATION_STATUS}" != "succeeded" ]]; then
+  write_timing_evidence "restore_admission_unexpected_status"
   err "direct restore returned unexpected status: ${RESTORE_OPERATION_STATUS}"
   cat "${BODY_FILE}" >&2
   exit 1
+else
+  RESTORE_TERMINAL_PROJECTION_LAG_MS="0"
 fi
+write_timing_evidence "restore_verified"
 
 status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/save-points")"
 if [[ "${status}" != "200" ]]; then
@@ -666,8 +901,9 @@ if ! grep -q 'hello from file-library smoke' "${DOWNLOAD_FILE}"; then
   exit 1
 fi
 
-status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "{\"name\":\"Smoke task file template\",\"source_library_id\":\"${LIBRARY_ID}\"}")"
-if [[ "${status}" != "201" ]]; then
+TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY="file-library-smoke-task-file-template-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}"
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "${TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY}" "{\"name\":\"Smoke task file template\",\"source_library_id\":\"${LIBRARY_ID}\"}")"
+if [[ "${status}" != "201" && "${status}" != "200" ]]; then
   err "failed to create task file template: ${status}"
   cat "${BODY_FILE}" >&2
   exit 1
@@ -753,5 +989,6 @@ assert_no_raw_storage_fields "file library delete entries"
 
 delete_empty_library_when_terminal
 
+write_timing_evidence "completed"
 LIBRARY_ID=""
 info "real smoke passed"

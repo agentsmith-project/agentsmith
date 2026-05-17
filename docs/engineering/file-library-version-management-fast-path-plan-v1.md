@@ -70,7 +70,7 @@ Review: 已根据两轮 reviewer findings 修正 blocker，本文为二轮 revie
 - 点击保存或恢复后，admission 状态必须快速可见。
 - 用户可以看到“已接收并处理中”、“已成功”、“失败原因”、“需要人工恢复处理”这几类明确状态。
 - 如果后端尚未真正开始 restore，不应显示成 terminal success。
-- 如果 `afscp_operation_id=null`，只能作为 admission failure 或已失败投射处理，不能被 UI helper 解释为成功。
+- AgentSmith 本地 admission operation 在 storage / AFSCP start 前可以短暂持有 `afscp_operation_id=null` 作为 admission fence；普通用户 UI 只消费 AgentSmith public operation id/status，不暴露 raw AFSCP id。禁止的是把下游 AFSCP / JVS `null` operation 当作成功或进度；如果后台无法启动下游 operation，必须转为 failed / recovery_required。
 
 ## 4. 非目标
 
@@ -275,7 +275,7 @@ cleanup 判定规则：
 AFSCP 必须把 save / list / restore / TaskFileTemplate save/publish 相关 operation 生命周期收敛清楚：
 
 - HTTP intake/admission 要么快速返回可追踪 operation id，要么返回 typed failure；worker/direct execution 可以等待 JVS 并提交 terminal success / failure。
-- `afscp_operation_id=null` 不得进入“已接收并运行中”的 UI 状态。
+- AgentSmith local pre-start operation 可短暂持有 `afscp_operation_id=null` 作为 admission fence；投射给 UI 时必须使用 AgentSmith public operation id/status。下游 AFSCP operation 仍为 null 且无法启动时，不得继续作为 running / success，必须 failed / recovery_required。
 - 连续 `409` 要映射成 active operation conflict、recovery required 或 typed retryable blocker，不能让 UI 闪一下后失联。
 - `operation_recovery.manual=1` 必须进入可见的 recovery_required 或内部失败状态，并被 focused gate 捕获。
 - `pending-cleanups/restore-*` 必须区分 fresh metadata-referenced cleanup_pending 与 stale / non-convergent / unreferenced cleanup；前者允许在收敛窗口内存在，后者或阻塞后续 save / list / restore 的 cleanup 必须失败。
@@ -352,7 +352,7 @@ Owner：AgentSmith Files frontend + API consumer
 - `operation: null` 只渲染为“当前没有正在运行的操作”。
 - admission 请求返回前显示本地 pending；返回 operation id 后显示 accepted / running。
 - 轮询超时显示“仍在处理”，不能显示 success。
-- `afscp_operation_id=null` 的 failed restore 必须显示失败原因，不能进入 running 或 success。
+- 下游启动失败后 `afscp_operation_id=null` 的 failed restore 必须显示失败原因，不能进入 running 或 success。
 - 普通用户 UI 不显示“内部 runbook”；operator-facing 日志或视图可以携带 runbook reference。
 
 完成标准：
@@ -451,7 +451,7 @@ AFSCP focused tests：
 
 - fake JVS runner 覆盖 save / restore admission 和 operation projection。
 - 连续 `409` 映射为 conflict / retryable blocker / recovery_required，不是 UI success。
-- `afscp_operation_id=null` 的 restore 进入 failed admission 或 failed operation。
+- pre-start local restore 可验证 `afscp_operation_id=null` admission fence；无法启动下游 operation 或下游 terminal null 必须进入 failed admission / failed operation / recovery_required。
 - `operation_recovery.manual=1` 让 worker recovery gate 失败。
 - stale / non-convergent / unreferenced `pending-cleanups/restore-*` 或阻塞后续 save / list / restore 的 cleanup 让 focused cleanup / recovery gate 失败；fresh metadata-referenced cleanup_pending 在收敛窗口内允许。
 - AFSCP repo-template create / clone lifecycle 有 fake JVS runner 覆盖。
@@ -467,7 +467,7 @@ JVS focused tests：
 Focused real lane timing：
 
 - 不以 full `npm run verify -- --goal=real --run` 作为每次小改动门禁。
-- 新增或复用 focused real lane timing producer，记录 AgentSmith HTTP intake/admission latency、AFSCP queue / worker hop latency、JVS clone duration、UI projection lag。
+- 新增或复用 focused real lane timing producer，记录 AgentSmith HTTP intake/admission latency、AFSCP queue / worker hop latency、JVS clone duration、UI projection lag；如果 AgentSmith 产品 API 未暴露 AFSCP worker hop 或 JVS clone duration，evidence 必须写明 source / availability，不能无声写 null。
 - admission latency 和 JVS clone duration 分开记录，不能把 clone 变慢伪装成 UI 无响应。
 - worker / recovery manual 残留必须让 focused real lane 失败。
 - cleanup gate 必须包含收敛窗口和状态判定；fresh metadata-referenced cleanup_pending 在窗口内允许；如果已不阻塞后续 save / list / restore，可允许 terminal success 并作为 operator-facing non-blocking cleanup evidence 继续收敛；stale / non-convergent / unreferenced cleanup 或阻塞后续操作必须失败。
@@ -537,7 +537,7 @@ Recovery：
 - AgentSmith focused unit / e2e 通过。
 - AFSCP fake runner operation lifecycle tests 通过。
 - JVS fake JuiceFS clone tests 通过。
-- focused real lane timing 产出 admission latency、AFSCP worker hop、JVS clone duration、UI projection lag。
+- focused real lane timing 产出 admission latency、AFSCP worker hop、JVS clone duration、UI projection lag；不可得的底层耗时必须带 source / availability。
 - worker / recovery manual 残留会失败。
 - cleanup gate 按收敛窗口判断，stale / non-convergent / unreferenced cleanup 或阻塞后续操作会失败。
 

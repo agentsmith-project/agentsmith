@@ -7,6 +7,7 @@ import {
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocFileLibraryVersionOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectTaskFileTemplateRepo,
 } from './file-library-persistence.js';
 
 class RestoreOperationCreateFailureDocStore extends InMemoryJsonDocStore {
@@ -421,6 +422,54 @@ describe('file-library-persistence catalog schema', () => {
       }),
     ]);
     expect(repo.toPublic(first.operation)).not.toHaveProperty('idempotency_key');
+  });
+
+  it('creates or reuses one task file template for a scoped source library idempotency key', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocProjectTaskFileTemplateRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+    const input = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sourceLibraryId: 'flib_template_source',
+      name: 'Starter files',
+      sourceSavePointId: 'flsp_template_source',
+      sourceAfscpSavePointId: 'sp_template_source',
+      createdByUserId: 'user_1',
+      afscpTemplateId: 'tmpl_template_source',
+      afscpCreateOperationId: 'op_template_source',
+      idempotencyKey: 'task-template-key-stable',
+    };
+
+    const first = await repo.createOrReuseByIdempotencyKey(input);
+    const second = await new JsonDocProjectTaskFileTemplateRepo(
+      docStore,
+      () => '2026-05-09T12:01:00.000Z',
+    ).createOrReuseByIdempotencyKey({
+      ...input,
+      name: 'Changed retry body that must not replace original',
+      afscpTemplateId: 'tmpl_retry',
+    });
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.template).toMatchObject({
+      id: first.template.id,
+      name: 'Starter files',
+      idempotency_key: 'task-template-key-stable',
+      afscp_template_id: 'tmpl_template_source',
+    });
+    await expect(repo.findByIdempotencyKey({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sourceLibraryId: 'flib_template_source',
+      idempotencyKey: 'task-template-key-stable',
+    })).resolves.toMatchObject({
+      id: first.template.id,
+    });
+    expect(repo.toPublic(first.template)).not.toHaveProperty('idempotency_key');
   });
 
   it('creates or reuses one active restore operation for a library across different idempotency keys', async () => {

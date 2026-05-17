@@ -2,6 +2,7 @@
  * Project task file template hooks.
  */
 
+import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -9,6 +10,21 @@ import { toast } from '@/components/ui/toast';
 import { FilesAPI, getApiClient } from '@/lib/api';
 import { handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
+
+type CreateTaskFileTemplateVariables = {
+  workspaceId: string;
+  projectId: string;
+  sourceLibraryId: string;
+  name: string;
+  description?: string;
+  idempotencyKey?: string;
+};
+
+function generateTaskFileTemplateIdempotencyKey(): string {
+  const suffix = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `task_file_template_${suffix}`;
+}
 
 export function useTaskFileTemplates(
   workspaceId: string,
@@ -29,25 +45,31 @@ export function useCreateTaskFileTemplate() {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const t = useTranslations('common.toast');
+  const idempotencyKeysRef = React.useRef(new WeakMap<CreateTaskFileTemplateVariables, string>());
+
+  function resolveIdempotencyKey(variables: CreateTaskFileTemplateVariables) {
+    if (variables.idempotencyKey) {
+      idempotencyKeysRef.current.set(variables, variables.idempotencyKey);
+      return variables.idempotencyKey;
+    }
+    const existing = idempotencyKeysRef.current.get(variables);
+    if (existing) return existing;
+    const next = generateTaskFileTemplateIdempotencyKey();
+    idempotencyKeysRef.current.set(variables, next);
+    return next;
+  }
 
   return useMutation({
-    mutationFn: ({
-      workspaceId,
-      projectId,
-      sourceLibraryId,
-      name,
-      description,
-    }: {
-      workspaceId: string;
-      projectId: string;
-      sourceLibraryId: string;
-      name: string;
-      description?: string;
-    }) => filesAPI.createTaskFileTemplate(workspaceId, projectId, {
-      source_library_id: sourceLibraryId,
-      name,
-      description,
-    }),
+    mutationFn: (variables: CreateTaskFileTemplateVariables) => filesAPI.createTaskFileTemplate(
+      variables.workspaceId,
+      variables.projectId,
+      {
+        source_library_id: variables.sourceLibraryId,
+        name: variables.name,
+        description: variables.description,
+      },
+      { idempotencyKey: resolveIdempotencyKey(variables) },
+    ),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.taskFileTemplates.list(variables.workspaceId, variables.projectId),

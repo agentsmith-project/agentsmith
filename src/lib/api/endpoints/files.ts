@@ -200,10 +200,16 @@ export class FilesAPI {
     workspaceId: string,
     projectId: string,
     payload: CreateTaskFileTemplateRequest,
+    options: { idempotencyKey: string },
   ): Promise<TaskFileTemplate> {
     return this.client.post<TaskFileTemplate>(
       `/workspaces/${workspaceId}/projects/${projectId}/task-file-templates`,
       payload,
+      {
+        headers: {
+          'Idempotency-Key': options.idempotencyKey,
+        },
+      },
     );
   }
 

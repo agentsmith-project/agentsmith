@@ -476,7 +476,7 @@ describe('FilesAPI', () => {
       source_library_id: 'flib_1',
       name: 'Starter',
       description: 'Baseline files',
-    });
+    }, { idempotencyKey: 'template-key-1' });
     await api.publishTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
     await api.unpublishTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
     await api.deleteTaskFileTemplate('ws_1', 'proj_1', 'tmpl_1');
@@ -491,6 +491,11 @@ describe('FilesAPI', () => {
         source_library_id: 'flib_1',
         name: 'Starter',
         description: 'Baseline files',
+      },
+      {
+        headers: {
+          'Idempotency-Key': 'template-key-1',
+        },
       },
     );
     expect(client.post).toHaveBeenNthCalledWith(

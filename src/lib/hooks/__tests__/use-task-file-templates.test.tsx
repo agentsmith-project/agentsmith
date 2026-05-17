@@ -185,6 +185,8 @@ describe('task file template hooks', () => {
       source_library_id: 'lib_1',
       name: 'Starter',
       description: 'Baseline files',
+    }, {
+      idempotencyKey: expect.stringMatching(/^task_file_template_/),
     });
     expect(mockPublishTaskFileTemplate).toHaveBeenCalledWith(workspaceId, projectId, 'tmpl_new');
     expect(mockUnpublishTaskFileTemplate).toHaveBeenCalledWith(workspaceId, projectId, 'tmpl_new');

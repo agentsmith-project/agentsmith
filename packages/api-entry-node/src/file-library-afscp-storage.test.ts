@@ -1112,7 +1112,7 @@ describe('AFSCP File Library storage adapter', () => {
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         libraryId: 'flib_123',
-        message: 'Restore preview current state',
+        message: 'Save point create busy fixture',
         actorUserId: 'user_1',
         idempotencyKey: 'save-point-create-busy-key',
         requestId: 'req_save_point_create_busy',
@@ -1585,6 +1585,7 @@ describe('AFSCP File Library storage adapter', () => {
       projectId: 'proj_1',
       libraryId: 'flib_123',
       templateId: 'tmpl_task_file_template_1',
+      idempotencyKey: 'task-template-key-1',
       actorUserId: 'user_1',
       requestId: 'req_template_create',
     })).resolves.toMatchObject({
@@ -1593,6 +1594,10 @@ describe('AFSCP File Library storage adapter', () => {
       operationStatus: 'succeeded',
       sourceSavePointId: 'sp_template_source_001',
     });
+    expect(client.createRepoTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      templateId: 'tmpl_task_file_template_1',
+      idempotencyKey: 'file-library:flib_123:template-create:tmpl_task_file_template_1:task-template-key-1',
+    }));
 
     await expect(adapter.cloneTemplateToLibrary({
       workspaceId: 'ws_default',

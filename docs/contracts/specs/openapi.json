@@ -3499,6 +3499,17 @@
           "Files"
         ],
         "operationId": "createTaskFileTemplate",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3510,6 +3521,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Task file template idempotently reused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskFileTemplate"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Task file template created",
             "content": {
@@ -3555,6 +3576,16 @@
                       "$ref": "#/components/schemas/ApiError"
                     }
                   ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Required idempotency key is missing or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }

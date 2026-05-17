@@ -9864,7 +9864,9 @@ export interface operations {
     createTaskFileTemplate: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path: {
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
@@ -9877,6 +9879,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Task file template idempotently reused */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileTemplate"];
+                };
+            };
             /** @description Task file template created */
             201: {
                 headers: {
@@ -9905,6 +9916,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Required idempotency key is missing or invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Task file template create failed */

@@ -1007,6 +1007,7 @@ export interface TaskFileTemplateRecord extends TaskFileTemplatePublicRecord {
   afscp_template_id: string;
   afscp_create_operation_id?: string;
   source_afscp_save_point_id?: string;
+  idempotency_key?: string;
 }
 
 function scopedDigestId(prefix: string, parts: string[], length = 24): string {
@@ -1092,6 +1093,20 @@ export function buildAfscpTemplateId(taskFileTemplateId: string): string {
     .replace(/^_+|_+$/g, '')
     .slice(0, 58);
   return `tmpl_${segment || randomUUID().replace(/-/g, '').slice(0, 24)}`;
+}
+
+export function buildTaskFileTemplateIdempotencyId(input: {
+  workspaceId: string;
+  projectId: string;
+  sourceLibraryId: string;
+  idempotencyKey: string;
+}): string {
+  return scopedDigestId('tftpl', [
+    input.workspaceId,
+    input.projectId,
+    input.sourceLibraryId,
+    input.idempotencyKey,
+  ]);
 }
 
 function publicSavePoint(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
@@ -1899,7 +1914,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     private readonly nowIso: () => string = () => new Date().toISOString(),
   ) {}
 
-  async create(input: {
+  private buildCreateRecord(input: {
     id?: string;
     workspaceId: string;
     projectId: string;
@@ -1911,10 +1926,11 @@ export class JsonDocProjectTaskFileTemplateRepo {
     afscpTemplateId: string;
     afscpCreateOperationId?: string;
     sourceAfscpSavePointId?: string;
-  }): Promise<TaskFileTemplateRecord> {
+    idempotencyKey?: string;
+  }): TaskFileTemplateRecord {
     const now = this.nowIso();
     const id = input.id ?? generateTaskFileTemplateId();
-    const record: TaskFileTemplateRecord = {
+    return {
       id,
       workspace_id: input.workspaceId,
       project_id: input.projectId,
@@ -1927,10 +1943,87 @@ export class JsonDocProjectTaskFileTemplateRepo {
       afscp_template_id: input.afscpTemplateId,
       ...(input.afscpCreateOperationId ? { afscp_create_operation_id: input.afscpCreateOperationId } : {}),
       ...(input.sourceAfscpSavePointId ? { source_afscp_save_point_id: input.sourceAfscpSavePointId } : {}),
+      ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
       created_at: now,
       updated_at: now,
     };
+  }
+
+  async create(input: {
+    id?: string;
+    workspaceId: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    sourceLibraryId: string;
+    sourceSavePointId?: string;
+    createdByUserId: string;
+    afscpTemplateId: string;
+    afscpCreateOperationId?: string;
+    sourceAfscpSavePointId?: string;
+    idempotencyKey?: string;
+  }): Promise<TaskFileTemplateRecord> {
+    const record = this.buildCreateRecord(input);
     await this.docStore.upsert(TASK_FILE_TEMPLATE_COLLECTION, record.id, record);
+    return record;
+  }
+
+  async createOrReuseByIdempotencyKey(input: {
+    workspaceId: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    sourceLibraryId: string;
+    sourceSavePointId?: string;
+    createdByUserId: string;
+    afscpTemplateId: string;
+    afscpCreateOperationId?: string;
+    sourceAfscpSavePointId?: string;
+    idempotencyKey: string;
+  }): Promise<{ template: TaskFileTemplateRecord; created: boolean }> {
+    const record = this.buildCreateRecord({
+      ...input,
+      id: buildTaskFileTemplateIdempotencyId(input),
+    });
+    const result = await this.docStore.createIfAbsent(
+      TASK_FILE_TEMPLATE_COLLECTION,
+      record.id,
+      record,
+    );
+    if (result.ok) {
+      return { template: record, created: true };
+    }
+    const current = result.current;
+    if (
+      current.workspace_id !== input.workspaceId
+      || current.project_id !== input.projectId
+      || current.source_library_id !== input.sourceLibraryId
+      || current.idempotency_key !== input.idempotencyKey
+    ) {
+      throw new Error('task_file_template_idempotency_conflict');
+    }
+    return { template: current, created: false };
+  }
+
+  async findByIdempotencyKey(input: {
+    workspaceId: string;
+    projectId: string;
+    sourceLibraryId: string;
+    idempotencyKey: string;
+  }): Promise<TaskFileTemplateRecord | null> {
+    const record = await this.docStore.get<TaskFileTemplateRecord>(
+      TASK_FILE_TEMPLATE_COLLECTION,
+      buildTaskFileTemplateIdempotencyId(input),
+    );
+    if (
+      !record
+      || record.workspace_id !== input.workspaceId
+      || record.project_id !== input.projectId
+      || record.source_library_id !== input.sourceLibraryId
+      || record.idempotency_key !== input.idempotencyKey
+    ) {
+      return null;
+    }
     return record;
   }
 

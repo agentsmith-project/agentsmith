@@ -200,6 +200,15 @@ describe('file-library recovery and task-template MSW contracts', () => {
       source_save_point_id: savePoint.id,
       status: 'succeeded',
     });
+    const activeAfterTerminalRestore = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+    expect(activeAfterTerminalRestore.status).toBe(200);
+    await expect(activeAfterTerminalRestore.json()).resolves.toMatchObject({
+      operation: expect.objectContaining({
+        kind: 'restore',
+        source_save_point_id: savePoint.id,
+        status: 'succeeded',
+      }),
+    });
 
     await expect(downloadTextFile(libraryId, 'direct-restore-target.txt')).resolves.toBe('before restore');
     await expect(listEntryNames(libraryId)).resolves.not.toContain('post-savepoint-only.txt');
@@ -261,11 +270,15 @@ describe('file-library recovery and task-template MSW contracts', () => {
   });
 
   it('publishes task file templates and clones their files into a new task workspace', async () => {
-    const createTemplate = await postJson('/task-file-templates', {
-      source_library_id: 'lib_shared_default',
-      name: `Starter template ${Date.now()}`,
-      description: 'Reusable task files',
-    });
+    const createTemplate = await postJsonWithIdempotency(
+      '/task-file-templates',
+      {
+        source_library_id: 'lib_shared_default',
+        name: `Starter template ${Date.now()}`,
+        description: 'Reusable task files',
+      },
+      'task-template-msw-key-1',
+    );
     expect(createTemplate.status).toBe(201);
     const template = await createTemplate.json() as { id?: string; status?: string };
     expect(template.status).toBe('unpublished');

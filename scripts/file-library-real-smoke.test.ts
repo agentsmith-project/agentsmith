@@ -17,6 +17,22 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('META_MEDIA_TYPE="$(content_type_media_type "${META_CONTENT_TYPE}")"');
     expect(script).toContain('[[ "${META_MEDIA_TYPE}" != "text/plain" ]]');
     expect(script).toContain('/file-libraries/${LIBRARY_ID}/save-points');
+    const savePointPostCalls = Array.from(
+      script.matchAll(/status="\$\(api_json(?:_with_idempotency)? POST "([^"]*\/save-points)" "([^"]+)" '[^']+'\)"/g),
+    );
+    expect(savePointPostCalls).toHaveLength(2);
+    expect(savePointPostCalls.map((match) => match[2])).toEqual([
+      '${SAVE_POINT_IDEMPOTENCY_KEY}',
+      '${MUTATION_SAVE_POINT_IDEMPOTENCY_KEY}',
+    ]);
+    expect(new Set(savePointPostCalls.map((match) => match[2])).size).toBe(savePointPostCalls.length);
+    expect(script).toContain(
+      'SAVE_POINT_IDEMPOTENCY_KEY="file-library-smoke-save-point-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}-before-template-publish"',
+    );
+    expect(script).toContain(
+      'MUTATION_SAVE_POINT_IDEMPOTENCY_KEY="file-library-smoke-save-point-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}-after-mutation"',
+    );
+    expect(script).not.toMatch(/api_json POST "[^"]*\/save-points"/);
     expect(script).toContain('created save point missing from save point list');
     expect(script).toContain('failed to delete guide after save point');
     expect(script).toContain('post-save-point mutation delete');
@@ -29,10 +45,43 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('RESTORE_OPERATION_SOURCE_SAVE_POINT_ID');
     expect(script).toContain('direct restore operation did not reference the requested save point');
     expect(script).toContain('wait_restore_operation_terminal()');
+    expect(script).not.toContain('is no longer active');
+    expect(script).toContain('disappeared from active projection before terminal succeeded');
+    expect(script).not.toMatch(/if \[\[ -z "\$\{operation_status\}" \]\]; then[\s\S]{0,240}return 0/);
+    expect(script).toContain('is_restore_operation_succeeded_state()');
+    expect(script).toContain('RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="true"');
+    expect(script).toContain('write_timing_evidence()');
+    expect(script).toContain('FILE_LIBRARY_REAL_SMOKE_TIMING_EVIDENCE_PATH');
+    expect(script).toContain('save_point_admission_latency_ms');
+    expect(script).toContain('restore_admission_latency_ms');
+    expect(script).toContain('restore_active_projection_first_seen_lag_ms');
+    expect(script).toContain('restore_terminal_projection_lag_ms');
+    expect(script).toContain('wait_save_point_id_by_message()');
+    expect(script).toContain('SAVE_POINT_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"');
+    expect(script).toContain('MUTATION_SAVE_POINT_OPERATION_ID="$(cat "${BODY_FILE}" | json_field "j.id")"');
+    expect(script).toContain('SAVE_POINT_ID="$(wait_save_point_id_by_message "Smoke save point before template publish" "file library save point list")"');
+    expect(script).toContain('MUTATION_SAVE_POINT_ID="$(wait_save_point_id_by_message "Smoke save point after mutation" "file library mutation save point list")"');
+    expect(script).toMatch(/if \[\[ "\$\{status\}" != "202" \]\]; then[\s\S]{0,180}failed to create save point/);
+    expect(script).toMatch(/if \[\[ "\$\{status\}" != "202" \]\]; then[\s\S]{0,180}failed to create mutation save point/);
+    expect(script).not.toContain('SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"');
+    expect(script).not.toContain('MUTATION_SAVE_POINT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"');
+    expect(script).toContain('schema_version: 2');
+    expect(script).toContain('agentsmith_admission');
+    expect(script).toContain('active_projection_first_seen');
+    expect(script).toContain('terminal_projection');
+    expect(script).toContain('afscp_worker_hop');
+    expect(script).toContain('afscp_operation');
+    expect(script).toContain("source: 'not_exposed_by_agentsmith_product_api'");
+    expect(script).toContain("availability: 'unavailable'");
+    expect(script).toContain("source: cloneEvidencePresent ? 'operator_safe_clone_evidence_from_restore_projection' : 'not_exposed_by_agentsmith_product_api'");
+    expect(script).toContain('clone_evidence');
+    expect(script).toContain('duration_ms');
     expect(script).toContain('direct restore changed save point count; possible restore-triggered save point');
     expect(script).toContain('direct restore created an internal-looking save point');
     expect(script).toContain('restored file content mismatch');
     expect(script).toContain('/task-file-templates');
+    expect(script).toContain('TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY="file-library-smoke-task-file-template-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}"');
+    expect(script).toContain('api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "${TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY}"');
     expect(script).toContain('/task-file-templates/${TASK_FILE_TEMPLATE_ID}/publish');
     expect(script).toContain('\\"workspace_mode\\":\\"use_template\\"');
     expect(script).toContain('task file template clone did not create an independent file library');

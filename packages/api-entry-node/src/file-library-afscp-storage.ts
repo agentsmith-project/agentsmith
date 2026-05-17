@@ -194,6 +194,7 @@ export interface FileLibraryStoragePort {
   }): Promise<FileLibraryRestoreOperationResult>;
   createTemplateFromLibrary(input: FileLibraryStorageLibraryInput & {
     templateId: string;
+    idempotencyKey?: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1488,6 +1489,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
 
   async createTemplateFromLibrary(input: FileLibraryStorageLibraryInput & {
     templateId: string;
+    idempotencyKey?: string;
     actorUserId: string;
     requestId?: string;
     signal?: AbortSignal;
@@ -1500,13 +1502,15 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         sourceRepoId: mapping.repo_id,
         templateId: input.templateId,
         correlationId: resolveCorrelationId(input.requestId, 'file-library-template-create'),
-        idempotencyKey: safeIdempotencyKey([
-          'file-library',
-          input.libraryId,
-          'template-create',
-          input.templateId,
-          input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
-        ]),
+        idempotencyKey: input.idempotencyKey
+          ? safeIdempotencyKey(['file-library', input.libraryId, 'template-create', input.templateId, input.idempotencyKey])
+          : safeIdempotencyKey([
+              'file-library',
+              input.libraryId,
+              'template-create',
+              input.templateId,
+              input.requestId ?? randomUUID().replace(/-/g, '').slice(0, 12),
+            ]),
         actor: { type: 'user', id: input.actorUserId },
         signal: input.signal,
       });

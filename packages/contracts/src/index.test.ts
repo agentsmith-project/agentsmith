@@ -577,6 +577,29 @@ describe('agent task persistent HOME contracts', () => {
       'post',
       '200',
     )).toEqual(['FileLibraryRestoreOperation']);
+    expect(readResponseSchemaNames(
+      openapi.paths ?? {},
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
+      'post',
+      '200',
+    )).toEqual(['TaskFileTemplate']);
+    expect(readResponseSchemaNames(
+      openapi.paths ?? {},
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
+      'post',
+      '422',
+    )).toEqual(['ApiError']);
+    expect(asRecord(
+      asRecord(openapi.paths?.[
+        '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates'
+      ])?.post,
+    )?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'Idempotency-Key',
+        in: 'header',
+        required: true,
+      }),
+    ]));
 
     for (const path of [
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}',
@@ -721,7 +744,7 @@ describe('agent task persistent HOME contracts', () => {
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates',
         method: 'post',
-        statuses: ['201', '400', '401', '403', '404', '409', '502', '503'],
+        statuses: ['200', '201', '400', '401', '403', '404', '409', '422', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/task-file-templates/{taskFileTemplateId}',

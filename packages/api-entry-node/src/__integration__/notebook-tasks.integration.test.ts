@@ -902,25 +902,167 @@ describe('api-entry-node notebook task routes', () => {
 
   it('auto-initializes a workspace file library when create-new mode is requested', async () => {
     const { baseUrl, deps } = await startServer();
-    await createDefaultManagedTaskRunner(deps, 'auto-create-new-default-runner');
+    const projectId = await createNotebookTaskProject(
+      deps,
+      'ws_default',
+      undefined,
+      'Create New First Task Project',
+    );
+    await createDefaultManagedTaskRunner(deps, 'auto-create-new-default-runner', { projectId });
+    const projectPath = `/api/v1/workspaces/ws_default/projects/${projectId}`;
+    const taskTitle = 'Notebook first task with auto workspace';
+    const workspaceName = 'Auto Workspace';
+
+    await expect(deps.docStore.list<TaskRecord>(notebookTasksCollection('ws_default'), {
+      workspace_id: 'ws_default',
+      project_id: projectId,
+    })).resolves.toHaveLength(0);
 
     const createTaskRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      `${projectPath}/tasks`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: 'Notebook task with auto workspace',
+          title: taskTitle,
           workspace_mode: 'create_new',
-          workspace_name: 'Auto Workspace',
+          workspace_name: workspaceName,
         }),
       },
     );
     expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(201);
-    const createdTask = await createTaskRes.json() as { workspace_file_library_id: string; workspace_file_library_name: string };
+    const createdTask = await createTaskRes.json() as {
+      id: string;
+      title: string;
+      workspace_file_library_id: string;
+      workspace_file_library_name: string;
+    };
+    expect(createdTask.title).toBe(taskTitle);
     expect(createdTask.workspace_file_library_id).toMatch(/^flib_/);
-    expect(createdTask.workspace_file_library_name).toBe('Auto Workspace');
+    expect(createdTask.workspace_file_library_name).toBe(workspaceName);
+
+    await expect(deps.docStore.get<TaskRecord>(
+      notebookTasksCollection('ws_default'),
+      createdTask.id,
+    )).resolves.toMatchObject({
+      id: createdTask.id,
+      workspace_id: 'ws_default',
+      project_id: projectId,
+      title: taskTitle,
+      status: 'active',
+      workspace_file_library_id: createdTask.workspace_file_library_id,
+      workspace_file_library_name: workspaceName,
+      file_library_binding_generation: expect.any(Number),
+    });
+
+    const listTaskRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/tasks?search=${encodeURIComponent(taskTitle)}`,
+    );
+    expect(listTaskRes.status).toBe(200);
+    const listedTasks = await listTaskRes.json() as { items: Array<{ id: string; workspace_file_library_id: string }> };
+    expect(listedTasks.items).toEqual([
+      expect.objectContaining({
+        id: createdTask.id,
+        workspace_file_library_id: createdTask.workspace_file_library_id,
+      }),
+    ]);
+
+    const fileLibraryRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/file-libraries/${createdTask.workspace_file_library_id}`,
+    );
+    expect(fileLibraryRes.status).toBe(200);
+    await expect(fileLibraryRes.json()).resolves.toMatchObject({
+      id: createdTask.workspace_file_library_id,
+      name: workspaceName,
+      status: 'ready',
+      task_home_binding_status: 'bound',
+      bound_task_visible: true,
+      bound_task_id: createdTask.id,
+      bound_task_title: taskTitle,
+      bound_task_status: 'active',
+    });
+  });
+
+  it('keeps create_new provisioning failures out of task storage and leaves the file library failed', async () => {
+    const deps = createDefaultNodeApiDeps();
+    configureAfscpReadyFileLibraryTestDeps(deps);
+    const readyFileLibraryStorageAdapter = deps.fileLibraryStorageAdapter;
+    if (!readyFileLibraryStorageAdapter) {
+      throw new Error('file_library_storage_adapter_missing');
+    }
+    const failingCreateRepoForLibrary = vi.fn(async () => {
+      throw new Error('afscp_provisioning_failed');
+    });
+    deps.fileLibraryStorageAdapter = {
+      ...readyFileLibraryStorageAdapter,
+      createRepoForLibrary: failingCreateRepoForLibrary,
+    };
+    const { baseUrl } = await startServerWithDeps(deps);
+    const projectId = await createNotebookTaskProject(
+      deps,
+      'ws_default',
+      undefined,
+      'AFSCP Provisioning Failure Project',
+    );
+    await createDefaultManagedTaskRunner(deps, 'afscp-provisioning-failure-default-runner', { projectId });
+    const projectPath = `/api/v1/workspaces/ws_default/projects/${projectId}`;
+    const taskTitle = 'Task blocked by AFSCP provisioning failure';
+    const workspaceName = 'AFSCP Broken Workspace';
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/tasks`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: taskTitle,
+          workspace_mode: 'create_new',
+          workspace_name: workspaceName,
+        }),
+      },
+    );
+
+    expect(createTaskRes.status, await createTaskRes.clone().text()).toBe(502);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
+      message: 'file_library_operation_failed',
+    });
+    expect(failingCreateRepoForLibrary).toHaveBeenCalledTimes(1);
+
+    const persistedTasks = await deps.docStore.list<TaskRecord>(notebookTasksCollection('ws_default'), {
+      workspace_id: 'ws_default',
+      project_id: projectId,
+    });
+    expect(persistedTasks.some((task) => task.title === taskTitle)).toBe(false);
+
+    const listTaskRes = await apiFetch(
+      baseUrl,
+      `${projectPath}/tasks?search=${encodeURIComponent(taskTitle)}`,
+    );
+    expect(listTaskRes.status).toBe(200);
+    const listedTasks = await listTaskRes.json() as { items: Array<{ title: string }> };
+    expect(listedTasks.items.some((task) => task.title === taskTitle)).toBe(false);
+
+    const listLibrariesRes = await apiFetch(baseUrl, `${projectPath}/file-libraries`);
+    expect(listLibrariesRes.status).toBe(200);
+    const listedLibraries = await listLibrariesRes.json() as {
+      items: Array<{
+        name: string;
+        status: string;
+        task_home_binding_status: string;
+        bound_task_visible: boolean;
+      }>;
+    };
+    expect(listedLibraries.items).toContainEqual(expect.objectContaining({
+      name: workspaceName,
+      status: 'failed',
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+    }));
   });
 
   it.each(['agent_id', 'agent_name', 'runner_id', 'runner_selection'])(

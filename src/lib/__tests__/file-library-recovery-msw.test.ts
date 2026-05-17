@@ -7,6 +7,13 @@ import { taskHandlers } from '@/mocks/handlers/tasks';
 const server = setupServer(...fileHandlers, ...taskHandlers);
 const baseUrl = 'http://localhost/api/v1/workspaces/ws_default/projects/proj_001';
 
+type SavePointListItem = {
+  created_at: string;
+  file_library_id: string;
+  id: string;
+  message?: string;
+};
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
@@ -88,13 +95,16 @@ async function createSavePointAndReadFirst(libraryId: string, message: string) {
   });
   const list = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
   expect(list.status).toBe(200);
-  const listBody = await list.json() as { items?: Array<{ id?: string; file_library_id?: string; message?: string }> };
+  const listBody = await list.json() as { items?: SavePointListItem[] };
   const savePoint = (listBody.items ?? []).find((item) => item.message === message);
   expect(savePoint).toMatchObject({
     file_library_id: libraryId,
     message,
   });
-  return savePoint ?? {};
+  expect(savePoint?.id).toEqual(expect.any(String));
+  expect(savePoint?.created_at).toEqual(expect.any(String));
+  if (!savePoint) throw new Error(`Expected save point for message "${message}"`);
+  return savePoint;
 }
 
 async function getFileLibrary(libraryId: string) {

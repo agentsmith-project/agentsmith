@@ -145,10 +145,14 @@ function readLastRestoreString(
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 function getFileLibraryLastRestore(library: FileLibrary | null): FileLibraryLastRestoreView | null {
-  const record = (library as (FileLibrary & { last_restore?: unknown }) | null)?.last_restore;
-  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
-  const candidate = record as Record<string, unknown>;
+  const record: unknown = library?.last_restore;
+  if (!isUnknownRecord(record)) return null;
+  const candidate = record;
   const sourceSavePointId = readLastRestoreString(candidate, 'source_save_point_id');
   const sourceSavePointLabel = readLastRestoreString(candidate, 'source_save_point_label');
   const sourceSavePointCreatedAt = readLastRestoreString(candidate, 'source_save_point_created_at');
@@ -709,7 +713,7 @@ export function FileLibraryRecoveryDialog({
     if (!open || activeVersionOperationQuery.isLoading) return;
     const nextOperation = normalizeVersionOperation(activeVersionOperationQuery.data?.operation);
     if (!nextOperation) {
-      if (isVersionOperationActive(restoreOperation)) {
+      if (restoreOperation && isVersionOperationActive(restoreOperation)) {
         const localStarted = localVersionOperationStartedRef.current;
         if (
           localStarted?.id === restoreOperation.id
@@ -774,12 +778,13 @@ export function FileLibraryRecoveryDialog({
     if (trackedOperation.kind === 'save_point_create') {
       const resultSavePointId = getVersionOperationResultSavePointId(trackedOperation);
       if (resultSavePointId) {
-        setPendingSavePointCreate((current) => (
-          current?.operationId === trackedOperation.id
-          && current.resultSavePointId !== resultSavePointId
-            ? { ...current, resultSavePointId }
-            : current
-        ));
+        setPendingSavePointCreate((current) => {
+          if (!current) return current;
+          return current.operationId === trackedOperation.id
+            && current.resultSavePointId !== resultSavePointId
+              ? { ...current, resultSavePointId }
+              : current;
+        });
       }
     }
   }, [

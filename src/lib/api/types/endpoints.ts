@@ -8,6 +8,10 @@
  */
 
 import type { EndpointCapabilityType, EndpointUpstreamProtocol } from './index';
+export type {
+  FileLibraryOperationLookup,
+  GetFileLibraryActiveOperationResponse,
+} from './files';
 
 // ============================================================
 // Custom Endpoint Types

@@ -311,6 +311,45 @@ describe('file library mutations', () => {
     });
   });
 
+  it('rejects accepted delete polling when the operation lookup is not a delete projection', async () => {
+    const { Wrapper } = createTestHarness();
+    mockDeleteLibrary.mockResolvedValueOnce({
+      status: 'accepted',
+      file_library_id: 'lib_1',
+      file_library_status: 'deleting',
+      operation_id: 'op_delete_version_shape',
+      operation_status: 'pending',
+    });
+    mockGetFileLibraryOperationProjection.mockResolvedValueOnce({
+      id: 'op_delete_version_shape',
+      kind: 'restore',
+      file_library_id: 'lib_1',
+      source_save_point_id: 'sp_1',
+      status: 'succeeded',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:01.000Z',
+    });
+
+    const { result } = renderHook(() => useDeleteFileLibrary(), {
+      wrapper: Wrapper,
+    });
+
+    await expect(result.current.mutateAsync({
+      workspaceId,
+      projectId,
+      libraryId: 'lib_1',
+    })).rejects.toMatchObject({
+      errorCode: 'FILE_LIBRARY_OPERATION_PROJECTION_INVALID',
+    });
+
+    expect(mockDeleteLibrary).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(handleErrorForToast).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'FILE_LIBRARY_OPERATION_PROJECTION_INVALID' }),
+      'useDeleteFileLibrary',
+    );
+  });
+
   it('stops accepted delete polling on operator intervention and reports an error', async () => {
     const { queryClient, Wrapper } = createTestHarness();
     const listKey = ['file-libraries', workspaceId, projectId];

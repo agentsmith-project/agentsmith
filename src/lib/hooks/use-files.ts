@@ -10,7 +10,11 @@ import { getApiClient, FilesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { toast } from '@/components/ui/toast';
 import { APIError, handleErrorForToast } from '@/lib/api/errors';
-import type { DeleteFileLibraryResult, FileLibraryOperationProjection } from '@/lib/api/types';
+import type {
+  DeleteFileLibraryResult,
+  FileLibraryOperationLookup,
+  FileLibraryOperationProjection,
+} from '@/lib/api/types';
 
 const FILE_LIBRARY_CONFLICT_ERROR_CODES = new Set([
   'FILE_LIBRARY_TASK_IN_USE',
@@ -84,6 +88,12 @@ function isFileLibraryDeleteLifecycleError(error: unknown) {
   return error instanceof APIError && FILE_LIBRARY_DELETE_LIFECYCLE_ERROR_CODES.has(error.errorCode);
 }
 
+function isFileLibraryOperationProjection(
+  operation: FileLibraryOperationLookup,
+): operation is FileLibraryOperationProjection {
+  return 'operation_id' in operation && 'operation_state' in operation;
+}
+
 function normalizeOperationState(projection: FileLibraryOperationProjection): string {
   return projection.operation_state.trim().toLowerCase();
 }
@@ -126,6 +136,24 @@ function createDeleteOperationError(
   );
 }
 
+function createDeleteOperationProjectionError(
+  libraryId: string,
+  operationId: string,
+  operation: FileLibraryOperationLookup,
+): APIError {
+  return new APIError(
+    'FILE_LIBRARY_OPERATION_PROJECTION_INVALID',
+    'file_library_delete_operation_projection_invalid',
+    undefined,
+    409,
+    {
+      file_library_id: libraryId,
+      operation_id: operationId,
+      operation_shape: 'kind' in operation ? operation.kind : 'restore',
+    },
+  );
+}
+
 async function resolveAcceptedDelete(input: {
   filesAPI: FilesAPI;
   workspaceId: string;
@@ -134,11 +162,15 @@ async function resolveAcceptedDelete(input: {
   operationId: string;
 }): Promise<DeleteFileLibraryResult> {
   for (let attempt = 0; attempt < FILE_LIBRARY_DELETE_MAX_POLL_ATTEMPTS; attempt += 1) {
-    const projection = await input.filesAPI.getFileLibraryOperationProjection(
+    const operation = await input.filesAPI.getFileLibraryOperationProjection(
       input.workspaceId,
       input.projectId,
       input.operationId,
     );
+    if (!isFileLibraryOperationProjection(operation)) {
+      throw createDeleteOperationProjectionError(input.libraryId, input.operationId, operation);
+    }
+    const projection = operation;
     if (isDeleteOperationSucceeded(projection)) {
       return input.filesAPI.deleteLibrary(input.workspaceId, input.projectId, input.libraryId);
     }

@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
 import { toast } from '@/components/ui/toast';
@@ -266,7 +266,7 @@ export function useFileLibraryActiveVersionOperation(
   projectId: string,
   libraryId: string | null | undefined,
   options?: { enabled?: boolean },
-) {
+): UseQueryResult<GetFileLibraryActiveOperationResponse, Error> {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const safeLibraryId = libraryId ?? '';
@@ -281,7 +281,7 @@ export function useFileLibraryActiveVersionOperation(
     () => queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
     [projectId, safeLibraryId, workspaceId],
   );
-  const query = useQuery({
+  const query = useQuery<GetFileLibraryActiveOperationResponse>({
     queryKey: activeOperationKey,
     queryFn: async () => {
       const response = await filesAPI.getActiveFileLibraryOperation(workspaceId, projectId, safeLibraryId);
@@ -363,7 +363,7 @@ export function useFileLibraryActiveVersionOperation(
               activeOperationKey,
               normalizedResolvedOperation,
             );
-            if (isVersionOperationActive(normalizedResolvedOperation)) {
+            if (normalizedResolvedOperation && isVersionOperationActive(normalizedResolvedOperation)) {
               lastActiveOperationRef.current = {
                 workspaceId,
                 projectId,
@@ -413,7 +413,7 @@ export function useFileLibraryVersionOperationLookup(
   libraryId: string | null | undefined,
   operationId: string | null | undefined,
   options?: { enabled?: boolean },
-) {
+): UseQueryResult<FileLibraryVersionOperationWithResult | null, Error> {
   const queryClient = useQueryClient();
   const filesAPI = new FilesAPI(getApiClient());
   const safeLibraryId = libraryId ?? '';
@@ -438,7 +438,7 @@ export function useFileLibraryVersionOperationLookup(
         versionOperationKey,
       );
       if (shouldKeepTerminalVersionOperation(currentOperation, nextOperation)) {
-        return currentOperation;
+        return currentOperation ?? null;
       }
       return nextOperation;
     },

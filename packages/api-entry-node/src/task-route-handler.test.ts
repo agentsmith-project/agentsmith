@@ -9999,6 +9999,10 @@ describe('task-route-handler workspace access', () => {
       const releasePod = vi.fn(async () => {
         await releaseDrain.promise;
       });
+      const bindingReleaseDrain = createDeferred<void>();
+      const deleteWorkspaceBinding = vi.fn(async () => {
+        await bindingReleaseDrain.promise;
+      });
       deps.internalAgentPodManager = {
         ensureAgentReady,
         keepalive: vi.fn(async () => undefined),
@@ -10040,6 +10044,7 @@ describe('task-route-handler workspace access', () => {
             fileLibraryId: input.fileLibraryId,
           },
         })),
+        deleteWorkspaceBinding,
       } as never;
 
       const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
@@ -10159,6 +10164,7 @@ describe('task-route-handler workspace access', () => {
       })).resolves.toBe(true);
       expect(firstDeleteRes.statusCode).toBe(204);
       expect(releasePod).not.toHaveBeenCalled();
+      expect(deleteWorkspaceBinding).not.toHaveBeenCalled();
 
       const finalDeleteRes = { statusCode: 0, end: vi.fn() } as never;
       const finalDelete = handleTaskRoute({
@@ -10182,6 +10188,11 @@ describe('task-route-handler workspace access', () => {
       });
       expect(finalDeleteRes.statusCode).toBe(0);
       releaseDrain.resolve();
+      await vi.waitFor(() => {
+        expect(deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
+      });
+      expect(finalDeleteRes.statusCode).toBe(0);
+      bindingReleaseDrain.resolve();
       await expect(finalDelete).resolves.toBe(true);
       expect(finalDeleteRes.statusCode).toBe(204);
       expect(releasePod).toHaveBeenCalledWith(
@@ -10189,6 +10200,10 @@ describe('task-route-handler workspace access', () => {
         'proj_1',
         sanitizeWorkloadId('task_internal_terminal'),
       );
+      expect(deleteWorkspaceBinding).toHaveBeenCalledWith({
+        workspaceId: 'ws_default',
+        fileLibraryId: 'lib_internal_terminal',
+      });
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

@@ -363,6 +363,7 @@ type InternalTaskWorkloadIdentity = {
   taskId: string;
   userId: string;
   agentId: string;
+  workspaceFileLibraryId?: string | null;
 };
 
 type ManagedTerminalRuntimeDispatchContext = {
@@ -1943,26 +1944,65 @@ async function maybeReleaseInternalAgentWorkload(
   }
   const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
   if (internalWorkloadCoordinator) {
-    await internalWorkloadCoordinator.requestHardTeardown({
+    const released = await internalWorkloadCoordinator.requestHardTeardown({
       workspaceId: identity.workspaceId,
       projectId: identity.projectId,
       workloadId: sanitizeWorkloadId(identity.taskId),
-    }).catch((err: unknown) => {
-      console.warn(
-        '[sandbox] requestHardTeardown failed for task %s: %s',
-        identity.taskId,
-        err instanceof Error ? err.message : err,
-      );
-    });
+    }).then(
+      () => true,
+      (err: unknown) => {
+        console.warn(
+          '[sandbox] requestHardTeardown failed for task %s: %s',
+          identity.taskId,
+          err instanceof Error ? err.message : err,
+        );
+        return false;
+      },
+    );
+    if (!released) return;
+    await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
     return;
   }
   if (!deps.internalAgentPodManager) return;
-  await deps.internalAgentPodManager.releasePod(
+  const released = await deps.internalAgentPodManager.releasePod(
     identity.workspaceId,
     identity.projectId,
     sanitizeWorkloadId(identity.taskId),
-  ).catch((err: unknown) => {
-    console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, err instanceof Error ? err.message : err);
+  ).then(
+    () => true,
+    (err: unknown) => {
+      console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, err instanceof Error ? err.message : err);
+      return false;
+    },
+  );
+  if (!released) return;
+  await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+}
+
+async function maybeReleaseInternalAgentWorkspaceBinding(
+  deps: NodeApiDeps,
+  identity: InternalTaskWorkloadIdentity,
+): Promise<void> {
+  const workspaceFileLibraryId = identity.workspaceFileLibraryId?.trim();
+  if (!workspaceFileLibraryId) return;
+  if (await hasBlockingTerminalSessionsForTask({
+    terminalService: deps.notebookTerminalService,
+    workspaceId: identity.workspaceId,
+    projectId: identity.projectId,
+    taskId: identity.taskId,
+    userId: identity.userId,
+  })) {
+    return;
+  }
+  if (await hasBlockingTaskRunForTerminal(deps.cache, identity.taskId)) {
+    return;
+  }
+  const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager
+    ?? deps.internalAgentWorkspaceProvisioner;
+  if (typeof workspaceBindingManager?.deleteWorkspaceBinding !== 'function') return;
+  await workspaceBindingManager.deleteWorkspaceBinding({
+    workspaceId: identity.workspaceId,
+    fileLibraryId: workspaceFileLibraryId,
   });
 }
 
@@ -2404,6 +2444,7 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
         taskId: string;
         userId: string;
         agentId: string;
+        runtimeDispatchContext?: Record<string, unknown>;
       }) => void | Promise<void>;
     }) => void;
   };
@@ -2418,12 +2459,14 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
       await ensureManagedTerminalRuntimeReady(deps, session);
     },
     onSessionClosed: async (session) => {
+      const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);
       await maybeReleaseInternalAgentWorkload(deps, {
         workspaceId: session.workspaceId,
         projectId: session.projectId,
         taskId: session.taskId,
         userId: session.userId,
         agentId: session.agentId,
+        workspaceFileLibraryId: runtimeDispatchContext?.managedInternalAgent.workspaceFileLibraryId ?? null,
       });
     },
   });

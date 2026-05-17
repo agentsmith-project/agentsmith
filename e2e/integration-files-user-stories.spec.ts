@@ -550,14 +550,39 @@ async function downloadTextFileViaApi(args: {
   libraryId: string;
   path: string;
 }): Promise<string> {
+  const result = await downloadTextFileViaApiResult(args);
+  expect(result.status, result.body).toBe('ok');
+  return result.body;
+}
+
+async function downloadTextFileViaApiResult(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  path: string;
+}): Promise<{
+  status: 'ok' | 'file_download_pending' | 'error';
+  statusCode: number;
+  body: string;
+}> {
   const headers = await authHeaders(args.page);
   const response = await args.page.request.get(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/download?path=${encodeURIComponent(args.path)}`,
     { headers },
   );
   const body = await response.text();
-  expect(response.ok(), body).toBe(true);
-  return body;
+  const status = response.status();
+  if (response.ok()) {
+    return { status: 'ok', statusCode: status, body };
+  }
+  if (
+    status === 404
+    && /RESOURCE_NOT_FOUND|file_library_object_not_found|file_library_download_not_found|not_found/.test(body)
+  ) {
+    return { status: 'file_download_pending', statusCode: status, body };
+  }
+  return { status: 'error', statusCode: status, body };
 }
 
 async function waitForTextFileContentViaApi(args: {
@@ -569,15 +594,20 @@ async function waitForTextFileContentViaApi(args: {
   expectedContent: string;
   timeoutMs?: number;
 }): Promise<void> {
-  await expect.poll(async () => (
-    await downloadTextFileViaApi({
+  await expect.poll(async () => {
+    const result = await downloadTextFileViaApiResult({
       page: args.page,
       workspaceId: args.workspaceId,
       projectId: args.projectId,
       libraryId: args.libraryId,
       path: args.path,
-    })
-  ).trim(), {
+    });
+    if (result.status === 'file_download_pending') {
+      return 'file_download_pending';
+    }
+    expect(result.status, result.body).toBe('ok');
+    return result.body.trim();
+  }, {
     timeout: args.timeoutMs ?? 120_000,
     intervals: [1_000, 2_000, 5_000],
     message: `file content did not reach expected state: ${args.path}`,

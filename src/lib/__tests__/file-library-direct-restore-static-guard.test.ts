@@ -249,6 +249,15 @@ describe('file-library direct restore static guard', () => {
     expect(e2eSource).toContain('hidden_runtime_restore_status=ok');
   });
 
+  it('keeps text download polling retryable while Files export catches up', () => {
+    const e2eSource = readFileSync('e2e/integration-files-user-stories.spec.ts', 'utf8');
+
+    expect(e2eSource).toContain('downloadTextFileViaApiResult');
+    expect(e2eSource).toContain('file_library_object_not_found');
+    expect(e2eSource).toContain('file_download_pending');
+    expect(e2eSource).toContain('status === 404');
+  });
+
   it('keeps focused e2e evidence that restore confirm does not create save points or call legacy routes', () => {
     const e2eSource = readFileSync('e2e/integration-files-user-stories.spec.ts', 'utf8');
 

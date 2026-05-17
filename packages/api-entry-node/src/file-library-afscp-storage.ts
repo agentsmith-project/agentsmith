@@ -24,6 +24,7 @@ import { guessFileLibraryContentType } from './file-library-content-type.js';
 import { createAbortError } from './object-stream-bridge.js';
 
 export const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
+const READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
 
 export type FileLibraryStorageOperationStatus =
   | 'pending'
@@ -800,6 +801,26 @@ function ensureOk(response: Response, fallbackMessage: string): void {
 
 function basicAuthorization(access: AfscpExportAccessCredential): string {
   return `Basic ${Buffer.from(`${access.auth.username}:${access.auth.password}`, 'utf8').toString('base64')}`;
+}
+
+async function waitForReadExportDownloadRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (delayMs <= 0) return;
+  if (signal?.aborted) {
+    throw createAbortError(signal.reason, 'file_library_download_aborted');
+  }
+  await new Promise<void>((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const handleAbort = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', handleAbort);
+      reject(createAbortError(signal?.reason, 'file_library_download_aborted'));
+    };
+    timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', handleAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', handleAbort, { once: true });
+  });
 }
 
 export function normalizeAfscpFileLibraryPath(input: string): string {
@@ -2029,41 +2050,52 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     signal?: AbortSignal;
   }): Promise<FileLibraryDownloadResult> {
     const objectPath = normalizeAfscpFileLibraryPath(input.objectPath);
-    const context = await this.createExportContext(input, 'read_only');
-    try {
-      const response = await this.webdavFetch(context.access, objectPath, {
-        method: 'GET',
-        signal: input.signal,
-      });
-      ensureOk(response, 'file_library_download_failed');
-      if (!response.body) {
-        throw new Error('file_library_download_failed');
-      }
-      const stream = Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>);
-      const release = this.bindExportReleaseToDownloadStream({
-        stream,
-        input,
-        context,
-      });
-      let cancelled = false;
-      return {
-        meta: responseMeta(objectPath, response),
-        download: {
+    for (let attempt = 0; attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length; attempt += 1) {
+      await waitForReadExportDownloadRetry(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+      const context = await this.createExportContext(input, 'read_only');
+      try {
+        const response = await this.webdavFetch(context.access, objectPath, {
+          method: 'GET',
+          signal: input.signal,
+        });
+        if (
+          response.status === 404
+          && attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length - 1
+        ) {
+          await this.revokeExportAfterUse(input, context);
+          continue;
+        }
+        ensureOk(response, 'file_library_download_failed');
+        if (!response.body) {
+          throw new Error('file_library_download_failed');
+        }
+        const stream = Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>);
+        const release = this.bindExportReleaseToDownloadStream({
           stream,
-          cancel: async (reason?: unknown) => {
-            if (!cancelled && !stream.destroyed) {
-              cancelled = true;
-              stream.once('error', () => undefined);
-              stream.destroy(createAbortError(reason, 'file_library_download_aborted'));
-            }
-            await release();
+          input,
+          context,
+        });
+        let cancelled = false;
+        return {
+          meta: responseMeta(objectPath, response),
+          download: {
+            stream,
+            cancel: async (reason?: unknown) => {
+              if (!cancelled && !stream.destroyed) {
+                cancelled = true;
+                stream.once('error', () => undefined);
+                stream.destroy(createAbortError(reason, 'file_library_download_aborted'));
+              }
+              await release();
+            },
           },
-        },
-      };
-    } catch (error) {
-      await this.revokeExportAfterUse(input, context);
-      throw error;
+        };
+      } catch (error) {
+        await this.revokeExportAfterUse(input, context);
+        throw error;
+      }
     }
+    throw new Error('file_library_object_not_found');
   }
 
   async getObjectMeta(input: FileLibraryStorageLibraryInput & {

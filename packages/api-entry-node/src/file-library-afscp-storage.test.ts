@@ -978,6 +978,44 @@ describe('AFSCP File Library storage adapter', () => {
     })));
   });
 
+  it('retries a read export download when a just-released writer is not visible yet', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(
+        Readable.toWeb(Readable.from(['durable writer content'])) as unknown as BodyInit,
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Content-Length': '22',
+            'Last-Modified': 'Sat, 09 May 2026 00:00:00 GMT',
+          },
+        },
+      )) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    const result = await adapter.downloadObject({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      objectPath: 'docs/from-terminal.txt',
+      requestId: 'req_download_after_writer_release',
+    });
+
+    expect(client.createExport).toHaveBeenCalledTimes(2);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      exportId: 'export_flib_123',
+    }));
+    expect(result.meta.size_bytes).toBe(22);
+
+    result.download.stream.resume();
+    await finished(result.download.stream);
+    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalledTimes(2));
+  });
+
   it('admits save point creation without polling terminal clone state or persisting raw ids in public state', async () => {
     const client = createProductClient({
       pollOperation: vi.fn(async () => ({

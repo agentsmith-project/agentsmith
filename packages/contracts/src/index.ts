@@ -401,6 +401,7 @@ export const FileLibraryRestoreOperationStatusSchema = z.enum([
   'restoring',
   'succeeded',
   'failed',
+  'recovery_required',
 ]);
 
 export const FileLibraryRestoreOperationSchema = z.object({
@@ -408,6 +409,7 @@ export const FileLibraryRestoreOperationSchema = z.object({
   file_library_id: z.string().min(1),
   source_save_point_id: z.string().min(1),
   status: FileLibraryRestoreOperationStatusSchema,
+  failure_reason: z.string().min(1).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 }).strict();
@@ -438,7 +440,10 @@ export const FileLibraryVersionOperationSchema = z.object({
 }).strict();
 
 export const GetFileLibraryActiveOperationResponseSchema = z.object({
-  operation: FileLibraryVersionOperationSchema.nullable(),
+  operation: z.union([
+    FileLibraryVersionOperationSchema,
+    FileLibraryRestoreOperationSchema,
+  ]).nullable(),
 }).strict();
 
 export const CreateFileLibraryRestoreRequestSchema = z.object({
@@ -469,6 +474,7 @@ export const CreateTaskFileTemplateRequestSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
   source_library_id: z.string().min(1),
+  publish_on_create: z.boolean().optional(),
 }).strict();
 
 export const TaskInputRefInputSchema = z.object({

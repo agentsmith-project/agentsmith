@@ -11,6 +11,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/components/ui/toast';
 import { FilesAPI, getApiClient } from '@/lib/api';
 import type {
+  FileLibraryOperationProjection,
   FileLibraryVersionOperation,
   FileLibraryRestoreOperation,
   GetFileLibraryActiveOperationResponse,
@@ -47,6 +48,23 @@ function isVersionOperationTerminal(operation: FileLibraryVersionOperation | nul
   return operation?.status === 'succeeded'
     || operation?.status === 'failed'
     || operation?.status === 'recovery_required';
+}
+
+type FileLibraryVersionOperationLookup =
+  | FileLibraryOperationProjection
+  | FileLibraryVersionOperation
+  | FileLibraryRestoreOperation;
+
+function isOperationProjection(operation: FileLibraryVersionOperationLookup): operation is FileLibraryOperationProjection {
+  return 'operation_id' in operation && 'operation_state' in operation;
+}
+
+function isRestoreOperation(operation: FileLibraryVersionOperationLookup): operation is FileLibraryRestoreOperation {
+  return !('kind' in operation)
+    && 'id' in operation
+    && 'file_library_id' in operation
+    && 'source_save_point_id' in operation
+    && 'status' in operation;
 }
 
 export function restoreOperationToVersionOperation(
@@ -106,6 +124,14 @@ function activeVersionOperationResponse(
   return { operation };
 }
 
+function normalizeActiveVersionOperation(
+  operation: FileLibraryVersionOperationLookup | null | undefined,
+): FileLibraryVersionOperation | null {
+  if (!operation) return null;
+  if (isOperationProjection(operation)) return null;
+  return isRestoreOperation(operation) ? restoreOperationToVersionOperation(operation) : operation;
+}
+
 function fileObjectQueryMatches(
   queryKey: readonly unknown[],
   workspaceId: string,
@@ -144,19 +170,26 @@ async function invalidateRestoreRelatedCaches(
   workspaceId: string,
   projectId: string,
   libraryId: string,
+  options: { includeActiveOperation?: boolean } = { includeActiveOperation: true },
 ) {
-  await Promise.all([
+  const invalidations = [
     invalidateFileObjectCaches(queryClient, workspaceId, projectId, libraryId),
     queryClient.invalidateQueries({
       queryKey: queryKeys.fileLibraries.savePoints(workspaceId, projectId, libraryId),
     }),
     queryClient.invalidateQueries({
-      queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId),
-    }),
-    queryClient.invalidateQueries({
       queryKey: queryKeys.fileLibraries.detail(workspaceId, projectId, libraryId),
     }),
-  ]);
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.taskFileTemplates.list(workspaceId, projectId),
+    }),
+  ];
+  if (options.includeActiveOperation ?? true) {
+    invalidations.push(queryClient.invalidateQueries({
+      queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, libraryId),
+    }));
+  }
+  await Promise.all(invalidations);
 }
 
 export function useFileLibrarySavePoints(
@@ -200,19 +233,20 @@ export function useFileLibraryActiveVersionOperation(
     libraryId: string;
     operation: FileLibraryVersionOperation;
   } | null>(null);
+  const operationLookupInFlightRef = React.useRef<string | null>(null);
   const query = useQuery({
     queryKey: queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
     queryFn: () => filesAPI.getActiveFileLibraryOperation(workspaceId, projectId, safeLibraryId),
     enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!safeLibraryId,
     refetchInterval: (activeQuery) => (
-      isVersionOperationActive(activeQuery.state.data?.operation)
+      isVersionOperationActive(normalizeActiveVersionOperation(activeQuery.state.data?.operation))
         ? ACTIVE_FILE_LIBRARY_OPERATION_REFETCH_INTERVAL_MS
         : false
     ),
     staleTime: 0,
   });
 
-  const operation = query.data?.operation;
+  const operation = normalizeActiveVersionOperation(query.data?.operation);
   React.useEffect(() => {
     if (!safeLibraryId || query.isLoading) return;
     if (isVersionOperationActive(operation)) {
@@ -223,7 +257,9 @@ export function useFileLibraryActiveVersionOperation(
     }
     if (isVersionOperationTerminal(operation)) {
       lastActiveOperationRef.current = null;
-      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId);
+      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId, {
+        includeActiveOperation: false,
+      });
       return;
     }
     const lastActive = lastActiveOperationRef.current;
@@ -234,7 +270,65 @@ export function useFileLibraryActiveVersionOperation(
       && lastActive.projectId === projectId
       && lastActive.libraryId === safeLibraryId
     ) {
-      lastActiveOperationRef.current = null;
+      const operationId = lastActive.operation.id;
+      void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId, {
+        includeActiveOperation: false,
+      });
+      if (operationLookupInFlightRef.current !== operationId) {
+        operationLookupInFlightRef.current = operationId;
+        const operationLookupApi = new FilesAPI(getApiClient());
+        void operationLookupApi.getFileLibraryVersionOperation(
+          workspaceId,
+          projectId,
+          operationId,
+        )
+          .then((resolvedOperation) => {
+            const normalizedResolvedOperation = normalizeActiveVersionOperation(resolvedOperation);
+            operationLookupInFlightRef.current = null;
+            const currentLastActive = lastActiveOperationRef.current;
+            if (
+              currentLastActive?.operation.id !== operationId
+              || currentLastActive.workspaceId !== workspaceId
+              || currentLastActive.projectId !== projectId
+              || currentLastActive.libraryId !== safeLibraryId
+            ) {
+              return;
+            }
+            if (
+              normalizedResolvedOperation?.file_library_id
+              && normalizedResolvedOperation.file_library_id !== safeLibraryId
+            ) {
+              lastActiveOperationRef.current = null;
+              return;
+            }
+            queryClient.setQueryData<GetFileLibraryActiveOperationResponse>(
+              queryKeys.fileLibraries.activeOperation(workspaceId, projectId, safeLibraryId),
+              activeVersionOperationResponse(normalizedResolvedOperation),
+            );
+            if (isVersionOperationActive(normalizedResolvedOperation)) {
+              lastActiveOperationRef.current = {
+                workspaceId,
+                projectId,
+                libraryId: safeLibraryId,
+                operation: normalizedResolvedOperation,
+              };
+              return;
+            }
+            lastActiveOperationRef.current = null;
+            if (isVersionOperationTerminal(normalizedResolvedOperation)) {
+              void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId, {
+                includeActiveOperation: false,
+              });
+            }
+          })
+          .catch(() => {
+            operationLookupInFlightRef.current = null;
+            lastActiveOperationRef.current = null;
+            void invalidateRestoreRelatedCaches(queryClient, workspaceId, projectId, safeLibraryId, {
+              includeActiveOperation: false,
+            });
+          });
+      }
       return;
     }
     if (!operation) {

@@ -888,7 +888,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
   }
 }
 
-export type FileLibrarySavePointPurpose = 'user' | 'task_template_source';
+export type FileLibrarySavePointPurpose = 'user' | 'template_source' | 'task_template_source';
 
 export interface FileLibrarySavePointPublicRecord {
   id: string;
@@ -906,7 +906,12 @@ export interface FileLibrarySavePointMappingRecord extends FileLibrarySavePointP
   updated_at: string;
 }
 
-export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
+export type FileLibraryRestoreOperationStatus =
+  | 'pending'
+  | 'restoring'
+  | 'succeeded'
+  | 'failed'
+  | 'recovery_required';
 export type FileLibraryVersionOperationKind =
   | 'save_point_create'
   | 'restore';
@@ -944,6 +949,7 @@ export interface FileLibraryRestoreOperationPublicRecord {
   file_library_id: string;
   source_save_point_id: string;
   status: FileLibraryRestoreOperationStatus;
+  failure_reason?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1008,6 +1014,7 @@ export interface TaskFileTemplateRecord extends TaskFileTemplatePublicRecord {
   afscp_create_operation_id?: string;
   source_afscp_save_point_id?: string;
   idempotency_key?: string;
+  idempotency_request_hash?: string;
 }
 
 function scopedDigestId(prefix: string, parts: string[], length = 24): string {
@@ -1098,15 +1105,63 @@ export function buildAfscpTemplateId(taskFileTemplateId: string): string {
 export function buildTaskFileTemplateIdempotencyId(input: {
   workspaceId: string;
   projectId: string;
-  sourceLibraryId: string;
   idempotencyKey: string;
 }): string {
   return scopedDigestId('tftpl', [
     input.workspaceId,
     input.projectId,
-    input.sourceLibraryId,
     input.idempotencyKey,
   ]);
+}
+
+export function buildTaskFileTemplateIdempotencyRequestHash(input: {
+  sourceLibraryId: string;
+  name: string;
+  description?: string;
+  publishOnCreate?: boolean;
+}): string {
+  const canonical = JSON.stringify({
+    source_library_id: input.sourceLibraryId,
+    name: input.name,
+    description: input.description ?? null,
+    publish_on_create: input.publishOnCreate === true,
+  });
+  return createHash('sha256').update(canonical).digest('base64url');
+}
+
+const PUBLIC_OPERATION_FAILURE_REASONS = new Set([
+  'file_library_active_writer_blocked',
+  'file_library_capability_denied',
+  'file_library_restore_failed',
+  'file_library_save_point_create_failed',
+  'file_library_storage_admin_action_required',
+  'file_library_template_create_failed',
+  'file_library_template_clone_failed',
+]);
+
+function publicOperationFailureReason(reason: string | undefined, fallback: string): string | undefined {
+  const trimmed = reason?.trim();
+  if (!trimmed) return undefined;
+  if (PUBLIC_OPERATION_FAILURE_REASONS.has(trimmed)) {
+    return trimmed;
+  }
+  const normalized = trimmed.toLowerCase();
+  if (
+    normalized.includes('recovery')
+    || normalized.includes('operator')
+    || normalized.includes('journal')
+    || normalized.includes('control_root')
+    || normalized.includes('/var/lib')
+  ) {
+    return 'file_library_storage_admin_action_required';
+  }
+  if (normalized.includes('writer')) {
+    return 'file_library_active_writer_blocked';
+  }
+  if (normalized.includes('capability')) {
+    return 'file_library_capability_denied';
+  }
+  return fallback;
 }
 
 function publicSavePoint(record: FileLibrarySavePointMappingRecord): FileLibrarySavePointPublicRecord {
@@ -1129,11 +1184,13 @@ function resolveFileLibrarySavePointPurpose(input: {
 function publicRestoreOperation(
   record: FileLibraryRestoreOperationRecord,
 ): FileLibraryRestoreOperationPublicRecord {
+  const failureReason = publicOperationFailureReason(record.failure_reason, 'file_library_restore_failed');
   return {
     id: record.id,
     file_library_id: record.file_library_id,
     source_save_point_id: record.source_save_point_id,
     status: record.status,
+    ...(failureReason ? { failure_reason: failureReason } : {}),
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
@@ -1142,6 +1199,12 @@ function publicRestoreOperation(
 function publicVersionOperation(
   record: FileLibraryVersionOperationRecord,
 ): FileLibraryVersionOperationPublicRecord {
+  const failureReason = publicOperationFailureReason(
+    record.failure_reason,
+    record.kind === 'save_point_create'
+      ? 'file_library_save_point_create_failed'
+      : 'file_library_restore_failed',
+  );
   return {
     id: record.id,
     kind: record.kind,
@@ -1149,7 +1212,7 @@ function publicVersionOperation(
     ...(record.file_library_id ? { file_library_id: record.file_library_id } : {}),
     ...(record.source_save_point_id ? { source_save_point_id: record.source_save_point_id } : {}),
     ...(record.message ? { message: record.message } : {}),
-    ...(record.failure_reason ? { failure_reason: record.failure_reason } : {}),
+    ...(failureReason ? { failure_reason: failureReason } : {}),
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
@@ -1267,6 +1330,17 @@ function isActiveVersionOperationStatus(status: FileLibraryVersionOperationStatu
   return status === 'accepted' || status === 'running';
 }
 
+function isSameVersionOperationIdempotencyRequest(
+  current: FileLibraryVersionOperationRecord,
+  input: {
+    message?: string;
+    sourceSavePointId?: string;
+  },
+): boolean {
+  return (current.message ?? undefined) === (input.message ?? undefined)
+    && (current.source_save_point_id ?? undefined) === (input.sourceSavePointId ?? undefined);
+}
+
 export class JsonDocFileLibraryVersionOperationRepo {
   constructor(
     private readonly docStore: JsonDocStorePort,
@@ -1360,6 +1434,7 @@ export class JsonDocFileLibraryVersionOperationRepo {
       || current.library_id !== input.libraryId
       || current.kind !== input.kind
       || current.idempotency_key !== input.idempotencyKey
+      || !isSameVersionOperationIdempotencyRequest(current, input)
     ) {
       throw new Error('file_library_version_operation_idempotency_conflict');
     }
@@ -1381,6 +1456,25 @@ export class JsonDocFileLibraryVersionOperationRepo {
       || record.workspace_id !== workspaceId
       || record.project_id !== projectId
       || record.library_id !== libraryId
+    ) {
+      return null;
+    }
+    return record;
+  }
+
+  async getByIdInProject(
+    workspaceId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<FileLibraryVersionOperationRecord | null> {
+    const record = await this.docStore.get<FileLibraryVersionOperationRecord>(
+      FILE_LIBRARY_VERSION_OPERATION_COLLECTION,
+      operationId,
+    );
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
     ) {
       return null;
     }
@@ -1592,6 +1686,17 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     return record.status === 'pending' || record.status === 'restoring';
   }
 
+  private isSameIdempotencyRequest(
+    current: FileLibraryRestoreOperationRecord,
+    input: {
+      sourceSavePointId: string;
+      sourceAfscpSavePointId: string;
+    },
+  ): boolean {
+    return current.source_save_point_id === input.sourceSavePointId
+      && current.source_afscp_save_point_id === input.sourceAfscpSavePointId;
+  }
+
   async create(input: FileLibraryRestoreOperationCreateInput): Promise<FileLibraryRestoreOperationRecord> {
     const record = this.buildOperationRecord(
       input,
@@ -1632,6 +1737,7 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       || current.project_id !== input.projectId
       || current.library_id !== input.libraryId
       || current.idempotency_key !== input.idempotencyKey
+      || !this.isSameIdempotencyRequest(current, input)
     ) {
       throw new Error('file_library_restore_operation_idempotency_conflict');
     }
@@ -1648,6 +1754,9 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       input.idempotencyKey,
     );
     if (existing) {
+      if (!this.isSameIdempotencyRequest(existing, input)) {
+        throw new Error('file_library_restore_operation_idempotency_conflict');
+      }
       return { operation: existing, created: false, reason: 'idempotency' };
     }
 
@@ -1686,6 +1795,9 @@ export class JsonDocFileLibraryRestoreOperationRepo {
           && current.library_id === input.libraryId
           && current.idempotency_key === input.idempotencyKey
         ) {
+          if (!this.isSameIdempotencyRequest(current, input)) {
+            throw new Error('file_library_restore_operation_idempotency_conflict');
+          }
           return { operation: current, created: false, reason: 'idempotency' };
         }
         throw new Error('file_library_restore_operation_idempotency_conflict');
@@ -1711,6 +1823,12 @@ export class JsonDocFileLibraryRestoreOperationRepo {
         continue;
       }
       if (this.isActiveOperation(storedOperation)) {
+        if (
+          storedOperation.idempotency_key === input.idempotencyKey
+          && !this.isSameIdempotencyRequest(storedOperation, input)
+        ) {
+          throw new Error('file_library_restore_operation_idempotency_conflict');
+        }
         return {
           operation: storedOperation,
           created: false,
@@ -1827,6 +1945,25 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     return record;
   }
 
+  async getByIdInProject(
+    workspaceId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const record = await this.docStore.get<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      operationId,
+    );
+    if (
+      !record
+      || record.workspace_id !== workspaceId
+      || record.project_id !== projectId
+    ) {
+      return null;
+    }
+    return record;
+  }
+
   async updateStatus(input: {
     workspaceId: string;
     projectId: string;
@@ -1920,6 +2057,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     projectId: string;
     name: string;
     description?: string;
+    status?: TaskFileTemplateStatus;
     sourceLibraryId: string;
     sourceSavePointId?: string;
     createdByUserId: string;
@@ -1927,6 +2065,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     afscpCreateOperationId?: string;
     sourceAfscpSavePointId?: string;
     idempotencyKey?: string;
+    publishOnCreate?: boolean;
   }): TaskFileTemplateRecord {
     const now = this.nowIso();
     const id = input.id ?? generateTaskFileTemplateId();
@@ -1936,7 +2075,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
       project_id: input.projectId,
       name: input.name,
       ...(input.description ? { description: input.description } : {}),
-      status: 'unpublished',
+      status: input.status ?? 'unpublished',
       source_library_id: input.sourceLibraryId,
       ...(input.sourceSavePointId ? { source_save_point_id: input.sourceSavePointId } : {}),
       created_by_user_id: input.createdByUserId,
@@ -1944,6 +2083,9 @@ export class JsonDocProjectTaskFileTemplateRepo {
       ...(input.afscpCreateOperationId ? { afscp_create_operation_id: input.afscpCreateOperationId } : {}),
       ...(input.sourceAfscpSavePointId ? { source_afscp_save_point_id: input.sourceAfscpSavePointId } : {}),
       ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+      ...(input.idempotencyKey
+        ? { idempotency_request_hash: buildTaskFileTemplateIdempotencyRequestHash(input) }
+        : {}),
       created_at: now,
       updated_at: now,
     };
@@ -1955,6 +2097,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     projectId: string;
     name: string;
     description?: string;
+    status?: TaskFileTemplateStatus;
     sourceLibraryId: string;
     sourceSavePointId?: string;
     createdByUserId: string;
@@ -1973,6 +2116,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     projectId: string;
     name: string;
     description?: string;
+    status?: TaskFileTemplateStatus;
     sourceLibraryId: string;
     sourceSavePointId?: string;
     createdByUserId: string;
@@ -1980,6 +2124,7 @@ export class JsonDocProjectTaskFileTemplateRepo {
     afscpCreateOperationId?: string;
     sourceAfscpSavePointId?: string;
     idempotencyKey: string;
+    publishOnCreate?: boolean;
   }): Promise<{ template: TaskFileTemplateRecord; created: boolean }> {
     const record = this.buildCreateRecord({
       ...input,
@@ -1997,12 +2142,30 @@ export class JsonDocProjectTaskFileTemplateRepo {
     if (
       current.workspace_id !== input.workspaceId
       || current.project_id !== input.projectId
-      || current.source_library_id !== input.sourceLibraryId
       || current.idempotency_key !== input.idempotencyKey
+      || !this.isSameIdempotencyRequest(current, input)
     ) {
       throw new Error('task_file_template_idempotency_conflict');
     }
     return { template: current, created: false };
+  }
+
+  private isSameIdempotencyRequest(
+    current: TaskFileTemplateRecord,
+    input: {
+      sourceLibraryId: string;
+      name: string;
+      description?: string;
+      publishOnCreate?: boolean;
+    },
+  ): boolean {
+    const requestHash = buildTaskFileTemplateIdempotencyRequestHash(input);
+    if (current.idempotency_request_hash) {
+      return current.idempotency_request_hash === requestHash;
+    }
+    return current.source_library_id === input.sourceLibraryId
+      && current.name === input.name
+      && (current.description ?? undefined) === (input.description ?? undefined);
   }
 
   async findByIdempotencyKey(input: {
@@ -2011,20 +2174,12 @@ export class JsonDocProjectTaskFileTemplateRepo {
     sourceLibraryId: string;
     idempotencyKey: string;
   }): Promise<TaskFileTemplateRecord | null> {
-    const record = await this.docStore.get<TaskFileTemplateRecord>(
-      TASK_FILE_TEMPLATE_COLLECTION,
-      buildTaskFileTemplateIdempotencyId(input),
-    );
-    if (
-      !record
-      || record.workspace_id !== input.workspaceId
-      || record.project_id !== input.projectId
-      || record.source_library_id !== input.sourceLibraryId
-      || record.idempotency_key !== input.idempotencyKey
-    ) {
-      return null;
-    }
-    return record;
+    const records = await this.docStore.list<TaskFileTemplateRecord>(TASK_FILE_TEMPLATE_COLLECTION, {
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      idempotency_key: input.idempotencyKey,
+    });
+    return records[0] ?? null;
   }
 
   async listByProject(workspaceId: string, projectId: string): Promise<TaskFileTemplateRecord[]> {

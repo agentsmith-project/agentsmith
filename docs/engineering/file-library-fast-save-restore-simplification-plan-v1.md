@@ -155,12 +155,12 @@ States:
 
 - `restoring`: `Restoring files...`
 - `succeeded`: `Files restored.`
-- `failed`: `Restore failed. No successful restore was applied. Review the reason and try again.`
+- `failed`: `Restore failed. No successful restore was applied. Check the file library state, then try again.`
 - `blocked before start`: typed user-action blocker, for example active writer or storage not ready.
 
 Refresh behavior:
 
-- If the page is refreshed while restore is running, reopening Version & templates must show the active restore operation.
+- If the page is refreshed while restore is running, reopening File updates must show the active restore operation.
 - The file table should be disabled or guarded for destructive writes while restore is active.
 - On success, file object caches are invalidated and the browser refetches the current directory.
 

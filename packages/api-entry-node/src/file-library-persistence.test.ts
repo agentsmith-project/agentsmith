@@ -316,6 +316,37 @@ describe('file-library-persistence catalog schema', () => {
     });
   });
 
+  it('persists recovery-required direct restore operations as terminal product state', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+
+    const record = await repo.create({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_recovery',
+      afscpOperationId: 'op_restore_recovery',
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'recovery_required',
+      idempotencyKey: 'restore-key-recovery',
+      createdByUserId: 'user_1',
+      failureReason: 'file_library_storage_admin_action_required',
+    });
+
+    expect(repo.toPublic(record)).toMatchObject({
+      id: record.id,
+      file_library_id: 'flib_restore_recovery',
+      source_save_point_id: 'flsp_restore',
+      status: 'recovery_required',
+      failure_reason: 'file_library_storage_admin_action_required',
+    });
+    await expect(repo.findActiveByLibrary('ws_default', 'proj_1', 'flib_restore_recovery'))
+      .resolves.toBeNull();
+  });
+
   it('creates or reuses one restore operation for a scoped idempotency key', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocFileLibraryRestoreOperationRepo(
@@ -357,19 +388,14 @@ describe('file-library-persistence catalog schema', () => {
       }),
     ]);
 
-    const repeatFromFreshRepo = await new JsonDocFileLibraryRestoreOperationRepo(
+    await expect(new JsonDocFileLibraryRestoreOperationRepo(
       docStore,
       () => '2026-05-09T12:01:00.000Z',
     ).createOrReuseByIdempotencyKey({
       ...input,
       sourceSavePointId: 'flsp_restore_other',
-    });
-    expect(repeatFromFreshRepo.created).toBe(false);
-    expect(repeatFromFreshRepo.operation).toMatchObject({
-      id: first.operation.id,
-      source_save_point_id: 'flsp_restore',
-      idempotency_key: 'restore-key-stable',
-    });
+      sourceAfscpSavePointId: 'sp_restore_other',
+    })).rejects.toThrow('file_library_restore_operation_idempotency_conflict');
   });
 
   it('creates or reuses one file-library version operation for a stable save-point idempotency key', async () => {
@@ -391,23 +417,16 @@ describe('file-library-persistence catalog schema', () => {
     };
 
     const first = await repo.createOrReuseByIdempotencyKey(input);
-    const second = await new JsonDocFileLibraryVersionOperationRepo(
+    await expect(new JsonDocFileLibraryVersionOperationRepo(
       docStore,
       () => '2026-05-09T12:01:00.000Z',
     ).createOrReuseByIdempotencyKey({
       ...input,
       status: 'running',
       message: 'Changed retry body that must not replace original',
-    });
+    })).rejects.toThrow('file_library_version_operation_idempotency_conflict');
 
     expect(first.created).toBe(true);
-    expect(second.created).toBe(false);
-    expect(second.operation).toMatchObject({
-      id: first.operation.id,
-      idempotency_key: 'save-point-key-stable',
-      afscp_operation_id: 'op_save_point_same',
-      message: 'Before edits',
-    });
     await expect(docStore.list<Record<string, unknown>>(
       'project_file_library_version_operations',
       {
@@ -424,7 +443,7 @@ describe('file-library-persistence catalog schema', () => {
     expect(repo.toPublic(first.operation)).not.toHaveProperty('idempotency_key');
   });
 
-  it('creates or reuses one task file template for a scoped source library idempotency key', async () => {
+  it('reuses one task file template only when the idempotency request body matches', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocProjectTaskFileTemplateRepo(
       docStore,
@@ -444,23 +463,27 @@ describe('file-library-persistence catalog schema', () => {
     };
 
     const first = await repo.createOrReuseByIdempotencyKey(input);
-    const second = await new JsonDocProjectTaskFileTemplateRepo(
+    const replay = await new JsonDocProjectTaskFileTemplateRepo(
       docStore,
       () => '2026-05-09T12:01:00.000Z',
-    ).createOrReuseByIdempotencyKey({
-      ...input,
-      name: 'Changed retry body that must not replace original',
-      afscpTemplateId: 'tmpl_retry',
-    });
+    ).createOrReuseByIdempotencyKey(input);
 
     expect(first.created).toBe(true);
-    expect(second.created).toBe(false);
-    expect(second.template).toMatchObject({
+    expect(replay.created).toBe(false);
+    expect(replay.template).toMatchObject({
       id: first.template.id,
       name: 'Starter files',
       idempotency_key: 'task-template-key-stable',
       afscp_template_id: 'tmpl_template_source',
     });
+    await expect(new JsonDocProjectTaskFileTemplateRepo(
+      docStore,
+      () => '2026-05-09T12:02:00.000Z',
+    ).createOrReuseByIdempotencyKey({
+      ...input,
+      name: 'Changed retry body',
+      afscpTemplateId: 'tmpl_retry',
+    })).rejects.toThrow('task_file_template_idempotency_conflict');
     await expect(repo.findByIdempotencyKey({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -656,5 +679,54 @@ describe('file-library-persistence catalog schema', () => {
         purpose: 'user',
       }),
     ]);
+  });
+
+  it('keeps template source save points out of the default user restore point list', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibrarySavePointMappingRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+
+    await repo.upsertFromAfscp({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+      afscpSavePointId: 'sp_template_source',
+      message: 'Template source: Starter',
+      createdAt: '2026-05-09T00:00:00.000Z',
+      purpose: 'template_source',
+    });
+    await repo.upsertFromAfscp({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+      afscpSavePointId: 'sp_user_visible',
+      message: 'Before restore',
+      createdAt: '2026-05-09T00:01:00.000Z',
+      purpose: 'user',
+    });
+
+    await expect(repo.listByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+    })).resolves.toEqual([
+      expect.objectContaining({
+        afscp_save_point_id: 'sp_user_visible',
+        purpose: 'user',
+      }),
+    ]);
+    await expect(repo.listByLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore',
+      includeTemplateSources: true,
+    })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        afscp_save_point_id: 'sp_template_source',
+        purpose: 'template_source',
+      }),
+    ]));
   });
 });

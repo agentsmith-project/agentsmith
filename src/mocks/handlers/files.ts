@@ -40,7 +40,7 @@ type MockTaskHomeBinding = {
 type MockFileLibrarySavePoint = FileLibrarySavePoint & {
   workspace_id: string;
   project_id: string;
-  purpose: 'user' | 'task_template_source';
+  purpose: 'user' | 'template_source' | 'task_template_source';
   snapshot: ObjectRow[];
 };
 
@@ -62,6 +62,7 @@ type MockFileLibraryVersionOperation = FileLibraryVersionOperation & {
 type MockTaskFileTemplate = TaskFileTemplate & {
   snapshot: ObjectRow[];
   idempotency_key?: string;
+  idempotency_signature?: string;
 };
 
 const taskHomeBindingsByLibrary = new Map<string, MockTaskHomeBinding>();
@@ -388,7 +389,7 @@ function createMockFileLibrarySavePoint(input: {
   projectId: string;
   libraryId: string;
   message?: string;
-  purpose?: 'user' | 'task_template_source';
+  purpose?: 'user' | 'template_source' | 'task_template_source';
 }) {
   const now = nowIso();
   const savePoint: MockFileLibrarySavePoint = {
@@ -677,7 +678,11 @@ function findRecentTerminalRestoreOperation(input: {
       operation.workspace_id === input.workspaceId
       && operation.project_id === input.projectId
       && operation.file_library_id === input.libraryId
-      && (operation.status === 'succeeded' || operation.status === 'failed')
+      && (
+        operation.status === 'succeeded'
+        || operation.status === 'failed'
+        || operation.status === 'recovery_required'
+      )
       && typeof operation.terminal_projection_expires_at_ms === 'number'
       && Date.now() <= operation.terminal_projection_expires_at_ms,
     )
@@ -1051,6 +1056,32 @@ export const fileHandlers = [
       operation: latest,
     });
   }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-library-operations/:operationId`, ({ params }) => {
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
+    const operationId = String(params.operationId ?? '');
+    const versionOperation = versionOperationsById.get(operationId);
+    if (
+      versionOperation
+      && versionOperation.workspace_id === workspaceId
+      && versionOperation.project_id === projectId
+    ) {
+      return HttpResponse.json(toPublicMockVersionOperation(versionOperation));
+    }
+    const restoreOperation = restoreOperationsById.get(operationId);
+    if (
+      restoreOperation
+      && restoreOperation.workspace_id === workspaceId
+      && restoreOperation.project_id === projectId
+    ) {
+      return HttpResponse.json(toPublicVersionOperation(restoreOperation));
+    }
+    return HttpResponse.json({
+      error_code: 'FILE_LIBRARY_OPERATION_NOT_FOUND',
+      message: 'file_library_operation_not_found',
+      operation_id: operationId,
+    }, { status: 404 });
+  }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/file-libraries/:id/save-points`, async ({ params, request }) => {
     const availability = rejectUnavailableFileLibraryWrite(params);
     if (availability.response) return availability.response;
@@ -1068,16 +1099,23 @@ export const fileHandlers = [
     const idempotencyScope = `${workspaceId}:${projectId}:${libraryId}:save_point_create:${idempotencyKey}`;
     const existingOperationId = versionOperationIdsByIdempotencyKey.get(idempotencyScope);
     const existingOperation = existingOperationId ? versionOperationsById.get(existingOperationId) : null;
+    const message = typeof body.message === 'string' && body.message.trim().length > 0
+      ? body.message.trim()
+      : undefined;
     if (existingOperation) {
+      if ((existingOperation.message ?? undefined) !== (message ?? undefined)) {
+        return HttpResponse.json({
+          error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+          message: 'file_library_idempotency_conflict',
+        }, { status: 409 });
+      }
       return HttpResponse.json(toPublicMockVersionOperation(existingOperation), { status: 202 });
     }
     const savePoint = createMockFileLibrarySavePoint({
       workspaceId,
       projectId,
       libraryId,
-      message: typeof body.message === 'string' && body.message.trim().length > 0
-        ? body.message.trim()
-        : undefined,
+      message,
     });
     const operation = createMockVersionOperation({
       workspaceId,
@@ -1110,6 +1148,12 @@ export const fileHandlers = [
     const existingOperationId = restoreOperationIdsByIdempotencyKey.get(`${workspaceId}:${projectId}:${libraryId}:${idempotencyKey}`);
     const existingOperation = existingOperationId ? restoreOperationsById.get(existingOperationId) : null;
     if (existingOperation) {
+      if (existingOperation.source_save_point_id !== body.save_point_id) {
+        return HttpResponse.json({
+          error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+          message: 'file_library_idempotency_conflict',
+        }, { status: 409 });
+      }
       return HttpResponse.json(toPublicRestoreOperation(existingOperation));
     }
     if (!body.save_point_id) {
@@ -1269,6 +1313,7 @@ export const fileHandlers = [
       source_library_id?: string;
       name?: string;
       description?: string;
+      publish_on_create?: boolean;
     };
     const workspaceId = String(params.ws ?? '');
     const projectId = String(params.prj ?? '');
@@ -1301,7 +1346,19 @@ export const fileHandlers = [
     const idempotencyScope = `${workspaceId}:${projectId}:${sourceLibrary.id}:${idempotencyKey}`;
     const existingTemplateId = taskFileTemplateIdsByIdempotencyKey.get(idempotencyScope);
     const existingTemplate = existingTemplateId ? taskFileTemplatesById.get(existingTemplateId) : null;
+    const idempotencySignature = JSON.stringify({
+      source_library_id: sourceLibrary.id,
+      name: body.name.trim(),
+      description: body.description?.trim() || null,
+      publish_on_create: body.publish_on_create === true,
+    });
     if (existingTemplate) {
+      if (existingTemplate.idempotency_signature !== idempotencySignature) {
+        return HttpResponse.json({
+          error_code: 'TASK_FILE_TEMPLATE_IDEMPOTENCY_CONFLICT',
+          message: 'task_file_template_idempotency_conflict',
+        }, { status: 409 });
+      }
       return HttpResponse.json(toPublicTaskFileTemplate(existingTemplate), { status: 200 });
     }
     const savePoint = createMockFileLibrarySavePoint({
@@ -1309,7 +1366,7 @@ export const fileHandlers = [
       projectId,
       libraryId: sourceLibrary.id,
       message: `Template source: ${body.name.trim()}`,
-      purpose: 'task_template_source',
+      purpose: 'template_source',
     });
     const now = nowIso();
     const template: MockTaskFileTemplate = {
@@ -1320,11 +1377,12 @@ export const fileHandlers = [
       source_save_point_id: savePoint.id,
       name: body.name.trim(),
       ...(body.description?.trim() ? { description: body.description.trim() } : {}),
-      status: 'unpublished',
+      status: body.publish_on_create === true ? 'published' : 'unpublished',
       created_by_user_id: 'user_001',
       created_at: now,
       updated_at: now,
       idempotency_key: idempotencyKey,
+      idempotency_signature: idempotencySignature,
       snapshot: cloneObjectRows(savePoint.snapshot),
     };
     taskFileTemplatesById.set(template.id, template);
@@ -1342,6 +1400,15 @@ export const fileHandlers = [
         error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND',
         message: 'task_file_template_not_found',
       }, { status: 404 });
+    }
+    if (template.status === 'failed' || !template.source_save_point_id || template.snapshot.length === 0) {
+      return HttpResponse.json({
+        error_code: 'TASK_FILE_TEMPLATE_MATERIAL_NOT_READY',
+        message: 'task_file_template_material_not_ready',
+      }, { status: 409 });
+    }
+    if (template.status === 'published') {
+      return HttpResponse.json(toPublicTaskFileTemplate(template));
     }
     template.status = 'published';
     template.updated_at = nowIso();

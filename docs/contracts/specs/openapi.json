@@ -3333,7 +3333,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileLibraryOperationProjection"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FileLibraryOperationProjection"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryVersionOperation"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FileLibraryRestoreOperation"
+                    }
+                  ]
                 }
               }
             }
@@ -13763,8 +13773,12 @@
               "pending",
               "restoring",
               "succeeded",
-              "failed"
+              "failed",
+              "recovery_required"
             ]
+          },
+          "failure_reason": {
+            "type": "string"
           },
           "created_at": {
             "type": "string",
@@ -13840,6 +13854,9 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/FileLibraryVersionOperation"
+              },
+              {
+                "$ref": "#/components/schemas/FileLibraryRestoreOperation"
               },
               {
                 "type": "null"
@@ -13951,6 +13968,9 @@
           },
           "source_library_id": {
             "type": "string"
+          },
+          "publish_on_create": {
+            "type": "boolean"
           }
         }
       },

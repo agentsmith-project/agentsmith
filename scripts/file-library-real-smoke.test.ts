@@ -46,7 +46,9 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('direct restore operation did not reference the requested save point');
     expect(script).toContain('wait_restore_operation_terminal()');
     expect(script).not.toContain('is no longer active');
-    expect(script).toContain('disappeared from active projection before terminal succeeded');
+    expect(script).not.toContain('disappeared from active projection before terminal succeeded');
+    expect(script).toContain('/file-library-operations/${operation_id}');
+    expect(script).toContain('restore_operation_lookup_succeeded');
     expect(script).not.toMatch(/if \[\[ -z "\$\{operation_status\}" \]\]; then[\s\S]{0,240}return 0/);
     expect(script).toContain('is_restore_operation_succeeded_state()');
     expect(script).toContain('RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="true"');
@@ -69,6 +71,7 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('agentsmith_admission');
     expect(script).toContain('active_projection_first_seen');
     expect(script).toContain('terminal_projection');
+    expect(script).toContain("source: 'agentsmith_file_library_operation_lookup'");
     expect(script).toContain('afscp_worker_hop');
     expect(script).toContain('afscp_operation');
     expect(script).toContain("source: 'not_exposed_by_agentsmith_product_api'");
@@ -82,10 +85,15 @@ describe('file library backend-real smoke project storage readiness', () => {
     expect(script).toContain('/task-file-templates');
     expect(script).toContain('TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY="file-library-smoke-task-file-template-${WORKSPACE_ID}-${PROJECT_ID}-${LIBRARY_ID}"');
     expect(script).toContain('api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "${TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY}"');
+    expect(script).toContain('TASK_FILE_TEMPLATE_LIST_COUNT_BEFORE_REPLAY');
+    expect(script).toContain('TASK_FILE_TEMPLATE_REPLAY_ID="$(cat "${BODY_FILE}" | json_field "j.id")"');
+    expect(script).toContain('task file template idempotency replay returned a different template id');
+    expect(script).toContain('task file template idempotency replay changed template list count');
     expect(script).toContain('/task-file-templates/${TASK_FILE_TEMPLATE_ID}/publish');
     expect(script).toContain('\\"workspace_mode\\":\\"use_template\\"');
     expect(script).toContain('task file template clone did not create an independent file library');
     expect(script).toContain('cloned task file library is missing template source file');
+    expect(script).toContain('cloned task file library changed after source library mutation');
     expect(script).toContain('delete_empty_library_when_terminal()');
     expect(script).toContain('wait_file_library_delete_operation_terminal()');
     expect(script).toContain('assert_no_raw_afscp_ids()');

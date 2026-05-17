@@ -77,6 +77,18 @@ describe('generated story specs', () => {
     expect(committedStories[0]).toHaveProperty('personas');
   });
 
+  it('exposes backend-real file-library version-management steps as visual evidence', async () => {
+    const { generatedSpecs } = await loadCanonicalStoryCatalog();
+    const imageAssetStory = generatedSpecs.find(
+      (story) => story.storyId === 'agent-task-image-asset-savepoint-delete-restore',
+    );
+
+    expect(imageAssetStory?.visualStepIds).toEqual([
+      'create-business-save-point',
+      'restore-save-point',
+    ]);
+  });
+
   it('routes committed generated cache freshness through the explicit check flow', async () => {
     const { stories } = await loadCanonicalStoryCatalog();
     const regenerated = renderGeneratedStorySpecsJson(buildGeneratedStorySpecs(stories));

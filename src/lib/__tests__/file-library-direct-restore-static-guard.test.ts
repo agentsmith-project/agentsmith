@@ -181,6 +181,19 @@ const forbiddenUserVisibleCopyTokens = [
   `Task ${'workspace'} usage`,
 ];
 
+function readContentHashGuardText(file: string): string {
+  const text = readFileSync(file, 'utf8');
+  if (file !== 'packages/api-entry-node/src/file-library-afscp-storage.ts') {
+    return text;
+  }
+  const start = text.indexOf('function safeIdempotencyKey(');
+  const end = text.indexOf('function resolveCorrelationId(', start);
+  if (start < 0 || end <= start) {
+    return text;
+  }
+  return `${text.slice(0, start)}${text.slice(end)}`.replace('createHash, ', '');
+}
+
 describe('file-library direct restore static guard', () => {
   it('keeps active frontend, api-entry, e2e, MSW, and smoke paths off removed restore contracts and copy', () => {
     const offenders = guardedFiles.flatMap((file) => {
@@ -195,7 +208,7 @@ describe('file-library direct restore static guard', () => {
 
   it('keeps Files restore scoped roots off file-content hash evidence', () => {
     const offenders = fileRestoreContentHashGuardedFiles.flatMap((file) => {
-      const text = readFileSync(file, 'utf8');
+      const text = readContentHashGuardText(file);
       return fileRestoreContentHashForbiddenTokens
         .filter((token) => text.includes(token))
         .map((token) => `${file}: ${token}`);

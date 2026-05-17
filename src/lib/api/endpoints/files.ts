@@ -11,7 +11,7 @@ import type {
   DeleteFileLibraryResult,
   FileLibrary,
   GetFileLibraryActiveOperationResponse,
-  FileLibraryOperationProjection,
+  FileLibraryOperationLookup,
   FileLibraryRestoreOperation,
   FileObjectsListParams,
   FileObjectsListResponse,
@@ -114,8 +114,18 @@ export class FilesAPI {
     workspaceId: string,
     projectId: string,
     operationId: string,
-  ): Promise<FileLibraryOperationProjection> {
-    return this.client.get<FileLibraryOperationProjection>(
+  ): Promise<FileLibraryOperationLookup> {
+    return this.client.get<FileLibraryOperationLookup>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-library-operations/${operationId}`,
+    );
+  }
+
+  async getFileLibraryVersionOperation(
+    workspaceId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<FileLibraryOperationLookup> {
+    return this.client.get<FileLibraryOperationLookup>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-library-operations/${operationId}`,
     );
   }

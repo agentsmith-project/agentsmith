@@ -16,18 +16,19 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildAfscpTemplateId,
+  buildTaskFileTemplateIdempotencyRequestHash,
   buildTaskFileTemplateIdempotencyId,
   JsonDocFileLibraryVersionOperationRepo,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocFileLibrarySavePointMappingRepo,
   JsonDocProjectTaskFileTemplateRepo,
-  generateTaskFileTemplateId,
   type FileLibrarySavePointPublicRecord,
   type FileLibraryRestoreOperationRecord,
   type FileLibraryRestoreOperationStatus,
   type FileLibraryVersionOperationRecord,
   type FileLibraryVersionOperationStatus,
+  type TaskFileTemplateRecord,
 } from './file-library-persistence.js';
 import {
   createHttpOperationEnvelope,
@@ -241,7 +242,29 @@ function isFileLibraryRestoreConflictingMutationRoute(routeKind: ProjectFileLibr
     || (routeKind === 'fileLibraryItem' && method === 'DELETE');
 }
 
+function publicRestoreOperationFailureReason(operation: FileLibraryRestoreOperationRecord): string | undefined {
+  if (operation.status === 'recovery_required') {
+    return 'file_library_storage_admin_action_required';
+  }
+  const reason = operation.failure_reason?.trim();
+  if (!reason) {
+    return undefined;
+  }
+  const normalized = reason.toLowerCase();
+  if (
+    normalized.includes('recovery')
+    || normalized.includes('operator')
+    || normalized.includes('journal')
+    || normalized.includes('control_root')
+    || normalized.includes('/var/lib')
+  ) {
+    return 'file_library_storage_admin_action_required';
+  }
+  return publicFileOperationMessage(new Error(reason), 'file_library_restore_failed');
+}
+
 function presentFileLibraryRestoreActiveOperation(operation: FileLibraryRestoreOperationRecord) {
+  const failureReason = publicRestoreOperationFailureReason(operation);
   return {
     id: operation.id,
     kind: 'restore',
@@ -252,7 +275,7 @@ function presentFileLibraryRestoreActiveOperation(operation: FileLibraryRestoreO
       : operation.status === 'restoring'
         ? 'running'
         : operation.status,
-    ...(operation.failure_reason ? { failure_reason: operation.failure_reason } : {}),
+    ...(failureReason ? { failure_reason: failureReason } : {}),
     created_at: operation.created_at,
     updated_at: operation.updated_at,
   };
@@ -266,6 +289,7 @@ function mapStorageOperationStatusToVersionStatus(
   status: FileLibraryStorageOperationStatus,
 ): FileLibraryVersionOperationStatus {
   if (status === 'succeeded') return 'succeeded';
+  if (status === 'recovery_required') return 'recovery_required';
   if (status === 'failed') return 'failed';
   return 'accepted';
 }
@@ -275,9 +299,19 @@ function mapOperationProjectionToVersionStatus(
 ): FileLibraryVersionOperationStatus {
   const errorCode = projection.error?.code?.trim().toLowerCase() ?? '';
   if (
-    errorCode.includes('recovery')
-    || errorCode.includes('journal')
+    errorCode === 'file_library_storage_admin_action_required'
+    || errorCode === 'file_library_operation_requires_recovery'
+    || errorCode === 'file_library_recovery_required'
+    || errorCode.includes('admin_action')
+    || errorCode.includes('storage_admin')
+    || errorCode.includes('requires_recovery')
+    || errorCode.includes('requires recovery')
+    || errorCode.includes('admin action')
+    || errorCode.includes('system_admin')
+    || errorCode.includes('system admin')
     || errorCode.includes('operator')
+    || errorCode.includes('recovery')
+    || errorCode.includes('journal')
   ) {
     return 'recovery_required';
   }
@@ -319,6 +353,48 @@ function mapOperationProjectionToVersionStatus(
     return 'running';
   }
   return 'accepted';
+}
+
+function publicVersionOperationFailureReason(input: {
+  status: FileLibraryVersionOperationStatus;
+  projection?: FileLibraryOperationProjection | null;
+  fallback: string;
+}): string | null {
+  if (input.status === 'succeeded' || input.status === 'accepted' || input.status === 'running') {
+    return null;
+  }
+  const code = input.projection?.error?.code?.trim();
+  if (
+    input.status === 'recovery_required'
+    || code === 'file_library_storage_admin_action_required'
+    || code?.toLowerCase().includes('recovery')
+    || code?.toLowerCase().includes('operator')
+  ) {
+    return 'file_library_storage_admin_action_required';
+  }
+  if (code === 'file_library_active_writer_blocked') {
+    return 'file_library_active_writer_blocked';
+  }
+  if (code === 'file_library_capability_denied') {
+    return 'file_library_capability_denied';
+  }
+  return input.fallback;
+}
+
+function restoreFailureReasonForStatus(status: FileLibraryRestoreOperationStatus): string | null {
+  if (status === 'recovery_required') {
+    return 'file_library_storage_admin_action_required';
+  }
+  if (status === 'failed') {
+    return 'file_library_restore_failed';
+  }
+  return null;
+}
+
+function restoreFailureStatusForPublicMessage(message: string): FileLibraryRestoreOperationStatus {
+  return message === 'file_library_storage_admin_action_required'
+    ? 'recovery_required'
+    : 'failed';
 }
 
 function versionOperationRank(operation: FileLibraryVersionOperationRecord | FileLibraryRestoreOperationRecord): number {
@@ -363,6 +439,9 @@ const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'file_library_save_point_list_pending',
   'file_library_restore_failed',
   'file_library_restore_operation_active',
+  'file_library_idempotency_conflict',
+  'file_library_restore_operation_idempotency_conflict',
+  'file_library_version_operation_idempotency_conflict',
   'file_library_active_writer_blocked',
   'file_library_namespace_project_mismatch',
   'file_library_template_clone_not_allowed',
@@ -373,6 +452,7 @@ const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'file_library_template_clone_failed',
   'file_library_template_clone_pending',
   'file_library_upload_failed',
+  'task_file_template_material_not_ready',
   'invalid_file_library_directory_path',
   'invalid_file_library_path',
 ]);
@@ -482,6 +562,16 @@ function mapFileLibraryControlRouteError(error: unknown, fallbackErrorCode: stri
   if (message === 'file_library_restore_operation_active') {
     return { statusCode: 409, errorCode: 'FILE_LIBRARY_OPERATION_PENDING', message };
   }
+  if (
+    message === 'file_library_idempotency_conflict'
+    || message === 'file_library_restore_operation_idempotency_conflict'
+    || message === 'file_library_version_operation_idempotency_conflict'
+  ) {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT', message: 'file_library_idempotency_conflict' };
+  }
+  if (message === 'task_file_template_material_not_ready') {
+    return { statusCode: 409, errorCode: 'TASK_FILE_TEMPLATE_MATERIAL_NOT_READY', message };
+  }
   if (message === 'file_library_active_writer_blocked') {
     return { statusCode: 409, errorCode: 'FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', message };
   }
@@ -548,15 +638,26 @@ function fileLibraryControlRouteErrorBody(
   return base;
 }
 
-function buildPublishSnapshotAfscpTemplateId(taskFileTemplateId: string, requestId?: string): string {
-  const suffix = requestId?.trim() || generateTaskFileTemplateId();
-  return buildAfscpTemplateId(`${taskFileTemplateId}_publish_${suffix}`);
+function isSameTaskFileTemplateCreateRequest(input: {
+  template: TaskFileTemplateRecord;
+  sourceLibraryId: string;
+  name: string;
+  description?: string;
+  publishOnCreate?: boolean;
+}): boolean {
+  if (input.template.idempotency_request_hash) {
+    return input.template.idempotency_request_hash === buildTaskFileTemplateIdempotencyRequestHash(input);
+  }
+  return input.template.source_library_id === input.sourceLibraryId
+    && input.template.name === input.name
+    && (input.template.description ?? undefined) === (input.description ?? undefined);
 }
 
 function storageStatusToRestoreOperationStatus(
-  status: 'pending' | 'succeeded' | 'failed',
+  status: FileLibraryStorageOperationStatus,
 ): FileLibraryRestoreOperationStatus {
   if (status === 'pending') return 'restoring';
+  if (status === 'recovery_required') return 'recovery_required';
   return status;
 }
 
@@ -565,7 +666,7 @@ function isActiveRestoreOperationStatus(status: FileLibraryRestoreOperationStatu
 }
 
 function isTerminalRestoreOperationStatus(status: FileLibraryRestoreOperationStatus): boolean {
-  return status === 'succeeded' || status === 'failed';
+  return status === 'succeeded' || status === 'failed' || status === 'recovery_required';
 }
 
 function isRecentTerminalRestoreOperation(operation: FileLibraryRestoreOperationRecord): boolean {
@@ -712,7 +813,7 @@ async function reconcileRestoreOperationRecord(input: {
     operationId: operation.id,
     status: storageStatusToRestoreOperationStatus(result.operationStatus),
     afscpOperationId: result.operationId,
-    failureReason: result.operationStatus === 'failed' ? 'file_library_restore_failed' : null,
+    failureReason: restoreFailureReasonForStatus(storageStatusToRestoreOperationStatus(result.operationStatus)),
   });
   const next = updated ?? operation;
   if (isTerminalRestoreOperationStatus(next.status)) {
@@ -828,7 +929,7 @@ async function continuePreStartRestoreOperationReplay(input: {
       projectId: input.projectId,
       libraryId: input.libraryId,
       operationId: operation.id,
-      status: 'failed',
+      status: restoreFailureStatusForPublicMessage(mapped.message),
       failureReason: mapped.message,
     }) ?? operation;
     await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
@@ -895,7 +996,7 @@ async function continuePreStartRestoreOperationReplay(input: {
         operationId: operation.id,
         afscpOperationId: result.operationId,
         status: nextStatus,
-        failureReason: nextStatus === 'failed' ? 'file_library_restore_failed' : null,
+        failureReason: restoreFailureReasonForStatus(nextStatus),
       }) ?? operation;
       if (isTerminalRestoreOperationStatus(updatedOperation.status)) {
         await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
@@ -975,7 +1076,7 @@ function schedulePreStartRestoreOperationContinuation(input: {
         projectId: input.projectId,
         libraryId: input.libraryId,
         operationId: input.operation.id,
-        status: 'failed',
+        status: restoreFailureStatusForPublicMessage(mapped.message),
         failureReason: mapped.message,
       }) ?? input.operation;
       await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({
@@ -1172,7 +1273,11 @@ async function reconcileVersionOperationRecord(input: {
     libraryId: input.libraryId,
     operationId: input.operation.id,
     status,
-    failureReason: projection.error?.code ?? null,
+    failureReason: publicVersionOperationFailureReason({
+      status,
+      projection,
+      fallback: 'file_library_save_point_create_failed',
+    }),
   }) ?? input.operation;
 }
 
@@ -1939,16 +2044,49 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'not_found' });
       return true;
     }
-    if (!deps.fileLibraryStorageAdapter?.enabled) {
-      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
-      return true;
-    }
+    const requestId = readRequestId(req) ?? undefined;
     try {
+      const operationRepo = new JsonDocFileLibraryVersionOperationRepo(deps.docStore);
+      const versionOperation = await operationRepo.getByIdInProject(workspaceId, projectId, operationId);
+      if (versionOperation) {
+        const reconciled = await reconcileVersionOperationRecord({
+          deps,
+          operationRepo,
+          workspaceId,
+          projectId,
+          libraryId: versionOperation.library_id,
+          operation: versionOperation,
+          requestId,
+        });
+        json(res, 200, operationRepo.toPublic(reconciled));
+        return true;
+      }
+
+      const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
+      const restoreOperation = await restoreRepo.getByIdInProject(workspaceId, projectId, operationId);
+      if (restoreOperation) {
+        const reconciled = await reconcileRestoreOperationRecord({
+          deps,
+          restoreRepo,
+          workspaceId,
+          projectId,
+          libraryId: restoreOperation.library_id,
+          operation: restoreOperation,
+          requestId,
+        });
+        json(res, 200, presentFileLibraryRestoreActiveOperation(reconciled));
+        return true;
+      }
+
+      if (!deps.fileLibraryStorageAdapter?.enabled) {
+        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
+        return true;
+      }
       const projection = await deps.fileLibraryStorageAdapter.getOperationProjection({
         workspaceId,
         projectId,
         operationId,
-        requestId: readRequestId(req) ?? undefined,
+        requestId,
       });
       json(res, 200, projection);
     } catch (error) {
@@ -2075,6 +2213,30 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const existingTemplate = await templateRepo.findByIdempotencyKey({
+      workspaceId,
+      projectId,
+      sourceLibraryId: parsed.data.source_library_id,
+      idempotencyKey,
+    });
+    if (existingTemplate) {
+      if (!isSameTaskFileTemplateCreateRequest({
+        template: existingTemplate,
+        sourceLibraryId: parsed.data.source_library_id,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        publishOnCreate: parsed.data.publish_on_create,
+      })) {
+        json(res, 409, {
+          error_code: 'TASK_FILE_TEMPLATE_IDEMPOTENCY_CONFLICT',
+          message: 'task_file_template_idempotency_conflict',
+        });
+        return true;
+      }
+      json(res, 200, templateRepo.toPublic(existingTemplate));
+      return true;
+    }
     const sourceLibrary = await catalogRepo.getById(workspaceId, projectId, parsed.data.source_library_id);
     if (!sourceLibrary) {
       json(res, 404, { error_code: 'FILE_LIBRARY_NOT_FOUND', message: 'file_library_not_found' });
@@ -2084,23 +2246,11 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 409, buildFileLibraryNotReadyResponse(sourceLibrary));
       return true;
     }
-    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-    const existingTemplate = await templateRepo.findByIdempotencyKey({
-      workspaceId,
-      projectId,
-      sourceLibraryId: sourceLibrary.id,
-      idempotencyKey,
-    });
-    if (existingTemplate) {
-      json(res, 200, templateRepo.toPublic(existingTemplate));
-      return true;
-    }
     const templateId = buildTaskFileTemplateIdempotencyId({
       workspaceId,
       projectId,
-      sourceLibraryId: sourceLibrary.id,
       idempotencyKey,
     });
     const afscpTemplateId = buildAfscpTemplateId(templateId);
@@ -2132,7 +2282,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             libraryId: sourceLibrary.id,
             afscpSavePointId: result.sourceSavePointId,
             message: `Template source: ${parsed.data.name}`,
-            purpose: 'task_template_source',
+            purpose: 'template_source',
           })
         : null;
       const { template, created } = await templateRepo.createOrReuseByIdempotencyKey({
@@ -2140,6 +2290,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         projectId,
         name: parsed.data.name,
         description: parsed.data.description,
+        status: parsed.data.publish_on_create ? 'published' : 'unpublished',
         sourceLibraryId: sourceLibrary.id,
         sourceSavePointId: sourceSavePoint?.id,
         sourceAfscpSavePointId: result.sourceSavePointId ?? undefined,
@@ -2147,9 +2298,17 @@ export async function handleProjectFileLibraryRoutes(args: {
         afscpTemplateId: result.templateId,
         afscpCreateOperationId: result.operationId ?? undefined,
         idempotencyKey,
+        publishOnCreate: parsed.data.publish_on_create,
       });
       json(res, created ? 201 : 200, templateRepo.toPublic(template));
     } catch (error) {
+      if (readErrorMessage(error) === 'task_file_template_idempotency_conflict') {
+        json(res, 409, {
+          error_code: 'TASK_FILE_TEMPLATE_IDEMPOTENCY_CONFLICT',
+          message: 'task_file_template_idempotency_conflict',
+        });
+        return true;
+      }
       const mapped = mapFileLibraryControlRouteError(
         error,
         'TASK_FILE_TEMPLATE_CREATE_FAILED',
@@ -2168,79 +2327,29 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
       return true;
     }
-    const requestId = readOptionalRequestId(req);
-    const sourceLibrary = existing.status === 'published'
-      ? null
-      : await catalogRepo.getById(workspaceId, projectId, existing.source_library_id);
-    if (existing.status !== 'published') {
-      if (!deps.fileLibraryStorageAdapter?.enabled) {
-        json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
-        return true;
-      }
-      if (!sourceLibrary) {
-        json(res, 404, { error_code: 'FILE_LIBRARY_NOT_FOUND', message: 'file_library_not_found' });
-        return true;
-      }
-      if (sourceLibrary.status !== 'ready') {
-        json(res, 409, buildFileLibraryNotReadyResponse(sourceLibrary));
-        return true;
-      }
+    if (
+      existing.status === 'failed'
+      || !existing.source_save_point_id
+      || !existing.source_afscp_save_point_id
+      || !existing.afscp_template_id
+    ) {
+      json(res, 409, {
+        error_code: 'TASK_FILE_TEMPLATE_MATERIAL_NOT_READY',
+        message: 'task_file_template_material_not_ready',
+      });
+      return true;
+    }
+    if (existing.status === 'published') {
+      json(res, 200, templateRepo.toPublic(existing));
+      return true;
     }
     try {
-      await ensureNoActiveRestoreOperation({
-        deps,
-        restoreRepo: new JsonDocFileLibraryRestoreOperationRepo(deps.docStore),
+      const updated = await templateRepo.updateStatus({
         workspaceId,
         projectId,
-        libraryId: existing.source_library_id,
-        requestId,
+        taskFileTemplateId,
+        status: 'published',
       });
-      const updated = existing.status === 'published'
-        ? await templateRepo.updateStatus({
-            workspaceId,
-            projectId,
-            taskFileTemplateId,
-            status: 'published',
-          })
-        : await (async () => {
-            if (!sourceLibrary || !deps.fileLibraryStorageAdapter?.enabled) {
-              throw new Error('file_library_template_create_failed');
-            }
-            const result = await deps.fileLibraryStorageAdapter.createTemplateFromLibrary({
-              workspaceId,
-              projectId,
-              libraryId: sourceLibrary.id,
-              templateId: buildPublishSnapshotAfscpTemplateId(taskFileTemplateId, requestId),
-              actorUserId: user.id,
-              requestId,
-            });
-            if (result.operationStatus === 'pending') {
-              throw new Error('file_library_template_create_pending');
-            }
-            if (result.operationStatus === 'failed') {
-              throw new Error('file_library_template_create_failed');
-            }
-            if (!result.sourceSavePointId) {
-              throw new Error('file_library_template_create_failed');
-            }
-            const sourceSavePoint = await new JsonDocFileLibrarySavePointMappingRepo(deps.docStore).upsertFromAfscp({
-              workspaceId,
-              projectId,
-              libraryId: sourceLibrary.id,
-              afscpSavePointId: result.sourceSavePointId,
-              message: `Template source: ${existing.name}`,
-              purpose: 'task_template_source',
-            });
-            return templateRepo.publishWithSnapshot({
-              workspaceId,
-              projectId,
-              taskFileTemplateId,
-              afscpTemplateId: result.templateId,
-              afscpCreateOperationId: result.operationId ?? null,
-              sourceSavePointId: sourceSavePoint.id,
-              sourceAfscpSavePointId: result.sourceSavePointId,
-            });
-          })();
       if (!updated) {
         json(res, 404, { error_code: 'TASK_FILE_TEMPLATE_NOT_FOUND', message: 'task_file_template_not_found' });
         return true;
@@ -2781,6 +2890,13 @@ export async function handleProjectFileLibraryRoutes(args: {
         idempotencyKey,
       );
       if (existingOperation) {
+        if ((existingOperation.message ?? undefined) !== (message ?? undefined)) {
+          json(res, 409, {
+            error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+            message: 'file_library_idempotency_conflict',
+          });
+          return true;
+        }
         json(res, 202, operationRepo.toPublic(existingOperation));
         return true;
       }
@@ -2803,6 +2919,10 @@ export async function handleProjectFileLibraryRoutes(args: {
         idempotencyKey,
         createdByUserId: user.id,
         message,
+        failureReason: publicVersionOperationFailureReason({
+          status: mapStorageOperationStatusToVersionStatus(result.operationStatus),
+          fallback: 'file_library_save_point_create_failed',
+        }) ?? undefined,
       });
       if (result.savePointId) {
         await savePointRepo.upsertFromAfscp({
@@ -2897,14 +3017,6 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-    const savePoint = await savePointRepo.getById(workspaceId, projectId, libraryId, parsed.data.save_point_id);
-    if (!savePoint) {
-      json(res, 404, {
-        error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
-        message: 'file_library_save_point_not_found',
-      });
-      return true;
-    }
     const requestId = readOptionalRequestId(req);
     let startedOperation: FileLibraryRestoreOperationRecord | null = null;
     try {
@@ -2915,6 +3027,20 @@ export async function handleProjectFileLibraryRoutes(args: {
         idempotencyKey,
       );
       if (existing) {
+        const savePoint = await savePointRepo.getById(workspaceId, projectId, libraryId, parsed.data.save_point_id);
+        if (
+          existing.source_save_point_id !== parsed.data.save_point_id
+          || (
+            savePoint
+            && existing.source_afscp_save_point_id !== savePoint.afscp_save_point_id
+          )
+        ) {
+          json(res, 409, {
+            error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+            message: 'file_library_idempotency_conflict',
+          });
+          return true;
+        }
         const reconciled = await reconcileRestoreOperationRecord({
           deps,
           restoreRepo,
@@ -2942,6 +3068,15 @@ export async function handleProjectFileLibraryRoutes(args: {
           requestId,
         });
         json(res, 200, restoreRepo.toPublic(prepared));
+        return true;
+      }
+
+      const savePoint = await savePointRepo.getById(workspaceId, projectId, libraryId, parsed.data.save_point_id);
+      if (!savePoint) {
+        json(res, 404, {
+          error_code: 'FILE_LIBRARY_SAVE_POINT_NOT_FOUND',
+          message: 'file_library_save_point_not_found',
+        });
         return true;
       }
 
@@ -3063,7 +3198,7 @@ export async function handleProjectFileLibraryRoutes(args: {
           projectId,
           libraryId,
           operationId: startedOperation.id,
-          status: 'failed',
+          status: restoreFailureStatusForPublicMessage(mapped.message),
           failureReason: mapped.message,
         }) ?? startedOperation;
         await restoreRuntimeAccessReleaseFenceAfterTerminalRestore({

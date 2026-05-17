@@ -502,6 +502,90 @@ async function selectReadmeFile(page: Page) {
   await expect(page.getByTestId('files__selection-summary')).toBeVisible();
 }
 
+async function installVisualFileUpdateOperationOverride(
+  page: Page,
+  options: {
+    status: 'failed' | 'recovery_required';
+    failureReason: string;
+  },
+) {
+  await page.evaluate((config) => {
+    type HarnessWindow = Window & {
+      __agsVisualFileUpdateFetchInstalled?: boolean;
+      __agsVisualFileUpdateConfig?: {
+        failureReason: string;
+        status: 'failed' | 'recovery_required';
+      };
+    };
+
+    const win = window as HarnessWindow;
+    win.__agsVisualFileUpdateConfig = config;
+    if (win.__agsVisualFileUpdateFetchInstalled) {
+      return;
+    }
+
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : null;
+      const method = (init?.method ?? request?.method ?? 'GET').toUpperCase();
+      const resolvedUrl = request?.url ?? String(input);
+      let url: URL;
+      try {
+        url = new URL(resolvedUrl, window.location.origin);
+      } catch {
+        return originalFetch(input, init);
+      }
+
+      const activeConfig = win.__agsVisualFileUpdateConfig;
+      if (
+        activeConfig
+        && method === 'GET'
+        && /\/api\/v1\/workspaces\/ws_default\/projects\/proj_001\/file-libraries\/lib_shared_default\/operations\/active$/.test(url.pathname)
+      ) {
+        return Promise.resolve(new Response(JSON.stringify({
+          operation: {
+            id: `visual_file_update_${activeConfig.status}`,
+            kind: 'restore',
+            file_library_id: 'lib_shared_default',
+            source_save_point_id: 'sp_visual_file_update',
+            status: activeConfig.status,
+            failure_reason: activeConfig.failureReason,
+            created_at: '2026-05-09T12:01:00.000Z',
+            updated_at: '2026-05-09T12:02:00.000Z',
+          },
+        }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }));
+      }
+
+      return originalFetch(input, init);
+    };
+
+    win.__agsVisualFileUpdateFetchInstalled = true;
+  }, options);
+}
+
+async function openVisualFilesVersionManagementSheet(
+  page: Page,
+  options: { expectRestoreOperation?: boolean } = {},
+) {
+  await expect(page.getByTestId('files__workspace-surface')).toBeVisible();
+  await page.waitForTimeout(1200);
+  await expect(page.getByTestId('files__version-management')).toBeEnabled();
+  await page.getByTestId('files__version-management').click();
+  await expect(page.getByTestId('files__dialog__version-management')).toBeVisible();
+  await expect(page.getByTestId('files__version-management-scope')).toBeVisible();
+  if (options.expectRestoreOperation) {
+    await expect(page.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
+  }
+  await expect(page.getByTestId('files__save-point__message')).toBeVisible();
+  await expect(page.getByTestId('files__template__name')).toBeVisible();
+  await page.waitForTimeout(400);
+}
+
 async function openAuditDetailDrawer(page: Page) {
   const table = page.getByTestId('audit__table');
   await expect(table).toBeVisible();
@@ -1633,6 +1717,52 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       });
       await expect(page.getByTestId('files__dialog__move')).toBeVisible();
       await page.waitForTimeout(400);
+    },
+  },
+  'files-version-management-sheet': {
+    afterNavigate: async ({ page }) => {
+      await openVisualFilesVersionManagementSheet(page);
+      await expect(page.getByRole('heading', { name: 'File updates' })).toBeVisible();
+    },
+    screenshotOptions: {
+      stabilizeAttempts: 2,
+      stabilizeDelayMs: 250,
+    },
+  },
+  'files-version-management-failed': {
+    afterNavigate: async ({ page }) => {
+      await installVisualFileUpdateOperationOverride(page, {
+        status: 'failed',
+        failureReason: 'AFSCP_ERR_JVS_REPO at /var/lib/afscp/control-root/repo_flib_visual',
+      });
+      await openVisualFilesVersionManagementSheet(page, { expectRestoreOperation: true });
+      await expect(page.getByTestId('files__restore-operation-title')).toContainText('Restore failed');
+      await expect(page.getByTestId('files__restore-operation-summary')).toContainText(
+        'Check the file library state',
+      );
+    },
+    screenshotOptions: {
+      stabilizeAttempts: 2,
+      stabilizeDelayMs: 250,
+    },
+  },
+  'files-version-management-recovery-required': {
+    afterNavigate: async ({ page }) => {
+      await installVisualFileUpdateOperationOverride(page, {
+        status: 'recovery_required',
+        failureReason: 'operation_recovery.manual=1 JVS /control-root/recovery_required',
+      });
+      await openVisualFilesVersionManagementSheet(page, { expectRestoreOperation: true });
+      await expect(page.getByTestId('files__restore-operation-title')).toContainText(
+        'Restore needs system-side recovery',
+      );
+      await expect(page.getByTestId('files__restore-operation-summary')).toContainText(
+        'system management-side handling',
+      );
+    },
+    screenshotOptions: {
+      stabilizeAttempts: 2,
+      stabilizeDelayMs: 250,
     },
   },
   'dialog-invite-member': {

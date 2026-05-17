@@ -19,6 +19,7 @@ import {
   FileLibraryRestoreOperationSchema,
   FileLibraryRestoreActiveWriterBlockedErrorSchema,
   FileLibraryRuntimeAccessReleaseBlockedErrorSchema,
+  GetFileLibraryActiveOperationResponseSchema,
   ReleaseFileLibraryRuntimeAccessResponseSchema,
   FileLibraryTaskInUseErrorSchema,
   TaskFileTemplateNotFoundErrorSchema,
@@ -169,6 +170,33 @@ describe('agent task persistent HOME contracts', () => {
       source_save_point_id: 'flsp_safe',
       status: 'restoring',
     });
+    expect(FileLibraryRestoreOperationSchema.parse({
+      id: 'flro_recovery',
+      file_library_id: 'flib_a',
+      source_save_point_id: 'flsp_safe',
+      status: 'recovery_required',
+      failure_reason: 'file_library_storage_admin_action_required',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    })).toMatchObject({
+      status: 'recovery_required',
+      failure_reason: 'file_library_storage_admin_action_required',
+    });
+    expect(GetFileLibraryActiveOperationResponseSchema.parse({
+      operation: {
+        id: 'flro_active_restore',
+        file_library_id: 'flib_a',
+        source_save_point_id: 'flsp_safe',
+        status: 'restoring',
+        created_at: '2026-05-09T00:00:00.000Z',
+        updated_at: '2026-05-09T00:00:00.000Z',
+      },
+    })).toMatchObject({
+      operation: {
+        id: 'flro_active_restore',
+        status: 'restoring',
+      },
+    });
     expect(FileLibraryRestoreOperationSchema.safeParse({
       id: 'flro_raw_summary',
       file_library_id: 'flib_a',
@@ -232,6 +260,7 @@ describe('agent task persistent HOME contracts', () => {
     expect(CreateTaskFileTemplateRequestSchema.safeParse({
       name: 'Template from library',
       source_library_id: 'flib_ready',
+      publish_on_create: true,
     }).success).toBe(true);
 
     expect(CreateTaskFileTemplateRequestSchema.safeParse({
@@ -674,7 +703,7 @@ describe('agent task persistent HOME contracts', () => {
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}',
         method: 'delete',
-        statuses: ['204', '401', '403', '404', '409', '502', '503'],
+        statuses: ['202', '204', '401', '403', '404', '409', '502', '503'],
       },
       {
         path: '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries',
@@ -765,7 +794,7 @@ describe('agent task persistent HOME contracts', () => {
 
     for (const operation of expectedStatusesByOperation) {
       expect(readResponseStatuses(paths, operation.path, operation.method), `${operation.method.toUpperCase()} ${operation.path}`)
-        .toEqual(expect.arrayContaining(operation.statuses));
+        .toEqual(operation.statuses);
     }
 
     for (const path of [

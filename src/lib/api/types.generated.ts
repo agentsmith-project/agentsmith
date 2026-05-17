@@ -3379,6 +3379,7 @@ export interface components {
         CreateTaskFileTemplateRequest: {
             description?: string;
             name: string;
+            publish_on_create?: boolean;
             source_library_id: string;
         };
         CreateTaskRequest: {
@@ -3607,11 +3608,12 @@ export interface components {
         FileLibraryRestoreOperation: {
             /** Format: date-time */
             created_at: string;
+            failure_reason?: string;
             file_library_id: string;
             id: string;
             source_save_point_id: string;
             /** @enum {string} */
-            status: "pending" | "restoring" | "succeeded" | "failed";
+            status: "pending" | "restoring" | "succeeded" | "failed" | "recovery_required";
             /** Format: date-time */
             updated_at: string;
         };
@@ -3689,7 +3691,7 @@ export interface components {
             updated_at: string;
         };
         GetFileLibraryActiveOperationResponse: {
-            operation: components["schemas"]["FileLibraryVersionOperation"] | null;
+            operation: components["schemas"]["FileLibraryVersionOperation"] | components["schemas"]["FileLibraryRestoreOperation"] | null;
         };
         /** @enum {string} */
         HardTeardownDebtStatus: "pending" | "requested" | "failed";
@@ -8527,7 +8529,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryOperationProjection"];
+                    "application/json": components["schemas"]["FileLibraryOperationProjection"] | components["schemas"]["FileLibraryVersionOperation"] | components["schemas"]["FileLibraryRestoreOperation"];
                 };
             };
             401: components["responses"]["Unauthorized"];

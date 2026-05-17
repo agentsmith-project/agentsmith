@@ -1630,6 +1630,65 @@ describe('visual baseline support', () => {
     );
   });
 
+  it('catalogs focused file update Sheet visual states without expanding the full files catalog', () => {
+    const scenarios = groupVisualBaselineCatalogByScenario();
+    const idleSheet = scenarios.get('files-version-management-sheet');
+    const failedSheet = scenarios.get('files-version-management-failed');
+    const recoveryRequiredSheet = scenarios.get('files-version-management-recovery-required');
+
+    expect(idleSheet).toMatchObject({
+      storyId: 'mock-lane-workspace-project-core',
+      storySceneId: 'files-version-management-sheet',
+      group: 'overlay_drawers',
+      recipeFamily: 'overlay_sheet',
+      route: '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
+      stableMarkers: expect.arrayContaining([
+        'files__dialog__version-management',
+        'files__version-management-scope',
+        'files__save-point__message',
+        'files__template__name',
+      ]),
+      semanticAssertions: {
+        requiredViewportTestIds: expect.arrayContaining([
+          'files__dialog__version-management',
+          'files__version-management-scope',
+          'files__save-point__message',
+          'files__template__name',
+        ]),
+        forbiddenVisibleText: expect.arrayContaining([
+          'version operation',
+          'Review the reason and try again',
+        ]),
+      },
+    });
+    expect(idleSheet?.entries.map((entry) => entry.screenshot).sort()).toEqual([
+      'files-version-management-sheet-dark.png',
+      'files-version-management-sheet-light.png',
+    ]);
+
+    for (const scenario of [failedSheet, recoveryRequiredSheet]) {
+      expect(scenario).toMatchObject({
+        storyId: 'mock-lane-workspace-project-core',
+        group: 'overlay_drawers',
+        recipeFamily: 'overlay_sheet',
+        route: '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
+        stableMarkers: expect.arrayContaining([
+          'files__dialog__version-management',
+          'files__restore-operation',
+          'files__restore-operation-summary',
+        ]),
+        semanticAssertions: {
+          requiredViewportTestIds: expect.arrayContaining([
+            'files__dialog__version-management',
+            'files__restore-operation',
+            'files__restore-operation-summary',
+          ]),
+        },
+      });
+      expect(scenario?.entries).toHaveLength(1);
+    }
+  });
+
   it('documents the mock-lane story family linkage contract', async () => {
     const docSource = await readFile(path.resolve('docs/testing/mock-lane-visual-story-linkage.md'), 'utf-8');
 

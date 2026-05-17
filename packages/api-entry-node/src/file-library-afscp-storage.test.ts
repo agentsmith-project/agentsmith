@@ -1009,6 +1009,44 @@ describe('AFSCP File Library storage adapter', () => {
     })).resolves.toBeNull();
   });
 
+  it('does not surface AFSCP template source save points as user restore points', async () => {
+    const client = createProductClient({
+      listSavePoints: vi.fn(async () => ({
+        save_points: [
+          {
+            save_point_id: 'sp_template_source_001',
+            repo_id: 'repo_flib_123',
+            message: 'Template source: Release starter',
+            created_at: '2026-05-09T00:00:00.000Z',
+            purpose: 'template_source',
+          },
+          {
+            save_point_id: 'sp_user_001',
+            repo_id: 'repo_flib_123',
+            message: 'User checkpoint',
+            created_at: '2026-05-09T00:01:00.000Z',
+            purpose: 'user',
+          },
+        ],
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.listSavePoints({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      requestId: 'req_save_point_list_template_source',
+    })).resolves.toEqual([
+      {
+        savePointId: 'sp_user_001',
+        repoId: 'repo_flib_123',
+        message: 'User checkpoint',
+        createdAt: '2026-05-09T00:01:00.000Z',
+      },
+    ]);
+  });
+
   it('preserves typed AFSCP save point list errors instead of collapsing them to list failed', async () => {
     const client = createProductClient({
       listSavePoints: vi.fn(async () => {
@@ -1464,6 +1502,42 @@ describe('AFSCP File Library storage adapter', () => {
     });
   });
 
+  it('maps operator-intervention direct restore terminals to recovery_required instead of generic failed', async () => {
+    const client = createProductClient({
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'repo_restore',
+        operation_state: 'operator_intervention_required',
+        phase: 'repo_restore_requires_operator',
+        resource: { type: 'repo', id: 'repo_flib_123' },
+        error: {
+          code: 'OPERATION_RECOVERY_REQUIRED',
+          message: 'manual recovery required at /var/lib/afscp/control-root/repo_flib_123',
+          retryable: false,
+        },
+        external_resource_ids: {
+          source_save_point_id: '1778481131647-4d2e0211',
+        },
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+
+    await expect(adapter.restoreFileLibrary({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      savePointId: '1778481131647-4d2e0211',
+      idempotencyKey: 'restore-key-recovery',
+      actorUserId: 'user_1',
+      requestId: 'req_restore_recovery',
+    })).resolves.toMatchObject({
+      operationId: 'op_restore_direct',
+      operationStatus: 'recovery_required',
+      sourceSavePointId: '1778481131647-4d2e0211',
+    });
+  });
+
   it('reconciles existing direct restore operations from getOperation using public save point ids', async () => {
     const client = createProductClient({
       getOperation: vi.fn(async (input) => ({
@@ -1629,6 +1703,50 @@ describe('AFSCP File Library storage adapter', () => {
       project_id: 'proj_1',
     });
     expect(JSON.stringify(await mappingRepo.getByLibraryId('ws_default', 'proj_1', 'flib_clone_123'))).not.toContain('tmpl_task_file_template_1');
+  });
+
+  it('uses a stable short AFSCP idempotency key for long template create keys', async () => {
+    const createRepoTemplate = vi.fn(async () => ({
+      operation_id: 'op_template_create',
+      operation_state: 'queued',
+      resource: { type: 'repo_template', id: 'tmpl_task_file_template_1' },
+      result: null,
+      error: null,
+    }));
+    const client = createProductClient({
+      createRepoTemplate,
+      pollOperation: vi.fn(async (input) => ({
+        ...succeededRepoOperation,
+        operation_id: input.operationId,
+        operation_type: 'template_create',
+        operation_state: 'succeeded',
+        external_resource_ids: { source_save_point_id: 'sp_template_source_long_key' },
+      })),
+    });
+    const { adapter } = await createMappedAdapter({ client });
+    const longKey = `task-template-${'x'.repeat(400)}-${'unsafe value'.repeat(20)}`;
+
+    for (const requestId of ['req_template_create_long_1', 'req_template_create_long_2']) {
+      await expect(adapter.createTemplateFromLibrary({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        templateId: 'tmpl_task_file_template_1',
+        idempotencyKey: longKey,
+        actorUserId: 'user_1',
+        requestId,
+      })).resolves.toMatchObject({
+        operationStatus: 'succeeded',
+        sourceSavePointId: 'sp_template_source_long_key',
+      });
+    }
+
+    const keys = createRepoTemplate.mock.calls.map((call) => call[0]?.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(String(keys[0]).length).toBeLessThanOrEqual(128);
+    expect(String(keys[0])).toMatch(/^file-library:[A-Za-z0-9_-]{32,}$/);
+    expect(String(keys[0])).not.toContain('unsafe');
+    expect(String(keys[0])).not.toContain('xxxx');
   });
 
   it('returns typed pending template create and clone results without marking clone mappings failed', async () => {

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 
 import { fileHandlers } from '@/mocks/handlers/files';
@@ -141,13 +141,24 @@ describe('file-library recovery and task-template MSW contracts', () => {
 
     const second = await postJsonWithIdempotency(
       `/file-libraries/${libraryId}/save-points`,
-      { message: 'Retry should not create a second point' },
+      { message: 'Before idempotent save' },
       'msw-save-point-key-repeat',
     );
     expect(second.status).toBe(202);
     await expect(second.json()).resolves.toMatchObject({
       id: firstPayload.id,
       message: 'Before idempotent save',
+    });
+
+    const conflict = await postJsonWithIdempotency(
+      `/file-libraries/${libraryId}/save-points`,
+      { message: 'Retry should not create a second point' },
+      'msw-save-point-key-repeat',
+    );
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+      message: 'file_library_idempotency_conflict',
     });
 
     const list = await fetch(`${baseUrl}/file-libraries/${libraryId}/save-points`);
@@ -169,6 +180,48 @@ describe('file-library recovery and task-template MSW contracts', () => {
     const converged = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
     expect(converged.status).toBe(200);
     await expect(converged.json()).resolves.toEqual({ operation: null });
+  });
+
+  it('projects terminal save-point operations by public operation id after active projection clears', async () => {
+    const library = await postJson('/file-libraries', {
+      name: `Save point terminal ${Date.now()}`,
+    });
+    expect(library.status).toBe(201);
+    const libraryPayload = await library.json() as { id?: string };
+    const libraryId = libraryPayload.id ?? '';
+
+    const save = await postJsonWithIdempotency(
+      `/file-libraries/${libraryId}/save-points`,
+      { message: 'Terminal save point projection' },
+      'msw-save-point-terminal',
+    );
+    expect(save.status).toBe(202);
+    const savePayload = await save.json() as { id?: string };
+    expect(savePayload.id).toBeTruthy();
+
+    const running = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+    expect(running.status).toBe(200);
+    await expect(running.json()).resolves.toMatchObject({
+      operation: expect.objectContaining({
+        id: savePayload.id,
+        kind: 'save_point_create',
+        status: 'running',
+      }),
+    });
+
+    const cleared = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+    expect(cleared.status).toBe(200);
+    await expect(cleared.json()).resolves.toEqual({ operation: null });
+
+    const terminal = await fetch(`${baseUrl}/file-library-operations/${savePayload.id}`);
+    expect(terminal.status).toBe(200);
+    await expect(terminal.json()).resolves.toMatchObject({
+      id: savePayload.id,
+      kind: 'save_point_create',
+      status: 'succeeded',
+      file_library_id: libraryId,
+      message: 'Terminal save point projection',
+    });
   });
 
   it('creates save points and restores file-library contents through direct restore without hidden save points', async () => {
@@ -219,6 +272,53 @@ describe('file-library recovery and task-template MSW contracts', () => {
       ((await savePointListAfter.json()) as { items?: Array<{ id?: string }> }).items?.map((item) => item.id) ?? [],
     );
     expect(savePointIdsAfter).toEqual(savePointIdsBefore);
+  });
+
+  it('projects terminal restore operations by public operation id after the active recent window is missed', async () => {
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-05-09T12:00:00.000Z'));
+    try {
+      const library = await postJson('/file-libraries', {
+        name: 'Restore terminal lookup',
+      });
+      expect(library.status).toBe(201);
+      const libraryPayload = await library.json() as { id?: string };
+      const libraryId = libraryPayload.id ?? '';
+
+      const upload = await uploadTextFile(libraryId, 'restore-terminal.txt', 'before restore');
+      expect(upload.status, await upload.text()).toBe(201);
+      const savePoint = await createSavePointAndReadFirst(libraryId, 'Before missed terminal restore');
+      const deleteOriginal = await deletePaths(libraryId, ['restore-terminal.txt']);
+      expect(deleteOriginal.status, await deleteOriginal.text()).toBe(200);
+      const mutation = await uploadTextFile(libraryId, 'restore-terminal.txt', 'after restore');
+      expect(mutation.status, await mutation.text()).toBe(201);
+
+      const restore = await postJsonWithIdempotency(`/file-libraries/${libraryId}/restore`, {
+        save_point_id: savePoint.id,
+      }, 'msw-direct-restore-missed-terminal');
+      expect(restore.status).toBe(200);
+      const restorePayload = await restore.json() as { id?: string; source_save_point_id?: string; status?: string };
+      expect(restorePayload).toMatchObject({
+        source_save_point_id: savePoint.id,
+        status: 'succeeded',
+      });
+
+      dateNow.mockReturnValue(Date.parse('2026-05-09T12:00:31.000Z'));
+      const activeAfterWindow = await fetch(`${baseUrl}/file-libraries/${libraryId}/operations/active`);
+      expect(activeAfterWindow.status).toBe(200);
+      await expect(activeAfterWindow.json()).resolves.toEqual({ operation: null });
+
+      const terminal = await fetch(`${baseUrl}/file-library-operations/${restorePayload.id}`);
+      expect(terminal.status).toBe(200);
+      await expect(terminal.json()).resolves.toMatchObject({
+        id: restorePayload.id,
+        kind: 'restore',
+        source_save_point_id: savePoint.id,
+        status: 'succeeded',
+      });
+      await expect(downloadTextFile(libraryId, 'restore-terminal.txt')).resolves.toBe('before restore');
+    } finally {
+      dateNow.mockRestore();
+    }
   });
 
   it('returns the same direct restore operation for a repeated idempotency key', async () => {

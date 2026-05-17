@@ -177,13 +177,13 @@ vi.mock('next-intl', () => ({
       'select_task_file_template': 'Select task file template',
       'task_file_template_empty': 'No published task file templates are available in this project right now.',
       'task_file_template_hint': 'Only published task file templates are listed.',
-      'task_file_template_conflict': 'Task file template could not be cloned. Keep this selection and try again after the file library version operation settles.',
+      'task_file_template_conflict': 'Task file template could not be cloned. Keep this selection and try again after the file update finishes.',
       'workspace_file_library_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
       'workspace_file_library_bound_redacted': 'Bound to another task',
       'workspace_file_library_conflict': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
       'file_library_deleting.description': 'This library is being deleted. Refresh the library status before trying again.',
       'file_library_not_ready.description': 'This library is not ready yet. Refresh the library status before trying again.',
-      'file_library_operation_pending.description': 'File library version operation is still running. Wait for it to finish, then try again.',
+      'file_library_operation_pending.description': 'A file update is still running. Wait for it to finish, then try again.',
       'task_start_notice': 'Start the task after creation by sending the first instruction.',
       'history_immutable_notice': 'Task history cannot be modified',
       'advanced_settings': 'Advanced settings',
@@ -1098,7 +1098,7 @@ describe('TaskCreateDialog', () => {
       [
         'FILE_LIBRARY_OPERATION_PENDING',
         'file_library_operation_pending',
-        'File library version operation is still running. Wait for it to finish, then try again.',
+        'A file update is still running. Wait for it to finish, then try again.',
       ],
     ])('keeps template create conflicts inline for %s', async (errorCode, message, expectedMessage) => {
       const user = userEvent.setup();

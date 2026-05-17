@@ -132,7 +132,8 @@
       "expectedFeedback": "Save point list shows the business note for the asset cleanup point.",
       "note": "备注使用业务语义，便于后续恢复时理解为什么要回到这个状态。",
       "evidence": [
-        "trace"
+        "trace",
+        "visual"
       ]
     },
     {
@@ -156,7 +157,8 @@
       "expectedFeedback": "Restore confirm appears before the request, restore operation settles, and deleted image, note, and manifest return with the expected file names, token, SVG marker, and note text.",
       "note": "restore 验证用户确认、终态和用户可理解的文件/文本结果。",
       "evidence": [
-        "trace"
+        "trace",
+        "visual"
       ]
     },
     {

@@ -78,7 +78,7 @@ describe('resolveApiErrorPresentation', () => {
       'file_library_task_in_use.description': 'Delete the bound task before deleting this library.',
       'workspace_file_library_in_use.description': 'That task workspace is now bound to another task. Select another workspace or create a new one.',
       'file_library_capability_denied.description': 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
-      'file_library_operation_pending.description': 'File library version operation is still running. Wait for it to finish, then try again.',
+      'file_library_operation_pending.description': 'A file update is still running. Wait for it to finish, then try again.',
       'file_library_active_writer_blocked.description': 'Task files are still in use. Release task file usage, then try again.',
       'file_library_storage_not_ready.description': 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
       'agent_task_delete_blocked.description':
@@ -132,9 +132,9 @@ describe('resolveApiErrorPresentation', () => {
     ['FILE_LIBRARY_TASK_IN_USE', 'file_library_task_in_use', 'Delete the bound task before deleting this library.'],
     ['AGENT_TASK_FILE_LIBRARY_IN_USE', 'workspace_file_library_in_use', 'That task workspace is now bound to another task. Select another workspace or create a new one.'],
     ['FILE_LIBRARY_CAPABILITY_DENIED', 'file_library_capability_denied', 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.'],
-    ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'File library version operation is still running. Wait for it to finish, then try again.'],
-    ['FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING', 'file_library_save_point_create_pending', 'File library version operation is still running. Wait for it to finish, then try again.'],
-    ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending', 'File library version operation is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'A file update is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING', 'file_library_save_point_create_pending', 'A file update is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending', 'A file update is still running. Wait for it to finish, then try again.'],
     ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked', 'Task files are still in use. Release task file usage, then try again.'],
     ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready', 'Project file storage is not ready yet. Wait for initialization to finish, then try again.'],
     ['AGENT_TASK_DELETE_BLOCKED', 'agent_task_delete_blocked', 'Delete is blocked because this task still has an active run, terminal session, or task workspace in use. Finish those blockers and try again.'],
@@ -167,12 +167,12 @@ describe('resolveApiErrorPresentation', () => {
   });
 
   it.each([
-    ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending'],
-    ['FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING', 'file_library_save_point_list_pending'],
-    ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending'],
-    ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked'],
-    ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready'],
-  ])('returns a productized toast message for %s', (errorCode, rawMessage) => {
+    ['FILE_LIBRARY_OPERATION_PENDING', 'file_library_operation_pending', 'A file update is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING', 'file_library_save_point_list_pending', 'A file update is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_RESTORE_OPERATION_PENDING', 'file_library_restore_operation_pending', 'A file update is still running. Wait for it to finish, then try again.'],
+    ['FILE_LIBRARY_ACTIVE_WRITER_BLOCKED', 'file_library_active_writer_blocked', 'Task files are still in use. Release task file usage, then try again.'],
+    ['FILE_LIBRARY_STORAGE_NOT_READY', 'storage not ready', 'Project file storage is not ready yet. Wait for initialization to finish, then try again.'],
+  ])('returns a productized toast message for %s', (errorCode, rawMessage, expectedMessage) => {
     const userMessage = new APIError(
       errorCode,
       rawMessage,
@@ -180,6 +180,7 @@ describe('resolveApiErrorPresentation', () => {
       409,
     ).getUserMessage();
 
+    expect(userMessage).toBe(expectedMessage);
     expect(userMessage).not.toBe(rawMessage);
     expect(userMessage).not.toContain(rawMessage);
     expect(userMessage).not.toContain(errorCode);

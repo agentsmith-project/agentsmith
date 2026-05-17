@@ -24,7 +24,7 @@ describe('LibraryDialogs', () => {
       'file_manager.library_delete_confirm_placeholder': 'Type the library name',
       'file_manager.library_delete_deleting': 'Deleting...',
       'file_manager.library_delete_deleting_description': '{name} is already being deleted.',
-      'file_manager.library_delete_pending': 'Deleting this library. This can take a moment while version management settles.',
+      'file_manager.library_delete_pending': 'Deleting this library. File updates may take a moment to finish.',
       'file_manager.delete': 'Delete',
     };
     const template = translations[key] ?? key;
@@ -207,7 +207,7 @@ describe('LibraryDialogs', () => {
     );
 
     expect(screen.getByTestId('files__library-delete__pending')).toHaveTextContent(
-      'Deleting this library. This can take a moment while version management settles.',
+      'Deleting this library. File updates may take a moment to finish.',
     );
     expect(screen.getByTestId('files__library-delete__submit')).toHaveTextContent('Deleting...');
     expect(screen.getByTestId('files__library-delete__submit')).toBeDisabled();
@@ -256,7 +256,7 @@ describe('LibraryDialogs', () => {
 
     expect(screen.getByText('Shared Docs is already being deleted.')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-delete__pending')).toHaveTextContent(
-      'Deleting this library. This can take a moment while version management settles.',
+      'Deleting this library. File updates may take a moment to finish.',
     );
     expect(screen.getByTestId('files__library-delete__submit')).toHaveTextContent('Deleting...');
     expect(screen.getByTestId('files__library-delete__submit')).toBeDisabled();

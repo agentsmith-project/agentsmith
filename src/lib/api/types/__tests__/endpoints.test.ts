@@ -22,6 +22,8 @@ import type {
   EndpointCapabilityType,
 } from '../endpoints-core';
 import type {
+  FileLibraryOperationLookup,
+  GetFileLibraryActiveOperationResponse,
   CustomEndpointUpstreamProtocol,
   CustomEndpointConfig,
   EndpointHealthCheck,
@@ -67,6 +69,14 @@ type CreateFileLibrarySavePoint409Response = OperationJsonResponse<
 type CreateFileLibrarySavePoint202Response = OperationJsonResponse<
   operations['createFileLibrarySavePoint']['responses'],
   202
+>;
+type RestoreFileLibrary200Response = OperationJsonResponse<
+  operations['createFileLibraryRestore']['responses'],
+  200
+>;
+type GetFileLibraryOperationProjection200Response = OperationJsonResponse<
+  operations['getFileLibraryOperationProjection']['responses'],
+  200
 >;
 type ExpectedProjectPathParams = {
   projectId: string;
@@ -379,6 +389,65 @@ describe('File library save point pending contract', () => {
     expect(JSON.stringify(savePointsPath?.post?.responses?.['409'])).toContain(
       '#/components/schemas/FileLibrarySavePointOperationPendingError',
     );
+  });
+
+  it('documents terminal version operation lookup and recovery-required restore status', () => {
+    expectTypeOf<RestoreFileLibrary200Response>()
+      .toEqualTypeOf<components['schemas']['FileLibraryRestoreOperation']>();
+    expectTypeOf<RestoreFileLibrary200Response['status']>()
+      .toEqualTypeOf<'pending' | 'restoring' | 'succeeded' | 'failed' | 'recovery_required'>();
+    expectTypeOf<components['schemas']['FileLibraryRestoreOperation']['failure_reason']>()
+      .toEqualTypeOf<string | undefined>();
+    expectTypeOf<GetFileLibraryOperationProjection200Response>()
+      .toEqualTypeOf<
+        components['schemas']['FileLibraryOperationProjection']
+        | components['schemas']['FileLibraryVersionOperation']
+        | components['schemas']['FileLibraryRestoreOperation']
+      >();
+    expectTypeOf<FileLibraryOperationLookup>()
+      .toEqualTypeOf<GetFileLibraryOperationProjection200Response>();
+    expectTypeOf<GetFileLibraryActiveOperationResponse['operation']>()
+      .toEqualTypeOf<
+        components['schemas']['FileLibraryVersionOperation']
+        | components['schemas']['FileLibraryRestoreOperation']
+        | null
+      >();
+
+    const jsonSource = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+    ) as {
+      components?: {
+        schemas?: Record<string, {
+          properties?: Record<string, unknown>;
+        }>;
+      };
+      paths?: Record<string, Record<string, {
+        responses?: Record<string, {
+          content?: {
+            'application/json'?: {
+              schema?: {
+                oneOf?: Array<{ $ref?: string }>;
+              };
+            };
+          };
+        }>;
+      }>>;
+    };
+    const restoreStatus = jsonSource.components?.schemas?.FileLibraryRestoreOperation
+      ?.properties?.status;
+    expect(restoreStatus).toMatchObject({
+      enum: ['pending', 'restoring', 'succeeded', 'failed', 'recovery_required'],
+      type: 'string',
+    });
+    const operationLookupPath = jsonSource.paths?.[
+      '/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-library-operations/{operationId}'
+    ];
+    expect(operationLookupPath?.get?.responses?.['200']?.content?.['application/json']?.schema?.oneOf)
+      .toEqual([
+        { $ref: '#/components/schemas/FileLibraryOperationProjection' },
+        { $ref: '#/components/schemas/FileLibraryVersionOperation' },
+        { $ref: '#/components/schemas/FileLibraryRestoreOperation' },
+      ]);
   });
 });
 

@@ -95,6 +95,12 @@ function emptyDescriptionKey(prefix: string, canWrite: boolean) {
   return 'file_manager.empty_description';
 }
 
+function libraryUnavailableReasonKey(status: FilesBrowserPaneProps['selectedLibraryStatus']) {
+  if (status === 'failed') return 'file_manager.library_status_reason_failed';
+  if (status === 'degraded') return 'file_manager.library_status_reason_degraded';
+  return null;
+}
+
 export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   const {
     t,
@@ -150,6 +156,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
   const isMultiMode = selectionMode === 'multi';
   const selectedLibraryUnavailable = selectedLibraryStatus !== null && selectedLibraryStatus !== 'ready';
+  const unavailableReasonKey = libraryUnavailableReasonKey(selectedLibraryStatus);
   const libraryActionsDisabled = !selectedLibraryId || selectedLibraryUnavailable;
   const showWriteActions = canManage;
   const selectedLibraryBound = selectedLibraryTaskHomeBinding?.task_home_binding_status === 'bound';
@@ -425,6 +432,11 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
                 <div className="mt-2 text-sm text-tertiary">
                   {t('file_manager.library_unavailable_description')}
                 </div>
+                {unavailableReasonKey ? (
+                  <div className="mt-2 text-sm text-secondary" data-testid="files__library-unavailable-reason">
+                    {t(unavailableReasonKey)}
+                  </div>
+                ) : null}
               </div>
             ) : objectsQuery.isLoading ? (
               <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>

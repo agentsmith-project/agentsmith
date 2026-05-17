@@ -55,7 +55,9 @@ vi.mock('next-intl', () => ({
         'file_manager.library_create_description': 'Create a shared file library for this project.',
         'file_manager.library_status_ready': 'Ready',
         'file_manager.library_status_failed': 'Failed',
+        'file_manager.library_status_degraded': 'Degraded',
         'file_manager.library_status_reason_failed': 'Library provisioning failed.',
+        'file_manager.library_status_reason_degraded': 'Library is degraded and needs attention.',
         'file_manager.library_binding_unbound': 'Unbound',
         'file_manager.library_binding_bound': 'Bound',
         'file_manager.library_binding_bound_visible': `Bound to ${values?.title ?? 'task'} (${values?.status ?? 'unknown'})`,
@@ -618,6 +620,9 @@ describe('FilesPage (object browser)', () => {
       'Library provisioning failed.',
     );
     expect(screen.queryByTestId('files__library-status-reason--lib_failed')).not.toBeInTheDocument();
+    expect(screen.getByTestId('files__library-unavailable-empty-state')).toHaveTextContent(
+      'Library provisioning failed.',
+    );
     expect(screen.queryByTestId('files__library-desktop-access--lib_failed')).not.toBeInTheDocument();
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
     expect(screen.getByTestId('files__version-management')).toBeDisabled();
@@ -799,6 +804,7 @@ describe('FilesPage (object browser)', () => {
     expect(await screen.findByTestId('files__library-unavailable-empty-state')).toBeInTheDocument();
     expect(screen.getByText('file_manager.library_unavailable_title')).toBeInTheDocument();
     expect(screen.getByText('file_manager.library_unavailable_description')).toBeInTheDocument();
+    expect(screen.getByText('Library is degraded and needs attention.')).toBeInTheDocument();
     expect(screen.queryByText('file_manager.loading')).not.toBeInTheDocument();
   });
 

@@ -17,6 +17,7 @@ type CreateTaskFileTemplateVariables = {
   sourceLibraryId: string;
   name: string;
   description?: string;
+  publishOnCreate?: boolean;
   idempotencyKey?: string;
 };
 
@@ -67,6 +68,7 @@ export function useCreateTaskFileTemplate() {
         source_library_id: variables.sourceLibraryId,
         name: variables.name,
         description: variables.description,
+        publish_on_create: variables.publishOnCreate,
       },
       { idempotencyKey: resolveIdempotencyKey(variables) },
     ),

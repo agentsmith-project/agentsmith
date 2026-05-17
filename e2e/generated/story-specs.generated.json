@@ -223,9 +223,9 @@
     "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
     "goal": "项目成员让 Agent Task 在显式绑定的 ready 文件库中生成图片资产后，可以在 Files 里创建业务 save point、删除图片、说明文件和 manifest、再通过 restore 找回文件；回到同一个 Agent Task 后，成员还能从输入框继续发消息，managed runner 通过运行时 task metadata 证明仍在同一任务 HOME 中，读取恢复后的文件、manifest 和固定短文本，并写出新的 post-restore evidence；API 侧仍显示该任务绑定同一个 workspaceFileLibraryId。",
     "sourceRef": "e2e/stories/backend-real/agent-task-image-asset-savepoint-delete-restore.story.md#agent-task-image-asset-savepoint-delete-restore",
-    "sourceFingerprint": "36b64c7338c328b5d839ee85bcceead42aa1bf9cc3739c77fce3bb9c73ac37a2",
-    "storyFingerprint": "92365574c5ebe69dec19519014a47ecbb07769ad9b79fb65a30db5440ef95e11",
-    "stepMapFingerprint": "f22f3b6f8961d9640c7d35b9f43407086fe556d321ed43c7dbfaa3b16f33d5fd",
+    "sourceFingerprint": "7034a68c48476f69aefd3718a898c7566438eae102f914f8665b55d93fc66583",
+    "storyFingerprint": "6e29dd9d326f86b99197e095bdbb6f7c3afd04cd2a7eeaf83be76160bbfebfed",
+    "stepMapFingerprint": "735ef4cabbe9a52a25f4c8b8171c976821c94eba6cac6eea132dc0b7a2ec1e1f",
     "sceneIds": [
       "agent-task-create",
       "agent-task-detail",
@@ -252,7 +252,10 @@
       "verify-task-history-preserved",
       "continue-same-task-after-restore"
     ],
-    "visualStepIds": []
+    "visualStepIds": [
+      "create-business-save-point",
+      "restore-save-point"
+    ]
   },
   {
     "storyId": "agent-task-terminal-reentry-recovery",
@@ -1413,8 +1416,8 @@
     "entryRoute": "/en-US/workspaces/ws_default",
     "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md#mock-lane-workspace-project-core",
-    "sourceFingerprint": "1f71dd258eba4e8e38990a52393f0eb9983d4b7310b5cff05fd5b3acf4a0b6a2",
-    "storyFingerprint": "f115c8cc31b97944bf135166ebc68e42fb51bfbb777ec11916456461b591f386",
+    "sourceFingerprint": "1e2d05fb0aa03601138a1dabdadbd27dcb2f8b9af75622b19d33b51c4947fecb",
+    "storyFingerprint": "5f29cbac023184bfe25e2c9f72f614e8d901f984ceabde5b102d3aa0d95fcc28",
     "stepMapFingerprint": "fc217664c231e04f7a2d5f64c6dea4fad526df3315c22b642acc893f36901b93",
     "sceneIds": [
       "workspace-home-project-creator",
@@ -1438,6 +1441,9 @@
       "agent-task-detail-artifact-hover",
       "files",
       "files-selection-details",
+      "files-version-management-sheet",
+      "files-version-management-failed",
+      "files-version-management-recovery-required",
       "dialog-files-create-folder",
       "dialog-files-rename",
       "dialog-files-library-create",

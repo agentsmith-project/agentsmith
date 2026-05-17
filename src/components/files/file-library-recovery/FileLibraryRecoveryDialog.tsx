@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type {
   FileLibrary,
+  FileLibraryRestoreOperation,
   FileLibrarySavePoint,
   FileLibraryVersionOperation,
   ReleaseFileLibraryRuntimeAccessResponse,
@@ -91,6 +92,11 @@ type PendingRestoreConfirm = {
   savePoint: FileLibrarySavePoint;
 };
 
+type PendingTemplateCreateAction = {
+  key: string;
+  signature: string;
+};
+
 type RestoreOperationDisplay = {
   description: string;
   icon: 'info' | 'loading' | 'success' | 'warning';
@@ -118,8 +124,41 @@ function generateRestoreIdempotencyKey(savePointId: string) {
   return `restore_${savePointId}_${randomPart}`;
 }
 
+function generateTaskFileTemplateActionKey() {
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `task_file_template_${randomPart}`;
+}
+
+function buildTaskFileTemplateActionSignature(input: {
+  description: string;
+  name: string;
+  publishOnCreate: boolean;
+  sourceLibraryId: string;
+}) {
+  return JSON.stringify({
+    description: input.description,
+    name: input.name,
+    publish_on_create: input.publishOnCreate,
+    source_library_id: input.sourceLibraryId,
+  });
+}
+
 function isVersionOperationActive(operation: FileLibraryVersionOperation | null | undefined) {
   return operation?.status === 'accepted' || operation?.status === 'running';
+}
+
+function isVersionOperationTerminal(operation: FileLibraryVersionOperation | null | undefined) {
+  return operation?.status === 'succeeded'
+    || operation?.status === 'failed'
+    || operation?.status === 'recovery_required';
+}
+
+function normalizeVersionOperation(
+  operation: FileLibraryVersionOperation | FileLibraryRestoreOperation | null | undefined,
+): FileLibraryVersionOperation | null {
+  if (!operation) return null;
+  return 'kind' in operation ? operation : restoreOperationToVersionOperation(operation);
 }
 
 function buildRestoreOperationDisplay(
@@ -137,7 +176,7 @@ function buildRestoreOperationDisplay(
     }
     if (operation.status === 'failed') {
       return {
-        description: operation.failure_reason?.trim() || t('file_manager.save_point_operation_failed_summary'),
+        description: t('file_manager.save_point_operation_failed_summary'),
         icon: 'warning',
         title: t('file_manager.save_point_operation_failed_title'),
         tone: 'error',
@@ -145,7 +184,7 @@ function buildRestoreOperationDisplay(
     }
     if (operation.status === 'recovery_required') {
       return {
-        description: operation.failure_reason?.trim() || t('file_manager.save_point_operation_recovery_required_summary'),
+        description: t('file_manager.save_point_operation_recovery_required_summary'),
         icon: 'warning',
         title: t('file_manager.save_point_operation_recovery_required_title'),
         tone: 'error',
@@ -176,7 +215,7 @@ function buildRestoreOperationDisplay(
   }
   if (operation.status === 'failed') {
     return {
-      description: operation.failure_reason?.trim() || t('file_manager.restore_operation_failed_summary'),
+      description: t('file_manager.restore_operation_failed_summary'),
       icon: 'warning',
       title: t('file_manager.restore_operation_failed_title'),
       tone: 'error',
@@ -184,7 +223,7 @@ function buildRestoreOperationDisplay(
   }
   if (operation.status === 'recovery_required') {
     return {
-      description: operation.failure_reason?.trim() || t('file_manager.restore_operation_recovery_required_summary'),
+      description: t('file_manager.restore_operation_recovery_required_summary'),
       icon: 'warning',
       title: t('file_manager.restore_operation_recovery_required_title'),
       tone: 'error',
@@ -541,6 +580,7 @@ export function FileLibraryRecoveryDialog({
   const [templatePublishMode, setTemplatePublishMode] = React.useState<TemplatePublishMode>('published');
   const [templateActionError, setTemplateActionError] = React.useState<TemplateActionErrorDisplay | null>(null);
   const restoreConfirmInFlightRef = React.useRef(false);
+  const templateCreateActionRef = React.useRef<PendingTemplateCreateAction | null>(null);
   const localVersionOperationStartedRef = React.useRef<{ id: string; activeDataUpdatedAt: number } | null>(null);
   const [restoreConfirmSubmitting, setRestoreConfirmSubmitting] = React.useState(false);
 
@@ -584,6 +624,7 @@ export function FileLibraryRecoveryDialog({
       setTemplatePublishMode('published');
       setTemplateActionError(null);
       restoreConfirmInFlightRef.current = false;
+      templateCreateActionRef.current = null;
       localVersionOperationStartedRef.current = null;
       setRestoreConfirmSubmitting(false);
     }
@@ -591,7 +632,7 @@ export function FileLibraryRecoveryDialog({
 
   React.useEffect(() => {
     if (!open || activeVersionOperationQuery.isLoading) return;
-    const nextOperation = activeVersionOperationQuery.data?.operation ?? null;
+    const nextOperation = normalizeVersionOperation(activeVersionOperationQuery.data?.operation);
     if (!nextOperation) {
       if (isVersionOperationActive(restoreOperation)) {
         const localStarted = localVersionOperationStartedRef.current;
@@ -636,6 +677,8 @@ export function FileLibraryRecoveryDialog({
   const templatesForProject = templates;
   const restoreOperationActive = isVersionOperationActive(restoreOperation);
   const taskTemplatesBlocked = restoreOperationActive || activeVersionOperationQuery.isLoading;
+  const showTemplateListLoading = templatesQuery.isLoading && templates.length === 0;
+  const showTemplateListError = templatesQuery.isError && templates.length === 0;
   const savePointListOperationPending = isFileLibraryOperationPendingError(savePointsQuery.error);
   const showSavePointListLoading = savePointsQuery.isLoading && savePoints.length === 0;
   const showSavePointListError = savePointsQuery.isError
@@ -661,11 +704,10 @@ export function FileLibraryRecoveryDialog({
       !pendingSavePointCreate.existingIds.has(savePoint.id)
       && (!pendingMessage || savePoint.message === pendingMessage)
     ));
+    if (!createdSavePointVisible) return;
     setSavePointActionError(null);
     setPendingSavePointCreate(null);
-    if (createdSavePointVisible) {
-      setSavePointMessage('');
-    }
+    setSavePointMessage('');
   }, [
     pendingSavePointCreate,
     savePointActionError?.kind,
@@ -673,6 +715,21 @@ export function FileLibraryRecoveryDialog({
     savePointsQuery.dataUpdatedAt,
     savePointsQuery.isError,
     savePointsQuery.isLoading,
+  ]);
+
+  React.useEffect(() => {
+    if (!pendingSavePointCreate || restoreOperation?.kind !== 'save_point_create') return;
+    if (!isVersionOperationTerminal(restoreOperation)) return;
+    setSavePointActionError(null);
+    setPendingSavePointCreate(null);
+    if (restoreOperation.status === 'succeeded') {
+      setSavePointMessage('');
+    }
+  }, [
+    pendingSavePointCreate,
+    restoreOperation?.id,
+    restoreOperation?.kind,
+    restoreOperation?.status,
   ]);
 
   const handleCreateSavePoint = async () => {
@@ -811,20 +868,31 @@ export function FileLibraryRecoveryDialog({
       return;
     }
     try {
-      const template = await createTemplate.mutateAsync({
+      const name = templateName.trim();
+      const description = templateDescription.trim();
+      const publishOnCreate = templatePublishMode === 'published';
+      const signature = buildTaskFileTemplateActionSignature({
+        sourceLibraryId: library.id,
+        name,
+        description,
+        publishOnCreate,
+      });
+      if (templateCreateActionRef.current?.signature !== signature) {
+        templateCreateActionRef.current = {
+          signature,
+          key: generateTaskFileTemplateActionKey(),
+        };
+      }
+      await createTemplate.mutateAsync({
         workspaceId,
         projectId,
         sourceLibraryId: library.id,
-        name: templateName.trim(),
-        description: templateDescription.trim() || undefined,
+        name,
+        description: description || undefined,
+        publishOnCreate,
+        idempotencyKey: templateCreateActionRef.current.key,
       });
-      if (templatePublishMode === 'published') {
-        await publishTemplate.mutateAsync({
-          workspaceId,
-          projectId,
-          templateId: template.id,
-        });
-      }
+      templateCreateActionRef.current = null;
       setTemplateName('');
       setTemplateDescription('');
       setTemplatePublishMode('published');
@@ -906,7 +974,8 @@ export function FileLibraryRecoveryDialog({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right-wide"
-          className="flex h-full flex-col gap-0 overflow-hidden p-0"
+          closeLabel={t('file_manager.close')}
+          className="flex h-full max-w-full flex-col gap-0 overflow-hidden overflow-x-hidden p-0"
           data-testid="files__dialog__version-management"
         >
           <SheetHeader className="border-b border-subtle px-6 py-5">
@@ -1194,13 +1263,46 @@ export function FileLibraryRecoveryDialog({
                   </div>
                 </div>
               ) : null}
-              <div className="max-h-[220px] overflow-auto rounded-md border border-subtle">
-                {templatesForProject.length === 0 ? (
+              <div className="max-h-[220px] overflow-auto overflow-x-auto rounded-md border border-subtle">
+                {showTemplateListLoading ? (
+                  <div
+                    className="px-3 py-6 text-center text-sm text-tertiary"
+                    data-testid="files__template__list-loading"
+                    role="status"
+                  >
+                    {t('file_manager.loading')}
+                  </div>
+                ) : showTemplateListError ? (
+                  <div
+                    className="flex items-start justify-between gap-3 px-3 py-4"
+                    data-testid="files__template__list-error"
+                    role="alert"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-sm font-medium text-primary">
+                        {t('file_manager.task_template_load_error_title')}
+                      </div>
+                      <div className="text-sm text-secondary">
+                        {t('file_manager.task_template_load_error_description')}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void templatesQuery.refetch()}
+                      data-testid="files__template__retry"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      {t('file_manager.save_point_retry')}
+                    </Button>
+                  </div>
+                ) : templatesForProject.length === 0 ? (
                   <div className="px-3 py-6 text-center text-sm text-tertiary">{t('file_manager.task_template_empty')}</div>
                 ) : (
                   <div className="divide-y divide-subtle">
                     {templatesForProject.map((template) => (
-                      <div key={template.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <div key={template.id} className="flex flex-col gap-3 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 space-y-1">
                           <div className="flex min-w-0 items-center gap-2">
                             <div className="truncate text-sm font-medium text-primary">{template.name}</div>
@@ -1209,8 +1311,21 @@ export function FileLibraryRecoveryDialog({
                           {template.description ? (
                             <div className="truncate text-xs text-tertiary">{template.description}</div>
                           ) : null}
+                          <div
+                            className="truncate text-xs text-tertiary"
+                            data-testid={`files__template__source--${template.id}`}
+                          >
+                            {t(template.source_library_id === library?.id
+                              ? 'file_manager.task_template_source_current'
+                              : 'file_manager.task_template_source_other')}
+                          </div>
+                          {template.status === 'failed' ? (
+                            <div className="text-xs text-warning" data-testid={`files__template__failed-next-step--${template.id}`}>
+                              {t('file_manager.task_template_failed_next_step')}
+                            </div>
+                          ) : null}
                         </div>
-                        <div className="flex shrink-0 gap-2">
+                        <div className="flex flex-wrap gap-2 sm:shrink-0">
                           {template.status === 'published' ? (
                             <Button
                               type="button"
@@ -1222,7 +1337,7 @@ export function FileLibraryRecoveryDialog({
                             >
                               {t('file_manager.template_unpublish')}
                             </Button>
-                          ) : (
+                          ) : template.status === 'unpublished' ? (
                             <Button
                               type="button"
                               variant="outline"
@@ -1233,7 +1348,7 @@ export function FileLibraryRecoveryDialog({
                             >
                               {t('file_manager.template_publish')}
                             </Button>
-                          )}
+                          ) : null}
                           <Button
                             type="button"
                             variant="ghost"
@@ -1263,7 +1378,7 @@ export function FileLibraryRecoveryDialog({
                 />
               ) : null}
 
-              <div className="max-h-[280px] overflow-auto rounded-md border border-subtle">
+              <div className="max-h-[280px] overflow-auto overflow-x-auto rounded-md border border-subtle">
                 {showSavePointListLoading ? (
                   <div className="px-3 py-6 text-center text-sm text-tertiary">{t('file_manager.loading')}</div>
                 ) : savePointListOperationPending && savePoints.length === 0 ? (
@@ -1302,7 +1417,7 @@ export function FileLibraryRecoveryDialog({
                 ) : (
                   <div className="divide-y divide-subtle">
                     {savePoints.map((savePoint) => (
-                      <div key={savePoint.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <div key={savePoint.id} className="flex flex-col gap-3 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium text-primary">{savePointLabel(savePoint, t)}</div>
                           <div className="text-xs text-tertiary">{formatTimestamp(savePoint.created_at)}</div>

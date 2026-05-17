@@ -1903,7 +1903,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileLibraryOperationProjection"
+                oneOf:
+                  - $ref: "#/components/schemas/FileLibraryOperationProjection"
+                  - $ref: "#/components/schemas/FileLibraryVersionOperation"
+                  - $ref: "#/components/schemas/FileLibraryRestoreOperation"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -8705,6 +8708,9 @@ components:
             - restoring
             - succeeded
             - failed
+            - recovery_required
+        failure_reason:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -8759,6 +8765,7 @@ components:
         operation:
           oneOf:
             - $ref: "#/components/schemas/FileLibraryVersionOperation"
+            - $ref: "#/components/schemas/FileLibraryRestoreOperation"
             - type: "null"
     CreateFileLibraryRestoreRequest:
       type: object
@@ -8836,6 +8843,8 @@ components:
           maxLength: 1000
         source_library_id:
           type: string
+        publish_on_create:
+          type: boolean
     CreateProjectInviteRequest:
       type: object
       required:

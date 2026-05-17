@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { JsonDocStorePort } from '@mbos/ports';
@@ -27,6 +27,7 @@ export const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp
 
 export type FileLibraryStorageOperationStatus =
   | 'pending'
+  | 'recovery_required'
   | 'succeeded'
   | 'failed';
 
@@ -313,6 +314,10 @@ const OPERATION_TERMINAL_STATES = new Set([
   'canceled',
   'operator_intervention_required',
 ]);
+const OPERATION_RECOVERY_REQUIRED_STATES = new Set([
+  'operator_intervention_required',
+  'recovery_required',
+]);
 const OPERATION_SUCCESS_STATES = new Set(['succeeded', 'success', 'completed', 'ready']);
 const HEADER_SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ERROR_CODE_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/;
@@ -380,6 +385,13 @@ function normalizeOperationStatus(value: unknown): FileLibraryStorageOperationSt
   return 'pending';
 }
 
+function normalizeRestoreOperationStatus(value: unknown): FileLibraryStorageOperationStatus {
+  if (typeof value === 'string' && OPERATION_RECOVERY_REQUIRED_STATES.has(value.trim().toLowerCase())) {
+    return 'recovery_required';
+  }
+  return normalizeOperationStatus(value);
+}
+
 function isStorageTerminalOperation(operation: AfscpOperationRecord): boolean {
   return normalizeOperationStatus(operation.operation_state) !== 'pending';
 }
@@ -401,6 +413,30 @@ function readOperationProjectionString(operation: AfscpOperationEnvelope | Afscp
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function publicOperationProjectionErrorCode(code: string): string {
+  if (
+    WRITER_BLOCKER_OPERATION_CODES.has(code)
+    || code === 'ACTIVE_WRITER_SESSIONS'
+    || code === 'STALE_WRITER_SESSION_UNCERTAIN'
+  ) {
+    return 'file_library_active_writer_blocked';
+  }
+  if (code === 'CAPABILITY_DENIED') {
+    return 'file_library_capability_denied';
+  }
+  if (
+    code === 'VOLUME_MISMATCH_REQUIRES_IMPORT'
+    || code === 'OPERATION_RECOVERY_REQUIRED'
+    || code === 'JVS_JOURNAL_RECOVERY_REQUIRED'
+    || code === 'JVS_METADATA_INVALID'
+    || code.toLowerCase().includes('recovery')
+    || code.toLowerCase().includes('operator')
+  ) {
+    return 'file_library_storage_admin_action_required';
+  }
+  return 'file_library_operation_failed';
+}
+
 function readOperationProjectionError(operation: AfscpOperationEnvelope | AfscpOperationRecord): FileLibraryOperationProjection['error'] {
   const error = operation.error;
   if (!isRecord(error)) {
@@ -410,8 +446,9 @@ function readOperationProjectionError(operation: AfscpOperationEnvelope | AfscpO
   const code = typeof rawCode === 'string' && ERROR_CODE_PATTERN.test(rawCode.trim())
     ? rawCode.trim()
     : 'afscp_operation_failed';
+  const publicCode = publicOperationProjectionErrorCode(code);
   return {
-    code,
+    code: publicCode,
     ...(typeof error.retryable === 'boolean' ? { retryable: error.retryable } : {}),
   };
 }
@@ -545,6 +582,10 @@ function normalizeAfscpSavePoint(record: AfscpSavePoint): FileLibraryAfscpSavePo
   if (!savePointId || !createdAt) {
     return null;
   }
+  const purpose = readStringField(record, 'purpose');
+  if (purpose === 'template_source' || purpose === 'task_template_source') {
+    return null;
+  }
   const message = readStringField(record, 'message') ?? undefined;
   return {
     savePointId,
@@ -668,15 +709,18 @@ function buildRepoId(libraryId: string): string {
 }
 
 function safeIdempotencyKey(parts: string[]): string {
+  const raw = parts.join('\0');
   const joined = parts
     .map((part) => part.trim().replace(/[^A-Za-z0-9._:-]+/g, '-'))
     .filter(Boolean)
-    .join(':')
-    .slice(0, 180);
-  if (HEADER_SAFE_ID_PATTERN.test(joined)) {
+    .join(':');
+  if (joined.length <= 128 && HEADER_SAFE_ID_PATTERN.test(joined)) {
     return joined;
   }
-  return `file-library:${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+  const prefixCandidate = parts[0]?.trim().replace(/[^A-Za-z0-9._:-]+/g, '-') || 'file-library';
+  const prefix = HEADER_SAFE_ID_PATTERN.test(prefixCandidate) ? (prefixCandidate.split(':')[0] ?? 'file-library') : 'file-library';
+  const digest = createHash('sha256').update(raw).digest('base64url');
+  return `${prefix}:${digest}`;
 }
 
 function resolveCorrelationId(requestId: string | undefined, fallbackPrefix: string): string {
@@ -2285,7 +2329,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     const initialOperation = input.initialOperation;
     const operationId = readOperationId(input.finalOperation)
       ?? (initialOperation ? readOperationId(initialOperation) : null);
-    const operationStatus = normalizeOperationStatus(input.finalOperation.operation_state);
+    const operationStatus = normalizeRestoreOperationStatus(input.finalOperation.operation_state);
     const sourceSavePointId = readSourceSavePointId(input.finalOperation)
       ?? (initialOperation ? readSourceSavePointId(initialOperation) : null)
       ?? readSavePointId(input.finalOperation)

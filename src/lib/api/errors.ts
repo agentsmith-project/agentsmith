@@ -105,9 +105,9 @@ export class APIError extends Error {
       RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait and try again.',
       INTERNAL_ERROR: 'An unexpected error occurred. Please try again later.',
       FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
-      FILE_LIBRARY_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
-      FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
-      FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
+      FILE_LIBRARY_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
+      FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
+      FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
       FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files are still in use. Release task file usage, then try again.',
       FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     };
@@ -188,9 +188,9 @@ const FILE_LIBRARY_TYPED_ERROR_KEYS: Record<string, string[]> = {
 
 const FILE_LIBRARY_TYPED_ERROR_DEFAULTS: Record<string, string> = {
   FILE_LIBRARY_CAPABILITY_DENIED: 'Task file templates are not available for this project yet. Ask an admin to enable file templates, then try again.',
-  FILE_LIBRARY_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
-  FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
-  FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'File library version operation is still running. Wait for it to finish, then try again.',
+  FILE_LIBRARY_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
+  FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
+  FILE_LIBRARY_RESTORE_OPERATION_PENDING: 'A file update is still running. Wait for it to finish, then try again.',
   FILE_LIBRARY_ACTIVE_WRITER_BLOCKED: 'Task files are still in use. Release task file usage, then try again.',
   FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
 };

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const {
   mockCreateSavePoint,
   mockGetActiveFileLibraryOperation,
+  mockGetFileLibraryVersionOperation,
   mockListSavePoints,
   mockReleaseRuntimeAccess,
   mockRestoreFileLibrary,
@@ -20,6 +21,15 @@ const {
     updated_at: '2026-05-09T12:00:00.000Z',
   }),
   mockGetActiveFileLibraryOperation: vi.fn().mockResolvedValue({ operation: null }),
+  mockGetFileLibraryVersionOperation: vi.fn().mockResolvedValue({
+    id: 'flop_lookup_terminal',
+    kind: 'restore',
+    file_library_id: 'lib_1',
+    source_save_point_id: 'sp_1',
+    status: 'succeeded',
+    created_at: '2026-05-09T12:01:00.000Z',
+    updated_at: '2026-05-09T12:02:00.000Z',
+  }),
   mockListSavePoints: vi.fn().mockResolvedValue({ items: [] }),
   mockReleaseRuntimeAccess: vi.fn().mockResolvedValue({ file_library_id: 'lib_1', released: true }),
   mockRestoreFileLibrary: vi.fn().mockResolvedValue({
@@ -38,6 +48,7 @@ vi.mock('@/lib/api', () => ({
     return {
       createSavePoint: mockCreateSavePoint,
       getActiveFileLibraryOperation: mockGetActiveFileLibraryOperation,
+      getFileLibraryVersionOperation: mockGetFileLibraryVersionOperation,
       listSavePoints: mockListSavePoints,
       releaseRuntimeAccess: mockReleaseRuntimeAccess,
       restoreFileLibrary: mockRestoreFileLibrary,
@@ -213,8 +224,10 @@ describe('file library recovery hooks', () => {
         },
       })
       .mockResolvedValueOnce({ operation: null });
+    mockGetFileLibraryVersionOperation.mockRejectedValueOnce(new Error('operation projection unavailable'));
     const { queryClient, Wrapper } = createTestHarness();
     const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
+    const templatesKey = ['task-file-templates', workspaceId, projectId];
     const objectsKey = [
       'file-objects',
       'infinite',
@@ -224,6 +237,7 @@ describe('file library recovery hooks', () => {
       { prefix: '', delimiter: '/', page_size: 200 },
     ];
     queryClient.setQueryData(savePointsKey, { items: [] });
+    queryClient.setQueryData(templatesKey, { items: [] });
     queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
 
     const { result } = renderHook(
@@ -244,8 +258,137 @@ describe('file library recovery hooks', () => {
       await vi.waitFor(() => expect(result.current.data?.operation).toBeNull());
     });
     expect(mockGetActiveFileLibraryOperation.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(false);
-    expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(false);
+    expect(mockGetFileLibraryVersionOperation).toHaveBeenCalledWith(
+      workspaceId,
+      projectId,
+      'flro_active_to_null',
+    );
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: templatesKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
+      });
+    });
+  });
+
+  it('looks up a missed terminal restore by operation id and refreshes dependent caches', async () => {
+    vi.useFakeTimers();
+    mockGetActiveFileLibraryOperation
+      .mockResolvedValueOnce({
+        operation: {
+          id: 'flro_missed_terminal',
+          kind: 'restore',
+          file_library_id: libraryId,
+          source_save_point_id: 'sp_1',
+          status: 'running',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      })
+      .mockResolvedValueOnce({ operation: null });
+    mockGetFileLibraryVersionOperation.mockResolvedValueOnce({
+      id: 'flro_missed_terminal',
+      kind: 'restore',
+      file_library_id: libraryId,
+      source_save_point_id: 'sp_1',
+      status: 'succeeded',
+      created_at: '2026-05-09T12:01:00.000Z',
+      updated_at: '2026-05-09T12:02:00.000Z',
+    });
+    const { queryClient, Wrapper } = createTestHarness();
+    const savePointsKey = ['file-library-save-points', workspaceId, projectId, libraryId];
+    const templatesKey = ['task-file-templates', workspaceId, projectId];
+    const objectsKey = [
+      'file-objects',
+      'infinite',
+      workspaceId,
+      projectId,
+      libraryId,
+      { prefix: '', delimiter: '/', page_size: 200 },
+    ];
+    queryClient.setQueryData(savePointsKey, { items: [] });
+    queryClient.setQueryData(templatesKey, { items: [] });
+    queryClient.setQueryData(objectsKey, { pages: [{ items: [] }] });
+
+    const { result } = renderHook(
+      () => useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.operation?.status).toBe('running'));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.operation?.status).toBe('succeeded'));
+    });
+    expect(mockGetFileLibraryVersionOperation).toHaveBeenCalledWith(
+      workspaceId,
+      projectId,
+      'flro_missed_terminal',
+    );
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(queryClient.getQueryCache().find({ queryKey: savePointsKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: templatesKey })?.isStale()).toBe(true);
+        expect(queryClient.getQueryCache().find({ queryKey: objectsKey })?.isStale()).toBe(true);
+      });
+    });
+  });
+
+  it('does not normalize fallback raw operation projections as restore operations', async () => {
+    vi.useFakeTimers();
+    mockGetActiveFileLibraryOperation
+      .mockResolvedValueOnce({
+        operation: {
+          id: 'flro_active_raw_projection',
+          kind: 'restore',
+          file_library_id: libraryId,
+          source_save_point_id: 'sp_1',
+          status: 'running',
+          created_at: '2026-05-09T12:01:00.000Z',
+          updated_at: '2026-05-09T12:01:00.000Z',
+        },
+      })
+      .mockResolvedValueOnce({ operation: null });
+    mockGetFileLibraryVersionOperation.mockResolvedValueOnce({
+      operation_id: 'op_afscp_raw_restore',
+      operation_state: 'operator_intervention_required',
+      operation_type: 'restore',
+      resource: { type: 'repo' },
+      error: { code: 'afscp_operator_recovery_required /home/task/.ssh/id_rsa' },
+      updated_at: '2026-05-09T12:02:00.000Z',
+    });
+    const { Wrapper } = createTestHarness();
+    const { result } = renderHook(
+      () => useFileLibraryActiveVersionOperation(workspaceId, projectId, libraryId),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => expect(result.current.data?.operation?.status).toBe('running'));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(mockGetFileLibraryVersionOperation).toHaveBeenCalledWith(
+        workspaceId,
+        projectId,
+        'flro_active_raw_projection',
+      ));
+    });
+    expect(result.current.data?.operation).toBeNull();
+    expect(JSON.stringify(result.current.data)).not.toMatch(/op_afscp_raw_restore|operator_recovery|\.ssh|id_rsa/);
   });
 
   it('creates a save point through fast admission and stores the active save operation projection', async () => {

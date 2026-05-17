@@ -229,6 +229,39 @@ describe('FilesAPI', () => {
     );
   });
 
+  it('routes file-library version operation lookup through the project scoped operation path', async () => {
+    const operation = {
+      id: 'flop_restore_terminal',
+      kind: 'restore' as const,
+      status: 'recovery_required' as const,
+      file_library_id: 'flib_1',
+      source_save_point_id: 'sp_1',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:01.000Z',
+    };
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn().mockResolvedValue(operation),
+      getBlob: vi.fn(),
+      postMultipart: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new FilesAPI(client);
+
+    await expect(api.getFileLibraryVersionOperation('ws_1', 'proj_1', 'flop_restore_terminal'))
+      .resolves.toEqual(operation);
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/file-library-operations/flop_restore_terminal',
+    );
+  });
+
   it('passes object listing aborts through the FetchApiClient fetch path', async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {

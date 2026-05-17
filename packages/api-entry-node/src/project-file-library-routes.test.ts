@@ -488,6 +488,19 @@ async function createSavePointForRestore(input: {
     json: savePointJson,
     readBody: vi.fn().mockResolvedValue({ message: input.message ?? 'Before restore' }),
   });
+  const targetMessage = input.message ?? 'Before restore';
+  const mappedSavePoints = await input.deps.docStore.list<Record<string, unknown>>(
+    'project_file_library_save_point_mappings',
+    {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      library_id: input.libraryId,
+    },
+  );
+  const mapped = mappedSavePoints.find((item) => item.message === targetMessage);
+  if (mapped) {
+    return mapped;
+  }
   const listJson = vi.fn();
   await handleProjectFileLibraryRoutes({
     routeKind: 'fileLibrarySavePoints',
@@ -503,7 +516,7 @@ async function createSavePointForRestore(input: {
     readBody: vi.fn(),
   });
   const listBody = listJson.mock.calls[0]?.[2] as { items?: Record<string, unknown>[] };
-  return listBody.items?.[0] ?? {};
+  return listBody.items?.find((item) => item.message === targetMessage) ?? listBody.items?.[0] ?? {};
 }
 
 function activeRuntimeBinding(libraryId: string): InternalAgentWorkspaceBinding {
@@ -734,6 +747,224 @@ describe('project-file-library-routes', () => {
     expect(serialized).not.toContain('repo_flib_123');
     expect(serialized).not.toContain('metadata_url');
     expect(serialized).not.toContain('one-time-webdav-secret');
+  });
+
+  it.each([
+    {
+      label: 'failed',
+      projection: {
+        operation_id: 'op_save_point_terminal_failed',
+        operation_state: 'failed',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: { code: 'afscp_save_point_failed' },
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      },
+      expectedStatus: 'failed',
+      expectedFailureReason: 'file_library_save_point_create_failed',
+    },
+    {
+      label: 'recovery_required',
+      projection: {
+        operation_id: 'op_save_point_terminal_recovery',
+        operation_state: 'operator_intervention_required',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: { code: 'afscp_operator_recovery_required' },
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      },
+      expectedStatus: 'recovery_required',
+      expectedFailureReason: 'file_library_storage_admin_action_required',
+    },
+  ])('serves local save-point terminal $label projections through public operation lookup', async ({
+    projection,
+    expectedStatus,
+    expectedFailureReason,
+  }) => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: projection.operation_id,
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      getOperationProjection: vi.fn(async (input) => {
+        if (input.operationId !== projection.operation_id) {
+          throw new Error('file_library_operation_not_found');
+        }
+        return projection;
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': `req_save_point_lookup_${expectedStatus}`,
+          'idempotency-key': `save-point-lookup-${expectedStatus}`,
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: `Before ${expectedStatus}` }),
+    })).resolves.toBe(true);
+    const publicOperationId = (createJson.mock.calls[0]?.[2] as { id?: string }).id;
+    expect(publicOperationId).toMatch(/^flop_/);
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: publicOperationId,
+      req: { headers: { 'x-request-id': `req_save_point_lookup_${expectedStatus}_get` } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.getOperationProjection).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: projection.operation_id,
+      requestId: `req_save_point_lookup_${expectedStatus}_get`,
+    }));
+    expect(lookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: publicOperationId,
+      kind: 'save_point_create',
+      file_library_id: libraryId,
+      status: expectedStatus,
+      failure_reason: expectedFailureReason,
+    }));
+    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2]))
+      .not.toMatch(new RegExp(`${projection.operation_id}|${projection.error.code}`));
+  });
+
+  it('serves local restore failed projections through public operation lookup', async () => {
+    const storageAdapter = createStorageAdapter({
+      reconcileRestoreOperation: vi.fn(async (input) => {
+        if (input.operationId !== 'op_restore_lookup_failed') {
+          throw new Error('file_library_operation_not_found');
+        }
+        return {
+          operationId: 'op_restore_lookup_failed',
+          operationStatus: 'failed',
+          sourceSavePointId: 'sp_user_001',
+        };
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreOperation = await new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).create({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: 'op_restore_lookup_failed',
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_001',
+      status: 'restoring',
+      idempotencyKey: 'restore-lookup-failed',
+      createdByUserId: 'user_1',
+    });
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: restoreOperation.id,
+      req: { headers: { 'x-request-id': 'req_restore_lookup_failed' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.reconcileRestoreOperation).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'op_restore_lookup_failed',
+      requestId: 'req_restore_lookup_failed',
+    }));
+    expect(lookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: restoreOperation.id,
+      kind: 'restore',
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'failed',
+      failure_reason: 'file_library_restore_failed',
+    }));
+    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2])).not.toContain('op_restore_lookup_failed');
+  });
+
+  it('serves local restore recovery-required projections through public operation lookup', async () => {
+    const storageAdapter = createStorageAdapter({
+      reconcileRestoreOperation: vi.fn(async (input) => {
+        if (input.operationId !== 'op_restore_lookup_recovery') {
+          throw new Error('file_library_operation_not_found');
+        }
+        return {
+          operationId: 'op_restore_lookup_recovery',
+          operationStatus: 'recovery_required',
+          sourceSavePointId: 'sp_user_001',
+        };
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreOperation = await new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).create({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: 'op_restore_lookup_recovery',
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_001',
+      status: 'restoring',
+      idempotencyKey: 'restore-lookup-recovery',
+      createdByUserId: 'user_1',
+    });
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: restoreOperation.id,
+      req: { headers: { 'x-request-id': 'req_restore_lookup_recovery' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(lookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: restoreOperation.id,
+      kind: 'restore',
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'recovery_required',
+      failure_reason: 'file_library_storage_admin_action_required',
+    }));
+    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2]))
+      .not.toMatch(/op_restore_lookup_recovery|operator|JVS|control_root/);
   });
 
   it('maps invisible file-library operation projections to not_found', async () => {
@@ -1771,7 +2002,7 @@ describe('project-file-library-routes', () => {
     expect(storageAdapter.createSavePoint).not.toHaveBeenCalled();
   });
 
-  it('reuses the local save-point version operation for the same Idempotency-Key', async () => {
+  it('reuses the local save-point version operation for the same Idempotency-Key and matching message', async () => {
     const storageAdapter = createStorageAdapter({
       createSavePoint: vi.fn(async () => ({
         operationId: 'op_save_point_idempotent',
@@ -1819,7 +2050,7 @@ describe('project-file-library-routes', () => {
       deps,
       user: OWNER_USER,
       json: secondJson,
-      readBody: vi.fn().mockResolvedValue({ message: 'Different retry body' }),
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
     })).resolves.toBe(true);
 
     const firstBody = firstJson.mock.calls[0]?.[2] as Record<string, unknown>;
@@ -1841,6 +2072,65 @@ describe('project-file-library-routes', () => {
         afscp_operation_id: 'op_save_point_idempotent',
       }),
     ]);
+  });
+
+  it('rejects save point creation when the same Idempotency-Key is reused with a different message', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_idempotent_conflict',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const firstJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_idempotent_conflict_first',
+          'idempotency-key': 'save-point-idempotent-conflict-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: firstJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before restore' }),
+    })).resolves.toBe(true);
+
+    const secondJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_idempotent_conflict_second',
+          'idempotency-key': 'save-point-idempotent-conflict-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: secondJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Changed retry body' }),
+    })).resolves.toBe(true);
+
+    expect(secondJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+      message: 'file_library_idempotency_conflict',
+    });
+    expect(storageAdapter.createSavePoint).toHaveBeenCalledTimes(1);
   });
 
   it('projects active save-point creation operations through the library active operation endpoint', async () => {
@@ -2036,6 +2326,11 @@ describe('project-file-library-routes', () => {
     const created = await createReadyLibrary(deps);
     const libraryId = String(created.id);
     const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const secondSavePoint = await createSavePointForRestore({
+      deps,
+      libraryId,
+      message: 'Before different restore',
+    });
 
     const restoreJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -2101,6 +2396,60 @@ describe('project-file-library-routes', () => {
       id: restoreBody.id,
       status: 'restoring',
     });
+
+    const conflictJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_direct_repeat_different_save_point',
+          'idempotency-key': 'restore-key-1',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: conflictJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: secondSavePoint.id,
+      }),
+    })).resolves.toBe(true);
+    expect(conflictJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+      message: 'file_library_idempotency_conflict',
+    });
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
+
+    const invisibleConflictJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRestore',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_restore_direct_repeat_invisible_save_point',
+          'idempotency-key': 'restore-key-1',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: invisibleConflictJson,
+      readBody: vi.fn().mockResolvedValue({
+        save_point_id: 'flsp_deleted_or_not_visible',
+      }),
+    })).resolves.toBe(true);
+    expect(invisibleConflictJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_IDEMPOTENCY_CONFLICT',
+      message: 'file_library_idempotency_conflict',
+    });
+    expect(storageAdapter.restoreFileLibrary).toHaveBeenCalledTimes(1);
 
     const activeJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -3962,7 +4311,7 @@ describe('project-file-library-routes', () => {
   });
 
   it('does not call legacy restore preview/run/fence helpers on the direct restore route', () => {
-    const source = readFileSync(new URL('./project-file-library-routes.ts', import.meta.url), 'utf8');
+    const source = readFileSync('packages/api-entry-node/src/project-file-library-routes.ts', 'utf8');
     const start = source.indexOf("routeKind === 'fileLibraryRestore'");
     const end = source.indexOf("routeKind === 'fileLibraryEntries'", start);
     expect(start).toBeGreaterThanOrEqual(0);
@@ -5445,7 +5794,142 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify([firstTemplate, secondTemplate])).not.toMatch(/template-create-key-1|tmpl_|sp_template|repo_|credential|control_root/);
   });
 
-  it('re-snapshots an unpublished task file template at publish time and updates public source mapping', async () => {
+  it('rejects a reused task file template create idempotency key when the request body changes', async () => {
+    const createTemplateFromLibrary = vi.fn(async (input: Parameters<FileLibraryStoragePort['createTemplateFromLibrary']>[0]) => ({
+      templateId: input.templateId,
+      operationId: 'op_template_create_conflict_seed',
+      operationStatus: 'succeeded' as const,
+      sourceSavePointId: 'sp_template_source_conflict_seed',
+    }));
+    const storageAdapter = createStorageAdapter({ createTemplateFromLibrary });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const makeRequest = async (name: string, json: ReturnType<typeof vi.fn>) => handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {
+        headers: {
+          'x-request-id': `req_${name.replace(/\s+/g, '_').toLowerCase()}`,
+          'idempotency-key': 'template-create-conflict-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name,
+        source_library_id: libraryId,
+      }),
+    });
+
+    const firstJson = vi.fn();
+    const secondJson = vi.fn();
+    await expect(makeRequest('Initial template', firstJson)).resolves.toBe(true);
+    await expect(makeRequest('Changed template', secondJson)).resolves.toBe(true);
+
+    expect(firstJson.mock.calls[0]?.[1]).toBe(201);
+    expect(secondJson.mock.calls[0]?.[1]).toBe(409);
+    expect(secondJson.mock.calls[0]?.[2]).toMatchObject({
+      error_code: 'TASK_FILE_TEMPLATE_IDEMPOTENCY_CONFLICT',
+      message: 'task_file_template_idempotency_conflict',
+    });
+    expect(createTemplateFromLibrary).toHaveBeenCalledTimes(1);
+    await expect(new JsonDocProjectTaskFileTemplateRepo(deps.docStore).listByProject('ws_default', 'proj_1'))
+      .resolves.toHaveLength(1);
+  });
+
+  it('creates and publishes a task file template as one idempotent product action', async () => {
+    const createTemplateFromLibrary = vi.fn(async (input: Parameters<FileLibraryStoragePort['createTemplateFromLibrary']>[0]) => ({
+      templateId: input.templateId,
+      operationId: 'op_template_create_published_once',
+      operationStatus: 'succeeded' as const,
+      sourceSavePointId: 'sp_template_source_published_once',
+    }));
+    const storageAdapter = createStorageAdapter({ createTemplateFromLibrary });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const makeRequest = async (json: ReturnType<typeof vi.fn>) => handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplates',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {
+        headers: {
+          'x-request-id': 'req_template_create_publish_once',
+          'idempotency-key': 'template-create-publish-on-create-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Published starter',
+        source_library_id: libraryId,
+        publish_on_create: true,
+      }),
+    });
+
+    const firstJson = vi.fn();
+    const secondJson = vi.fn();
+    await expect(makeRequest(firstJson)).resolves.toBe(true);
+    await expect(makeRequest(secondJson)).resolves.toBe(true);
+
+    expect(firstJson.mock.calls[0]?.[1]).toBe(201);
+    expect(secondJson.mock.calls[0]?.[1]).toBe(200);
+    expect(firstJson.mock.calls[0]?.[2]).toMatchObject({ status: 'published' });
+    expect(secondJson.mock.calls[0]?.[2]).toEqual(firstJson.mock.calls[0]?.[2]);
+    expect(createTemplateFromLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects publishing failed task file templates because their material must be saved again', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const templateRepo = new JsonDocProjectTaskFileTemplateRepo(deps.docStore);
+    const failedTemplate = await templateRepo.create({
+      id: 'tftpl_failed_material',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Failed material',
+      status: 'failed',
+      sourceLibraryId: libraryId,
+      createdByUserId: OWNER_USER.id,
+      afscpTemplateId: 'tmpl_failed_material',
+    });
+
+    const publishJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'taskFileTemplatePublish',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskFileTemplateId: failedTemplate.id,
+      req: { headers: { 'x-request-id': 'req_template_publish_failed_material' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: publishJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(publishJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'TASK_FILE_TEMPLATE_MATERIAL_NOT_READY',
+      message: 'task_file_template_material_not_ready',
+    });
+    await expect(templateRepo.getById('ws_default', 'proj_1', failedTemplate.id))
+      .resolves.toMatchObject({ status: 'failed' });
+  });
+
+  it('publishes an unpublished task file template without creating another source save point', async () => {
     let templateCreateCount = 0;
     const createTemplateFromLibrary = vi.fn(async (input: Parameters<FileLibraryStoragePort['createTemplateFromLibrary']>[0]) => {
       templateCreateCount += 1;
@@ -5490,50 +5974,47 @@ describe('project-file-library-routes', () => {
       source_afscp_save_point_id: 'sp_template_source_1',
     });
 
-    const publishJson = vi.fn();
-    await expect(handleProjectFileLibraryRoutes({
+    const publishRequest = async (json: ReturnType<typeof vi.fn>) => handleProjectFileLibraryRoutes({
       routeKind: 'taskFileTemplatePublish',
       method: 'POST',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       taskFileTemplateId: String(template.id),
-      req: { headers: { 'x-request-id': 'req_template_publish_current_state' } } as never,
+      req: { headers: { 'x-request-id': 'req_template_publish_existing_snapshot' } } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: publishJson,
+      json,
       readBody: vi.fn(),
-    })).resolves.toBe(true);
+    });
 
-    expect(createTemplateFromLibrary).toHaveBeenCalledTimes(2);
-    expect(createTemplateFromLibrary).toHaveBeenLastCalledWith(expect.objectContaining({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      actorUserId: OWNER_USER.id,
-      requestId: 'req_template_publish_current_state',
-      templateId: expect.stringMatching(/^tmpl_/),
-    }));
+    const publishJson = vi.fn();
+    const replayJson = vi.fn();
+    await expect(publishRequest(publishJson)).resolves.toBe(true);
+    await expect(publishRequest(replayJson)).resolves.toBe(true);
+
+    expect(createTemplateFromLibrary).toHaveBeenCalledTimes(1);
     const updatedInternal = await templateRepo.getById('ws_default', 'proj_1', String(template.id));
     expect(updatedInternal).toMatchObject({
       status: 'published',
-      source_afscp_save_point_id: 'sp_template_source_2',
-      afscp_create_operation_id: 'op_template_create_2',
+      source_afscp_save_point_id: 'sp_template_source_1',
+      afscp_create_operation_id: 'op_template_create_1',
     });
     expect(updatedInternal?.source_save_point_id).toEqual(expect.stringMatching(/^flsp_/));
-    expect(updatedInternal?.source_save_point_id).not.toBe(initialInternal?.source_save_point_id);
-    expect(updatedInternal?.afscp_template_id).not.toBe(initialInternal?.afscp_template_id);
+    expect(updatedInternal?.source_save_point_id).toBe(initialInternal?.source_save_point_id);
+    expect(updatedInternal?.afscp_template_id).toBe(initialInternal?.afscp_template_id);
 
     expect(publishJson.mock.calls[0]?.[2]).toMatchObject({
       id: template.id,
       status: 'published',
       source_save_point_id: updatedInternal?.source_save_point_id,
     });
+    expect(replayJson.mock.calls[0]?.[2]).toEqual(publishJson.mock.calls[0]?.[2]);
     expect(JSON.stringify(publishJson.mock.calls)).not.toMatch(/tmpl_|sp_template_source|repo_|credential|control_root/);
 
     vi.mocked(storageAdapter.listSavePoints).mockResolvedValueOnce([
       {
-        savePointId: 'sp_template_source_2',
+        savePointId: 'sp_template_source_1',
         repoId: `repo_${libraryId}`,
         message: 'Template source: Publish-time template',
         createdAt: '2026-05-09T00:02:00.000Z',

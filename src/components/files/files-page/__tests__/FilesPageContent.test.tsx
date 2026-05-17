@@ -199,6 +199,40 @@ describe('FilesPageContent', () => {
     expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('file_manager.library_status_failed');
   });
 
+  it('shows failed and degraded library reasons in the main browser area', () => {
+    const { rerender } = render(
+      <FilesPageContent
+        {...buildProps({
+          libraries: [
+            libraryFixture({ id: 'lib_failed', name: 'Failed library', status: 'failed' }),
+          ],
+          selectedLibraryId: 'lib_failed',
+          selectedLibraryStatus: 'failed',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('files__library-unavailable-empty-state')).toHaveTextContent(
+      'file_manager.library_status_reason_failed',
+    );
+
+    rerender(
+      <FilesPageContent
+        {...buildProps({
+          libraries: [
+            libraryFixture({ id: 'lib_degraded', name: 'Degraded library', status: 'degraded' }),
+          ],
+          selectedLibraryId: 'lib_degraded',
+          selectedLibraryStatus: 'degraded',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('files__library-unavailable-empty-state')).toHaveTextContent(
+      'file_manager.library_status_reason_degraded',
+    );
+  });
+
   it('lets bound libraries open the delete explanation instead of hiding the blocker behind a disabled icon', async () => {
     const user = userEvent.setup();
     const onDeleteLibrary = vi.fn();

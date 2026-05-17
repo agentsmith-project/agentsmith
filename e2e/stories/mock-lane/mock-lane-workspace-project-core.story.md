@@ -228,6 +228,40 @@
       ]
     },
     {
+      "sceneId": "files-version-management-sheet",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
+      "recipeFamily": "overlay_sheet",
+      "authLane": "authed",
+      "stableMarkers": [
+        "files__dialog__version-management",
+        "files__version-management-scope",
+        "files__save-point__message",
+        "files__template__name"
+      ]
+    },
+    {
+      "sceneId": "files-version-management-failed",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
+      "recipeFamily": "overlay_sheet",
+      "authLane": "authed",
+      "stableMarkers": [
+        "files__dialog__version-management",
+        "files__restore-operation",
+        "files__restore-operation-summary"
+      ]
+    },
+    {
+      "sceneId": "files-version-management-recovery-required",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
+      "recipeFamily": "overlay_sheet",
+      "authLane": "authed",
+      "stableMarkers": [
+        "files__dialog__version-management",
+        "files__restore-operation",
+        "files__restore-operation-summary"
+      ]
+    },
+    {
       "sceneId": "dialog-files-create-folder",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
@@ -643,6 +677,93 @@
           "themes": [
             "default"
           ]
+        },
+        {
+          "sceneId": "files-version-management-sheet",
+          "scenarioId": "files-version-management-sheet",
+          "scenario": "File updates Sheet with save point and task template forms visible.",
+          "group": "overlay_drawers",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/files/file-library-recovery/FileLibraryRecoveryDialog.tsx",
+            "src/messages/en-US.json",
+            "src/messages/zh-CN.json"
+          ],
+          "capture": "viewport",
+          "authLane": "authed",
+          "uxState": "happy",
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "version operation",
+              "Review the reason and try again"
+            ],
+            "requiredViewportTestIds": [
+              "files__dialog__version-management",
+              "files__version-management-scope",
+              "files__save-point__message",
+              "files__template__name"
+            ]
+          }
+        },
+        {
+          "sceneId": "files-version-management-failed",
+          "scenarioId": "files-version-management-failed",
+          "scenario": "File updates Sheet showing a failed restore with public-safe recovery guidance.",
+          "group": "overlay_drawers",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/files/file-library-recovery/FileLibraryRecoveryDialog.tsx"
+          ],
+          "capture": "viewport",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "themes": [
+            "default"
+          ],
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "AFSCP",
+              "JVS",
+              "/var/lib",
+              "Review the reason and try again"
+            ],
+            "requiredViewportTestIds": [
+              "files__dialog__version-management",
+              "files__restore-operation",
+              "files__restore-operation-summary"
+            ]
+          }
+        },
+        {
+          "sceneId": "files-version-management-recovery-required",
+          "scenarioId": "files-version-management-recovery-required",
+          "scenario": "File updates Sheet showing system-side recovery required for a restore.",
+          "group": "overlay_drawers",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/files/file-library-recovery/FileLibraryRecoveryDialog.tsx"
+          ],
+          "capture": "viewport",
+          "authLane": "authed",
+          "uxState": "diagnostic",
+          "themes": [
+            "default"
+          ],
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "operation_recovery.manual",
+              "/control-root"
+            ],
+            "requiredViewportTestIds": [
+              "files__dialog__version-management",
+              "files__restore-operation",
+              "files__restore-operation-summary"
+            ]
+          }
         },
         {
           "sceneId": "dialog-files-create-folder",

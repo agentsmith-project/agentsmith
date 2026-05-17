@@ -103,6 +103,11 @@ export interface FileLibraryOperationProjection {
   finished_at?: string;
 }
 
+export type FileLibraryOperationLookup =
+  | FileLibraryOperationProjection
+  | FileLibraryVersionOperation
+  | FileLibraryRestoreOperation;
+
 export interface CreateFileLibraryFolderRequest {
   path: string;
 }
@@ -126,7 +131,12 @@ export interface MoveFileLibraryEntryRequest {
   overwrite?: boolean;
 }
 
-export type FileLibraryRestoreOperationStatus = 'pending' | 'restoring' | 'succeeded' | 'failed';
+export type FileLibraryRestoreOperationStatus =
+  | 'pending'
+  | 'restoring'
+  | 'succeeded'
+  | 'failed'
+  | 'recovery_required';
 export type FileLibraryVersionOperationKind =
   | 'save_point_create'
   | 'restore';
@@ -179,7 +189,7 @@ export interface FileLibraryVersionOperation {
 }
 
 export interface GetFileLibraryActiveOperationResponse {
-  operation: FileLibraryVersionOperation | null;
+  operation: FileLibraryVersionOperation | FileLibraryRestoreOperation | null;
 }
 
 export interface ReleaseFileLibraryRuntimeAccessResponse {
@@ -212,6 +222,7 @@ export interface CreateTaskFileTemplateRequest {
   source_library_id: string;
   name: string;
   description?: string;
+  publish_on_create?: boolean;
 }
 
 export interface FileItem {

@@ -32,13 +32,14 @@ const sheetVariants = {
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  closeLabel?: string;
   side?: 'left' | 'right' | 'right-wide';
 }
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, ...props }, ref) => (
+>(({ side = 'right', closeLabel = 'Close', className, children, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <DialogPrimitive.Content
@@ -57,7 +58,7 @@ const SheetContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close
         className={dialogCloseClassName}
-        aria-label="Close"
+        aria-label={closeLabel}
       >
         <X className="h-4 w-4" />
       </DialogPrimitive.Close>

@@ -200,7 +200,7 @@ const evidence = {
     },
     terminal_projection: {
       restore_lag_ms: integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS'),
-      source: 'agentsmith_operations_active_projection',
+      source: 'agentsmith_file_library_operation_lookup',
       availability:
         integerEnv('FILE_LIBRARY_REAL_SMOKE_RESTORE_TERMINAL_PROJECTION_LAG_MS') !== null ? 'available' : 'not_observed',
     },
@@ -297,38 +297,61 @@ wait_restore_operation_terminal() {
   fi
 
   while (( attempt <= max_attempts )); do
-    status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/operations/active")"
-    if [[ "${status}" == "200" ]]; then
+    local active_status
+    active_status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/operations/active")"
+    if [[ "${active_status}" == "200" ]]; then
       assert_no_raw_storage_fields "file library restore operation"
-      local operation_status
-      operation_status="$(cat "${BODY_FILE}" | json_field "j.operation && j.operation.id === '${operation_id}' ? j.operation.status : ''" || true)"
-      if [[ -z "${operation_status}" ]]; then
-        RESTORE_OPERATION_STATUS="missing"
-        write_timing_evidence "restore_active_projection_missing"
-        err "restore operation ${operation_id} disappeared from active projection before terminal succeeded"
-        cat "${BODY_FILE}" >&2
-        exit 1
-      fi
-      local projection_seen_at_ms
-      projection_seen_at_ms="$(now_ms)"
-      if [[ -z "${RESTORE_ACTIVE_FIRST_SEEN_AT_MS}" ]]; then
+      local active_operation_status
+      active_operation_status="$(cat "${BODY_FILE}" | json_field "j.operation && j.operation.id === '${operation_id}' ? j.operation.status : ''" || true)"
+      if [[ -n "${active_operation_status}" && -z "${RESTORE_ACTIVE_FIRST_SEEN_AT_MS}" ]]; then
+        local projection_seen_at_ms
+        projection_seen_at_ms="$(now_ms)"
         RESTORE_ACTIVE_FIRST_SEEN_AT_MS="${projection_seen_at_ms}"
         RESTORE_ACTIVE_FIRST_SEEN_LAG_MS="$(elapsed_ms "${RESTORE_ADMITTED_AT_MS}" "${projection_seen_at_ms}")"
       fi
+      if [[ -n "${active_operation_status}" ]]; then
+        capture_restore_clone_evidence_from_body
+      fi
+      if is_restore_operation_succeeded_state "${active_operation_status}"; then
+        RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="true"
+      fi
+    fi
+
+    local lookup_status
+    lookup_status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-library-operations/${operation_id}")"
+    if [[ "${lookup_status}" == "200" ]]; then
+      assert_no_raw_storage_fields "file library restore operation lookup"
+      local operation_status
+      operation_status="$(cat "${BODY_FILE}" | json_field "typeof j.status === 'string' ? j.status : (typeof j.operation_state === 'string' ? j.operation_state : '')" || true)"
+      if [[ -z "${operation_status}" ]]; then
+        RESTORE_OPERATION_STATUS="missing"
+        write_timing_evidence "restore_operation_lookup_missing_status"
+        err "restore operation ${operation_id} lookup did not include a status"
+        cat "${BODY_FILE}" >&2
+        exit 1
+      fi
       RESTORE_OPERATION_STATUS="${operation_status}"
+      local lookup_source_save_point_id
+      lookup_source_save_point_id="$(cat "${BODY_FILE}" | json_field "typeof j.source_save_point_id === 'string' ? j.source_save_point_id : ''" || true)"
+      if [[ -n "${lookup_source_save_point_id}" ]]; then
+        RESTORE_OPERATION_SOURCE_SAVE_POINT_ID="${lookup_source_save_point_id}"
+      fi
       capture_restore_clone_evidence_from_body
       if is_restore_operation_succeeded_state "${operation_status}"; then
-        RESTORE_TERMINAL_PROJECTION_LAG_MS="$(elapsed_ms "${RESTORE_ADMITTED_AT_MS}" "${projection_seen_at_ms}")"
-        RESTORE_TERMINAL_SEEN_IN_ACTIVE_PROJECTION="true"
-        write_timing_evidence "restore_terminal_projection_succeeded"
+        RESTORE_TERMINAL_PROJECTION_LAG_MS="$(elapsed_ms "${RESTORE_ADMITTED_AT_MS}" "$(now_ms)")"
+        write_timing_evidence "restore_operation_lookup_succeeded"
         return 0
       fi
       if [[ "${operation_status}" == "recovery_required" ]] || is_operation_failed_state "${operation_status}"; then
-        write_timing_evidence "restore_terminal_projection_failed"
+        write_timing_evidence "restore_operation_lookup_failed"
         err "restore operation ${operation_id} failed with status ${operation_status}"
         cat "${BODY_FILE}" >&2
         exit 1
       fi
+    elif [[ "${lookup_status}" != "404" ]]; then
+      err "failed to read restore operation ${operation_id}: ${lookup_status}"
+      cat "${BODY_FILE}" >&2
+      exit 1
     fi
     sleep 1
     attempt=$((attempt + 1))
@@ -911,6 +934,43 @@ fi
 assert_no_raw_storage_fields "task file template create"
 TASK_FILE_TEMPLATE_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
 
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list task file templates before idempotency replay: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template list before idempotency replay"
+TASK_FILE_TEMPLATE_LIST_COUNT_BEFORE_REPLAY="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) ? String(j.items.length) : ''")"
+
+status="$(api_json_with_idempotency POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates" "${TASK_FILE_TEMPLATE_IDEMPOTENCY_KEY}" "{\"name\":\"Smoke task file template\",\"source_library_id\":\"${LIBRARY_ID}\"}")"
+if [[ "${status}" != "201" && "${status}" != "200" ]]; then
+  err "failed to replay task file template create idempotency key: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template create idempotency replay"
+TASK_FILE_TEMPLATE_REPLAY_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+if [[ "${TASK_FILE_TEMPLATE_REPLAY_ID}" != "${TASK_FILE_TEMPLATE_ID}" ]]; then
+  err "task file template idempotency replay returned a different template id"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list task file templates after idempotency replay: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "task file template list after idempotency replay"
+TASK_FILE_TEMPLATE_LIST_COUNT_AFTER_REPLAY="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) ? String(j.items.length) : ''")"
+if [[ "${TASK_FILE_TEMPLATE_LIST_COUNT_AFTER_REPLAY}" != "${TASK_FILE_TEMPLATE_LIST_COUNT_BEFORE_REPLAY}" ]]; then
+  err "task file template idempotency replay changed template list count"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
 status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/task-file-templates/${TASK_FILE_TEMPLATE_ID}/publish")"
 if [[ "${status}" != "200" ]]; then
   err "failed to publish task file template: ${status}"
@@ -964,6 +1024,19 @@ fi
 status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/move" '{"from_path":"docs/guide.txt","to_path":"docs/guide-renamed.txt"}')"
 if [[ "${status}" != "204" ]]; then
   err "failed to move file: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${TEMPLATE_LIBRARY_ID}/entries?path=docs/")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to re-read cloned task file library entries after source mutation: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+assert_no_raw_storage_fields "cloned task file library entries after source mutation"
+if ! grep -q 'guide.txt' "${BODY_FILE}" || grep -q 'guide-renamed.txt' "${BODY_FILE}"; then
+  err "cloned task file library changed after source library mutation"
   cat "${BODY_FILE}" >&2
   exit 1
 fi

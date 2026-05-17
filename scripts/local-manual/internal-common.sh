@@ -212,9 +212,12 @@ ensure_kind_image() {
   local node_name="${KIND_CLUSTER_NAME}-control-plane"
   local tarball
   tarball="$(mktemp /tmp/kind-image.XXXXXX.tar)"
-  docker save "${image}" -o "${tarball}"
-  cat "${tarball}" | docker exec -i "${node_name}" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar'
-  rm -f "${tarball}"
+  (
+    set -e
+    trap 'rm -f "${tarball}"' EXIT
+    docker save "${image}" -o "${tarball}"
+    docker exec -i "${node_name}" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar' < "${tarball}"
+  )
 }
 
 ensure_internal_runner_image() {

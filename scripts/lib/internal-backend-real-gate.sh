@@ -42,9 +42,12 @@ internal_real_gate_ensure_kind_image() {
   local tarball
 
   tarball="$(mktemp /tmp/kind-image.XXXXXX.tar)"
-  docker save "${image}" -o "${tarball}"
-  cat "${tarball}" | docker exec -i "${KIND_NODE_NAME}" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar'
-  rm -f "${tarball}"
+  (
+    set -e
+    trap 'rm -f "${tarball}"' EXIT
+    docker save "${image}" -o "${tarball}"
+    docker exec -i "${KIND_NODE_NAME}" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar' < "${tarball}"
+  )
 }
 
 internal_real_gate_ensure_local_image() {

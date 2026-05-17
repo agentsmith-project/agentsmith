@@ -449,4 +449,136 @@ sleep 1
     expect(readFileSync(webEnvLog, 'utf8')).not.toContain('29999');
     expect(readFileSync(webEnvLog, 'utf8')).not.toContain('39999');
   });
+
+  it('uses probe-only parent stack reuse without starting local API or Web services', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'wait-real-stack-ready-'));
+    tempRoots.push(tempRoot);
+
+    const scriptsDir = path.join(tempRoot, 'scripts');
+    const scriptsLibDir = path.join(scriptsDir, 'lib');
+    const binDir = path.join(tempRoot, 'bin');
+    const stateRoot = path.join(tempRoot, 'artifacts/backend-real/current');
+    const runtimeCallsLog = path.join(tempRoot, 'runtime-calls.log');
+    const runNextLog = path.join(tempRoot, 'run-next.log');
+    const curlArgsLog = path.join(tempRoot, 'curl-args.log');
+    const kubectlLog = path.join(tempRoot, 'kubectl.log');
+
+    mkdirSync(scriptsLibDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(stateRoot, { recursive: true });
+
+    cpSync(path.join(process.cwd(), 'scripts/wait-real-stack-ready.sh'), path.join(scriptsDir, 'wait-real-stack-ready.sh'));
+    cpSync(path.join(process.cwd(), 'scripts/lib/backend-real-state.sh'), path.join(scriptsLibDir, 'backend-real-state.sh'));
+
+    writeFileSync(
+      path.join(scriptsLibDir, 'local-runtime-processes.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+local_runtime_port_is_listening() {
+  printf 'port-check:%s\\n' "$1" >> "${runtimeCallsLog}"
+  return 1
+}
+
+local_runtime_start_owned_service() {
+  printf 'start:%s:%s\\n' "$1" "$2" >> "${runtimeCallsLog}"
+  return 97
+}
+
+local_runtime_capture_authoritative_service_pid() {
+  printf 'capture:%s:%s:%s\\n' "$1" "$2" "$3" >> "${runtimeCallsLog}"
+  return 97
+}
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsLibDir, 'runtime-verification.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+clear_runtime_stack_env() {
+  :
+}
+
+resolve_loopback_runtime_stack() {
+  local api_port="$1"
+  local web_port="$2"
+  local keycloak_port="$3"
+  local keycloak_realm="$4"
+
+  RUNTIME_HOST_API_BASE_URL="http://127.0.0.1:\${api_port}"
+  RUNTIME_BROWSER_WEB_BASE_URL="http://localhost:\${web_port}"
+  KEYCLOAK_BASE_URL="http://localhost:\${keycloak_port}"
+  PUBLIC_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
+  INTERNAL_KEYCLOAK_BASE_URL="\${KEYCLOAK_BASE_URL}"
+  KEYCLOAK_ISSUER_URL="\${KEYCLOAK_BASE_URL}/realms/\${keycloak_realm}"
+  export \
+    RUNTIME_HOST_API_BASE_URL \
+    RUNTIME_BROWSER_WEB_BASE_URL \
+    KEYCLOAK_BASE_URL \
+    PUBLIC_KEYCLOAK_BASE_URL \
+    INTERNAL_KEYCLOAK_BASE_URL \
+    KEYCLOAK_ISSUER_URL
+}
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsDir, 'run-next-dev-safe.sh'),
+      `#!/usr/bin/env bash
+printf 'run-next-dev-safe should not run\\n' >> "${runNextLog}"
+exit 98
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(binDir, 'curl'),
+      `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "${curlArgsLog}"
+exit 0
+`,
+      'utf8',
+    );
+    writeFileSync(
+      path.join(binDir, 'kubectl'),
+      `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "${kubectlLog}"
+exit 0
+`,
+      'utf8',
+    );
+    writeFileSync(path.join(stateRoot, 'token.txt'), 'probe-token\n', 'utf8');
+    chmodSync(path.join(binDir, 'curl'), 0o755);
+    chmodSync(path.join(binDir, 'kubectl'), 0o755);
+
+    execFileSync('bash', [path.join(scriptsDir, 'wait-real-stack-ready.sh')], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        BACKEND_REAL_READY_PROBE_ONLY: '1',
+        INTEGRATION_PARENT_STACK_REUSE: 'true',
+        BACKEND_REAL_STATE_DIR: stateRoot,
+        API_PORT: '20090',
+        WEB_PORT: '3091',
+        KEYCLOAK_PORT: '28081',
+        API_BASE: 'http://127.0.0.1:20090',
+        BASE_URL: 'http://localhost:3091',
+      },
+      stdio: 'pipe',
+    });
+
+    expect(existsSync(runtimeCallsLog)).toBe(false);
+    expect(existsSync(runNextLog)).toBe(false);
+    expect(existsSync(kubectlLog)).toBe(false);
+    expect(readFileSync(curlArgsLog, 'utf8').trim().split('\n')).toEqual([
+      '-fsS http://localhost:28081/realms/mbos/.well-known/openid-configuration',
+      '-fsS http://127.0.0.1:20090/api/v1/openapi.json',
+      '-fsS http://localhost:3091/api/public/workspaces',
+    ]);
+  });
 });

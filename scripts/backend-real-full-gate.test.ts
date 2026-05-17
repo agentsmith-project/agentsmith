@@ -48,6 +48,11 @@ function stepRoute(story: StoryDefinition, step: StoryStepDefinition): string {
   return story.scenes.find((scene) => scene.sceneId === step.sceneId)?.route ?? story.entryRoute;
 }
 
+function shellFunctionBody(source: string, functionName: string): string {
+  const match = source.match(new RegExp(`^${functionName}\\(\\) \\{\\n([\\s\\S]*?)^\\}`, 'mu'));
+  return match?.[1] ?? '';
+}
+
 function renderReview(manifest: UxTraceBundleManifest): string {
   return [
     `# ${manifest.title}`,
@@ -768,6 +773,15 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('reusing parent-verified CSI image import');
   });
 
+  it('imports internal gate kind image tarballs through stdin redirection instead of a pipe', () => {
+    const script = readFileSync('scripts/lib/internal-backend-real-gate.sh', 'utf8');
+    const body = shellFunctionBody(script, 'internal_real_gate_ensure_kind_image');
+
+    expect(body).not.toMatch(/cat\s+"\$\{tarball\}"\s*\|\s*docker exec -i/u);
+    expect(body).toMatch(/docker exec -i "\$\{KIND_NODE_NAME\}"[\s\S]*< "\$\{tarball\}"/u);
+    expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');
+  });
+
   it('lets the release user story reuse runner build and CSI kind imports without suppressing evidence', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
@@ -845,10 +859,15 @@ describe('backend-real full gate runtime ownership contract', () => {
 
   it('invokes backend-real:ready with explicit release-ready ports and without ambient integration port leakage', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const readyCommandStart = script.indexOf("run_cmd \"env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT");
+    const readyCommandEnd = script.indexOf('npm run backend-real:ready', readyCommandStart);
+    const readyCommand = script.slice(readyCommandStart, readyCommandEnd);
 
     expect(script).toContain(
-      "run_cmd \"env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}'",
+      "run_cmd \"env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_READY_PROBE_ONLY=1 INTEGRATION_PARENT_STACK_REUSE=true BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}'",
     );
+    expect(readyCommand).toContain('BACKEND_REAL_READY_PROBE_ONLY=1');
+    expect(readyCommand).toContain('INTEGRATION_PARENT_STACK_REUSE=true');
     expect(script).toContain("KEYCLOAK_PORT='${KEYCLOAK_PORT}'");
     expect(script).toContain("API_BASE='${RUNTIME_HOST_API_BASE_URL}'");
     expect(script).toContain("BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}'");

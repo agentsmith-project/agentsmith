@@ -294,7 +294,7 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passe
 ensure_local_release_stack
 ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"
-run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_READY_PROBE_ONLY=1 INTEGRATION_PARENT_STACK_REUSE=true BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "npm run backend-real:run"

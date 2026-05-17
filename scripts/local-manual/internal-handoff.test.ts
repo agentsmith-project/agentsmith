@@ -248,6 +248,15 @@ describe('local-manual internal handoff', () => {
     expect(script).not.toContain('kubectl create namespace "${K8S_NAMESPACE}"');
   });
 
+  it('imports local-manual kind image tarballs through stdin redirection instead of a pipe', () => {
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const body = functionBody(common, 'ensure_kind_image');
+
+    expect(body).not.toMatch(/cat\s+"\$\{tarball\}"\s*\|\s*docker exec -i/u);
+    expect(body).toMatch(/docker exec -i "\$\{node_name\}"[\s\S]*< "\$\{tarball\}"/u);
+    expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');
+  });
+
   it('starts AFSCP as a local-real dependency before the internal sandbox and AgentSmith API restart', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const up = readFileSync('scripts/local-manual/internal-up.sh', 'utf8');

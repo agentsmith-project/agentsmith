@@ -44,8 +44,13 @@ TIMEOUT_SEC="${READY_TIMEOUT_SEC:-180}"
 SLEEP_SEC="${READY_SLEEP_SEC:-2}"
 CSI_NAMESPACE="${CSI_NAMESPACE:-kube-system}"
 CSI_DAEMONSET="${CSI_DAEMONSET:-juicefs-csi-node}"
+BACKEND_REAL_READY_PROBE_ONLY="${BACKEND_REAL_READY_PROBE_ONLY:-0}"
 
 info() { echo "[wait-real-stack-ready] $*"; }
+
+ready_probe_only() {
+  [[ "${BACKEND_REAL_READY_PROBE_ONLY}" == "1" ]]
+}
 
 ensure_local_release_stack() {
   local state_dir api_log web_log api_pid api_root_pid web_pid web_wrapper_pid next_dev_pid_file next_dev_port_file web_process_state_file
@@ -194,17 +199,24 @@ wait_http_auth() {
   info "${name} ready"
 }
 
-ensure_local_release_stack
+if ready_probe_only; then
+  info "probe-only readiness: reusing parent stack"
+else
+  ensure_local_release_stack
+fi
 
 wait_http "keycloak oidc discovery" "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM:-mbos}/.well-known/openid-configuration"
 wait_http "api docs" "${API_BASE%/}/api/v1/openapi.json"
 wait_http "web" "${WEB_BASE%/}/api/public/workspaces"
-wait_http_auth "api auth" "${API_BASE%/}/api/v1/me/profile" "${TOKEN_FILE}"
 
-if command -v kubectl >/dev/null 2>&1; then
-  if kubectl get daemonset "${CSI_DAEMONSET}" -n "${CSI_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl rollout status daemonset/"${CSI_DAEMONSET}" -n "${CSI_NAMESPACE}" --timeout="${TIMEOUT_SEC}s" >/dev/null
-    info "csi node daemonset ready"
+if ! ready_probe_only; then
+  wait_http_auth "api auth" "${API_BASE%/}/api/v1/me/profile" "${TOKEN_FILE}"
+
+  if command -v kubectl >/dev/null 2>&1; then
+    if kubectl get daemonset "${CSI_DAEMONSET}" -n "${CSI_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl rollout status daemonset/"${CSI_DAEMONSET}" -n "${CSI_NAMESPACE}" --timeout="${TIMEOUT_SEC}s" >/dev/null
+      info "csi node daemonset ready"
+    fi
   fi
 fi
 

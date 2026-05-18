@@ -390,25 +390,24 @@ describe('local-manual internal handoff', () => {
     expect(fullStopBody).toContain('stop_afscp_local_runtime');
   });
 
-  it('resolves AFSCP JVS from the sibling source cache instead of the old release default', () => {
+  it('resolves AFSCP JVS from the published release artifact by default', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
 
     expect(common).toContain('resolve_afscp_jvs_binary()');
-    expect(common).toContain('prepare_afscp_jvs_sibling_artifact()');
-    expect(common).toContain('AFSCP_JVS_ROOT="${AFSCP_JVS_ROOT:-$(realpath -m "${ROOT_DIR}/../jvs")}"');
-    expect(common).toContain('AFSCP_JVS_SIBLING_CACHE_DIR="${AFSCP_JVS_SIBLING_CACHE_DIR:-${ROOT_DIR}/artifacts/cache/jvs-sibling}"');
+    expect(common).toContain('prepare_afscp_jvs_release_artifact()');
+    expect(common).toContain('AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.10}"');
+    expect(common).toContain('https://github.com/agentsmith-project/jvs/releases/download/${AFSCP_JVS_RELEASE_VERSION}');
     expect(common).toContain('afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}"');
     expect(common).not.toContain('AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.9}"');
     expect(common).not.toContain('releases/download/v0.4.9');
   });
 
-  it('keeps the local-real internal env off the old JVS release default', () => {
+  it('keeps the local-real internal env on the published JVS release default', () => {
     const envSource = readFileSync('infra/flows/local-manual-internal.env', 'utf8');
 
-    expect(envSource).toContain('JVS defaults to the sibling checkout');
+    expect(envSource).toContain('JVS defaults to the verified GitHub release artifact');
+    expect(envSource).toContain('AFSCP_JVS_RELEASE_VERSION=${AFSCP_JVS_RELEASE_VERSION:-v0.4.10}');
     expect(envSource).not.toContain('releases/download/v0.4.9');
-    expect(envSource).not.toContain('AFSCP_JVS_RELEASE_URL=https://');
-    expect(envSource).not.toContain('AFSCP_JVS_SHA256SUMS_URL=https://');
   });
 
   it('does not default local-real internal env to a hard-coded JVS binary', () => {
@@ -418,9 +417,9 @@ describe('local-manual internal handoff', () => {
     expect(envSource).toContain('AFSCP_RESTORE_RECOVERY_ENABLED=${AFSCP_RESTORE_RECOVERY_ENABLED:-true}');
     expect(envSource).toContain('Usually do not set AFSCP_JVS_BINARY_PATH/SHA');
     expect(envSource).toContain('must pass `jvs afscp --help`');
-    expect(envSource).toContain('must not pin the historical sibling build output ../jvs/bin/jvs-linux-amd64');
+    expect(envSource).toContain('historical sibling build output ../jvs/bin/jvs-linux-amd64');
     expect(localManualSample).toContain('usually do not set AFSCP_JVS_BINARY_PATH/SHA');
-    expect(localManualSample).toContain('Explicit overrides are diagnostics only and must pass `jvs afscp --help`');
+    expect(localManualSample).toContain('Explicit binary overrides are diagnostics only and must pass `jvs afscp --help`');
     expect(localManualSample).toContain('Do not pin the historical sibling build output ../jvs/bin/jvs-linux-amd64');
     expect(envSource).not.toContain('AFSCP_JVS_BINARY_PATH=${AFSCP_JVS_BINARY_PATH:-');
     expect(envSource).not.toContain('AFSCP_JVS_BINARY_SHA256=${AFSCP_JVS_BINARY_SHA256:-');
@@ -490,6 +489,9 @@ FAKEGO
       AFSCP_JVS_SIBLING_CACHE_DIR="$cache_dir"
       AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="$cached_binary"
       AFSCP_JVS_SIBLING_SOURCE_REF_PATH="$cache_dir/jvs-linux-amd64.source-ref"
+      AFSCP_JVS_RELEASE_URL=
+      AFSCP_JVS_SHA256SUMS_URL=
+      AFSCP_JVS_SHA256SUMS_PATH=
       resolve_afscp_jvs_binary
       "$AFSCP_JVS_BINARY_PATH" afscp --help
       write_afscp_local_runtime_env
@@ -562,6 +564,9 @@ FAKEGO
       AFSCP_JVS_SIBLING_CACHE_DIR="$cache_dir"
       AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="$cache_dir/jvs-linux-amd64"
       AFSCP_JVS_SIBLING_SOURCE_REF_PATH="$cache_dir/jvs-linux-amd64.source-ref"
+      AFSCP_JVS_RELEASE_URL=
+      AFSCP_JVS_SHA256SUMS_URL=
+      AFSCP_JVS_SHA256SUMS_PATH=
       resolve_afscp_jvs_binary
     `);
 
@@ -671,28 +676,28 @@ JVS
     expect(result.stdout).toContain('gateway_prefix=/e/\n');
   });
 
-  it('defaults JVS to sibling source cache paths with inactive release URLs', () => {
+  it('defaults JVS to published release cache paths and URLs', () => {
     const result = runInternalCommonSnippet(`
-      printf 'sibling_root=%s\\n' "$AFSCP_JVS_ROOT"
-      printf 'sibling_cache=%s\\n' "$AFSCP_JVS_SIBLING_CACHE_DIR"
-      printf 'sibling_binary_cache=%s\\n' "$AFSCP_JVS_SIBLING_BINARY_CACHE_PATH"
-      printf 'sibling_source_ref=%s\\n' "$AFSCP_JVS_SIBLING_SOURCE_REF_PATH"
       printf 'internal_real_dir=%s\\n' "$INTERNAL_REAL_DIR"
+      printf 'release_version=%s\\n' "$AFSCP_JVS_RELEASE_VERSION"
+      printf 'release_cache=%s\\n' "$AFSCP_JVS_RELEASE_CACHE_DIR"
+      printf 'release_binary_cache=%s\\n' "$AFSCP_JVS_RELEASE_BINARY_CACHE_PATH"
+      printf 'release_sums_cache=%s\\n' "$AFSCP_JVS_RELEASE_SHA256SUMS_CACHE_PATH"
       printf 'release=%s\\n' "$AFSCP_JVS_RELEASE_URL"
       printf 'sums=%s\\n' "$AFSCP_JVS_SHA256SUMS_URL"
     `);
 
     expect(result.status).toBe(0);
-    const siblingCacheDir = `${process.cwd()}/artifacts/cache/jvs-sibling`;
-    expect(result.stdout).toContain(`sibling_root=${path.dirname(process.cwd())}/jvs\n`);
-    expect(result.stdout).toContain(`sibling_cache=${siblingCacheDir}\n`);
-    expect(result.stdout).toContain(`sibling_binary_cache=${siblingCacheDir}/jvs-linux-amd64\n`);
-    expect(result.stdout).toContain(`sibling_source_ref=${siblingCacheDir}/jvs-linux-amd64.source-ref\n`);
+    const releaseCacheDir = `${process.cwd()}/artifacts/cache/jvs-release/v0.4.10`;
+    expect(result.stdout).toContain('release_version=v0.4.10\n');
+    expect(result.stdout).toContain(`release_cache=${releaseCacheDir}\n`);
+    expect(result.stdout).toContain(`release_binary_cache=${releaseCacheDir}/jvs-linux-amd64\n`);
+    expect(result.stdout).toContain(`release_sums_cache=${releaseCacheDir}/SHA256SUMS\n`);
     const internalRealDir = result.stdout.match(/^internal_real_dir=(.+)$/m)?.[1] ?? '';
     expect(internalRealDir).toBeTruthy();
-    expect(siblingCacheDir.startsWith(internalRealDir)).toBe(false);
-    expect(result.stdout).toContain('release=\n');
-    expect(result.stdout).toContain('sums=\n');
+    expect(releaseCacheDir.startsWith(internalRealDir)).toBe(false);
+    expect(result.stdout).toContain('release=https://github.com/agentsmith-project/jvs/releases/download/v0.4.10/jvs-linux-amd64\n');
+    expect(result.stdout).toContain('sums=https://github.com/agentsmith-project/jvs/releases/download/v0.4.10/SHA256SUMS\n');
   });
 
   it('preserves explicit JVS release cache dir overrides while deriving child cache paths from them', () => {

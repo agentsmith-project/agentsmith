@@ -68,12 +68,7 @@ export type LocalKindImageRefs = {
     k8s_tag_ref?: string;
     k8s_ref: string;
   };
-  afscp: {
-    host_ref: string;
-    host_digest_ref?: string;
-    k8s_tag_ref?: string;
-    k8s_ref: string;
-  };
+  afscp: MirroredSourceImageRefs;
   llmup: {
     version: string;
     source_ref: string;
@@ -122,9 +117,6 @@ export type LocalKindImagesProducerOptions = {
   outputSiteEnvPath?: string;
   evidenceDir?: string;
   sandboxSourceDir?: string;
-  afscpSourceDir?: string;
-  jvsSourceDir?: string;
-  jvsBinarySourcePath?: string;
   llmupImageLockPath?: string;
   hostRegistry?: string;
   k8sRegistry?: string;
@@ -368,6 +360,7 @@ function imageRefs(options: {
   k8sRegistry: string;
   registryProject: string;
   llmup: LlmupImageLock;
+  afscp: MirroredSourceImageRefs;
   ingressNginxController: MirroredSourceImageRefs;
   ingressNginxCertgen: MirroredSourceImageRefs;
 }): LocalKindImageRefs {
@@ -392,11 +385,7 @@ function imageRefs(options: {
       k8s_tag_ref: `${prefixK8s}/agentsmith-managed-runner:${options.tag}`,
       k8s_ref: `${prefixK8s}/agentsmith-managed-runner:${options.tag}`,
     },
-    afscp: {
-      host_ref: `${prefixHost}/agentsmith-fs-control-plane:${options.tag}`,
-      k8s_tag_ref: `${prefixK8s}/agentsmith-fs-control-plane:${options.tag}`,
-      k8s_ref: `${prefixK8s}/agentsmith-fs-control-plane:${options.tag}`,
-    },
+    afscp: options.afscp,
     llmup: {
       version: options.llmup.version,
       source_ref: options.llmup.source_image,
@@ -699,68 +688,6 @@ async function configureKindRegistryNoProxy(options: {
   });
 }
 
-async function syncAfscpJvsBinary(options: {
-  afscpSourceDir: string;
-  jvsSourceDir: string;
-  jvsBinarySourcePath?: string;
-  runner: LocalKindImageCommandRunner;
-  env: Record<string, string | undefined>;
-}): Promise<{ evidence: ImageOperationEvidence; failure?: CheckFailure }> {
-  const sourcePath = options.jvsBinarySourcePath ?? path.join(options.jvsSourceDir, 'bin', 'jvs-linux-amd64');
-  const targetPath = path.join(options.afscpSourceDir, 'dist', 'jvs-linux-amd64');
-  const dockerfilePath = path.join(options.afscpSourceDir, 'Dockerfile');
-  const script = [
-    'set -euo pipefail',
-    'echo afscp-jvs-binary-sync',
-    `source_path=${shellQuote(sourcePath)}`,
-    `target_path=${shellQuote(targetPath)}`,
-    `dockerfile_path=${shellQuote(dockerfilePath)}`,
-    'expected_sha="$(sed -n \'s/^ARG JVS_SHA256=//p\' "${dockerfile_path}" | head -1)"',
-    'if [[ -z "${expected_sha}" ]]; then echo "missing ARG JVS_SHA256 in ${dockerfile_path}" >&2; exit 1; fi',
-    'if [[ ! -x "${source_path}" ]]; then echo "missing executable JVS release binary at ${source_path}; run make release-build in the sibling jvs checkout" >&2; exit 1; fi',
-    'mkdir -p "$(dirname "${target_path}")"',
-    'cp "${source_path}" "${target_path}"',
-    'chmod 0755 "${target_path}"',
-    'actual_sha="$(sha256sum "${target_path}" | awk \'{print $1}\')"',
-    'if [[ "${actual_sha}" != "${expected_sha}" ]]; then echo "JVS binary checksum mismatch: expected ${expected_sha}, got ${actual_sha} from ${source_path}" >&2; exit 1; fi',
-    'assert_jvs_help_flags() {',
-    '  local command_label="$1"',
-    '  local expected_flags="$2"',
-    '  shift 2',
-    '  local help_output',
-    '  if ! help_output="$("$@" 2>&1)"; then',
-    '    echo "JVS binary semantic smoke failed: ${command_label} exited non-zero" >&2',
-    '    echo "${help_output}" >&2',
-    '    exit 1',
-    '  fi',
-    '  local expected_flag',
-    '  for expected_flag in ${expected_flags}; do',
-    '    if ! grep -Fq -- "${expected_flag}" <<<"${help_output}"; then',
-    '      echo "JVS binary semantic smoke failed: ${command_label} missing ${expected_flag}" >&2',
-    '      echo "${help_output}" >&2',
-    '      exit 1',
-    '    fi',
-    '  done',
-    '}',
-    'assert_jvs_help_flags "jvs afscp save --help" "--control-root --home --json --message --purpose" "${target_path}" afscp save --help',
-    'assert_jvs_help_flags "jvs afscp list --help" "--control-root --home --json" "${target_path}" afscp list --help',
-    'assert_jvs_help_flags "jvs afscp restore --help" "--control-root --home --json --save-point" "${target_path}" afscp restore --help',
-    'assert_jvs_help_flags "jvs afscp clone --help" "--control-root --home --json --save-point --target-control-root --target-home" "${target_path}" afscp clone --help',
-    'assert_jvs_help_flags "jvs afscp status --help" "--control-root --home --json" "${target_path}" afscp status --help',
-    'assert_jvs_help_flags "jvs afscp doctor --help" "--control-root --home --json" "${target_path}" afscp doctor --help',
-    'echo "JVS binary semantic smoke passed for jvs.afscp.direct.v1 help contract"',
-  ].join('\n');
-
-  return runCommandOperation({
-    name: 'afscp-jvs-binary-sync',
-    command: 'bash',
-    args: ['-lc', script],
-    runner: options.runner,
-    env: options.env,
-    timeoutMs: SHORT_DOCKER_TIMEOUT_MS,
-  });
-}
-
 function registryBaseUrl(k8sRegistry: string): string {
   return `http://${k8sRegistry}/v2/`;
 }
@@ -1024,14 +951,6 @@ function siblingSandboxSourceDir(): string {
   return path.resolve(REPO_ROOT, '..', 'mbos-sandbox-v1', 'manager-service');
 }
 
-function siblingAfscpSourceDir(): string {
-  return path.resolve(REPO_ROOT, '..', 'agentsmith-fs-control-plane');
-}
-
-function siblingJvsSourceDir(): string {
-  return path.resolve(REPO_ROOT, '..', 'jvs');
-}
-
 export async function runLocalKindImagesProducer(
   options: LocalKindImagesProducerOptions = {},
 ): Promise<LocalKindImagesProducerResult> {
@@ -1045,10 +964,6 @@ export async function runLocalKindImagesProducer(
   const generatedSiteEnvPath = path.resolve(options.outputSiteEnvPath ?? DEFAULT_LOCAL_KIND_SITE_ENV_PATH);
   const sandboxSourceDir = path.resolve(options.sandboxSourceDir ?? env.SANDBOX_SOURCE_DIR ?? siblingSandboxSourceDir());
   const sandboxDockerfile = path.join(sandboxSourceDir, 'Dockerfile');
-  const afscpSourceDir = path.resolve(options.afscpSourceDir ?? env.AFSCP_SOURCE_DIR ?? siblingAfscpSourceDir());
-  const afscpDockerfile = path.join(afscpSourceDir, 'Dockerfile');
-  const jvsSourceDir = path.resolve(options.jvsSourceDir ?? env.JVS_SOURCE_DIR ?? siblingJvsSourceDir());
-  const jvsBinarySourcePath = options.jvsBinarySourcePath ?? env.JVS_BINARY_SOURCE_PATH;
   const llmupLockPath = path.resolve(options.llmupImageLockPath ?? DEFAULT_LLMUP_IMAGE_LOCK_PATH);
   const runner = options.runner ?? defaultLocalKindImageCommandRunner;
   const failures: CheckFailure[] = [];
@@ -1077,12 +992,21 @@ export async function runLocalKindImagesProducer(
     k8sRegistry,
     registryProject,
   });
+  const afscp = parsePinnedSourceImage(siteEnv.AFSCP_IMAGE, {
+    sourceName: siteEnvPath,
+    key: 'AFSCP_IMAGE',
+    repositoryName: 'agentsmith-fs-control-plane',
+    hostRegistry,
+    k8sRegistry,
+    registryProject,
+  });
   const refs = imageRefs({
     tag,
     hostRegistry,
     k8sRegistry,
     registryProject,
     llmup,
+    afscp,
     ingressNginxController,
     ingressNginxCertgen,
   });
@@ -1097,14 +1021,6 @@ export async function runLocalKindImagesProducer(
       `missing sandbox manager source at ${sandboxSourceDir}; set SANDBOX_SOURCE_DIR or --sandbox-source-dir to ../mbos-sandbox-v1/manager-service`,
     );
   }
-  if (!existsSync(afscpSourceDir) || !existsSync(afscpDockerfile)) {
-    addFailure(
-      failures,
-      'afscp-source',
-      `missing AFSCP source at ${afscpSourceDir}; set AFSCP_SOURCE_DIR or --afscp-source-dir to ../agentsmith-fs-control-plane`,
-    );
-  }
-
   const baseEvidence: Omit<LocalKindImagesEvidence, 'status' | 'generated_at' | 'paths'> = {
     schema_version: 'agentsmith.unified-deploy.local-kind-images.evidence/v1',
     producer: 'local-kind-images',
@@ -1151,19 +1067,6 @@ export async function runLocalKindImagesProducer(
     return finishImages({ ...baseEvidence, failures }, evidenceDir);
   }
 
-  const jvsBinarySync = await syncAfscpJvsBinary({
-    afscpSourceDir,
-    jvsSourceDir,
-    jvsBinarySourcePath,
-    runner,
-    env,
-  });
-  operations.push(jvsBinarySync.evidence);
-  if (jvsBinarySync.failure) {
-    failures.push(jvsBinarySync.failure);
-    return finishImages({ ...baseEvidence, failures }, evidenceDir);
-  }
-
   const appAndSandbox = await runDockerSequence({
     runner,
     env,
@@ -1198,14 +1101,6 @@ export async function runLocalKindImagesProducer(
         args: ['push', refs.sandbox_manager.host_ref],
       },
       {
-        name: 'afscp-build',
-        args: ['build', '-t', refs.afscp.host_ref, '-f', afscpDockerfile, afscpSourceDir],
-      },
-      {
-        name: 'afscp-push',
-        args: ['push', refs.afscp.host_ref],
-      },
-      {
         name: 'managed-runner-base-build',
         args: ['build', '-t', refs.managed_runner.base_host_ref, '-f', 'infra/runner/Dockerfile.agent-task-runner-base', '.'],
       },
@@ -1235,6 +1130,11 @@ export async function runLocalKindImagesProducer(
   }
 
   const mirroredSourceImages = [
+    {
+      name: 'afscp',
+      sourceRef: refs.afscp.source_ref,
+      hostRef: refs.afscp.host_ref,
+    },
     {
       name: 'llmup',
       sourceRef: refs.llmup.source_ref,
@@ -1783,8 +1683,6 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       options.evidenceDir = arg.slice('--evidence-dir='.length);
     } else if (arg.startsWith('--sandbox-source-dir=')) {
       options.sandboxSourceDir = arg.slice('--sandbox-source-dir='.length);
-    } else if (arg.startsWith('--afscp-source-dir=')) {
-      options.afscpSourceDir = arg.slice('--afscp-source-dir='.length);
     } else if (arg.startsWith('--llmup-image-lock=')) {
       options.llmupImageLockPath = arg.slice('--llmup-image-lock='.length);
     } else if (arg.startsWith('--host-registry=')) {

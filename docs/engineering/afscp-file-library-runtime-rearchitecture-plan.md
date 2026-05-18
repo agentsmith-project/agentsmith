@@ -12,7 +12,7 @@ Owner: AgentSmith product and engineering.
 > preview-first restore language in this historical plan as background only, not
 > implementation or acceptance guidance.
 
-Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.5`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
+Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is the GitHub-published image `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
 

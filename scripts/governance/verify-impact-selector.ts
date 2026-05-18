@@ -145,6 +145,7 @@ export interface BuildVerificationPlanInput {
   catalog?: VerificationCatalog;
   stories?: readonly StoryDefinition[];
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
+  packageJsonBaseRefs?: readonly string[];
 }
 
 type MutableStoryCard = Omit<
@@ -479,6 +480,10 @@ function isGovernanceToolingPath(filePath: string): boolean {
 }
 
 type JsonObject = Record<string, unknown>;
+type PackageJsonComparison = {
+  basePackageJson: JsonObject;
+  currentPackageJson: JsonObject;
+};
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -562,6 +567,11 @@ function readPackageJsonFromHead(): JsonObject | null {
   return content === null ? null : parseJsonObject(content);
 }
 
+function readPackageJsonFromGitRef(ref: string): JsonObject | null {
+  const content = readGitText(['show', `${ref}:package.json`]);
+  return content === null ? null : parseJsonObject(content);
+}
+
 function readPackageJsonFromIndex(): JsonObject | null {
   const content = readGitText(['show', ':package.json']);
   return content === null ? null : parseJsonObject(content);
@@ -573,6 +583,93 @@ function readPackageJsonFromWorktree(): JsonObject | null {
   } catch {
     return null;
   }
+}
+
+function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string): boolean {
+  const diff = readGitText(['diff', '--name-only', `${baseRef}..${currentRef}`, '--', 'package.json']);
+  if (diff === null) {
+    return false;
+  }
+  return diff
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .includes('package.json');
+}
+
+function packageJsonBaseRefCandidates(
+  explicitBaseRefs: readonly string[] = [],
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const candidates: string[] = explicitBaseRefs
+    .map((ref) => ref.trim())
+    .filter(Boolean);
+  const verifyBaseRef = env.VERIFY_BASE_REF?.trim();
+  if (verifyBaseRef) {
+    candidates.push(verifyBaseRef);
+  }
+
+  const githubBaseRef = env.GITHUB_BASE_REF?.trim();
+  if (githubBaseRef) {
+    candidates.push(githubBaseRef.startsWith('origin/') ? githubBaseRef : `origin/${githubBaseRef}`);
+  }
+
+  candidates.push('origin/main');
+  return [...new Set(candidates)];
+}
+
+function packageJsonComparisonFromBranchBase(baseRefs: readonly string[]): PackageJsonComparison | null {
+  for (const baseRef of packageJsonBaseRefCandidates(baseRefs)) {
+    const verifyBaseResult = readGitText(['rev-parse', '--verify', baseRef]);
+    if (verifyBaseResult === null) {
+      continue;
+    }
+
+    const mergeBase = readGitText(['merge-base', 'HEAD', baseRef])?.trim().split(/\r?\n/)[0]?.trim();
+    if (!mergeBase || !hasPackageJsonDiffBetweenRefs(mergeBase, 'HEAD')) {
+      continue;
+    }
+
+    const basePackageJson = readPackageJsonFromGitRef(mergeBase);
+    const currentPackageJson = readPackageJsonFromHead();
+    if (basePackageJson && currentPackageJson) {
+      return {
+        basePackageJson,
+        currentPackageJson,
+      };
+    }
+  }
+
+  return null;
+}
+
+function packageJsonComparisonFromWorktree(): PackageJsonComparison | null {
+  if (!packageJsonHasDiffAgainstHead()) {
+    return null;
+  }
+
+  const hasCachedDiff = packageJsonHasCachedDiff();
+  const hasUnstagedDiff = packageJsonHasUnstagedDiff();
+  if (hasCachedDiff && hasUnstagedDiff) {
+    return null;
+  }
+
+  const basePackageJson = readPackageJsonFromHead();
+  const currentPackageJson = hasCachedDiff ? readPackageJsonFromIndex() : readPackageJsonFromWorktree();
+  if (!basePackageJson || !currentPackageJson) {
+    return null;
+  }
+
+  return {
+    basePackageJson,
+    currentPackageJson,
+  };
+}
+
+function packageJsonComparisonForChangedFile(baseRefs: readonly string[]): PackageJsonComparison | null {
+  if (packageJsonHasDiffAgainstHead()) {
+    return packageJsonComparisonFromWorktree();
+  }
+  return packageJsonComparisonFromBranchBase(baseRefs);
 }
 
 function isSafeGovernanceToolingTestPath(value: string): boolean {
@@ -625,30 +722,23 @@ function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: st
   return false;
 }
 
-function isPackageJsonSafeGovernanceToolingChange(filePath: string): boolean {
-  if (filePath !== 'package.json' || !packageJsonHasDiffAgainstHead()) {
+function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== 'package.json') {
     return false;
   }
 
-  const hasCachedDiff = packageJsonHasCachedDiff();
-  const hasUnstagedDiff = packageJsonHasUnstagedDiff();
-  if (hasCachedDiff && hasUnstagedDiff) {
+  const comparison = packageJsonComparisonForChangedFile(baseRefs);
+  if (!comparison) {
     return false;
   }
 
-  const basePackageJson = readPackageJsonFromHead();
-  const currentPackageJson = hasCachedDiff ? readPackageJsonFromIndex() : readPackageJsonFromWorktree();
-  if (!basePackageJson || !currentPackageJson) {
-    return false;
-  }
-
-  const packageChangedKeys = changedJsonKeys(basePackageJson, currentPackageJson);
+  const packageChangedKeys = changedJsonKeys(comparison.basePackageJson, comparison.currentPackageJson);
   if (packageChangedKeys.length !== 1 || packageChangedKeys[0] !== 'scripts') {
     return false;
   }
 
-  const baseScripts = basePackageJson.scripts;
-  const currentScripts = currentPackageJson.scripts;
+  const baseScripts = comparison.basePackageJson.scripts;
+  const currentScripts = comparison.currentPackageJson.scripts;
   if (!isJsonObject(baseScripts) || !isJsonObject(currentScripts)) {
     return false;
   }
@@ -1373,6 +1463,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const generatedAt = input.generatedAt ?? catalog.provenance.generated_at;
   const stories = catalog.stories;
   const changedFiles = uniqueSorted((input.changedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
+  const packageJsonBaseRefs = input.packageJsonBaseRefs ?? [];
   const storyBySourceFile = buildStorySourceMap(catalog);
   const accumulator = createAccumulator();
   const releaseRealDiagnosticGoal = goal === 'release-real' && input.goalExplicit;
@@ -1484,7 +1575,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    if (isPackageJsonSafeGovernanceToolingChange(changedFile)) {
+    if (isPackageJsonSafeGovernanceToolingChange(changedFile, packageJsonBaseRefs)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
       const action = 'Run npm run verify -- --goal=pr --run for the package.json governance or mock-lane npm script change; heavy visual/backend-real evidence is not selected by this impact report.';

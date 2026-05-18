@@ -73,6 +73,50 @@ function withPackageJsonGitFixture<T>(
   });
 }
 
+function withCleanBranchPackageJsonGitFixture<T>(
+  basePackageJson: unknown,
+  currentPackageJson: unknown,
+  run: (args: { root: string; catalog: ReturnType<typeof buildVerificationCatalog> }) => T,
+  baseRef = 'refs/remotes/origin/main',
+): T {
+  const catalog = buildVerificationCatalog();
+  return withTempDir('agentsmith-package-impact-clean-branch-', (root) => {
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(basePackageJson, null, 2)}\n`);
+    runGitInFixture(root, ['init']);
+    runGitInFixture(root, ['add', 'package.json']);
+    runGitInFixture(root, [
+      '-c',
+      'user.email=agentsmith@example.test',
+      '-c',
+      'user.name=AgentSmith Test',
+      'commit',
+      '-m',
+      'base package',
+    ]);
+    runGitInFixture(root, ['update-ref', baseRef, 'HEAD']);
+
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(currentPackageJson, null, 2)}\n`);
+    runGitInFixture(root, ['add', 'package.json']);
+    runGitInFixture(root, [
+      '-c',
+      'user.email=agentsmith@example.test',
+      '-c',
+      'user.name=AgentSmith Test',
+      'commit',
+      '-m',
+      'current package',
+    ]);
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      return run({ root, catalog });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+}
+
 type ReportEvidenceCard = {
   level: string;
   state: string;
@@ -990,6 +1034,149 @@ describe('verify impact selector', () => {
           affectedSurfaces: ['engineering-governance-tooling'],
           storyIds: [],
           broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('maps clean branch package.json safe scripts by comparing merge-base to HEAD instead of dirty worktree state', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:e2e:lane:mock:chromium': 'bash scripts/run-mock-lane-playwright.sh --project=chromium --workers=4 && bash scripts/run-mock-lane-playwright.sh --project=chromium-serial --workers=1',
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:e2e:lane:mock:chromium': 'bash scripts/run-mock-lane-session.sh --shards=chromium,chromium-serial',
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+
+    withCleanBranchPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('uses the caller-provided package.json base ref instead of assuming origin/main', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:governance-tooling': 'npm run test:run -- scripts/default-gate.test.ts scripts/governance/__tests__/verify-impact-selector.test.ts',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+
+    withCleanBranchPackageJsonGitFixture(
+      basePackageJson,
+      currentPackageJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['package.json'],
+          catalog,
+          packageJsonBaseRefs: ['upstream/main'],
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+        expect(plan.riskSummary.broadImpact).toBe(false);
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'package.json',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['engineering-governance-tooling'],
+          }),
+        ]);
+      },
+      'refs/remotes/upstream/main',
+    );
+  });
+
+  it('does not ignore unsafe dirty package.json state when a clean branch base diff is otherwise safe', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:governance-tooling': 'npm run test:run -- scripts/default-gate.test.ts scripts/governance/__tests__/verify-impact-selector.test.ts',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+
+    withCleanBranchPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ root, catalog }) => {
+      writeFileSync(join(root, 'package.json'), `${JSON.stringify({
+        ...currentPackageJson,
+        dependencies: {
+          next: '15.1.0',
+        },
+      }, null, 2)}\n`);
+      runGitInFixture(root, ['add', 'package.json']);
+      writeFileSync(join(root, 'package.json'), `${JSON.stringify({
+        ...currentPackageJson,
+        dependencies: {
+          next: '15.2.0',
+        },
+      }, null, 2)}\n`);
+
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
+          manualReviewRequired: true,
         }),
       ]);
     });

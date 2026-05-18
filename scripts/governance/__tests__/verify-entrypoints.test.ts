@@ -135,6 +135,7 @@ type FakeGitOptions = {
   mergeBases?: Record<string, string>;
   emptyMergeBases?: readonly string[];
   baseDiffs?: Record<string, readonly string[]>;
+  showFiles?: Record<string, string>;
   dirtyFiles?: readonly string[];
   cachedFiles?: readonly string[];
   untrackedFiles?: readonly string[];
@@ -173,6 +174,7 @@ printf '%s\\n' "$*" >> "${logPath}"
 
 declare -A refs=(${bashAssocLiteral(options.refs)})
 declare -A merge_bases=(${bashAssocLiteral(options.mergeBases)})
+declare -A show_files=(${bashAssocLiteral(options.showFiles)})
 empty_merge_bases=(${bashArrayLiteral(options.emptyMergeBases)})
 
 if [[ "$1" == "fetch" ]]; then
@@ -227,6 +229,32 @@ ${bashDiffCases(options.baseDiffs)}
       exit 0
       ;;
   esac
+fi
+
+if [[ "$1" == "diff" && "$2" == "--name-only" && "$#" -eq 5 && "$4" == "--" ]]; then
+  range="$3"
+  path_filter="$5"
+  case "$range" in
+${bashDiffCases(options.baseDiffs)}
+    *)
+      exit 0
+      ;;
+  esac | while IFS= read -r file; do
+    if [[ "$file" == "$path_filter" ]]; then
+      printf '%s\\n' "$file"
+    fi
+  done
+  exit 0
+fi
+
+if [[ "$1" == "show" && "$#" -eq 2 ]]; then
+  spec="$2"
+  if [[ -n "\${show_files[$spec]:-}" ]]; then
+    printf '%s\\n' "\${show_files[$spec]}"
+    exit 0
+  fi
+  echo "fatal: path not found: $spec" >&2
+  exit 128
 fi
 
 if [[ "$1" == "ls-files" && "$#" -eq 3 && "$2" == "--others" && "$3" == "--exclude-standard" ]]; then
@@ -1251,6 +1279,65 @@ describe('verify human entrypoints', () => {
       expect(log).toContain('merge-base HEAD upstream/main');
       expect(log).not.toContain('origin/main');
       expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the selected base ref when classifying clean branch package.json script-only changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-package-base-'));
+    const gitLog = join(root, 'git.log');
+    const basePackageJson = JSON.stringify({
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    });
+    const currentPackageJson = JSON.stringify({
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:governance-tooling': 'npm run test:run -- scripts/default-gate.test.ts scripts/governance/__tests__/verify-impact-selector.test.ts',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    });
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'upstream/main': 'refs/remotes/upstream/main',
+        },
+        mergeBases: {
+          'HEAD upstream/main': 'upstream-merge-base-sha',
+        },
+        baseDiffs: {
+          'upstream-merge-base-sha..HEAD': ['package.json'],
+        },
+        showFiles: {
+          'upstream-merge-base-sha:package.json': basePackageJson,
+          'HEAD:package.json': currentPackageJson,
+        },
+      });
+
+      const result = runVerifyWithFakeGit(root, ['--base-ref=upstream/main']);
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual(['package.json']);
+      expect(report.required_levels).toEqual(['V0', 'V1']);
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=pr --run']);
+      expect(report.risk_summary.broad_impact).toBe(false);
+      expect(report.risk_summary.manual_review_required).toBe(false);
+      expect(result.stdout).toContain('Heavy evidence: visual=no, backend-real=no');
+      expect(result.stdout).not.toContain('unmapped-source');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify upstream/main');
+      expect(log).toContain('merge-base HEAD upstream/main');
+      expect(log).toContain('show upstream-merge-base-sha:package.json');
+      expect(log).not.toContain('origin/main');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

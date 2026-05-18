@@ -807,6 +807,7 @@ function verificationSentinelProfile(options: ParsedVerifyArgs): SentinelProfile
 }
 
 function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVerificationPlanInput {
+  const packageJsonBaseRefs = [selectBaseRef(options).ref];
   if (options.changedFiles) {
     return {
       goal: options.goal,
@@ -814,6 +815,7 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
       run: options.run,
       reportRoot,
       changedFiles: options.changedFiles,
+      packageJsonBaseRefs,
     };
   }
 
@@ -826,6 +828,7 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
     changedFiles: detected.changedFiles,
     changeDetectionFailure: detected.failure,
     changeDetectionWarnings: detected.warnings,
+    packageJsonBaseRefs,
   };
 }
 

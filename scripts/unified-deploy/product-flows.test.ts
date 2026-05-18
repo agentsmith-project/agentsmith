@@ -14,8 +14,21 @@ const mongoStoreMock = vi.hoisted(() => {
   return { close, constructor, get, list };
 });
 
+const pgMock = vi.hoisted(() => {
+  const query = vi.fn(async () => ({ rows: [] }));
+  const end = vi.fn(async () => undefined);
+  const constructor = vi.fn(function PoolMock() {
+    return { end, query };
+  });
+  return { constructor, end, query };
+});
+
 vi.mock('@mbos/adapters-private', () => ({
   MongoJsonDocStore: mongoStoreMock.constructor,
+}));
+
+vi.mock('pg', () => ({
+  Pool: pgMock.constructor,
 }));
 
 import {
@@ -82,6 +95,11 @@ afterEach(() => {
   mongoStoreMock.get.mockResolvedValue(null);
   mongoStoreMock.close.mockReset();
   mongoStoreMock.close.mockResolvedValue(undefined);
+  pgMock.constructor.mockClear();
+  pgMock.query.mockReset();
+  pgMock.query.mockResolvedValue({ rows: [] });
+  pgMock.end.mockReset();
+  pgMock.end.mockResolvedValue(undefined);
 });
 
 function tempDir(prefix: string): string {
@@ -630,6 +648,72 @@ describe('unified deploy product flow producer', () => {
         status: 'failed',
       }),
     ]));
+  });
+
+  it('fails schema preflight when public.projects is missing without running projects.sql', async () => {
+    const writes: Record<string, string> = {};
+    const fs = makeFs(writes);
+    pgMock.query.mockResolvedValueOnce({ rows: [{ projects_table_exists: false }] });
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs,
+      fetch: makeFailingProfileFetch(),
+      flowIds: ['workspace_project'],
+      keycloakBootstrapper: async () => {
+        throw new Error('keycloak bootstrap should not run when schema is missing');
+      },
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures[0]?.message).toContain('product_schema_not_ready/projects_table_missing');
+    expect(fs.readFile).not.toHaveBeenCalledWith(expect.stringContaining('projects.sql'));
+    expect(pgMock.query).toHaveBeenCalledWith(expect.stringContaining("to_regclass('public.projects')"));
+    expect(result.evidence.flows[0]?.checks).toMatchObject({
+      schema_preflight: {
+        projects_table_exists: false,
+      },
+    });
+  });
+
+  it('records schema preflight evidence instead of table initialization semantics', async () => {
+    const observed = { chatRequests: 0 };
+    const fs = makeFs();
+    pgMock.query.mockResolvedValueOnce({ rows: [{ projects_table_exists: true }] });
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs,
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project'],
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const workspaceFlow = result.evidence.flows.find((flow) => flow.flow === 'workspace_project');
+    expect(result.status).toBe('passed');
+    expect(fs.readFile).not.toHaveBeenCalledWith(expect.stringContaining('projects.sql'));
+    expect(workspaceFlow?.checks).toMatchObject({
+      schema_preflight: {
+        projects_table_exists: true,
+      },
+      project_id: 'proj_focused',
+    });
+    expect(JSON.stringify(workspaceFlow?.checks)).not.toContain('projects_table_initialized');
   });
 
   it('reuses an existing Keycloak user when create reports an email conflict', async () => {

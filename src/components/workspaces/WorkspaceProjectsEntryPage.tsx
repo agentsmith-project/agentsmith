@@ -495,7 +495,10 @@ export function WorkspaceProjectsEntryPage({
                   <PageLoading />
                 </div>
               ) : projects.length === 0 ? (
-                <section className="border-t border-dashed border-subtle px-0 py-10 text-center">
+                <section
+                  className="border-t border-dashed border-subtle px-0 py-10 text-center"
+                  data-testid="projects__list__ready"
+                >
                   <div className="mx-auto flex max-w-2xl flex-col items-center space-y-3">
                     <div className="flex h-12 w-12 items-center justify-center text-icon-default">
                       <FolderOpen className="h-8 w-8" />
@@ -523,7 +526,7 @@ export function WorkspaceProjectsEntryPage({
                   </div>
                 </section>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-6" data-testid="projects__list__ready">
                   {pinnedProjects.length > 0 ? (
                     <section className="space-y-3 border-t border-subtle pt-4">
                       <h2 className="type-system-caption flex items-center gap-2 text-tertiary">

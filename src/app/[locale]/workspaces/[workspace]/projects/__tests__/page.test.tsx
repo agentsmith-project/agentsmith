@@ -203,7 +203,40 @@ describe('ProjectsPage route', () => {
       expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
     });
     expect(screen.getByTestId('projects__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
+    expect(screen.getByTestId('projects__list__ready')).toBeInTheDocument();
     expect(screen.getByTestId('projects__table__row')).toBeInTheDocument();
+  });
+
+  it('marks the projects list ready only after the project query leaves initial loading', async () => {
+    mockUseProjects.mockImplementation(() => ({
+      data: emptyProjects,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+
+    const { rerender } = render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('projects__list__ready')).not.toBeInTheDocument();
+
+    mockUseProjects.mockImplementation(() => ({
+      data: emptyProjects,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+
+    rerender(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('projects__list__ready')).toBeInTheDocument();
+    });
+    expect(screen.getByText('empty.title')).toBeInTheDocument();
   });
 
   it('uses the shared work surface header and toolbar instead of a page-local width shell', async () => {

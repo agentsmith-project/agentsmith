@@ -1,3 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentsmith-product-schema-bootstrap
+  namespace: {{NAMESPACE}}
+  labels:
+    app.kubernetes.io/name: agentsmith
+    app.kubernetes.io/component: product-schema-bootstrap
+    app.kubernetes.io/part-of: agentsmith-deploy
+  annotations:
+    rendered-by: agentsmith-unified-deploy
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentsmith
+        app.kubernetes.io/component: product-schema-bootstrap
+      annotations:
+        agentsmith.mbos.dev/checksum-app-config: "{{AGENTSMITH_APP_CONFIG_CHECKSUM}}"
+        agentsmith.mbos.dev/checksum-app-secrets: "{{AGENTSMITH_APP_SECRETS_CHECKSUM}}"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: agentsmith-app
+      containers:
+        - name: agentsmith-product-schema-bootstrap
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - packages/api-entry-node/dist/product-schema-bootstrap.js
+          envFrom:
+            - configMapRef:
+                name: agentsmith-app-config
+            - secretRef:
+                name: agentsmith-app-secrets
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

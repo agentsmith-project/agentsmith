@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import {
   AFSCP_SCHEMA_BOOTSTRAP_JOB,
   AFSCP_VOLUME_BOOTSTRAP_JOB,
-  splitAfscpBootstrapAppYaml,
+  PRODUCT_SCHEMA_BOOTSTRAP_JOB,
+  splitAppBootstrapYaml,
   summarizeKubernetesJobStatus,
 } from './afscp-bootstrap';
 import { checkAddressTruth } from './check-address-truth';
@@ -129,6 +130,16 @@ type OperationEvidence = {
     | 'afscp-static-volume-reset-delete-workloads'
     | 'afscp-static-volume-reset-delete-pvc'
     | 'afscp-static-volume-reset-delete-pv'
+    | 'product-schema-bootstrap-delete-previous'
+    | 'product-schema-bootstrap-wait'
+    | 'product-schema-bootstrap-diagnostics-job-yaml'
+    | 'product-schema-bootstrap-diagnostics-job-describe'
+    | 'product-schema-bootstrap-diagnostics-pods-json'
+    | 'product-schema-bootstrap-diagnostics-pod-describe'
+    | 'product-schema-bootstrap-diagnostics-pod-logs'
+    | 'product-schema-bootstrap-diagnostics-pod-previous-logs'
+    | 'product-schema-bootstrap-diagnostics-pod-events'
+    | 'product-schema-bootstrap-diagnostics-events'
     | 'afscp-schema-bootstrap-delete-previous'
     | 'afscp-schema-bootstrap-wait'
     | 'afscp-schema-bootstrap-diagnostics-job-yaml'
@@ -157,6 +168,8 @@ type OperationEvidence = {
     | 'afscp-functional-diagnostics-pod-previous-logs'
     | 'afscp-functional-diagnostics-pod-events'
     | 'afscp-functional-diagnostics-events'
+    | 'product-schema-bootstrap-dry-run'
+    | 'product-schema-bootstrap-apply'
     | 'afscp-schema-bootstrap-dry-run'
     | 'afscp-schema-bootstrap-apply'
     | 'afscp-volume-bootstrap-dry-run'
@@ -1811,13 +1824,42 @@ function validateWebPublicWorkspaces(result: LocalKindHttpProbeResult): string |
   if (result.status !== 200 || !contentType(result.headers).toLowerCase().includes('json')) {
     return 'GET /api/public/workspaces must return 200 JSON from the Web-owned route';
   }
+  let payload: unknown;
   try {
-    JSON.parse(result.body);
+    payload = JSON.parse(result.body) as unknown;
   } catch {
     return 'GET /api/public/workspaces must return parseable JSON';
   }
+  if (!isPublicWorkspacesDirectoryPayload(payload)) {
+    return 'GET /api/public/workspaces JSON shape must match the public workspace directory payload';
+  }
 
   return undefined;
+}
+
+function isPublicWorkspacesDirectoryPayload(value: unknown): boolean {
+  if (!isJsonRecord(value)) {
+    return false;
+  }
+  if (!Array.isArray(value.items)) {
+    return false;
+  }
+
+  const total = value.total;
+  return value.items.every(isPublicWorkspaceDirectoryItem)
+    && (total === undefined || (typeof total === 'number' && Number.isFinite(total)));
+}
+
+function isPublicWorkspaceDirectoryItem(value: unknown): boolean {
+  if (!isJsonRecord(value)) {
+    return false;
+  }
+  return typeof value.id === 'string' && value.id.length > 0
+    && (value.name === undefined || typeof value.name === 'string');
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function validateApiProfile(result: LocalKindHttpProbeResult): string | undefined {
@@ -2692,9 +2734,9 @@ async function buildSafety(options: {
 }
 
 type AfscpBootstrapJobDefinition = {
-  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
+  jobName: typeof PRODUCT_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
   label: string;
-  failurePath: 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
+  failurePath: 'product-schema-bootstrap' | 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
   operationNames: {
     deletePrevious: OperationEvidence['name'];
     wait: OperationEvidence['name'];
@@ -2707,6 +2749,24 @@ type AfscpBootstrapJobDefinition = {
     diagnosticsPodEvents: OperationEvidence['name'];
     diagnosticsEvents: OperationEvidence['name'];
   };
+};
+
+const PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: PRODUCT_SCHEMA_BOOTSTRAP_JOB,
+  label: 'product schema bootstrap',
+  failurePath: 'product-schema-bootstrap',
+  operationNames: {
+    deletePrevious: 'product-schema-bootstrap-delete-previous',
+    wait: 'product-schema-bootstrap-wait',
+    diagnosticsJobYaml: 'product-schema-bootstrap-diagnostics-job-yaml',
+    diagnosticsJobDescribe: 'product-schema-bootstrap-diagnostics-job-describe',
+    diagnosticsPodsJson: 'product-schema-bootstrap-diagnostics-pods-json',
+    diagnosticsPodDescribe: 'product-schema-bootstrap-diagnostics-pod-describe',
+    diagnosticsPodLogs: 'product-schema-bootstrap-diagnostics-pod-logs',
+    diagnosticsPodPreviousLogs: 'product-schema-bootstrap-diagnostics-pod-previous-logs',
+    diagnosticsPodEvents: 'product-schema-bootstrap-diagnostics-pod-events',
+    diagnosticsEvents: 'product-schema-bootstrap-diagnostics-events',
+  },
 };
 
 const AFSCP_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
@@ -3338,11 +3398,16 @@ async function runApplySequence(options: {
   const operations: OperationEvidence[] = [];
   const failures: CheckFailure[] = [];
   let adminPreflightBatches: { namespaceYaml: string; resourceYaml: string };
-  let appBatches: { schemaBootstrapYaml: string; volumeBootstrapYaml: string; remainingYaml: string };
+  let appBatches: {
+    productBootstrapYaml: string;
+    schemaBootstrapYaml: string;
+    volumeBootstrapYaml: string;
+    remainingYaml: string;
+  };
 
   try {
     adminPreflightBatches = splitAdminPreflightYaml(options.preflightYaml);
-    appBatches = splitAfscpBootstrapAppYaml(options.appYaml);
+    appBatches = splitAppBootstrapYaml(options.appYaml);
   } catch (error: unknown) {
     failures.push({
       path: 'apply-sequence:rendered-yaml',
@@ -3442,6 +3507,69 @@ async function runApplySequence(options: {
   });
   operations.push(...afscpStaticVolumeReset.operations);
   failures.push(...afscpStaticVolumeReset.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  for (const step of [
+    {
+      name: 'product-schema-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.productBootstrapYaml,
+    },
+    {
+      name: 'product-schema-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.productBootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    if (step.name === 'product-schema-bootstrap-dry-run') {
+      const jobReset = await deletePreviousAfscpBootstrapJob({
+        definition: PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION,
+        namespace: options.namespace,
+        kubeconfigPath: options.kubeconfigPath,
+        runner: options.runner,
+        env: options.env,
+        secretValues: options.secretValues,
+      });
+      operations.push(...jobReset.operations);
+      failures.push(...jobReset.failures);
+      if (failures.length > 0) {
+        return { operations, failures };
+      }
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      break;
+    }
+  }
+  if (failures.length > 0) {
+    return { operations, failures };
+  }
+
+  const productBootstrap = await waitForAfscpBootstrapJob({
+    definition: PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...productBootstrap.operations);
+  failures.push(...productBootstrap.failures);
   if (failures.length > 0) {
     return { operations, failures };
   }

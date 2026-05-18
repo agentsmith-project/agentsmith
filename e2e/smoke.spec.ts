@@ -10,6 +10,12 @@ import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 
+type SmokeRoute = {
+  path: string;
+  title?: RegExp;
+  testId?: string;
+};
+
 // Keep smoke serial for route-health determinism in local dev server mode.
 test.describe.configure({ mode: 'default' });
 
@@ -57,16 +63,41 @@ async function recoverSessionIfNeeded(page: import('@playwright/test').Page) {
   await goToProject(page, 'endpoints');
 }
 
+async function waitForSmokeRouteReady(page: import('@playwright/test').Page) {
+  await waitForPageReady(page, 30_000, { allowErrorState: false });
+}
+
+async function throwIfUnexpectedPageError(page: import('@playwright/test').Page, context: string) {
+  if (await page.getByTestId('page-state__error').first().isVisible().catch(() => false)) {
+    throw new Error(`${context} rendered unexpected page-state__error`);
+  }
+}
+
+async function expectSmokeRouteReady(page: import('@playwright/test').Page, route: SmokeRoute) {
+  await expect(
+    page.getByTestId('page-state__error').first(),
+    `${route.path} must not use page-state__error as a smoke-ready state`,
+  ).toBeHidden();
+  await expect(
+    page.getByTestId('page-state__success').or(page.getByTestId('page-layout')).first(),
+  ).toBeVisible();
+  if (route.testId) {
+    await expect(page.getByTestId(route.testId)).toBeVisible({ timeout: 5_000 });
+  }
+}
+
 async function ensureEndpointsPageReady(page: import('@playwright/test').Page): Promise<boolean> {
   const table = page.getByTestId('endpoints__table');
   const createBtn = page.getByTestId('endpoints__create-btn');
-  const accessDenied = page.getByTestId('page-state__forbidden').or(page.getByTestId('page-state__error')).first();
+  const accessDenied = page.getByTestId('page-state__forbidden').first();
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    await throwIfUnexpectedPageError(page, 'endpoints smoke');
     if (await table.isVisible().catch(() => false)) return true;
     if (await createBtn.isVisible().catch(() => false)) return true;
     if (await accessDenied.isVisible().catch(() => false)) return true;
     await recoverSessionIfNeeded(page);
     await goToProject(page, 'endpoints');
+    await throwIfUnexpectedPageError(page, 'endpoints smoke');
     if (await table.isVisible().catch(() => false)) return true;
     if (await createBtn.isVisible().catch(() => false)) return true;
     if (await accessDenied.isVisible().catch(() => false)) return true;
@@ -92,22 +123,16 @@ test.describe('Smoke: Public Routes', () => {
       });
 
       await gotoAndWait(page, route.path);
-      await waitForPageReady(page);
+      await waitForSmokeRouteReady(page);
 
       // Every public page should reach a success or layout state
-      await expect(
-        page.getByTestId('page-state__success').or(page.getByTestId('page-layout')).first(),
-      ).toBeVisible();
+      await expectSmokeRouteReady(page, route);
 
       // Verify route-specific expectation if available
       if (route.title) {
         await expect(
           page.getByRole('heading', { name: route.title }).first(),
         ).toBeVisible({ timeout: 5_000 });
-      }
-
-      if (route.testId) {
-        await expect(page.getByTestId(route.testId)).toBeVisible({ timeout: 5_000 });
       }
 
       expect(errors, `Unexpected console errors on ${route.path}`).toHaveLength(0);
@@ -128,10 +153,9 @@ test.describe('Smoke: User Routes', () => {
       });
 
       await goToWithRetry(authedPage, route.path);
+      await waitForSmokeRouteReady(authedPage);
 
-      await expect(
-        authedPage.getByTestId('page-state__success').or(authedPage.getByTestId('page-layout')).first(),
-      ).toBeVisible();
+      await expectSmokeRouteReady(authedPage, route);
       await expect.poll(() => new URL(authedPage.url()).pathname).toContain(route.path);
 
       expect(errors, `Unexpected console errors on ${route.path}`).toHaveLength(0);
@@ -152,10 +176,9 @@ test.describe('Smoke: Workspace Routes', () => {
       });
 
       await goToWithRetry(authedPage, route.path);
+      await waitForSmokeRouteReady(authedPage);
 
-      await expect(
-        authedPage.getByTestId('page-state__success').or(authedPage.getByTestId('page-layout')).first(),
-      ).toBeVisible();
+      await expectSmokeRouteReady(authedPage, route);
       await expect.poll(() => new URL(authedPage.url()).pathname).toContain(route.path);
 
       expect(errors, `Unexpected console errors on ${route.path}`).toHaveLength(0);
@@ -176,11 +199,10 @@ test.describe('Smoke: Project Routes', () => {
       });
 
       await goToWithRetry(authedPage, route.path);
+      await waitForSmokeRouteReady(authedPage);
 
       // Page should reach a renderable state
-      await expect(
-        authedPage.getByTestId('page-state__success').or(authedPage.getByTestId('page-layout')).first(),
-      ).toBeVisible();
+      await expectSmokeRouteReady(authedPage, route);
       await expect.poll(() => new URL(authedPage.url()).pathname).toContain(route.path);
 
       expect(errors, `Unexpected console errors on ${route.path}`).toHaveLength(0);

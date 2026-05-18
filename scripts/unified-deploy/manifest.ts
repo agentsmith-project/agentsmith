@@ -21,6 +21,7 @@ const REQUIRED_SUBSTRATE_ENV = DOCKER_SUBSTRATE_REQUIRED_ENV;
 const REQUIRED_APP_COMPONENTS = [
   'web',
   'api',
+  'product-schema-bootstrap',
   'llmup',
   'afscp-api',
   'afscp-schema-bootstrap',

@@ -18,6 +18,10 @@ type ProjectSidebarNavOptions = {
   timeout?: number;
 };
 
+type PageReadyOptions = {
+  allowErrorState?: boolean;
+};
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -72,20 +76,31 @@ export async function gotoAndWaitForRedirect(
 }
 
 /** Wait for the page to reach a ready state */
-export async function waitForPageReady(page: Page, timeout = 30000) {
+export async function waitForPageReady(page: Page, timeout = 30000, options: PageReadyOptions = {}) {
+  const allowErrorState = options.allowErrorState ?? true;
+  const terminalSelector = allowErrorState
+    ? '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]'
+    : '[data-testid="page-state__success"], [data-testid="page-layout"]';
   // Some routes briefly render an MSW bootstrapping screen before the app layout is mounted.
   // Accept the bootstrap text as an initial state, then wait for terminal page markers.
   const readyMarker = page
     .locator(
-      '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
+      `${terminalSelector}, [data-testid="page-state__loading"]`,
     )
     .first();
   const bootMessage = page.getByText('Starting mocks...');
-
-  await Promise.race([
+  const disallowedErrorState = page.getByTestId('page-state__error').first();
+  const readyWaiters = [
     readyMarker.waitFor({ state: 'visible', timeout }),
     bootMessage.waitFor({ state: 'visible', timeout }),
-  ]);
+  ];
+  if (!allowErrorState) {
+    readyWaiters.push(disallowedErrorState.waitFor({ state: 'visible', timeout }).then(() => {
+      throw new Error(`page_ready_error_state:${page.url()}`);
+    }));
+  }
+
+  await Promise.race(readyWaiters);
 
   if (await bootMessage.isVisible().catch(() => false)) {
     try {
@@ -96,15 +111,18 @@ export async function waitForPageReady(page: Page, timeout = 30000) {
       );
     }
   }
+  if (!allowErrorState && await disallowedErrorState.isVisible().catch(() => false)) {
+    throw new Error(`page_ready_error_state:${page.url()}`);
+  }
   const hasTerminalMarker = await page
-    .locator('[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]')
+    .locator(terminalSelector)
     .first()
     .isVisible()
     .catch(() => false);
 
   if (!hasTerminalMarker) {
     await page.waitForSelector(
-      '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]',
+      terminalSelector,
       { timeout },
     );
   }

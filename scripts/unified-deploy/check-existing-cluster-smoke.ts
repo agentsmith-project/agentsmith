@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import {
   AFSCP_SCHEMA_BOOTSTRAP_JOB,
   AFSCP_VOLUME_BOOTSTRAP_JOB,
-  splitAfscpBootstrapAppYaml,
+  PRODUCT_SCHEMA_BOOTSTRAP_JOB,
+  splitAppBootstrapYaml,
   summarizeKubernetesJobStatus,
 } from './afscp-bootstrap';
 import { checkApiSingleReplica } from './check-api-single-replica';
@@ -89,10 +90,14 @@ type ResourceSummary = {
 type OperationEvidence = {
   name:
     | 'namespace-exists'
+    | 'product-schema-bootstrap-delete-previous'
+    | 'product-schema-bootstrap-wait'
     | 'afscp-schema-bootstrap-delete-previous'
     | 'afscp-schema-bootstrap-wait'
     | 'afscp-volume-bootstrap-delete-previous'
     | 'afscp-volume-bootstrap-wait'
+    | 'product-schema-bootstrap-dry-run'
+    | 'product-schema-bootstrap-apply'
     | 'afscp-schema-bootstrap-dry-run'
     | 'afscp-schema-bootstrap-apply'
     | 'afscp-volume-bootstrap-dry-run'
@@ -1121,13 +1126,42 @@ function validateWebPublicWorkspaces(result: ExistingClusterHttpProbeResult): st
   if (result.status !== 200 || !contentType(result.headers).toLowerCase().includes('json')) {
     return 'GET /api/public/workspaces must return 200 JSON from the Web-owned route';
   }
+  let payload: unknown;
   try {
-    JSON.parse(result.body);
+    payload = JSON.parse(result.body) as unknown;
   } catch {
     return 'GET /api/public/workspaces must return parseable JSON';
   }
+  if (!isPublicWorkspacesDirectoryPayload(payload)) {
+    return 'GET /api/public/workspaces JSON shape must match the public workspace directory payload';
+  }
 
   return undefined;
+}
+
+function isPublicWorkspacesDirectoryPayload(value: unknown): boolean {
+  if (!isJsonRecord(value)) {
+    return false;
+  }
+  if (!Array.isArray(value.items)) {
+    return false;
+  }
+
+  const total = value.total;
+  return value.items.every(isPublicWorkspaceDirectoryItem)
+    && (total === undefined || (typeof total === 'number' && Number.isFinite(total)));
+}
+
+function isPublicWorkspaceDirectoryItem(value: unknown): boolean {
+  if (!isJsonRecord(value)) {
+    return false;
+  }
+  return typeof value.id === 'string' && value.id.length > 0
+    && (value.name === undefined || typeof value.name === 'string');
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function validateApiProfileUnauthenticated(result: ExistingClusterHttpProbeResult): string | undefined {
@@ -1383,13 +1417,23 @@ async function finish(
 }
 
 type AfscpBootstrapJobDefinition = {
-  jobName: typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
+  jobName: typeof PRODUCT_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_SCHEMA_BOOTSTRAP_JOB | typeof AFSCP_VOLUME_BOOTSTRAP_JOB;
   label: string;
-  failurePath: 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
+  failurePath: 'product-schema-bootstrap' | 'afscp-schema-bootstrap' | 'afscp-volume-bootstrap';
   operationNames: {
     deletePrevious: OperationEvidence['name'];
     wait: OperationEvidence['name'];
   };
+};
+
+const PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
+  jobName: PRODUCT_SCHEMA_BOOTSTRAP_JOB,
+  label: 'product schema bootstrap',
+  failurePath: 'product-schema-bootstrap',
+  operationNames: {
+    deletePrevious: 'product-schema-bootstrap-delete-previous',
+    wait: 'product-schema-bootstrap-wait',
+  },
 };
 
 const AFSCP_SCHEMA_BOOTSTRAP_DEFINITION: AfscpBootstrapJobDefinition = {
@@ -1535,10 +1579,15 @@ async function runApplySequence(options: {
   const baseArgs = kubeBaseArgs(options.kubeconfigPath);
   const operations: OperationEvidence[] = [];
   const failures: CheckFailure[] = [];
-  let appBatches: { schemaBootstrapYaml: string; volumeBootstrapYaml: string; remainingYaml: string };
+  let appBatches: {
+    productBootstrapYaml: string;
+    schemaBootstrapYaml: string;
+    volumeBootstrapYaml: string;
+    remainingYaml: string;
+  };
 
   try {
-    appBatches = splitAfscpBootstrapAppYaml(options.appYaml);
+    appBatches = splitAppBootstrapYaml(options.appYaml);
   } catch (error: unknown) {
     return {
       operations,
@@ -1547,6 +1596,66 @@ async function runApplySequence(options: {
         message: errorMessage(error),
       }],
     };
+  }
+
+  for (const step of [
+    {
+      name: 'product-schema-bootstrap-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: appBatches.productBootstrapYaml,
+    },
+    {
+      name: 'product-schema-bootstrap-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: appBatches.productBootstrapYaml,
+    },
+  ] as const) {
+    if (step.input.trim().length === 0) {
+      continue;
+    }
+    if (step.name === 'product-schema-bootstrap-dry-run') {
+      const jobReset = await deletePreviousAfscpBootstrapJob({
+        definition: PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION,
+        namespace: options.namespace,
+        kubeconfigPath: options.kubeconfigPath,
+        runner: options.runner,
+        env: options.env,
+        secretValues: options.secretValues,
+      });
+      operations.push(...jobReset.operations);
+      failures.push(...jobReset.failures);
+      if (failures.length > 0) {
+        return { operations, failures };
+      }
+    }
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      return { operations, failures };
+    }
+  }
+
+  const productBootstrap = await waitForAfscpBootstrapJob({
+    definition: PRODUCT_SCHEMA_BOOTSTRAP_DEFINITION,
+    namespace: options.namespace,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  operations.push(...productBootstrap.operations);
+  failures.push(...productBootstrap.failures);
+  if (failures.length > 0) {
+    return { operations, failures };
   }
 
   for (const definition of [AFSCP_SCHEMA_BOOTSTRAP_DEFINITION, AFSCP_VOLUME_BOOTSTRAP_DEFINITION]) {

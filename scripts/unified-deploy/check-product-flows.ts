@@ -182,6 +182,7 @@ type ProductFlowProducerOptions = {
 type ProductFlowState = {
   token: string;
   keycloak: KeycloakBootstrapResult;
+  schemaPreflight?: JsonRecord;
   provider?: ProviderMockHandle;
   projectId?: string;
   credentialId?: string;
@@ -251,7 +252,6 @@ export type ProductFlowProducerResult = {
 
 const DEFAULT_LIVE_SITE_ENV_PATH = path.join(REPO_ROOT, 'artifacts', 'unified-deploy', 'local-kind-site.env');
 const DEFAULT_EVIDENCE_DIR = path.join(REPO_ROOT, 'artifacts', 'unified-deploy');
-const PROJECTS_SQL_PATH = path.join(REPO_ROOT, 'packages', 'adapters-private', 'sql', 'projects.sql');
 const PRODUCT_FLOW_COMMAND = 'npm run test:unified-deploy:product-flows';
 const PRODUCT_FLOW_PRODUCER = 'unified-deploy-product-flows' as const;
 const DEFAULT_AGENT_TASK_POLLS = 20;
@@ -656,6 +656,25 @@ function checksFromError(error: unknown): JsonRecord {
     return asRecord((error as Error & { checks?: unknown }).checks);
   }
   return {};
+}
+
+function schemaPreflightFromBootstrap(checks: JsonRecord): JsonRecord {
+  const schemaPreflight = asRecord(checks.schema_preflight);
+  return Object.keys(schemaPreflight).length > 0 ? schemaPreflight : {};
+}
+
+function withSchemaPreflightChecks(schemaPreflight: JsonRecord | undefined, checks: JsonRecord): JsonRecord {
+  if (!schemaPreflight || Object.keys(schemaPreflight).length === 0) {
+    return checks;
+  }
+  const existingPreflight = asRecord(checks.schema_preflight);
+  return {
+    ...checks,
+    schema_preflight: {
+      ...schemaPreflight,
+      ...existingPreflight,
+    },
+  };
 }
 
 function requestId(flow: ProductVerificationFlowId): string {
@@ -1665,21 +1684,35 @@ async function closeServer(server: Server): Promise<void> {
 
 async function defaultBackendBootstrapper(
   truth: ProductFlowRuntimeTruth,
-  fsDriver: ProductFlowFs,
+  _fsDriver: ProductFlowFs,
 ): Promise<JsonRecord> {
-  const sql = await fsDriver.readFile(PROJECTS_SQL_PATH);
   const pool = new Pool({
     connectionString: truth.postgres.url,
     connectionTimeoutMillis: 5_000,
   });
   try {
-    await pool.query(sql);
+    const result = await pool.query("select to_regclass('public.projects') is not null as projects_table_exists");
+    const firstRow = asRecord(result.rows?.[0]);
+    const projectsTableExists = firstRow.projects_table_exists === true;
+    if (!projectsTableExists) {
+      throw productFlowError(
+        'product_schema_not_ready/projects_table_missing: public.projects table is missing; run backend schema bootstrap before product flows',
+        {
+          schema_preflight: {
+            postgres_database: truth.postgres.dbName,
+            projects_table_exists: false,
+          },
+        },
+      );
+    }
   } finally {
     await pool.end();
   }
   return {
-    postgres_database: truth.postgres.dbName,
-    projects_table_initialized: true,
+    schema_preflight: {
+      postgres_database: truth.postgres.dbName,
+      projects_table_exists: true,
+    },
   };
 }
 
@@ -2435,6 +2468,7 @@ async function runSingleFlow(args: {
     } else {
       throw new Error(`unknown product flow: ${args.flow satisfies never}`);
     }
+    checks = withSchemaPreflightChecks(args.state.schemaPreflight, checks);
     return buildFlowEvidence({
       truth: args.truth,
       flow: args.flow,
@@ -2454,7 +2488,7 @@ async function runSingleFlow(args: {
       status: 'failed',
       startedMs,
       generatedAt: nowIso(args.now),
-      checks: checksFromError(error),
+      checks: withSchemaPreflightChecks(args.state.schemaPreflight, checksFromError(error)),
       failure,
     });
   }
@@ -2688,8 +2722,9 @@ export async function runUnifiedDeployProductFlowsProducer(
   const flowIds = resolveFlowIds(options.flowIds);
   let keycloak: KeycloakBootstrapResult;
   let token: string;
+  let schemaPreflight: JsonRecord = {};
   try {
-    await backendBootstrapper(truth, fsDriver);
+    schemaPreflight = schemaPreflightFromBootstrap(await backendBootstrapper(truth, fsDriver));
     keycloak = await keycloakBootstrapper(truth);
     await workspaceBootstrapper(truth, keycloak);
     token = await tokenProvider(truth, {
@@ -2698,13 +2733,14 @@ export async function runUnifiedDeployProductFlowsProducer(
     });
   } catch (error: unknown) {
     const failureMessage = `product bootstrap failed: ${errorMessage(error)}`;
+    const bootstrapChecks = checksFromError(error);
     const flowEvidence: ProductFlowEvidence[] = flowIds.map((flow) => buildFlowEvidence({
       truth,
       flow,
       status: 'failed',
       startedMs: Date.now(),
       generatedAt,
-      checks: {},
+      checks: bootstrapChecks,
       failure: {
         path: `flow:${flow}`,
         message: `${flowLabel(flow)} blocked by ${failureMessage}`,
@@ -2738,6 +2774,7 @@ export async function runUnifiedDeployProductFlowsProducer(
   const state: ProductFlowState = {
     token,
     keycloak,
+    schemaPreflight,
     flowStartedAt: generatedAt,
     requestIds: {},
   };
@@ -2773,7 +2810,7 @@ export async function runUnifiedDeployProductFlowsProducer(
               status: 'failed',
               startedMs,
               generatedAt: nowIso(now),
-              checks: {},
+              checks: withSchemaPreflightChecks(state.schemaPreflight, {}),
               failure: {
                 path: `flow:${flow}`,
                 message: errorMessage(error),

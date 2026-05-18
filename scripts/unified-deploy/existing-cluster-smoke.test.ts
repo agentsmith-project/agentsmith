@@ -127,6 +127,9 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
     if (joined.includes('get namespace agentsmith')) {
       return jsonResult({ kind: 'Namespace', metadata: { name: 'agentsmith' } });
     }
+    if (joined.includes('get job/agentsmith-product-schema-bootstrap -o json')) {
+      return jsonResult(completedJob('agentsmith-product-schema-bootstrap'));
+    }
     if (joined.includes('get job/afscp-schema-bootstrap -o json')) {
       return jsonResult(completedJob('afscp-schema-bootstrap'));
     }
@@ -171,7 +174,7 @@ const passingProbeRunner: ExistingClusterHttpProbeRunner = async (url, options) 
     return {
       status: 200,
       headers: { 'content-type': 'application/json' },
-      body: '[]',
+      body: '{"items":[]}',
       request_headers: options.headers ?? {},
     };
   }
@@ -287,88 +290,122 @@ describe('unified deploy existing-cluster smoke producer', () => {
     const applyCalls = calls.filter((call) => call.args.includes('apply'));
     const rolloutCalls = calls.filter((call) => call.args.includes('rollout'));
     const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+    const productJobDeleteIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('delete job agentsmith-product-schema-bootstrap'),
+    );
     const schemaJobDeleteIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('delete job afscp-schema-bootstrap'),
     );
     const volumeJobDeleteIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('delete job afscp-volume-bootstrap'),
     );
-    const schemaBootstrapDryRunIndex = calls.indexOf(applyCalls[0] as CommandCall);
-    const schemaBootstrapApplyIndex = calls.indexOf(applyCalls[1] as CommandCall);
-    const volumeBootstrapDryRunIndex = calls.indexOf(applyCalls[2] as CommandCall);
-    const volumeBootstrapApplyIndex = calls.indexOf(applyCalls[3] as CommandCall);
+    const productBootstrapDryRunIndex = calls.indexOf(applyCalls[0] as CommandCall);
+    const productBootstrapApplyIndex = calls.indexOf(applyCalls[1] as CommandCall);
+    const schemaBootstrapDryRunIndex = calls.indexOf(applyCalls[2] as CommandCall);
+    const schemaBootstrapApplyIndex = calls.indexOf(applyCalls[3] as CommandCall);
+    const volumeBootstrapDryRunIndex = calls.indexOf(applyCalls[4] as CommandCall);
+    const volumeBootstrapApplyIndex = calls.indexOf(applyCalls[5] as CommandCall);
+    const productJobPollIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('get job/agentsmith-product-schema-bootstrap -o json'),
+    );
     const schemaJobPollIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('get job/afscp-schema-bootstrap -o json'),
     );
     const volumeJobPollIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('get job/afscp-volume-bootstrap -o json'),
     );
-    const appDryRunIndex = calls.indexOf(applyCalls[4] as CommandCall);
-    const appApplyIndex = calls.indexOf(applyCalls[5] as CommandCall);
+    const appDryRunIndex = calls.indexOf(applyCalls[6] as CommandCall);
+    const appApplyIndex = calls.indexOf(applyCalls[7] as CommandCall);
     const firstRolloutIndex = calls.findIndex((call) =>
       call.args.join(' ').includes('rollout status deployment/agentsmith-web'),
     );
 
     expect(result.status).toBe('passed');
-    expect(applyCalls).toHaveLength(6);
-    expect(schemaJobDeleteIndex).toBeGreaterThan(-1);
-    expect(volumeJobDeleteIndex).toBeGreaterThan(schemaJobDeleteIndex);
-    expect(schemaBootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
+    expect(applyCalls).toHaveLength(8);
+    expect(productJobDeleteIndex).toBeGreaterThan(-1);
+    expect(productBootstrapDryRunIndex).toBeGreaterThan(productJobDeleteIndex);
     expect(applyCalls[0]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
     expect(applyCalls[0]?.input).toContain('kind: Job');
-    expect(applyCalls[0]?.input).toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[0]?.input).toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[0]?.input).toContain('packages/api-entry-node/dist/product-schema-bootstrap.js');
+    expect(applyCalls[0]?.input).toContain('name: agentsmith-app-config');
+    expect(applyCalls[0]?.input).toContain('name: agentsmith-app-secrets');
+    expect(applyCalls[0]?.input).toContain('name: substrate-postgresql');
+    expect(applyCalls[0]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
+    expect(applyCalls[0]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
+    expect(applyCalls[0]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[0]?.input).not.toContain('name: afscp-schema-bootstrap');
     expect(applyCalls[0]?.input).not.toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[0]?.input).toContain('name: afscp-runtime-config');
-    expect(applyCalls[0]?.input).toContain('name: afscp-runtime-secrets');
-    expect(applyCalls[0]?.input).toContain('name: afscp-default-volume-juicefs');
-    expect(applyCalls[0]?.input).toContain('kind: PersistentVolume');
-    expect(applyCalls[0]?.input).toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[0]?.input).not.toContain('name: afscp-runtime-config');
+    expect(applyCalls[0]?.input).not.toContain('name: afscp-runtime-secrets');
+    expect(applyCalls[0]?.input).not.toContain('kind: PersistentVolume');
+    expect(applyCalls[0]?.input).not.toContain('kind: PersistentVolumeClaim');
     expect(applyCalls[0]?.input).not.toContain('kind: Deployment');
     expect(applyCalls[0]?.input).not.toContain('name: agentsmith-api');
     expect(applyCalls[1]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
-    expect(applyCalls[1]?.input).not.toContain('name: afscp-volume-bootstrap');
-    expect(schemaJobPollIndex).toBeGreaterThan(schemaBootstrapApplyIndex);
-    expect(volumeBootstrapDryRunIndex).toBeGreaterThan(schemaJobPollIndex);
+    expect(applyCalls[1]?.input).toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[1]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(productJobPollIndex).toBeGreaterThan(productBootstrapApplyIndex);
+    expect(schemaJobDeleteIndex).toBeGreaterThan(productJobPollIndex);
+    expect(volumeJobDeleteIndex).toBeGreaterThan(schemaJobDeleteIndex);
+    expect(schemaBootstrapDryRunIndex).toBeGreaterThan(volumeJobDeleteIndex);
     expect(applyCalls[2]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
     expect(applyCalls[2]?.input).toContain('kind: Job');
-    expect(applyCalls[2]?.input).toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[2]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
-    expect(applyCalls[2]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[2]?.input).not.toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[2]?.input).toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[2]?.input).not.toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[2]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[2]?.input).toContain('name: afscp-runtime-config');
+    expect(applyCalls[2]?.input).toContain('name: afscp-runtime-secrets');
+    expect(applyCalls[2]?.input).toContain('name: afscp-default-volume-juicefs');
+    expect(applyCalls[2]?.input).toContain('kind: PersistentVolume');
+    expect(applyCalls[2]?.input).toContain('kind: PersistentVolumeClaim');
     expect(applyCalls[2]?.input).not.toContain('kind: Deployment');
-    expect(applyCalls[2]?.input).not.toContain('kind: PersistentVolume');
-    expect(applyCalls[2]?.input).not.toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[2]?.input).not.toContain('name: agentsmith-api');
     expect(applyCalls[3]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
-    expect(applyCalls[3]?.input).toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[3]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[3]?.input).not.toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[3]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(schemaJobPollIndex).toBeGreaterThan(schemaBootstrapApplyIndex);
+    expect(volumeBootstrapDryRunIndex).toBeGreaterThan(schemaJobPollIndex);
+    expect(applyCalls[4]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[4]?.input).toContain('kind: Job');
+    expect(applyCalls[4]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[4]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
+    expect(applyCalls[4]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[4]?.input).not.toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[4]?.input).not.toContain('kind: Deployment');
+    expect(applyCalls[4]?.input).not.toContain('kind: PersistentVolume');
+    expect(applyCalls[4]?.input).not.toContain('kind: PersistentVolumeClaim');
+    expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[5]?.input).toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[5]?.input).not.toContain('name: afscp-schema-bootstrap');
     expect(volumeJobPollIndex).toBeGreaterThan(volumeBootstrapApplyIndex);
     expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
-    expect(applyCalls[4]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
-    expect(applyCalls[4]?.input).toContain('kind: Deployment');
-    expect(applyCalls[4]?.input).toContain('name: agentsmith-api');
-    expect(applyCalls[4]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(applyCalls[4]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(applyCalls[4]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
-    expect(applyCalls[4]?.input).toContain('MINIO_PORT: "9000"');
-    expect(applyCalls[4]?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
-    expect(applyCalls[4]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
-    expect(applyCalls[4]?.input).toContain('value: ghcr.io/mbos/agentsmith-managed-runner:dev');
-    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
-    expect(applyCalls[4]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
-    expect(applyCalls[4]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
-    expect(applyCalls[4]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
-    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[4]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[4]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[4]?.input).not.toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[4]?.input).not.toContain('@substrate-postgresql:15432/');
-    expect(applyCalls[4]?.input).not.toContain('@substrate-mongodb:27027/');
-    expect(applyCalls[4]?.input).not.toContain('@substrate-redis:16379/');
-    expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
-    expect(applyCalls[5]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[5]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[6]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));
+    expect(applyCalls[6]?.input).toContain('kind: Deployment');
+    expect(applyCalls[6]?.input).toContain('name: agentsmith-api');
+    expect(applyCalls[6]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
+    expect(applyCalls[6]?.input).toContain('value: ghcr.io/mbos/agentsmith-managed-runner:dev');
+    expect(applyCalls[6]?.input).not.toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
+    expect(applyCalls[6]?.input).not.toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
+    expect(applyCalls[6]?.input).not.toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[6]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
+    expect(applyCalls[6]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
+    expect(applyCalls[6]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
+    expect(applyCalls[6]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
+    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[6]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[6]?.input).not.toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[6]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[6]?.input).not.toContain('name: afscp-volume-bootstrap');
+    expect(applyCalls[6]?.input).not.toContain('@substrate-postgresql:15432/');
+    expect(applyCalls[6]?.input).not.toContain('@substrate-mongodb:27027/');
+    expect(applyCalls[6]?.input).not.toContain('@substrate-redis:16379/');
+    expect(applyCalls[7]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
+    expect(applyCalls[7]?.input).not.toContain('name: agentsmith-product-schema-bootstrap');
+    expect(applyCalls[7]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[7]?.input).not.toContain('name: afscp-volume-bootstrap');
     for (const call of applyCalls) {
       expect(call.input).not.toContain('kind: Namespace');
       expect(call.input).not.toContain('kind: ClusterRole');
@@ -387,7 +424,14 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(result.evidence.profile).toBe('existing-cluster');
     expect(result.evidence.rendered_config_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.evidence.substrate_truth_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(result.evidence.manifest_summary.resources).toContain('Job/agentsmith-product-schema-bootstrap');
     expect(result.evidence.manifest_summary.resources).toContain('Deployment/agentsmith-api');
+    expect(result.evidence.operations.map((operation) => operation.name)).toEqual(expect.arrayContaining([
+      'product-schema-bootstrap-delete-previous',
+      'product-schema-bootstrap-dry-run',
+      'product-schema-bootstrap-apply',
+      'product-schema-bootstrap-wait',
+    ]));
     expect(result.evidence.live_api_replica_check).toMatchObject({
       status: 'passed',
       desired_replicas: 1,
@@ -396,6 +440,51 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(result.evidence.forbidden_resource_check.status).toBe('passed');
     expect(result.evidence.llmup_config_health.status).toBe('passed');
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('fails fast on a failed product schema bootstrap Job before AFSCP and Deployment controllers', async () => {
+    const root = tempDir('existing-cluster-product-schema-failed-job-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get job/agentsmith-product-schema-bootstrap -o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(failedJob(
+          'agentsmith-product-schema-bootstrap',
+          'BackoffLimitExceeded',
+          'product schema migration exited before completing',
+        ));
+      }
+
+      return passing(command, args, options);
+    };
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+    const commandText = calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n');
+
+    expect(result.status).toBe('failed');
+    expect(commandText).toContain('get job/agentsmith-product-schema-bootstrap -o json');
+    expect(commandText).not.toContain('delete job afscp-schema-bootstrap');
+    expect(commandText).not.toContain('get job/afscp-schema-bootstrap -o json');
+    expect(commandText).not.toContain('rollout status deployment/agentsmith-web');
+    expect(calls.some((call) =>
+      call.args.includes('apply') && call.input.includes('name: agentsmith-api'),
+    )).toBe(false);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product-schema-bootstrap:wait',
+        message: expect.stringContaining('BackoffLimitExceeded'),
+      }),
+    ]));
   });
 
   it('fails fast on a failed AFSCP bootstrap Job before applying Deployment controllers', async () => {
@@ -465,6 +554,74 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(profileHeaders[0]?.Authorization).toBe('Bearer profile-token');
     expect(result.evidence.route_probes.find((probe) => probe.name === 'api-profile')?.expected).toContain('authenticated');
     expect(result.evidence.product_verification_matrix.login_profile.status).toBe('not_claimed');
+  });
+
+  it('passes route probes when public workspaces returns an empty directory', async () => {
+    const root = tempDir('existing-cluster-public-workspaces-empty-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner: createPassingRunner([]),
+      probeRunner: async (url, options) => {
+        if (url.includes('/api/public/workspaces')) {
+          return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: '{"items":[]}',
+            request_headers: options.headers ?? {},
+          };
+        }
+        return passingProbeRunner(url, options);
+      },
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.failures).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'probe:web-public-workspaces',
+      }),
+    ]));
+  });
+
+  it.each([
+    ['non-object payload', '[]'],
+    ['missing items array', '{}'],
+    ['item without string id', '{"items":[{"name":"Alpha"}]}'],
+    ['item with non-string id', '{"items":[{"id":123}]}'],
+  ])('fails route probes when public workspaces returns %s', async (_caseName, body) => {
+    const root = tempDir('existing-cluster-public-workspaces-shape-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner: createPassingRunner([]),
+      probeRunner: async (url, options) => {
+        if (url.includes('/api/public/workspaces')) {
+          return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body,
+            request_headers: options.headers ?? {},
+          };
+        }
+        return passingProbeRunner(url, options);
+      },
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'probe:web-public-workspaces',
+        message: expect.stringContaining('JSON shape'),
+      }),
+    ]));
   });
 
   it('passes forbidden autoscaler drift check when the target cluster has no KEDA API resources', async () => {

@@ -68,6 +68,11 @@
         "replicas": 1,
         "operator_replicas_setting": false
       },
+      "product-schema-bootstrap": {
+        "workload": "Job",
+        "public": false,
+        "internal_only": true
+      },
       "llmup": {
         "workload": "Deployment",
         "service": "agentsmith-llmup",

@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "src/index.ts",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outfile=dist/index.js --log-level=warning",
+    "build": "esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outdir=dist --entry-names=[name] --log-level=warning",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",

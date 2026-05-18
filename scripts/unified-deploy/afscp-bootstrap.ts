@@ -8,6 +8,7 @@ import {
 
 export const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
 export const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
+export const PRODUCT_SCHEMA_BOOTSTRAP_JOB = 'agentsmith-product-schema-bootstrap';
 export const AFSCP_BOOTSTRAP_JOB_NAMES = [
   AFSCP_SCHEMA_BOOTSTRAP_JOB,
   AFSCP_VOLUME_BOOTSTRAP_JOB,
@@ -84,6 +85,27 @@ function isAfscpVolumeBootstrapJob(document: KubernetesDocument): boolean {
   return resourceKind(document) === 'Job' && asRecord(document.metadata).name === AFSCP_VOLUME_BOOTSTRAP_JOB;
 }
 
+function isProductSchemaBootstrapJob(document: KubernetesDocument): boolean {
+  return resourceKind(document) === 'Job' && asRecord(document.metadata).name === PRODUCT_SCHEMA_BOOTSTRAP_JOB;
+}
+
+function isProductSchemaBootstrapPrerequisite(document: KubernetesDocument): boolean {
+  const kind = resourceKind(document);
+  const name = asRecord(document.metadata).name;
+  const component = componentLabel(document);
+
+  if (component === 'substrate-binding' && ['Service', 'EndpointSlice'].includes(kind)) {
+    return true;
+  }
+
+  if (kind === 'ServiceAccount' && name === 'agentsmith-app') {
+    return true;
+  }
+
+  return ['ConfigMap', 'Secret'].includes(kind)
+    && ['agentsmith-app-config', 'agentsmith-app-secrets'].includes(String(name));
+}
+
 function isAfscpBootstrapPrerequisite(document: KubernetesDocument): boolean {
   const kind = resourceKind(document);
   const component = componentLabel(document);
@@ -115,5 +137,24 @@ export function splitAfscpBootstrapAppYaml(source: string): {
     schemaBootstrapYaml: schemaSplit.firstYaml,
     volumeBootstrapYaml: volumeSplit.firstYaml,
     remainingYaml: volumeSplit.secondYaml,
+  };
+}
+
+export function splitAppBootstrapYaml(source: string): {
+  productBootstrapYaml: string;
+  schemaBootstrapYaml: string;
+  volumeBootstrapYaml: string;
+  remainingYaml: string;
+} {
+  const productSplit = splitKubernetesDocuments(source, (document) =>
+    isProductSchemaBootstrapJob(document) || isProductSchemaBootstrapPrerequisite(document),
+  );
+  const afscpSplit = splitAfscpBootstrapAppYaml(productSplit.secondYaml);
+
+  return {
+    productBootstrapYaml: productSplit.firstYaml,
+    schemaBootstrapYaml: afscpSplit.schemaBootstrapYaml,
+    volumeBootstrapYaml: afscpSplit.volumeBootstrapYaml,
+    remainingYaml: afscpSplit.remainingYaml,
   };
 }

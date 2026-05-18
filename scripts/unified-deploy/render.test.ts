@@ -423,6 +423,7 @@ describe('unified deploy render producer', () => {
         'Role/agentsmith-sandbox-manager',
         'RoleBinding/agentsmith-sandbox-manager',
         'ConfigMap/sandbox-manager-config',
+        'Job/agentsmith-product-schema-bootstrap',
         'Job/afscp-schema-bootstrap',
         'Job/afscp-volume-bootstrap',
         'PersistentVolume/agentsmith-afscp-default-volume',
@@ -561,15 +562,20 @@ describe('unified deploy render producer', () => {
     expect(rootPackage.scripts?.['api:node:start']).toBe('npm run start -w @mbos/api-entry-node');
     expect(apiPackage.main).toBe('dist/index.js');
     expect(apiPackage.scripts?.build).toContain('esbuild src/index.ts');
+    expect(apiPackage.scripts?.build).toContain('src/product-schema-bootstrap.ts');
     expect(apiPackage.scripts?.build).toContain('--banner:js=');
     expect(apiPackage.scripts?.build).toContain('createRequire');
     expect(apiPackage.scripts?.build).toContain('node:module');
     expect(apiPackage.scripts?.build).toContain('import.meta.url');
-    expect(apiPackage.scripts?.build).toContain('--outfile=dist/index.js');
+    expect(apiPackage.scripts?.build).toContain('--outdir=dist');
+    expect(apiPackage.scripts?.build).toContain('--entry-names=[name]');
     expect(apiPackage.scripts?.start).toBe('node dist/index.js');
     expect(apiPackage.scripts?.start).not.toMatch(/\btsx\b|src\/index\.ts|api:node:dev/u);
     expect(dockerfile).toContain('npm run api:node:build');
-    expect(checkApiProductionEntrypointScripts().ok).toBe(true);
+    expect(checkApiProductionEntrypointScripts()).toEqual({
+      ok: true,
+      failures: [],
+    });
   });
 
   it('rejects API production entrypoint scripts that fall back to tsx or dev commands', () => {
@@ -595,9 +601,58 @@ describe('unified deploy render producer', () => {
     expect(messages).toContain('api:node:start must delegate to @mbos/api-entry-node start');
     expect(messages).toContain('api package start must run node dist/index.js');
     expect(messages).toContain('api package main must point to dist/index.js');
-    expect(messages).toContain('api package build must bundle src/index.ts to dist/index.js');
+    expect(messages).toContain('api package build must bundle src/index.ts and src/product-schema-bootstrap.ts to dist');
     expect(messages).toContain('api package ESM bundle must inject Node createRequire for bundled CJS dependencies');
     expect(messages).toContain('Dockerfile.agentsmith-app must build the API production entrypoint');
+  });
+
+  it('rejects API production entrypoint builds that omit the product schema bootstrap entry or dist outdir', () => {
+    const baseOptions = {
+      rootPackage: {
+        scripts: {
+          'api:node:build': 'npm run build -w @mbos/api-entry-node',
+          'api:node:start': 'npm run start -w @mbos/api-entry-node',
+        },
+      },
+      dockerfileText: 'RUN npm run api:node:build',
+    };
+    const validBuild = 'esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from \'node:module\';const require = createRequire(import.meta.url);" --outdir=dist --entry-names=[name] --log-level=warning';
+
+    const missingBootstrap = checkApiProductionEntrypointScripts({
+      ...baseOptions,
+      apiPackage: {
+        main: 'dist/index.js',
+        scripts: {
+          build: validBuild.replace(' src/product-schema-bootstrap.ts', ''),
+          start: 'node dist/index.js',
+        },
+      },
+    });
+    const wrongOutdir = checkApiProductionEntrypointScripts({
+      ...baseOptions,
+      apiPackage: {
+        main: 'dist/index.js',
+        scripts: {
+          build: validBuild.replace('--outdir=dist', '--outdir=build'),
+          start: 'node dist/index.js',
+        },
+      },
+    });
+
+    expect(missingBootstrap.ok).toBe(false);
+    expect(missingBootstrap.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'packages/api-entry-node/package.json:scripts.build',
+        message: expect.stringContaining('src/product-schema-bootstrap.ts'),
+      }),
+    ]));
+    expect(wrongOutdir.ok).toBe(false);
+    expect(wrongOutdir.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'packages/api-entry-node/package.json:scripts.build',
+        message: expect.stringContaining('to dist'),
+      }),
+    ]));
   });
 
   it('renders service-specific startup commands for the shared app image workloads', async () => {
@@ -609,6 +664,14 @@ describe('unified deploy render producer', () => {
     const webPorts = Array.isArray(web.ports) ? web.ports.map(asRecord) : [];
     const apiPorts = Array.isArray(api.ports) ? api.ports.map(asRecord) : [];
     const apiEnv = Array.isArray(api.env) ? api.env.map(asRecord) : [];
+    const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+    const productSchemaJobSpec = asRecord(productSchemaJob.spec);
+    const productSchemaJobPodSpec = asRecord(asRecord(productSchemaJobSpec.template).spec);
+    const productSchemaJobContainer = podSpecContainer(
+      productSchemaJobPodSpec,
+      'containers',
+      'agentsmith-product-schema-bootstrap',
+    );
     const ingressPorts = ingressBackendPorts(rendered.output);
 
     expect(web.command).toEqual(['npm']);
@@ -626,7 +689,66 @@ describe('unified deploy render producer', () => {
       { name: 'PORT', value: '20000' },
       { name: 'INTERNAL_AGENT_IMAGE', value: siteEnv.MANAGED_RUNNER_IMAGE },
     ]));
+    expect(productSchemaJobSpec.backoffLimit).toBe(0);
+    expect(productSchemaJobSpec.ttlSecondsAfterFinished).toBe(86400);
+    expect(productSchemaJobPodSpec.restartPolicy).toBe('Never');
+    expect(productSchemaJobPodSpec.serviceAccountName).toBe('agentsmith-app');
+    expect(productSchemaJobContainer.image).toBe(siteEnv.API_IMAGE);
+    expect(productSchemaJobContainer.command).toEqual(['node']);
+    expect(productSchemaJobContainer.args).toEqual(['packages/api-entry-node/dist/product-schema-bootstrap.js']);
+    expect(productSchemaJobContainer.envFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'agentsmith-app-config' } },
+      { secretRef: { name: 'agentsmith-app-secrets' } },
+    ]));
     expect(ingressPorts.get('/api/v1')).toBe(20000);
+  });
+
+  it('rejects rendered output without the product schema bootstrap Job', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output).filter((document) =>
+      !(resourceKind(document) === 'Job' && resourceName(document) === 'agentsmith-product-schema-bootstrap'),
+    );
+
+    const result = checkRenderedOutput(stringifyDocuments(documents));
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'Job/agentsmith-product-schema-bootstrap',
+        message: expect.stringContaining('product schema bootstrap Job must be rendered'),
+      }),
+    ]));
+  });
+
+  it('rejects product schema bootstrap Jobs with a broken runtime contract', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+    const productSchemaJobSpec = asRecord(productSchemaJob.spec);
+    const productSchemaJobPodSpec = asRecord(asRecord(productSchemaJobSpec.template).spec);
+    const productSchemaJobContainer = podSpecContainer(
+      productSchemaJobPodSpec,
+      'containers',
+      'agentsmith-product-schema-bootstrap',
+    );
+    asRecord(productSchemaJob.metadata).namespace = 'wrong-namespace';
+    productSchemaJobPodSpec.serviceAccountName = 'default';
+    productSchemaJobContainer.image = 'ghcr.io/mbos/agentsmith-app:wrong';
+    productSchemaJobContainer.command = ['npm'];
+    productSchemaJobContainer.args = ['run', 'api:node:start'];
+    productSchemaJobContainer.envFrom = [
+      { configMapRef: { name: 'agentsmith-app-config' } },
+    ];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('product schema bootstrap Job must be namespace-local');
+    expect(text).toContain('product schema bootstrap Job must use agentsmith-app ServiceAccount');
+    expect(text).toContain('product schema bootstrap Job must use the rendered API image');
+    expect(text).toContain('product schema bootstrap Job must run node packages/api-entry-node/dist/product-schema-bootstrap.js');
+    expect(text).toContain('product schema bootstrap Job must consume agentsmith-app-config and agentsmith-app-secrets');
   });
 
   it('renders AFSCP runtime components with the bounded internal JVS runtime contract', async () => {

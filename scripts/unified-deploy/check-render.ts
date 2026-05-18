@@ -40,6 +40,19 @@ const API_ROOT_BUILD_SCRIPT = 'npm run build -w @mbos/api-entry-node';
 const API_ROOT_START_SCRIPT = 'npm run start -w @mbos/api-entry-node';
 const API_PACKAGE_START_SCRIPT = 'node dist/index.js';
 const API_PACKAGE_MAIN = 'dist/index.js';
+const AGENTSMITH_APP_SERVICE_ACCOUNT = 'agentsmith-app';
+const AGENTSMITH_APP_CONFIG_MAP = 'agentsmith-app-config';
+const AGENTSMITH_APP_SECRET = 'agentsmith-app-secrets';
+const PRODUCT_SCHEMA_BOOTSTRAP_JOB = 'agentsmith-product-schema-bootstrap';
+const PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT = 'packages/api-entry-node/dist/product-schema-bootstrap.js';
+const API_PACKAGE_REQUIRED_BUILD_ARGS = [
+  'src/index.ts',
+  'src/product-schema-bootstrap.ts',
+  '--bundle',
+  '--platform=node',
+  '--format=esm',
+  '--outdir=dist',
+] as const;
 const API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS = [
   '--banner:js=',
   'createRequire',
@@ -92,6 +105,14 @@ function includesForbiddenApiStartRuntime(command: string): boolean {
   return /\btsx\b|src\/index\.ts|api:node:dev/u.test(command);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function includesShellArg(command: string, arg: string): boolean {
+  return new RegExp(`(?:^|\\s)${escapeRegExp(arg)}(?:$|\\s)`, 'u').test(command);
+}
+
 export function checkApiProductionEntrypointScripts(
   options: ApiProductionEntrypointOptions = {},
 ): CheckResult {
@@ -117,16 +138,14 @@ export function checkApiProductionEntrypointScripts(
     addFailure(failures, 'packages/api-entry-node/package.json:main', 'api package main must point to dist/index.js');
   }
   if (
-    !apiBuild.includes('esbuild src/index.ts')
-    || !apiBuild.includes('--bundle')
-    || !apiBuild.includes('--platform=node')
-    || !apiBuild.includes('--format=esm')
-    || !apiBuild.includes('--outfile=dist/index.js')
+    !apiBuild.includes('esbuild')
+    || !API_PACKAGE_REQUIRED_BUILD_ARGS.every((arg) => includesShellArg(apiBuild, arg))
+    || includesShellArg(apiBuild, '--outfile=dist/index.js')
   ) {
     addFailure(
       failures,
       'packages/api-entry-node/package.json:scripts.build',
-      'api package build must bundle src/index.ts to dist/index.js',
+      'api package build must bundle src/index.ts and src/product-schema-bootstrap.ts to dist',
     );
   }
   if (!API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS.every((snippet) => apiBuild.includes(snippet))) {
@@ -193,6 +212,9 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
   }
   if (!hasResource(documents, 'ConfigMap', LLMUP_CONFIG_MAP)) {
     addFailure(failures, `ConfigMap/${LLMUP_CONFIG_MAP}`, 'llmup app-owned configuration must be rendered');
+  }
+  if (!hasResource(documents, 'Job', PRODUCT_SCHEMA_BOOTSTRAP_JOB)) {
+    addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must be rendered');
   }
   for (const [kind, name] of [
     ['ServiceAccount', AFSCP_RUNTIME_SERVICE_ACCOUNT],
@@ -603,14 +625,74 @@ function servicePort(documents: readonly Record<string, unknown>[], serviceName:
   return typeof firstPort === 'number' ? firstPort : undefined;
 }
 
+function checkProductSchemaBootstrapJob(
+  documents: readonly Record<string, unknown>[],
+  namespace: string,
+  apiImage: string,
+  failures: CheckFailure[],
+): void {
+  const job = resourceByKindName(documents, 'Job', PRODUCT_SCHEMA_BOOTSTRAP_JOB);
+  if (resourceName(job) !== PRODUCT_SCHEMA_BOOTSTRAP_JOB) {
+    return;
+  }
+
+  const jobSpec = asRecord(job.spec);
+  const podSpec = asRecord(asRecord(jobSpec.template).spec);
+  const container = podSpecContainer(podSpec, 'containers', PRODUCT_SCHEMA_BOOTSTRAP_JOB);
+
+  if (resourceNamespace(job) !== namespace) {
+    addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must be namespace-local');
+  }
+  if (jobSpec.backoffLimit !== 0 || jobSpec.ttlSecondsAfterFinished !== 86400) {
+    addFailure(
+      failures,
+      `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+      'product schema bootstrap Job must fail fast and retain short-lived completion evidence',
+    );
+  }
+  if (podSpec.restartPolicy !== 'Never') {
+    addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must leave a failed Pod for diagnostics');
+  }
+  if (podSpec.serviceAccountName !== AGENTSMITH_APP_SERVICE_ACCOUNT) {
+    addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must use agentsmith-app ServiceAccount');
+  }
+  if (container.image !== apiImage) {
+    addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must use the rendered API image');
+  }
+  if (
+    stringArray(container.command).join('\0') !== 'node'
+    || stringArray(container.args).join('\0') !== PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT
+  ) {
+    addFailure(
+      failures,
+      `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+      `product schema bootstrap Job must run node ${PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT}`,
+    );
+  }
+
+  const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
+  if (
+    !hasEnvFromRef(envFrom, 'configMapRef', AGENTSMITH_APP_CONFIG_MAP)
+    || !hasEnvFromRef(envFrom, 'secretRef', AGENTSMITH_APP_SECRET)
+  ) {
+    addFailure(
+      failures,
+      `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+      'product schema bootstrap Job must consume agentsmith-app-config and agentsmith-app-secrets',
+    );
+  }
+}
+
 function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   const web = deploymentContainer(documents, 'agentsmith-web', 'web');
   const api = deploymentContainer(documents, 'agentsmith-api', 'api');
+  const apiDeployment = resourceByKindName(documents, 'Deployment', 'agentsmith-api');
   const appConfigMap = resourceByKindName(documents, 'ConfigMap', 'agentsmith-app-config');
   const appConfigData = asRecord(appConfigMap.data);
   const ingressPorts = collectIngressRoutePorts(documents);
   const webImage = typeof web.image === 'string' ? web.image : '';
   const apiImage = typeof api.image === 'string' ? api.image : '';
+  const namespace = resourceNamespace(apiDeployment) || resourceNamespace(appConfigMap);
 
   if (webImage !== apiImage || !/\/agentsmith-app(?::|@sha256:)/u.test(webImage)) {
     addFailure(failures, 'Deployment/agentsmith-web', 'web and api must default to the shared agentsmith-app image');
@@ -656,6 +738,7 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
       'api AFSCP bootstrap binding must authorize the sandbox manager orchestrator caller',
     );
   }
+  checkProductSchemaBootstrapJob(documents, namespace, apiImage, failures);
 }
 
 function checkLlmupContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {

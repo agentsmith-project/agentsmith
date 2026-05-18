@@ -81,6 +81,24 @@ function countMatches(content: string, pattern: RegExp): number {
   return [...content.matchAll(pattern)].length;
 }
 
+function sliceBetween(
+  content: string,
+  startMarker: string,
+  endMarker: string,
+  message: string,
+  failures: string[],
+): string {
+  const start = content.indexOf(startMarker);
+  const end = start >= 0 ? content.indexOf(endMarker, start) : -1;
+
+  if (start < 0 || end < 0 || end <= start) {
+    failures.push(message);
+    return '';
+  }
+
+  return content.slice(start, end);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -255,6 +273,25 @@ for (const [command, pattern] of [
     failures.push(`default gate must run shared preflight command exactly once: ${command} (found ${count})`);
   }
 }
+const governanceToolingSuite = packageJson.scripts?.['test:governance-tooling'] ?? '';
+requireMatch(governanceToolingSuite, /npm run test:run --/, 'test:governance-tooling must run a focused Vitest suite', failures);
+requireMatch(governanceToolingSuite, /scripts\/default-gate\.test\.ts/, 'test:governance-tooling must cover default-gate profile behavior', failures);
+requireMatch(governanceToolingSuite, /scripts\/contracts\/check-current-gates\.test\.ts/, 'test:governance-tooling must cover current gate contract behavior', failures);
+requireMatch(governanceToolingSuite, /scripts\/governance\/__tests__\/current-gate-governance\.test\.ts/, 'test:governance-tooling must cover current gate governance helpers', failures);
+requireMatch(governanceToolingSuite, /scripts\/governance\/__tests__\/verify-impact-selector\.test\.ts/, 'test:governance-tooling must cover governance tooling impact selection', failures);
+forbidMatch(governanceToolingSuite, /playwright|test:e2e|lane:mock|lane:visual|test:visual|workspace-project-default-gate|governance-default-gate/, 'test:governance-tooling must stay scoped to governance tooling unit/contract tests without Playwright or domain gates', failures);
+requireMatch(defaultGateScript, /standalone\|fast\|campaign_after_gate_fast\|governance_tooling/, 'default gate must allow the scoped governance_tooling profile', failures);
+requireMatch(defaultGateScript, /\[\[ "\$\{DEFAULT_GATE_PROFILE\}" == "campaign_after_gate_fast" \]\] \|\| \[\[ "\$\{DEFAULT_GATE_PROFILE\}" == "governance_tooling" \]\] \|\| \[\[ "\$\{DEFAULT_GATE_REUSE_FAST_EVIDENCE\}" == "1" \]\]/, 'governance_tooling profile must reuse fast evidence and skip shared pure checks', failures);
+const governanceToolingProfileBlock = sliceBetween(
+  defaultGateScript,
+  'if [[ "${DEFAULT_GATE_PROFILE}" == "governance_tooling" ]]; then',
+  'workspace_project_default_gate_command=',
+  'default gate must isolate the governance_tooling profile before standalone domain delegation',
+  failures,
+);
+requireMatch(governanceToolingProfileBlock, /npm run test:governance-tooling/, 'governance_tooling profile must run the focused governance tooling suite', failures);
+requireMatch(governanceToolingProfileBlock, /exit 0/, 'governance_tooling profile must exit before standalone domain delegation', failures);
+forbidMatch(governanceToolingProfileBlock, /workspace-project-default-gate|governance-default-gate|test:e2e:lane:mock|lane:visual|test:visual|e2e\/visual/, 'governance_tooling profile must not run domain gates, mock lane, or visual lane', failures);
 requireMatch(defaultGateScript, /next_generated_root_run_locked_type_state_gate_sequence/, 'default gate must run typegen, tsc, and build through the shared locked type-state helper', failures);
 requireMatch(defaultGateScript, /npx next typegen \.[\s\S]*npx tsc --noEmit[\s\S]*npm run build/, 'default gate locked type-state helper callback must keep typegen -> tsc -> build order', failures);
 requireMatch(defaultGateScript, /workspace-project-default-gate\.sh --skip-shared-preflight/, 'default gate must delegate workspace-project domain checks with shared preflight skipped', failures);

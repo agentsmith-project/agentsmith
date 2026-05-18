@@ -6,6 +6,7 @@ describe('backend real run first-lane port contract', () => {
   it('keeps backend-real runner shell scripts syntax valid', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/backend-real-run.sh'])).not.toThrow();
     expect(() => execFileSync('bash', ['-n', 'scripts/agent-task-real-smoke-gate.sh'])).not.toThrow();
+    expect(() => execFileSync('bash', ['-n', 'scripts/run-internal-agent-task-real-gate.sh'])).not.toThrow();
     expect(() => execFileSync('bash', ['-n', 'scripts/files-restore-continuation-real-gate.sh'])).not.toThrow();
   });
 
@@ -54,7 +55,19 @@ describe('backend real run first-lane port contract', () => {
     expect(script).toContain('bash scripts/workspace-project-default-gate.sh --with-backend-real --skip-shared-preflight --skip-focused-visual');
     expect(script).toContain('npm run test:backend-real:core');
     expect(script).toContain('AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT=1');
+    expect(script).toContain('AGENT_TASK_REAL_SMOKE_STATIC_ONLY=1');
     expect(script).toContain('npm run test:agent-task:backend-real:smoke');
+  });
+
+  it('runs agent-task smoke as static-only and collapses internal managed Agent Task coverage into one core composite producer', () => {
+    const script = readFileSync('scripts/backend-real-run.sh', 'utf8');
+
+    expect(script).toContain('AGENT_TASK_REAL_SMOKE_STATIC_ONLY=1');
+    expect(script).toContain('running internal agent-task backend-real composite');
+    expect(script).toContain('bash scripts/run-internal-agent-task-real-gate.sh --core-composite');
+    expect(script).toContain('cleanup_gate_ports 20064 3065 e2e/integration-agent-task-runner.spec.ts');
+    expect(script).not.toContain('info "running internal agent-task backend-real gate"');
+    expect(script).not.toContain('npm run test:internal:backend-real:agent-task-workspace');
   });
 
   it('keeps focused Files restore continuation out of backend-real core direct integration entrypoints', () => {
@@ -64,16 +77,20 @@ describe('backend real run first-lane port contract', () => {
     expect(script).not.toContain('cleanup_gate_ports 21020 3121 e2e/integration-files-user-stories.spec.ts');
     expect(script).not.toContain('npm run test:e2e:integration:files:user-stories:restore-continue');
     expect(script).not.toContain('AFSCP_RESTORE_RECOVERY_ENABLED');
-    expect(script).toContain('npm run test:internal:backend-real:agent-task-workspace');
+    expect(script).toContain('bash scripts/run-internal-agent-task-real-gate.sh --core-composite');
   });
 
   it('keeps agent-task smoke static preflight by default and skippable only by explicit flag or env', () => {
     const script = readFileSync('scripts/agent-task-real-smoke-gate.sh', 'utf8');
 
     expect(script).toContain('SKIP_SHARED_PREFLIGHT="${AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT:-0}"');
+    expect(script).toContain('STATIC_ONLY="${AGENT_TASK_REAL_SMOKE_STATIC_ONLY:-0}"');
     expect(script).toContain('--skip-shared-preflight');
+    expect(script).toContain('--static-only');
     expect(script).toContain('if [[ "${SKIP_SHARED_PREFLIGHT}" == "1" ]]; then');
     expect(script).toContain('reusing shared preflight evidence; skipping contracts/openapi/typegen/typecheck');
+    expect(script).toContain('if [[ "${STATIC_ONLY}" == "1" ]]; then');
+    expect(script).toContain('static-only smoke checks passed; skipping internal managed Agent Task runtime');
     expect(script).toContain('run_cmd "npm run contracts:check"');
     expect(script).toContain('run_cmd "npm run contracts:check-openapi"');
     expect(script).toContain('run_cmd "npm run openapi:check-generated"');

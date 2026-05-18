@@ -71,7 +71,8 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/index.test.ts' \
   -t 'denies suspended memberships in route authz and authorize endpoint'"
 
-run_cmd "bash scripts/run-mock-lane-playwright.sh \
+run_cmd "MOCK_LANE_WARM_URLS=$'/en-US/login\n/en-US/workspaces/ws_default/projects/proj_001/members\n/en-US/workspaces/ws_default/projects/proj_001/resource-policy' \
+  bash scripts/run-mock-lane-playwright.sh \
   e2e/governance-default.spec.ts \
   --project=chromium \
   --workers=1"
@@ -82,6 +83,7 @@ else
   info "running governance focused visual mock lane"
   (
     cd "${ROOT_DIR}"
+    MOCK_LANE_WARM_URLS=$'/en-US/login\n/en-US/workspaces/ws_default/projects/proj_001/members\n/en-US/workspaces/ws_default/projects/proj_001/resource-policy\n/en-US/workspaces/ws_default/projects/proj_001/audit\n/en-US/workspaces/ws_default/projects/proj_001/alerts' \
     bash scripts/run-mock-lane-playwright.sh \
       e2e/visual.spec.ts \
       --project=visual \

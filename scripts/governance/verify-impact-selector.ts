@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
 import type { StoryDefinition } from '../../e2e/story-contract';
 import type { VisualBaselineCatalogEntry } from '../../e2e/visual-baseline-support';
 import {
@@ -26,6 +29,7 @@ export type ChangedFileImpactRule =
   | 'docs_only'
   | 'design_system'
   | 'runner_context_credential'
+  | 'backend_real_diagnostic_tooling'
   | 'release_real_owner_diagnostic'
   | 'release_deploy_operations'
   | 'governance_tooling'
@@ -200,6 +204,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'docs_only',
   'design_system',
   'runner_context_credential',
+  'backend_real_diagnostic_tooling',
   'release_real_owner_diagnostic',
   'release_deploy_operations',
   'governance_tooling',
@@ -237,6 +242,7 @@ const PUBLIC_VERIFY_TEXT_REPLACEMENTS: readonly (readonly [string, string])[] = 
     .sort(([left], [right]) => right.length - left.length)
     .map(([internalText, publicText]) => [internalText, publicText] as const),
 ];
+const GOVERNANCE_TOOLING_DEFAULT_GATE_PROFILE = 'governance_tooling' as const;
 
 const MANUAL_REVIEW_REASONS = {
   storyMarkdownChanged: 'story markdown changed',
@@ -320,6 +326,32 @@ export function publicRecommendedVerificationCommands(commands: readonly string[
   return rendered;
 }
 
+export function defaultGateProfileForVerificationPlan(
+  plan: VerificationPlan,
+): typeof GOVERNANCE_TOOLING_DEFAULT_GATE_PROFILE | null {
+  const onlyGovernanceToolingSurface = plan.affectedSurfaces.length === 1
+    && plan.affectedSurfaces[0] === 'engineering-governance-tooling';
+  const hasHeavyLevel = plan.requiredLevels.some((level) => level === 'V2' || level === 'V3' || level === 'V4');
+  const hasStoryImpact = plan.storyCards.length > 0
+    || plan.changedFileImpacts.some((impact) => impact.storyIds.length > 0);
+  const hasUnmappedImpact = plan.affectedSurfaces.includes('unmapped-source')
+    || plan.changedFileImpacts.some((impact) => impact.matchedRules.includes('unmapped_source'));
+
+  if (
+    plan.goal === 'pr'
+    && onlyGovernanceToolingSurface
+    && !hasHeavyLevel
+    && !plan.riskSummary.broadImpact
+    && !plan.riskSummary.manualReviewRequired
+    && !hasStoryImpact
+    && !hasUnmappedImpact
+  ) {
+    return GOVERNANCE_TOOLING_DEFAULT_GATE_PROFILE;
+  }
+
+  return null;
+}
+
 function publicGovernedVerifyCommandForInternalAlias(command: string): string {
   return sanitizePublicVerificationText(command);
 }
@@ -366,7 +398,6 @@ function isGeneratedStorySpec(filePath: string, catalog: VerificationCatalog): b
 const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^scripts\/skills-runtime-/,
   /^scripts\/.*agent-task.*runner/i,
-  /^scripts\/run-internal-agent-task-real-gate\.sh$/,
   /^scripts\/notebook-/,
   /^scripts\/task-terminal/,
   /^scripts\/workspace-shared-context/,
@@ -405,6 +436,8 @@ function isReleaseDeployPath(filePath: string): boolean {
   return [
     /^scripts\/release-full-campaign\.sh$/,
     /^scripts\/release-full-aggregate-gate\.sh$/,
+    /^scripts\/run-integration-release-user-story(?:\.test)?\.(?:sh|ts)$/,
+    /^scripts\/release-local-precheck-afscp\.test\.ts$/,
     /^scripts\/governance\/release/,
     /^scripts\/governance\/run-release/,
     /^scripts\/governance\/release-campaign/,
@@ -435,7 +468,221 @@ function isGovernanceToolingPath(filePath: string): boolean {
   if (isReleaseDeployPath(filePath)) {
     return false;
   }
-  return /^scripts\/governance\/.*\.ts$/.test(filePath);
+  return [
+    /^scripts\/governance\/.*\.ts$/,
+    /^scripts\/default-gate(?:\.test)?\.(?:sh|ts)$/,
+    /^scripts\/governance-default-gate(?:\.test)?\.(?:sh|ts)$/,
+    /^scripts\/run-mock-lane-playwright\.test\.ts$/,
+    /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
+  ].some((pattern) => pattern.test(filePath));
+}
+
+type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonObject(value: string): JsonObject | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isJsonObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (isJsonObject(value)) {
+    return `{${Object.keys(value)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function changedJsonKeys(left: JsonObject, right: JsonObject): string[] {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys]
+    .filter((key) => stableJson(left[key]) !== stableJson(right[key]))
+    .sort((leftKey, rightKey) => leftKey.localeCompare(rightKey));
+}
+
+function readGitText(args: readonly string[]): string | null {
+  const result = spawnSync('git', [...args], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  if (result.status !== 0 || typeof result.stdout !== 'string') {
+    return null;
+  }
+  return result.stdout;
+}
+
+function packageJsonHasDiffAgainstHead(): boolean {
+  const diff = readGitText(['diff', '--name-only', 'HEAD', '--', 'package.json']);
+  if (diff === null) {
+    return false;
+  }
+  return diff
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .includes('package.json');
+}
+
+function packageJsonHasUnstagedDiff(): boolean {
+  const diff = readGitText(['diff', '--name-only', '--', 'package.json']);
+  if (diff === null) {
+    return false;
+  }
+  return diff
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .includes('package.json');
+}
+
+function packageJsonHasCachedDiff(): boolean {
+  const diff = readGitText(['diff', '--name-only', '--cached', '--', 'package.json']);
+  if (diff === null) {
+    return false;
+  }
+  return diff
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .includes('package.json');
+}
+
+function readPackageJsonFromHead(): JsonObject | null {
+  const content = readGitText(['show', 'HEAD:package.json']);
+  return content === null ? null : parseJsonObject(content);
+}
+
+function readPackageJsonFromIndex(): JsonObject | null {
+  const content = readGitText(['show', ':package.json']);
+  return content === null ? null : parseJsonObject(content);
+}
+
+function readPackageJsonFromWorktree(): JsonObject | null {
+  try {
+    return parseJsonObject(readFileSync('package.json', 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function isSafeGovernanceToolingTestPath(value: string): boolean {
+  return /^scripts\/(?:default-gate|governance-default-gate|run-mock-lane-playwright)\.test\.ts$/.test(value)
+    || /^scripts\/contracts\/check-current-[^/]+\.test\.ts$/.test(value)
+    || /^scripts\/contracts\/check-engineering-governance\.test\.ts$/.test(value)
+    || /^scripts\/governance\/__tests__\/[^/]+\.test\.ts$/.test(value);
+}
+
+function isSafeGovernanceToolingTestCommand(command: string): boolean {
+  const prefix = 'npm run test:run -- ';
+  if (!command.startsWith(prefix) || /[;&|`$<>]/.test(command)) {
+    return false;
+  }
+  const testPaths = command.slice(prefix.length).trim().split(/\s+/).filter(Boolean);
+  return testPaths.length > 0 && testPaths.every(isSafeGovernanceToolingTestPath);
+}
+
+function isSafeMockLaneDiagnosticCommand(command: string): boolean {
+  if (/[;|`$<>]/.test(command) || /\b(?:visual|with-visual|release|deploy|backend-real)\b/i.test(command)) {
+    return false;
+  }
+
+  const segments = command.split(/\s+&&\s+/).map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length === 0) {
+    return false;
+  }
+
+  return segments.every((segment) => {
+    if (/^bash scripts\/run-mock-lane-session\.sh\b/.test(segment)) {
+      return /\s--(?:preset=default|shards=chromium,chromium-serial)\b/.test(segment);
+    }
+    if (/^bash scripts\/run-mock-lane-playwright\.sh\b/.test(segment)) {
+      return /\s--project=(?:smoke|chromium|chromium-serial)\b/.test(segment);
+    }
+    return false;
+  });
+}
+
+function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {
+  if (scriptName === 'test:governance') {
+    return command === 'bash scripts/governance-default-gate.sh';
+  }
+  if (scriptName === 'test:governance-tooling') {
+    return isSafeGovernanceToolingTestCommand(command);
+  }
+  if (/^test:e2e:lane:mock:(?:smoke|chromium)$/.test(scriptName)) {
+    return isSafeMockLaneDiagnosticCommand(command);
+  }
+  return false;
+}
+
+function isPackageJsonSafeGovernanceToolingChange(filePath: string): boolean {
+  if (filePath !== 'package.json' || !packageJsonHasDiffAgainstHead()) {
+    return false;
+  }
+
+  const hasCachedDiff = packageJsonHasCachedDiff();
+  const hasUnstagedDiff = packageJsonHasUnstagedDiff();
+  if (hasCachedDiff && hasUnstagedDiff) {
+    return false;
+  }
+
+  const basePackageJson = readPackageJsonFromHead();
+  const currentPackageJson = hasCachedDiff ? readPackageJsonFromIndex() : readPackageJsonFromWorktree();
+  if (!basePackageJson || !currentPackageJson) {
+    return false;
+  }
+
+  const packageChangedKeys = changedJsonKeys(basePackageJson, currentPackageJson);
+  if (packageChangedKeys.length !== 1 || packageChangedKeys[0] !== 'scripts') {
+    return false;
+  }
+
+  const baseScripts = basePackageJson.scripts;
+  const currentScripts = currentPackageJson.scripts;
+  if (!isJsonObject(baseScripts) || !isJsonObject(currentScripts)) {
+    return false;
+  }
+
+  const changedScriptNames = changedJsonKeys(baseScripts, currentScripts);
+  if (changedScriptNames.length === 0) {
+    return false;
+  }
+
+  return changedScriptNames.every((scriptName) => {
+    const currentCommand = currentScripts[scriptName];
+    const previousCommand = baseScripts[scriptName];
+    if (
+      typeof currentCommand !== 'string'
+      || !isSafeGovernanceOrMockLanePackageScript(scriptName, currentCommand)
+    ) {
+      return false;
+    }
+    if (previousCommand === undefined) {
+      return true;
+    }
+    return typeof previousCommand === 'string'
+      && isSafeGovernanceOrMockLanePackageScript(scriptName, previousCommand);
+  });
+}
+
+function isBackendRealDiagnosticToolingPath(filePath: string): boolean {
+  return [
+    /^scripts\/backend-real-bootstrap\.sh$/,
+    /^scripts\/backend-real-run(?:\.test)?\.(?:sh|ts)$/,
+    /^scripts\/agent-task-real-smoke-gate\.sh$/,
+    /^scripts\/run-internal-agent-task-real-gate\.sh$/,
+    /^scripts\/internal-backend-real-gate-runtime\.test\.ts$/,
+  ].some((pattern) => pattern.test(filePath));
 }
 
 function isEnvLikePath(filePath: string): boolean {
@@ -512,7 +759,10 @@ function levelsForGoal(goal: VerificationGoal): readonly VerificationLevel[] {
   if (goal === 'release-real') {
     return ['V3'];
   }
-  return ['V0', 'V1', 'V3'];
+  if (goal === 'real') {
+    return ['V0', 'V1', 'V3'];
+  }
+  return ['V0', 'V1'];
 }
 
 function commandsForLevels(levels: Iterable<VerificationLevel>): readonly string[] {
@@ -1234,6 +1484,26 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
+    if (isPackageJsonSafeGovernanceToolingChange(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Run npm run verify -- --goal=pr --run for the package.json governance or mock-lane npm script change; heavy visual/backend-real evidence is not selected by this impact report.';
+      const surface = 'engineering-governance-tooling';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} only changes safe governance or mock-lane npm scripts.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'governance_tooling',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
+        broadImpact: false,
+      });
+    }
+
     if (isEnvOnlyConfigurationPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
@@ -1421,6 +1691,28 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
+    if (isBackendRealDiagnosticToolingPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V3'];
+      const action = `Run ${GOVERNED_REAL_VERIFY_COMMAND} with backend-real gate owner review (backend_real_diagnostic_tooling).`;
+      const surface = 'backend-real-diagnostic-tooling';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} touches backend-real gate or diagnostic tooling.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'backend_real_diagnostic_tooling',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
+    }
+
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
       const action = `Run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
@@ -1485,11 +1777,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     if (isGovernanceToolingPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
-      const action = 'Review governance tooling impact, then run the governed PR verification entrypoint.';
+      const action = 'Run npm run verify -- --goal=pr --run for the governance tooling change; heavy visual/backend-real evidence is not selected by this impact report.';
       const surface = 'engineering-governance-tooling';
       addLevels(accumulator, levels);
       accumulator.surfaces.add(surface);
-      accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} touches governance verification tooling.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {
@@ -1498,7 +1789,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         surfaces: [surface],
         storyIds: [],
         action,
-        manualReviewRequired: true,
+        manualReviewRequired: false,
         broadImpact: false,
       });
     }
@@ -1561,6 +1852,8 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   if (changedFiles.length > 0 && goal !== 'pr' && input.goalExplicit) {
     if (goal === 'release-real' && accumulator.levels.has('V4')) {
       accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy impact requires release:ready operator review.');
+    } else if (goal === 'real' && accumulator.levels.has('V4')) {
+      accumulator.reasons.push('Explicit real goal defaults were suppressed because V4 release/deploy impact requires release:ready operator review.');
     } else {
       addGoalDefaults(accumulator, goal);
     }

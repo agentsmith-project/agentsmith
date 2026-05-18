@@ -63,6 +63,30 @@ describe('current verification campaign manifest', () => {
     }
   });
 
+  it('binds visual release evidence at the terminal aggregate instead of gate-release', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
+    const gateReleaseStep = releaseFull.steps.find((step) => step.id === 'gate-release');
+    const terminalStep = releaseFull.steps.find((step) => step.id === 'gate-release-full');
+
+    expect(gateReleaseStep?.dependsOn).toEqual(['gate-default']);
+    expect(gateReleaseStep?.dependsOn).not.toContain('lane-visual');
+    expect(terminalStep?.dependsOn).toEqual(
+      expect.arrayContaining(['lane-visual', 'gate-release']),
+    );
+    expect(visualStep).toMatchObject({
+      workflowRole: 'evidence_owner',
+      executionMode: 'execute',
+      resultRequired: true,
+      evidenceRequired: true,
+    });
+    expect(findCurrentGateDefinitionById('lane-visual')?.requiredFor).toContain('release');
+  });
+
   it('requires native results and concrete evidence checks for release evidence owner steps', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {

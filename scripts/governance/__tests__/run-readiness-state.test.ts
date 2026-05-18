@@ -27,6 +27,27 @@ function withTempRoot<T>(action: (root: string) => T): T {
   }
 }
 
+const TEST_INTEGRATION_DEPS_IDENTITY = {
+  postgres_port: '25432',
+  mongo_port: '27027',
+  redis_port: '26379',
+  minio_api_port: '29000',
+  minio_console_port: '29001',
+  keycloak_port: '28081',
+  keycloak_base_url: 'http://localhost:28081',
+  keycloak_realm: 'mbos',
+  keycloak_client_id: 'agentsmith',
+} as const;
+
+function integrationDepsIdentityArgs(
+  overrides: Partial<Record<keyof typeof TEST_INTEGRATION_DEPS_IDENTITY, string>> = {},
+): string[] {
+  return Object.entries({
+    ...TEST_INTEGRATION_DEPS_IDENTITY,
+    ...overrides,
+  }).flatMap(([key, value]) => ['--identity', `${key}=${value}`]);
+}
+
 describe('run-local readiness state', () => {
   it('writes readiness state under the run report root with redacted allowlisted env digests', () => {
     withTempRoot((root) => {
@@ -289,6 +310,7 @@ describe('run-local readiness state', () => {
         writerToken: restored.writerToken,
         field: 'integration_deps_ready',
         status: 'ready',
+        identity: TEST_INTEGRATION_DEPS_IDENTITY,
       });
 
       expect(() => ensureRunReadinessState({
@@ -305,7 +327,7 @@ describe('run-local readiness state', () => {
     });
   });
 
-  it('lets the parent writer mark integration deps ready and exposes a read-only CLI check', () => {
+  it('lets the parent writer mark integration deps ready only with matching identity and exposes a read-only CLI check', () => {
     withTempRoot((root) => {
       const context = createRunReadinessState({
         scope: 'release',
@@ -331,6 +353,18 @@ describe('run-local readiness state', () => {
         encoding: 'utf8',
       }).status).toBe(1);
 
+      expect(() => updateRunReadinessStateField({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
+        field: 'integration_deps_ready',
+        status: 'ready',
+      })).toThrow(/identity/);
+
       const updated = updateRunReadinessStateField({
         statePath: context.statePath,
         invocationId: context.state.invocation_id,
@@ -341,6 +375,7 @@ describe('run-local readiness state', () => {
         writerToken: context.writerToken,
         field: 'integration_deps_ready',
         status: 'ready',
+        identity: TEST_INTEGRATION_DEPS_IDENTITY,
       });
 
       expect(updated.readiness.integration_deps_ready).toBe('ready');
@@ -351,8 +386,45 @@ describe('run-local readiness state', () => {
           ...context.env,
         },
         encoding: 'utf8',
+      }).status).toBe(1);
+      expect(spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'integration_deps_ready',
+        ...integrationDepsIdentityArgs(),
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ...context.env,
+        },
+        encoding: 'utf8',
       }).status).toBe(0);
-      expect(spawnSync('npx', ['tsx', 'scripts/governance/run-readiness-state.ts', 'check', '--field', 'integration_deps_ready'], {
+      expect(spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'integration_deps_ready',
+        ...integrationDepsIdentityArgs({ mongo_port: '37017' }),
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ...context.env,
+        },
+        encoding: 'utf8',
+      }).status).toBe(1);
+      expect(spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'integration_deps_ready',
+        ...integrationDepsIdentityArgs(),
+      ], {
         cwd: process.cwd(),
         env: {
           ...process.env,
@@ -629,8 +701,8 @@ describe('run-local readiness state', () => {
     ] as const) {
       expect(content, `${path} must source the shared read-only readiness helper`)
         .toContain('scripts/lib/run-readiness-state.sh');
-      expect(content, `${path} must check integration_deps_ready before dependency startup`)
-        .toContain('readiness_state_field_ready integration_deps_ready');
+      expect(content, `${path} must match integration_deps_ready identity before dependency startup`)
+        .toContain('readiness_state_field_ready_with_identity integration_deps_ready');
       expect(content, `${path} must not write readiness state from shell children`)
         .not.toContain('update --field');
     }

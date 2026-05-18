@@ -19,11 +19,15 @@ describe('run-mock-lane-playwright', () => {
 
     expect(packageJson.scripts?.['test:e2e']).toBe('bash scripts/run-mock-lane-session.sh --preset=default');
     expect(packageJson.scripts?.['test:e2e:all']).toBe('bash scripts/run-mock-lane-session.sh --preset=with-visual');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:chromium']).toBe(
+      'bash scripts/run-mock-lane-session.sh --shards=chromium,chromium-serial',
+    );
+    expect(packageJson.scripts?.['test:e2e:lane:mock:chromium']).not.toContain('run-mock-lane-playwright.sh');
+    expect(packageJson.scripts?.['test:e2e:lane:mock:chromium']).not.toContain('&&');
     expect(packageJson.scripts?.['test:e2e:lane:mock:full:with-visual']).toBe(
       'bash scripts/run-mock-lane-session.sh --preset=with-visual',
     );
     expect(packageJson.scripts?.['test:e2e:lane:mock:smoke']).toContain('scripts/run-mock-lane-playwright.sh');
-    expect(packageJson.scripts?.['test:e2e:lane:mock:chromium']).toContain('scripts/run-mock-lane-playwright.sh');
     expect(packageJson.scripts?.['test:e2e:lane:mock:visual']).toContain('scripts/run-mock-lane-playwright.sh');
     expect(packageJson.scripts?.['test:e2e:lane:mock:visual:update']).toContain('scripts/run-mock-lane-playwright.sh');
     expect(packageJson.scripts?.['test:e2e:lane:mock:visual:update']).not.toContain('run-mock-lane-session.sh');

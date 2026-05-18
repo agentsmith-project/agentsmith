@@ -1947,11 +1947,7 @@ function extractSpecSources(
   let runGrepMatch = runGrepPattern.exec(content);
   while (runGrepMatch) {
     const [, spec, grep] = runGrepMatch;
-    sources.push(
-      grep.length > 0
-        ? { source_kind: "playwright_grep", spec, grep }
-        : { source_kind: "playwright_spec", spec },
-    );
+    sources.push(...sourceReferencesForGrep(spec, grep));
     runGrepMatch = runGrepPattern.exec(content);
   }
 
@@ -1974,15 +1970,56 @@ function extractSpecSources(
     const afterSpec =
       line.slice(line.indexOf(spec) + spec.length).split("&&", 1)[0] ?? "";
     const grep = extractGrepValue(afterSpec);
-    sources.push(
-      grep
-        ? { source_kind: "playwright_grep", spec, grep }
-        : { source_kind: "playwright_spec", spec },
-    );
+    sources.push(...sourceReferencesForGrep(spec, grep));
     specMatch = specPattern.exec(content);
   }
 
   return uniqueSourceReferences(sources);
+}
+
+function sourceReferencesForGrep(
+  spec: string,
+  grep: string | undefined,
+): readonly CurrentRealSessionCoverageSourceReference[] {
+  if (!grep) {
+    return [{ source_kind: "playwright_spec", spec }];
+  }
+
+  return splitSimpleGrepAlternation(grep).map((part) => ({
+    source_kind: "playwright_grep",
+    spec,
+    grep: part,
+  }));
+}
+
+function splitSimpleGrepAlternation(grep: string): readonly string[] {
+  const parts: string[] = [];
+  let current = "";
+  let escaped = false;
+
+  for (const char of grep) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      current += char;
+      escaped = true;
+      continue;
+    }
+    if (char === "|") {
+      parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  parts.push(current.trim());
+  const nonEmptyParts = parts.filter((part) => part.length > 0);
+
+  return nonEmptyParts.length > 0 ? nonEmptyParts : [grep];
 }
 
 function extractGrepValue(value: string): string | undefined {

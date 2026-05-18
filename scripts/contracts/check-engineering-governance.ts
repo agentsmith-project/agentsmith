@@ -421,14 +421,13 @@ forbidMatch(
   'CI workflows must call npm internal adapters directly instead of removed Make compatibility targets',
 );
 
-const requiredMockLaneScripts = [
+const singleShardMockLaneScripts = [
   'test:e2e:lane:mock:smoke',
-  'test:e2e:lane:mock:chromium',
   'test:e2e:lane:mock:visual',
   'test:e2e:lane:mock:visual:update',
 ] as const;
 
-for (const scriptName of requiredMockLaneScripts) {
+for (const scriptName of singleShardMockLaneScripts) {
   const scriptValue = packageJson.scripts?.[scriptName];
   if (!scriptValue) {
     failures.push(`package.json is missing required mock lane script: ${scriptName}`);
@@ -436,6 +435,27 @@ for (const scriptName of requiredMockLaneScripts) {
   }
   if (!/run-mock-lane-playwright\.sh/.test(scriptValue)) {
     failures.push(`${scriptName} must use scripts/run-mock-lane-playwright.sh as the canonical mock lane launcher`);
+  }
+}
+
+const multiShardMockLaneAggregateScripts = [
+  {
+    scriptName: 'test:e2e:lane:mock:chromium',
+    shards: 'chromium,chromium-serial',
+  },
+] as const;
+
+for (const { scriptName, shards } of multiShardMockLaneAggregateScripts) {
+  const scriptValue = packageJson.scripts?.[scriptName];
+  if (!scriptValue) {
+    failures.push(`package.json is missing required mock lane script: ${scriptName}`);
+    continue;
+  }
+  if (!/run-mock-lane-session\.sh/.test(scriptValue) || !scriptValue.includes(`--shards=${shards}`)) {
+    failures.push(`${scriptName} must use scripts/run-mock-lane-session.sh with --shards=${shards} so the aggregate chromium lane shares one mock session`);
+  }
+  if (/run-mock-lane-playwright\.sh/.test(scriptValue)) {
+    failures.push(`${scriptName} must not chain scripts/run-mock-lane-playwright.sh; single-shard diagnostics own that launcher`);
   }
 }
 
@@ -558,12 +578,12 @@ requireMatch(
 );
 requireMatch(
   internalAgentTaskRealGate,
-  /resolve_internal_spec_port_pair\(\)[\s\S]*INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000[\s\S]*run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts "member context stays private between workspace members" 23079 33079/,
+  /resolve_internal_spec_port_pair\(\)[\s\S]*INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000[\s\S]*run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts "member context stays private between workspace members\|task context stays private to the task owner within the same workspace" 23079 33079/,
   'internal Agent Task real gate must allocate isolated Context Store ports away from local-manual web defaults',
 );
 forbidMatch(
   internalAgentTaskRealGate,
-  /run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts "member context stays private between workspace members" 20079 3101/,
+  /run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts [^\n]*\s3101(?:\s|\|\|)/,
   'internal Agent Task real gate must not run nested Context Store isolation on local-manual web port 3101',
 );
 

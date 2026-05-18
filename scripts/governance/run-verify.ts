@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import {
   buildVerificationPlan,
+  defaultGateProfileForVerificationPlan,
   publicRecommendedVerificationCommands,
   publicVerifyRunCommandForGoal,
   sanitizePublicVerificationText,
@@ -49,6 +50,10 @@ import type { CurrentGateResultFailureClass } from './current-gate-result-schema
 import {
   createRunReadinessState,
 } from './run-readiness-state';
+import {
+  createReleaseCleanupFinalizer,
+  type ReleaseCleanupFinalizer,
+} from './release-cleanup-finalizer';
 
 export {
   buildVerificationPlan,
@@ -83,12 +88,20 @@ type NpmScriptRunContext = {
   env: NodeJS.ProcessEnv;
 };
 
+type VerifyRunCleanupContext = {
+  reportRoot: string;
+  repoRoot: string;
+  env: NodeJS.ProcessEnv;
+  goal: VerificationGoal;
+};
+
 type VerificationCliDependencies = {
   stdout?: CliWriteStream;
   stderr?: CliWriteStream;
   runNpmScript?: (script: string, context: NpmScriptRunContext) => NpmScriptResult;
   sentinelRunner?: (profile: SentinelProfile) => SentinelPreflightResult;
   ownerPreflight?: (evidencePath: string) => ResourceOwnerPreflightResult;
+  cleanupFinalizer?: (context: VerifyRunCleanupContext) => ReleaseCleanupFinalizer | null;
   pureCheckShadowRepoRoot?: string;
   pureCheckShadowGitSha?: string;
   pureCheckShadowToolchainIdentity?: Readonly<Record<string, string | null | undefined>>;
@@ -647,6 +660,7 @@ function buildSameRunEvidenceReuseEnv(args: {
   script: string;
   plannedScripts: readonly string[];
   executedScripts: readonly string[];
+  defaultGateProfile?: string | null;
 }): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   if (args.script === 'verify:default' && args.executedScripts.includes('verify:quick')) {
@@ -662,6 +676,10 @@ function buildSameRunEvidenceReuseEnv(args: {
     env[BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE_ENV] = '1';
   }
 
+  if (args.script === 'verify:default' && args.defaultGateProfile) {
+    env[DEFAULT_GATE_PROFILE_ENV] = args.defaultGateProfile;
+  }
+
   return env;
 }
 
@@ -670,6 +688,7 @@ function npmScriptRunContextForScript(args: {
   script: string;
   plannedScripts: readonly string[];
   executedScripts: readonly string[];
+  defaultGateProfile?: string | null;
 }): NpmScriptRunContext {
   return {
     ...args.baseContext,
@@ -679,6 +698,7 @@ function npmScriptRunContextForScript(args: {
         script: args.script,
         plannedScripts: args.plannedScripts,
         executedScripts: args.executedScripts,
+        defaultGateProfile: args.defaultGateProfile,
       }),
     },
   };
@@ -762,6 +782,17 @@ function defaultOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResu
   });
 }
 
+function defaultCleanupFinalizer(context: VerifyRunCleanupContext): ReleaseCleanupFinalizer | null {
+  if (context.goal !== 'real') {
+    return null;
+  }
+  return createReleaseCleanupFinalizer({
+    cwd: context.repoRoot,
+    env: context.env,
+    campaignRoot: context.reportRoot,
+  });
+}
+
 function verificationSentinelProfile(options: ParsedVerifyArgs): SentinelProfile | null {
   if (!options.run || !options.goalExplicit) {
     return null;
@@ -807,6 +838,8 @@ export function runVerificationCli(
   const runNpmScript = dependencies.runNpmScript ?? defaultRunNpmScript;
   const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
   const ownerPreflight = dependencies.ownerPreflight ?? defaultOwnerPreflight;
+  const cleanupFinalizerFactory = dependencies.cleanupFinalizer
+    ?? (dependencies.runNpmScript ? (() => null) : defaultCleanupFinalizer);
 
   try {
     const options = parseArgs(argv);
@@ -844,6 +877,7 @@ export function runVerificationCli(
     const pureCheckShadowRepoRoot = dependencies.pureCheckShadowRepoRoot
       ?? process.env[PURE_CHECK_SHADOW_REPO_ROOT_ENV]
       ?? process.cwd();
+    const repoRoot = process.cwd();
     const generatedAt = new Date().toISOString();
     const catalog = buildVerificationCatalog({ generatedAt });
     const plan = buildVerificationPlan({
@@ -865,39 +899,9 @@ export function runVerificationCli(
       return 0;
     }
 
-    const runContractFailure = verificationRunContractFailure({
-      goal: options.goal,
-      goalExplicit: options.goalExplicit,
-      run: options.run,
-      recommendedCommands: plan.recommendedCommands,
-    });
-    if (runContractFailure) {
-      stderr.write(`[verify] ${runContractFailure}\n`);
-      return 1;
-    }
-
-    const sentinelProfile = verificationSentinelProfile(options);
-    if (sentinelProfile) {
-      let sentinelResult: SentinelPreflightResult;
-      try {
-        sentinelResult = sentinelRunner(sentinelProfile);
-      } catch {
-        stderr.write(`[verify] sentinel preflight unavailable for ${sentinelProfile}.\n`);
-        return 1;
-      }
-      if (sentinelResult.exitCode !== 0) {
-        stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
-        stderr.write(`[verify] sentinel preflight failed for ${sentinelProfile}.\n`);
-        return 1;
-      }
-    }
-
     const pureCheckShadowGitSha = dependencies.pureCheckShadowGitSha
       ?? process.env[PURE_CHECK_SHADOW_GIT_SHA_ENV]
       ?? resolveVerifyGitSha();
-    const executedScripts: string[] = [];
-    const scriptExecutions: PureCheckVerifyScriptExecution[] = [];
-    const plannedScripts = plannedNpmScripts(plan.recommendedCommands);
     const npmScriptRunContext = buildNpmScriptRunContext({
       reportRoot,
       repoRoot: pureCheckShadowRepoRoot,
@@ -918,48 +922,93 @@ export function runVerificationCli(
         env: process.env,
       }).env,
     });
-    for (const command of plan.recommendedCommands) {
-      const script = npmScriptFromCommand(command);
-      const result = runNpmScript(script, npmScriptRunContextForScript({
-        baseContext: npmScriptRunContext,
-        script,
-        plannedScripts,
-        executedScripts,
-      }));
-      const scriptExecution = scriptExecutionFromNpmResult(script, result);
-      executedScripts.push(script);
-      scriptExecutions.push(scriptExecution);
-      if (result.status !== 0) {
-        stderr.write(renderFailedNpmScriptSummary({
-          script,
-          status: result.status,
-          reportRoot,
-          goal: options.goal,
-        }));
-        const auditPath = writeVerifyPureCheckShadowAudit({
-          repoRoot: pureCheckShadowRepoRoot,
-          reportRoot,
-          executedScripts,
-          scriptExecutions,
-          generatedAt,
-          gitSha: pureCheckShadowGitSha,
-          toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
-        });
-        stdout.write(`Pure check shadow audit: ${auditPath}\n`);
-        return typeof result.status === 'number' ? result.status : 1;
-      }
-    }
-    const auditPath = writeVerifyPureCheckShadowAudit({
-      repoRoot: pureCheckShadowRepoRoot,
+
+    const cleanupFinalizer = cleanupFinalizerFactory({
       reportRoot,
-      executedScripts,
-      scriptExecutions,
-      generatedAt,
-      gitSha: pureCheckShadowGitSha,
-      toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
+      repoRoot,
+      env: process.env,
+      goal: options.goal,
     });
-    stdout.write(`Pure check shadow audit: ${auditPath}\n`);
-    return 0;
+    let completedSuccessfully = false;
+    try {
+      const runContractFailure = verificationRunContractFailure({
+        goal: options.goal,
+        goalExplicit: options.goalExplicit,
+        run: options.run,
+        recommendedCommands: plan.recommendedCommands,
+      });
+      if (runContractFailure) {
+        stderr.write(`[verify] ${runContractFailure}\n`);
+        return 1;
+      }
+
+      const sentinelProfile = verificationSentinelProfile(options);
+      if (sentinelProfile) {
+        let sentinelResult: SentinelPreflightResult;
+        try {
+          sentinelResult = sentinelRunner(sentinelProfile);
+        } catch {
+          stderr.write(`[verify] sentinel preflight unavailable for ${sentinelProfile}.\n`);
+          return 1;
+        }
+        if (sentinelResult.exitCode !== 0) {
+          stdout.write(renderSentinelPreflightOutput(sentinelResult.output));
+          stderr.write(`[verify] sentinel preflight failed for ${sentinelProfile}.\n`);
+          return 1;
+        }
+      }
+
+      const executedScripts: string[] = [];
+      const scriptExecutions: PureCheckVerifyScriptExecution[] = [];
+      const plannedScripts = plannedNpmScripts(plan.recommendedCommands);
+      const defaultGateProfile = defaultGateProfileForVerificationPlan(plan);
+      for (const command of plan.recommendedCommands) {
+        const script = npmScriptFromCommand(command);
+        const result = runNpmScript(script, npmScriptRunContextForScript({
+          baseContext: npmScriptRunContext,
+          script,
+          plannedScripts,
+          executedScripts,
+          defaultGateProfile,
+        }));
+        const scriptExecution = scriptExecutionFromNpmResult(script, result);
+        executedScripts.push(script);
+        scriptExecutions.push(scriptExecution);
+        if (result.status !== 0) {
+          stderr.write(renderFailedNpmScriptSummary({
+            script,
+            status: result.status,
+            reportRoot,
+            goal: options.goal,
+          }));
+          const auditPath = writeVerifyPureCheckShadowAudit({
+            repoRoot: pureCheckShadowRepoRoot,
+            reportRoot,
+            executedScripts,
+            scriptExecutions,
+            generatedAt,
+            gitSha: pureCheckShadowGitSha,
+            toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
+          });
+          stdout.write(`Pure check shadow audit: ${auditPath}\n`);
+          return typeof result.status === 'number' ? result.status : 1;
+        }
+      }
+      const auditPath = writeVerifyPureCheckShadowAudit({
+        repoRoot: pureCheckShadowRepoRoot,
+        reportRoot,
+        executedScripts,
+        scriptExecutions,
+        generatedAt,
+        gitSha: pureCheckShadowGitSha,
+        toolchainIdentity: dependencies.pureCheckShadowToolchainIdentity,
+      });
+      stdout.write(`Pure check shadow audit: ${auditPath}\n`);
+      completedSuccessfully = true;
+      return 0;
+    } finally {
+      cleanupFinalizer?.finalize(completedSuccessfully ? 'success' : 'failure');
+    }
   } catch (error) {
     stderr.write(`[verify] ${error instanceof Error ? error.message : String(error)}\n`);
     return 1;

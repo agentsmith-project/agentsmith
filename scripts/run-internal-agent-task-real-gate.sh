@@ -23,6 +23,9 @@ PLAYWRIGHT_PASSTHROUGH_ARGS=()
 if [[ "${1:-}" == "--skills-runtime" ]]; then
   GATE_MODE="skills-runtime"
   shift
+elif [[ "${1:-}" == "--core-composite" ]]; then
+  GATE_MODE="core-composite"
+  shift
 elif [[ "${1:-}" == "--visual-review" ]]; then
   GATE_MODE="visual-review"
   shift
@@ -168,6 +171,27 @@ wait_for_internal_integration_deps_for_afscp() {
   gate_wait_for_tcp "${INTERNAL_REAL_DIR}" "127.0.0.1" "${INTEGRATION_REDIS_PORT}" 120 infra_dependency_unready redis_ready
   gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}/minio/health/live" 120 infra_dependency_unready minio_ready 200
   gate_wait_for_http "${INTERNAL_REAL_DIR}" "http://127.0.0.1:${INTEGRATION_KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 180 infra_dependency_unready keycloak_ready 200
+}
+
+ensure_internal_default_workspace_for_afscp() {
+  info "ensuring default workspace before child backend-real specs"
+  (
+    cd "${ROOT_DIR}" && \
+      DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:${INTEGRATION_POSTGRES_PORT}/mbos" \
+      MONGO_URL="${MONGO_URL}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      REDIS_URL="redis://localhost:${INTEGRATION_REDIS_PORT}" \
+      MINIO_ENDPOINT="127.0.0.1" \
+      MINIO_PORT="${INTEGRATION_MINIO_API_PORT}" \
+      MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      KEYCLOAK_URL="${KEYCLOAK_BASE_URL%/}/realms" \
+      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+      npx tsx scripts/ensure-default-workspace.ts >/dev/null
+  )
 }
 
 enable_files_restore_continuation_afscp_restore_recovery() {
@@ -379,9 +403,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-stop_internal_afscp_local_runtime
 ensure_internal_integration_deps_for_afscp
 wait_for_internal_integration_deps_for_afscp
+ensure_internal_default_workspace_for_afscp
 reset_internal_afscp_local_runtime
 enable_files_restore_continuation_afscp_restore_recovery
 prepare_internal_backend_real_gate_runtime
@@ -396,6 +420,8 @@ record_service afscp_local_runtime ready "${AFSCP_BASE_URL}"
 
 if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   info "running internal agent-task skills runtime real integration"
+elif [[ "${GATE_MODE}" == "core-composite" ]]; then
+  info "running internal agent-task core composite real integration"
 elif [[ "${GATE_MODE}" == "visual-review" ]]; then
   info "running backend-real visual review with internal managed Agent Task sandbox"
 elif [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
@@ -456,6 +482,9 @@ run_internal_spec() {
       INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${INTERNAL_VISUAL_ARTIFACT_DIR}" \
       INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" \
       INTEGRATION_AFSCP_LOCAL_RUNTIME=0 \
+      INTEGRATION_BOOTSTRAP_DEPS=false \
+      INTEGRATION_INIT_DEPS=false \
+      INTEGRATION_ENSURE_DEFAULT_WORKSPACE=false \
       INTEGRATION_KEEP_FAILED_ENV="${KEEP_FAILED_ENV}" \
       POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
       MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
@@ -513,32 +542,78 @@ run_internal_spec_grep() {
 }
 
 run_skills_runtime_specs() {
+  local runner_api_port="${1:-20073}"
+  local runner_web_port="${2:-3066}"
   local skills_status=0
 
-  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner" 20073 3066 || skills_status=$?
+  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner|writes task context through mbos-context and persists it for the task owner|uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner|uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner|reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner|rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner" "${runner_api_port}" "${runner_web_port}" || skills_status=$?
   if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "writes task context through mbos-context and persists it for the task owner" 20074 3069 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner" 20075 3070 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner" 20076 3071 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner" 20077 3081 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner" 20078 3091 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 23079 33079 || skills_status=$?
-  fi
-  if [[ "${skills_status}" -eq 0 ]]; then
-    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 23080 33080 || skills_status=$?
+    run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members|task context stays private to the task owner within the same workspace" 23079 33079 || skills_status=$?
   fi
 
   return "${skills_status}"
+}
+
+run_internal_reclaim_spec() {
+  local reclaim_api_port="$1"
+  local reclaim_web_port="$2"
+  local reclaim_state_file=""
+  local reclaim_status=0
+
+  reclaim_state_file="$(prepare_internal_backend_real_spec_runtime "integration-internal-sandbox-reclaim")" || reclaim_status=$?
+  if [[ "${reclaim_status}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "${reclaim_api_port}" "${reclaim_web_port}" "${reclaim_state_file}" || reclaim_status=$?
+  fi
+  if [[ "${reclaim_status}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
+  else
+    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}"
+  fi
+  if [[ -n "${reclaim_state_file}" && ( "${KEEP_FAILED_ENV}" != "1" || "${reclaim_status}" -eq 0 ) ]]; then
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${reclaim_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  fi
+  return "${reclaim_status}"
+}
+
+run_core_composite_specs() {
+  local composite_status=0
+
+  run_skills_runtime_specs "${API_PORT}" "${WEB_PORT}" || composite_status=$?
+  if [[ "${composite_status}" -eq 0 ]]; then
+    run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))" || composite_status=$?
+  fi
+
+  return "${composite_status}"
+}
+
+run_internal_workspace_specs() {
+  local workspace_state_file
+  local workspace_status=0
+  local reclaim_status=0
+
+  workspace_state_file="$(prepare_internal_backend_real_spec_runtime "integration-internal-agent-task-workspace")" || workspace_status=$?
+  if [[ "${workspace_status}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    run_internal_spec e2e/integration-agent-task-runner.spec.ts "${API_PORT}" "${WEB_PORT}" "${workspace_state_file}" --grep "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner"
+    workspace_status=$?
+  fi
+  if [[ "${workspace_status}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-agent-task-runner"
+  else
+    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}"
+  fi
+  if [[ "${workspace_status}" -eq 0 ]]; then
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))" || reclaim_status=$?
+  elif [[ "${KEEP_FAILED_ENV}" != "1" && -n "${workspace_state_file}" ]]; then
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  fi
+
+  if [[ "${workspace_status}" -ne 0 ]]; then
+    return "${workspace_status}"
+  fi
+  return "${reclaim_status}"
 }
 
 set +e
@@ -551,6 +626,18 @@ if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   fi
   info "internal agent-task skills runtime real gate passed"
   gate_record_success "${INTERNAL_REAL_DIR}" "skills_runtime_specs"
+  exit 0
+fi
+
+if [[ "${GATE_MODE}" == "core-composite" ]]; then
+  run_core_composite_specs
+  GATE_STATUS=$?
+  set -e
+  if [[ "${GATE_STATUS}" -ne 0 ]]; then
+    exit "${GATE_STATUS}"
+  fi
+  info "internal agent-task core composite real gate passed"
+  gate_record_success "${INTERNAL_REAL_DIR}" "core_composite_specs"
   exit 0
 fi
 
@@ -592,40 +679,10 @@ if [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
   exit 0
 fi
 
-WORKSPACE_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-agent-task-workspace")"
-gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
-run_internal_spec e2e/integration-agent-task-runner.spec.ts "${API_PORT}" "${WEB_PORT}" "${WORKSPACE_STATE_FILE}" --grep "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner"
-WORKSPACE_STATUS=$?
-RECLAIM_STATUS=0
-if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-agent-task-runner"
-else
-  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-agent-task-runner failed with status ${WORKSPACE_STATUS}"
-fi
-if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
-
-  RECLAIM_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-internal-sandbox-reclaim")"
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
-  run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "$((API_PORT + 1))" "$((WEB_PORT + 1))" "${RECLAIM_STATE_FILE}"
-  RECLAIM_STATUS=$?
-  if [[ "${RECLAIM_STATUS}" -eq 0 ]]; then
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
-  else
-    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${RECLAIM_STATUS}"
-  fi
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${RECLAIM_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
-elif [[ "${KEEP_FAILED_ENV}" != "1" ]]; then
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
-fi
+run_internal_workspace_specs
+GATE_STATUS=$?
 set -e
 
-if [[ "${WORKSPACE_STATUS}" -ne 0 ]]; then
-  GATE_STATUS="${WORKSPACE_STATUS}"
-fi
-if [[ "${RECLAIM_STATUS}" -ne 0 && "${GATE_STATUS}" -eq 0 ]]; then
-  GATE_STATUS="${RECLAIM_STATUS}"
-fi
 if [[ "${GATE_STATUS}" -ne 0 ]]; then
   exit "${GATE_STATUS}"
 fi

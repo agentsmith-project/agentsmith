@@ -25,8 +25,10 @@ import {
 } from './resource-owner-preflight';
 import { renderShortFailureProjection } from './status-projection';
 import {
+  INTEGRATION_DEPS_READINESS_IDENTITY_KEYS,
   buildRunReadinessCampaignOrchestratorEnv,
   createRunReadinessState,
+  updateRunReadinessStateField,
   updateRunReadinessStateParentObservations,
 } from './run-readiness-state';
 import {
@@ -98,10 +100,16 @@ type ReleasePrecheckParentObservations = {
   };
 };
 
+type ReleasePrecheckIntegrationDepsIdentity = Record<
+  (typeof INTEGRATION_DEPS_READINESS_IDENTITY_KEYS)[number],
+  string
+>;
+
 type ReleasePrecheckSummaryResult =
   | {
     ok: true;
     observations: ReleasePrecheckParentObservations;
+    integrationDepsIdentity: ReleasePrecheckIntegrationDepsIdentity;
   }
   | {
     ok: false;
@@ -215,6 +223,30 @@ function parsePrecheckOperation(value: unknown, fieldPath: string): {
   };
 }
 
+function parseReleasePrecheckIntegrationDepsIdentity(value: unknown): {
+  ok: true;
+  identity: ReleasePrecheckIntegrationDepsIdentity;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (!isRecord(value)) {
+    return { ok: false, error: 'release local precheck summary integration_deps_identity must be an object' };
+  }
+  const identity: Partial<ReleasePrecheckIntegrationDepsIdentity> = {};
+  for (const key of INTEGRATION_DEPS_READINESS_IDENTITY_KEYS) {
+    const entry = value[key];
+    if (typeof entry !== 'string' || entry.trim().length === 0) {
+      return { ok: false, error: `release local precheck summary integration_deps_identity.${key} is required` };
+    }
+    identity[key] = entry.trim();
+  }
+  return {
+    ok: true,
+    identity: identity as ReleasePrecheckIntegrationDepsIdentity,
+  };
+}
+
 function parseReleasePrecheckSummary(
   value: unknown,
   expectedCampaign: {
@@ -257,6 +289,10 @@ function parseReleasePrecheckSummary(
   if (!apiWeb.ok) {
     return { ok: false, error: apiWeb.error };
   }
+  const integrationDepsIdentity = parseReleasePrecheckIntegrationDepsIdentity(value.integration_deps_identity);
+  if (!integrationDepsIdentity.ok) {
+    return { ok: false, error: integrationDepsIdentity.error };
+  }
   if (typeof value.campaign_root !== 'string' || value.campaign_root.trim().length === 0) {
     return { ok: false, error: 'release local precheck summary campaign_root is required' };
   }
@@ -282,6 +318,7 @@ function parseReleasePrecheckSummary(
         api_web_start_count: apiWeb.operation.startCount,
       },
     },
+    integrationDepsIdentity: integrationDepsIdentity.identity,
   };
 }
 
@@ -499,6 +536,18 @@ export function runReleaseReady(
       writerToken: readiness.writerToken,
       services: precheckSummary.observations.services,
       counts: precheckSummary.observations.counts,
+    });
+    updateRunReadinessStateField({
+      statePath: readiness.statePath,
+      invocationId: readiness.state.invocation_id,
+      processNonce: readiness.state.process_nonce,
+      inputDigest: readiness.state.input_digest,
+      envDigest: readiness.state.env_digest.digest,
+      gitSha: readiness.state.git_sha,
+      writerToken: readiness.writerToken,
+      field: 'integration_deps_ready',
+      status: 'ready',
+      identity: precheckSummary.integrationDepsIdentity,
     });
     let sentinelResult: SentinelPreflightResult;
     try {

@@ -41,6 +41,16 @@ describe('release local precheck lightweight contract', () => {
     expect(script).toContain('"observed_operations": {');
     expect(script).toContain('"dependency_services": {');
     expect(script).toContain('"api_web": {');
+    expect(script).toContain('"integration_deps_identity": {');
+    expect(script).toContain('"postgres_port": os.environ.get("POSTGRES_PORT", "")');
+    expect(script).toContain('"mongo_port": os.environ.get("MONGO_PORT", "")');
+    expect(script).toContain('"redis_port": os.environ.get("REDIS_PORT", "")');
+    expect(script).toContain('"minio_api_port": os.environ.get("MINIO_API_PORT", "")');
+    expect(script).toContain('"minio_console_port": os.environ.get("MINIO_CONSOLE_PORT", "")');
+    expect(script).toContain('"keycloak_port": os.environ.get("KEYCLOAK_PORT", "")');
+    expect(script).toContain('"keycloak_base_url": os.environ.get("KEYCLOAK_BASE_URL", "")');
+    expect(script).toContain('"keycloak_realm": os.environ.get("KEYCLOAK_REALM", "")');
+    expect(script).toContain('"keycloak_client_id": os.environ.get("KEYCLOAK_CLIENT_ID", "")');
     expect(script).toContain('"status": os.environ.get("DEPS_OPERATION_STATUS", "unknown")');
     expect(script).toContain('"start_count": int(os.environ.get("DEPS_START_COUNT", "0"))');
     expect(script).toContain('"status": os.environ.get("API_WEB_OPERATION_STATUS", "unknown")');
@@ -56,6 +66,7 @@ describe('release local precheck lightweight contract', () => {
     expect(script.lastIndexOf('\nwrite_precheck_success_report\n')).toBeLessThan(script.lastIndexOf('PRECHECK_STATUS=0'));
     expect(script).not.toContain('BACKEND_REAL_API_KEY_VALUE",');
     expect(script).not.toContain('ACCESS_TOKEN",');
+    expect(script).not.toContain('MINIO_SECRET_KEY",');
   });
 
   it('records whether precheck reused dependencies or started bootstrap without guessing counts', () => {

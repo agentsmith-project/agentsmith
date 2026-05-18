@@ -20,6 +20,13 @@ type PureCheckHarnessResult = {
   stdout: string;
 };
 
+type DefaultGateHarnessResult = {
+  commandLog: string[];
+  processStatus: number | null;
+  stderr: string;
+  stdout: string;
+};
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -136,6 +143,54 @@ ${stderr}`);
   }
 }
 
+function writeCommandLogger(path: string, command: string, logPath: string, exitCode: number): void {
+  writeFileSync(
+    path,
+    `#!/bin/sh
+printf '${command} %s\\n' "$*" >> ${shellQuote(logPath)}
+exit ${exitCode}
+`,
+    { mode: 0o755 },
+  );
+}
+
+function runDefaultGateHarness(profile: string): DefaultGateHarnessResult {
+  const root = mkdtempSync(join(tmpdir(), 'agentsmith-default-gate-profile-'));
+
+  try {
+    const binDir = join(root, 'bin');
+    const logPath = join(root, 'commands.log');
+    mkdirSync(binDir);
+    writeCommandLogger(join(binDir, 'npm'), 'npm', logPath, 0);
+    writeCommandLogger(join(binDir, 'npx'), 'npx', logPath, 98);
+    writeCommandLogger(join(binDir, 'bash'), 'bash', logPath, 97);
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DEFAULT_GATE_PROFILE: profile,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    };
+    delete env.DEFAULT_GATE_REUSE_FAST_EVIDENCE;
+
+    const result = spawnSync('/usr/bin/bash', ['scripts/default-gate.sh'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env,
+    });
+
+    return {
+      commandLog: existsSync(logPath)
+        ? readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean)
+        : [],
+      processStatus: result.status,
+      stderr: result.stderr,
+      stdout: result.stdout,
+    };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 describe('default engineering gate profiles', () => {
   it('keeps gate:fast on the same authoritative gate driver with a dedicated fast profile', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
@@ -145,13 +200,27 @@ describe('default engineering gate profiles', () => {
     expect(packageJson.scripts?.['gate:fast']).toBe('DEFAULT_GATE_PROFILE=fast bash scripts/default-gate.sh');
   });
 
+  it('keeps governance tooling on one focused non-Playwright suite', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+
+    const script = packageJson.scripts?.['test:governance-tooling'] ?? '';
+
+    expect(script).toContain('npm run test:run --');
+    expect(script).toContain('scripts/default-gate.test.ts');
+    expect(script).toContain('scripts/contracts/check-current-gates.test.ts');
+    expect(script).toContain('scripts/governance/__tests__/verify-impact-selector.test.ts');
+    expect(script).not.toMatch(/playwright|test:e2e|lane:mock|lane:visual|test:visual/);
+  });
+
   it('keeps the fast profile on shared preflight, lint, and locked type-state before smoke coverage', () => {
     const script = readFileSync('scripts/default-gate.sh', 'utf8');
 
     expect(script).toContain('DEFAULT_GATE_PROFILE="${DEFAULT_GATE_PROFILE:-standalone}"');
     expect(script).toContain('DEFAULT_GATE_REUSE_FAST_EVIDENCE="${DEFAULT_GATE_REUSE_FAST_EVIDENCE:-0}"');
     expect(script).toContain('--campaign-after-gate-fast');
-    expect(script).toContain('standalone|fast|campaign_after_gate_fast');
+    expect(script).toContain('standalone|fast|campaign_after_gate_fast|governance_tooling');
     expect(script).toContain('reuse_gate_fast_evidence()');
     expect(script).toContain('skip_workspace_project_focused_visual()');
     expect(script).toContain('skip_governance_focused_visual()');
@@ -167,11 +236,11 @@ describe('default engineering gate profiles', () => {
     expect(script).toContain('if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then');
   });
 
-  it('reuses gate:fast evidence only for the campaign profile or an explicit reuse env without forcing focused visual skip', () => {
+  it('reuses gate:fast evidence only for scoped reuse profiles or an explicit reuse env without forcing focused visual skip', () => {
     const script = readFileSync('scripts/default-gate.sh', 'utf8');
 
     expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" != "fast" ]]');
-    expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]');
+    expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_PROFILE}" == "governance_tooling" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]');
     expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}" == "1" ]]');
     expect(script).toContain('[[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}" == "1" ]]');
     expect(script).toContain('reusing gate:fast evidence; skipping contracts/openapi/lint/typegen/typecheck/build');
@@ -179,6 +248,22 @@ describe('default engineering gate profiles', () => {
     expect(script).toContain('workspace_project_default_gate_command="${workspace_project_default_gate_command} --skip-focused-visual"');
     expect(script).toContain('governance_default_gate_command="bash scripts/governance-default-gate.sh --skip-shared-preflight"');
     expect(script).toContain('governance_default_gate_command="${governance_default_gate_command} --skip-focused-visual"');
+  });
+
+  it('runs only the focused governance tooling suite for the scoped governance tooling profile', () => {
+    const result = runDefaultGateHarness('governance_tooling');
+    const combinedOutput = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.processStatus).toBe(0);
+    expect(result.commandLog).toEqual(['npm run test:governance-tooling']);
+    expect(result.stdout).toContain('reusing gate:fast evidence; skipping contracts/openapi/lint/typegen/typecheck/build');
+    expect(result.stdout).toContain('[default-gate] npm run test:governance-tooling');
+    expect(result.stdout).toContain('governance tooling engineering gate passed');
+    expect(combinedOutput).not.toContain('workspace-project-default-gate');
+    expect(combinedOutput).not.toContain('governance-default-gate');
+    expect(combinedOutput).not.toContain('test:e2e:lane:mock:smoke');
+    expect(combinedOutput).not.toContain('lane:visual');
+    expect(combinedOutput).not.toContain('test:visual');
   });
 
   it('wraps only shared pure checks with producer evidence in default-gate', () => {

@@ -161,7 +161,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         evidenceRequired: true,
         lineKind: 'release_backend_real',
         defaultFailureClass: 'infra_setup_failure',
-        dependsOn: ['gate-default', 'lane-visual'],
+        dependsOn: ['gate-default'],
         evidenceHints: findCurrentGateDefinitionById('gate-release')?.campaignEvidenceArtifacts ?? [],
         evidenceChecks: campaignEvidenceChecks('gateRelease'),
         nativeResult: {

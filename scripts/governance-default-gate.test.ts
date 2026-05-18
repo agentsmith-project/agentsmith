@@ -23,6 +23,15 @@ function extractExpectedSet(script: string): string[] {
   return parseFocusedVisualExpectedSet(match[1]).map((entry) => entry.key);
 }
 
+function extractWarmUrlRoutes(script: string): string[][] {
+  return [...script.matchAll(/MOCK_LANE_WARM_URLS=\$'([^']+)'/g)].map((match) =>
+    match[1]
+      .split('\\n')
+      .map((route) => route.trim())
+      .filter(Boolean),
+  );
+}
+
 describe('governance-default-gate', () => {
   it('stays shell-syntax valid', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/governance-default-gate.sh'])).not.toThrow();
@@ -48,6 +57,31 @@ describe('governance-default-gate', () => {
       'resource-policy:light',
     ]);
     expect(script).toContain("--grep 'Visual - Story Catalog Scenes.*(");
+  });
+
+  it('uses governance-scoped warm routes for mock and focused visual Playwright calls', () => {
+    const script = readGovernanceGateScript();
+    const warmRoutes = extractWarmUrlRoutes(script);
+
+    expect(warmRoutes).toEqual([
+      [
+        '/en-US/login',
+        '/en-US/workspaces/ws_default/projects/proj_001/members',
+        '/en-US/workspaces/ws_default/projects/proj_001/resource-policy',
+      ],
+      [
+        '/en-US/login',
+        '/en-US/workspaces/ws_default/projects/proj_001/members',
+        '/en-US/workspaces/ws_default/projects/proj_001/resource-policy',
+        '/en-US/workspaces/ws_default/projects/proj_001/audit',
+        '/en-US/workspaces/ws_default/projects/proj_001/alerts',
+      ],
+    ]);
+    for (const routes of warmRoutes) {
+      expect(routes).not.toContain('/en-US/user/profile');
+      expect(routes).not.toContain('/en-US/workspaces/ws_default/settings');
+      expect(routes).not.toContain('/en-US/workspaces/ws_default/projects/proj_001/files');
+    }
   });
 
   it('keeps the visual grep aligned with current governance visual scene titles', () => {

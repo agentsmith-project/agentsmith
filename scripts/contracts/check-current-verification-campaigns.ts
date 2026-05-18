@@ -66,17 +66,27 @@ function main(): void {
   assert(terminalStep.executionMode === 'aggregate_only', 'gate-release-full campaign step must be aggregate-only.');
   assert(terminalStep.workflowRole === 'terminal_verdict', 'gate-release-full campaign step must be terminal_verdict.');
   assert(terminalStep.evidenceChecks.length > 0, 'gate-release-full must declare aggregate evidence checks.');
+  assert(
+    terminalStep.dependsOn.includes('lane-visual') && terminalStep.dependsOn.includes('gate-release'),
+    'gate-release-full must aggregate both lane-visual and gate-release evidence.',
+  );
   for (const step of releaseFull.steps.filter((candidate) => candidate.workflowRole === 'evidence_owner')) {
     assert(step.nativeResult, `${step.id} must declare its native result contract.`);
     assert(step.nativeResult.path.includes('<campaign-root>'), `${step.id} native result path must be campaign-scoped.`);
     assert(step.evidenceChecks.length > 0, `${step.id} must declare concrete evidence checks.`);
   }
   const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
+  assert(visualStep?.workflowRole === 'evidence_owner', 'lane-visual must stay a release evidence owner.');
+  assert(visualStep.evidenceRequired, 'lane-visual release evidence must stay required.');
   assert(
     visualStep?.evidenceChecks.some((check) => check.kind === 'visual_baseline_automated_passes'),
     'lane-visual campaign step must require visual baseline automated-pass artifacts.',
   );
   const gateReleaseStep = releaseFull.steps.find((step) => step.id === 'gate-release');
+  assert(
+    gateReleaseStep?.dependsOn.join(',') === 'gate-default',
+    'gate-release must depend only on gate-default; visual evidence is aggregated by gate-release-full.',
+  );
   assert(
     gateReleaseStep?.evidenceChecks.some((check) => check.path.includes('backend-real-visual/review.md')),
     'gate-release campaign step must require the backend-real visual review summary.',

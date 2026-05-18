@@ -13,6 +13,26 @@ function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
 }
 
+function shellFunctionBody(source: string, functionName: string): string {
+  const start = source.indexOf(`${functionName}() {`);
+  expect(start, `${functionName} start`).toBeGreaterThanOrEqual(0);
+  const nextFunction = source.indexOf('\nrun_', start + functionName.length + 4);
+  const nextMode = source.indexOf('\nset +e', start);
+  const endCandidates = [nextFunction, nextMode].filter((index) => index > start);
+  const end = endCandidates.length > 0 ? Math.min(...endCandidates) : source.length;
+
+  return source.slice(start, end);
+}
+
+function sectionBetween(source: string, startNeedle: string, endNeedle: string): string {
+  const start = source.indexOf(startNeedle);
+  expect(start, `${startNeedle} start`).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  expect(end, `${endNeedle} end`).toBeGreaterThan(start);
+
+  return source.slice(start, end);
+}
+
 function renderSandboxState(env: Record<string, string>): string {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-backend-real-gate-'));
@@ -79,8 +99,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
     expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
     expect(agentTaskGate).toContain(
-      '\nstop_internal_afscp_local_runtime\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
+      '\ntrap cleanup EXIT\n\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nensure_internal_default_workspace_for_afscp\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
     );
+    expect(agentTaskGate).toContain('ensure_internal_default_workspace_for_afscp()');
     expect(agentTaskGate).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
     expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
     expect(agentTaskGate).toContain('export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"');
@@ -152,6 +173,34 @@ describe('internal backend-real gate runtime contract', () => {
     expect(developmentGuide).not.toContain('local sandbox manager / cleaner');
   });
 
+  it('starts the internal Agent Task gate without duplicating AFSCP stop before reset', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const startupBlock = sectionBetween(
+      agentTaskGate,
+      '\ntrap cleanup EXIT\n',
+      '\ngate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster"',
+    );
+    const resetFunction = sectionBetween(
+      agentTaskGate,
+      '\nreset_internal_afscp_local_runtime() {',
+      '\n}\n\nrecord_service()',
+    );
+    const cleanupFunction = sectionBetween(
+      agentTaskGate,
+      '\ncleanup() {',
+      '\n}\ntrap cleanup EXIT',
+    );
+
+    expect(startupBlock).not.toContain('\nstop_internal_afscp_local_runtime\n');
+    expect(startupBlock.match(/\nreset_internal_afscp_local_runtime\n/g) ?? []).toHaveLength(1);
+    expect(resetFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
+    expect(resetFunction).toContain('reset_owned_afscp_local_runtime_data');
+    expect(resetFunction.indexOf('stop_internal_afscp_local_runtime')).toBeLessThan(
+      resetFunction.indexOf('reset_owned_afscp_local_runtime_data'),
+    );
+    expect(cleanupFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
+  });
+
   it('allocates isolated ports for nested Context Store specs without cleaning unowned dev servers', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
 
@@ -161,10 +210,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('INTERNAL_REAL_SPEC_WEB_PORT_BASE:-33000');
     expect(agentTaskGate).toContain('preferred ports api=${preferred_api_port} web=${preferred_web_port} unavailable');
     expect(agentTaskGate).toContain(
-      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 23079 33079',
-    );
-    expect(agentTaskGate).toContain(
-      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "task context stays private to the task owner within the same workspace" 23080 33080',
+      'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members|task context stays private to the task owner within the same workspace" 23079 33079',
     );
     expect(agentTaskGate).not.toContain(
       'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 20079 3101',
@@ -204,6 +250,54 @@ describe('internal backend-real gate runtime contract', () => {
     expect(integrationGate).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
     expect(integrationGate).toContain('agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts|e2e/integration-visual-review.spec.ts');
     expect(integrationGate).toContain("grep -q 'startAgentTaskRunViaApi'");
+  });
+
+  it('runs backend-real core internal coverage through one composite managed Agent Task producer with batched greps', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const backendRealRun = read('scripts/backend-real-run.sh');
+    const skillsFunction = shellFunctionBody(agentTaskGate, 'run_skills_runtime_specs');
+    const compositeFunction = shellFunctionBody(agentTaskGate, 'run_core_composite_specs');
+
+    expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--core-composite" ]]');
+    expect(agentTaskGate).toContain('running internal agent-task core composite real integration');
+    expect(backendRealRun).toContain('bash scripts/run-internal-agent-task-real-gate.sh --core-composite');
+
+    expect(skillsFunction.match(/run_internal_spec_grep e2e\/integration-agent-task-runner\.spec\.ts/g) ?? []).toHaveLength(1);
+    expect(skillsFunction.match(/run_internal_spec_grep e2e\/integration-context-store-isolation\.spec\.ts/g) ?? []).toHaveLength(1);
+    expect(skillsFunction).toContain(
+      'reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner'
+      + '|writes task context through mbos-context and persists it for the task owner'
+      + '|uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner'
+      + '|uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner'
+      + '|reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner'
+      + '|rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner',
+    );
+    expect(skillsFunction).toContain(
+      'member context stays private between workspace members'
+      + '|task context stays private to the task owner within the same workspace',
+    );
+    expect(skillsFunction.match(/reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner/g) ?? [])
+      .toHaveLength(1);
+
+    expect(compositeFunction).toContain('run_skills_runtime_specs "${API_PORT}" "${WEB_PORT}"');
+    expect(compositeFunction).toContain('run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))"');
+    expect(compositeFunction).not.toContain('run_internal_workspace_specs');
+  });
+
+  it('passes child integration specs through the parent-prepared deps/init/default-workspace boundary', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const integrationCallIndex = agentTaskGate.indexOf('bash scripts/run-integration-e2e-full.sh "${spec}" "$@"');
+
+    expect(integrationCallIndex).toBeGreaterThanOrEqual(0);
+    for (const assignment of [
+      'INTEGRATION_BOOTSTRAP_DEPS=false \\',
+      'INTEGRATION_INIT_DEPS=false \\',
+      'INTEGRATION_ENSURE_DEFAULT_WORKSPACE=false \\',
+    ]) {
+      expect(agentTaskGate).toContain(assignment);
+      expect(agentTaskGate.indexOf(assignment)).toBeLessThan(integrationCallIndex);
+    }
+    expect(agentTaskGate).toContain('ensure_internal_default_workspace_for_afscp');
   });
 
   it('routes backend-real visual review through the shared internal sandbox bootstrap', () => {
@@ -267,6 +361,7 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(agentTaskGate).toContain(
       '\nwait_for_internal_integration_deps_for_afscp\n'
+      + 'ensure_internal_default_workspace_for_afscp\n'
       + 'reset_internal_afscp_local_runtime\n'
       + 'enable_files_restore_continuation_afscp_restore_recovery\n'
       + 'prepare_internal_backend_real_gate_runtime',

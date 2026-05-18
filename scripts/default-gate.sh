@@ -178,7 +178,7 @@ run_default_gate_build() {
 
 reuse_gate_fast_evidence() {
   [[ "${DEFAULT_GATE_PROFILE}" != "fast" ]] && {
-    [[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]
+    [[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${DEFAULT_GATE_PROFILE}" == "governance_tooling" ]] || [[ "${DEFAULT_GATE_REUSE_FAST_EVIDENCE}" == "1" ]]
   }
 }
 
@@ -191,7 +191,7 @@ skip_governance_focused_visual() {
 }
 
 case "${DEFAULT_GATE_PROFILE}" in
-  standalone|fast|campaign_after_gate_fast)
+  standalone|fast|campaign_after_gate_fast|governance_tooling)
     ;;
   *)
     echo "[default-gate] unknown DEFAULT_GATE_PROFILE: ${DEFAULT_GATE_PROFILE}" >&2
@@ -218,6 +218,12 @@ fi
 if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then
   run_cmd "npm run test:e2e:lane:mock:smoke"
   info "fast engineering gate passed"
+  exit 0
+fi
+
+if [[ "${DEFAULT_GATE_PROFILE}" == "governance_tooling" ]]; then
+  run_cmd "npm run test:governance-tooling"
+  info "governance tooling engineering gate passed"
   exit 0
 fi
 

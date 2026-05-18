@@ -138,14 +138,16 @@ describe('governance DAG scheduler', () => {
         { fromJobId: 'gate-fast', toJobId: 'gate-default' },
         { fromJobId: 'gate-fast', toJobId: 'lane-visual' },
         { fromJobId: 'gate-default', toJobId: 'gate-release' },
-        { fromJobId: 'lane-visual', toJobId: 'gate-release' },
         { fromJobId: 'gate-release', toJobId: 'lane-unified-deploy-substrate' },
         { fromJobId: 'lane-unified-deploy-substrate', toJobId: 'lane-unified-deploy-local-kind-images' },
         { fromJobId: 'lane-unified-deploy-local-kind-images', toJobId: 'lane-unified-deploy-local-kind' },
         { fromJobId: 'lane-unified-deploy-local-kind', toJobId: 'lane-unified-deploy-product-flows' },
+        { fromJobId: 'lane-visual', toJobId: 'gate-release-full' },
+        { fromJobId: 'gate-release', toJobId: 'gate-release-full' },
         { fromJobId: 'lane-unified-deploy-product-flows', toJobId: 'gate-release-full' },
       ]),
     );
+    expect(topology.edges).not.toContainEqual({ fromJobId: 'lane-visual', toJobId: 'gate-release' });
   });
 
   it('fails closed for unknown dependencies and cycles', () => {

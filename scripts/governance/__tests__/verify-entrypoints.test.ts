@@ -480,18 +480,33 @@ describe('verify human entrypoints', () => {
       expect(plan.recommendedCommands).toEqual([
         'npm run verify:quick',
         'npm run verify:default',
-        'npm run verify:real',
       ]);
       expect(output).toContain('AgentSmith Verification');
       expect(output).toContain('Mode: dry-run');
-      expect(output).toContain('npm run verify -- --goal=real --run');
-      expect(output).not.toContain('npm run verify:real');
+      expect(output).toContain('npm run verify -- --goal=pr --run');
+      expect(output).not.toContain('npm run verify -- --goal=real --run');
       expect(output).not.toContain('npm run verify:release-real');
       expect(output).toContain('Final verdict: not evaluated');
       expect(existsSync(join(root, 'artifacts', 'gate-results'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('executes clean pr run without requiring backend-real owner verification', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      goalExplicit: true,
+      run: true,
+    });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('cannot execute');
+    expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
   });
 
   it('shows lightweight unified deploy unit diagnostics in dry-run human output', () => {
@@ -1382,7 +1397,7 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('base ref unavailable');
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
       expect(report.changed_files).toEqual([]);
-      expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
+      expect(report.required_levels).toEqual(['V0', 'V1']);
       expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
       expect(report.risk_summary.manual_review_required).toBe(false);
       expect(report.risk_summary.broad_impact).toBe(false);
@@ -1411,7 +1426,7 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('base ref unavailable');
       const report = readVerifyReport(root);
       expect(report.changed_files).toEqual([]);
-      expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
+      expect(report.required_levels).toEqual(['V0', 'V1']);
       expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
       expect(report.risk_summary.manual_review_required).toBe(false);
       expect(report.risk_summary.broad_impact).toBe(false);
@@ -2080,6 +2095,44 @@ describe('verify human entrypoints', () => {
         .toBeUndefined();
       expect(captured.find((entry) => entry.script === 'verify:default')?.env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE)
         .toBeUndefined();
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.DEFAULT_GATE_PROFILE)
+        .toBe('governance_tooling');
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not pass the governance tooling default profile for mixed mapped pr runs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-mixed-no-governance-profile-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const captured: Array<{ script: string; env: NodeJS.ProcessEnv }> = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'scripts/governance/verify-impact-selector.ts',
+        '--changed-file',
+        'README.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script, context) => {
+          captured.push({ script, env: context.env });
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(captured.map((entry) => entry.script)).toEqual(['verify:quick', 'verify:default']);
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.DEFAULT_GATE_PROFILE)
+        .toBeUndefined();
       expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -2177,7 +2230,7 @@ describe('verify human entrypoints', () => {
       };
       expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
       expect(report.recommended_commands).toEqual(['npm run verify -- --goal=pr --run']);
-      expect(report.risk_summary.manual_review_required).toBe(true);
+      expect(report.risk_summary.manual_review_required).toBe(false);
       expect(report.risk_summary.broad_impact).toBe(false);
       expect(report.risk_summary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
       expect(report.story_cards).toEqual([]);
@@ -2187,7 +2240,7 @@ describe('verify human entrypoints', () => {
           matched_rules: ['governance_tooling'],
           affected_surfaces: ['engineering-governance-tooling'],
           story_ids: [],
-          manual_review_required: true,
+          manual_review_required: false,
           broad_impact: false,
         }),
       ]);
@@ -2246,6 +2299,92 @@ describe('verify human entrypoints', () => {
       expect(captured.find((entry) => entry.script === 'verify:quick')?.env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE)
         .toBeUndefined();
       expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('finalizes verify-real cleanup after successful aliases so later real preflight is not blocked by its own resources', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-cleanup-success-'));
+    const shadowRoot = join(root, 'claim-store-shadow');
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const cleanupContexts: Array<{ reportRoot: string; repoRoot: string; goal: string }> = [];
+    const cleanupReasons: string[] = [];
+    const aliasClaimStoreRoots: string[] = [];
+    try {
+      mkdirSync(shadowRoot, { recursive: true });
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        ownerPreflight: passingOwnerPreflight,
+        sentinelRunner: () => passingSentinelResult(),
+        runNpmScript: (_script, context) => {
+          aliasClaimStoreRoots.push(context.env[CLAIM_STORE_ROOT_ENV] ?? '');
+          return { status: 0 };
+        },
+        cleanupFinalizer: (context) => {
+          cleanupContexts.push({
+            reportRoot: context.reportRoot,
+            repoRoot: context.repoRoot,
+            goal: context.goal,
+          });
+          return {
+            finalize: (reason) => cleanupReasons.push(reason),
+          };
+        },
+        pureCheckShadowRepoRoot: shadowRoot,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(cleanupContexts).toEqual([{ reportRoot: root, repoRoot: process.cwd(), goal: 'real' }]);
+      expect(cleanupReasons).toEqual(['success']);
+      expect(new Set(aliasClaimStoreRoots)).toEqual(new Set([shadowRoot]));
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('finalizes verify-real cleanup after failed aliases before returning the alias failure', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-cleanup-failure-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const cleanupReasons: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        ownerPreflight: passingOwnerPreflight,
+        sentinelRunner: () => passingSentinelResult(),
+        runNpmScript: (script) => ({ status: script === 'verify:real' ? 7 : 0 }),
+        cleanupFinalizer: () => ({
+          finalize: (reason) => cleanupReasons.push(reason),
+        }),
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(7);
+      expect(cleanupReasons).toEqual(['failure']);
+      expect(stderr.join('')).toContain('Blocker: verify_alias_failed');
+      expect(stderr.join('')).toContain('internal backend-real verification check step');
+      expect(stdout.join('')).toContain('Pure check shadow audit:');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

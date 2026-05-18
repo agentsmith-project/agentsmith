@@ -324,6 +324,7 @@ describe('current real session coverage manifest', () => {
           ? [
             'run_grep e2e/integration-chat.spec.ts "real deepseek" 21001 3101',
             'run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members" 20079 3101 || skills_status=$?',
+            'run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner|writes task context through mbos-context and persists it for the task owner" 20073 3066 || skills_status=$?',
           ].join('\n')
           : undefined
       ),
@@ -342,11 +343,26 @@ describe('current real session coverage manifest', () => {
         spec: 'e2e/integration-context-store-isolation.spec.ts',
         grep: 'member context stays private between workspace members',
       }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'writes task context through mbos-context and persists it for the task owner',
+      }),
     ]));
     expect(discovery.sources).not.toEqual(expect.arrayContaining([
       expect.objectContaining({
         source_kind: 'playwright_spec',
         spec: 'e2e/integration-context-store-isolation.spec.ts',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner|writes task context through mbos-context and persists it for the task owner',
       }),
     ]));
 

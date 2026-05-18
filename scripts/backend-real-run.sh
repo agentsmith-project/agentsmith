@@ -64,31 +64,28 @@ if [[ "${REUSE_DEFAULT_GATE_EVIDENCE}" == "1" ]]; then
     INTEGRATION_API_PORT=20060 \
     INTEGRATION_WEB_PORT=3061 \
     AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT=1 \
+    AGENT_TASK_REAL_SMOKE_STATIC_ONLY=1 \
     npm run test:agent-task:backend-real:smoke
 else
   run_real_cmd \
     INTEGRATION_API_PORT=20060 \
     INTEGRATION_WEB_PORT=3061 \
+    AGENT_TASK_REAL_SMOKE_STATIC_ONLY=1 \
     npm run test:agent-task:backend-real:smoke
 fi
 
-info "running agent-task runner backend-real checks"
+info "running internal agent-task backend-real composite"
 cleanup_gate_ports 20064 3065 e2e/integration-agent-task-runner.spec.ts
+# Evidence ownership: this composite is the backend-real core producer for npm run test:agent-task:backend-real:runner.
 run_real_cmd \
   INTEGRATION_API_PORT=20064 \
   INTEGRATION_WEB_PORT=3065 \
-  npm run test:agent-task:backend-real:runner
+  bash scripts/run-internal-agent-task-real-gate.sh --core-composite
 
 info "running file library backend-real gate"
 run_real_cmd \
   FILE_LIBRARY_GATE_API_PORT=21010 \
   bash scripts/run-file-library-real-gate.sh
-
-info "running internal agent-task backend-real gate"
-run_real_cmd \
-  INTEGRATION_API_PORT=20072 \
-  INTEGRATION_WEB_PORT=3072 \
-  npm run test:internal:backend-real:agent-task-workspace
 
 state_set_string release.phase "run_completed"
 state_set_string release.last_run_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

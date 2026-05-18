@@ -68,6 +68,9 @@ REDIS_PORT="${INTEGRATION_REDIS_PORT}"
 MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
 MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}"
 KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:${INTEGRATION_KEYCLOAK_PORT}}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
@@ -116,9 +119,22 @@ release_user_story_runner_image_reuse_ready() {
     "runner_image_id=${runner_image_id}"
 }
 
+release_user_story_integration_deps_ready() {
+  readiness_state_field_ready_with_identity integration_deps_ready \
+    "postgres_port=${INTEGRATION_POSTGRES_PORT}" \
+    "mongo_port=${INTEGRATION_MONGO_PORT}" \
+    "redis_port=${INTEGRATION_REDIS_PORT}" \
+    "minio_api_port=${INTEGRATION_MINIO_API_PORT}" \
+    "minio_console_port=${INTEGRATION_MINIO_CONSOLE_PORT}" \
+    "keycloak_port=${INTEGRATION_KEYCLOAK_PORT}" \
+    "keycloak_base_url=${KEYCLOAK_BASE_URL}" \
+    "keycloak_realm=${KEYCLOAK_REALM}" \
+    "keycloak_client_id=${KEYCLOAK_CLIENT_ID}"
+}
+
 ensure_release_user_story_integration_deps_for_afscp() {
   info "ensuring local integration dependencies for AFSCP"
-  if readiness_state_field_ready integration_deps_ready; then
+  if release_user_story_integration_deps_ready; then
     info "reusing parent-verified integration dependencies for AFSCP"
     (
       cd "${ROOT_DIR}" && \

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,6 +8,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVerificationPlan,
 } from '../run-verify';
+import {
+  defaultGateProfileForVerificationPlan,
+} from '../verify-impact-selector';
 import {
   CURRENT_STORY_RISK_POLICY_SCHEMA,
   CURRENT_STORY_RISK_POLICY_SOURCE,
@@ -27,6 +30,47 @@ function withTempDir<T>(prefix: string, run: (root: string) => T): T {
 
 function occurrenceCount(value: string, pattern: string): number {
   return value.split(pattern).length - 1;
+}
+
+function runGitInFixture(root: string, args: readonly string[]): void {
+  const result = spawnSync('git', [...args], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+function withPackageJsonGitFixture<T>(
+  basePackageJson: unknown,
+  currentPackageJson: unknown,
+  run: (args: { root: string; catalog: ReturnType<typeof buildVerificationCatalog> }) => T,
+): T {
+  const catalog = buildVerificationCatalog();
+  return withTempDir('agentsmith-package-impact-', (root) => {
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(basePackageJson, null, 2)}\n`);
+    runGitInFixture(root, ['init']);
+    runGitInFixture(root, ['add', 'package.json']);
+    runGitInFixture(root, [
+      '-c',
+      'user.email=agentsmith@example.test',
+      '-c',
+      'user.name=AgentSmith Test',
+      'commit',
+      '-m',
+      'base package',
+    ]);
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(currentPackageJson, null, 2)}\n`);
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      return run({ root, catalog });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
 }
 
 type ReportEvidenceCard = {
@@ -811,7 +855,7 @@ describe('verify impact selector', () => {
     expect(plan.releaseVerdict).toBe(false);
   });
 
-  it('maps governance tooling sources to targeted V0/V1 owner review instead of unmapped triage', () => {
+  it('maps pure governance tooling sources to targeted V0/V1 without broad, manual, story, or unmapped impact', () => {
     const changedFiles = [
       'scripts/governance/verify-impact-selector.ts',
       'scripts/governance/__tests__/verify-impact-selector.test.ts',
@@ -827,7 +871,7 @@ describe('verify impact selector', () => {
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.storyCards).toEqual([]);
     expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: engineering-governance-tooling');
-    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
     expect(plan.riskSummary.broadImpact).toBe(false);
     expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
     expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
@@ -837,10 +881,156 @@ describe('verify impact selector', () => {
         matchedRules: ['governance_tooling'],
         affectedSurfaces: ['engineering-governance-tooling'],
         storyIds: [],
-        manualReviewRequired: true,
+        manualReviewRequired: false,
         broadImpact: false,
       })),
     ));
+    expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+  });
+
+  it('does not select the governance tooling default-gate profile for mixed mapped changes', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      goalExplicit: true,
+      run: true,
+      changedFiles: [
+        'scripts/governance/verify-impact-selector.ts',
+        'README.md',
+      ],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.affectedSurfaces).toEqual(['docs-only', 'engineering-governance-tooling']);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.storyCards).toEqual([]);
+    expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
+  });
+
+  it('maps root governance gate and current contract checks without unmapped or visual impact', () => {
+    const changedFiles = [
+      'scripts/default-gate.sh',
+      'scripts/default-gate.test.ts',
+      'scripts/contracts/check-current-gates.ts',
+      'scripts/contracts/check-current-gates.test.ts',
+      'scripts/contracts/check-current-verification-campaigns.ts',
+      'scripts/contracts/check-engineering-governance.ts',
+      'scripts/governance-default-gate.sh',
+      'scripts/governance-default-gate.test.ts',
+      'scripts/run-mock-lane-playwright.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+        storyIds: [],
+        broadImpact: false,
+      })),
+    ));
+  });
+
+  it('maps package.json to governance tooling only when git diff is limited to safe governance and mock-lane npm scripts', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:e2e:lane:mock:chromium': 'bash scripts/run-mock-lane-playwright.sh --project=chromium --workers=4 && bash scripts/run-mock-lane-playwright.sh --project=chromium-serial --workers=1',
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:e2e:lane:mock:chromium': 'bash scripts/run-mock-lane-session.sh --shards=chromium,chromium-serial',
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:governance-tooling': 'npm run test:run -- scripts/default-gate.test.ts scripts/contracts/check-current-gates.test.ts scripts/contracts/check-current-gate-results.test.ts scripts/contracts/check-current-governance-observability.test.ts scripts/governance/__tests__/current-gate-governance.test.ts scripts/governance/__tests__/current-gate-result-schema.test.ts scripts/governance/__tests__/current-workflow-governance.test.ts scripts/governance/__tests__/current-verification-campaign-manifest.test.ts scripts/governance/__tests__/verify-entrypoints.test.ts scripts/governance/__tests__/verify-impact-selector.test.ts',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('keeps package.json fail-closed when git diff changes dependencies instead of only safe scripts', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.0.0',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+      dependencies: {
+        next: '15.1.0',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
+          manualReviewRequired: true,
+        }),
+      ]);
+      expect(plan.recommendedCommands).toContain('npm run verify:visual');
+    });
   });
 
   it.each([
@@ -871,6 +1061,8 @@ describe('verify impact selector', () => {
   it.each([
     'scripts/release-full-campaign.sh',
     'scripts/release-full-aggregate-gate.sh',
+    'scripts/run-integration-release-user-story.sh',
+    'scripts/release-local-precheck-afscp.test.ts',
   ])('maps root release and deploy script %s to V4 operator review only', (changedFile) => {
     const plan = buildVerificationPlan({
       changedFiles: [changedFile],
@@ -889,6 +1081,24 @@ describe('verify impact selector', () => {
       manualReviewRequired: true,
     });
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('release/deploy operator review');
+  });
+
+  it('keeps explicit real run for release/deploy changes pointed at release-ready instead of partial heavy aliases', () => {
+    const plan = buildVerificationPlan({
+      goal: 'real',
+      goalExplicit: true,
+      run: true,
+      changedFiles: ['scripts/run-integration-release-user-story.sh'],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual([]);
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('not a release verdict');
+    expect(plan.finalVerdict).toBe('not_evaluated_next_action_required');
+    expect(plan.releaseVerdict).toBe(false);
   });
 
   it('maps non-runtime env examples/local frontend configuration to V0/V1 without visual, backend-real, or unmapped impact', () => {
@@ -1118,6 +1328,47 @@ describe('verify impact selector', () => {
     expect(plan.storyCards[0]?.riskReason).toContain('inferred fail-closed');
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('unmapped source');
     expect(plan.storyCards[0]?.levelStatuses.length).toBe(plan.storyCards[0]?.requiredLevels.length);
+  });
+
+  it('maps backend-real gate diagnostics to backend-real owner review without unmapped or visual impact', () => {
+    const changedFiles = [
+      'scripts/backend-real-bootstrap.sh',
+      'scripts/backend-real-run.sh',
+      'scripts/backend-real-run.test.ts',
+      'scripts/agent-task-real-smoke-gate.sh',
+      'scripts/run-internal-agent-task-real-gate.sh',
+      'scripts/internal-backend-real-gate-runtime.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+    const internalAgentTaskGateImpact = plan.changedFileImpacts.find(
+      (impact) => impact.changedFile === 'scripts/run-internal-agent-task-real-gate.sh',
+    );
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V3']);
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.affectedSurfaces).toEqual(['backend-real-diagnostic-tooling']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['backend_real_diagnostic_tooling'],
+        affectedSurfaces: ['backend-real-diagnostic-tooling'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      })),
+    ));
+    expect(internalAgentTaskGateImpact).toMatchObject({
+      matchedRules: ['backend_real_diagnostic_tooling'],
+      affectedSurfaces: ['backend-real-diagnostic-tooling'],
+      storyIds: [],
+      broadImpact: true,
+      manualReviewRequired: true,
+    });
+    expect(internalAgentTaskGateImpact?.matchedRules).not.toContain('runner_context_credential');
+    expect(plan.storyCards.every((card) => card.lane === 'backend-real')).toBe(true);
   });
 
   it('keeps broad-impact story cards on their own story-level evidence lanes', () => {

@@ -61,6 +61,18 @@ function sha256(value: string): string {
 
 type PrecheckOperationStatus = 'reused' | 'started';
 
+const DEFAULT_RELEASE_PRECHECK_DEPS_IDENTITY = {
+  postgres_port: '25432',
+  mongo_port: '27027',
+  redis_port: '26379',
+  minio_api_port: '29000',
+  minio_console_port: '29001',
+  keycloak_port: '28081',
+  keycloak_base_url: 'http://localhost:28081',
+  keycloak_realm: 'mbos',
+  keycloak_client_id: 'agentsmith',
+} as const;
+
 function writePrecheckSummary(campaignRoot: string, overrides: Partial<{
   campaignRunId: string;
   campaignRoot: string;
@@ -68,6 +80,8 @@ function writePrecheckSummary(campaignRoot: string, overrides: Partial<{
   dependencyStartCount: number;
   apiWebStatus: PrecheckOperationStatus;
   apiWebStartCount: number;
+  integrationDepsIdentity: Record<string, string>;
+  omitIntegrationDepsIdentity: boolean;
 }> = {}): void {
   writeJson(join(campaignRoot, 'release-local-precheck', 'precheck-summary.json'), {
     schema_version: 'agentsmith.release-local-precheck/v1',
@@ -90,6 +104,11 @@ function writePrecheckSummary(campaignRoot: string, overrides: Partial<{
         start_count: overrides.apiWebStartCount ?? 1,
       },
     },
+    ...(
+      overrides.omitIntegrationDepsIdentity
+        ? {}
+        : { integration_deps_identity: overrides.integrationDepsIdentity ?? DEFAULT_RELEASE_PRECHECK_DEPS_IDENTITY }
+    ),
     generated_at: '2026-04-25T12:00:00.000Z',
   });
 }
@@ -137,6 +156,17 @@ const WRITE_PRECHECK_SUMMARY_SHELL = [
   '  "observed_operations": {',
   '    "dependency_services": { "status": "reused", "start_count": 0 },',
   '    "api_web": { "status": "started", "start_count": 1 }',
+  '  },',
+  '  "integration_deps_identity": {',
+  '    "postgres_port": "25432",',
+  '    "mongo_port": "27027",',
+  '    "redis_port": "26379",',
+  '    "minio_api_port": "29000",',
+  '    "minio_console_port": "29001",',
+  '    "keycloak_port": "28081",',
+  '    "keycloak_base_url": "http://localhost:28081",',
+  '    "keycloak_realm": "mbos",',
+  '    "keycloak_client_id": "agentsmith"',
   '  },',
   '  "generated_at": "2026-04-25T12:00:00.000Z"',
   '}',
@@ -868,6 +898,13 @@ exit 0
         }),
         expectedOutput: 'campaign_root',
       },
+      {
+        label: 'missing deps identity',
+        writeSummary: (campaignRoot) => writePrecheckSummary(campaignRoot, {
+          omitIntegrationDepsIdentity: true,
+        }),
+        expectedOutput: 'integration_deps_identity',
+      },
     ];
 
     for (const testCase of cases) {
@@ -1359,7 +1396,10 @@ exit 0
           real_services_started: 'ready',
           api_web_started: 'ready',
         });
-        expect(readinessValidation.state.readiness.integration_deps_ready).toBe('unknown');
+        expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
+        expect(readinessValidation.state.readiness_identities?.integration_deps_ready?.values).toEqual(
+          DEFAULT_RELEASE_PRECHECK_DEPS_IDENTITY,
+        );
         expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('sk-test');
       } finally {
         rmSync(root, { recursive: true, force: true });
@@ -1513,9 +1553,12 @@ exit 0
       if (!readinessValidation.ok) {
         throw new Error(readinessValidation.error);
       }
-      expect(readinessValidation.state.readiness.integration_deps_ready).toBe('unknown');
+      expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
       expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('unknown');
       expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('unknown');
+      expect(readinessValidation.state.readiness_identities?.integration_deps_ready?.values).toEqual(
+        DEFAULT_RELEASE_PRECHECK_DEPS_IDENTITY,
+      );
       expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared).toBeUndefined();
       expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed).toBeUndefined();
       expect(stdout.join('')).not.toContain('state/readiness.json');

@@ -170,6 +170,15 @@ write_precheck_success_report() {
   WEB_BASE_URL="${WEB_BASE_URL}" \
   API_PORT="${API_PORT}" \
   WEB_PORT="${WEB_PORT}" \
+  POSTGRES_PORT="${POSTGRES_PORT}" \
+  MONGO_PORT="${MONGO_PORT}" \
+  REDIS_PORT="${REDIS_PORT}" \
+  MINIO_API_PORT="${MINIO_API_PORT}" \
+  MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
+  KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
   RELEASE_CAMPAIGN_RUN_ID="${RELEASE_CAMPAIGN_RUN_ID:-}" \
   RELEASE_CAMPAIGN_ROOT="${RELEASE_CAMPAIGN_ROOT:-}" \
   DEPS_OPERATION_STATUS="${DEPS_OPERATION_STATUS}" \
@@ -203,6 +212,17 @@ payload = {
             "status": os.environ.get("API_WEB_OPERATION_STATUS", "unknown"),
             "start_count": int(os.environ.get("API_WEB_START_COUNT", "0")),
         },
+    },
+    "integration_deps_identity": {
+        "postgres_port": os.environ.get("POSTGRES_PORT", ""),
+        "mongo_port": os.environ.get("MONGO_PORT", ""),
+        "redis_port": os.environ.get("REDIS_PORT", ""),
+        "minio_api_port": os.environ.get("MINIO_API_PORT", ""),
+        "minio_console_port": os.environ.get("MINIO_CONSOLE_PORT", ""),
+        "keycloak_port": os.environ.get("KEYCLOAK_PORT", ""),
+        "keycloak_base_url": os.environ.get("KEYCLOAK_BASE_URL", ""),
+        "keycloak_realm": os.environ.get("KEYCLOAK_REALM", ""),
+        "keycloak_client_id": os.environ.get("KEYCLOAK_CLIENT_ID", ""),
     },
     "run_id": os.environ.get("INTEGRATION_RUN_ID", ""),
     "api_base": os.environ.get("INTEGRATION_API_BASE", ""),

@@ -7,10 +7,15 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 SKIP_SHARED_PREFLIGHT="${AGENT_TASK_REAL_SMOKE_SKIP_SHARED_PREFLIGHT:-0}"
+STATIC_ONLY="${AGENT_TASK_REAL_SMOKE_STATIC_ONLY:-0}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-shared-preflight)
       SKIP_SHARED_PREFLIGHT=1
+      shift
+      ;;
+    --static-only)
+      STATIC_ONLY=1
       shift
       ;;
     *)
@@ -66,6 +71,11 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/project-join-request-routes.test.ts' \
   'packages/api-entry-node/src/project-member-governance-routes.test.ts' \
   'packages/api-entry-node/src/workspace-registry.test.ts'"
+
+if [[ "${STATIC_ONLY}" == "1" ]]; then
+  info "static-only smoke checks passed; skipping internal managed Agent Task runtime"
+  exit 0
+fi
 
 info "backend-real logs will be written to:"
 info "  API: ${API_LOG}"

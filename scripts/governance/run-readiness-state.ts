@@ -43,7 +43,20 @@ const RUN_READINESS_FIELDS = [
   'local_kind_image_import_completed',
 ] as const satisfies readonly RunReadinessField[];
 
+export const INTEGRATION_DEPS_READINESS_IDENTITY_KEYS = [
+  'postgres_port',
+  'mongo_port',
+  'redis_port',
+  'minio_api_port',
+  'minio_console_port',
+  'keycloak_port',
+  'keycloak_base_url',
+  'keycloak_realm',
+  'keycloak_client_id',
+] as const;
+
 const RUN_READINESS_FIELD_REQUIRED_IDENTITY_KEYS: Partial<Record<RunReadinessField, readonly string[]>> = {
+  integration_deps_ready: INTEGRATION_DEPS_READINESS_IDENTITY_KEYS,
   runner_image_digest_prepared: [
     'runner_image_ref',
     'runner_image_id',
@@ -310,6 +323,39 @@ function validateIdentityValues(value: unknown): value is Record<string, string>
     && Object.entries(value).every(([key, entry]) => key.length > 0 && typeof entry === 'string');
 }
 
+function sortedIdentityKeys(values: Record<string, string>): readonly string[] {
+  return Object.keys(values).sort((left, right) => left.localeCompare(right));
+}
+
+function identityKeysEqual(values: Record<string, string>, expectedKeys: readonly string[]): boolean {
+  const actualKeys = sortedIdentityKeys(values);
+  const sortedExpectedKeys = [...expectedKeys].sort((left, right) => left.localeCompare(right));
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === sortedExpectedKeys[index]);
+}
+
+function validateRequiredReadyIdentities(value: Record<string, unknown>): RunReadinessStateValidationResult | null {
+  const readiness = value.readiness;
+  if (!isRecord(readiness)) {
+    return null;
+  }
+  const identities = isRecord(value.readiness_identities) ? value.readiness_identities : {};
+  for (const field of RUN_READINESS_FIELDS) {
+    const requiredKeys = RUN_READINESS_FIELD_REQUIRED_IDENTITY_KEYS[field];
+    if (!requiredKeys || readiness[field] !== 'ready') {
+      continue;
+    }
+    const record = identities[field];
+    if (!isRecord(record) || !validateIdentityValues(record.values) || !identityKeysEqual(record.values, requiredKeys)) {
+      return {
+        ok: false,
+        error: `readiness state ready field requires complete identity: ${field}`,
+      };
+    }
+  }
+  return null;
+}
+
 function validateNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
@@ -410,6 +456,10 @@ function parseRunReadinessState(value: unknown): RunReadinessStateValidationResu
       }
     }
   }
+  const requiredIdentityValidation = validateRequiredReadyIdentities(value);
+  if (requiredIdentityValidation) {
+    return requiredIdentityValidation;
+  }
 
   return {
     ok: true,
@@ -505,6 +555,10 @@ export function updateRunReadinessStateField(input: {
     state: validation.state,
     writerToken: input.writerToken,
   });
+  const requiredKeys = RUN_READINESS_FIELD_REQUIRED_IDENTITY_KEYS[input.field];
+  if (input.status === 'ready' && requiredKeys && (!input.identity || !identityKeysEqual(input.identity, requiredKeys))) {
+    throw new Error(`readiness state ready field requires complete identity: ${input.field}`);
+  }
   const readinessIdentities: Partial<Record<RunReadinessField, RunReadinessIdentityRecord>> = {
     ...(validation.state.readiness_identities ?? {}),
   };
@@ -701,17 +755,6 @@ function readinessIdentityMatches(
     field,
     identities,
   });
-}
-
-function sortedIdentityKeys(values: Record<string, string>): readonly string[] {
-  return Object.keys(values).sort((left, right) => left.localeCompare(right));
-}
-
-function identityKeysEqual(values: Record<string, string>, expectedKeys: readonly string[]): boolean {
-  const actualKeys = sortedIdentityKeys(values);
-  const sortedExpectedKeys = [...expectedKeys].sort((left, right) => left.localeCompare(right));
-  return actualKeys.length === expectedKeys.length
-    && actualKeys.every((key, index) => key === sortedExpectedKeys[index]);
 }
 
 export function runReadinessFieldIdentityMatches(input: {

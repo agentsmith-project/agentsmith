@@ -149,6 +149,14 @@ type OperationEvidence = {
     | 'afscp-volume-bootstrap-diagnostics-pod-previous-logs'
     | 'afscp-volume-bootstrap-diagnostics-pod-events'
     | 'afscp-volume-bootstrap-diagnostics-events'
+    | 'afscp-functional-convergence-check'
+    | 'afscp-functional-diagnostics-pods-json'
+    | 'afscp-functional-diagnostics-deployment-describe'
+    | 'afscp-functional-diagnostics-pod-describe'
+    | 'afscp-functional-diagnostics-pod-logs'
+    | 'afscp-functional-diagnostics-pod-previous-logs'
+    | 'afscp-functional-diagnostics-pod-events'
+    | 'afscp-functional-diagnostics-events'
     | 'afscp-schema-bootstrap-dry-run'
     | 'afscp-schema-bootstrap-apply'
     | 'afscp-volume-bootstrap-dry-run'
@@ -300,6 +308,9 @@ const AFSCP_SCHEMA_BOOTSTRAP_WAIT_TIMEOUT_MS = 150_000;
 const AFSCP_BOOTSTRAP_JOB_POLL_INTERVAL_MS = 2_000;
 const AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_TIMEOUT_MS = 30_000;
 const AFSCP_SCHEMA_BOOTSTRAP_DIAGNOSTIC_OUTPUT_LIMIT = 12_000;
+const AFSCP_FUNCTIONAL_CONVERGENCE_TIMEOUT_MS = 90_000;
+const AFSCP_FUNCTIONAL_DIAGNOSTIC_TIMEOUT_MS = 30_000;
+const AFSCP_FUNCTIONAL_DIAGNOSTIC_OUTPUT_LIMIT = 12_000;
 const AFSCP_WORKLOAD_DEPLOYMENTS = [
   'afscp-api',
   'afscp-worker',
@@ -830,6 +841,7 @@ async function runKubectlOperation(options: {
   env: Record<string, string | undefined>;
   kubeconfigPath: string;
   secretValues: readonly string[];
+  timeoutMs?: number;
 }): Promise<{ evidence: OperationEvidence; failure?: CheckFailure }> {
   const result = await options.runner('kubectl', options.args, {
     input: options.input,
@@ -838,7 +850,7 @@ async function runKubectlOperation(options: {
       ...options.env,
       KUBECONFIG: options.kubeconfigPath,
     },
-    timeoutMs: KUBECTL_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? KUBECTL_TIMEOUT_MS,
   });
   const evidence: OperationEvidence = {
     name: options.name,
@@ -2993,6 +3005,326 @@ async function waitForAfscpBootstrapJob(options: {
   };
 }
 
+function afscpFunctionalConvergenceProbeScript(): string {
+  return [
+    "const crypto = require('node:crypto');",
+    "const READY_STATES = new Set(['succeeded', 'success', 'completed', 'ready']);",
+    "const FAILED_STATES = new Set(['failed', 'failure', 'error', 'errored', 'cancelled', 'canceled']);",
+    "const marker = 'afscp-functional-convergence';",
+    "const namespaceId = 'ns_rollout_probe';",
+    "const productRoles = ['repo_admin', 'repo_lifecycle_admin', 'restore_admin', 'template_admin', 'export_admin', 'mount_admin', 'operation_inspector'];",
+    "const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));",
+    "function env(name) {",
+    "  const value = process.env[name];",
+    "  if (typeof value !== 'string' || value.trim().length === 0) {",
+    "    throw new Error(`missing required env ${name}`);",
+    "  }",
+    "  return value.trim();",
+    "}",
+    "function sortJson(value) {",
+    "  if (Array.isArray(value)) {",
+    "    return value.map(sortJson);",
+    "  }",
+    "  if (value !== null && typeof value === 'object') {",
+    "    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, nested]) => [key, sortJson(nested)]));",
+    "  }",
+    "  return value;",
+    "}",
+    "function signature(value) {",
+    "  return crypto.createHash('sha256').update(JSON.stringify(sortJson(value))).digest('hex');",
+    "}",
+    "const config = {",
+    "  baseUrl: env('AFSCP_BASE_URL').replace(/\\/+$/u, ''),",
+    "  defaultVolumeId: env('AFSCP_DEFAULT_VOLUME_ID'),",
+    "  productCaller: env('AFSCP_CALLER_SERVICE'),",
+    "  bootstrapCaller: env('AFSCP_BOOTSTRAP_CALLER_SERVICE'),",
+    "  orchestratorCaller: env('AFSCP_ORCHESTRATOR_CALLER_SERVICE'),",
+    "  productToken: env('AFSCP_SERVICE_TOKEN'),",
+    "  bootstrapToken: env('AFSCP_BOOTSTRAP_SERVICE_TOKEN'),",
+    "};",
+    "function buildVolumeBinding() {",
+    "  return {",
+    "    namespace_id: namespaceId,",
+    "    default_volume_id: config.defaultVolumeId,",
+    "    allowed_callers: [",
+    "      { caller_service: config.productCaller, roles: productRoles },",
+    "      { caller_service: config.orchestratorCaller, roles: ['orchestrator_mount'] },",
+    "    ],",
+    "    quota_bytes_default: 0,",
+    "    export_policy: { webdav_enabled: true, max_session_seconds: 900 },",
+    "    lifecycle_policy: { tombstone_retention_seconds: 604800, purge_requires_lifecycle_admin: true, break_glass_purge_enabled: false },",
+    "    mount_policy: { workload_mount_enabled: true, workload_mount_requires_external_control_root: true, allow_privileged_workload: false },",
+    "    template_policy: { namespace_templates_enabled: true, cross_namespace_clone_enabled: false },",
+    "    status: 'active',",
+    "  };",
+    "}",
+    "function headers(options) {",
+    "  const result = {",
+    "    Accept: 'application/json',",
+    "    Authorization: `Bearer ${options.token}`,",
+    "    'X-AFSCP-Caller-Service': options.callerService,",
+    "    'X-Correlation-Id': marker,",
+    "  };",
+    "  if (options.namespaceId) {",
+    "    result['X-AFSCP-Namespace-Id'] = options.namespaceId;",
+    "  }",
+    "  if (options.mutation) {",
+    "    result['Idempotency-Key'] = options.mutation.idempotencyKey;",
+    "    result['X-AFSCP-Actor-Type'] = 'operator';",
+    "    result['X-AFSCP-Actor-Id'] = 'local-kind-rollout';",
+    "  }",
+    "  if (options.hasBody) {",
+    "    result['Content-Type'] = 'application/json';",
+    "  }",
+    "  return result;",
+    "}",
+    "async function requestJson(stage, method, requestPath, options) {",
+    "  const response = await fetch(`${config.baseUrl}${requestPath}`, {",
+    "    method,",
+    "    headers: headers({ ...options, hasBody: options.body !== undefined }),",
+    "    body: options.body === undefined ? undefined : JSON.stringify(options.body),",
+    "  });",
+    "  const text = await response.text();",
+    "  let payload = undefined;",
+    "  if (text.trim().length > 0) {",
+    "    try {",
+    "      payload = JSON.parse(text);",
+    "    } catch {",
+    "      payload = text.slice(0, 1000);",
+    "    }",
+    "  }",
+    "  if (!response.ok) {",
+    "    throw new Error(`${stage} http ${response.status}: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}`);",
+    "  }",
+    "  return payload ?? {};",
+    "}",
+    "function operationState(operation) {",
+    "  return typeof operation.operation_state === 'string' ? operation.operation_state : '';",
+    "}",
+    "function operationId(stage, operation) {",
+    "  if (typeof operation.operation_id === 'string' && operation.operation_id.length > 0) {",
+    "    return operation.operation_id;",
+    "  }",
+    "  throw new Error(`${stage} response did not include operation_id`);",
+    "}",
+    "async function pollOperation(stage, id) {",
+    "  const deadline = Date.now() + 60_000;",
+    "  let lastState = '';",
+    "  while (Date.now() <= deadline) {",
+    "    const operation = await requestJson(stage, 'GET', `/internal/v1/operations/${encodeURIComponent(id)}`, {",
+    "      callerService: config.bootstrapCaller,",
+    "      token: config.bootstrapToken,",
+    "    });",
+    "    lastState = operationState(operation);",
+    "    const normalized = lastState.trim().toLowerCase();",
+    "    if (READY_STATES.has(normalized)) {",
+    "      return operation;",
+    "    }",
+    "    if (FAILED_STATES.has(normalized)) {",
+    "      throw new Error(`${stage} operation ${id} failed with state=${lastState}`);",
+    "    }",
+    "    await sleep(1_000);",
+    "  }",
+    "  throw new Error(`timed out waiting for AFSCP ${stage.replace(/_/gu, ' ')} operation ${id}; last_state=${lastState || 'unknown'}`);",
+    "}",
+    "async function main() {",
+    "  const namespaceOperation = await requestJson('namespace_upsert', 'PUT', `/internal/v1/namespaces/${encodeURIComponent(namespaceId)}`, {",
+    "    callerService: config.bootstrapCaller,",
+    "    token: config.bootstrapToken,",
+    "    namespaceId,",
+    "    mutation: { idempotencyKey: `${marker}:${namespaceId}:namespace-upsert` },",
+    "    body: { namespace_id: namespaceId },",
+    "  });",
+    "  const namespaceOperationId = operationId('namespace_upsert', namespaceOperation);",
+    "  const namespaceFinal = await pollOperation('namespace_upsert', namespaceOperationId);",
+    "  const binding = buildVolumeBinding();",
+    "  const bindingSignature = signature(binding).slice(0, 16);",
+    "  const volumeOperation = await requestJson('volume_binding', 'PUT', `/internal/v1/namespaces/${encodeURIComponent(namespaceId)}/volume-binding`, {",
+    "    callerService: config.bootstrapCaller,",
+    "    token: config.bootstrapToken,",
+    "    namespaceId,",
+    "    mutation: { idempotencyKey: `${marker}:${namespaceId}:volume-binding:${bindingSignature}` },",
+    "    body: binding,",
+    "  });",
+    "  const volumeOperationId = operationId('volume_binding', volumeOperation);",
+    "  const volumeFinal = await pollOperation('volume_binding', volumeOperationId);",
+    "  const reposQuery = new URLSearchParams({ namespace_id: namespaceId }).toString();",
+    "  await requestJson('product_binding_check', 'GET', `/internal/v1/repos?${reposQuery}`, {",
+    "    callerService: config.productCaller,",
+    "    token: config.productToken,",
+    "    namespaceId,",
+    "  });",
+    "  console.log(JSON.stringify({",
+    "    status: 'passed',",
+    "    marker,",
+    "    namespace_id: namespaceId,",
+    "    default_volume_id: config.defaultVolumeId,",
+    "    namespace_operation_id: namespaceOperationId,",
+    "    namespace_operation_state: operationState(namespaceFinal),",
+    "    volume_binding_operation_id: volumeOperationId,",
+    "    volume_binding_operation_state: operationState(volumeFinal),",
+    "  }));",
+    "}",
+    "main().catch((error) => {",
+    "  const message = error instanceof Error ? error.message : String(error);",
+    "  console.error(JSON.stringify({ status: 'failed', marker, message }));",
+    "  if (error instanceof Error && error.stack) {",
+    "    console.error(error.stack);",
+    "  }",
+    "  process.exit(1);",
+    "});",
+  ].join('\n');
+}
+
+async function collectAfscpFunctionalDiagnostics(options: {
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<OperationEvidence[]> {
+  const baseArgs = kubeBaseArgs(options.kubeconfigPath);
+  const operations: OperationEvidence[] = [];
+  const runDiagnostic = async (
+    name: OperationEvidence['name'],
+    args: string[],
+  ): Promise<Awaited<ReturnType<typeof runKubectlCheck>>> => {
+    const result = await runKubectlCheck({
+      name,
+      args,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+      timeoutMs: AFSCP_FUNCTIONAL_DIAGNOSTIC_TIMEOUT_MS,
+      diagnosticMaxLength: AFSCP_FUNCTIONAL_DIAGNOSTIC_OUTPUT_LIMIT,
+    });
+    operations.push(result.evidence);
+    return result;
+  };
+
+  for (const component of AFSCP_WORKLOAD_DEPLOYMENTS) {
+    const podList = await runDiagnostic('afscp-functional-diagnostics-pods-json', [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'get',
+      'pods',
+      '-l',
+      `app.kubernetes.io/component=${component}`,
+      '-o',
+      'json',
+    ]);
+    const podNames = podNamesFromPodList(podList.raw.stdout);
+
+    await runDiagnostic('afscp-functional-diagnostics-deployment-describe', [
+      ...baseArgs,
+      '-n',
+      options.namespace,
+      'describe',
+      `deployment/${component}`,
+    ]);
+
+    for (const podName of podNames) {
+      await runDiagnostic('afscp-functional-diagnostics-pod-logs', [
+        ...baseArgs,
+        '-n',
+        options.namespace,
+        'logs',
+        `pod/${podName}`,
+        '--all-containers=true',
+        '--prefix=true',
+        '--timestamps=true',
+        '--tail=200',
+      ]);
+      await runDiagnostic('afscp-functional-diagnostics-pod-previous-logs', [
+        ...baseArgs,
+        '-n',
+        options.namespace,
+        'logs',
+        `pod/${podName}`,
+        '--all-containers=true',
+        '--prefix=true',
+        '--timestamps=true',
+        '--previous',
+        '--tail=200',
+      ]);
+      await runDiagnostic('afscp-functional-diagnostics-pod-describe', [
+        ...baseArgs,
+        '-n',
+        options.namespace,
+        'describe',
+        `pod/${podName}`,
+      ]);
+      await runDiagnostic('afscp-functional-diagnostics-pod-events', [
+        ...baseArgs,
+        '-n',
+        options.namespace,
+        'get',
+        'events',
+        `--field-selector=involvedObject.kind=Pod,involvedObject.name=${podName}`,
+        '--sort-by=.lastTimestamp',
+      ]);
+    }
+  }
+
+  await runDiagnostic('afscp-functional-diagnostics-events', [
+    ...baseArgs,
+    '-n',
+    options.namespace,
+    'get',
+    'events',
+    '--sort-by=.lastTimestamp',
+  ]);
+
+  return operations;
+}
+
+async function checkAfscpFunctionalConvergence(options: {
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const check = await runKubectlOperation({
+    name: 'afscp-functional-convergence-check',
+    args: [
+      ...kubeBaseArgs(options.kubeconfigPath),
+      '-n',
+      options.namespace,
+      'exec',
+      'deployment/agentsmith-api',
+      '-c',
+      'api',
+      '-i',
+      '--',
+      'node',
+      '-',
+    ],
+    input: afscpFunctionalConvergenceProbeScript(),
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+    timeoutMs: AFSCP_FUNCTIONAL_CONVERGENCE_TIMEOUT_MS,
+  });
+  const operations = [check.evidence];
+  if (!check.failure) {
+    return { operations, failures: [] };
+  }
+
+  operations.push(...await collectAfscpFunctionalDiagnostics(options));
+
+  return {
+    operations,
+    failures: [{
+      path: 'afscp-functional-convergence:check',
+      message: `AFSCP functional convergence must complete namespace and volume binding operations after AFSCP workloads are ready: ${check.failure.message}; diagnostics captured in local-kind rollout evidence operations`,
+    }],
+  };
+}
+
 async function runApplySequence(options: {
   preflightYaml: string;
   appYaml: string;
@@ -3503,6 +3835,25 @@ export async function runLocalKindRolloutProducer(
     env,
     secretValues,
   });
+  const operationsAfterRollout = [...afterApplyEvidence.operations];
+  if (rollouts.failures.length === 0) {
+    const afscpFunctionalConvergence = await checkAfscpFunctionalConvergence({
+      namespace: safety.namespace,
+      kubeconfigPath: kubeconfig.path,
+      runner,
+      env,
+      secretValues,
+    });
+    operationsAfterRollout.push(...afscpFunctionalConvergence.operations);
+    if (afscpFunctionalConvergence.failures.length > 0) {
+      return finish({
+        ...afterApplyEvidence,
+        operations: operationsAfterRollout,
+        rollouts: rollouts.rollouts,
+        failures: afscpFunctionalConvergence.failures,
+      }, evidenceDir);
+    }
+  }
   const llmupConfigHealth = buildLlmupConfigHealthEvidence(rendered.appYaml, rollouts.rollouts);
   const liveApi = await checkLiveApiReplica({
     namespace: safety.namespace,
@@ -3537,6 +3888,7 @@ export async function runLocalKindRolloutProducer(
 
   return finish({
     ...afterApplyEvidence,
+    operations: operationsAfterRollout,
     rollouts: rollouts.rollouts,
     llmup_config_health: llmupConfigHealth.evidence,
     live_api_replica_check: liveApi.evidence,

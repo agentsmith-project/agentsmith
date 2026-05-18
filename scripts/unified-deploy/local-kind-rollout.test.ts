@@ -340,6 +340,19 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
     if (joined.includes('rollout status')) {
       return { exitCode: 0, stdout: 'deployment successfully rolled out', stderr: '' };
     }
+    if (joined.includes('exec deployment/agentsmith-api') && (options.input ?? '').includes('afscp-functional-convergence')) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          status: 'passed',
+          marker: 'afscp-functional-convergence',
+          namespace_id: 'ns_rollout_probe',
+          namespace_operation_state: 'succeeded',
+          volume_binding_operation_state: 'succeeded',
+        }),
+        stderr: '',
+      };
+    }
     if (joined.includes('get ingressclass nginx')) {
       return jsonResult({
         apiVersion: 'networking.k8s.io/v1',
@@ -1360,6 +1373,14 @@ describe('unified deploy local-kind live rollout producer', () => {
       'afscp-schema-bootstrap-wait',
       'afscp-volume-bootstrap-delete-previous',
       'afscp-volume-bootstrap-wait',
+      'afscp-functional-convergence-check',
+    ]));
+    expect(result.evidence.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'afscp-functional-convergence-check',
+        status: 'passed',
+        stdout: expect.stringContaining('afscp-functional-convergence'),
+      }),
     ]));
     expect(result.evidence.image_preflight.status).toBe('passed');
     expect(result.evidence.image_preflight.image_refs).toContain(`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
@@ -1373,6 +1394,124 @@ describe('unified deploy local-kind live rollout producer', () => {
     });
     expect(result.evidence.live_api_replica_check.ready_replicas).toBe(1);
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('runs an AFSCP functional convergence check after workload rollouts and captures runtime diagnostics when it fails', async () => {
+    const root = tempDir('local-kind-afscp-functional-convergence-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      const recordCall = () => calls.push({ command, args, input: options.input ?? '', timeoutMs: options.timeoutMs });
+
+      if (joined.includes('exec deployment/agentsmith-api') && (options.input ?? '').includes('afscp-functional-convergence')) {
+        recordCall();
+        return {
+          exitCode: 1,
+          stdout: '{"stage":"volume_binding","operation_state":"pending"}',
+          stderr: 'timed out waiting for AFSCP volume binding operation',
+        };
+      }
+
+      for (const component of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+        if (joined.includes(`get pods -l app.kubernetes.io/component=${component}`)) {
+          recordCall();
+          return jsonResult({
+            kind: 'List',
+            items: [
+              {
+                kind: 'Pod',
+                metadata: { name: `${component}-test-pod` },
+              },
+            ],
+          });
+        }
+      }
+
+      if (joined.includes('logs pod/afscp-worker-test-pod') && !joined.includes('--previous')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'worker log: volume binding operation still pending', stderr: '' };
+      }
+      if (joined.includes('logs pod/afscp-api-test-pod') && !joined.includes('--previous')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'api log: accepted namespace operation', stderr: '' };
+      }
+      if (joined.includes('logs pod/afscp-export-gateway-test-pod') && !joined.includes('--previous')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'export gateway log: listener ready', stderr: '' };
+      }
+      if (joined.includes('logs pod/') && joined.includes('--previous')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'previous runtime log: none', stderr: '' };
+      }
+      if (joined.includes('describe pod/')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'pod describe: containers are running', stderr: '' };
+      }
+      if (joined.includes('get events') && joined.includes('afscp-')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'runtime event: no recent warnings', stderr: '' };
+      }
+      if (joined.includes('describe deployment/afscp-')) {
+        recordCall();
+        return { exitCode: 0, stdout: 'deployment describe: available', stderr: '' };
+      }
+
+      return passing(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: async () => {
+        throw new Error('route probes must not run after AFSCP functional convergence fails');
+      },
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+
+    const commandText = calls.map((call) => call.args.join(' ')).join('\n');
+    const afscpExportGatewayRolloutIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('rollout status deployment/afscp-export-gateway'),
+    );
+    const functionalCheckIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('exec deployment/agentsmith-api'),
+    );
+
+    expect(result.status).toBe('failed');
+    expect(functionalCheckIndex).toBeGreaterThan(afscpExportGatewayRolloutIndex);
+    expect(commandText).toContain('logs pod/afscp-worker-test-pod --all-containers=true');
+    expect(commandText).toContain('logs pod/afscp-api-test-pod --all-containers=true');
+    expect(commandText).toContain('logs pod/afscp-export-gateway-test-pod --all-containers=true');
+    expect(commandText).toContain('describe pod/afscp-api-test-pod');
+    expect(commandText).toContain('get events --field-selector=involvedObject.kind=Pod,involvedObject.name=afscp-export-gateway-test-pod');
+    expect(result.evidence.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'afscp-functional-convergence-check',
+        status: 'failed',
+        stderr: expect.stringContaining('volume binding operation'),
+      }),
+      expect.objectContaining({
+        name: 'afscp-functional-diagnostics-pod-logs',
+        stdout: expect.stringContaining('worker log'),
+      }),
+      expect.objectContaining({
+        name: 'afscp-functional-diagnostics-deployment-describe',
+        stdout: expect.stringContaining('available'),
+      }),
+    ]));
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'afscp-functional-convergence:check',
+        message: expect.stringContaining('volume binding operation'),
+      }),
+    ]));
+    expect(result.evidence.route_probes).toEqual([]);
   });
 
   it('waits for AFSCP schema bootstrap before app rollouts and fails closed when it does not complete', async () => {

@@ -260,6 +260,7 @@ const DEFAULT_FILE_LIBRARY_CREATE_MAX_ATTEMPTS = 8;
 const DEFAULT_FILE_LIBRARY_CREATE_RETRY_BASE_MS = 500;
 const FILE_LIBRARY_CATALOG_COLLECTION = 'project_file_libraries';
 const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
+const PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION = 'project_afscp_namespace_mappings';
 const DEPENDENCY_BLOCKED_CODE = 'DEPENDENCY_BLOCKED';
 const SECRET_DIAGNOSTIC_PATTERN = /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)=([^\s,"]+)/giu;
 const FLOW_ORDER: ProductVerificationFlowId[] = [
@@ -717,6 +718,10 @@ function fileLibraryMappingId(input: { workspaceId: string; projectId: string; l
   return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
 }
 
+function projectStorageMappingId(input: { workspaceId: string; projectId: string }): string {
+  return `${input.workspaceId}:${input.projectId}`;
+}
+
 function recordTimestampMs(record: JsonRecord): number {
   const timestamp = stringValue(record, 'updated_at') || stringValue(record, 'created_at');
   const parsed = Date.parse(timestamp);
@@ -731,13 +736,19 @@ function latestRecord(records: JsonRecord[]): JsonRecord | null {
 function operationProjectionEvidence(payload: JsonRecord): JsonRecord {
   const error = asRecord(payload.error);
   const resource = asRecord(payload.resource);
+  const operationState = stringValue(payload, 'operation_state');
   return compactJsonRecord({
     operation_id: stringValue(payload, 'operation_id'),
-    operation_state: stringValue(payload, 'operation_state'),
+    operation_state: operationState,
+    operation_status: stringValue(payload, 'status') || stringValue(payload, 'operation_status') || operationState,
     operation_type: stringValue(payload, 'operation_type'),
     resource_type: stringValue(resource, 'type'),
+    phase: stringValue(payload, 'phase'),
+    attempt: numberValue(payload, 'attempt'),
     error_code: stringValue(error, 'code'),
     error_retryable: booleanValue(error, 'retryable'),
+    last_error_code: stringValue(payload, 'last_error_code') || stringValue(error, 'code'),
+    last_error: firstString(payload.last_error, error.message),
     created_at: stringValue(payload, 'created_at'),
     started_at: stringValue(payload, 'started_at'),
     updated_at: stringValue(payload, 'updated_at'),
@@ -745,7 +756,7 @@ function operationProjectionEvidence(payload: JsonRecord): JsonRecord {
   });
 }
 
-async function fetchFileLibraryOperationProjectionEvidence(input: {
+async function fetchStorageOperationProjectionEvidence(input: {
   truth: ProductFlowRuntimeTruth;
   state: ProductFlowState;
   fetchImpl: ProductFlowFetch;
@@ -784,6 +795,88 @@ async function fetchFileLibraryOperationProjectionEvidence(input: {
       message: errorMessage(error),
       body_summary: bodySummary(text),
     };
+  }
+}
+
+function selectProjectStorageOperation(mapping: JsonRecord): { operationId: string; role: string } | null {
+  const stage = stringValue(mapping, 'stage');
+  const namespaceUpsertOperationId = stringValue(mapping, 'namespace_upsert_operation_id');
+  const volumeBindingOperationId = stringValue(mapping, 'volume_binding_operation_id');
+  if (stage === 'volume_binding' && volumeBindingOperationId) {
+    return { operationId: volumeBindingOperationId, role: 'volume_binding' };
+  }
+  if (stage === 'namespace_upsert' && namespaceUpsertOperationId) {
+    return { operationId: namespaceUpsertOperationId, role: 'namespace_upsert' };
+  }
+  if (volumeBindingOperationId) {
+    return { operationId: volumeBindingOperationId, role: 'volume_binding' };
+  }
+  if (namespaceUpsertOperationId) {
+    return { operationId: namespaceUpsertOperationId, role: 'namespace_upsert' };
+  }
+  return null;
+}
+
+function projectStorageMappingEvidence(mapping: JsonRecord): JsonRecord {
+  const selectedOperation = selectProjectStorageOperation(mapping);
+  return compactJsonRecord({
+    collection: PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION,
+    mapping_id: stringValue(mapping, 'id'),
+    status: stringValue(mapping, 'status'),
+    stage: stringValue(mapping, 'stage'),
+    generation: numberValue(mapping, 'generation'),
+    next_action: stringValue(mapping, 'next_action'),
+    retryable: booleanValue(mapping, 'retryable'),
+    last_error_code: stringValue(mapping, 'last_error_code'),
+    last_error: stringValue(mapping, 'last_error'),
+    updated_at: stringValue(mapping, 'updated_at'),
+    namespace_upsert_operation_id: stringValue(mapping, 'namespace_upsert_operation_id'),
+    volume_binding_operation_id: stringValue(mapping, 'volume_binding_operation_id'),
+    active_operation_id: selectedOperation?.operationId,
+    active_operation_role: selectedOperation?.role,
+  });
+}
+
+async function readMongoProjectStorageEvidence(input: {
+  truth: ProductFlowRuntimeTruth;
+  state: ProductFlowState;
+}): Promise<JsonRecord> {
+  if (!input.state.projectId) {
+    return {
+      collection: PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION,
+      enrichment_status: 'skipped_missing_project',
+    };
+  }
+
+  const mappingId = projectStorageMappingId({
+    workspaceId: input.truth.workspaceId,
+    projectId: input.state.projectId,
+  });
+  const store = new MongoJsonDocStore({
+    url: input.truth.mongo.url,
+    dbName: input.truth.mongo.dbName,
+    mongoClientOptions: {
+      maxPoolSize: 1,
+      maxConnecting: 1,
+      waitQueueTimeoutMS: 2_000,
+      maxIdleTimeMS: 1_000,
+    },
+  });
+  try {
+    const mapping = await store.get<JsonRecord>(
+      PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION,
+      mappingId,
+    );
+    if (!mapping) {
+      return {
+        collection: PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION,
+        mapping_id: mappingId,
+        enrichment_status: 'mapping_not_found',
+      };
+    }
+    return projectStorageMappingEvidence(mapping);
+  } finally {
+    await store.close();
   }
 }
 
@@ -851,6 +944,7 @@ async function defaultFileLibraryFailureEvidenceProvider(
   input: FileLibraryFailureEvidenceInput,
 ): Promise<JsonRecord> {
   const evidenceSources = ['backend_response'];
+  const backendErrorCode = stringValue(input.backendError, 'error_code');
   const trace: JsonRecord = {
     evidence_kind: 'file_library_provisioning_failure',
     request_correlation_id: input.requestId,
@@ -858,6 +952,26 @@ async function defaultFileLibraryFailureEvidenceProvider(
     backend_response: input.backendError,
   };
   let operationId = stringValue(input.backendError, 'operation_id');
+  let projectStorageOperationId = '';
+
+  if (backendErrorCode === 'PROJECT_STORAGE_PENDING' || backendErrorCode === 'PROJECT_STORAGE_BLOCKED') {
+    try {
+      const projectStorageEvidence = await readMongoProjectStorageEvidence(input);
+      trace.project_storage_mapping = projectStorageEvidence;
+      evidenceSources.push(`mongo:${PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION}`);
+      projectStorageOperationId = stringValue(projectStorageEvidence, 'active_operation_id');
+      if (!operationId && projectStorageOperationId) {
+        operationId = projectStorageOperationId;
+        trace.project_storage_operation_id = projectStorageOperationId;
+      }
+    } catch (error: unknown) {
+      trace.project_storage_mapping = {
+        collection: PROJECT_AFSCP_NAMESPACE_MAPPING_COLLECTION,
+        enrichment_status: 'unavailable',
+        message: errorMessage(error),
+      };
+    }
+  }
 
   if (!operationId) {
     try {
@@ -884,20 +998,31 @@ async function defaultFileLibraryFailureEvidenceProvider(
   if (operationId) {
     trace.afscp_operation_id = operationId;
     try {
-      const operationEvidence = await fetchFileLibraryOperationProjectionEvidence({
+      const operationEvidence = await fetchStorageOperationProjectionEvidence({
         truth: input.truth,
         state: input.state,
         fetchImpl: input.fetchImpl,
         operationId,
         requestId: input.requestId,
       });
-      trace.afscp_operation = operationEvidence;
+      if (projectStorageOperationId && projectStorageOperationId === operationId) {
+        trace.project_storage_operation = operationEvidence;
+        trace.afscp_operation = operationEvidence;
+      } else {
+        trace.afscp_operation = operationEvidence;
+      }
       evidenceSources.push('api:file-library-operations');
     } catch (error: unknown) {
-      trace.afscp_operation = {
+      const unavailableOperationEvidence = {
         enrichment_status: 'unavailable',
         message: errorMessage(error),
       };
+      if (projectStorageOperationId && projectStorageOperationId === operationId) {
+        trace.project_storage_operation = unavailableOperationEvidence;
+        trace.afscp_operation = unavailableOperationEvidence;
+      } else {
+        trace.afscp_operation = unavailableOperationEvidence;
+      }
     }
   }
 

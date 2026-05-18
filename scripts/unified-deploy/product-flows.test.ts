@@ -4,6 +4,20 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const mongoStoreMock = vi.hoisted(() => {
+  const list = vi.fn(async () => []);
+  const get = vi.fn(async () => null);
+  const close = vi.fn(async () => undefined);
+  const constructor = vi.fn(function MongoJsonDocStoreMock() {
+    return { list, get, close };
+  });
+  return { close, constructor, get, list };
+});
+
+vi.mock('@mbos/adapters-private', () => ({
+  MongoJsonDocStore: mongoStoreMock.constructor,
+}));
+
 import {
   assertNoServiceStartCommand,
   assertPodRoutableProviderBaseUrl,
@@ -61,6 +75,13 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
+  mongoStoreMock.constructor.mockClear();
+  mongoStoreMock.list.mockReset();
+  mongoStoreMock.list.mockResolvedValue([]);
+  mongoStoreMock.get.mockReset();
+  mongoStoreMock.get.mockResolvedValue(null);
+  mongoStoreMock.close.mockReset();
+  mongoStoreMock.close.mockResolvedValue(undefined);
 });
 
 function tempDir(prefix: string): string {
@@ -260,7 +281,11 @@ function makeFocusedAgentTaskFetch(observed: {
   });
 }
 
-function makeFileLibraryPendingFetch(observed: { createAttempts: number }, pendingAttempts: number): ProductFlowFetch {
+function makeFileLibraryPendingFetch(
+  observed: { createAttempts: number },
+  pendingAttempts: number,
+  options: { operationProjection?: Record<string, unknown> } = {},
+): ProductFlowFetch {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -300,6 +325,9 @@ function makeFileLibraryPendingFetch(observed: { createAttempts: number }, pendi
     }
     if (url.includes('/file-libraries/flib_pending/download') && method === 'GET') {
       return responseText(200, 'hello from unified deploy product flow\n');
+    }
+    if (url.includes('/file-library-operations/op_volume_binding_pending') && method === 'GET' && options.operationProjection) {
+      return responseJson(200, options.operationProjection);
     }
     return responseJson(404, { error: `unexpected:${method}:${url}` });
   });
@@ -899,6 +927,116 @@ describe('unified deploy product flow producer', () => {
     });
     const serializedEvidence = JSON.stringify(Object.values(writes));
     expect(serializedEvidence).toContain('op_pending_storage');
+    expect(serializedEvidence).toContain('[REDACTED]');
+    expect(serializedEvidence).not.toContain('super_secret_token_123');
+  });
+
+  it('enriches files pending-to-limit evidence with project storage mapping and operation truth', async () => {
+    const observed = { createAttempts: 0 };
+    const writes: Record<string, string> = {};
+    mongoStoreMock.get.mockImplementation(async (collection: string, id: string) => {
+      if (collection === 'project_afscp_namespace_mappings' && id === 'ws_default:proj_pending') {
+        return {
+          id,
+          workspace_id: 'ws_default',
+          project_id: 'proj_pending',
+          namespace_id: 'ns_pending_storage',
+          status: 'pending',
+          stage: 'volume_binding',
+          generation: 3,
+          next_action: 'wait',
+          retryable: false,
+          namespace_upsert_operation_id: 'op_namespace_succeeded',
+          volume_binding_operation_id: 'op_volume_binding_pending',
+          last_error_code: 'AFSCP_VOLUME_TOKEN=super_secret_token_123',
+          last_error: 'namespace volume binding stalled',
+          updated_at: '2026-05-07T00:00:10.000Z',
+        };
+      }
+      return null;
+    });
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(writes),
+      fetch: makeFileLibraryPendingFetch(observed, 10, {
+        operationProjection: {
+          operation_id: 'op_volume_binding_pending',
+          operation_state: 'running',
+          operation_type: 'namespace_volume_binding_put',
+          resource: { type: 'namespace_volume_binding' },
+          error: {
+            code: 'AFSCP_VOLUME_TOKEN=super_secret_token_123',
+            retryable: true,
+          },
+          phase: 'validate_namespace_volume_binding_put',
+          attempt: 3,
+          last_error: 'namespace volume binding stalled',
+          updated_at: '2026-05-07T00:00:12.000Z',
+        },
+      }),
+      flowIds: ['workspace_project', 'files'],
+      fileLibraryCreateMaxAttempts: 2,
+      fileLibraryCreateRetryBaseMs: 0,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const filesFlow = result.evidence.flows.find((flow) => flow.flow === 'files');
+    expect(result.status).toBe('failed');
+    expect(observed.createAttempts).toBe(2);
+    expect(mongoStoreMock.get).toHaveBeenCalledWith('project_afscp_namespace_mappings', 'ws_default:proj_pending');
+    expect(filesFlow?.failure?.message).toContain('file library create still pending after 2 attempts');
+    expect(filesFlow?.checks).toMatchObject({
+      create_attempts: 2,
+      create_last_error_code: 'PROJECT_STORAGE_PENDING',
+      provisioning_failure_trace: {
+        project_storage_mapping: {
+          collection: 'project_afscp_namespace_mappings',
+          mapping_id: 'ws_default:proj_pending',
+          status: 'pending',
+          stage: 'volume_binding',
+          generation: 3,
+          next_action: 'wait',
+          retryable: false,
+          volume_binding_operation_id: 'op_volume_binding_pending',
+          active_operation_id: 'op_volume_binding_pending',
+          active_operation_role: 'volume_binding',
+          last_error: 'namespace volume binding stalled',
+          updated_at: '2026-05-07T00:00:10.000Z',
+        },
+        project_storage_operation_id: 'op_volume_binding_pending',
+        project_storage_operation: {
+          operation_id: 'op_volume_binding_pending',
+          operation_state: 'running',
+          operation_status: 'running',
+          operation_type: 'namespace_volume_binding_put',
+          resource_type: 'namespace_volume_binding',
+          phase: 'validate_namespace_volume_binding_put',
+          attempt: 3,
+          last_error: 'namespace volume binding stalled',
+          updated_at: '2026-05-07T00:00:12.000Z',
+        },
+        afscp_operation: {
+          operation_id: 'op_volume_binding_pending',
+          operation_status: 'running',
+          last_error: 'namespace volume binding stalled',
+        },
+      },
+    });
+    const serializedEvidence = JSON.stringify(Object.values(writes));
+    expect(serializedEvidence).toContain('project_afscp_namespace_mappings');
+    expect(serializedEvidence).toContain('op_volume_binding_pending');
     expect(serializedEvidence).toContain('[REDACTED]');
     expect(serializedEvidence).not.toContain('super_secret_token_123');
   });

@@ -4,6 +4,9 @@ import path from 'node:path';
 
 import {
   buildVerificationPlan,
+  publicRecommendedVerificationCommands,
+  publicVerifyRunCommandForGoal,
+  sanitizePublicVerificationText,
   verificationRunContractFailure,
   type BuildVerificationPlanInput,
   type VerificationGoal,
@@ -116,6 +119,18 @@ const PURE_CHECK_SHADOW_GIT_SHA_ENV = 'AGENTSMITH_GOVERNANCE_CLAIM_STORE_GIT_SHA
 const VERIFY_REPORT_ROOT_ENV = 'AGENTSMITH_VERIFY_REPORT_ROOT';
 const VERIFY_REPO_ROOT_ENV = 'AGENTSMITH_VERIFY_REPO_ROOT';
 const VERIFY_GIT_SHA_ENV = 'AGENTSMITH_VERIFY_GIT_SHA';
+const DEFAULT_GATE_REUSE_FAST_EVIDENCE_ENV = 'DEFAULT_GATE_REUSE_FAST_EVIDENCE';
+const WORKSPACE_PROJECT_SKIP_FOCUSED_VISUAL_ENV = 'WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL';
+const GOVERNANCE_SKIP_FOCUSED_VISUAL_ENV = 'GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL';
+const BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE_ENV = 'BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE';
+const DEFAULT_GATE_PROFILE_ENV = 'DEFAULT_GATE_PROFILE';
+const SAME_RUN_REUSE_ENV_KEYS = [
+  DEFAULT_GATE_REUSE_FAST_EVIDENCE_ENV,
+  WORKSPACE_PROJECT_SKIP_FOCUSED_VISUAL_ENV,
+  GOVERNANCE_SKIP_FOCUSED_VISUAL_ENV,
+  BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE_ENV,
+  DEFAULT_GATE_PROFILE_ENV,
+] as const;
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -155,34 +170,12 @@ function humanizeVerdict(verdict: string): string {
   return verdict.replaceAll('_', ' ');
 }
 
-const GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS: Record<string, string> = {
-  'npm run verify:quick': 'npm run verify -- --goal=debug --run',
-  'npm run verify:default': 'npm run verify -- --goal=pr --run',
-  'npm run verify:visual': 'npm run verify -- --goal=visual --run',
-  'npm run verify:real': 'npm run verify -- --goal=real --run',
-  'npm run verify:release-real': 'npm run verify -- --goal=release-real --run',
-};
-
 function cleanVerifyHumanText(value: string): string {
-  return Object.entries(GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS).reduce(
-    (current, [alias, command]) => current.split(alias).join(command),
-    value,
-  );
-}
-
-function renderRecommendedCommand(command: string): string {
-  return GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[command] ?? cleanVerifyHumanText(command);
+  return sanitizePublicVerificationText(value);
 }
 
 function uniqueRenderedRecommendedCommands(commands: readonly string[]): string[] {
-  const rendered: string[] = [];
-  for (const command of commands) {
-    const displayCommand = renderRecommendedCommand(command);
-    if (!rendered.includes(displayCommand)) {
-      rendered.push(displayCommand);
-    }
-  }
-  return rendered;
+  return publicRecommendedVerificationCommands(commands);
 }
 
 function renderRecommendedPlan(plan: VerificationPlan): string[] {
@@ -282,7 +275,7 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
 }
 
 function renderProjectionValue(value: string | null): string {
-  return value ?? '<none>';
+  return value ? cleanVerifyHumanText(value) : '<none>';
 }
 
 function renderVerifyStatusProjection(projection: CurrentStatusProjection): string {
@@ -575,6 +568,45 @@ function npmScriptFromCommand(command: string): string {
   return command.replace(/^npm run /, '');
 }
 
+function isInternalVerifyAdapterScript(script: string): boolean {
+  return script.startsWith('verify:')
+    || script.startsWith('gate:')
+    || script.startsWith('lane:');
+}
+
+function internalVerifyCheckStepLabel(script: string): string {
+  if (script === 'verify:quick') {
+    return 'fast verification check step';
+  }
+  if (script === 'verify:default') {
+    return 'default verification check step';
+  }
+  if (script === 'verify:visual') {
+    return 'visual verification check step';
+  }
+  if (script === 'verify:real') {
+    return 'backend-real verification check step';
+  }
+  if (script === 'verify:release-real') {
+    return 'release backend-real verification check step';
+  }
+  if (script.startsWith('gate:')) {
+    return 'gate verification check step';
+  }
+  if (script.startsWith('lane:')) {
+    return 'lane verification check step';
+  }
+  return 'verification check step';
+}
+
+function sanitizedVerifyRunEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const sanitized = { ...env };
+  for (const key of SAME_RUN_REUSE_ENV_KEYS) {
+    delete sanitized[key];
+  }
+  return sanitized;
+}
+
 function buildNpmScriptRunContext(args: {
   reportRoot: string;
   repoRoot: string;
@@ -586,7 +618,7 @@ function buildNpmScriptRunContext(args: {
     repoRoot: args.repoRoot,
     gitSha: args.gitSha,
     env: {
-      ...process.env,
+      ...sanitizedVerifyRunEnv(process.env),
       [VERIFY_REPORT_ROOT_ENV]: args.reportRoot,
       [VERIFY_REPO_ROOT_ENV]: args.repoRoot,
       [VERIFY_GIT_SHA_ENV]: args.gitSha,
@@ -594,6 +626,68 @@ function buildNpmScriptRunContext(args: {
       [PURE_CHECK_SHADOW_GIT_SHA_ENV]: args.gitSha,
       ...(args.readinessEnv ?? {}),
     },
+  };
+}
+
+function plannedNpmScripts(commands: readonly string[]): string[] {
+  return commands.map(npmScriptFromCommand);
+}
+
+function plannedScriptRunsAfter(
+  plannedScripts: readonly string[],
+  currentScript: string,
+  laterScript: string,
+): boolean {
+  const currentIndex = plannedScripts.indexOf(currentScript);
+  const laterIndex = plannedScripts.indexOf(laterScript);
+  return currentIndex >= 0 && laterIndex > currentIndex;
+}
+
+function buildSameRunEvidenceReuseEnv(args: {
+  script: string;
+  plannedScripts: readonly string[];
+  executedScripts: readonly string[];
+}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  if (args.script === 'verify:default' && args.executedScripts.includes('verify:quick')) {
+    env[DEFAULT_GATE_REUSE_FAST_EVIDENCE_ENV] = '1';
+  }
+
+  if (args.script === 'verify:default' && plannedScriptRunsAfter(args.plannedScripts, args.script, 'verify:visual')) {
+    env[WORKSPACE_PROJECT_SKIP_FOCUSED_VISUAL_ENV] = '1';
+    env[GOVERNANCE_SKIP_FOCUSED_VISUAL_ENV] = '1';
+  }
+
+  if (args.script === 'verify:real' && args.executedScripts.includes('verify:default')) {
+    env[BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE_ENV] = '1';
+  }
+
+  return env;
+}
+
+function npmScriptRunContextForScript(args: {
+  baseContext: NpmScriptRunContext;
+  script: string;
+  plannedScripts: readonly string[];
+  executedScripts: readonly string[];
+}): NpmScriptRunContext {
+  return {
+    ...args.baseContext,
+    env: {
+      ...args.baseContext.env,
+      ...buildSameRunEvidenceReuseEnv({
+        script: args.script,
+        plannedScripts: args.plannedScripts,
+        executedScripts: args.executedScripts,
+      }),
+    },
+  };
+}
+
+function publicReportPlan(plan: VerificationPlan): VerificationPlan {
+  return {
+    ...plan,
+    recommendedCommands: publicRecommendedVerificationCommands(plan.recommendedCommands),
   };
 }
 
@@ -619,16 +713,24 @@ function renderFailedNpmScriptSummary(args: {
   goal: VerificationGoal;
 }): string {
   const exitStatus = args.status === null ? 'terminated without exit status' : `exit ${args.status}`;
-  const governedRerun = `npm run verify -- --goal=${args.goal} --run`;
+  const governedRerun = publicVerifyRunCommandForGoal(args.goal);
+  const internalAdapter = isInternalVerifyAdapterScript(args.script);
+  const checkStepLabel = internalVerifyCheckStepLabel(args.script);
+  const failureWhy = internalAdapter
+    ? `internal ${checkStepLabel} for ${governedRerun} failed with ${exitStatus}.`
+    : `${cleanVerifyHumanText(`npm run ${args.script}`)} failed with ${exitStatus}.`;
+  const failedAdapterLine = internalAdapter
+    ? `[verify] failed internal check step: ${checkStepLabel} (${exitStatus})`
+    : `[verify] failed command: ${cleanVerifyHumanText(`npm run ${args.script}`)} (${exitStatus})`;
   return renderShortFailureProjection({
     verdict: 'FAILED',
     blocker: 'verify_alias_failed',
     stage: 'verify',
-    why: `npm run ${args.script} failed with ${exitStatus}.`,
+    why: failureWhy,
     rerunCommand: governedRerun,
     evidencePath: args.reportRoot,
   }) + [
-    `[verify] failed script: npm run ${args.script} (${exitStatus})`,
+    failedAdapterLine,
     `[verify] report root: ${args.reportRoot}`,
   ].join('\n') + '\n';
 }
@@ -750,7 +852,7 @@ export function runVerificationCli(
       catalog,
     });
     const catalogWriteResult = writeVerificationCatalog(catalog, reportRoot);
-    const writeResult = writeStoryAcceptanceReport(plan, reportRoot, {
+    const writeResult = writeStoryAcceptanceReport(publicReportPlan(plan), reportRoot, {
       verificationCatalogPath: catalogWriteResult.jsonPath,
     });
 
@@ -795,6 +897,7 @@ export function runVerificationCli(
       ?? resolveVerifyGitSha();
     const executedScripts: string[] = [];
     const scriptExecutions: PureCheckVerifyScriptExecution[] = [];
+    const plannedScripts = plannedNpmScripts(plan.recommendedCommands);
     const npmScriptRunContext = buildNpmScriptRunContext({
       reportRoot,
       repoRoot: pureCheckShadowRepoRoot,
@@ -817,7 +920,12 @@ export function runVerificationCli(
     });
     for (const command of plan.recommendedCommands) {
       const script = npmScriptFromCommand(command);
-      const result = runNpmScript(script, npmScriptRunContext);
+      const result = runNpmScript(script, npmScriptRunContextForScript({
+        baseContext: npmScriptRunContext,
+        script,
+        plannedScripts,
+        executedScripts,
+      }));
       const scriptExecution = scriptExecutionFromNpmResult(script, result);
       executedScripts.push(script);
       scriptExecutions.push(scriptExecution);

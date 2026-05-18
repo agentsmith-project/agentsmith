@@ -44,9 +44,14 @@ PLAYWRIGHT_EMPTY_SELECTION_DIR="${ROOT_DIR}/artifacts/mock-lane/empty-selections
 PLAYWRIGHT_EMPTY_SELECTION_EVIDENCE_FILE="${PLAYWRIGHT_EMPTY_SELECTION_DIR}/evidence.json"
 PLAYWRIGHT_EMPTY_SELECTION_LOG_FILE="${PLAYWRIGHT_EMPTY_SELECTION_DIR}/playwright-list.log"
 PLAYWRIGHT_EMPTY_SELECTION_HELPER_VERSION="mock_lane_playwright_empty_selection/v2"
+PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR="${ROOT_DIR}/artifacts/mock-lane/focused-visual-selections/${MOCK_RUN_ID}"
+PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_EVIDENCE_FILE="${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR}/evidence.json"
+PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG="${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR}/playwright-list.log"
+PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET=""
 PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=0
 PLAYWRIGHT_ORIGINAL_ARGS=()
 PLAYWRIGHT_ARGS=()
+FOCUSED_VISUAL_SELECTION_VALIDATED=0
 PLAYWRIGHT_PID=""
 PLAYWRIGHT_TAIL_PID=""
 PLAYWRIGHT_WATCHDOG_PID=""
@@ -486,14 +491,32 @@ is_visual_baseline_run() {
 
 prepare_playwright_args() {
   PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=0
+  PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET=""
   PLAYWRIGHT_ORIGINAL_ARGS=("$@")
   PLAYWRIGHT_ARGS=()
 
   local arg
-  for arg in "$@"; do
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    shift
     case "${arg}" in
       --allow-empty-selection)
         PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG=1
+        ;;
+      --focused-visual-expected-set)
+        if [[ $# -eq 0 || -z "$1" ]]; then
+          err "--focused-visual-expected-set requires a non-empty scenarioId:theme set"
+          exit 1
+        fi
+        PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET="$1"
+        shift
+        ;;
+      --focused-visual-expected-set=*)
+        PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET="${arg#--focused-visual-expected-set=}"
+        if [[ -z "${PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET}" ]]; then
+          err "--focused-visual-expected-set requires a non-empty scenarioId:theme set"
+          exit 1
+        fi
         ;;
       *)
         PLAYWRIGHT_ARGS+=("${arg}")
@@ -661,14 +684,65 @@ handle_empty_playwright_selection() {
   return 1
 }
 
+validate_focused_visual_selection() {
+  [[ -n "${PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET}" ]] || return 1
+
+  if ! is_visual_baseline_run "$@"; then
+    err "--focused-visual-expected-set is only supported for e2e/visual.spec.ts"
+    return 2
+  fi
+
+  local list_status
+  mkdir -p "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR}"
+  : > "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}"
+  set +e
+  (
+    cd "${ROOT_DIR}"
+    env \
+      PW_EXCLUDE_LANE_REAL=true \
+      BASE_URL="${BASE_URL}" \
+      npx playwright test "$@" --list
+  ) >"${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}" 2>&1
+  list_status=$?
+  set -e
+
+  if (
+    cd "${ROOT_DIR}"
+    npx tsx scripts/focused-visual-selection.ts \
+      --expected "${PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET}" \
+      --evidence "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_EVIDENCE_FILE}" \
+      --list-log "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}" \
+      --list-exit-code "${list_status}" \
+      --allow-empty-requested "${PLAYWRIGHT_ALLOW_EMPTY_SELECTION_ARG}" \
+      -- "${PLAYWRIGHT_ORIGINAL_ARGS[@]}"
+  ); then
+    FOCUSED_VISUAL_SELECTION_VALIDATED=1
+    return 0
+  fi
+
+  return 2
+}
+
 prepare_playwright_args "$@"
-if handle_empty_playwright_selection "${PLAYWRIGHT_ARGS[@]}"; then
-  RUN_SUCCEEDED=1
-  exit 0
+
+if validate_focused_visual_selection "${PLAYWRIGHT_ARGS[@]}"; then
+  FOCUSED_VISUAL_SELECTION_VALIDATED=1
 else
-  empty_selection_status=$?
-  if [[ "${empty_selection_status}" -eq 2 ]]; then
+  focused_visual_selection_status=$?
+  if [[ "${focused_visual_selection_status}" -eq 2 ]]; then
     exit 1
+  fi
+fi
+
+if [[ "${FOCUSED_VISUAL_SELECTION_VALIDATED}" != "1" ]]; then
+  if handle_empty_playwright_selection "${PLAYWRIGHT_ARGS[@]}"; then
+    RUN_SUCCEEDED=1
+    exit 0
+  else
+    empty_selection_status=$?
+    if [[ "${empty_selection_status}" -eq 2 ]]; then
+      exit 1
+    fi
   fi
 fi
 

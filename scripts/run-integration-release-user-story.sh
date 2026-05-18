@@ -106,30 +106,12 @@ release_user_story_runner_image_id() {
   docker image inspect --format '{{.Id}}' "${RUNNER_IMAGE}" 2>/dev/null | head -n1 || true
 }
 
-release_user_story_cluster_uid() {
-  kubectl --context "${KIND_CONTEXT_NAME}" get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
-}
-
 release_user_story_runner_image_reuse_ready() {
   local runner_image_id
   runner_image_id="$(release_user_story_runner_image_id)"
   [[ -n "${runner_image_id}" ]] || return 1
 
   readiness_state_field_ready_with_identity runner_image_digest_prepared \
-    "runner_image_ref=${RUNNER_IMAGE}" \
-    "runner_image_id=${runner_image_id}"
-}
-
-release_user_story_local_kind_image_import_reuse_ready() {
-  local cluster_uid
-  local runner_image_id
-  cluster_uid="$(release_user_story_cluster_uid)"
-  runner_image_id="$(release_user_story_runner_image_id)"
-  [[ -n "${cluster_uid}" && -n "${runner_image_id}" ]] || return 1
-
-  readiness_state_field_ready_with_identity local_kind_image_import_completed \
-    "local_kind_context=${KIND_CONTEXT_NAME}" \
-    "local_kind_cluster_uid=${cluster_uid}" \
     "runner_image_ref=${RUNNER_IMAGE}" \
     "runner_image_id=${runner_image_id}"
 }
@@ -311,14 +293,6 @@ ensure_afscp_storage_csi() {
   kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-    if release_user_story_local_kind_image_import_reuse_ready; then
-      info "reusing parent-verified kind image imports for ${KIND_CONTEXT_NAME}"
-      if wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"; then
-        return 0
-      fi
-      info "parent-verified CSI readiness no longer matches live cluster; reloading kind images"
-    fi
-
     info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
     ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     ensure_kind_image "${RUNNER_IMAGE}"

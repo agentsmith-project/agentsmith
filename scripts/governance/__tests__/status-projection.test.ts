@@ -269,6 +269,16 @@ function expectNoInternalVerifyAlias(value: unknown): void {
   expect(serialized).not.toContain('npm run verify:');
 }
 
+function expectNoForbiddenVerifyGoal(value: unknown): void {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  expect(serialized).not.toMatch(/\bnpm run verify -- --goal=(?:debug|release-real) --run\b/);
+}
+
+function expectNoPublicAdapterTerm(value: unknown): void {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  expect(serialized).not.toMatch(/\badapter\b/i);
+}
+
 describe('current status projection', () => {
   it('renders clean command failures with the canonical blocker-only shape', () => {
     const rendered = renderShortFailureProjection({
@@ -295,7 +305,33 @@ describe('current status projection', () => {
     expect(rendered).not.toContain('Verdict:');
   });
 
-  it('renders release-ready status rerun as release:ready instead of an owner diagnostic adapter', () => {
+  it('renders diagnostic verify reruns as public entrypoints without internal adapter wording', () => {
+    const debugRendered = renderShortFailureProjection({
+      blocker: 'verify_alias_failed',
+      stage: 'verify',
+      why: 'internal fast verification adapter failed.',
+      rerunCommand: 'npm run verify -- --goal=debug --run',
+      evidencePath: 'artifacts/verification/run-001',
+    });
+    const releaseRealRendered = renderShortFailureProjection({
+      blocker: 'verify_alias_failed',
+      stage: 'verify',
+      why: 'internal release-real verification adapter failed.',
+      rerunCommand: 'npm run verify -- --goal=release-real --run',
+      evidencePath: 'artifacts/verification/run-002',
+    });
+
+    expect(debugRendered).toContain('Rerun: npm run verify -- --goal=pr --run');
+    expect(releaseRealRendered).toContain('Rerun: npm run release:ready');
+    expect(debugRendered).toContain('Why: internal fast verification check step failed.');
+    expect(releaseRealRendered).toContain('Why: internal release-real verification check step failed.');
+    expectNoForbiddenVerifyGoal(debugRendered);
+    expectNoForbiddenVerifyGoal(releaseRealRendered);
+    expectNoPublicAdapterTerm(debugRendered);
+    expectNoPublicAdapterTerm(releaseRealRendered);
+  });
+
+  it('renders release-ready status rerun as release:ready instead of an owner diagnostic command', () => {
     withTempRoot((campaignRoot) => {
       const aggregatePath = writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -589,6 +625,44 @@ describe('current status projection', () => {
     expect(rendered).toContain('Release decision produced: false');
     expect(rendered).toContain('Commands executed: false');
     expect(rendered).not.toContain('sk-status-render-do-not-print');
+  });
+
+  it('renders legacy diagnostic safe-next commands as public entrypoints', () => {
+    const base = buildStatusProjection({
+      goal: 'release-ready',
+      currentGitSha: CURRENT_GIT_SHA,
+      generatedAt: GENERATED_AT,
+    });
+    const debugProjection = {
+      ...base,
+      goal: 'verify' as const,
+      safe_next_command: 'npm run verify -- --goal=debug --run',
+      resume_recommendation: {
+        ...base.resume_recommendation,
+        safe_next_command: 'npm run verify -- --goal=debug --run',
+      },
+    };
+    const releaseRealProjection = {
+      ...base,
+      goal: 'verify' as const,
+      safe_next_command: 'npm run verify -- --goal=release-real --run',
+      resume_recommendation: {
+        ...base.resume_recommendation,
+        safe_next_command: 'npm run verify -- --goal=release-real --run',
+      },
+    };
+
+    const debugRendered = renderStatusProjection(debugProjection);
+    const releaseRealRendered = renderStatusProjection(releaseRealProjection);
+
+    expect(debugRendered).toContain('Next action: npm run verify -- --goal=pr --run');
+    expect(debugRendered).toContain('safe_next=npm run verify -- --goal=pr --run');
+    expect(releaseRealRendered).toContain('Next action: npm run release:ready');
+    expect(releaseRealRendered).toContain('safe_next=npm run release:ready');
+    expectNoForbiddenVerifyGoal(debugRendered);
+    expectNoForbiddenVerifyGoal(releaseRealRendered);
+    expectNoInternalVerifyAlias(debugRendered);
+    expectNoInternalVerifyAlias(releaseRealRendered);
   });
 
   it('keeps prebuilt shadow scope_kind and mode redacted in projection JSON, lock_owner, and human output', () => {

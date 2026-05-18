@@ -66,30 +66,12 @@ internal_real_gate_runner_image_id() {
   docker image inspect --format '{{.Id}}' "${image}" 2>/dev/null | head -n1 || true
 }
 
-internal_real_gate_cluster_uid() {
-  kubectl --context "${KIND_CONTEXT_NAME}" get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
-}
-
 internal_real_gate_runner_image_reuse_ready() {
   local runner_image_id
   runner_image_id="$(internal_real_gate_runner_image_id "${RUNNER_IMAGE}")"
   [[ -n "${runner_image_id}" ]] || return 1
 
   readiness_state_field_ready_with_identity runner_image_digest_prepared \
-    "runner_image_ref=${RUNNER_IMAGE}" \
-    "runner_image_id=${runner_image_id}"
-}
-
-internal_real_gate_local_kind_image_import_reuse_ready() {
-  local cluster_uid
-  local runner_image_id
-  cluster_uid="$(internal_real_gate_cluster_uid)"
-  runner_image_id="$(internal_real_gate_runner_image_id "${RUNNER_IMAGE}")"
-  [[ -n "${cluster_uid}" && -n "${runner_image_id}" ]] || return 1
-
-  readiness_state_field_ready_with_identity local_kind_image_import_completed \
-    "local_kind_context=${KIND_CONTEXT_NAME}" \
-    "local_kind_cluster_uid=${cluster_uid}" \
     "runner_image_ref=${RUNNER_IMAGE}" \
     "runner_image_id=${runner_image_id}"
 }
@@ -393,23 +375,11 @@ prepare_internal_backend_real_gate_runtime() {
 
   KIND_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane"
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-    if internal_real_gate_local_kind_image_import_reuse_ready; then
-      internal_real_gate_info "reusing parent-verified kind runner image import for ${RUNNER_IMAGE}"
-    else
-      internal_real_gate_info "loading ${RUNNER_IMAGE} into kind node ${KIND_NODE_NAME}"
-      internal_real_gate_ensure_kind_image "${RUNNER_IMAGE}"
-    fi
+    internal_real_gate_info "loading ${RUNNER_IMAGE} into kind node ${KIND_NODE_NAME}"
+    internal_real_gate_ensure_kind_image "${RUNNER_IMAGE}"
   fi
 
-  if internal_real_gate_local_kind_image_import_reuse_ready; then
-    internal_real_gate_info "reusing parent-verified CSI image import for ${KIND_CONTEXT_NAME}"
-    if ! internal_real_gate_wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"; then
-      internal_real_gate_info "parent-verified CSI readiness no longer matches live cluster; reconciling"
-      internal_real_gate_ensure_afscp_storage_csi
-    fi
-  else
-    internal_real_gate_ensure_afscp_storage_csi
-  fi
+  internal_real_gate_ensure_afscp_storage_csi
 
   KIND_GATEWAY="$(internal_real_gate_resolve_kind_gateway)"
   SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"

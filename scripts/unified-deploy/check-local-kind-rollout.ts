@@ -57,6 +57,7 @@ import {
 } from './substrate-lifecycle';
 import {
   READINESS_STATE_ENV,
+  runReadinessFieldIdentityMatches,
   validateRunReadinessStateForConsumer,
   type RunReadinessState,
 } from '../governance/run-readiness-state';
@@ -1055,11 +1056,11 @@ function readinessFieldReadyWithIdentity(options: {
     return false;
   }
 
-  const stored = validation.state.readiness_identities?.[options.field]?.values;
-  if (!stored) {
-    return false;
-  }
-  return Object.entries(options.identity).every(([key, value]) => stored[key] === value);
+  return runReadinessFieldIdentityMatches({
+    state: validation.state,
+    field: options.field,
+    identities: options.identity,
+  });
 }
 
 async function resolveLocalKindClusterUid(options: {
@@ -3901,7 +3902,7 @@ export async function runLocalKindRolloutProducer(
   }
 
   const clusterUid = await resolveLocalKindClusterUid({ runner, env });
-  const imagePreflightReuseReady = clusterUid
+  const imageHandoffReadinessMatched = clusterUid
     ? readinessFieldReadyWithIdentity({
       env,
       field: 'local_kind_image_import_completed',
@@ -3912,22 +3913,21 @@ export async function runLocalKindRolloutProducer(
       },
     })
     : false;
-  const imagePreflight: LocalKindImagePreflightResult = imagePreflightReuseReady
+  const verifiedImagePreflight = await checkLocalKindImagePreflight({
+    renderedYaml: imagePreflightYaml,
+    runner,
+    env,
+    registryAvailabilityPoll: options.registryAvailabilityPoll,
+  });
+  const imagePreflight: LocalKindImagePreflightResult = imageHandoffReadinessMatched
     ? {
-      status: 'passed',
-      image_refs: Object.values(imageRefs),
-      host_refs: [],
-      failures: [],
+      ...verifiedImagePreflight,
       diagnostics: [
-        `reused parent-verified local-kind image handoff for ${safety.context}`,
+        `parent-verified local-kind image handoff matched readiness identity for ${safety.context}; rendered manifest and image refs were still verified`,
+        ...verifiedImagePreflight.diagnostics,
       ],
     }
-    : await checkLocalKindImagePreflight({
-      renderedYaml: imagePreflightYaml,
-      runner,
-      env,
-      registryAvailabilityPoll: options.registryAvailabilityPoll,
-    });
+    : verifiedImagePreflight;
   const afterImagePreflightEvidence = {
     ...baseEvidence,
     image_preflight: imagePreflight,

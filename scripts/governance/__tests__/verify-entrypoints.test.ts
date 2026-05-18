@@ -24,7 +24,6 @@ import {
   PURE_CHECK_PRODUCER_EVIDENCE_SCHEMA,
   PURE_CHECK_PRODUCER_RESULT_ARTIFACT_ID,
   PURE_CHECK_PRODUCER_RESULT_FILE_NAME,
-  writePureCheckProducerEvidence,
 } from '../pure-check-producer-evidence';
 import {
   READINESS_STATE_ENV,
@@ -345,6 +344,12 @@ const LEGACY_VERIFY_REPORT_ALIASES = [
   'npm run verify:real',
   'npm run verify:release-real',
 ] as const;
+const INTERNAL_VERIFY_HUMAN_COMMAND_PATTERNS = [
+  /\bnpm run verify:(?:quick|default|visual|real|release-real)\b/,
+  /\bnpm run verify -- --goal=(?:debug|release-real) --run\b/,
+  /\bnpm run gate:[a-z0-9:_-]+\b/,
+  /\bnpm run lane:[a-z0-9:_-]+\b/,
+] as const;
 const SENTINEL_PASS_ENV = {
   NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
   INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
@@ -364,12 +369,18 @@ function expectCleanVerifyReportSurface(root: string): void {
     expect(json).not.toContain(alias);
     expect(markdown).not.toContain(alias);
   }
+  expect(json).not.toMatch(/\bnpm run verify -- --goal=(?:debug|release-real) --run\b/);
+  expect(markdown).not.toMatch(/\bnpm run verify -- --goal=(?:debug|release-real) --run\b/);
 }
 
 function expectCleanVerifyHumanOutput(output: string): void {
   for (const alias of LEGACY_VERIFY_REPORT_ALIASES) {
     expect(output).not.toContain(alias);
   }
+  for (const pattern of INTERNAL_VERIFY_HUMAN_COMMAND_PATTERNS) {
+    expect(output).not.toMatch(pattern);
+  }
+  expect(output).not.toMatch(/\badapter\b/i);
 }
 
 function passingSentinelResult() {
@@ -524,6 +535,175 @@ describe('verify human entrypoints', () => {
     expect(envDecision).toContain('backend-real=no');
     expect(envDecision).toContain('.env.local.example is env-only configuration');
     expect(envDecision).toContain('without visual or backend-real expansion');
+  });
+
+  it('renders docs-only dry-run recommendations through public PR entrypoints only', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['docs/engineering/governance-verification-runtime-simplification-plan-v1.md'],
+    });
+    const output = renderVerificationPlan(plan);
+    const recommendedBlock = recommendedPlanBlock(output);
+
+    expect(recommendedBlock).toContain('npm run verify -- --goal=pr --run');
+    expect(recommendedBlock).not.toMatch(/\bnpm run verify -- --goal=debug --run\b/);
+    expect(output).not.toMatch(/\bnpm run verify -- --goal=debug --run\b/);
+  });
+
+  it('renders design-system dry-run recommendations through public visual and real entrypoints', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['src/app/globals.css'],
+    });
+    const output = renderVerificationPlan(plan);
+    const recommendedBlock = recommendedPlanBlock(output);
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(recommendedBlock).toContain('npm run verify -- --goal=visual --run');
+    expect(recommendedBlock).toContain('npm run verify -- --goal=real --run');
+    expect(recommendedBlock).not.toMatch(/\bnpm run verify -- --goal=debug --run\b/);
+    expect(recommendedBlock).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
+  });
+
+  it('renders backend-real full gate dry-run recommendations through release-ready', () => {
+    const plan = buildVerificationPlan({
+      goal: 'pr',
+      run: false,
+      changedFiles: ['scripts/backend-real-full-gate.sh'],
+    });
+    const output = renderVerificationPlan(plan);
+    const recommendedBlock = recommendedPlanBlock(output);
+
+    expect(recommendedBlock).toContain('npm run release:ready');
+    expect(recommendedBlock).not.toContain('npm run verify -- --goal=real --run');
+    expect(recommendedBlock).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
+    expect(output).toContain('Next action: Run npm run release:ready');
+    expect(output).toContain('not a release verdict until npm run release:ready runs');
+    expect(output).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
+  });
+
+  it('writes docs-only dry-run reports with only the public PR command', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-report-docs-only-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--report-root',
+        root,
+        '--changed-file',
+        'docs/engineering/governance-verification-runtime-simplification-plan-v1.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+      });
+      const output = stdout.join('');
+      const report = readVerifyReport(root);
+
+      expect(exitCode).toBe(0);
+      expect(stderr.join('')).toBe('');
+      expect(recommendedPlanBlock(output).trim()).toBe('1. npm run verify -- --goal=pr --run');
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=pr --run']);
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps --run without an explicit goal clean across stdout, stderr, JSON, and markdown', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-no-goal-clean-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'docs/engineering/governance-verification-runtime-simplification-plan-v1.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+      });
+      const stdoutText = stdout.join('');
+      const stderrText = stderr.join('');
+      const report = readVerifyReport(root);
+
+      expect(exitCode).toBe(1);
+      expect(stdoutText).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+      expect(stderrText).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=pr --run']);
+      expect(report.risk_summary.warnings.join('\n')).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+      expectCleanVerifyHumanOutput(stdoutText);
+      expectCleanVerifyHumanOutput(stderrText);
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes design-system dry-run reports with public PR, visual, and real commands', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-report-design-system-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/app/globals.css',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+      });
+      const output = stdout.join('');
+      const report = readVerifyReport(root);
+
+      expect(exitCode).toBe(0);
+      expect(stderr.join('')).toBe('');
+      expect(recommendedPlanBlock(output).trim().split('\n')).toEqual([
+        '1. npm run verify -- --goal=pr --run',
+        '2. npm run verify -- --goal=visual --run',
+        '3. npm run verify -- --goal=real --run',
+      ]);
+      expect(report.recommended_commands).toEqual([
+        'npm run verify -- --goal=pr --run',
+        'npm run verify -- --goal=visual --run',
+        'npm run verify -- --goal=real --run',
+      ]);
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes backend-real owner dry-run reports with only release-ready publicly recommended', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-report-backend-real-owner-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--report-root',
+        root,
+        '--changed-file',
+        'scripts/backend-real-full-gate.sh',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+      });
+      const output = stdout.join('');
+      const report = readVerifyReport(root);
+
+      expect(exitCode).toBe(0);
+      expect(stderr.join('')).toBe('');
+      expect(recommendedPlanBlock(output).trim()).toBe('1. npm run release:ready');
+      expect(report.recommended_commands).toEqual(['npm run release:ready']);
+      expect(output).toContain('not a release verdict until npm run release:ready runs');
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('prints heavy evidence decisions from selector output for visual and backend-real impact', () => {
@@ -939,7 +1119,11 @@ describe('verify human entrypoints', () => {
         };
       };
       expect(report.verification_catalog_path).toBe(join(root, 'verification-catalog.json'));
-      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=visual --run']);
+      expect(report.recommended_commands).toEqual([
+        'npm run verify -- --goal=pr --run',
+        'npm run verify -- --goal=visual --run',
+      ]);
+      expect(markdown).toContain('- npm run verify -- --goal=pr --run');
       expect(markdown).toContain('- npm run verify -- --goal=visual --run');
       expectCleanVerifyReportSurface(root);
       expect(report.generated_at).toBe(catalog.provenance.generated_at);
@@ -1476,7 +1660,10 @@ describe('verify human entrypoints', () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Goal: release-real');
       expect(result.stdout).toContain('Required levels: V3');
-      expect(result.stdout).toContain('npm run verify -- --goal=release-real --run');
+      expect(result.stdout).toContain('npm run release:ready');
+      expect(result.stdout).toContain('not a release verdict until npm run release:ready runs');
+      expect(result.stdout).not.toContain('npm run verify -- --goal=real --run');
+      expect(result.stdout).not.toContain('npm run verify -- --goal=release-real --run');
       expect(result.stdout).not.toContain('npm run verify:release-real');
       expect(result.stdout).not.toContain('npm run verify:visual');
       expect(result.stdout).not.toContain('npm run verify:real');
@@ -1495,7 +1682,7 @@ describe('verify human entrypoints', () => {
       expect(releaseRealUxTraceTemplate).toBeTruthy();
       expect(report.required_levels).toEqual(['V3']);
       expect(report.required_levels).not.toContain('V4');
-      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
+      expect(report.recommended_commands).toEqual(['npm run release:ready']);
       expect(report.story_cards[0]).toMatchObject({
         risk_level: 'R0',
         risk_policy_refs: ['release_blocking_governance'],
@@ -1506,7 +1693,7 @@ describe('verify human entrypoints', () => {
       expect(v3Evidence).toMatchObject({
         state: 'not_inspected_by_verify_report',
         status: 'manual_review_needed',
-        owner: 'npm run verify -- --goal=release-real --run',
+        owner: 'npm run release:ready',
         artifact_path: null,
         artifact_path_template: releaseRealUxTraceTemplate,
         artifact_path_template_reason: null,
@@ -1519,7 +1706,7 @@ describe('verify human entrypoints', () => {
       expect(reportStatusValues(report.story_cards)).not.toContain('stale');
 
       const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
-      expect(markdown).toContain('- npm run verify -- --goal=release-real --run');
+      expect(markdown).toContain('- npm run release:ready');
       expect(markdown).toContain('## Traceability Gaps');
       expect(markdown).toContain('No traceability gaps were detected.');
       expectCleanVerifyReportSurface(root);
@@ -1561,13 +1748,15 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('npm run verify -- --goal=release-real --run');
+      expect(result.stdout).toContain('npm run release:ready');
+      expect(result.stdout).not.toContain('npm run verify -- --goal=real --run');
+      expect(result.stdout).not.toContain('npm run verify -- --goal=release-real --run');
       expect(result.stdout).not.toContain('npm run verify:release-real');
       const report = readVerifyReport(root);
-      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
+      expect(report.recommended_commands).toEqual(['npm run release:ready']);
       expectCleanVerifyReportSurface(root);
       expect(readFileSync(join(root, 'story-acceptance-report.md'), 'utf8'))
-        .toContain('- npm run verify -- --goal=release-real --run');
+        .toContain('- npm run release:ready');
       expect(readFileSync(gitLog, 'utf8')).toContain('diff --name-only merge-base-sha..HEAD');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1631,7 +1820,9 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('--run requires an explicit --goal');
+      expect(result.stderr).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+      expectCleanVerifyHumanOutput(result.stdout);
+      expectCleanVerifyHumanOutput(result.stderr);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
       expect(existsSync(logPath)).toBe(false);
@@ -1641,7 +1832,8 @@ describe('verify human entrypoints', () => {
         risk_summary: { warnings: string[] };
       };
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
-      expect(report.risk_summary.warnings.join('\n')).toContain('--run requires an explicit --goal');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+      expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1787,9 +1979,13 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expect(result.stdout).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(result.stdout).toContain('npm run release:ready');
+      expect(result.stdout).not.toContain('npm run verify -- --goal=real --run');
       expectCleanVerifyHumanOutput(result.stdout);
-      expect(result.stderr).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expect(result.stderr).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(result.stderr).toContain('npm run release:ready');
+      expect(result.stderr).not.toContain('npm run verify -- --goal=real --run');
       expectCleanVerifyHumanOutput(result.stderr);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
@@ -1802,9 +1998,10 @@ describe('verify human entrypoints', () => {
         risk_summary: { warnings: string[] };
       };
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
-      expect(report.recommended_commands).toContain('npm run verify -- --goal=release-real --run');
+      expect(report.recommended_commands).toContain('npm run release:ready');
       expect(report.release_verdict).toBe(false);
-      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot execute npm run verify -- --goal=release-real --run');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(report.risk_summary.warnings.join('\n')).toContain('npm run release:ready');
       expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1842,6 +2039,90 @@ describe('verify human entrypoints', () => {
         'run verify:default',
         'run verify:visual',
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes same-run fast evidence reuse to default after quick succeeds', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-default-reuse-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const captured: Array<{ script: string; env: NodeJS.ProcessEnv }> = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'scripts/governance/verify-impact-selector.ts',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script, context) => {
+          captured.push({ script, env: context.env });
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(captured.map((entry) => entry.script)).toEqual(['verify:quick', 'verify:default']);
+      expect(captured.find((entry) => entry.script === 'verify:quick')?.env.DEFAULT_GATE_REUSE_FAST_EVIDENCE)
+        .toBeUndefined();
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.DEFAULT_GATE_REUSE_FAST_EVIDENCE)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBeUndefined();
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBeUndefined();
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE)
+        .toBeUndefined();
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes focused visual skip env to default when the same run owns full visual evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-visual-reuse-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const captured: Array<{ script: string; env: NodeJS.ProcessEnv }> = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=visual',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        runNpmScript: (script, context) => {
+          captured.push({ script, env: context.env });
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(captured.map((entry) => entry.script)).toEqual(['verify:quick', 'verify:default', 'verify:visual']);
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.DEFAULT_GATE_REUSE_FAST_EVIDENCE)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:visual')?.env.WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBeUndefined();
+      expect(captured.find((entry) => entry.script === 'verify:visual')?.env.GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBeUndefined();
+      expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1911,6 +2192,60 @@ describe('verify human entrypoints', () => {
         }),
       ]);
       expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes backend-real reuse env to real after default succeeds in the same run', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-reuse-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const captured: Array<{ script: string; env: NodeJS.ProcessEnv }> = [];
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        ownerPreflight: passingOwnerPreflight,
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        runNpmScript: (script, context) => {
+          captured.push({ script, env: context.env });
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+
+      expect(exitCode).toBe(0);
+      expect(sentinelProfiles).toEqual(['verify-real']);
+      expect(captured.map((entry) => entry.script)).toEqual([
+        'verify:quick',
+        'verify:default',
+        'verify:visual',
+        'verify:real',
+      ]);
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.DEFAULT_GATE_REUSE_FAST_EVIDENCE)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:default')?.env.GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:real')?.env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE)
+        .toBe('1');
+      expect(captured.find((entry) => entry.script === 'verify:quick')?.env.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE)
+        .toBeUndefined();
+      expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -2330,11 +2665,12 @@ describe('verify human entrypoints', () => {
       expect(aliases).toEqual(['verify:quick']);
       expect(stderr.join('')).toContain('Blocker: verify_alias_failed');
       expect(stderr.join('')).toContain('Stage: verify');
-      expect(stderr.join('')).toContain('Why: npm run verify:quick failed with exit 7.');
-      expect(stderr.join('')).toContain('Rerun: npm run verify -- --goal=debug --run');
+      expect(stderr.join('')).toContain('Why: internal fast verification check step for npm run verify -- --goal=pr --run failed with exit 7.');
+      expect(stderr.join('')).toContain('Rerun: npm run verify -- --goal=pr --run');
       expect(stderr.join('')).toContain(`Evidence: ${root}`);
-      expect(stderr.join('')).toContain('[verify] failed script: npm run verify:quick (exit 7)');
+      expect(stderr.join('')).toContain('[verify] failed internal check step: fast verification check step (exit 7)');
       expect(stderr.join('')).toContain(`[verify] report root: ${root}`);
+      expectCleanVerifyHumanOutput(stderr.join(''));
       expect(stdout.join('')).toContain(`Pure check shadow audit: ${join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME)}`);
 
       const audit = JSON.parse(readFileSync(join(root, PURE_CHECK_SHADOW_AUDIT_FILE_NAME), 'utf8')) as {
@@ -2473,7 +2809,11 @@ describe('verify human entrypoints', () => {
         release_verdict: boolean;
       };
       expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
-      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=real --run']);
+      expect(report.recommended_commands).toEqual([
+        'npm run verify -- --goal=pr --run',
+        'npm run verify -- --goal=visual --run',
+        'npm run verify -- --goal=real --run',
+      ]);
       expect(report.release_verdict).toBe(false);
       expectCleanVerifyReportSurface(root);
     } finally {
@@ -2554,7 +2894,7 @@ describe('verify human entrypoints', () => {
         not_release_readiness: boolean;
       };
       expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
-      expect(report.recommended_commands).toEqual(['npm run verify -- --goal=release-real --run']);
+      expect(report.recommended_commands).toEqual(['npm run release:ready']);
       expect(report.release_verdict).toBe(false);
       expect(report.not_release_readiness).toBe(true);
       expectCleanVerifyReportSurface(root);

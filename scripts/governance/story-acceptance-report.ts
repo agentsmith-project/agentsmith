@@ -1,10 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type {
-  VerificationPlan,
-  VerificationRiskSummary,
-  VerificationStoryCard,
+import {
+  publicRecommendedVerificationCommands,
+  sanitizePublicVerificationText,
+  type VerificationPlan,
+  type VerificationRiskSummary,
+  type VerificationStoryCard,
 } from './verify-impact-selector';
 
 export const STORY_ACCEPTANCE_REPORT_SCHEMA = 'agentsmith_story_acceptance_report/v1';
@@ -118,27 +120,8 @@ export interface BuildStoryAcceptanceReportOptions {
   verificationCatalogPath?: string;
 }
 
-const GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS: Record<string, string> = {
-  'npm run verify:quick': 'npm run verify -- --goal=debug --run',
-  'npm run verify:default': 'npm run verify -- --goal=pr --run',
-  'npm run verify:visual': 'npm run verify -- --goal=visual --run',
-  'npm run verify:real': 'npm run verify -- --goal=real --run',
-  'npm run verify:release-real': 'npm run verify -- --goal=release-real --run',
-};
-
-const GOVERNED_VERIFY_RUN_COMMAND_PRIORITY = [
-  'npm run verify:release-real',
-  'npm run verify:real',
-  'npm run verify:visual',
-  'npm run verify:default',
-  'npm run verify:quick',
-] as const;
-
 function cleanVerifyReportText(value: string): string {
-  return Object.entries(GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS).reduce(
-    (current, [alias, command]) => current.split(alias).join(command),
-    value,
-  );
+  return sanitizePublicVerificationText(value);
 }
 
 function cleanVerifyReportTextOrNull(value: string | null): string | null {
@@ -146,17 +129,7 @@ function cleanVerifyReportTextOrNull(value: string | null): string | null {
 }
 
 function toReportRecommendedCommands(commands: readonly string[]): string[] {
-  if (commands.length === 0) {
-    return [];
-  }
-
-  for (const alias of GOVERNED_VERIFY_RUN_COMMAND_PRIORITY) {
-    if (commands.includes(alias)) {
-      return [GOVERNED_VERIFY_RUN_COMMAND_BY_ALIAS[alias]];
-    }
-  }
-
-  return commands.map(cleanVerifyReportText);
+  return publicRecommendedVerificationCommands(commands);
 }
 
 function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {

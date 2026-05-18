@@ -743,34 +743,35 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toMatch(/LOCAL_RUNTIME_PROCESS_STATE_DIR="\$\{RELEASE_RUN_ROOT\}\/processes"/);
   });
 
-  it('reuses a parent-verified kind cluster only when readiness identity matches', () => {
+  it('does not treat local-kind image handoff readiness as kind cluster bootstrap readiness', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
     const prewarmStart = script.indexOf('prewarm_internal_kind_cluster()');
     const prewarmEnd = script.indexOf('cleanup() {', prewarmStart);
     const prewarmBody = script.slice(prewarmStart, prewarmEnd);
 
-    expect(script).toContain('scripts/lib/run-readiness-state.sh');
-    expect(prewarmBody).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
-    expect(prewarmBody).toContain('local_kind_context=${kind_context_name}');
-    expect(prewarmBody).toContain('local_kind_cluster_uid=${cluster_uid}');
-    expect(prewarmBody).toContain('reusing parent-verified local kind cluster');
+    expect(prewarmBody).not.toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(prewarmBody).not.toContain('reusing parent-verified local kind cluster');
     expect(prewarmBody).toContain('ensure_local_kind_cluster');
   });
 
-  it('lets internal Agent Task gates skip runner rebuild and kind image import only with matching readiness identity', () => {
+  it('lets internal Agent Task gates skip runner rebuild only with matching runner image readiness identity', () => {
     const script = readFileSync('scripts/lib/internal-backend-real-gate.sh', 'utf8');
+    const runnerReuseBody = shellFunctionBody(script, 'internal_real_gate_runner_image_reuse_ready');
+    const prepareBody = shellFunctionBody(script, 'prepare_internal_backend_real_gate_runtime');
 
     expect(script).toContain('internal_real_gate_runner_image_reuse_ready()');
-    expect(script).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
-    expect(script).toContain('runner_image_ref=${RUNNER_IMAGE}');
-    expect(script).toContain('runner_image_id=${runner_image_id}');
-    expect(script).toContain('internal_real_gate_local_kind_image_import_reuse_ready()');
-    expect(script).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
-    expect(script).toContain('local_kind_context=${KIND_CONTEXT_NAME}');
-    expect(script).toContain('local_kind_cluster_uid=${cluster_uid}');
+    expect(runnerReuseBody).toContain('runner_image_id="$(internal_real_gate_runner_image_id "${RUNNER_IMAGE}")"');
+    expect(runnerReuseBody).toContain('[[ -n "${runner_image_id}" ]] || return 1');
+    expect(runnerReuseBody).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
+    expect(runnerReuseBody).toContain('runner_image_ref=${RUNNER_IMAGE}');
+    expect(runnerReuseBody).toContain('runner_image_id=${runner_image_id}');
     expect(script).toContain('reusing parent-verified runner image digest');
-    expect(script).toContain('reusing parent-verified kind runner image import');
-    expect(script).toContain('reusing parent-verified CSI image import');
+    expect(script).not.toContain('internal_real_gate_local_kind_image_import_reuse_ready()');
+    expect(prepareBody).not.toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(prepareBody).not.toContain('reusing parent-verified kind runner image import');
+    expect(prepareBody).not.toContain('reusing parent-verified CSI image import');
+    expect(prepareBody).toContain('internal_real_gate_ensure_kind_image "${RUNNER_IMAGE}"');
+    expect(prepareBody).toContain('internal_real_gate_ensure_afscp_storage_csi');
   });
 
   it('imports internal gate kind image tarballs through stdin redirection instead of a pipe', () => {
@@ -782,17 +783,24 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');
   });
 
-  it('lets the release user story reuse runner build and CSI kind imports without suppressing evidence', () => {
+  it('lets the release user story reuse runner build without reusing local-kind image handoff for CSI imports', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const runnerReuseBody = shellFunctionBody(script, 'release_user_story_runner_image_reuse_ready');
+    const csiBody = shellFunctionBody(script, 'ensure_afscp_storage_csi');
 
     expect(script).toContain('scripts/lib/run-readiness-state.sh');
     expect(script).toContain('release_user_story_runner_image_reuse_ready()');
-    expect(script).toContain('release_user_story_local_kind_image_import_reuse_ready()');
-    expect(script).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
-    expect(script).toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(runnerReuseBody).toContain('runner_image_id="$(release_user_story_runner_image_id)"');
+    expect(runnerReuseBody).toContain('[[ -n "${runner_image_id}" ]] || return 1');
+    expect(runnerReuseBody).toContain('readiness_state_field_ready_with_identity runner_image_digest_prepared');
+    expect(runnerReuseBody).toContain('runner_image_ref=${RUNNER_IMAGE}');
+    expect(runnerReuseBody).toContain('runner_image_id=${runner_image_id}');
     expect(script).toContain('reusing parent-verified runner image digest');
-    expect(script).toContain('reusing parent-verified kind image imports');
-    expect(script).toContain('wait_for_afscp_storage_csi_ready');
+    expect(script).not.toContain('release_user_story_local_kind_image_import_reuse_ready()');
+    expect(csiBody).not.toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
+    expect(csiBody).not.toContain('reusing parent-verified kind image imports');
+    expect(csiBody).toContain('ensure_kind_image "${RUNNER_IMAGE}"');
+    expect(csiBody).toContain('wait_for_afscp_storage_csi_ready');
   });
 
   it('exposes a gate-scoped AFSCP local runtime reset helper with the local-real marker', () => {

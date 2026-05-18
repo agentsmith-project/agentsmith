@@ -195,6 +195,46 @@ function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
+function createReadyLocalKindImageImportEnv(options: {
+  root: string;
+  siteEnvPath: string;
+  context?: string;
+  clusterUid?: string;
+}): Record<string, string | undefined> {
+  const readiness = createRunReadinessState({
+    scope: 'release',
+    root: options.root,
+    gitSha: 'local-kind-rollout-test',
+    input: {
+      campaign_root: options.root,
+      run_id: 'local-kind-rollout-test',
+    },
+    env: {
+      NEXT_PUBLIC_API_BASE: 'http://localhost:29180/api/v1',
+    },
+    invocationId: 'local-kind-rollout-invocation',
+    processNonce: 'local-kind-rollout-process-nonce',
+  });
+  updateRunReadinessStateField({
+    statePath: readiness.statePath,
+    invocationId: readiness.state.invocation_id,
+    processNonce: readiness.state.process_nonce,
+    inputDigest: readiness.state.input_digest,
+    envDigest: readiness.state.env_digest.digest,
+    gitSha: readiness.state.git_sha,
+    writerToken: readiness.writerToken,
+    field: 'local_kind_image_import_completed',
+    status: 'ready',
+    identity: {
+      local_kind_context: options.context ?? 'kind-agentsmith',
+      local_kind_cluster_uid: options.clusterUid ?? 'cluster-uid-local-kind',
+      local_kind_site_env_digest: sha256(readFileSync(options.siteEnvPath, 'utf8')),
+    },
+  });
+
+  return readiness.env;
+}
+
 function writeTemplatesRootWithInlineAfscpCsi(root: string): string {
   const templatesRoot = join(root, 'unified-templates');
   cpSync(join(process.cwd(), 'infra', 'deploy', 'unified', 'templates'), join(templatesRoot, 'templates'), {
@@ -920,47 +960,18 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(true);
   });
 
-  it('reuses parent-verified local-kind image handoff when site env and cluster identity match', async () => {
+  it('still runs image preflight contract checks when parent image handoff readiness matches', async () => {
     const root = tempDir('local-kind-image-preflight-reuse-');
     const evidenceDir = tempDir('local-kind-evidence-');
     const kubeconfigPath = writeKubeconfig(root);
     const siteEnvPath = writeLocalKindImageSiteEnv(root);
     const calls: CommandCall[] = [];
-    const readiness = createRunReadinessState({
-      scope: 'release',
-      root,
-      gitSha: 'local-kind-rollout-test',
-      input: {
-        campaign_root: root,
-        run_id: 'local-kind-rollout-test',
-      },
-      env: {
-        NEXT_PUBLIC_API_BASE: 'http://localhost:29180/api/v1',
-      },
-      invocationId: 'local-kind-rollout-invocation',
-      processNonce: 'local-kind-rollout-process-nonce',
-    });
-    updateRunReadinessStateField({
-      statePath: readiness.statePath,
-      invocationId: readiness.state.invocation_id,
-      processNonce: readiness.state.process_nonce,
-      inputDigest: readiness.state.input_digest,
-      envDigest: readiness.state.env_digest.digest,
-      gitSha: readiness.state.git_sha,
-      writerToken: readiness.writerToken,
-      field: 'local_kind_image_import_completed',
-      status: 'ready',
-      identity: {
-        local_kind_context: 'kind-agentsmith',
-        local_kind_cluster_uid: 'cluster-uid-local-kind',
-        local_kind_site_env_digest: sha256(readFileSync(siteEnvPath, 'utf8')),
-      },
-    });
+    const readinessEnv = createReadyLocalKindImageImportEnv({ root, siteEnvPath });
 
     const result = await runLocalKindRolloutProducer({
       evidenceDir,
       env: {
-        ...readiness.env,
+        ...readinessEnv,
         KUBECONFIG: kubeconfigPath,
       },
       homeDir: root,
@@ -974,11 +985,41 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(result.status).toBe('passed');
     expect(result.evidence.image_preflight.status).toBe('passed');
     expect(result.evidence.image_preflight.diagnostics).toEqual(expect.arrayContaining([
-      expect.stringContaining('reused parent-verified local-kind image handoff'),
+      expect.stringContaining('parent-verified local-kind image handoff matched readiness identity'),
     ]));
-    expect(commandText).not.toContain('crictl pull');
-    expect(commandText).not.toContain('buildx imagetools inspect');
+    expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
+    expect(commandText).toContain(`docker buildx imagetools inspect localhost:5001/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(true);
+  });
+
+  it('fails image preflight despite ready image handoff readiness when rendered image refs are mutable', async () => {
+    const root = tempDir('local-kind-ready-mutable-image-handoff-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeMutableLocalKindImageSiteEnv(root);
+    const calls: CommandCall[] = [];
+    const readinessEnv = createReadyLocalKindImageImportEnv({ root, siteEnvPath });
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: {
+        ...readinessEnv,
+        KUBECONFIG: kubeconfigPath,
+      },
+      homeDir: root,
+      siteEnvPath,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'image-preflight:kind-registry:5000/mbos/agentsmith-app:local-kind-dev',
+        message: expect.stringContaining('local-kind image handoff must use immutable'),
+      }),
+    ]));
+    expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(false);
   });
 
   it('fails before apply when the local-kind handoff still uses mutable tags', async () => {

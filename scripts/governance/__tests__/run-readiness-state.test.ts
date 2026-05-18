@@ -6,8 +6,10 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV,
   READINESS_STATE_ENV,
   buildReadinessStatePath,
+  buildRunReadinessCampaignOrchestratorEnv,
   createRunReadinessState,
   ensureRunReadinessState,
   updateRunReadinessStateField,
@@ -237,6 +239,72 @@ describe('run-local readiness state', () => {
     });
   });
 
+  it('allows only the release campaign orchestrator handoff env to restore parent write access', () => {
+    withTempRoot((root) => {
+      const input = {
+        campaign_root: root,
+        run_id: 'release-run-orchestrator-writer',
+      };
+      const baseEnv = {
+        NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+      };
+      const context = createRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-orchestrator-writer',
+        input,
+        env: baseEnv,
+        invocationId: 'orchestrator-writer-invocation',
+        processNonce: 'orchestrator-writer-process-nonce',
+      });
+
+      const orchestratorEnv = buildRunReadinessCampaignOrchestratorEnv({
+        statePath: context.statePath,
+        state: context.state,
+        writerToken: context.writerToken,
+      });
+      expect(orchestratorEnv[READINESS_STATE_ENV.path]).toBe(context.statePath);
+      expect(orchestratorEnv[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBe(context.writerToken);
+
+      const restored = ensureRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-orchestrator-writer',
+        input,
+        env: {
+          ...baseEnv,
+          ...orchestratorEnv,
+        },
+      });
+      expect(restored.writerToken).toBe(context.writerToken);
+      expect(JSON.stringify(restored.env)).not.toContain(context.writerToken);
+
+      updateRunReadinessStateField({
+        statePath: restored.statePath,
+        invocationId: restored.state.invocation_id,
+        processNonce: restored.state.process_nonce,
+        inputDigest: restored.state.input_digest,
+        envDigest: restored.state.env_digest.digest,
+        gitSha: restored.state.git_sha,
+        writerToken: restored.writerToken,
+        field: 'integration_deps_ready',
+        status: 'ready',
+      });
+
+      expect(() => ensureRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-orchestrator-writer',
+        input,
+        env: {
+          ...baseEnv,
+          ...context.env,
+          [RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]: 'writer-wrong-token',
+        },
+      })).toThrow(/parent writer token mismatch/);
+    });
+  });
+
   it('lets the parent writer mark integration deps ready and exposes a read-only CLI check', () => {
     withTempRoot((root) => {
       const context = createRunReadinessState({
@@ -445,6 +513,103 @@ describe('run-local readiness state', () => {
       expect(raw).toContain('runner_image_digest_prepared');
       expect(raw).toContain('runner_image_id');
       expect(raw).not.toContain('PRESET_ENDPOINT_API_KEY');
+    });
+  });
+
+  it('requires the complete local-kind image handoff identity before reuse', () => {
+    withTempRoot((root) => {
+      const context = createRunReadinessState({
+        scope: 'release',
+        root,
+        gitSha: 'git-sha-local-kind-identity',
+        input: {
+          campaign_root: root,
+          run_id: 'release-run-local-kind-identity',
+        },
+        env: {
+          NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
+        },
+        invocationId: 'local-kind-identity-invocation',
+        processNonce: 'local-kind-identity-process-nonce',
+      });
+
+      updateRunReadinessStateField({
+        statePath: context.statePath,
+        invocationId: context.state.invocation_id,
+        processNonce: context.state.process_nonce,
+        inputDigest: context.state.input_digest,
+        envDigest: context.state.env_digest.digest,
+        gitSha: context.state.git_sha,
+        writerToken: context.writerToken,
+        field: 'local_kind_image_import_completed',
+        status: 'ready',
+        identity: {
+          local_kind_context: 'kind-agentsmith',
+          local_kind_cluster_uid: 'cluster-uid-local-kind',
+          local_kind_site_env_digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        },
+      });
+
+      const baseEnv = {
+        ...process.env,
+        ...context.env,
+      };
+      const exactIdentity = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'local_kind_image_import_completed',
+        '--identity',
+        'local_kind_context=kind-agentsmith',
+        '--identity',
+        'local_kind_cluster_uid=cluster-uid-local-kind',
+        '--identity',
+        'local_kind_site_env_digest=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      ], {
+        cwd: process.cwd(),
+        env: baseEnv,
+        encoding: 'utf8',
+      });
+      expect(exactIdentity.status).toBe(0);
+
+      const missingSiteEnvDigest = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'local_kind_image_import_completed',
+        '--identity',
+        'local_kind_context=kind-agentsmith',
+        '--identity',
+        'local_kind_cluster_uid=cluster-uid-local-kind',
+      ], {
+        cwd: process.cwd(),
+        env: baseEnv,
+        encoding: 'utf8',
+      });
+      expect(missingSiteEnvDigest.status).toBe(1);
+
+      const runnerImageIdentity = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-readiness-state.ts',
+        'check',
+        '--field',
+        'local_kind_image_import_completed',
+        '--identity',
+        'local_kind_context=kind-agentsmith',
+        '--identity',
+        'local_kind_cluster_uid=cluster-uid-local-kind',
+        '--identity',
+        'runner_image_ref=agentsmith-agent-task-runner:local',
+        '--identity',
+        'runner_image_id=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ], {
+        cwd: process.cwd(),
+        env: baseEnv,
+        encoding: 'utf8',
+      });
+      expect(runnerImageIdentity.status).toBe(1);
     });
   });
 

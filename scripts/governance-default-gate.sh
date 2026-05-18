@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 SKIP_SHARED_PREFLIGHT=0
 SKIP_FOCUSED_VISUAL="${GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}"
+GOVERNANCE_FOCUSED_VISUAL_EXPECTED_SET='alerts-notifications-tab:default,drawer-audit-detail:default,members-effective-access-drawer:default,members:dark,members:light,resource-policy:dark,resource-policy:light'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,11 +79,16 @@ run_cmd "bash scripts/run-mock-lane-playwright.sh \
 if [[ "${SKIP_FOCUSED_VISUAL}" == "1" ]]; then
   info "skipping governance focused visual mock lane; full visual evidence is owned by lane:visual"
 else
-  run_cmd "bash scripts/run-mock-lane-playwright.sh \
-    e2e/visual.spec.ts \
-    --project=visual \
-    --workers=1 \
-    --grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'"
+  info "running governance focused visual mock lane"
+  (
+    cd "${ROOT_DIR}"
+    bash scripts/run-mock-lane-playwright.sh \
+      e2e/visual.spec.ts \
+      --project=visual \
+      --workers=1 \
+      --focused-visual-expected-set "${GOVERNANCE_FOCUSED_VISUAL_EXPECTED_SET}" \
+      --grep 'Visual - Story Catalog Scenes.*(governance_pages / members |overlay_drawers / members-effective-access-drawer|governance_pages / resource-policy|overlay_drawers / drawer-audit-detail|overlay_drawers / alerts-notifications-tab)'
+  )
 fi
 
 info "governance default gate passed"

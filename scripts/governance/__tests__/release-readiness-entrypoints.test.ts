@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -15,8 +16,11 @@ import {
   createReleaseCleanupFinalizer,
 } from '../release-cleanup-finalizer';
 import { runReleaseReady } from '../release-ready';
+import { runReleaseCampaignExecution } from '../release-campaign-execution';
 import {
+  RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV,
   READINESS_STATE_ENV,
+  resolveReadinessGitSha,
   validateRunReadinessStateForConsumer,
 } from '../run-readiness-state';
 import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
@@ -49,6 +53,10 @@ const SENTINEL_PASS_ENV = {
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 type PrecheckOperationStatus = 'reused' | 'started';
@@ -293,20 +301,6 @@ function passingGitGuard() {
   return {
     ok: true as const,
     headSha: VALID_RELEASE_READY_GIT_SHA,
-  };
-}
-
-function passingReusableResourceReadiness() {
-  return {
-    runnerImage: {
-      imageRef: 'agentsmith-agent-task-runner:local',
-      imageId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    },
-    localKind: {
-      context: 'kind-agentsmith',
-      clusterUid: 'cluster-uid-release-ready',
-      controlPlaneContainerId: 'kind-control-plane-container',
-    },
   };
 }
 
@@ -813,17 +807,6 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
-        reusableResourceReadiness: () => ({
-          runnerImage: {
-            imageRef: 'agentsmith-agent-task-runner:local',
-            imageId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          },
-          localKind: {
-            context: 'kind-agentsmith',
-            clusterUid: 'cluster-uid-release-ready',
-            controlPlaneContainerId: 'kind-control-plane-container',
-          },
-        }),
       });
 
       expect(exitCode).toBe(9);
@@ -914,7 +897,6 @@ exit 0
             return passingSentinelResult();
           },
           ownerPreflight: passingOwnerPreflight,
-          reusableResourceReadiness: passingReusableResourceReadiness,
         });
 
         const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -1148,7 +1130,6 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
-        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -1192,7 +1173,6 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
-        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       const combinedOutput = `${stdout.join('')}\n${stderr.join('')}`;
@@ -1355,7 +1335,6 @@ exit 0
           },
           sentinelRunner: () => passingSentinelResult(),
           ownerPreflight: passingOwnerPreflight,
-          reusableResourceReadiness: passingReusableResourceReadiness,
         });
 
         expect(exitCode, testCase.label).toBe(7);
@@ -1380,10 +1359,84 @@ exit 0
           real_services_started: 'ready',
           api_web_started: 'ready',
         });
+        expect(readinessValidation.state.readiness.integration_deps_ready).toBe('unknown');
         expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('sk-test');
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('does not mark runner image digest ready from a local Docker tag without producer evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-runner-image-no-evidence-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-fake-docker-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const campaignEnvs: NodeJS.ProcessEnv[] = [];
+    try {
+      const dockerPath = join(fakeBin, 'docker');
+      writeFileSync(dockerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[ "$1" == "image" && "$2" == "inspect" ]]; then',
+        '  printf "%s\\n" "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"',
+        '  exit 0',
+        'fi',
+        'exit 1',
+        '',
+      ].join('\n'));
+      chmodSync(dockerPath, 0o755);
+      const kubectlPath = join(fakeBin, 'kubectl');
+      writeFileSync(kubectlPath, '#!/usr/bin/env bash\nexit 1\n');
+      chmodSync(kubectlPath, 0o755);
+
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: passingGitGuard,
+        runNpmScript: (script, _args, env) => {
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
+          if (script === 'release:campaign:full') {
+            campaignEnvs.push(env);
+            return { status: 7, signal: null };
+          }
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+      });
+
+      expect(exitCode).toBe(7);
+      expect(campaignEnvs).toHaveLength(1);
+      const readinessValidation = validateRunReadinessStateForConsumer({
+        statePath: campaignEnvs[0]?.[READINESS_STATE_ENV.path] ?? '',
+        invocationId: campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId] ?? '',
+        processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
+        inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
+        envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+        gitSha: VALID_RELEASE_READY_GIT_SHA,
+      });
+      expect(readinessValidation).toMatchObject({ ok: true });
+      if (!readinessValidation.ok) {
+        throw new Error(readinessValidation.error);
+      }
+      expect(readinessValidation.state.parent_observations.services).toEqual({
+        real_services_started: 'ready',
+        api_web_started: 'ready',
+      });
+      expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('unknown');
+      expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared).toBeUndefined();
+      expect(`${stdout.join('')}\n${stderr.join('')}`).not.toContain('state/readiness.json');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
     }
   });
 
@@ -1425,7 +1478,6 @@ exit 0
           return passingSentinelResult();
         },
         ownerPreflight: passingOwnerPreflight,
-        reusableResourceReadiness: passingReusableResourceReadiness,
       });
 
       expect(exitCode).toBe(7);
@@ -1461,18 +1513,171 @@ exit 0
       if (!readinessValidation.ok) {
         throw new Error(readinessValidation.error);
       }
-      expect(readinessValidation.state.readiness.integration_deps_ready).toBe('ready');
-      expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('ready');
+      expect(readinessValidation.state.readiness.integration_deps_ready).toBe('unknown');
+      expect(readinessValidation.state.readiness.runner_image_digest_prepared).toBe('unknown');
       expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('unknown');
-      expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared?.values).toMatchObject({
-        runner_image_ref: 'agentsmith-agent-task-runner:local',
-        runner_image_id: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      });
+      expect(readinessValidation.state.readiness_identities?.runner_image_digest_prepared).toBeUndefined();
       expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed).toBeUndefined();
       expect(stdout.join('')).not.toContain('state/readiness.json');
       expect(stderr.join('')).toBe('');
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('hands readiness writing to the release campaign orchestrator for same-run local-kind image import readiness', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-campaign-readiness-handoff-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-campaign-readiness-bin-'));
+    const logPath = join(root, 'npm.log');
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const campaignEnvs: NodeJS.ProcessEnv[] = [];
+    const gitSha = resolveReadinessGitSha(process.cwd());
+    try {
+      const siteEnv = [
+        'AGENTSMITH_APP_IMAGE=kind-registry:5000/mbos/agentsmith-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'AGENTSMITH_MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        '',
+      ].join('\n');
+      mkdirSync(join(root, 'unified-deploy'), { recursive: true });
+      writeFileSync(join(root, 'unified-deploy', 'local-kind-site.env'), siteEnv);
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|writer=%s\\n' "$*" "\${${RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV}:-}" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  mkdir -p "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full"
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json" <<JSON
+{
+  "schema_version": "${CURRENT_GATE_RESULT_SCHEMA_VERSION}",
+  "gate_id": "gate-release-full",
+  "gate_adapter": { "npm_script": "gate:release:full", "ci_job": null },
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "line_kind": "release_full_verdict",
+  "evidence_dir": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full",
+  "summary": "Release-ready handoff campaign passed.",
+  "generated_at": "2026-04-25T12:00:00.000Z"
+}
+JSON
+fi
+exit 0
+`);
+      writeFileSync(join(fakeBin, 'kubectl'), [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[ "$1" == "config" && "$2" == "current-context" ]]; then',
+        '  printf "kind-agentsmith\\n"',
+        '  exit 0',
+        'fi',
+        'if [[ "$1" == "get" && "$2" == "namespace" && "$3" == "kube-system" ]]; then',
+        '  printf "cluster-uid-release-ready-campaign\\n"',
+        '  exit 0',
+        'fi',
+        'exit 1',
+        '',
+      ].join('\n'));
+      chmodSync(join(fakeBin, 'kubectl'), 0o755);
+
+      const exitCode = runReleaseReady([], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: gitSha,
+        }),
+        runNpmScript: (script, _args, env) => {
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
+          if (script === 'release:campaign:full') {
+            campaignEnvs.push(env);
+            const result = runReleaseCampaignExecution({
+              campaign: {
+                id: 'release-full',
+                description: 'minimal release-ready readiness handoff campaign',
+                runRootPattern: '<tmp>',
+                steps: [
+                  {
+                    id: 'lane-unified-deploy-local-kind-images',
+                    gateId: 'lane-unified-deploy-local-kind-images',
+                    npmScript: 'lane:unified-deploy:local-kind:images',
+                    command: 'npm run lane:unified-deploy:local-kind:images',
+                    workflowRole: 'evidence_owner',
+                    executionMode: 'execute',
+                    resultRequired: false,
+                    evidenceRequired: false,
+                    lineKind: 'unified_deploy_local_kind_images',
+                    defaultFailureClass: 'infra_setup_failure',
+                    dependsOn: [],
+                    evidenceHints: [],
+                    evidenceChecks: [],
+                  },
+                  {
+                    id: 'gate-release-full',
+                    gateId: 'gate-release-full',
+                    npmScript: 'gate:release:full',
+                    command: 'npm run gate:release:full',
+                    workflowRole: 'terminal_verdict',
+                    executionMode: 'aggregate_only',
+                    resultRequired: false,
+                    evidenceRequired: false,
+                    lineKind: 'release_full_verdict',
+                    defaultFailureClass: 'evidence_missing',
+                    dependsOn: ['lane-unified-deploy-local-kind-images'],
+                    evidenceHints: [],
+                    evidenceChecks: [],
+                  },
+                ],
+              },
+              campaignRoot: root,
+              runId: env.RELEASE_CAMPAIGN_RUN_ID ?? 'release-ready-campaign-readiness-handoff',
+              cwd: process.cwd(),
+              env,
+              stdio: 'pipe',
+            });
+            return { status: result.exitCode, signal: null };
+          }
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(campaignEnvs).toHaveLength(1);
+      expect(campaignEnvs[0]?.[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toMatch(/^writer-/);
+      const readinessValidation = validateRunReadinessStateForConsumer({
+        statePath: campaignEnvs[0]?.[READINESS_STATE_ENV.path] ?? '',
+        invocationId: campaignEnvs[0]?.[READINESS_STATE_ENV.invocationId] ?? '',
+        processNonce: campaignEnvs[0]?.[READINESS_STATE_ENV.processNonce] ?? '',
+        inputDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.inputDigest],
+        envDigest: campaignEnvs[0]?.[READINESS_STATE_ENV.envDigest],
+        gitSha,
+      });
+      expect(readinessValidation).toMatchObject({ ok: true });
+      if (!readinessValidation.ok) {
+        throw new Error(readinessValidation.error);
+      }
+      expect(readinessValidation.state.readiness.local_kind_image_import_completed).toBe('ready');
+      expect(readinessValidation.state.readiness_identities?.local_kind_image_import_completed?.values).toEqual({
+        local_kind_context: 'kind-agentsmith',
+        local_kind_cluster_uid: 'cluster-uid-release-ready-campaign',
+        local_kind_site_env_digest: sha256(siteEnv),
+      });
+      const log = readFileSync(logPath, 'utf8');
+      expect(log).toContain('run lane:unified-deploy:local-kind:images|writer=');
+      expect(log).toContain('run gate:release:full|writer=');
+      expect(log).not.toContain(campaignEnvs[0]?.[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV] ?? 'writer-missing');
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
     }
   });
 

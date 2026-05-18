@@ -218,12 +218,25 @@ const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
 const AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
 const UNIFIED_DEPLOY_UNIT_COMMAND = 'npm run test:unified-deploy:unit';
+export const PUBLIC_RELEASE_READY_COMMAND = 'npm run release:ready';
+const GOVERNED_PR_VERIFY_COMMAND = 'npm run verify -- --goal=pr --run';
+const GOVERNED_VISUAL_VERIFY_COMMAND = 'npm run verify -- --goal=visual --run';
 const GOVERNED_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=real --run';
 const GOVERNED_RELEASE_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=release-real --run';
-const GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> = {
+const PUBLIC_GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> = {
+  'npm run verify:quick': GOVERNED_PR_VERIFY_COMMAND,
+  'npm run verify:default': GOVERNED_PR_VERIFY_COMMAND,
+  'npm run verify:visual': GOVERNED_VISUAL_VERIFY_COMMAND,
   [REAL_VERIFY_COMMAND]: GOVERNED_REAL_VERIFY_COMMAND,
-  [RELEASE_REAL_VERIFY_COMMAND]: GOVERNED_RELEASE_REAL_VERIFY_COMMAND,
+  [RELEASE_REAL_VERIFY_COMMAND]: PUBLIC_RELEASE_READY_COMMAND,
 };
+const PUBLIC_VERIFY_TEXT_REPLACEMENTS: readonly (readonly [string, string])[] = [
+  [GOVERNED_RELEASE_REAL_VERIFY_COMMAND, PUBLIC_RELEASE_READY_COMMAND],
+  ['npm run verify -- --goal=debug --run', GOVERNED_PR_VERIFY_COMMAND],
+  ...Object.entries(PUBLIC_GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS)
+    .sort(([left], [right]) => right.length - left.length)
+    .map(([internalText, publicText]) => [internalText, publicText] as const),
+];
 
 const MANUAL_REVIEW_REASONS = {
   storyMarkdownChanged: 'story markdown changed',
@@ -274,8 +287,41 @@ function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): 
   return MANUAL_REVIEW_REASON_ORDER.filter((reason) => selected.has(reason));
 }
 
-function governedVerifyCommandForInternalAlias(command: string): string {
-  return GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS[command] ?? command;
+export function publicVerifyRunCommandForGoal(goal: VerificationGoal): string {
+  if (goal === 'release-real') {
+    return PUBLIC_RELEASE_READY_COMMAND;
+  }
+  if (goal === 'debug') {
+    return GOVERNED_PR_VERIFY_COMMAND;
+  }
+  return `npm run verify -- --goal=${goal} --run`;
+}
+
+export function sanitizePublicVerificationText(value: string): string {
+  let output = value
+    .split('--goal=<debug|pr|visual|real|release-real>')
+    .join('--goal=<pr|visual|real>');
+  for (const [internalText, publicText] of PUBLIC_VERIFY_TEXT_REPLACEMENTS) {
+    output = output.split(internalText).join(publicText);
+  }
+  return output
+    .replace(/\b--goal=debug\b/g, '--goal=pr')
+    .replace(/\b--goal=release-real\b/g, 'release:ready');
+}
+
+export function publicRecommendedVerificationCommands(commands: readonly string[]): string[] {
+  const rendered: string[] = [];
+  for (const command of commands) {
+    const publicCommand = sanitizePublicVerificationText(command);
+    if (!rendered.includes(publicCommand)) {
+      rendered.push(publicCommand);
+    }
+  }
+  return rendered;
+}
+
+function publicGovernedVerifyCommandForInternalAlias(command: string): string {
+  return sanitizePublicVerificationText(command);
 }
 
 export function verificationRunContractFailure(input: {
@@ -289,7 +335,7 @@ export function verificationRunContractFailure(input: {
   }
 
   if (!input.goalExplicit) {
-    return '--run requires an explicit --goal=<debug|pr|visual|real|release-real>; no verification aliases were executed.';
+    return '--run requires an explicit public --goal=<pr|visual|real>; no internal verification steps were executed.';
   }
 
   const blockedCommands = input.recommendedCommands.filter((command) => (
@@ -300,8 +346,13 @@ export function verificationRunContractFailure(input: {
     return null;
   }
 
-  const blockedGovernedCommands = blockedCommands.map(governedVerifyCommandForInternalAlias);
-  return `--goal=${input.goal} --run cannot execute ${blockedGovernedCommands.join(', ')}; use ${GOVERNED_REAL_VERIFY_COMMAND} for backend-real verification or ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} for the release-real owner diagnostic.`;
+  const publicGoal = input.goal === 'debug' ? 'pr' : input.goal;
+  if (blockedCommands.includes(RELEASE_REAL_VERIFY_COMMAND)) {
+    return `--goal=${publicGoal} --run cannot cover release-owned backend-real changes; use ${PUBLIC_RELEASE_READY_COMMAND}. This verify report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
+  }
+
+  const blockedGovernedCommands = [...new Set(blockedCommands.map(publicGovernedVerifyCommandForInternalAlias))];
+  return `--goal=${publicGoal} --run cannot execute ${blockedGovernedCommands.join(', ')}; use ${GOVERNED_REAL_VERIFY_COMMAND} for backend-real verification.`;
 }
 
 function normalizeRepoPath(value: string): string {
@@ -953,11 +1004,12 @@ function evidenceTemplateForLevel(
 }
 
 function evidenceOwnerForLevel(level: VerificationLevel, context: EvidenceCardBuildContext): string {
-  return evidenceProjectionForLevel({
+  const owner = evidenceProjectionForLevel({
     catalog: context.catalog,
     level,
     releaseRealDiagnostic: releaseRealDiagnosticSelected(context),
   }).owner;
+  return publicGovernedVerifyCommandForInternalAlias(owner);
 }
 
 function evidenceNoteForLevel(level: VerificationLevel): string {
@@ -1055,7 +1107,7 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
   pushUnique(
     accumulator.nextActions,
     goal === 'release-real'
-      ? `Run ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} as a release backend-real owner diagnostic; this report is not release readiness.`
+      ? `Run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`
       : defaultNextAction(levels),
   );
 }
@@ -1106,7 +1158,9 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       mapped = true;
       const releaseRealDiagnosticStoryImpact = releaseRealDiagnosticGoal && isReleaseRealDiagnosticStory(exactStory);
       const levels: readonly VerificationLevel[] = releaseRealDiagnosticStoryImpact ? ['V3'] : levelsForStory(exactStory);
-      const action = 'Manual story review required because canonical story markdown changed; then run the governed verification entrypoint.';
+      const action = releaseRealDiagnosticStoryImpact
+        ? `Manual story review required because canonical story markdown changed; then run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`
+        : 'Manual story review required because canonical story markdown changed; then run the governed verification entrypoint.';
       const surface = `story:${exactStory.storyId}`;
       const impactSource: VerificationStoryImpactSource = {
         changedFile,
@@ -1369,7 +1423,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
-      const action = `Run ${GOVERNED_RELEASE_REAL_VERIFY_COMMAND} as a release backend-real owner diagnostic; this report is not release readiness.`;
+      const action = `Run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
       const surface = 'release-real-owner';
       accumulator.levels.add('V3');
       accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { evaluateFocusedVisualSelection } from './focused-visual-selection';
 
 describe('run-mock-lane-playwright', () => {
   it('stays shell-syntax valid so visual wrapper regressions fail before Playwright starts', () => {
@@ -138,5 +139,109 @@ describe('run-mock-lane-playwright', () => {
     expect(script).not.toContain('"selection": "skipped"');
     expect(selectionCallIndex).toBeGreaterThan(probeIndex);
     expect(startServerIndex).toBeGreaterThan(selectionCallIndex);
+  });
+
+  it('validates focused visual expected scenario/theme sets before empty-selection handling and mock server startup', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+    const focusedValidationIndex = script.indexOf('validate_focused_visual_selection "${PLAYWRIGHT_ARGS[@]}"');
+    const emptySelectionIndex = script.indexOf('handle_empty_playwright_selection "${PLAYWRIGHT_ARGS[@]}"');
+    const startServerIndex = script.indexOf('start_mock_server\nwrite_visual_build_info');
+
+    expect(script).toContain('PLAYWRIGHT_FOCUSED_VISUAL_EXPECTED_SET');
+    expect(script).toContain('PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_EVIDENCE_FILE');
+    expect(script).toContain('--focused-visual-expected-set');
+    expect(script).toContain('scripts/focused-visual-selection.ts');
+    expect(script).toContain('--allow-empty-requested');
+    expect(focusedValidationIndex).toBeGreaterThanOrEqual(0);
+    expect(emptySelectionIndex).toBeGreaterThan(focusedValidationIndex);
+    expect(startServerIndex).toBeGreaterThan(emptySelectionIndex);
+  });
+
+  it('writes focused visual list evidence to the durable focused visual selection artifact dir', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+    const focusedValidationStart = script.indexOf('validate_focused_visual_selection() {');
+    const focusedValidationEnd = script.indexOf('prepare_playwright_args "$@"');
+    const focusedValidationBody = script.slice(focusedValidationStart, focusedValidationEnd);
+
+    expect(script).toContain(
+      'PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG="${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR}/playwright-list.log"',
+    );
+    expect(focusedValidationBody).toContain('mkdir -p "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_DIR}"');
+    expect(focusedValidationBody).toContain(': > "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}"');
+    expect(focusedValidationBody).toContain(') >"${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}" 2>&1');
+    expect(focusedValidationBody).toContain('--list-log "${PLAYWRIGHT_FOCUSED_VISUAL_SELECTION_LIST_LOG}"');
+    expect(focusedValidationBody).not.toContain('--list-log "${PLAYWRIGHT_SELECTION_LIST_LOG}"');
+  });
+
+  it('fails focused visual validation when a non-empty grep selection misses expected scenario/theme entries', () => {
+    const result = evaluateFocusedVisualSelection({
+      expectedSet: [
+        'workspace-home-project-creator:default',
+        'projects-list:default',
+        'workspace-overview:dark',
+        'workspace-overview:light',
+        'overview:dark',
+        'overview:light',
+      ],
+      listExitCode: 0,
+      allowEmptySelectionRequested: false,
+      listOutput: [
+        'Listing tests:',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › project_pages / overview › overview [dark]',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › project_pages / overview › overview [light]',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › workspace_pages / workspace-overview › workspace-overview [dark]',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › workspace_pages / workspace-overview › workspace-overview [light]',
+        'Total: 4 tests in 1 file',
+      ].join('\n'),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.matchedSet.map((entry) => entry.key)).toEqual([
+      'overview:dark',
+      'overview:light',
+      'workspace-overview:dark',
+      'workspace-overview:light',
+    ]);
+    expect(result.missingSet.map((entry) => entry.key)).toEqual([
+      'projects-list:default',
+      'workspace-home-project-creator:default',
+    ]);
+    expect(result.extraSet).toEqual([]);
+  });
+
+  it('fails focused visual validation when grep selects scenarios outside the allowlist', () => {
+    const result = evaluateFocusedVisualSelection({
+      expectedSet: ['members:dark', 'members:light'],
+      listExitCode: 0,
+      allowEmptySelectionRequested: false,
+      listOutput: [
+        'Listing tests:',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › governance_pages / members › members [dark]',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › governance_pages / members › members [light]',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › governance_pages / resource-policy › resource-policy [dark]',
+        'Total: 3 tests in 1 file',
+      ].join('\n'),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.missingSet).toEqual([]);
+    expect(result.extraSet.map((entry) => entry.key)).toEqual(['resource-policy:dark']);
+  });
+
+  it('does not let allow-empty selection bypass focused visual expected-set validation', () => {
+    const result = evaluateFocusedVisualSelection({
+      expectedSet: ['members:dark'],
+      listExitCode: 0,
+      allowEmptySelectionRequested: true,
+      listOutput: [
+        'Listing tests:',
+        '  [visual] › visual.spec.ts:2724:9 › Visual - Story Catalog Scenes › governance_pages / members › members [dark]',
+        'Total: 1 test in 1 file',
+      ].join('\n'),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.reason).toBe('focused_visual_disallows_allow_empty_selection');
+    expect(result.matchedSet.map((entry) => entry.key)).toEqual(['members:dark']);
   });
 });

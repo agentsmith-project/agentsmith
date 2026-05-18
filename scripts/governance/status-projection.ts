@@ -28,6 +28,7 @@ import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
+import { sanitizePublicVerificationText } from './verify-impact-selector';
 import type {
   MinimalLeaseLockSection,
   MinimalLeaseOwnerRef,
@@ -320,26 +321,46 @@ function isCleanRerunCommand(command: string): boolean {
   ].some((pattern) => pattern.test(command));
 }
 
+function publicStatusCommand(command: string): string {
+  return sanitizePublicVerificationText(command);
+}
+
+function renderPublicCommand(value: string): string {
+  return redactProjectionText(publicStatusCommand(value));
+}
+
+function renderPublicFailureText(value: string): string {
+  return redactProjectionText(publicStatusCommand(value))
+    .replace(/\binternal ([a-z0-9 -]+) verification adapter\b/gi, 'internal $1 verification check step')
+    .replace(/\bverification adapter\b/gi, 'verification check step')
+    .replace(/\badapter\b/gi, 'internal check step');
+}
+
+function renderOptionalPublicCommand(value: string | null | undefined): string {
+  return value === null || value === undefined ? '<none>' : renderPublicCommand(value);
+}
+
 export function renderShortFailureProjection(input: ShortFailureProjectionInput): string {
   const lines: string[] = [];
   if (input.readOnlyMessage) {
-    lines.push(`Read-only: ${input.readOnlyMessage}`);
+    lines.push(`Read-only: ${renderPublicFailureText(input.readOnlyMessage)}`);
   }
   if (input.diagnosticOnly) {
     lines.push('Diagnostic only: not a release verdict.');
   }
   lines.push(`Blocker: ${redactProjectionText(input.blocker)}`);
   lines.push(`Stage: ${redactProjectionText(input.stage)}`);
-  lines.push(`Why: ${redactProjectionText(input.why)}`);
+  lines.push(`Why: ${renderPublicFailureText(input.why)}`);
   if (input.fixCommand) {
-    lines.push(`Fix: ${redactProjectionText(input.fixCommand)}`);
+    lines.push(`Fix: ${renderPublicCommand(input.fixCommand)}`);
   } else if (input.inspectCommand) {
-    lines.push(`Inspect: ${redactProjectionText(input.inspectCommand)}`);
+    lines.push(`Inspect: ${renderPublicCommand(input.inspectCommand)}`);
   }
-  if (input.rerunCommand && isCleanRerunCommand(input.rerunCommand)) {
-    lines.push(`Rerun: ${redactProjectionText(input.rerunCommand)}`);
+  const rerunCommand = input.rerunCommand ? publicStatusCommand(input.rerunCommand) : null;
+  if (rerunCommand && isCleanRerunCommand(rerunCommand)) {
+    lines.push(`Rerun: ${redactProjectionText(rerunCommand)}`);
   } else if (input.rerunCommand && !input.fixCommand && !input.inspectCommand) {
-    lines.push(`Inspect: ${redactProjectionText(input.rerunCommand)}`);
+    lines.push(`Inspect: ${renderPublicCommand(input.rerunCommand)}`);
   }
   if (input.evidencePath) {
     lines.push(`Evidence: ${redactProjectionPath(input.evidencePath)}`);
@@ -349,10 +370,6 @@ export function renderShortFailureProjection(input: ShortFailureProjectionInput)
 
 function releaseAggregateResultPath(campaignRoot: string): string {
   return join(resolve(campaignRoot), 'gate-release-full', 'result.json');
-}
-
-function gateResultsRoot(input?: string | null): string {
-  return resolve(input ?? join(process.cwd(), 'artifacts', 'gate-results'));
 }
 
 function aggregateMalformedResult(input: {
@@ -618,7 +635,7 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
     return 'npm run verify -- --goal=visual --run';
   }
   if (owner === 'gate-release') {
-    return 'npm run verify -- --goal=release-real --run';
+    return 'npm run verify -- --goal=real --run';
   }
   if (
     owner === 'lane-unified-deploy-substrate'
@@ -629,7 +646,7 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
     return goal === 'release-ready' ? 'npm run release:ready' : null;
   }
   if (owner === 'gate-fast') {
-    return 'npm run verify -- --goal=debug --run';
+    return 'npm run verify -- --goal=pr --run';
   }
   if (owner === 'gate-default') {
     return 'npm run verify -- --goal=pr --run';
@@ -1186,7 +1203,7 @@ function renderResumeRecommendation(recommendation: CurrentStatusProjectionResum
     `producer_jobs=${recommendation.producer_job_ids.length > 0 ? recommendation.producer_job_ids.join(',') : '<none>'}`,
     `downstream_aggregate=${renderOptional(recommendation.downstream_aggregate_job_id)}`,
     `pointer=${pointer}`,
-    `safe_next=${renderOptional(recommendation.safe_next_command)}`,
+    `safe_next=${renderOptionalPublicCommand(recommendation.safe_next_command)}`,
     `reason=${recommendation.reason_codes.length > 0 ? recommendation.reason_codes.join(',') : '<none>'}`,
     `automatic_rerun=${String(recommendation.automatic_rerun)}`,
     `automatic_skip=${String(recommendation.automatic_skip)}`,
@@ -1290,7 +1307,7 @@ function releaseReadyRerunCommand(projection: CurrentStatusProjection): string |
   if (projection.goal === 'release-ready' && projection.presentation_status !== 'passed') {
     return 'npm run release:ready';
   }
-  return projection.safe_next_command;
+  return projection.safe_next_command ? publicStatusCommand(projection.safe_next_command) : null;
 }
 
 function primaryEvidencePath(projection: CurrentStatusProjection): string | null {
@@ -1351,13 +1368,6 @@ function renderCompactLeaseShadow(projection: CurrentStatusProjection): string {
   return `Lease shadow: active_run=${activeRun}; ${lockStates}`;
 }
 
-function renderProjectionAuthority(projection: CurrentStatusProjection): string {
-  if (projection.aggregate_status_ref) {
-    return renderAggregateStatusRef(projection.aggregate_status_ref);
-  }
-  return renderOptionalPath(primaryEvidencePath(projection));
-}
-
 export function renderStatusProjectionSummary(projection: CurrentStatusProjection): string {
   const blocker = renderProjectionBlocker(projection, { humanSummary: true });
   const evidenceRoot = releaseEvidenceRootForProjection(projection) ?? primaryEvidencePath(projection);
@@ -1370,7 +1380,7 @@ export function renderStatusProjectionSummary(projection: CurrentStatusProjectio
     `Evidence: ${renderOptionalPath(evidenceRoot)}`,
     ...renderRunObservabilityLines(projection.run_observability),
     ...renderDeployCheckLines(projection.deploy_check_snapshot),
-    `Next: ${renderOptional(releaseReadyRerunCommand(projection))}`,
+    `Next: ${renderOptionalPublicCommand(releaseReadyRerunCommand(projection))}`,
     renderCompactLeaseShadow(projection),
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
     '',
@@ -1392,8 +1402,8 @@ export function renderStatusProjection(projection: CurrentStatusProjection): str
     `Presentation status: ${projection.presentation_status}`,
     `Primary blocker: ${renderPrimaryBlocker(projection.primary_blocker)}`,
     `Deepest reason: ${renderDeepestReason(projection.deepest_reason)}`,
-    `Next action: ${renderOptional(projection.safe_next_command)}`,
-    `Safe action: ${renderOptional(projection.safe_next_command)}`,
+    `Next action: ${renderOptionalPublicCommand(projection.safe_next_command)}`,
+    `Safe action: ${renderOptionalPublicCommand(projection.safe_next_command)}`,
     `Diagnostic context: ${renderResumeRecommendation(projection.resume_recommendation)}`,
     `Recovery: ${renderOptional(projection.destructive_recovery_command)}`,
     `Freshness: current_git_sha=${renderOptional(projection.current_git_sha)}; evidence_git_sha=${renderOptional(projection.evidence_git_sha)}; run_age_seconds=${renderOptional(projection.run_age_seconds)}`,

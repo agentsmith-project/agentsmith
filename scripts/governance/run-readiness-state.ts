@@ -14,6 +14,9 @@ export const READINESS_STATE_ENV = {
   gitSha: 'AGENTSMITH_READINESS_GIT_SHA',
 } as const;
 
+export const RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV =
+  'AGENTSMITH_RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN';
+
 const READINESS_ENV_DIGEST_ALLOWLIST = [
   'CI',
   'GITHUB_BASE_REF',
@@ -39,6 +42,18 @@ const RUN_READINESS_FIELDS = [
   'afscp_image_digest_prepared',
   'local_kind_image_import_completed',
 ] as const satisfies readonly RunReadinessField[];
+
+const RUN_READINESS_FIELD_REQUIRED_IDENTITY_KEYS: Partial<Record<RunReadinessField, readonly string[]>> = {
+  runner_image_digest_prepared: [
+    'runner_image_ref',
+    'runner_image_id',
+  ],
+  local_kind_image_import_completed: [
+    'local_kind_context',
+    'local_kind_cluster_uid',
+    'local_kind_site_env_digest',
+  ],
+};
 
 export interface RunReadinessEnvDigestEntry {
   name: string;
@@ -223,6 +238,24 @@ export function buildRunReadinessChildEnv(input: {
     [READINESS_STATE_ENV.inputDigest]: input.state.input_digest,
     [READINESS_STATE_ENV.envDigest]: input.state.env_digest.digest,
     [READINESS_STATE_ENV.gitSha]: input.state.git_sha,
+  };
+}
+
+export function buildRunReadinessCampaignOrchestratorEnv(input: {
+  statePath: string;
+  state: RunReadinessState;
+  writerToken?: string;
+}): NodeJS.ProcessEnv {
+  assertParentWriterToken({
+    state: input.state,
+    writerToken: input.writerToken,
+  });
+  return {
+    ...buildRunReadinessChildEnv({
+      statePath: input.statePath,
+      state: input.state,
+    }),
+    [RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]: input.writerToken,
   };
 }
 
@@ -581,6 +614,13 @@ export function ensureRunReadinessState(input: CreateRunReadinessStateInput): Ru
     if (!validation.ok) {
       throw new Error(`readiness state validation failed: ${validation.error}`);
     }
+    const writerToken = input.env[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]?.trim();
+    if (writerToken) {
+      assertParentWriterToken({
+        state: validation.state,
+        writerToken,
+      });
+    }
     return {
       statePath: existingStatePath,
       state: validation.state,
@@ -588,6 +628,7 @@ export function ensureRunReadinessState(input: CreateRunReadinessStateInput): Ru
         statePath: existingStatePath,
         state: validation.state,
       }),
+      ...(writerToken ? { writerToken } : {}),
     };
   }
 
@@ -655,15 +696,47 @@ function readinessIdentityMatches(
   field: RunReadinessField,
   identities: Record<string, string>,
 ): boolean {
-  const entries = Object.entries(identities);
-  if (entries.length === 0) {
-    return true;
+  return runReadinessFieldIdentityMatches({
+    state,
+    field,
+    identities,
+  });
+}
+
+function sortedIdentityKeys(values: Record<string, string>): readonly string[] {
+  return Object.keys(values).sort((left, right) => left.localeCompare(right));
+}
+
+function identityKeysEqual(values: Record<string, string>, expectedKeys: readonly string[]): boolean {
+  const actualKeys = sortedIdentityKeys(values);
+  const sortedExpectedKeys = [...expectedKeys].sort((left, right) => left.localeCompare(right));
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === sortedExpectedKeys[index]);
+}
+
+export function runReadinessFieldIdentityMatches(input: {
+  state: RunReadinessState;
+  field: RunReadinessField;
+  identities: Record<string, string>;
+}): boolean {
+  const requiredKeys = RUN_READINESS_FIELD_REQUIRED_IDENTITY_KEYS[input.field];
+  const requestedEntries = Object.entries(input.identities);
+  if (!requiredKeys) {
+    if (requestedEntries.length === 0) {
+      return true;
+    }
+    const stored = input.state.readiness_identities?.[input.field]?.values;
+    return Boolean(stored && requestedEntries.every(([key, value]) => stored[key] === value));
   }
-  const stored = state.readiness_identities?.[field]?.values;
-  if (!stored) {
+
+  if (!identityKeysEqual(input.identities, requiredKeys)) {
     return false;
   }
-  return entries.every(([key, value]) => stored[key] === value);
+  const stored = input.state.readiness_identities?.[input.field]?.values;
+  if (!stored || !identityKeysEqual(stored, requiredKeys)) {
+    return false;
+  }
+  return requiredKeys.every((key) => stored[key] === input.identities[key]);
 }
 
 function runReadinessStateCli(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): number {

@@ -229,9 +229,10 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
     expect(plan.requiredEvidence).toEqual(['backend-real ux_trace_bundle evidence']);
-    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not release readiness');
+    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
     expect(plan.releaseVerdict).toBe(false);
   });
 
@@ -676,7 +677,9 @@ describe('verify impact selector', () => {
 
     expect(plan.mode).toBe('run');
     expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-    expect(plan.riskSummary.warnings.join('\n')).toContain('--run requires an explicit --goal');
+    expect(plan.riskSummary.warnings.join('\n')).toContain('--run requires an explicit public --goal=<pr|visual|real>');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('--goal=debug');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('--goal=release-real');
     expect(plan.releaseVerdict).toBe(false);
   });
 
@@ -692,9 +695,10 @@ describe('verify impact selector', () => {
 
       expect(plan.recommendedCommands).toContain('npm run verify:real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify -- --goal=real --run`);
+      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal === 'debug' ? 'pr' : goal} --run cannot execute npm run verify -- --goal=real --run`);
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:real');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('--goal=debug');
       expect(plan.releaseVerdict).toBe(false);
     },
   );
@@ -714,7 +718,7 @@ describe('verify impact selector', () => {
   });
 
   it.each(['debug', 'pr', 'visual'] as const)(
-    'blocks implicit release-real diagnostic execution for %s run goal',
+    'blocks implicit release-real owner execution for %s run goal with release-ready guidance',
     (goal) => {
       const plan = buildVerificationPlan({
         goal,
@@ -724,9 +728,11 @@ describe('verify impact selector', () => {
       });
 
       expect(plan.recommendedCommands).toContain('npm run verify:release-real');
+      expect(plan.recommendedCommands).not.toContain('npm run verify:real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-      expect(plan.riskSummary.warnings.join('\n')).toContain(`--goal=${goal} --run cannot execute npm run verify -- --goal=release-real --run`);
-      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:real');
+      expect(plan.riskSummary.warnings.join('\n')).toContain('cannot cover release-owned backend-real changes');
+      expect(plan.riskSummary.warnings.join('\n')).toContain('npm run release:ready');
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify -- --goal=release-real --run');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
       expect(plan.releaseVerdict).toBe(false);
     },
@@ -744,9 +750,10 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
     expect(plan.releaseVerdict).toBe(false);
-    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not release readiness');
+    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
   });
 
   it('carries trace spec story binding sources into the acceptance report projection', () => {
@@ -1075,19 +1082,25 @@ describe('verify impact selector', () => {
     });
   });
 
-  it('maps backend-real full gate to the release-real owner diagnostic instead of V4 release closure', () => {
+  it('maps backend-real full gate to release-ready publicly instead of downgrading to core real', () => {
     const plan = buildVerificationPlan({
       changedFiles: ['scripts/backend-real-full-gate.sh'],
     });
+    const report = buildStoryAcceptanceReport(plan, '/tmp/report-root');
 
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
     expect(plan.affectedSurfaces).toEqual(['release-real-owner']);
     expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-real-owner');
     expect(plan.affectedStories.join('\n')).not.toContain('No changed files provided or detected');
-    expect(plan.nextAction).toContain('npm run verify -- --goal=release-real --run');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not release readiness');
+    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
+    expect(report.recommended_commands).toEqual(['npm run release:ready']);
+    expect(JSON.stringify(report)).not.toContain('npm run verify:');
+    expect(JSON.stringify(report)).not.toContain('--goal=release-real');
+    expect(JSON.stringify(report)).not.toContain('--goal=debug');
     expect(plan.releaseVerdict).toBe(false);
   });
 
@@ -1211,7 +1224,7 @@ describe('verify impact selector', () => {
         artifact_path_template_reason: null,
       });
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')).toMatchObject({
-        owner: 'npm run verify -- --goal=debug --run',
+        owner: 'npm run verify -- --goal=pr --run',
         artifact_path_template: null,
       });
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')?.artifact_path_template_reason)
@@ -1221,7 +1234,7 @@ describe('verify impact selector', () => {
           kind: 'missing_catalog_mapping',
           story_id: 'mock-lane-chat-operate-and-recover',
           level: 'V0',
-          owner: 'npm run verify -- --goal=debug --run',
+          owner: 'npm run verify -- --goal=pr --run',
           status: 'not_evaluated',
           artifact_path_template_reason: expect.stringContaining('No registered current gate result writer for gate-fast'),
           next_action: expect.stringContaining('Register the current gate result writer artifact_path_template mapping for V0'),

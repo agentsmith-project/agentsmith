@@ -182,6 +182,14 @@ reuse_gate_fast_evidence() {
   }
 }
 
+skip_workspace_project_focused_visual() {
+  [[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}" == "1" ]]
+}
+
+skip_governance_focused_visual() {
+  [[ "${DEFAULT_GATE_PROFILE}" == "campaign_after_gate_fast" ]] || [[ "${GOVERNANCE_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}" == "1" ]]
+}
+
 case "${DEFAULT_GATE_PROFILE}" in
   standalone|fast|campaign_after_gate_fast)
     ;;
@@ -213,12 +221,17 @@ if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then
   exit 0
 fi
 
-if reuse_gate_fast_evidence; then
-  run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight --skip-focused-visual"
-  run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight --skip-focused-visual"
-else
-  run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"
-  run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight"
+workspace_project_default_gate_command="bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"
+if skip_workspace_project_focused_visual; then
+  workspace_project_default_gate_command="${workspace_project_default_gate_command} --skip-focused-visual"
 fi
+
+governance_default_gate_command="bash scripts/governance-default-gate.sh --skip-shared-preflight"
+if skip_governance_focused_visual; then
+  governance_default_gate_command="${governance_default_gate_command} --skip-focused-visual"
+fi
+
+run_cmd "${workspace_project_default_gate_command}"
+run_cmd "${governance_default_gate_command}"
 
 info "default engineering gate passed"

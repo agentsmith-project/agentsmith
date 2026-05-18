@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parseFocusedVisualExpectedSet } from './focused-visual-selection';
 
 function readGovernanceGateScript() {
   return readFileSync('scripts/governance-default-gate.sh', 'utf8');
@@ -12,6 +13,14 @@ function extractVisualGrep(script: string) {
     throw new Error('governance default gate visual grep was not found');
   }
   return new RegExp(match[1]);
+}
+
+function extractExpectedSet(script: string): string[] {
+  const match = script.match(/GOVERNANCE_FOCUSED_VISUAL_EXPECTED_SET='([^']+)'/);
+  if (!match) {
+    throw new Error('governance focused visual expected set was not found');
+  }
+  return parseFocusedVisualExpectedSet(match[1]).map((entry) => entry.key);
 }
 
 describe('governance-default-gate', () => {
@@ -27,7 +36,18 @@ describe('governance-default-gate', () => {
     expect(script).toContain('if [[ "${SKIP_FOCUSED_VISUAL}" == "1" ]]; then');
     expect(script).toContain('skipping governance focused visual mock lane; full visual evidence is owned by lane:visual');
     expect(script).toContain('e2e/visual.spec.ts');
-    expect(script).toContain("--grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'");
+    expect(script).toContain('--focused-visual-expected-set "${GOVERNANCE_FOCUSED_VISUAL_EXPECTED_SET}"');
+    expect(script).not.toContain('--allow-empty-selection');
+    expect(extractExpectedSet(script)).toEqual([
+      'alerts-notifications-tab:default',
+      'drawer-audit-detail:default',
+      'members-effective-access-drawer:default',
+      'members:dark',
+      'members:light',
+      'resource-policy:dark',
+      'resource-policy:light',
+    ]);
+    expect(script).toContain("--grep 'Visual - Story Catalog Scenes.*(");
   });
 
   it('keeps the visual grep aligned with current governance visual scene titles', () => {

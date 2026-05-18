@@ -25,9 +25,9 @@ import {
 } from './resource-owner-preflight';
 import { renderShortFailureProjection } from './status-projection';
 import {
+  buildRunReadinessCampaignOrchestratorEnv,
   createRunReadinessState,
   updateRunReadinessStateParentObservations,
-  updateRunReadinessStateField,
 } from './run-readiness-state';
 import {
   createReleaseCleanupFinalizer,
@@ -64,18 +64,6 @@ type ReleaseReadyCleanupContext = {
   gitSha: string;
 };
 
-type ReusableResourceReadiness = {
-  runnerImage?: {
-    imageRef: string;
-    imageId: string;
-  };
-  localKind?: {
-    context: string;
-    clusterUid: string;
-    controlPlaneContainerId?: string;
-  };
-};
-
 type ReleaseReadyDependencies = {
   stdout?: CliWriteStream;
   stderr?: CliWriteStream;
@@ -90,7 +78,6 @@ type ReleaseReadyDependencies = {
   sentinelRunner?: (profile: SentinelProfile, env: NodeJS.ProcessEnv, cwd: string) => SentinelPreflightResult;
   ownerPreflight?: (evidencePath: string, env: NodeJS.ProcessEnv, cwd: string) => ResourceOwnerPreflightResult;
   createCleanupFinalizer?: ((context: ReleaseReadyCleanupContext) => ReleaseCleanupFinalizer) | null;
-  reusableResourceReadiness?: (env: NodeJS.ProcessEnv, cwd: string) => ReusableResourceReadiness;
 };
 
 type ReleasePrecheckOperationStatus = 'reused' | 'started';
@@ -188,21 +175,6 @@ function runGitCommand(cwd: string, args: readonly string[]): {
     status: result.status,
     stdout: typeof result.stdout === 'string' ? result.stdout : '',
     stderr: typeof result.stderr === 'string' ? result.stderr : '',
-  };
-}
-
-function runToolCommand(cwd: string, env: NodeJS.ProcessEnv, command: string, args: readonly string[]): {
-  status: number | null;
-  stdout: string;
-} {
-  const result = spawnSync(command, [...args], {
-    cwd,
-    env,
-    encoding: 'utf8',
-  });
-  return {
-    status: result.status,
-    stdout: typeof result.stdout === 'string' ? result.stdout : '',
   };
 }
 
@@ -402,7 +374,6 @@ export function runReleaseReady(
   const gitCleanGuard = dependencies.gitCleanGuard ?? defaultGitCleanGuard;
   const sentinelRunner = dependencies.sentinelRunner ?? defaultSentinelRunner;
   const ownerPreflight = dependencies.ownerPreflight ?? defaultOwnerPreflight;
-  const reusableResourceReadiness = dependencies.reusableResourceReadiness ?? defaultReusableResourceReadiness;
   const cleanupFinalizerFactory = dependencies.createCleanupFinalizer === undefined
     ? defaultCreateCleanupFinalizer
     : dependencies.createCleanupFinalizer;
@@ -518,17 +489,6 @@ export function runReleaseReady(
       }));
       return exitCode;
     }
-    updateRunReadinessStateField({
-      statePath: readiness.statePath,
-      invocationId: readiness.state.invocation_id,
-      processNonce: readiness.state.process_nonce,
-      inputDigest: readiness.state.input_digest,
-      envDigest: readiness.state.env_digest.digest,
-      gitSha: readiness.state.git_sha,
-      writerToken: readiness.writerToken,
-      field: 'integration_deps_ready',
-      status: 'ready',
-    });
     updateRunReadinessStateParentObservations({
       statePath: readiness.statePath,
       invocationId: readiness.state.invocation_id,
@@ -540,24 +500,6 @@ export function runReleaseReady(
       services: precheckSummary.observations.services,
       counts: precheckSummary.observations.counts,
     });
-    const reusableResources = reusableResourceReadiness(releaseReadyEnv, cwd);
-    if (reusableResources.runnerImage) {
-      updateRunReadinessStateField({
-        statePath: readiness.statePath,
-        invocationId: readiness.state.invocation_id,
-        processNonce: readiness.state.process_nonce,
-        inputDigest: readiness.state.input_digest,
-        envDigest: readiness.state.env_digest.digest,
-        gitSha: readiness.state.git_sha,
-        writerToken: readiness.writerToken,
-        field: 'runner_image_digest_prepared',
-        status: 'ready',
-        identity: {
-          runner_image_ref: reusableResources.runnerImage.imageRef,
-          runner_image_id: reusableResources.runnerImage.imageId,
-        },
-      });
-    }
     let sentinelResult: SentinelPreflightResult;
     try {
       sentinelResult = sentinelRunner('release-ready', releaseReadyEnv, cwd);
@@ -585,6 +527,11 @@ export function runReleaseReady(
 
     const campaignEnv = {
       ...releaseReadyEnv,
+      ...buildRunReadinessCampaignOrchestratorEnv({
+        statePath: readiness.statePath,
+        state: readiness.state,
+        writerToken: readiness.writerToken,
+      }),
     };
 
     const campaign = runNpmScript('release:campaign:full', argv, campaignEnv);
@@ -670,52 +617,6 @@ function defaultOwnerPreflight(
     env,
     cwd,
   });
-}
-
-function defaultRunnerImageRef(env: NodeJS.ProcessEnv): string {
-  return env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim()
-    || env.INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE?.trim()
-    || 'agentsmith-agent-task-runner:local';
-}
-
-function defaultReusableResourceReadiness(env: NodeJS.ProcessEnv, cwd: string): ReusableResourceReadiness {
-  const readiness: ReusableResourceReadiness = {};
-  const imageRef = defaultRunnerImageRef(env);
-  const image = runToolCommand(cwd, env, 'docker', ['image', 'inspect', '--format', '{{.Id}}', imageRef]);
-  const imageId = firstLine(image.stdout);
-  if (image.status === 0 && /^sha256:[a-f0-9]{64}$/iu.test(imageId)) {
-    readiness.runnerImage = {
-      imageRef,
-      imageId: imageId.toLowerCase(),
-    };
-  }
-
-  const context = firstLine(runToolCommand(cwd, env, 'kubectl', ['config', 'current-context']).stdout);
-  if (context.startsWith('kind-')) {
-    const clusterUid = firstLine(runToolCommand(cwd, env, 'kubectl', [
-      'get',
-      'namespace',
-      'kube-system',
-      '-o',
-      'jsonpath={.metadata.uid}',
-    ]).stdout);
-    if (clusterUid) {
-      const controlPlane = `${context.slice('kind-'.length)}-control-plane`;
-      const controlPlaneContainerId = firstLine(runToolCommand(cwd, env, 'docker', [
-        'inspect',
-        '--format',
-        '{{.Id}}',
-        controlPlane,
-      ]).stdout);
-      readiness.localKind = {
-        context,
-        clusterUid,
-        ...(controlPlaneContainerId ? { controlPlaneContainerId } : {}),
-      };
-    }
-  }
-
-  return readiness;
 }
 
 if (isCliEntrypoint('release-ready.ts')) {

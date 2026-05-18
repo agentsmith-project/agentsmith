@@ -1,7 +1,8 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -14,13 +15,16 @@ import {
   writeCampaignGateResult,
 } from '../release-campaign-io';
 import {
+  buildReleaseCampaignAggregateEnv,
   buildReleaseCampaignCommandEnv,
   buildReleaseCampaignRuntimeLeaseRequests,
+  runReleaseCampaignExecution,
 } from '../release-campaign-execution';
 import {
   readReleaseStatus,
 } from '../release-summary';
 import {
+  RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV,
   validateRunReadinessStateForConsumer,
 } from '../run-readiness-state';
 
@@ -55,6 +59,10 @@ function writeFakeNpm(dir: string, script: string): string {
   writeFileSync(path, script);
   chmodSync(path, 0o755);
   return path;
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function runReleaseCampaignWithFakeNpm(
@@ -419,23 +427,27 @@ exit 0
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-env-'));
     try {
       const runId = 'release-env-equivalence-test';
+      const baseEnvWithParentOnlyWriter = {
+        [RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]: 'writer-parent-only-secret',
+      };
 
       const gateDefault = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
         step: releaseFullStep('gate-default'),
-        baseEnv: {},
+        baseEnv: baseEnvWithParentOnlyWriter,
       });
       expect(gateDefault.DEFAULT_GATE_PROFILE).toBe('campaign_after_gate_fast');
       expect(gateDefault.DEFAULT_GATE_REUSE_FAST_EVIDENCE).toBe('1');
       expect(gateDefault.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
       expect(gateDefault.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
+      expect(gateDefault[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
 
       const visual = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
         step: releaseFullStep('lane-visual'),
-        baseEnv: {},
+        baseEnv: baseEnvWithParentOnlyWriter,
       });
       expect(visual.MOCK_RUN_ID).toBe(runId);
       expect(visual.VISUAL_BASELINE_REVIEW_ROOT).toBe(join(root, 'lane-visual', 'visual-baseline-reviews'));
@@ -443,12 +455,13 @@ exit 0
       expect(visual.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:visual');
       expect(visual.CURRENT_GATE_RESULT_LINE_KIND).toBe('visual');
       expect(visual.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-visual', 'native'));
+      expect(visual[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
 
       const release = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
         step: releaseFullStep('gate-release'),
-        baseEnv: {},
+        baseEnv: baseEnvWithParentOnlyWriter,
       });
       expect(release.BACKEND_REAL_REUSE_DEFAULT_GATE_EVIDENCE).toBe('1');
       expect(release.RELEASE_REAL_VISUAL_RUN_ID).toBe(runId);
@@ -459,12 +472,13 @@ exit 0
       expect(release.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:backend-real:release');
       expect(release.CURRENT_GATE_RESULT_LINE_KIND).toBe('release_backend_real');
       expect(release.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'gate-release', 'native'));
+      expect(release[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
 
       const unifiedDeploySubstrate = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
         step: releaseFullStep('lane-unified-deploy-substrate'),
-        baseEnv: {},
+        baseEnv: baseEnvWithParentOnlyWriter,
       });
       expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
       expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
@@ -474,12 +488,13 @@ exit 0
       expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-substrate', 'native'));
       expect(unifiedDeploySubstrate.SCENARIO_RUNTIME_ROOT).toBeUndefined();
       expect(unifiedDeploySubstrate.REHEARSAL_MODE).toBeUndefined();
+      expect(unifiedDeploySubstrate[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
 
       const unifiedDeployProductFlows = buildReleaseCampaignCommandEnv({
         campaignRoot: root,
         runId,
         step: releaseFullStep('lane-unified-deploy-product-flows'),
-        baseEnv: {},
+        baseEnv: baseEnvWithParentOnlyWriter,
       });
       expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
       expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
@@ -487,6 +502,19 @@ exit 0
       expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:unified-deploy:product-flows');
       expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_LINE_KIND).toBe('unified_deploy_product_flows');
       expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-product-flows', 'native'));
+      expect(unifiedDeployProductFlows[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
+
+      const aggregate = buildReleaseCampaignAggregateEnv({
+        campaignRoot: root,
+        runId,
+        baseEnv: {
+          ...baseEnvWithParentOnlyWriter,
+          CURRENT_GATE_RESULT_GATE_ID: 'stale-parent-gate',
+        },
+      });
+      expect(aggregate.RELEASE_CAMPAIGN_RUN_ID).toBe(runId);
+      expect(aggregate.RELEASE_CAMPAIGN_ROOT).toBe(root);
+      expect(aggregate[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -607,6 +635,112 @@ exit 0
         inputDigest: parts.input,
         envDigest: parts.env_digest,
       })).toMatchObject({ ok: true });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('marks local-kind image import readiness with the same site-env identity consumed by rollout', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-local-kind-readiness-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    try {
+      const siteEnv = [
+        'AGENTSMITH_APP_IMAGE=kind-registry:5000/mbos/agentsmith-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'AGENTSMITH_MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        '',
+      ].join('\n');
+      mkdirSync(join(root, 'unified-deploy'), { recursive: true });
+      writeFileSync(join(root, 'unified-deploy', 'local-kind-site.env'), siteEnv);
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+`);
+      writeFileSync(join(fakeBin, 'kubectl'), [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[ "$1" == "config" && "$2" == "current-context" ]]; then',
+        '  printf "kind-agentsmith\\n"',
+        '  exit 0',
+        'fi',
+        'if [[ "$1" == "get" && "$2" == "namespace" && "$3" == "kube-system" ]]; then',
+        '  printf "cluster-uid-campaign-local-kind\\n"',
+        '  exit 0',
+        'fi',
+        'exit 1',
+        '',
+      ].join('\n'));
+      chmodSync(join(fakeBin, 'kubectl'), 0o755);
+      const result = runReleaseCampaignExecution({
+        campaign: {
+          id: 'release-full',
+          description: 'minimal local-kind readiness identity campaign',
+          runRootPattern: '<tmp>',
+          steps: [
+            {
+              id: 'lane-unified-deploy-local-kind-images',
+              gateId: 'lane-unified-deploy-local-kind-images',
+              npmScript: 'lane:unified-deploy:local-kind:images',
+              command: 'npm run lane:unified-deploy:local-kind:images',
+              workflowRole: 'evidence_owner',
+              executionMode: 'execute',
+              resultRequired: false,
+              evidenceRequired: false,
+              lineKind: 'unified_deploy_local_kind_images',
+              defaultFailureClass: 'infra_setup_failure',
+              dependsOn: [],
+              evidenceHints: [],
+              evidenceChecks: [],
+            },
+            {
+              id: 'gate-release-full',
+              gateId: 'gate-release-full',
+              npmScript: 'gate:release:full',
+              command: 'npm run gate:release:full',
+              workflowRole: 'terminal_verdict',
+              executionMode: 'aggregate_only',
+              resultRequired: false,
+              evidenceRequired: false,
+              lineKind: 'release_full_verdict',
+              defaultFailureClass: 'evidence_missing',
+              dependsOn: ['lane-unified-deploy-local-kind-images'],
+              evidenceHints: [],
+              evidenceChecks: [],
+            },
+          ],
+        },
+        campaignRoot: root,
+        runId: 'release-campaign-local-kind-readiness',
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+        writeSummary: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      const statePath = join(root, 'state', 'readiness.json');
+      const readiness = JSON.parse(readFileSync(statePath, 'utf8')) as {
+        readiness: Record<string, string>;
+        readiness_identities: Record<string, { values: Record<string, string> }>;
+        invocation_id: string;
+        process_nonce: string;
+        git_sha: string;
+      };
+      expect(validateRunReadinessStateForConsumer({
+        statePath,
+        invocationId: readiness.invocation_id,
+        processNonce: readiness.process_nonce,
+        gitSha: readiness.git_sha,
+      })).toMatchObject({ ok: true });
+      expect(readiness.readiness.local_kind_image_import_completed).toBe('ready');
+      expect(readiness.readiness_identities.local_kind_image_import_completed.values).toEqual({
+        local_kind_context: 'kind-agentsmith',
+        local_kind_cluster_uid: 'cluster-uid-campaign-local-kind',
+        local_kind_site_env_digest: sha256(siteEnv),
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

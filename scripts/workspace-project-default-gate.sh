@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 WITH_REAL_LANE=0
 SKIP_SHARED_PREFLIGHT=0
 SKIP_FOCUSED_VISUAL="${WORKSPACE_PROJECT_DEFAULT_GATE_SKIP_FOCUSED_VISUAL:-0}"
+WORKSPACE_PROJECT_FOCUSED_VISUAL_EXPECTED_SET='dialog-project-join-now:default,dialog-project-join-request:default,notification-center-join-request:default,overview:dark,overview:light,projects-empty:default,projects-list-public-discovery:default,projects-list:default,workspace-home-project-creator:default,workspace-home:dark,workspace-home:light,workspace-login:dark,workspace-login:light,workspace-overview:dark,workspace-overview:light,workspace-select:dark,workspace-select:light,workspace-settings-create-project:default,workspace-settings:dark,workspace-settings:light'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -112,7 +113,8 @@ else
       e2e/visual.spec.ts \
       --project=visual \
       --workers=1 \
-      --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects list public discovery|project join request dialog|project join now dialog|notification center join request outcome|projects empty state|workspace settings|workspace settings create project dialog|overview'
+      --focused-visual-expected-set "${WORKSPACE_PROJECT_FOCUSED_VISUAL_EXPECTED_SET}" \
+      --grep 'Visual - Story Catalog Scenes.*(public_pages / workspace-select|public_pages / workspace-login|workspace_pages / workspace-home-project-creator|workspace_pages / projects-list |workspace_pages / projects-list-public-discovery|workspace_pages / dialog-project-join-request|workspace_pages / dialog-project-join-now|workspace_pages / notification-center-join-request|workspace_pages / projects-empty|workspace_pages / workspace-settings-create-project|workspace_pages / workspace-overview|workspace_pages / workspace-home |workspace_pages / workspace-settings |project_pages / overview)'
   )
 fi
 

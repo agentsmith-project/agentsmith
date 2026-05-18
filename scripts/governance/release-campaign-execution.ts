@@ -47,6 +47,7 @@ import {
   writeReleaseSummaryForCampaign,
 } from './release-summary';
 import {
+  RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV,
   ensureRunReadinessState,
   resolveReadinessGitSha,
   updateRunReadinessStateField,
@@ -123,6 +124,10 @@ const STEP_SPECIFIC_AGGREGATE_ENV_KEYS = [
 
 const STEP_SPECIFIC_AGGREGATE_ENV_PREFIXES = [
   'CURRENT_GATE_RESULT_',
+] as const;
+
+const RELEASE_CAMPAIGN_ORCHESTRATOR_ONLY_ENV_KEYS = [
+  RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV,
 ] as const;
 
 const RUNTIME_LEASE_CATEGORIES = new Set<CurrentResourceLockCategory>([
@@ -272,6 +277,14 @@ function writeCompletedStep(
   };
 }
 
+function scrubReleaseCampaignOrchestratorOnlyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const scrubbed = { ...env };
+  for (const key of RELEASE_CAMPAIGN_ORCHESTRATOR_ONLY_ENV_KEYS) {
+    delete scrubbed[key];
+  }
+  return scrubbed;
+}
+
 function writeSkippedStep(
   campaignRoot: string,
   step: CurrentVerificationCampaignStep,
@@ -293,11 +306,11 @@ function writeSkippedStep(
 export function buildReleaseCampaignCommandEnv(
   input: BuildReleaseCampaignCommandEnvInput,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
+  const env: NodeJS.ProcessEnv = scrubReleaseCampaignOrchestratorOnlyEnv({
     ...(input.baseEnv ?? process.env),
     RELEASE_CAMPAIGN_RUN_ID: input.runId,
     RELEASE_CAMPAIGN_ROOT: input.campaignRoot,
-  };
+  });
   const nativePath = nativeResultPath(input.campaignRoot, input.step);
 
   if (input.step.nativeResult && nativePath) {
@@ -346,9 +359,9 @@ export function buildReleaseCampaignAggregateEnv(input: {
   runId: string;
   baseEnv?: NodeJS.ProcessEnv;
 }): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
+  const env: NodeJS.ProcessEnv = scrubReleaseCampaignOrchestratorOnlyEnv({
     ...(input.baseEnv ?? process.env),
-  };
+  });
 
   for (const key of Object.keys(env)) {
     if (STEP_SPECIFIC_AGGREGATE_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
@@ -749,10 +762,10 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
     },
     env: campaignIdentityEnv,
   });
-  const campaignExecutionEnv: NodeJS.ProcessEnv = {
+  const campaignExecutionEnv: NodeJS.ProcessEnv = scrubReleaseCampaignOrchestratorOnlyEnv({
     ...campaignIdentityEnv,
     ...readiness.env,
-  };
+  });
   const stepById = new Map(input.campaign.steps.map((step) => [step.id, step]));
   const terminalStep = input.campaign.steps.find((step) => step.executionMode === 'aggregate_only');
   if (!terminalStep) {

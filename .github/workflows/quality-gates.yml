@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
       - name: Run gate-fast
         run: npm run gate:fast
 

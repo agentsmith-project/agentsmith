@@ -1296,6 +1296,33 @@ describe('unified deploy render producer', () => {
     expect(text).toContain('ASBCP must set ASBCP_CONFIG_PATH to the canonical asbcp-config.yaml path');
   });
 
+  it('rejects ASBCP canonical tag-only image refs in rendered Deployment', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+
+    asbcp.image = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.3';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('ASBCP image must be pinned by sha256 digest');
+  });
+
+  it('accepts ASBCP local-kind registry image refs pinned by sha256 digest', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+
+    asbcp.image = `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@sha256:${'a'.repeat(64)}`;
+
+    const failures = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .filter((failure) => failure.message.includes('ASBCP image'));
+
+    expect(failures).toEqual([]);
+  });
+
   it('renders a dedicated ASBCP runtime identity without public PV preflight RBAC', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);

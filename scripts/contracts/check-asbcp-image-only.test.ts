@@ -32,11 +32,12 @@ function fixtureRoot(): string {
   writeFixture(root, 'Makefile', 'ASBCP_INTERNAL_BASE_URL ?= http://127.0.0.1:28080\n');
   writeFixture(root, 'docs/contracts/product-terminology.md', 'AgentSmith app includes ASBCP.\n');
   writeFixture(root, 'docs/contracts/unified-deploy-contract.md', 'ASBCP is an app workload.\n');
-  writeFixture(root, 'docs/user-guides/unified-deploy-operations.md', 'AgentSmith app components include ASBCP.\n');
+  writeFixture(root, 'docs/user-guides/unified-deploy-operations.md', 'Managed task execution is available after deployment.\n');
   writeFixture(root, 'e2e/integration-internal-sandbox-reclaim.spec.ts', 'if (!process.env.ASBCP_INTERNAL_BASE_URL) throw new Error("missing_ASBCP_INTERNAL_BASE_URL");\n');
   writeFixture(root, 'e2e/integration-real-helpers.ts', 'export function deleteInternalWorkloadViaAsbcp() { return process.env.ASBCP_SERVICE_KEY; }\n');
-  writeFixture(root, 'src/components/agent-tasks/TaskPage.tsx', 'export const label = "ASBCP is server managed";\n');
-  writeFixture(root, 'src/messages/en-US.json', '{"agent_tasks":{"asbcp":"Sandbox workload lifecycle service"}}\n');
+  writeFixture(root, 'src/app/api/internal/asbcp/route.ts', 'const base = process.env.ASBCP_INTERNAL_BASE_URL;\n');
+  writeFixture(root, 'src/components/agent-tasks/TaskPage.tsx', 'export const label = "Task execution environment is server managed";\n');
+  writeFixture(root, 'src/messages/en-US.json', '{"agent_tasks":{"execution_environment":"Task execution environment"}}\n');
   writeFixture(root, 'package.json', '{"scripts":{"contracts:check-asbcp-image-only":"tsx scripts/contracts/check-asbcp-image-only.ts"}}\n');
   return root;
 }
@@ -62,11 +63,14 @@ describe('checkAsbcpImageOnly', () => {
     writeFixture(root, 'scripts/unified-deploy/check-local-kind-images.ts', [
       'const source = "../mbos-sandbox-v1/manager-service";',
       'const image = "mbos/sandbox-manager:dev";',
-      'const env = "SANDBOX_MANAGER_IMAGE SANDBOX_SERVICE_KEY";',
+      'const env = "SANDBOX_MANAGER_IMAGE SANDBOX_SERVICE_KEY SANDBOX_SOURCE_DIR";',
+      'const sourceArg = "--sandbox-source-dir";',
+      'const modulePath = "github.com/sandbox/manager";',
     ].join('\n'));
     writeFixture(root, 'infra/deploy/unified/templates/app/workloads.yaml.tpl', [
       'name: agentsmith-sandbox-manager',
       'mountPath: /etc/asbcp/config.yaml',
+      'legacyMountPath: /etc/sandbox-manager/manager-config.yaml',
     ].join('\n'));
     writeFixture(root, 'Makefile', 'SANDBOX_MANAGER_URL ?= http://127.0.0.1:28080\n');
     writeFixture(root, 'docs/contracts/unified-deploy-contract.md', 'sandbox-manager is active.\n');
@@ -84,9 +88,13 @@ describe('checkAsbcpImageOnly', () => {
     expect(text).toContain('legacy local-kind ASBCP image repo');
     expect(text).toContain('legacy ASBCP env prefix');
     expect(text).toContain('legacy ASBCP service key env');
+    expect(text).toContain('legacy ASBCP source dir env');
+    expect(text).toContain('legacy ASBCP source dir flag');
+    expect(text).toContain('legacy ASBCP module path');
     expect(text).toContain('legacy ASBCP Kubernetes identity');
     expect(text).toContain('legacy ASBCP manager command alias');
     expect(text).toContain('legacy ASBCP config path');
+    expect(text).toContain('legacy ASBCP manager config path');
     expect(text).toContain('Makefile:active AgentSmith ASBCP consumer paths');
     expect(text).toContain('docs/contracts/unified-deploy-contract.md:active AgentSmith ASBCP consumer paths');
     expect(text).toContain('docs/user-guides/unified-deploy-operations.md:active AgentSmith ASBCP consumer paths');
@@ -107,6 +115,71 @@ describe('checkAsbcpImageOnly', () => {
 
     expect(text).toContain('public ASBCP browser env');
     expect(text).toContain('ASBCP service key browser/client surface');
+    expect(text).toContain('src/messages/en-US.json:active AgentSmith ASBCP consumer paths');
+  });
+
+  it('rejects legacy sandbox control plane manager source paths and env prefix', () => {
+    const root = fixtureRoot();
+    writeFixture(root, 'scripts/unified-deploy/check-local-kind-images.ts', [
+      'const directManagerPath = "cmd/manager";',
+      'const relativeManagerPath = "./cmd/manager";',
+      'const legacyEnv = "SANDBOX_CONTROL_PLANE_IMAGE";',
+    ].join('\n'));
+
+    const text = checkAsbcpImageOnly({ rootDir: root }).failures
+      .map((failure) => `${failure.path}:${failure.message}`)
+      .join('\n');
+
+    expect(text).toContain('legacy ASBCP manager source command path');
+    expect(text).toContain('legacy ASBCP sandbox control plane env prefix');
+    expect(text).toContain('scripts/unified-deploy/check-local-kind-images.ts:active AgentSmith ASBCP consumer paths');
+  });
+
+  it('rejects legacy ASBCP names in active file paths while preserving negative fixtures', () => {
+    const root = fixtureRoot();
+    writeFixture(root, 'scripts/unified-deploy/sandbox-manager-image.lock', 'image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1.0.0\n');
+    writeFixture(root, 'infra/deploy/unified/templates/app/sandbox-manager-pv-rbac.yaml.tpl', 'kind: Role\n');
+    writeFixture(root, 'scripts/unified-deploy/local-kind-images.test.ts', [
+      'const legacyEnv = "SANDBOX_SOURCE_DIR";',
+      'const legacyArg = "--sandbox-source-dir";',
+      'const legacyModule = "github.com/sandbox/manager";',
+    ].join('\n'));
+
+    const text = checkAsbcpImageOnly({ rootDir: root }).failures
+      .map((failure) => `${failure.path}:${failure.message}`)
+      .join('\n');
+
+    expect(text).toContain('scripts/unified-deploy/sandbox-manager-image.lock:active AgentSmith ASBCP consumer file paths');
+    expect(text).toContain('infra/deploy/unified/templates/app/sandbox-manager-pv-rbac.yaml.tpl:active AgentSmith ASBCP consumer file paths');
+    expect(text).not.toContain('scripts/unified-deploy/local-kind-images.test.ts');
+  });
+
+  it('rejects user-facing ASBCP/internal key and engineering terminology leakage', () => {
+    const root = fixtureRoot();
+    writeFixture(root, 'docs/user-guides/unified-deploy-operations.md', [
+      'ASBCP is unavailable.',
+      'ASBCP_INTERNAL_BASE_URL is not configured.',
+      'ASBCP_SERVICE_KEY is missing.',
+      'The control plane is restarting.',
+      'The workload lifecycle failed.',
+    ].join('\n'));
+    writeFixture(root, 'src/components/agent-tasks/TaskPage.tsx', [
+      'export const title = "ASBCP status";',
+      'export const details = "The control plane cannot complete workload lifecycle checks";',
+    ].join('\n'));
+    writeFixture(root, 'src/messages/en-US.json', '{"agent_tasks":{"asbcp":"ASBCP_SERVICE_KEY missing in control plane"}}\n');
+
+    const text = checkAsbcpImageOnly({ rootDir: root }).failures
+      .map((failure) => `${failure.path}:${failure.message}`)
+      .join('\n');
+
+    expect(text).toContain('user-facing ASBCP term');
+    expect(text).toContain('user-facing ASBCP internal base URL');
+    expect(text).toContain('user-facing ASBCP service key');
+    expect(text).toContain('user-facing control plane terminology');
+    expect(text).toContain('user-facing workload lifecycle terminology');
+    expect(text).toContain('docs/user-guides/unified-deploy-operations.md:active AgentSmith ASBCP consumer paths');
+    expect(text).toContain('src/components/agent-tasks/TaskPage.tsx:active AgentSmith ASBCP consumer paths');
     expect(text).toContain('src/messages/en-US.json:active AgentSmith ASBCP consumer paths');
   });
 });

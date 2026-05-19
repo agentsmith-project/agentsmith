@@ -61,6 +61,8 @@ const API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS = [
 const ASBCP_SERVICE_ACCOUNT = 'agentsmith-sandbox-control-plane';
 const ASBCP_CONFIG_MAP = 'asbcp-config';
 const ASBCP_CONFIG_PATH = '/etc/asbcp/asbcp-config.yaml';
+const ASBCP_IMAGE_REPOSITORY_PATTERN = /(?:^|\/)agentsmith-sandbox-control-plane(?=[:@])/u;
+const IMAGE_SHA256_DIGEST_PATTERN = /@sha256:[a-f0-9]{64}$/iu;
 const LLMUP_CONFIG_MAP = 'agentsmith-llmup-config';
 const LLMUP_CONFIG_PATH = '/app/config/config.yaml';
 const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
@@ -1308,8 +1310,11 @@ function checkAsbcpContract(documents: readonly Record<string, unknown>[], failu
   if (podSpec.serviceAccountName !== ASBCP_SERVICE_ACCOUNT) {
     addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP must use its dedicated ServiceAccount');
   }
-  if (typeof container.image !== 'string' || !/\/agentsmith-sandbox-control-plane(?=[:@])/u.test(container.image)) {
+  const asbcpImage = typeof container.image === 'string' ? container.image : '';
+  if (!ASBCP_IMAGE_REPOSITORY_PATTERN.test(asbcpImage)) {
     addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
+  } else if (!IMAGE_SHA256_DIGEST_PATTERN.test(asbcpImage)) {
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP image must be pinned by sha256 digest');
   }
   if (appConfigData.ASBCP_INTERNAL_BASE_URL !== 'http://agentsmith-sandbox-control-plane:8080') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'ASBCP_INTERNAL_BASE_URL must point to the internal ASBCP Service');

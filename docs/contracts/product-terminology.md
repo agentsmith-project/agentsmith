@@ -219,10 +219,13 @@ current deploy vocabulary.
 - It does not own AgentSmith app workloads or product bootstrap.
 
 6. `AgentSmith app`
-- Kubernetes workload set for `web`, `api`, `llmup`, sandbox-manager, managed
-  runner deployment configuration, and required
+- Kubernetes workload set for `web`, `api`, `llmup`, the internal sandbox
+  execution service (ASBCP), managed runner deployment configuration, and required
   Kubernetes resources.
 - It consumes substrate truth and must not invent dependency addresses.
+- ASBCP is a developer/operator deployment term only. It must not become a
+  visible UI route, user-guide concept, i18n label, system management side, or
+  user access entrypoint.
 
 7. `app-managed llmup`
 - Deployment ownership term.

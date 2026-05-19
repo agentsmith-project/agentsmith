@@ -26,7 +26,7 @@ describe('parseAfscpConfig', () => {
       AFSCP_BOOTSTRAP_SERVICE_TOKEN: ' bootstrap-svc-token ',
       AFSCP_DEFAULT_VOLUME_ID: ' vol_shared ',
       AFSCP_BOOTSTRAP_CALLER_SERVICE: ' agentsmith-bootstrap ',
-      AFSCP_ORCHESTRATOR_CALLER_SERVICE: ' agentsmith-sandbox-manager ',
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE: ' agentsmith-sandbox-control-plane ',
     })).toEqual({
       enabled: true,
       baseUrl: 'https://afscp.internal/api',
@@ -35,7 +35,7 @@ describe('parseAfscpConfig', () => {
       bootstrapServiceToken: 'bootstrap-svc-token',
       defaultVolumeId: 'vol_shared',
       bootstrapCallerService: 'agentsmith-bootstrap',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
     });
   });
 
@@ -81,7 +81,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -107,7 +107,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-api',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -131,7 +131,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'same-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -155,7 +155,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'volume shared\r\nx-token=svc-token',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -180,7 +180,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_SERVICE_TOKEN: 'svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -204,7 +204,7 @@ describe('parseAfscpConfig', () => {
         AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'bootstrap-svc-token',
         AFSCP_DEFAULT_VOLUME_ID: 'vol_shared',
         AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
-        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-manager',
+        AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;

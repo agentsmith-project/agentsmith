@@ -79,11 +79,47 @@ spec:
           ports:
             - name: http
               containerPort: 3001
-          envFrom:
-            - configMapRef:
-                name: agentsmith-app-config
-            - secretRef:
-                name: agentsmith-app-secrets
+          env:
+            - name: NEXT_PUBLIC_API_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: NEXT_PUBLIC_API_BASE
+            - name: NEXT_PUBLIC_KEYCLOAK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: NEXT_PUBLIC_KEYCLOAK_URL
+            - name: NEXT_PUBLIC_KEYCLOAK_REALM
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: NEXT_PUBLIC_KEYCLOAK_REALM
+            - name: NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
+            - name: PUBLIC_KEYCLOAK_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: PUBLIC_KEYCLOAK_BASE_URL
+            - name: INTERNAL_KEYCLOAK_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: INTERNAL_KEYCLOAK_BASE_URL
+            - name: MONGO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentsmith-app-secrets
+                  key: MONGO_URL
+            - name: MONGO_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: agentsmith-app-secrets
+                  key: MONGO_DB_NAME
 ---
 apiVersion: v1
 kind: Service
@@ -267,11 +303,11 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
@@ -280,82 +316,70 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentsmith
-      app.kubernetes.io/component: sandbox-manager
+      app.kubernetes.io/component: asbcp
   template:
     metadata:
       labels:
         app.kubernetes.io/name: agentsmith
-        app.kubernetes.io/component: sandbox-manager
+        app.kubernetes.io/component: asbcp
       annotations:
-        agentsmith.mbos.dev/checksum-sandbox-manager-config: "{{SANDBOX_MANAGER_CONFIG_CHECKSUM}}"
+        agentsmith.mbos.dev/checksum-asbcp-config: "{{ASBCP_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-app-secrets: "{{AGENTSMITH_APP_SECRETS_CHECKSUM}}"
     spec:
-      serviceAccountName: agentsmith-sandbox-manager
+      serviceAccountName: agentsmith-sandbox-control-plane
       containers:
-        - name: sandbox-manager
-          image: "{{SANDBOX_MANAGER_IMAGE}}"
+        - name: asbcp
+          image: "{{ASBCP_IMAGE}}"
           ports:
             - name: http
               containerPort: 8080
           env:
-            - name: CONFIG_PATH
-              value: /etc/sandbox-manager/manager-config.yaml
-            - name: SERVICE_KEYS
+            - name: ASBCP_CONFIG_PATH
+              value: /etc/asbcp/asbcp-config.yaml
+            - name: ASBCP_SERVICE_KEYS
               valueFrom:
                 secretKeyRef:
                   name: agentsmith-app-secrets
-                  key: SANDBOX_SERVICE_KEY
-            - name: K8S_NAMESPACE
+                  key: ASBCP_SERVICE_KEY
+            - name: ASBCP_WORKLOAD_NAMESPACE
               value: "{{NAMESPACE}}"
-            - name: JUICEFS_STORAGE_ENDPOINT
-              value: "{{AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT}}"
-            - name: JUICEFS_STORAGE_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: agentsmith-app-secrets
-                  key: MINIO_ACCESS_KEY
-            - name: JUICEFS_STORAGE_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: agentsmith-app-secrets
-                  key: MINIO_SECRET_KEY
-            - name: AFSCP_INTERNAL_BASE_URL
+            - name: ASBCP_AFSCP_INTERNAL_BASE_URL
               value: "{{AFSCP_BASE_URL}}"
-            - name: AFSCP_ORCHESTRATOR_TOKEN
+            - name: ASBCP_AFSCP_ORCHESTRATOR_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: agentsmith-app-secrets
                   key: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
-            - name: AFSCP_CALLER_SERVICE
-              value: agentsmith-sandbox-manager
-            - name: AFSCP_ACTOR_TYPE
+            - name: ASBCP_AFSCP_CALLER_SERVICE
+              value: agentsmith-sandbox-control-plane
+            - name: ASBCP_AFSCP_ACTOR_TYPE
               value: system
-            - name: AFSCP_ACTOR_ID
-              value: agentsmith-sandbox-manager
+            - name: ASBCP_AFSCP_ACTOR_ID
+              value: agentsmith-sandbox-control-plane
           volumeMounts:
             - name: config
-              mountPath: /etc/sandbox-manager/manager-config.yaml
-              subPath: manager-config.yaml
+              mountPath: /etc/asbcp/asbcp-config.yaml
+              subPath: config.yaml
       volumes:
         - name: config
           configMap:
-            name: sandbox-manager-config
+            name: asbcp-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
 spec:
   selector:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
   ports:
     - name: http
       port: 8080

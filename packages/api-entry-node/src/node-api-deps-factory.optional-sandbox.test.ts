@@ -77,11 +77,19 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     }
   });
 
-  it('fails fast when sandbox env is partially configured', () => {
+  it('fails fast when ASBCP env is partially configured', () => {
+    expect(() => createNodeApiDepsFromEnv({
+      ...baseEnv,
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+    })).toThrowError('asbcp_config_incomplete');
+  });
+
+  it('rejects removed SANDBOX_MANAGER and SANDBOX_SERVICE_KEY env aliases', () => {
     expect(() => createNodeApiDepsFromEnv({
       ...baseEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
-    })).toThrowError('sandbox_manager_config_incomplete');
+      SANDBOX_SERVICE_KEY: 'legacy-key',
+    })).toThrowError('asbcp_legacy_env_forbidden');
   });
 
   it('does not fail startup when sandbox readyz preflight fails', async () => {
@@ -90,8 +98,8 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({
       ...baseEnv,
       ...afscpEnv,
-      SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
-      SANDBOX_SERVICE_KEY: 'svc-key',
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+      ASBCP_SERVICE_KEY: 'svc-key',
       AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
       AGENT_EXECUTION_WS_BASE_URL: 'ws://10.88.0.1:20000',
     });
@@ -112,8 +120,8 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({
       ...baseEnv,
       ...afscpEnv,
-      SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
-      SANDBOX_SERVICE_KEY: 'svc-key',
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+      ASBCP_SERVICE_KEY: 'svc-key',
     });
 
     try {
@@ -136,8 +144,8 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
 
     const { deps, lifecycle } = createNodeApiDepsFromEnv({
       ...baseEnv,
-      SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
-      SANDBOX_SERVICE_KEY: 'svc-key',
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+      ASBCP_SERVICE_KEY: 'svc-key',
       AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
       AGENT_EXECUTION_WS_BASE_URL: 'ws://10.88.0.1:20000',
     });

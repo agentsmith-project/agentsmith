@@ -45,7 +45,7 @@ describe('unified deploy address truth producer', () => {
       expect(rendered.output).toContain('INTERNAL_API_BASE_URL: "http://agentsmith-api:20000/api/v1"');
       expect(rendered.output).toContain('AGENT_EXECUTION_HTTP_BASE_URL: "http://agentsmith-api:20000/api/v1"');
       expect(rendered.output).toContain('AGENT_EXECUTION_WS_BASE_URL: "ws://agentsmith-api:20000"');
-      expect(rendered.output).toContain('SANDBOX_MANAGER_URL: "http://agentsmith-sandbox-manager:8080"');
+      expect(rendered.output).toContain('ASBCP_INTERNAL_BASE_URL: "http://agentsmith-sandbox-control-plane:8080"');
       expect(rendered.output).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL: "http://agentsmith-llmup:8080"');
       expect(rendered.output).toContain('INTERNAL_KEYCLOAK_BASE_URL: "http://substrate-keycloak:8080"');
       expect(rendered.output).toContain('MINIO_PORT: "9000"');
@@ -53,7 +53,7 @@ describe('unified deploy address truth producer', () => {
       expect(rendered.output).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
       expect(rendered.output).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
       expect(rendered.output).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:');
-      expect(rendered.output).toContain('SANDBOX_SERVICE_KEY:');
+      expect(rendered.output).toContain('ASBCP_SERVICE_KEY:');
       expect(rendered.output).not.toContain('@substrate-postgresql:15432/');
       expect(rendered.output).not.toContain('@substrate-mongodb:27027/');
       expect(rendered.output).not.toContain('@substrate-redis:16379/');
@@ -63,15 +63,15 @@ describe('unified deploy address truth producer', () => {
     },
   );
 
-  it('rejects missing app-owned sandbox and llmup secrets', async () => {
+  it('rejects missing app-owned ASBCP and llmup secrets', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
-    const withoutSandboxKey = removeLine(rendered.output, 'SANDBOX_SERVICE_KEY');
+    const withoutAsbcpKey = removeLine(rendered.output, 'ASBCP_SERVICE_KEY');
     const withoutLlmupToken = removeLine(rendered.output, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
 
-    expect(checkAddressTruth(withoutSandboxKey).failures).toEqual(expect.arrayContaining([
+    expect(checkAddressTruth(withoutAsbcpKey).failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('SANDBOX_SERVICE_KEY'),
+        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
       }),
     ]));
     expect(checkAddressTruth(withoutLlmupToken).failures).toEqual(expect.arrayContaining([
@@ -101,15 +101,15 @@ describe('unified deploy address truth producer', () => {
     ]));
   });
 
-  it('rejects address truth that points llmup or sandbox to the wrong service', async () => {
+  it('rejects address truth that points llmup or ASBCP to the wrong service', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const wrongLlmup = rendered.output.replace(
       'MBOS_UNIVERSAL_PROXY_BASE_URL: "http://agentsmith-llmup:8080"',
       'MBOS_UNIVERSAL_PROXY_BASE_URL: "http://agentsmith-web:3001"',
     );
-    const wrongSandbox = rendered.output.replace(
-      'SANDBOX_MANAGER_URL: "http://agentsmith-sandbox-manager:8080"',
-      'SANDBOX_MANAGER_URL: "http://agentsmith-api:20000"',
+    const wrongAsbcp = rendered.output.replace(
+      'ASBCP_INTERNAL_BASE_URL: "http://agentsmith-sandbox-control-plane:8080"',
+      'ASBCP_INTERNAL_BASE_URL: "http://agentsmith-api:20000"',
     );
 
     expect(checkAddressTruth(wrongLlmup).failures).toEqual(expect.arrayContaining([
@@ -118,10 +118,10 @@ describe('unified deploy address truth producer', () => {
         message: expect.stringContaining('MBOS_UNIVERSAL_PROXY_BASE_URL'),
       }),
     ]));
-    expect(checkAddressTruth(wrongSandbox).failures).toEqual(expect.arrayContaining([
+    expect(checkAddressTruth(wrongAsbcp).failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'ConfigMap/agentsmith-app-config',
-        message: expect.stringContaining('SANDBOX_MANAGER_URL'),
+        message: expect.stringContaining('ASBCP_INTERNAL_BASE_URL'),
       }),
     ]));
   });
@@ -208,9 +208,9 @@ describe('unified deploy address truth producer', () => {
     const substrateExample = await readFile('infra/deploy/unified/substrate/connection.env.example', 'utf8');
     const requiredEnv = manifest.substrate?.truth_schema?.required_env ?? [];
 
-    expect(requiredEnv).not.toContain('SANDBOX_SERVICE_KEY');
+    expect(requiredEnv).not.toContain('ASBCP_SERVICE_KEY');
     expect(requiredEnv).not.toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
-    expect(substrateExample).not.toContain('SANDBOX_SERVICE_KEY');
+    expect(substrateExample).not.toContain('ASBCP_SERVICE_KEY');
     expect(substrateExample).not.toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
   });
 
@@ -253,14 +253,14 @@ describe('unified deploy address truth producer', () => {
     const missingSecrets = siteEnv
       .split('\n')
       .filter((line) =>
-        !line.startsWith('SANDBOX_SERVICE_KEY=') && !line.startsWith('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='),
+        !line.startsWith('ASBCP_SERVICE_KEY=') && !line.startsWith('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='),
       )
       .join('\n');
 
     await expect(renderUnifiedDeployToString({
       profile: 'local-kind',
       siteEnv: missingSecrets,
-    })).rejects.toThrow(/SANDBOX_SERVICE_KEY|MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN/u);
+    })).rejects.toThrow(/ASBCP_SERVICE_KEY|MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN/u);
   });
 
   it('writes failed producer evidence when app site env parsing fails before address checks', async () => {
@@ -269,7 +269,7 @@ describe('unified deploy address truth producer', () => {
     const siteEnvPath = join(root, 'site.env');
     await writeFile(
       siteEnvPath,
-      removeEnvAssignment(await readFile(rendered.siteEnvPath, 'utf8'), 'SANDBOX_SERVICE_KEY'),
+      removeEnvAssignment(await readFile(rendered.siteEnvPath, 'utf8'), 'ASBCP_SERVICE_KEY'),
       'utf8',
     );
 
@@ -288,7 +288,7 @@ describe('unified deploy address truth producer', () => {
     expect(result.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'local-kind:render',
-        message: expect.stringContaining('SANDBOX_SERVICE_KEY'),
+        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
       }),
     ]));
     expect(report.producer).toBe('address-truth');
@@ -296,7 +296,7 @@ describe('unified deploy address truth producer', () => {
     expect(report.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'local-kind:render',
-        message: expect.stringContaining('SANDBOX_SERVICE_KEY'),
+        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
       }),
     ]));
   });

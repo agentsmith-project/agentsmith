@@ -342,7 +342,7 @@ require_parent_owned_existing_stack_reuse_truth() {
   if [[ -n "${BACKEND_REAL_SESSION_NAME}" ]]; then
     parent_stack_fail_closed "backend-real sessions cannot use parent stack reuse"
   fi
-  if managed_agent_task_sandbox_required; then
+  if managed_agent_task_asbcp_required; then
     parent_stack_fail_closed "managed Agent Task specs cannot use parent stack reuse"
   fi
 
@@ -378,7 +378,7 @@ require_parent_owned_existing_stack_reuse_truth() {
   record_service parent_stack_reuse ready "${PLAYWRIGHT_BASE_URL} -> ${INTEGRATION_API_BASE}"
 }
 
-managed_agent_task_sandbox_required() {
+managed_agent_task_asbcp_required() {
   case "${BACKEND_REAL_SESSION_NAME:-${SPEC_FILE}}" in
     agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts|e2e/integration-visual-review.spec.ts)
       return 0
@@ -398,17 +398,17 @@ managed_agent_task_sandbox_required() {
   return 1
 }
 
-preflight_managed_agent_task_sandbox_env() {
-  if ! managed_agent_task_sandbox_required; then
+preflight_managed_agent_task_asbcp_env() {
+  if ! managed_agent_task_asbcp_required; then
     return 0
   fi
 
   local missing=()
-  if [[ -z "${SANDBOX_MANAGER_URL:-}" ]]; then
-    missing+=("SANDBOX_MANAGER_URL")
+  if [[ -z "${ASBCP_INTERNAL_BASE_URL:-}" ]]; then
+    missing+=("ASBCP_INTERNAL_BASE_URL")
   fi
-  if [[ -z "${SANDBOX_SERVICE_KEY:-}" ]]; then
-    missing+=("SANDBOX_SERVICE_KEY")
+  if [[ -z "${ASBCP_SERVICE_KEY:-}" ]]; then
+    missing+=("ASBCP_SERVICE_KEY")
   fi
   if [[ -z "${AGENT_EXECUTION_WS_BASE_URL:-}" ]]; then
     missing+=("AGENT_EXECUTION_WS_BASE_URL")
@@ -417,16 +417,16 @@ preflight_managed_agent_task_sandbox_env() {
     missing+=("INTERNAL_AGENT_K8S_NAMESPACE")
   fi
   if [[ "${#missing[@]}" -eq 0 ]]; then
-    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "managed_agent_task_sandbox_env" "passed" "sandbox env present"
+    gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "managed_agent_task_asbcp_env" "passed" "ASBCP env present"
     return 0
   fi
 
   local missing_text
   missing_text="$(IFS=,; printf '%s' "${missing[*]}")"
-  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "managed_agent_task_sandbox_env" "Managed Agent Task backend-real coverage requires sandbox bootstrap; missing ${missing_text}. Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed sandbox env."
-  echo "[integration-e2e-full] Managed Agent Task backend-real coverage requires sandbox bootstrap." >&2
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "managed_agent_task_asbcp_env" "Managed Agent Task backend-real coverage requires ASBCP bootstrap; missing ${missing_text}. Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed ASBCP env."
+  echo "[integration-e2e-full] Managed Agent Task backend-real coverage requires ASBCP bootstrap." >&2
   echo "[integration-e2e-full] Missing: ${missing_text}" >&2
-  echo "[integration-e2e-full] Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed sandbox env." >&2
+  echo "[integration-e2e-full] Use scripts/run-internal-agent-task-real-gate.sh --visual-review/--skills-runtime or provide the managed ASBCP env." >&2
   exit 1
 }
 
@@ -756,7 +756,7 @@ stop_integration_afscp_local_runtime() {
 if parent_stack_reuse_enabled; then
   require_parent_owned_existing_stack_reuse_truth
 else
-  preflight_managed_agent_task_sandbox_env
+  preflight_managed_agent_task_asbcp_env
 
   if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
     run_clean_with_integration_env make deps-bootstrap
@@ -830,8 +830,8 @@ else
       MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
       MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
       MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-      SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-      SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+      ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL:-}" \
+      ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY:-}" \
       AFSCP_BASE_URL="${AFSCP_BASE_URL}" \
       AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL}" \
       AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID}" \
@@ -1021,8 +1021,8 @@ run_playwright_command() {
     MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
     MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN="${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}" \
     MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST="${MBOS_UNIVERSAL_PROXY_UPSTREAM_HOST:-}" \
-    SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-    SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+    ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL:-}" \
+    ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY:-}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
     INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}" \
     AFSCP_STORAGE_CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-}" \

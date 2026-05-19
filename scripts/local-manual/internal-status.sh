@@ -6,20 +6,21 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-common.sh"
 INTERNAL_MODE_STATUS="disabled"
 if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
   INTERNAL_MODE_STATUS="configured"
-  if INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" status | grep -q '^manager_alive=1$'; then
+  if INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" status | grep -q '^asbcp_alive=1$'; then
     INTERNAL_MODE_STATUS="enabled"
   fi
 fi
 echo "Internal mode: ${INTERNAL_MODE_STATUS}"
-echo "Sandbox manager URL: ${INTERNAL_SANDBOX_MANAGER_URL_VALUE}"
+echo "ASBCP URL: ${ASBCP_INTERNAL_BASE_URL_VALUE}"
 echo "AFSCP API: $(afscp_api_status)"
 if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
   INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" status || true
 else
-  echo "manager_pid="
-  echo "manager_alive=0"
-  echo "manager_listener_pids="
-  echo "manager_ready=0"
+  echo "asbcp_pid="
+  echo "asbcp_alive=0"
+  echo "asbcp_container_running=0"
+  echo "asbcp_listener_pids="
+  echo "asbcp_ready=0"
 fi
 echo "Runner socket: $(runner_socket_health_state)"
 echo "Namespace: ${K8S_NAMESPACE}"

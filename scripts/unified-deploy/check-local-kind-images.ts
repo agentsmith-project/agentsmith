@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +36,16 @@ export type LlmupImageLock = {
   k8s_image: string;
 };
 
+export type AsbcpImageLock = {
+  version: string;
+  source_image: string;
+  source_digest: string;
+  release_url: string;
+  commit_sha: string;
+  host_image: string;
+  k8s_image: string;
+};
+
 export type MirroredSourceImageRefs = {
   version: string;
   source_ref: string;
@@ -55,12 +64,7 @@ export type LocalKindImageRefs = {
     k8s_tag_ref?: string;
     k8s_ref: string;
   };
-  sandbox_manager: {
-    host_ref: string;
-    host_digest_ref?: string;
-    k8s_tag_ref?: string;
-    k8s_ref: string;
-  };
+  asbcp: MirroredSourceImageRefs;
   managed_runner: {
     base_host_ref: string;
     host_ref: string;
@@ -116,7 +120,7 @@ export type LocalKindImagesProducerOptions = {
   siteEnvPath?: string;
   outputSiteEnvPath?: string;
   evidenceDir?: string;
-  sandboxSourceDir?: string;
+  asbcpImageLockPath?: string;
   llmupImageLockPath?: string;
   hostRegistry?: string;
   k8sRegistry?: string;
@@ -150,6 +154,7 @@ export type RegistryAvailabilityPollOptions = {
 
 const DEFAULT_EVIDENCE_DIR = path.join(REPO_ROOT, 'artifacts', 'unified-deploy');
 export const DEFAULT_LOCAL_KIND_SITE_ENV_PATH = path.join(DEFAULT_EVIDENCE_DIR, 'local-kind-site.env');
+const DEFAULT_ASBCP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
 const DEFAULT_LLMUP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'llmup-image.lock');
 const DEFAULT_HOST_REGISTRY = 'localhost:5001';
 const DEFAULT_K8S_REGISTRY = 'kind-registry:5000';
@@ -169,6 +174,9 @@ const CLI_SECRET_ASSIGNMENT_PATTERN = /((?:--?|\/)?[A-Z0-9_-]*(?:PASSWORD|SECRET
 const COMMAND_SECRET_KEY_PATTERN = /(?:password|secret|token|access[-_]?key|api[-_]?key|client[-_]?secret)/iu;
 const SECRET_LIKE_TOKEN_PATTERN = /\b[^\s,"]*(?:password|secret|token)[^\s,"]*/giu;
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const ASBCP_CANONICAL_SOURCE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const ASBCP_RELEASE_URL_PREFIX = 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/';
+const COMMIT_SHA_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/iu;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -234,6 +242,15 @@ function commandText(command: string, args: readonly string[]): string {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/gu, `'\\''`)}'`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function isPlaceholderDigest(digest: string): boolean {
+  const match = /^sha256:([a-f0-9])\1{63}$/u.exec(digest);
+  return Boolean(match);
 }
 
 export async function defaultLocalKindImageCommandRunner(
@@ -354,11 +371,78 @@ export function parseLlmupImageLock(
   };
 }
 
+export function parseAsbcpImageLock(
+  source: string,
+  options: {
+    sourceName?: string;
+    hostRegistry?: string;
+    k8sRegistry?: string;
+    registryProject?: string;
+  } = {},
+): AsbcpImageLock {
+  const sourceName = options.sourceName ?? 'infra/deploy/shared/asbcp-image.lock';
+  const values = parseKeyValues(source, sourceName);
+  const version = values.asbcp_version;
+  const sourceImage = values.asbcp_source_image;
+  const releaseUrl = values.asbcp_release_url;
+  const commitSha = values.asbcp_commit_sha;
+
+  if (!version) {
+    throw new Error(`${sourceName} must include asbcp_version`);
+  }
+  if (!sourceImage) {
+    throw new Error(`${sourceName} must include asbcp_source_image`);
+  }
+  const sourceImagePattern = new RegExp(
+    `^${escapeRegExp(ASBCP_CANONICAL_SOURCE_REPOSITORY)}:([^@]+)@sha256:([a-fA-F0-9]{64})$`,
+    'u',
+  );
+  const sourceImageMatch = sourceImagePattern.exec(sourceImage);
+  if (!sourceImageMatch) {
+    if (!/@sha256:[a-fA-F0-9]{64}$/u.test(sourceImage)) {
+      throw new Error(`${sourceName} asbcp_source_image must include a sha256 digest`);
+    }
+    throw new Error(`${sourceName} asbcp_source_image must use canonical GHCR repo ${ASBCP_CANONICAL_SOURCE_REPOSITORY}`);
+  }
+  const tag = sourceImageMatch[1] ?? '';
+  const sourceDigest = `sha256:${(sourceImageMatch[2] ?? '').toLowerCase()}`;
+  if (tag !== version) {
+    throw new Error(`${sourceName} asbcp_source_image tag must match asbcp_version`);
+  }
+  if (isPlaceholderDigest(sourceDigest)) {
+    throw new Error(`${sourceName} asbcp_source_image must not use a placeholder digest`);
+  }
+  if (!releaseUrl) {
+    throw new Error(`${sourceName} must include asbcp_release_url`);
+  }
+  if (releaseUrl !== `${ASBCP_RELEASE_URL_PREFIX}${version}`) {
+    throw new Error(`${sourceName} asbcp_release_url tag must match asbcp_version`);
+  }
+  if (!commitSha || !COMMIT_SHA_PATTERN.test(commitSha)) {
+    throw new Error(`${sourceName} must include a valid asbcp_commit_sha`);
+  }
+
+  const hostRegistry = options.hostRegistry ?? DEFAULT_HOST_REGISTRY;
+  const k8sRegistry = options.k8sRegistry ?? DEFAULT_K8S_REGISTRY;
+  const registryProject = options.registryProject ?? DEFAULT_REGISTRY_PROJECT;
+
+  return {
+    version,
+    source_image: sourceImage,
+    source_digest: sourceDigest,
+    release_url: releaseUrl,
+    commit_sha: commitSha,
+    host_image: `${hostRegistry}/${registryProject}/agentsmith-sandbox-control-plane:${version}`,
+    k8s_image: `${k8sRegistry}/${registryProject}/agentsmith-sandbox-control-plane:${version}`,
+  };
+}
+
 function imageRefs(options: {
   tag: string;
   hostRegistry: string;
   k8sRegistry: string;
   registryProject: string;
+  asbcp: AsbcpImageLock;
   llmup: LlmupImageLock;
   afscp: MirroredSourceImageRefs;
   ingressNginxController: MirroredSourceImageRefs;
@@ -374,10 +458,13 @@ function imageRefs(options: {
       k8s_tag_ref: `${prefixK8s}/agentsmith-app:${options.tag}`,
       k8s_ref: `${prefixK8s}/agentsmith-app:${options.tag}`,
     },
-    sandbox_manager: {
-      host_ref: `${prefixHost}/sandbox-manager:${options.tag}`,
-      k8s_tag_ref: `${prefixK8s}/sandbox-manager:${options.tag}`,
-      k8s_ref: `${prefixK8s}/sandbox-manager:${options.tag}`,
+    asbcp: {
+      version: options.asbcp.version,
+      source_ref: options.asbcp.source_image,
+      source_digest: options.asbcp.source_digest,
+      host_ref: options.asbcp.host_image,
+      k8s_tag_ref: options.asbcp.k8s_image,
+      k8s_ref: options.asbcp.k8s_image,
     },
     managed_runner: {
       base_host_ref: `${prefixHost}/agentsmith-managed-runner-base:${options.tag}`,
@@ -466,7 +553,7 @@ function withDigestHandoff(
   refs: LocalKindImageRefs,
   digests: {
     app: string;
-    sandboxManager: string;
+    asbcp: string;
     managedRunner: string;
     afscp: string;
     llmup: string;
@@ -481,11 +568,11 @@ function withDigestHandoff(
       k8s_tag_ref: refs.app.k8s_tag_ref ?? refs.app.k8s_ref,
       k8s_ref: digestRef(refs.app.k8s_ref, digests.app),
     },
-    sandbox_manager: {
-      ...refs.sandbox_manager,
-      host_digest_ref: digestRef(refs.sandbox_manager.host_ref, digests.sandboxManager),
-      k8s_tag_ref: refs.sandbox_manager.k8s_tag_ref ?? refs.sandbox_manager.k8s_ref,
-      k8s_ref: digestRef(refs.sandbox_manager.k8s_ref, digests.sandboxManager),
+    asbcp: {
+      ...refs.asbcp,
+      host_digest_ref: digestRef(refs.asbcp.host_ref, digests.asbcp),
+      k8s_tag_ref: refs.asbcp.k8s_tag_ref ?? refs.asbcp.k8s_ref,
+      k8s_ref: digestRef(refs.asbcp.k8s_ref, digests.asbcp),
     },
     managed_runner: {
       ...refs.managed_runner,
@@ -543,7 +630,7 @@ function buildLocalKindSiteEnv(source: string, refs: LocalKindImageRefs): string
     ['API_IMAGE', refs.app.k8s_ref],
     ['LLMUP_IMAGE', refs.llmup.k8s_ref],
     ['AFSCP_IMAGE', refs.afscp.k8s_ref],
-    ['SANDBOX_MANAGER_IMAGE', refs.sandbox_manager.k8s_ref],
+    ['ASBCP_IMAGE', refs.asbcp.k8s_ref],
     ['MANAGED_RUNNER_IMAGE', refs.managed_runner.k8s_ref],
     ['INGRESS_NGINX_CONTROLLER_IMAGE', refs.ingress_nginx_controller.k8s_ref],
     ['INGRESS_NGINX_CERTGEN_IMAGE', refs.ingress_nginx_certgen.k8s_ref],
@@ -947,10 +1034,6 @@ async function finishImages(
   };
 }
 
-function siblingSandboxSourceDir(): string {
-  return path.resolve(REPO_ROOT, '..', 'mbos-sandbox-v1', 'manager-service');
-}
-
 export async function runLocalKindImagesProducer(
   options: LocalKindImagesProducerOptions = {},
 ): Promise<LocalKindImagesProducerResult> {
@@ -962,14 +1045,19 @@ export async function runLocalKindImagesProducer(
   const evidenceDir = options.evidenceDir ?? DEFAULT_EVIDENCE_DIR;
   const siteEnvPath = path.resolve(options.siteEnvPath ?? DEFAULT_SITE_ENV_PATH);
   const generatedSiteEnvPath = path.resolve(options.outputSiteEnvPath ?? DEFAULT_LOCAL_KIND_SITE_ENV_PATH);
-  const sandboxSourceDir = path.resolve(options.sandboxSourceDir ?? env.SANDBOX_SOURCE_DIR ?? siblingSandboxSourceDir());
-  const sandboxDockerfile = path.join(sandboxSourceDir, 'Dockerfile');
+  const asbcpLockPath = path.resolve(options.asbcpImageLockPath ?? DEFAULT_ASBCP_IMAGE_LOCK_PATH);
   const llmupLockPath = path.resolve(options.llmupImageLockPath ?? DEFAULT_LLMUP_IMAGE_LOCK_PATH);
   const runner = options.runner ?? defaultLocalKindImageCommandRunner;
   const failures: CheckFailure[] = [];
   const operations: ImageOperationEvidence[] = [];
   const siteEnvSource = await readFile(siteEnvPath, 'utf8');
   const siteEnv = parseKeyValues(siteEnvSource, siteEnvPath);
+  const asbcp = parseAsbcpImageLock(await readFile(asbcpLockPath, 'utf8'), {
+    sourceName: asbcpLockPath,
+    hostRegistry,
+    k8sRegistry,
+    registryProject,
+  });
   const llmup = parseLlmupImageLock(await readFile(llmupLockPath, 'utf8'), {
     sourceName: llmupLockPath,
     hostRegistry,
@@ -1005,6 +1093,7 @@ export async function runLocalKindImagesProducer(
     hostRegistry,
     k8sRegistry,
     registryProject,
+    asbcp,
     llmup,
     afscp,
     ingressNginxController,
@@ -1014,13 +1103,6 @@ export async function runLocalKindImagesProducer(
     await rm(generatedSiteEnvPath, { force: true });
   }
 
-  if (!existsSync(sandboxSourceDir) || !existsSync(sandboxDockerfile)) {
-    addFailure(
-      failures,
-      'sandbox-source',
-      `missing sandbox manager source at ${sandboxSourceDir}; set SANDBOX_SOURCE_DIR or --sandbox-source-dir to ../mbos-sandbox-v1/manager-service`,
-    );
-  }
   const baseEvidence: Omit<LocalKindImagesEvidence, 'status' | 'generated_at' | 'paths'> = {
     schema_version: 'agentsmith.unified-deploy.local-kind-images.evidence/v1',
     producer: 'local-kind-images',
@@ -1035,10 +1117,6 @@ export async function runLocalKindImagesProducer(
     operations,
     failures,
   };
-
-  if (failures.length > 0) {
-    return finishImages(baseEvidence, evidenceDir);
-  }
 
   const registry = await runDockerOperation({
     name: 'local-registry-check',
@@ -1067,7 +1145,7 @@ export async function runLocalKindImagesProducer(
     return finishImages({ ...baseEvidence, failures }, evidenceDir);
   }
 
-  const appAndSandbox = await runDockerSequence({
+  const appAndRunner = await runDockerSequence({
     runner,
     env,
     steps: [
@@ -1093,14 +1171,6 @@ export async function runLocalKindImagesProducer(
         args: ['push', refs.app.host_ref],
       },
       {
-        name: 'sandbox-build',
-        args: ['build', '-t', refs.sandbox_manager.host_ref, '-f', sandboxDockerfile, sandboxSourceDir],
-      },
-      {
-        name: 'sandbox-push',
-        args: ['push', refs.sandbox_manager.host_ref],
-      },
-      {
         name: 'managed-runner-base-build',
         args: ['build', '-t', refs.managed_runner.base_host_ref, '-f', 'infra/runner/Dockerfile.agent-task-runner-base', '.'],
       },
@@ -1123,13 +1193,18 @@ export async function runLocalKindImagesProducer(
       },
     ],
   });
-  operations.push(...appAndSandbox.operations);
-  failures.push(...appAndSandbox.failures);
+  operations.push(...appAndRunner.operations);
+  failures.push(...appAndRunner.failures);
   if (failures.length > 0) {
     return finishImages({ ...baseEvidence, failures }, evidenceDir);
   }
 
   const mirroredSourceImages = [
+    {
+      name: 'asbcp',
+      sourceRef: refs.asbcp.source_ref,
+      hostRef: refs.asbcp.host_ref,
+    },
     {
       name: 'afscp',
       sourceRef: refs.afscp.source_ref,
@@ -1203,7 +1278,7 @@ export async function runLocalKindImagesProducer(
     env,
     steps: [
       refs.app.host_ref,
-      refs.sandbox_manager.host_ref,
+      refs.asbcp.host_ref,
       refs.managed_runner.host_ref,
       refs.afscp.host_ref,
       refs.llmup.host_ref,
@@ -1228,7 +1303,7 @@ export async function runLocalKindImagesProducer(
   try {
     digestRefs = withDigestHandoff(refs, {
       app: manifestDigestFromOperations(manifests.operations, refs.app.host_ref),
-      sandboxManager: manifestDigestFromOperations(manifests.operations, refs.sandbox_manager.host_ref),
+      asbcp: manifestDigestFromOperations(manifests.operations, refs.asbcp.host_ref),
       managedRunner: manifestDigestFromOperations(manifests.operations, refs.managed_runner.host_ref),
       afscp: manifestDigestFromOperations(manifests.operations, refs.afscp.host_ref),
       llmup: manifestDigestFromOperations(manifests.operations, refs.llmup.host_ref),
@@ -1248,7 +1323,7 @@ export async function runLocalKindImagesProducer(
     poll: options.registryAvailabilityPoll,
     pullImages: [
       digestRefs.app.k8s_ref,
-      digestRefs.sandbox_manager.k8s_ref,
+      digestRefs.asbcp.k8s_ref,
       digestRefs.managed_runner.k8s_ref,
       digestRefs.afscp.k8s_ref,
       digestRefs.llmup.k8s_ref,
@@ -1681,8 +1756,8 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       options.outputSiteEnvPath = arg.slice('--out-site-env='.length);
     } else if (arg.startsWith('--evidence-dir=')) {
       options.evidenceDir = arg.slice('--evidence-dir='.length);
-    } else if (arg.startsWith('--sandbox-source-dir=')) {
-      options.sandboxSourceDir = arg.slice('--sandbox-source-dir='.length);
+    } else if (arg.startsWith('--asbcp-image-lock=')) {
+      options.asbcpImageLockPath = arg.slice('--asbcp-image-lock='.length);
     } else if (arg.startsWith('--llmup-image-lock=')) {
       options.llmupImageLockPath = arg.slice('--llmup-image-lock='.length);
     } else if (arg.startsWith('--host-registry=')) {

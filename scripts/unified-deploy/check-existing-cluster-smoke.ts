@@ -248,7 +248,7 @@ const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-web',
   'agentsmith-api',
   'agentsmith-llmup',
-  'agentsmith-sandbox-manager',
+  'agentsmith-sandbox-control-plane',
 ] as const;
 const EMPTY_SUMMARY: ResourceSummary = {
   total: 0,
@@ -1005,7 +1005,7 @@ async function checkInternalIngressExposure(options: {
   const probe: RouteProbeEvidence = {
     name: 'internal-services-not-exposed',
     path: 'Ingress/agentsmith',
-    expected: 'public ingress must not route to agentsmith-llmup or agentsmith-sandbox-manager',
+    expected: 'public ingress must not route to agentsmith-llmup or agentsmith-sandbox-control-plane',
     status: 'failed',
   };
 
@@ -1034,7 +1034,7 @@ async function checkInternalIngressExposure(options: {
   }
 
   const forbidden = services.filter((service) =>
-    service === 'agentsmith-llmup' || service === 'agentsmith-sandbox-manager',
+    service === 'agentsmith-llmup' || service === 'agentsmith-sandbox-control-plane',
   );
   if (forbidden.length > 0) {
     addFailure(

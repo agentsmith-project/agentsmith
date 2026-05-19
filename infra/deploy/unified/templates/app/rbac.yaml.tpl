@@ -12,11 +12,11 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
@@ -24,11 +24,11 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
@@ -40,22 +40,22 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
 subjects:
   - kind: ServiceAccount
-    name: agentsmith-sandbox-manager
+    name: agentsmith-sandbox-control-plane
     namespace: {{NAMESPACE}}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agentsmith-sandbox-manager
+  name: agentsmith-sandbox-control-plane
 ---
 apiVersion: v1
 kind: ServiceAccount

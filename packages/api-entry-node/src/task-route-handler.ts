@@ -2623,7 +2623,7 @@ async function preflightManagedRunnerRuntimeForTask(args: {
     return fail('internal_api_base_not_configured');
   }
   if (!args.deps.internalAgentPodManager) {
-    return fail('sandbox_manager_not_configured');
+    return fail('asbcp_not_configured');
   }
   if (!args.deps.internalAgentWorkspaceBindingManager && !args.deps.internalAgentWorkspaceProvisioner) {
     return fail('workspace_binding_manager_not_configured');

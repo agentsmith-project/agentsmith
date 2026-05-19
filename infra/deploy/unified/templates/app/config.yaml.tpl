@@ -19,11 +19,11 @@ data:
   AGENT_EXECUTION_WS_BASE_URL: "ws://agentsmith-api:20000"
   MBOS_UNIVERSAL_PROXY_BASE_URL: "{{LLMUP_INTERNAL_BASE_URL}}"
   LLMUP_INTERNAL_BASE_URL: "{{LLMUP_INTERNAL_BASE_URL}}"
-  SANDBOX_MANAGER_URL: "http://agentsmith-sandbox-manager:8080"
+  ASBCP_INTERNAL_BASE_URL: "http://agentsmith-sandbox-control-plane:8080"
   AFSCP_BASE_URL: "{{AFSCP_BASE_URL}}"
   AFSCP_CALLER_SERVICE: "agentsmith-api"
   AFSCP_BOOTSTRAP_CALLER_SERVICE: "agentsmith-bootstrap"
-  AFSCP_ORCHESTRATOR_CALLER_SERVICE: "agentsmith-sandbox-manager"
+  AFSCP_ORCHESTRATOR_CALLER_SERVICE: "agentsmith-sandbox-control-plane"
   AFSCP_DEFAULT_VOLUME_ID: "{{AFSCP_DEFAULT_VOLUME_ID}}"
   KEYCLOAK_ISSUER_URL: "{{SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER}}"
   PUBLIC_KEYCLOAK_BASE_URL: "{{SUBSTRATE_KEYCLOAK_PUBLIC_BASE_URL}}"
@@ -64,7 +64,7 @@ stringData:
   AFSCP_ORCHESTRATOR_SERVICE_TOKEN: "{{AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
   KEYCLOAK_ADMIN: "{{SUBSTRATE_KEYCLOAK_ADMIN}}"
   KEYCLOAK_ADMIN_PASSWORD: "{{SUBSTRATE_KEYCLOAK_ADMIN_PASSWORD}}"
-  SANDBOX_SERVICE_KEY: "{{SANDBOX_SERVICE_KEY}}"
+  ASBCP_SERVICE_KEY: "{{ASBCP_SERVICE_KEY}}"
   MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: "{{MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}}"
 ---
 apiVersion: v1
@@ -90,16 +90,16 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: sandbox-manager-config
+  name: asbcp-config
   namespace: {{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: sandbox-manager
+    app.kubernetes.io/component: asbcp
     app.kubernetes.io/part-of: agentsmith-deploy
   annotations:
     rendered-by: agentsmith-unified-deploy
 data:
-  manager-config.yaml: |
+  config.yaml: |
     version: 1
     server:
       httpPort: 8080

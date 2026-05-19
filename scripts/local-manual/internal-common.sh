@@ -41,16 +41,16 @@ ensure_internal_common_runtime_env() {
 
 init_internal_common_source_env
 
-SANDBOX_ROOT="${SANDBOX_ROOT:-$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
 INTERNAL_SANDBOX_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE:-${INTERNAL_REAL_DIR}/sandbox-control.env}"
-INTERNAL_SANDBOX_MANAGER_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
-INTERNAL_SANDBOX_MANAGER_CONFIG="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
-INTERNAL_SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:28080}"
-INTERNAL_SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_URL_VALUE##*:}"
+INTERNAL_ASBCP_LOG="${INTERNAL_ASBCP_LOG:-${INTERNAL_REAL_DIR}/asbcp.log}"
+INTERNAL_ASBCP_CONFIG="${INTERNAL_ASBCP_CONFIG:-${INTERNAL_REAL_DIR}/asbcp-config.yaml}"
+ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:28080}"
+INTERNAL_SANDBOX_PORT="${ASBCP_INTERNAL_BASE_URL_VALUE##*:}"
 INTERNAL_SANDBOX_PORT="${INTERNAL_SANDBOX_PORT%%/*}"
-SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
+ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/asbcp-image.lock}"
 KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
@@ -84,7 +84,7 @@ AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_local_manual}"
 AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME="${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME:-afscp-local-runtime}"
 AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
 AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
 AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
 AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
@@ -2468,7 +2468,7 @@ stop_afscp_local_runtime() {
 
 write_internal_sandbox_config() {
   ensure_internal_common_runtime_env
-  cat > "${INTERNAL_SANDBOX_MANAGER_CONFIG}" <<EOF
+  cat > "${INTERNAL_ASBCP_CONFIG}" <<EOF
 version: 1
 
 server:
@@ -2573,45 +2573,61 @@ buffer:
 EOF
 }
 
+resolve_local_manual_asbcp_image() {
+  local image digest_hex repeated
+  image="${ASBCP_IMAGE:-}"
+  if [[ -z "${image}" && -f "${ASBCP_IMAGE_LOCK_PATH}" ]]; then
+    image="$(awk -F= '$1 == "asbcp_source_image" { print $2 }' "${ASBCP_IMAGE_LOCK_PATH}" | tail -n1)"
+  fi
+  [[ -n "${image}" ]] || {
+    internal_err "missing ASBCP_IMAGE and image lock: ${ASBCP_IMAGE_LOCK_PATH}"
+    exit 1
+  }
+  if [[ ! "${image}" =~ @sha256:[a-f0-9]{64}$ ]]; then
+    internal_err "ASBCP_IMAGE must be pinned by digest: ${image}"
+    exit 1
+  fi
+  digest_hex="${image##*@sha256:}"
+  repeated="${digest_hex//${digest_hex:0:1}/}"
+  if [[ -z "${repeated}" ]]; then
+    internal_err "ASBCP_IMAGE uses a placeholder digest and is not pullable: ${image}"
+    exit 1
+  fi
+  printf '%s\n' "${image}"
+}
+
 write_internal_state_env() {
   ensure_internal_common_runtime_env
+  local asbcp_image
+  asbcp_image="$(resolve_local_manual_asbcp_image)"
   cat > "${INTERNAL_SANDBOX_STATE_FILE}" <<EOF
 ROOT_DIR="${ROOT_DIR}"
-SANDBOX_ROOT="${SANDBOX_ROOT}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR}"
-CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG}"
-SANDBOX_PORT="${INTERNAL_SANDBOX_PORT}"
-SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
+ASBCP_IMAGE="${asbcp_image}"
+ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH}"
+ASBCP_CONFIG_PATH="${INTERNAL_ASBCP_CONFIG}"
+ASBCP_PORT="${INTERNAL_SANDBOX_PORT}"
+ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
-SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG}"
-AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
-AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
-AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
-AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
-AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
-AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
-AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
+ASBCP_LOG="${INTERNAL_ASBCP_LOG}"
 AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
 AFSCP_INTERNAL_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
 AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
-AFSCP_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
-AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
 AFSCP_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
-AFSCP_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
-AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
-MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+AFSCP_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
 KUBECONFIG="${KUBECONFIG:-}"
 EOF
 }
 
 stop_internal_sandbox_runtime() {
   if [[ -f "${INTERNAL_SANDBOX_STATE_FILE}" ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
   kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
   kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
@@ -2633,7 +2649,7 @@ start_internal_runtime() {
   write_internal_sandbox_config
   write_internal_state_env
   stop_internal_sandbox_runtime
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-manager
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp
 }
 
 restart_api_with_mode() {

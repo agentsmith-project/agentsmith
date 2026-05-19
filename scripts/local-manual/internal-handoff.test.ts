@@ -124,7 +124,7 @@ function renderInternalSandboxConfig(): string {
   const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
   const runtimeLinesRoot = path.join(tempRoot, 'artifacts', 'runtime', 'lines');
   const internalDir = path.join(tempRoot, 'internal');
-  const configPath = path.join(internalDir, 'sandbox-manager.yaml');
+  const configPath = path.join(internalDir, 'asbcp.yaml');
   const envFile = path.join(tempRoot, '.env.local-manual');
   const internalEnvFile = path.join(tempRoot, 'local-manual-internal.env');
 
@@ -145,8 +145,8 @@ function renderInternalSandboxConfig(): string {
           export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
           export LOCAL_MANUAL_INTERNAL_ENV_FILE="${internalEnvFile}"
           export INTERNAL_REAL_DIR="${internalDir}"
-          export INTERNAL_SANDBOX_MANAGER_CONFIG="${configPath}"
-          export SANDBOX_MANAGER_URL="http://127.0.0.1:29080"
+          export INTERNAL_ASBCP_CONFIG="${configPath}"
+          export ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:29080"
           export INTERNAL_AGENT_K8S_NAMESPACE="agentsmith-sandbox"
           export LOCAL_MANUAL_INTERNAL_AGENT_IMAGE="runner:test"
           export AFSCP_BASE_URL="http://yaml-afscp.invalid"
@@ -184,7 +184,7 @@ function runInternalUpWithStubbedCommon(): string {
       `#!/usr/bin/env bash
 set -euo pipefail
 ROOT_DIR=${shellSingleQuote(tempRoot)}
-INTERNAL_SANDBOX_MANAGER_URL_VALUE="http://127.0.0.1:28080"
+ASBCP_INTERNAL_BASE_URL_VALUE="http://127.0.0.1:28080"
 K8S_NAMESPACE="agentsmith-sandbox"
 record() { printf '%s\\n' "$*" >> ${shellSingleQuote(operationLog)}; }
 ensure_local_manual_ready() { record ensure_local_manual_ready; }
@@ -229,7 +229,7 @@ describe('local-manual internal handoff', () => {
     expect(result.stateExists).toBe('no');
   });
 
-  it('keeps sandbox-manager AFSCP truth in env instead of generated YAML config', () => {
+  it('keeps ASBCP AFSCP truth in env instead of generated YAML config', () => {
     const config = renderInternalSandboxConfig();
 
     expect(config).toContain('httpPort: 29080');
@@ -383,7 +383,7 @@ describe('local-manual internal handoff', () => {
     expect(startBody).not.toContain('stop_afscp_local_runtime');
     expect(startBody).not.toContain('start-cleaner');
     expect(sandboxStopBody).not.toContain('stop-cleaner');
-    expect(sandboxStopBody).toContain('stop-manager');
+    expect(sandboxStopBody).toContain('stop-asbcp');
     expect(sandboxStopBody).toContain('app=managed-workload');
     expect(sandboxStopBody).toContain('app=sandbox');
     expect(fullStopBody).toContain('stop_internal_sandbox_runtime');
@@ -1287,8 +1287,9 @@ SH
       INTERNAL_SANDBOX_STATE_FILE="\${SNIPPET_TEMP_ROOT}/sandbox-control.env"
       AFSCP_BASE_URL="http://state-afscp.internal"
       AFSCP_CALLER_SERVICE="agentsmith-api"
-      AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-manager"
+      AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-control-plane"
       AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
+      ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
       write_internal_state_env
       cat "$INTERNAL_SANDBOX_STATE_FILE"
     `);
@@ -1296,7 +1297,7 @@ SH
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('AFSCP_INTERNAL_BASE_URL="http://state-afscp.internal"');
     expect(result.stdout).toContain('AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"');
-    expect(result.stdout).toContain('AFSCP_CALLER_SERVICE="agentsmith-sandbox-manager"');
+    expect(result.stdout).toContain('AFSCP_CALLER_SERVICE="agentsmith-sandbox-control-plane"');
     expect(result.stdout).not.toContain('AFSCP_CALLER_SERVICE="agentsmith-api"');
   });
 
@@ -2049,8 +2050,8 @@ SH
   it('keeps local-real internal sandbox handoff manager-only', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
 
-    expect(common).toContain('bash "${CONTROL_SCRIPT}" start-manager');
-    expect(common).toContain('bash "${CONTROL_SCRIPT}" stop-manager');
+    expect(common).toContain('bash "${CONTROL_SCRIPT}" start-asbcp');
+    expect(common).toContain('bash "${CONTROL_SCRIPT}" stop-asbcp');
     expect(common).not.toContain('start-cleaner');
     expect(common).not.toContain('stop-cleaner');
     expect(common).not.toContain('INTERNAL_SANDBOX_CLEANER');

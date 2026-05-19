@@ -11,7 +11,7 @@
 #   - A managed Agent Runner has been created (AGENT_RUNNER_ID set or cached)
 #
 # Usage:
-#   SANDBOX_MANAGER_URL=http://... SANDBOX_SERVICE_KEY=sk_xxx \
+#   ASBCP_INTERNAL_BASE_URL=http://... ASBCP_SERVICE_KEY=sk_xxx \
 #     AGENT_RUNNER_ID=agr_xxx PROJECT_ID=proj_xxx \
 #     ./scripts/sandbox-joint-integration-smoke.sh
 # ---------------------------------------------------------------------------
@@ -28,8 +28,8 @@ WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 AGENT_RUNNER_ID="${AGENT_RUNNER_ID:-$(state_get agent_runner.id)}"
-SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:?SANDBOX_MANAGER_URL required}"
-SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:?SANDBOX_SERVICE_KEY required}"
+ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL:?ASBCP_INTERNAL_BASE_URL required}"
+ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY:?ASBCP_SERVICE_KEY required}"
 PROMPT="${PROMPT:-reply exactly: sandbox smoke ok}"
 
 PASS=0
@@ -64,8 +64,8 @@ api() {
 
 sandbox_api() {
   local method="$1" path="$2"; shift 2
-  curl -sS -X "${method}" "${SANDBOX_MANAGER_URL}${path}" \
-    -H "X-Service-Key: ${SANDBOX_SERVICE_KEY}" \
+  curl -sS -X "${method}" "${ASBCP_INTERNAL_BASE_URL}${path}" \
+    -H "X-Service-Key: ${ASBCP_SERVICE_KEY}" \
     -H "Content-Type: application/json" \
     "$@"
 }
@@ -90,19 +90,19 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────
-log "=== Phase 2: Sandbox Manager health ==="
-HEALTH_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${SANDBOX_MANAGER_URL}/healthz")"
+log "=== Phase 2: ASBCP health ==="
+HEALTH_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${ASBCP_INTERNAL_BASE_URL}/healthz")"
 if [[ "${HEALTH_CODE}" == "200" ]]; then
-  pass "Sandbox Manager /healthz → 200"
+  pass "ASBCP /healthz -> 200"
 else
-  fail "Sandbox Manager /healthz → ${HEALTH_CODE}"
+  fail "ASBCP /healthz -> ${HEALTH_CODE}"
 fi
 
-READY_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${SANDBOX_MANAGER_URL}/readyz")"
+READY_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${ASBCP_INTERNAL_BASE_URL}/readyz")"
 if [[ "${READY_CODE}" == "200" ]]; then
-  pass "Sandbox Manager /readyz → 200"
+  pass "ASBCP /readyz -> 200"
 else
-  fail "Sandbox Manager /readyz → ${READY_CODE}"
+  fail "ASBCP /readyz -> ${READY_CODE}"
 fi
 
 # ───────────────────────────────────────────────────────────────

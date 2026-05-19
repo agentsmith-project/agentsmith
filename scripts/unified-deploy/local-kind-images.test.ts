@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   checkLocalKindImagePreflight,
+  parseAsbcpImageLock,
   parseLlmupImageLock,
   runLocalKindImagesProducer,
   type LocalKindImageCommandRunner,
@@ -19,7 +20,7 @@ type CommandCall = {
 };
 
 const APP_DIGEST = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const SANDBOX_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const ASBCP_DIGEST = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 const LLMUP_DIGEST = 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
@@ -38,19 +39,23 @@ function tempDir(prefix: string): string {
   return root;
 }
 
-function createSandboxSource(root: string): string {
-  const source = join(root, 'mbos-sandbox-v1', 'manager-service');
-  mkdirSync(source, { recursive: true });
-  writeFileSync(join(source, 'Dockerfile'), 'FROM scratch\n', 'utf8');
-  return source;
+function createAsbcpImageLock(root: string, content = `\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@${ASBCP_DIGEST}
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`): string {
+  const lockPath = join(root, 'asbcp-image.lock');
+  writeFileSync(lockPath, content, 'utf8');
+  return lockPath;
 }
 
 function registryDigestForRef(ref: string): string {
   if (ref.includes('/agentsmith-app:')) {
     return APP_DIGEST;
   }
-  if (ref.includes('/sandbox-manager:')) {
-    return SANDBOX_DIGEST;
+  if (ref.includes('/agentsmith-sandbox-control-plane:')) {
+    return ASBCP_DIGEST;
   }
   if (ref.includes('/llm-universal-proxy:')) {
     return LLMUP_DIGEST;
@@ -249,6 +254,52 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(lock.k8s_image).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.27');
   });
 
+  it('parses the locked ASBCP source image and requires canonical release provenance', () => {
+    const lock = parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@${ASBCP_DIGEST}
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`);
+
+    expect(lock.version).toBe('v0.1.0');
+    expect(lock.source_image).toContain('agentsmith-sandbox-control-plane:v0.1.0@sha256:');
+    expect(lock.release_url).toBe('https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0');
+    expect(lock.commit_sha).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(lock.host_image).toBe('localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
+    expect(lock.k8s_image).toBe('kind-registry:5000/mbos/agentsmith-sandbox-control-plane:v0.1.0');
+
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)).toThrow(/sha256 digest/u);
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)).toThrow(/placeholder digest/u);
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/example/agentsmith-sandbox-control-plane:v0.1.0@${ASBCP_DIGEST}
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)).toThrow(/canonical GHCR/u);
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@${ASBCP_DIGEST}
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)).toThrow(/asbcp_release_url/u);
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=v0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@${ASBCP_DIGEST}
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
+asbcp_commit_sha=not-a-sha
+`)).toThrow(/asbcp_commit_sha/u);
+  });
+
   it('keeps app Dockerfile build-context COPY sources present in the repo', () => {
     const missingSources = appDockerfileBuildContextCopySources()
       .filter(({ source }) => !existsSync(join(process.cwd(), source)));
@@ -258,14 +309,14 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
 
   it('generates a local-kind site env with immutable K8s digest refs and records host push refs', async () => {
     const root = tempDir('local-kind-images-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const evidenceDir = join(root, 'evidence');
     const calls: CommandCall[] = [];
 
     const result = await runLocalKindImagesProducer({
       evidenceDir,
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir,
+      asbcpImageLockPath,
       tag: 'test-tag',
       runner: successfulRunner(calls),
     });
@@ -276,7 +327,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(siteEnv).toContain(`API_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(siteEnv).toContain(`LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
     expect(siteEnv).toContain(`AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
-    expect(siteEnv).toContain(`SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`);
+    expect(siteEnv).toContain(`ASBCP_IMAGE=kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`);
     expect(siteEnv).toContain(`MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(siteEnv).toContain(`INGRESS_NGINX_CONTROLLER_IMAGE=kind-registry:5000/mbos/ingress-nginx-controller@${INGRESS_CONTROLLER_DIGEST}`);
     expect(siteEnv).toContain(`INGRESS_NGINX_CERTGEN_IMAGE=kind-registry:5000/mbos/ingress-nginx-kube-webhook-certgen@${INGRESS_CERTGEN_DIGEST}`);
@@ -286,10 +337,11 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(result.evidence.images.app.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-app:test-tag');
     expect(result.evidence.images.app.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-app@${APP_DIGEST}`);
     expect(result.evidence.images.app.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
-    expect(result.evidence.images.sandbox_manager.host_ref).toBe('localhost:5001/mbos/sandbox-manager:test-tag');
-    expect(result.evidence.images.sandbox_manager.k8s_tag_ref).toBe('kind-registry:5000/mbos/sandbox-manager:test-tag');
-    expect(result.evidence.images.sandbox_manager.host_digest_ref).toBe(`localhost:5001/mbos/sandbox-manager@${SANDBOX_DIGEST}`);
-    expect(result.evidence.images.sandbox_manager.k8s_ref).toBe(`kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`);
+    expect(result.evidence.images.asbcp.source_ref).toContain('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:');
+    expect(result.evidence.images.asbcp.host_ref).toBe('localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
+    expect(result.evidence.images.asbcp.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-sandbox-control-plane:v0.1.0');
+    expect(result.evidence.images.asbcp.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`);
+    expect(result.evidence.images.asbcp.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`);
     expect(result.evidence.images.managed_runner.base_host_ref).toBe('localhost:5001/mbos/agentsmith-managed-runner-base:test-tag');
     expect(result.evidence.images.managed_runner.host_ref).toBe('localhost:5001/mbos/agentsmith-managed-runner:test-tag');
     expect(result.evidence.images.managed_runner.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-managed-runner:test-tag');
@@ -318,25 +370,15 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(readFileSync(result.evidence.paths.report_path, 'utf8')).toContain('agentsmith.unified-deploy.local-kind-images.evidence/v1');
   });
 
-  it('fails fast when sandbox manager source is missing', async () => {
-    const root = tempDir('local-kind-images-missing-sandbox-');
-    const calls: CommandCall[] = [];
+  it('fails fast when the ASBCP image lock is missing', async () => {
+    const root = tempDir('local-kind-images-missing-asbcp-lock-');
 
-    const result = await runLocalKindImagesProducer({
+    await expect(runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir: join(root, 'missing', 'manager-service'),
-      runner: successfulRunner(calls),
-    });
-
-    expect(result.status).toBe('failed');
-    expect(result.failures).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: 'sandbox-source',
-        message: expect.stringContaining('SANDBOX_SOURCE_DIR'),
-      }),
-    ]));
-    expect(calls.some((call) => call.args.includes('build'))).toBe(false);
+      asbcpImageLockPath: join(root, 'missing-asbcp-image.lock'),
+      runner: successfulRunner([]),
+    })).rejects.toThrow(/missing-asbcp-image\.lock/u);
   });
 
   it('rejects a symlinked evidenceDir before writing local-kind image evidence', async () => {
@@ -348,7 +390,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     await expect(runLocalKindImagesProducer({
       evidenceDir,
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir: join(root, 'missing', 'manager-service'),
+      asbcpImageLockPath: createAsbcpImageLock(root),
       runner: successfulRunner([]),
     })).rejects.toThrow(/evidence.*symlink/i);
   });
@@ -369,7 +411,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
       await expect(runLocalKindImagesProducer({
         evidenceDir: join(releaseRoot, 'local-kind-images'),
         outputSiteEnvPath: join(root, 'local-kind-site.env'),
-        sandboxSourceDir: join(root, 'missing', 'manager-service'),
+        asbcpImageLockPath: createAsbcpImageLock(root),
         runner: successfulRunner([]),
       })).rejects.toThrow(/campaign|evidence|symlink/i);
 
@@ -388,15 +430,15 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     }
   });
 
-  it('builds app, sandbox, managed runner images, retags locked AFSCP and llmup, and pushes local registry refs in order', async () => {
+  it('builds app and managed runner images, retags locked ASBCP/AFSCP/llmup images, and pushes local registry refs in order', async () => {
     const root = tempDir('local-kind-images-order-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const calls: CommandCall[] = [];
 
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir,
+      asbcpImageLockPath,
       tag: 'order-tag',
       runner: successfulRunner(calls),
     });
@@ -406,8 +448,13 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(commandText).toContain('docker ps');
     expect(commandText).toContain('docker build -t localhost:5001/mbos/agentsmith-app-base:order-tag -f infra/deploy/Dockerfile.agentsmith-app-base');
     expect(commandText).toContain('docker build --build-arg APP_BASE_IMAGE=localhost:5001/mbos/agentsmith-app-base:order-tag -t localhost:5001/mbos/agentsmith-app:order-tag -f infra/deploy/Dockerfile.agentsmith-app');
-    expect(commandText).toContain(`docker build -t localhost:5001/mbos/sandbox-manager:order-tag -f ${join(sandboxSourceDir, 'Dockerfile')}`);
+    expect(commandText).not.toContain('mbos-sandbox-v1');
+    expect(commandText).not.toContain('docker build -t localhost:5001/mbos/agentsmith-sandbox-control-plane');
+    expect(commandText).not.toContain('docker build -t localhost:5001/mbos/sandbox-manager');
     expect(commandText).toContain('docker build --build-arg RUNNER_BASE_IMAGE=localhost:5001/mbos/agentsmith-managed-runner-base:order-tag -t localhost:5001/mbos/agentsmith-managed-runner:order-tag -f infra/runner/Dockerfile.agent-task-runner');
+    expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:');
+    expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:');
+    expect(commandText).toContain('localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
     expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:');
     expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:');
     expect(commandText).toContain('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.6');
@@ -421,7 +468,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(commandText).toContain('docker tag registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:');
     expect(commandText).toContain('localhost:5001/mbos/ingress-nginx-kube-webhook-certgen:v1.6.9');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-app:order-tag');
-    expect(commandText).toContain('docker push localhost:5001/mbos/sandbox-manager:order-tag');
+    expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-managed-runner:order-tag');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.6');
     expect(commandText).toContain('docker push localhost:5001/mbos/llm-universal-proxy:v0.2.27');
@@ -434,7 +481,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
 
   it('fails before generated site env when the locked AFSCP release image is unavailable', async () => {
     const root = tempDir('local-kind-images-afscp-source-unavailable-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const calls: CommandCall[] = [];
     const runner: LocalKindImageCommandRunner = async (command, args) => {
       calls.push({ command, args });
@@ -458,7 +505,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir,
+      asbcpImageLockPath,
       tag: 'afscp-unavailable',
       runner,
     });
@@ -474,7 +521,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
 
   it('pulls llmup when the locked source image is not already present locally', async () => {
     const root = tempDir('local-kind-images-llmup-pull-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const calls: CommandCall[] = [];
     const runner: LocalKindImageCommandRunner = async (command, args) => {
       calls.push({ command, args });
@@ -499,7 +546,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir,
+      asbcpImageLockPath,
       runner,
     });
 
@@ -509,7 +556,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
 
   it('passes when docker exec curl sees proxy 503 but CRI/containerd pull succeeds', async () => {
     const root = tempDir('local-kind-images-curl-diagnostic-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const outSiteEnvPath = join(root, 'local-kind-site.env');
     const calls: CommandCall[] = [];
     const runner: LocalKindImageCommandRunner = async (_command, args) => {
@@ -535,7 +582,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: outSiteEnvPath,
-      sandboxSourceDir,
+      asbcpImageLockPath,
       runner,
     });
 
@@ -543,7 +590,7 @@ llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@sha256
     expect(result.status).toBe('passed');
     expect(commandText).toContain('docker exec agentsmith-control-plane curl -fsS http://kind-registry:5000/v2/');
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`);
-    expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`);
+    expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`);
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
     expect(commandText).toContain(`docker exec agentsmith-control-plane crictl pull kind-registry:5000/mbos/ingress-nginx-controller@${INGRESS_CONTROLLER_DIGEST}`);
@@ -637,7 +684,7 @@ spec:
 
   it('fails without writing generated site env when CRI/containerd cannot pull local-kind images', async () => {
     const root = tempDir('local-kind-images-cri-pull-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const outSiteEnvPath = join(root, 'local-kind-site.env');
     const runner: LocalKindImageCommandRunner = async (_command, args) => {
       const joined = args.join(' ');
@@ -661,7 +708,7 @@ spec:
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: outSiteEnvPath,
-      sandboxSourceDir,
+      asbcpImageLockPath,
       registryAvailabilityPoll: testRegistryAvailabilityPoll().poll,
       runner,
     });
@@ -678,7 +725,7 @@ spec:
 
   it('fails without writing generated site env when kind-registry is not attached to the kind network', async () => {
     const root = tempDir('local-kind-images-network-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const outSiteEnvPath = join(root, 'local-kind-site.env');
     writeFileSync(outSiteEnvPath, 'WEB_IMAGE=stale-success\n', 'utf8');
     const runner: LocalKindImageCommandRunner = async (_command, args) => {
@@ -700,7 +747,7 @@ spec:
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: outSiteEnvPath,
-      sandboxSourceDir,
+      asbcpImageLockPath,
       registryAvailabilityPoll: testRegistryAvailabilityPoll().poll,
       runner,
     });
@@ -1005,7 +1052,7 @@ data:
 
   it('redacts secret-like values from docker diagnostics in evidence', async () => {
     const root = tempDir('local-kind-images-redaction-');
-    const sandboxSourceDir = createSandboxSource(root);
+    const asbcpImageLockPath = createAsbcpImageLock(root);
     const runner: LocalKindImageCommandRunner = async (_command, args) => {
       if (args.includes('build') && args.includes('-f') && args.includes('infra/deploy/Dockerfile.agentsmith-app-base')) {
         return {
@@ -1024,7 +1071,7 @@ data:
     const result = await runLocalKindImagesProducer({
       evidenceDir: join(root, 'evidence'),
       outputSiteEnvPath: join(root, 'local-kind-site.env'),
-      sandboxSourceDir,
+      asbcpImageLockPath,
       runner,
     });
     const report = readFileSync(result.evidence.paths.report_path, 'utf8');

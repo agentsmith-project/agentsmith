@@ -56,8 +56,8 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('  "${INTEGRATION_POSTGRES_PORT}" \\');
     expect(script).toContain('  "${INTEGRATION_MINIO_API_PORT}"');
 
-    expect(script).toContain('endpoint: localhost:${INTEGRATION_MINIO_API_PORT}');
-    expect(script).toContain('STORAGE_ENDPOINT="localhost:${INTEGRATION_MINIO_API_PORT}"');
+    expect(script).not.toContain('endpoint: localhost:${INTEGRATION_MINIO_API_PORT}');
+    expect(script).not.toContain('STORAGE_ENDPOINT="localhost:${INTEGRATION_MINIO_API_PORT}"');
 
     expect(script).toContain('INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \\');
     expect(script).toContain('INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \\');
@@ -71,7 +71,7 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).not.toContain('endpoint: localhost:19000');
   });
 
-  it('passes the sandbox-manager AFSCP env contract directly to the local manager process', () => {
+  it('passes the ASBCP AFSCP env contract directly to the locked ASBCP image', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
     expect(script).toContain('AFSCP_INTERNAL_BASE_URL_VALUE="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL}}"');
@@ -79,20 +79,21 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('AFSCP_CALLER_SERVICE_VALUE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}"');
     expect(script).toContain('AFSCP_ACTOR_TYPE_VALUE="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"');
     expect(script).toContain('AFSCP_ACTOR_ID_VALUE="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_CALLER_SERVICE_VALUE}}}"');
-    expect(script).toContain('AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}" \\');
-    expect(script).toContain('AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" \\');
-    expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}" \\');
-    expect(script).toContain('AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}" \\');
-    expect(script).toContain('AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}" \\');
+    expect(script).toContain('AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}"');
+    expect(script).toContain('AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}"');
+    expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"');
+    expect(script).toContain('AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"');
+    expect(script).toContain('AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"');
+    expect(script).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp');
     expect(script).not.toMatch(/^afscp:\s*$/mu);
     expect(script).not.toContain('http://127.0.0.1:28090');
   });
 
-  it('starts the wrapper-owned AFSCP local runtime before the sandbox manager and cleans it up', () => {
+  it('starts the wrapper-owned AFSCP local runtime before ASBCP and cleans it up', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const trapIndex = script.indexOf('trap cleanup EXIT');
     const ensureIndex = script.indexOf('\nensure_release_user_story_afscp_local_runtime\n', trapIndex);
-    const sandboxStartIndex = script.indexOf('info "starting local sandbox manager"', trapIndex);
+    const sandboxStartIndex = script.indexOf('info "starting ASBCP from locked image"', trapIndex);
     const cleanupStart = script.indexOf('cleanup() {');
     const cleanupEnd = script.indexOf('trap cleanup EXIT', cleanupStart);
     const cleanupBody = script.slice(cleanupStart, cleanupEnd);
@@ -109,7 +110,7 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(cleanupBody).toContain('stop_release_user_story_afscp_local_runtime');
   });
 
-  it('passes a single AFSCP and sandbox runtime truth to the child integration wrapper', () => {
+  it('passes a single AFSCP and ASBCP runtime truth to the child integration wrapper', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const childStart = script.indexOf('info "running full integration release user story"');
     const childBody = script.slice(childStart);
@@ -126,7 +127,8 @@ describe('run-integration-release-user-story integration dependency contract', (
       'AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" \\',
       'AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE}" \\',
       'AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN}" \\',
-      'SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\',
+      'ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \\',
+      'ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \\',
       'AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL_VALUE}" \\',
     ]) {
       expect(childBody).toContain(assignment);

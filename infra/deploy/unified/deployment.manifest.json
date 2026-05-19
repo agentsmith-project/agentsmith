@@ -106,9 +106,9 @@
         "public": false,
         "internal_only": true
       },
-      "sandbox-manager": {
+      "asbcp": {
         "workload": "Deployment",
-        "service": "agentsmith-sandbox-manager",
+        "service": "agentsmith-sandbox-control-plane",
         "public": false
       },
       "managed-runner-support": {
@@ -171,7 +171,7 @@
     ],
     "local_kind_admin_preflight": [
       "templates/local-kind-admin-preflight/namespace.yaml.tpl",
-      "templates/local-kind-admin-preflight/sandbox-manager-pv-rbac.yaml.tpl",
+      "templates/local-kind-admin-preflight/asbcp-pv-rbac.yaml.tpl",
       "templates/local-kind-admin-preflight/ingress-nginx.yaml.tpl"
     ]
   }

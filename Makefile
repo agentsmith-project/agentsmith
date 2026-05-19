@@ -893,8 +893,8 @@ urls:
 # Internal Agent Sandbox — Joint Integration
 # ---------------------------------------------------------------------------
 
-SANDBOX_MANAGER_URL ?=
-SANDBOX_SERVICE_KEY ?=
+ASBCP_INTERNAL_BASE_URL ?=
+ASBCP_SERVICE_KEY ?=
 INTERNAL_AGENT_WS_HOST ?= ws://localhost:$(PORT_API)
 AGENT_EXECUTION_WS_BASE_URL ?= $(INTERNAL_AGENT_WS_HOST)
 INTERNAL_AGENT_IMAGE ?=
@@ -914,15 +914,15 @@ sandbox-preflight:
 	@echo ""
 	@PASS=0; FAIL=0; \
 	echo "--- 1. Environment variables ---"; \
-	if [ -z "$(SANDBOX_MANAGER_URL)" ]; then \
-		echo "  [FAIL] SANDBOX_MANAGER_URL not set"; FAIL=$$((FAIL+1)); \
+	if [ -z "$(ASBCP_INTERNAL_BASE_URL)" ]; then \
+		echo "  [FAIL] ASBCP_INTERNAL_BASE_URL not set"; FAIL=$$((FAIL+1)); \
 	else \
-		echo "  [OK]   SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL)"; PASS=$$((PASS+1)); \
+		echo "  [OK]   ASBCP_INTERNAL_BASE_URL=$(ASBCP_INTERNAL_BASE_URL)"; PASS=$$((PASS+1)); \
 	fi; \
-	if [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
-		echo "  [FAIL] SANDBOX_SERVICE_KEY not set"; FAIL=$$((FAIL+1)); \
+	if [ -z "$(ASBCP_SERVICE_KEY)" ]; then \
+		echo "  [FAIL] ASBCP_SERVICE_KEY not set"; FAIL=$$((FAIL+1)); \
 	else \
-		echo "  [OK]   SANDBOX_SERVICE_KEY=<set>"; PASS=$$((PASS+1)); \
+		echo "  [OK]   ASBCP_SERVICE_KEY=<set>"; PASS=$$((PASS+1)); \
 	fi; \
 	if [ -z "$(INTERNAL_AGENT_IMAGE)" ]; then \
 		echo "  [FAIL] INTERNAL_AGENT_IMAGE not set"; FAIL=$$((FAIL+1)); \
@@ -930,20 +930,20 @@ sandbox-preflight:
 		echo "  [OK]   INTERNAL_AGENT_IMAGE=$(INTERNAL_AGENT_IMAGE)"; PASS=$$((PASS+1)); \
 	fi; \
 	echo ""; \
-	echo "--- 2. Sandbox Manager health ---"; \
-	if [ -n "$(SANDBOX_MANAGER_URL)" ]; then \
-		if curl -sf -o /dev/null -w "" --max-time 5 "$(SANDBOX_MANAGER_URL)/healthz" 2>/dev/null; then \
-			echo "  [OK]   $(SANDBOX_MANAGER_URL)/healthz → 200"; PASS=$$((PASS+1)); \
+	echo "--- 2. ASBCP health ---"; \
+	if [ -n "$(ASBCP_INTERNAL_BASE_URL)" ]; then \
+		if curl -sf -o /dev/null -w "" --max-time 5 "$(ASBCP_INTERNAL_BASE_URL)/healthz" 2>/dev/null; then \
+			echo "  [OK]   $(ASBCP_INTERNAL_BASE_URL)/healthz → 200"; PASS=$$((PASS+1)); \
 		else \
-			echo "  [FAIL] $(SANDBOX_MANAGER_URL)/healthz not reachable"; FAIL=$$((FAIL+1)); \
+			echo "  [FAIL] $(ASBCP_INTERNAL_BASE_URL)/healthz not reachable"; FAIL=$$((FAIL+1)); \
 		fi; \
-		if curl -sf -o /dev/null -w "" --max-time 5 "$(SANDBOX_MANAGER_URL)/readyz" 2>/dev/null; then \
-			echo "  [OK]   $(SANDBOX_MANAGER_URL)/readyz → 200"; PASS=$$((PASS+1)); \
+		if curl -sf -o /dev/null -w "" --max-time 5 "$(ASBCP_INTERNAL_BASE_URL)/readyz" 2>/dev/null; then \
+			echo "  [OK]   $(ASBCP_INTERNAL_BASE_URL)/readyz → 200"; PASS=$$((PASS+1)); \
 		else \
-			echo "  [FAIL] $(SANDBOX_MANAGER_URL)/readyz not reachable"; FAIL=$$((FAIL+1)); \
+			echo "  [FAIL] $(ASBCP_INTERNAL_BASE_URL)/readyz not reachable"; FAIL=$$((FAIL+1)); \
 		fi; \
 	else \
-		echo "  [SKIP] SANDBOX_MANAGER_URL not set"; \
+		echo "  [SKIP] ASBCP_INTERNAL_BASE_URL not set"; \
 	fi; \
 	echo ""; \
 	echo "--- 3. Keycloak ---"; \
@@ -972,9 +972,9 @@ sandbox-preflight:
 	echo "==> READY for joint integration"
 
 sandbox-api-dev: check-api-port
-	@if [ -z "$(SANDBOX_MANAGER_URL)" ] || [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
-		echo "[FAIL] Set SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY first."; \
-		echo "  Example: make sandbox-api-dev SANDBOX_MANAGER_URL=http://sandbox-manager:8080 SANDBOX_SERVICE_KEY=sk_xxx"; \
+	@if [ -z "$(ASBCP_INTERNAL_BASE_URL)" ] || [ -z "$(ASBCP_SERVICE_KEY)" ]; then \
+		echo "[FAIL] Set ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY first."; \
+		echo "  Example: make sandbox-api-dev ASBCP_INTERNAL_BASE_URL=http://agentsmith-sandbox-control-plane:8080 ASBCP_SERVICE_KEY=sk_xxx"; \
 		exit 1; \
 	fi
 	PORT=$(PORT_API) \
@@ -990,8 +990,8 @@ sandbox-api-dev: check-api-port
 	MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
 	MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) \
 	MINIO_BUCKET=$(MINIO_BUCKET) \
-	SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL) \
-	SANDBOX_SERVICE_KEY=$(SANDBOX_SERVICE_KEY) \
+	ASBCP_INTERNAL_BASE_URL=$(ASBCP_INTERNAL_BASE_URL) \
+	ASBCP_SERVICE_KEY=$(ASBCP_SERVICE_KEY) \
 	INTERNAL_AGENT_K8S_NAMESPACE=$(INTERNAL_AGENT_K8S_NAMESPACE) \
 	INTERNAL_AGENT_JUICEFS_CSI_DRIVER=$(INTERNAL_AGENT_JUICEFS_CSI_DRIVER) \
 	INTERNAL_AGENT_WORKSPACE_CAPACITY=$(INTERNAL_AGENT_WORKSPACE_CAPACITY) \
@@ -1006,11 +1006,11 @@ sandbox-api-dev: check-api-port
 	$(NPM) run api:node:dev
 
 sandbox-joint-smoke:
-	@if [ -z "$(SANDBOX_MANAGER_URL)" ] || [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
-		echo "[FAIL] Set SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY."; exit 1; \
+	@if [ -z "$(ASBCP_INTERNAL_BASE_URL)" ] || [ -z "$(ASBCP_SERVICE_KEY)" ]; then \
+		echo "[FAIL] Set ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY."; exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	API_BASE=http://localhost:$(PORT_API) \
-	SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL) \
-	SANDBOX_SERVICE_KEY=$(SANDBOX_SERVICE_KEY) \
+	ASBCP_INTERNAL_BASE_URL=$(ASBCP_INTERNAL_BASE_URL) \
+	ASBCP_SERVICE_KEY=$(ASBCP_SERVICE_KEY) \
 	bash ./scripts/sandbox-joint-integration-smoke.sh

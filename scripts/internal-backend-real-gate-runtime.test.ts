@@ -47,11 +47,11 @@ function renderSandboxState(env: Record<string, string>): string {
           set -euo pipefail
           source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
           ROOT_DIR="$REPO_ROOT"
-          SANDBOX_ROOT="$TEMP_ROOT/sandbox"
           INTERNAL_REAL_DIR="$TEMP_ROOT/internal"
-          CONFIG_PATH="$TEMP_ROOT/sandbox-manager.yaml"
-          SANDBOX_PORT="28080"
-          SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
+          CONFIG_PATH="$TEMP_ROOT/asbcp.yaml"
+          ASBCP_PORT="28080"
+          ASBCP_INTERNAL_BASE_URL_VALUE="http://127.0.0.1:28080"
+          ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
           K8S_NAMESPACE="agentsmith-sandbox"
           CSI_DRIVER="csi.juicefs.com"
           STORAGE_CAPACITY="1Pi"
@@ -65,7 +65,7 @@ function renderSandboxState(env: Record<string, string>): string {
           MINIO_SECRET_KEY="minio-sk"
           MINIO_BUCKET="mbos-dev"
           mkdir -p "$INTERNAL_REAL_DIR"
-          internal_real_gate_write_sandbox_state_file "$STATE_FILE" "$CONFIG_PATH" "$TEMP_ROOT/sandbox-manager.log"
+          internal_real_gate_write_sandbox_state_file "$STATE_FILE" "$CONFIG_PATH" "$TEMP_ROOT/asbcp.log"
           cat "$STATE_FILE"
         `,
       ],
@@ -121,7 +121,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"');
     expect(agentTaskGate).not.toContain('RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host');
 
-    expect(helper).toContain('SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"');
+    expect(helper).toContain('ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"');
     expect(helper).toContain(
       'AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"',
     );
@@ -132,7 +132,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE');
     expect(helper).not.toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).toContain('render_k8s_external_dependency_services \\');
-    expect(helper).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2');
+    expect(helper).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-asbcp 1>&2');
     expect(helper).not.toContain('start-cleaner');
     expect(helper).not.toContain('stop-cleaner');
     expect(helper).not.toContain('with-cleaner');
@@ -145,13 +145,13 @@ describe('internal backend-real gate runtime contract', () => {
       'build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "1"',
     );
 
-    expect(agentTaskGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
+    expect(agentTaskGate).toContain('ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \\');
     expect(agentTaskGate).not.toContain('start-cleaner');
     expect(agentTaskGate).not.toContain('stop-cleaner');
     expect(agentTaskGate).not.toContain('with-cleaner');
     expect(agentTaskGate).not.toContain('cleaner_log');
     expect(agentTaskGate).not.toContain('sandbox-cleaner');
-    expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
+    expect(agentTaskGate).toContain('ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \\');
     expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
     expect(agentTaskGate).toContain('AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \\');
     expect(agentTaskGate).toContain('AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \\');
@@ -165,12 +165,11 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE=0 \\');
 
-    expect(reclaimSpec).toContain('deleteInternalWorkloadViaManager');
+    expect(reclaimSpec).toContain('deleteInternalWorkloadViaAsbcp');
     expect(reclaimSpec).not.toContain('start-cleaner');
     expect(reclaimSpec).not.toContain('stop-cleaner');
     expect(reclaimSpec).not.toContain('run-cleaner-once');
-    expect(developmentGuide).toContain('local sandbox manager');
-    expect(developmentGuide).not.toContain('local sandbox manager / cleaner');
+    expect(developmentGuide).not.toContain('sandbox-cleaner');
   });
 
   it('starts the internal Agent Task gate without duplicating AFSCP stop before reset', () => {
@@ -220,12 +219,12 @@ describe('internal backend-real gate runtime contract', () => {
     );
   });
 
-  it('writes AFSCP manager env values into isolated sandbox state instead of relying on YAML config', () => {
+  it('writes AFSCP ASBCP env values into isolated sandbox state instead of relying on YAML config', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const state = renderSandboxState({
       AFSCP_INTERNAL_BASE_URL: 'http://formal-afscp.internal:28090',
       AFSCP_ORCHESTRATOR_TOKEN: 'formal-orchestrator-token',
-      AFSCP_CALLER_SERVICE: 'formal-sandbox-manager',
+      AFSCP_CALLER_SERVICE: 'formal-asbcp',
       AFSCP_ACTOR_TYPE: 'service',
       AFSCP_ACTOR_ID: 'formal-sandbox-actor',
       AFSCP_BASE_URL: 'http://legacy-afscp.internal:28090',
@@ -234,7 +233,7 @@ describe('internal backend-real gate runtime contract', () => {
 
     expect(state).toContain('AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"');
     expect(state).toContain('AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"');
-    expect(state).toContain('AFSCP_CALLER_SERVICE="formal-sandbox-manager"');
+    expect(state).toContain('AFSCP_CALLER_SERVICE="formal-asbcp"');
     expect(state).toContain('AFSCP_ACTOR_TYPE="service"');
     expect(state).toContain('AFSCP_ACTOR_ID="formal-sandbox-actor"');
     expect(state).not.toContain('CLEANER_');
@@ -242,12 +241,12 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).not.toMatch(/^afscp:\s*$/mu);
   });
 
-  it('fails direct managed Agent Task run-integration usage before Playwright when sandbox env is missing', () => {
+  it('fails direct managed Agent Task run-integration usage before Playwright when ASBCP env is missing', () => {
     const integrationGate = read('scripts/run-integration-e2e-full.sh');
 
-    expect(integrationGate).toContain('preflight_managed_agent_task_sandbox_env');
-    expect(integrationGate).toContain('managed_agent_task_sandbox_env');
-    expect(integrationGate).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
+    expect(integrationGate).toContain('preflight_managed_agent_task_asbcp_env');
+    expect(integrationGate).toContain('managed_agent_task_asbcp_env');
+    expect(integrationGate).toContain('Managed Agent Task backend-real coverage requires ASBCP bootstrap');
     expect(integrationGate).toContain('agent-task-backend-real-runner|e2e/integration-agent-task-runner.spec.ts|e2e/integration-visual-review.spec.ts');
     expect(integrationGate).toContain("grep -q 'startAgentTaskRunViaApi'");
   });
@@ -337,8 +336,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain(
       'run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121 "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}"',
     );
-    expect(agentTaskGate).toContain('SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \\');
-    expect(agentTaskGate).toContain('SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \\');
+    expect(agentTaskGate).toContain('ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \\');
+    expect(agentTaskGate).toContain('ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \\');
     expect(agentTaskGate).toContain('AGENT_EXECUTION_WS_BASE_URL="${spec_agent_execution_ws_base_url}" \\');
     expect(agentTaskGate).toContain('INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \\');
     expect(agentTaskGate).toContain('export ENV_FILE=/dev/null');

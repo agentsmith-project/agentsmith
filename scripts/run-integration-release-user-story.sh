@@ -5,7 +5,6 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
@@ -71,9 +70,9 @@ KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:${INTEGRATION_KEYCLOAK_PORT}}"
-SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
-SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"
-SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
+ASBCP_PORT="${INTERNAL_ASBCP_PORT:-28080}"
+ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
@@ -228,9 +227,11 @@ fi
 ensure_backend_real_state
 INTEGRATION_DIR="$(backend_real_tmp_file integration-release-user-story)"
 INTEGRATION_AFSCP_DIR="${INTEGRATION_AFSCP_DIR:-${INTEGRATION_DIR}/afscp}"
-SANDBOX_LOG="$(backend_real_resolve_runtime_path "${INTEGRATION_SANDBOX_LOG:-${INTEGRATION_DIR}/sandbox-manager.log}")"
-CONFIG_PATH="$(backend_real_resolve_runtime_path "${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.yaml}")"
-mkdir -p "${INTEGRATION_DIR}" "${INTEGRATION_AFSCP_DIR}" "$(dirname "${SANDBOX_LOG}")" "$(dirname "${CONFIG_PATH}")"
+ASBCP_LOG="$(backend_real_resolve_runtime_path "${INTEGRATION_ASBCP_LOG:-${INTEGRATION_DIR}/asbcp.log}")"
+CONFIG_PATH="$(backend_real_resolve_runtime_path "${INTEGRATION_ASBCP_CONFIG:-${INTEGRATION_DIR}/asbcp-config.yaml}")"
+ASBCP_STATE_FILE="$(backend_real_resolve_runtime_path "${INTEGRATION_ASBCP_STATE_FILE:-${INTEGRATION_DIR}/asbcp-control.env}")"
+CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
+mkdir -p "${INTEGRATION_DIR}" "${INTEGRATION_AFSCP_DIR}" "$(dirname "${ASBCP_LOG}")" "$(dirname "${CONFIG_PATH}")" "$(dirname "${ASBCP_STATE_FILE}")"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   if release_user_story_runner_image_reuse_ready; then
@@ -365,7 +366,7 @@ cat > "${CONFIG_PATH}" <<EOF
 version: 1
 
 server:
-  httpPort: ${SANDBOX_PORT}
+  httpPort: ${ASBCP_PORT}
 
 auth:
   enabled: true
@@ -421,25 +422,14 @@ exec:
 files:
   rootPrefix: /workspace
 
-storage:
-  endpoint: localhost:${INTEGRATION_MINIO_API_PORT}
-  accessKey: ${MINIO_ACCESS_KEY:-mbos}
-  secretKey: ${MINIO_SECRET_KEY:-mbos_dev_password}
-  bucket: ${MINIO_BUCKET:-mbos-dev}
-  useSSL: false
-
 buffer:
   capacity: 10000
 EOF
 
-SANDBOX_PID=""
 RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0
 cleanup() {
   local cleanup_status=0
-  if [[ -n "${SANDBOX_PID}" ]] && kill -0 "${SANDBOX_PID}" >/dev/null 2>&1; then
-    kill "${SANDBOX_PID}" >/dev/null 2>&1 || true
-    wait "${SANDBOX_PID}" >/dev/null 2>&1 || true
-  fi
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   if [[ "${RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED}" == "1" ]]; then
     if ! stop_release_user_story_afscp_local_runtime; then
       cleanup_status=1
@@ -453,55 +443,27 @@ trap cleanup EXIT
 ensure_release_user_story_integration_deps_for_afscp
 ensure_release_user_story_afscp_local_runtime
 
-existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
-if [[ -n "${existing_sandbox_pid}" ]]; then
-  info "terminating stale sandbox manager on :${SANDBOX_PORT}"
-  kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
-  sleep 2
-fi
+cat > "${ASBCP_STATE_FILE}" <<EOF
+ROOT_DIR="${ROOT_DIR}"
+INTERNAL_REAL_DIR="${INTEGRATION_DIR}"
+ASBCP_IMAGE="${ASBCP_IMAGE:-}"
+ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/asbcp-image.lock}"
+ASBCP_CONFIG_PATH="${CONFIG_PATH}"
+ASBCP_PORT="${ASBCP_PORT}"
+ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
+ASBCP_LOG="${ASBCP_LOG}"
+K8S_NAMESPACE="${K8S_NAMESPACE}"
+AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}"
+AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}"
+AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"
+AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"
+AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"
+KUBECONFIG="${KUBECONFIG:-}"
+EOF
 
-info "starting local sandbox manager"
-(
-  cd "${SANDBOX_ROOT}/manager-service" && \
-    env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-    CONFIG_PATH="${CONFIG_PATH}" \
-    SERVICE_KEYS="${SANDBOX_SERVICE_KEY_VALUE}" \
-    AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}" \
-    AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" \
-    AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}" \
-    AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}" \
-    AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}" \
-    JUICEFS_CSI_DRIVER="${CSI_DRIVER}" \
-    JUICEFS_STORAGE_CAPACITY="${STORAGE_CAPACITY}" \
-    JUICEFS_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}" \
-    JUICEFS_MOUNT_OPTIONS="${MOUNT_OPTIONS}" \
-    JUICEFS_SUBDIR="${SUBDIR}" \
-    JUICEFS_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}" \
-    JUICEFS_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}" \
-    JUICEFS_STORAGE_ENDPOINT="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}" \
-    JUICEFS_STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-    JUICEFS_STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-    STORAGE_ENDPOINT="localhost:${INTEGRATION_MINIO_API_PORT}" \
-    STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-    STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-    STORAGE_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-    STORAGE_USE_SSL="false" \
-    go run ./cmd/manager
-) >"${SANDBOX_LOG}" 2>&1 &
-SANDBOX_PID=$!
-
-for _ in $(seq 1 90); do
-  if curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
-if ! curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
-  echo "[integration-release-user-story] sandbox manager failed to become ready." >&2
-  tail -n 120 "${SANDBOX_LOG}" >&2 || true
-  exit 1
-fi
+info "starting ASBCP from locked image"
+INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp
 
 info "running full integration release user story"
 (
@@ -510,8 +472,8 @@ info "running full integration release user story"
     BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
     BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
     BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \
-    SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \
-    SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
+    ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \
+    ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \
     AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \
     AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}" \

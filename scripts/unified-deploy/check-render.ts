@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 import { asRecord, type CheckFailure, type CheckResult } from './manifest';
 import { checkApiSingleReplica } from './check-api-single-replica';
-import { substrateMinioInternalMountEndpoint } from './substrate-address-roles';
 import {
   componentLabel,
   parseKubernetesDocuments,
@@ -24,7 +23,7 @@ const REQUIRED_COMPONENT_DEPLOYMENTS = new Map([
   ['afscp-api', 'afscp-api'],
   ['afscp-worker', 'afscp-worker'],
   ['afscp-export-gateway', 'afscp-export-gateway'],
-  ['sandbox-manager', 'agentsmith-sandbox-manager'],
+  ['asbcp', 'agentsmith-sandbox-control-plane'],
 ]);
 const REQUIRED_COMPONENT_SERVICES = new Map([
   ['web', 'agentsmith-web'],
@@ -32,7 +31,7 @@ const REQUIRED_COMPONENT_SERVICES = new Map([
   ['llmup', 'agentsmith-llmup'],
   ['afscp-api', 'afscp-api'],
   ['afscp-export-gateway', 'afscp-export-gateway'],
-  ['sandbox-manager', 'agentsmith-sandbox-manager'],
+  ['asbcp', 'agentsmith-sandbox-control-plane'],
 ]);
 const REQUIRED_SUBSTRATE_SERVICES = ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'] as const;
 const FORBIDDEN_SUBSTRATE_WORKLOADS = ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'] as const;
@@ -59,9 +58,9 @@ const API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS = [
   'node:module',
   'import.meta.url',
 ] as const;
-const SANDBOX_MANAGER_SERVICE_ACCOUNT = 'agentsmith-sandbox-manager';
-const SANDBOX_MANAGER_CONFIG_MAP = 'sandbox-manager-config';
-const SANDBOX_MANAGER_CONFIG_PATH = '/etc/sandbox-manager/manager-config.yaml';
+const ASBCP_SERVICE_ACCOUNT = 'agentsmith-sandbox-control-plane';
+const ASBCP_CONFIG_MAP = 'asbcp-config';
+const ASBCP_CONFIG_PATH = '/etc/asbcp/asbcp-config.yaml';
 const LLMUP_CONFIG_MAP = 'agentsmith-llmup-config';
 const LLMUP_CONFIG_PATH = '/app/config/config.yaml';
 const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
@@ -223,13 +222,11 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
     ['Secret', AFSCP_VOLUME_SECRET],
     ['Job', AFSCP_SCHEMA_BOOTSTRAP_JOB],
     ['Job', AFSCP_VOLUME_BOOTSTRAP_JOB],
-    ['ServiceAccount', SANDBOX_MANAGER_SERVICE_ACCOUNT],
-    ['Role', SANDBOX_MANAGER_SERVICE_ACCOUNT],
-    ['RoleBinding', SANDBOX_MANAGER_SERVICE_ACCOUNT],
-    ['ConfigMap', SANDBOX_MANAGER_CONFIG_MAP],
+    ['ServiceAccount', ASBCP_SERVICE_ACCOUNT],
+    ['ConfigMap', ASBCP_CONFIG_MAP],
   ] as const) {
     if (!hasResource(documents, kind, name)) {
-      addFailure(failures, `${kind}/${name}`, `sandbox-manager ${kind} ${name} must be rendered`);
+      addFailure(failures, `${kind}/${name}`, `ASBCP ${kind} ${name} must be rendered`);
     }
   }
 }
@@ -335,6 +332,9 @@ function checkIngressRoutes(documents: readonly Record<string, unknown>[], failu
     if (serviceName.includes('afscp') || route.includes('afscp')) {
       addFailure(failures, 'Ingress/agentsmith', 'AFSCP services must remain internal only');
     }
+    if (serviceName === ASBCP_SERVICE_ACCOUNT || serviceName.includes('sandbox-control-plane') || route.includes('asbcp')) {
+      addFailure(failures, 'Ingress/agentsmith', 'ASBCP services must remain internal only');
+    }
   }
 }
 
@@ -345,9 +345,12 @@ function selectorTargetsInternalOnlyComponent(selector: Record<string, unknown>)
 
     return normalizedValue === 'llmup'
       || normalizedValue.includes('llmup')
+      || normalizedValue === 'asbcp'
+      || normalizedValue.includes('sandbox-control-plane')
       || normalizedValue.includes('afscp')
       || (normalizedKey.includes('component') && (
         normalizedValue === 'llmup'
+        || normalizedValue === 'asbcp'
         || normalizedValue === 'afscp-api'
         || normalizedValue === 'afscp-export-gateway'
       ));
@@ -361,8 +364,11 @@ function serviceExposesInternalOnlyComponent(document: Record<string, unknown>):
 
   const selector = asRecord(asRecord(document.spec).selector);
   return resourceName(document).toLowerCase().includes('llmup')
+    || resourceName(document) === ASBCP_SERVICE_ACCOUNT
+    || resourceName(document).toLowerCase().includes('sandbox-control-plane')
     || resourceName(document).toLowerCase().includes('afscp')
     || componentLabel(document) === 'llmup'
+    || componentLabel(document) === 'asbcp'
     || componentLabel(document).startsWith('afscp')
     || selectorTargetsInternalOnlyComponent(selector);
 }
@@ -378,6 +384,20 @@ function serviceExposesLlmupComponent(document: Record<string, unknown>): boolea
     || Object.values(selector).some((value) => typeof value === 'string' && value.toLowerCase().includes('llmup'));
 }
 
+function serviceExposesAsbcpComponent(document: Record<string, unknown>): boolean {
+  if (resourceKind(document) !== 'Service') {
+    return false;
+  }
+
+  const selector = asRecord(asRecord(document.spec).selector);
+  return resourceName(document) === ASBCP_SERVICE_ACCOUNT
+    || resourceName(document).toLowerCase().includes('sandbox-control-plane')
+    || componentLabel(document) === 'asbcp'
+    || Object.values(selector).some((value) => typeof value === 'string' && (
+      value.toLowerCase() === 'asbcp' || value.toLowerCase().includes('sandbox-control-plane')
+    ));
+}
+
 function checkInternalServiceTypes(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   for (const document of documents) {
     if (!serviceExposesInternalOnlyComponent(document)) {
@@ -391,7 +411,9 @@ function checkInternalServiceTypes(documents: readonly Record<string, unknown>[]
         resourceId(document),
         serviceExposesLlmupComponent(document)
           ? 'llmup Service must remain ClusterIP'
-          : 'AFSCP Service must remain ClusterIP',
+          : serviceExposesAsbcpComponent(document)
+            ? 'ASBCP Service must remain ClusterIP'
+            : 'AFSCP Service must remain ClusterIP',
       );
     }
   }
@@ -513,6 +535,45 @@ function hasEnvFromRef(envFrom: readonly Record<string, unknown>[], refKind: 'co
   return envFrom.some((entry) => asRecord(entry[refKind]).name === name);
 }
 
+function resourceFieldKeys(
+  documents: readonly Record<string, unknown>[],
+  kind: 'ConfigMap' | 'Secret',
+  name: string,
+): string[] {
+  const field = kind === 'ConfigMap' ? 'data' : 'stringData';
+  return Object.keys(asRecord(resourceByKindName(documents, kind, name)[field]));
+}
+
+function projectedEnvKeys(
+  documents: readonly Record<string, unknown>[],
+  container: Record<string, unknown>,
+): Set<string> {
+  const keys = new Set<string>();
+  const env = Array.isArray(container.env) ? container.env.map(asRecord) : [];
+  for (const entry of env) {
+    if (typeof entry.name === 'string') {
+      keys.add(entry.name);
+    }
+  }
+  const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
+  for (const entry of envFrom) {
+    const configMapName = asRecord(entry.configMapRef).name;
+    if (typeof configMapName === 'string') {
+      for (const key of resourceFieldKeys(documents, 'ConfigMap', configMapName)) {
+        keys.add(key);
+      }
+    }
+    const secretName = asRecord(entry.secretRef).name;
+    if (typeof secretName === 'string') {
+      for (const key of resourceFieldKeys(documents, 'Secret', secretName)) {
+        keys.add(key);
+      }
+    }
+  }
+
+  return keys;
+}
+
 function containerPorts(container: Record<string, unknown>): number[] {
   const ports = Array.isArray(container.ports) ? container.ports : [];
   return ports
@@ -530,6 +591,10 @@ function containerEnvValue(container: Record<string, unknown>, name: string): st
 function containerEnvEntry(container: Record<string, unknown>, name: string): Record<string, unknown> {
   const env = Array.isArray(container.env) ? container.env : [];
   return env.map(asRecord).find((entry) => entry.name === name) ?? {};
+}
+
+function containerConfigMapKeyRef(container: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(asRecord(containerEnvEntry(container, name).valueFrom).configMapKeyRef);
 }
 
 function containerSecretKeyRef(container: Record<string, unknown>, name: string): Record<string, unknown> {
@@ -574,22 +639,6 @@ function resourceStringsFromRules(resource: Record<string, unknown>): Set<string
   ));
 }
 
-function bindingSubjects(resource: Record<string, unknown>): Record<string, unknown>[] {
-  return Array.isArray(resource.subjects) ? resource.subjects.map(asRecord) : [];
-}
-
-function hasServiceAccountSubject(
-  resource: Record<string, unknown>,
-  serviceAccountName: string,
-  namespace: string,
-): boolean {
-  return bindingSubjects(resource).some((subject) =>
-    subject.kind === 'ServiceAccount'
-    && subject.name === serviceAccountName
-    && subject.namespace === namespace,
-  );
-}
-
 function addMissingEnvValueFailure(
   failures: CheckFailure[],
   container: Record<string, unknown>,
@@ -598,7 +647,7 @@ function addMissingEnvValueFailure(
   message: string,
 ): void {
   if (containerEnvValue(container, envName) !== expectedValue) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', message);
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, message);
   }
 }
 
@@ -612,7 +661,7 @@ function addMissingSecretEnvFailure(
 ): void {
   const secretKeyRef = containerSecretKeyRef(container, envName);
   if (secretKeyRef.name !== secretName || secretKeyRef.key !== key) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', message);
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, message);
   }
 }
 
@@ -725,17 +774,21 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
   if (!containerPorts(api).includes(20000) || servicePort(documents, 'agentsmith-api') !== 20000 || ingressPorts.get('/api/v1') !== 20000) {
     addFailure(failures, 'Service/agentsmith-api', 'api container, Service, and ingress must expose port 20000');
   }
+  const apiProjectedKeys = projectedEnvKeys(documents, api);
+  if (!apiProjectedKeys.has('ASBCP_INTERNAL_BASE_URL') || !apiProjectedKeys.has('ASBCP_SERVICE_KEY')) {
+    addFailure(failures, 'Deployment/agentsmith-api', 'api must project ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY for server-side ASBCP calls');
+  }
   if (appConfigData.AFSCP_CALLER_SERVICE !== 'agentsmith-api') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'api AFSCP product caller must be agentsmith-api');
   }
   if (appConfigData.AFSCP_BOOTSTRAP_CALLER_SERVICE !== 'agentsmith-bootstrap') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'api AFSCP bootstrap caller must be agentsmith-bootstrap');
   }
-  if (appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE !== 'agentsmith-sandbox-manager') {
+  if (appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE !== ASBCP_SERVICE_ACCOUNT) {
     addFailure(
       failures,
       'ConfigMap/agentsmith-app-config',
-      'api AFSCP bootstrap binding must authorize the sandbox manager orchestrator caller',
+      'api AFSCP bootstrap binding must authorize the ASBCP orchestrator caller',
     );
   }
   checkProductSchemaBootstrapJob(documents, namespace, apiImage, failures);
@@ -1135,8 +1188,8 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
       addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, `${key} must be rendered for AFSCP runtime`);
     }
   }
-  if (!String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-api=') || !String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-sandbox-manager=')) {
-    addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, 'AFSCP service tokens must authorize product, bootstrap, and sandbox-manager callers');
+  if (!String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-api=') || !String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes(`${ASBCP_SERVICE_ACCOUNT}=`)) {
+    addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, 'AFSCP service tokens must authorize product, bootstrap, and ASBCP callers');
   }
   for (const key of ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key']) {
     if (typeof volumeSecret[key] !== 'string' || !volumeSecret[key]) {
@@ -1216,7 +1269,7 @@ function checkRolloutChecksumAnnotations(documents: readonly Record<string, unkn
     ['afscp-api', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
     ['afscp-worker', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
     ['afscp-export-gateway', ['agentsmith.mbos.dev/checksum-afscp-config', 'agentsmith.mbos.dev/checksum-afscp-secrets']],
-    ['agentsmith-sandbox-manager', ['agentsmith.mbos.dev/checksum-sandbox-manager-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
+    [ASBCP_SERVICE_ACCOUNT, ['agentsmith.mbos.dev/checksum-asbcp-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
   ] as const) {
     const annotations = deploymentPodTemplateAnnotations(documents, deploymentName);
     for (const checksumKey of checksumKeys) {
@@ -1231,46 +1284,16 @@ function checkRolloutChecksumAnnotations(documents: readonly Record<string, unkn
   }
 }
 
-function checkSandboxManagerContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
-  const deployment = resourceByKindName(documents, 'Deployment', 'agentsmith-sandbox-manager');
-  const podSpec = deploymentPodSpec(documents, 'agentsmith-sandbox-manager');
-  const container = deploymentContainer(documents, 'agentsmith-sandbox-manager', 'sandbox-manager');
-  const configMap = resourceByKindName(documents, 'ConfigMap', SANDBOX_MANAGER_CONFIG_MAP);
+function checkAsbcpContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  const deployment = resourceByKindName(documents, 'Deployment', ASBCP_SERVICE_ACCOUNT);
+  const podSpec = deploymentPodSpec(documents, ASBCP_SERVICE_ACCOUNT);
+  const container = deploymentContainer(documents, ASBCP_SERVICE_ACCOUNT, 'asbcp');
+  const configMap = resourceByKindName(documents, 'ConfigMap', ASBCP_CONFIG_MAP);
   const appConfigMap = resourceByKindName(documents, 'ConfigMap', 'agentsmith-app-config');
+  const appSecret = resourceByKindName(documents, 'Secret', 'agentsmith-app-secrets');
   const namespace = resourceNamespace(deployment) || resourceNamespace(configMap);
-  const configData = asRecord(configMap.data);
   const appConfigData = asRecord(appConfigMap.data);
-  const managerConfig = typeof configData['manager-config.yaml'] === 'string'
-    ? configData['manager-config.yaml']
-    : '';
-
-  for (const expected of [
-    'version: 1',
-    'httpPort: 8080',
-    'requestIdHeader: X-Request-Id',
-    'headerName: X-Service-Key',
-    'requestTimeout: 15s',
-    `namespace: ${namespace}`,
-  ]) {
-    if (!managerConfig.includes(expected)) {
-      addFailure(failures, `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`, `sandbox-manager config must include ${expected}`);
-    }
-  }
-  if (/^afscp:\s*$/mu.test(managerConfig)) {
-    addFailure(
-      failures,
-      `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`,
-      'sandbox-manager config must not render inert afscp YAML; AFSCP truth source is the container env contract',
-    );
-  }
-  for (const forbiddenKey of ['SANDBOX_SERVICE_KEY', 'JUICEFS_STORAGE_ACCESS_KEY', 'JUICEFS_STORAGE_SECRET_KEY', 'MINIO_SECRET_KEY']) {
-    if (Object.prototype.hasOwnProperty.call(configData, forbiddenKey)) {
-      addFailure(failures, `ConfigMap/${SANDBOX_MANAGER_CONFIG_MAP}`, `${forbiddenKey} must not be rendered in sandbox-manager ConfigMap`);
-    }
-    if (Object.prototype.hasOwnProperty.call(appConfigData, forbiddenKey)) {
-      addFailure(failures, 'ConfigMap/agentsmith-app-config', `${forbiddenKey} must not be rendered in agentsmith-app-config`);
-    }
-  }
+  const appSecretData = asRecord(appSecret.stringData);
   for (const forbiddenKey of [
     'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE',
     'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE',
@@ -1282,143 +1305,101 @@ function checkSandboxManagerContract(documents: readonly Record<string, unknown>
     }
   }
 
-  if (podSpec.serviceAccountName !== SANDBOX_MANAGER_SERVICE_ACCOUNT) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', 'sandbox-manager must use its dedicated ServiceAccount');
+  if (podSpec.serviceAccountName !== ASBCP_SERVICE_ACCOUNT) {
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP must use its dedicated ServiceAccount');
+  }
+  if (typeof container.image !== 'string' || !/\/agentsmith-sandbox-control-plane(?=[:@])/u.test(container.image)) {
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
+  }
+  if (appConfigData.ASBCP_INTERNAL_BASE_URL !== 'http://agentsmith-sandbox-control-plane:8080') {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'ASBCP_INTERNAL_BASE_URL must point to the internal ASBCP Service');
+  }
+  if (typeof appSecretData.ASBCP_SERVICE_KEY !== 'string' || appSecretData.ASBCP_SERVICE_KEY.length === 0) {
+    addFailure(failures, 'Secret/agentsmith-app-secrets', 'ASBCP_SERVICE_KEY must be rendered only as an app Secret value');
   }
   addMissingEnvValueFailure(
     failures,
     container,
-    'CONFIG_PATH',
-    SANDBOX_MANAGER_CONFIG_PATH,
-    'sandbox-manager must set CONFIG_PATH to the mounted manager-config.yaml',
+    'ASBCP_CONFIG_PATH',
+    ASBCP_CONFIG_PATH,
+    'ASBCP must set ASBCP_CONFIG_PATH to the canonical asbcp-config.yaml path',
   );
   addMissingEnvValueFailure(
     failures,
     container,
-    'K8S_NAMESPACE',
+    'ASBCP_WORKLOAD_NAMESPACE',
     namespace,
-    'sandbox-manager K8S_NAMESPACE must match the unified render namespace',
+    'ASBCP workload namespace must match the unified render namespace',
   );
   addMissingEnvValueFailure(
     failures,
     container,
-    'AFSCP_INTERNAL_BASE_URL',
+    'ASBCP_AFSCP_INTERNAL_BASE_URL',
     typeof appConfigData.AFSCP_BASE_URL === 'string' ? appConfigData.AFSCP_BASE_URL : '',
-    'sandbox-manager AFSCP internal base URL must use the manager env contract',
+    'ASBCP AFSCP internal base URL must use the ASBCP env contract',
   );
   addMissingSecretEnvFailure(
     failures,
     container,
-    'AFSCP_ORCHESTRATOR_TOKEN',
+    'ASBCP_AFSCP_ORCHESTRATOR_TOKEN',
     'agentsmith-app-secrets',
     'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
-    'sandbox-manager AFSCP orchestrator token must come from agentsmith-app-secrets/AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    'ASBCP AFSCP orchestrator token must come from agentsmith-app-secrets/AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
   );
   addMissingEnvValueFailure(
     failures,
     container,
-    'AFSCP_CALLER_SERVICE',
-    'agentsmith-sandbox-manager',
-    'sandbox-manager AFSCP caller service must use the manager env contract',
+    'ASBCP_AFSCP_CALLER_SERVICE',
+    ASBCP_SERVICE_ACCOUNT,
+    'ASBCP AFSCP caller service must use the ASBCP env contract',
   );
-  addMissingEnvValueFailure(
-    failures,
-    container,
-    'AFSCP_ACTOR_TYPE',
-    'system',
-    'sandbox-manager AFSCP actor type must use the manager env contract',
-  );
-  addMissingEnvValueFailure(
-    failures,
-    container,
-    'AFSCP_ACTOR_ID',
-    'agentsmith-sandbox-manager',
-    'sandbox-manager AFSCP actor id must use the manager env contract',
-  );
-  for (const deprecatedEnvName of [
+  for (const forbiddenEnvName of [
     'AFSCP_BASE_URL',
+    'AFSCP_INTERNAL_BASE_URL',
+    'AFSCP_CALLER_SERVICE',
+    'AFSCP_ACTOR_TYPE',
+    'AFSCP_ACTOR_ID',
     'AFSCP_ORCHESTRATOR_CALLER_SERVICE',
     'AFSCP_ORCHESTRATOR_ACTOR_TYPE',
     'AFSCP_ORCHESTRATOR_ACTOR_ID',
     'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    'JUICEFS_STORAGE_ENDPOINT',
+    'JUICEFS_STORAGE_ACCESS_KEY',
+    'JUICEFS_STORAGE_SECRET_KEY',
+    'MINIO_ACCESS_KEY',
+    'MINIO_SECRET_KEY',
   ]) {
-    if (Object.prototype.hasOwnProperty.call(containerEnvEntry(container, deprecatedEnvName), 'name')) {
+    if (Object.prototype.hasOwnProperty.call(containerEnvEntry(container, forbiddenEnvName), 'name')) {
       addFailure(
         failures,
-        'Deployment/agentsmith-sandbox-manager',
-        `sandbox-manager must not use deprecated AFSCP env ${deprecatedEnvName}`,
+        `Deployment/${ASBCP_SERVICE_ACCOUNT}`,
+        `ASBCP must not use deprecated or raw storage env ${forbiddenEnvName}`,
       );
     }
   }
   addMissingSecretEnvFailure(
     failures,
     container,
-    'SERVICE_KEYS',
+    'ASBCP_SERVICE_KEYS',
     'agentsmith-app-secrets',
-    'SANDBOX_SERVICE_KEY',
-    'sandbox-manager SERVICE_KEYS must come from agentsmith-app-secrets/SANDBOX_SERVICE_KEY',
+    'ASBCP_SERVICE_KEY',
+    'ASBCP service keys must come from agentsmith-app-secrets/ASBCP_SERVICE_KEY',
   );
-  addMissingSecretEnvFailure(
-    failures,
-    container,
-    'JUICEFS_STORAGE_ACCESS_KEY',
-    'agentsmith-app-secrets',
-    'MINIO_ACCESS_KEY',
-    'sandbox-manager storage access key must come from agentsmith-app-secrets/MINIO_ACCESS_KEY',
-  );
-  addMissingSecretEnvFailure(
-    failures,
-    container,
-    'JUICEFS_STORAGE_SECRET_KEY',
-    'agentsmith-app-secrets',
-    'MINIO_SECRET_KEY',
-    'sandbox-manager storage secret key must come from agentsmith-app-secrets/MINIO_SECRET_KEY',
-  );
-
-  const expectedStorageEndpoint = namespace ? substrateMinioInternalMountEndpoint(namespace) : '';
-  if (expectedStorageEndpoint) {
-    addMissingEnvValueFailure(
-      failures,
-      container,
-      'JUICEFS_STORAGE_ENDPOINT',
-      expectedStorageEndpoint,
-      'sandbox-manager storage endpoint must point to the substrate-minio namespace FQDN and native port',
-    );
-  } else if (!/^http:\/\/substrate-minio\.[a-z0-9.-]+\.svc\.cluster\.local:9000$/u.test(containerEnvValue(container, 'JUICEFS_STORAGE_ENDPOINT') ?? '')) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', 'sandbox-manager storage endpoint must point to substrate-minio namespace FQDN');
-  }
 
   const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
   const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
   if (!volumeMounts.some((mount) =>
     mount.name === 'config'
-    && mount.mountPath === SANDBOX_MANAGER_CONFIG_PATH
-    && mount.subPath === 'manager-config.yaml',
+    && mount.mountPath === ASBCP_CONFIG_PATH
+    && mount.subPath === 'config.yaml',
   )) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', 'sandbox-manager must mount manager-config.yaml by subPath');
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP must mount config.yaml at the canonical asbcp-config.yaml path');
   }
   if (!volumes.some((volume) =>
     volume.name === 'config'
-    && asRecord(volume.configMap).name === SANDBOX_MANAGER_CONFIG_MAP,
+    && asRecord(volume.configMap).name === ASBCP_CONFIG_MAP,
   )) {
-    addFailure(failures, 'Deployment/agentsmith-sandbox-manager', 'sandbox-manager must mount sandbox-manager-config as config volume');
-  }
-
-  const role = resourceByKindName(documents, 'Role', SANDBOX_MANAGER_SERVICE_ACCOUNT);
-  const roleBinding = resourceByKindName(documents, 'RoleBinding', SANDBOX_MANAGER_SERVICE_ACCOUNT);
-  const roleResources = resourceStringsFromRules(role);
-
-  for (const expectedResource of ['pods', 'pods/status', 'pods/exec', 'persistentvolumeclaims', 'secrets', 'events']) {
-    if (!roleResources.has(expectedResource)) {
-      addFailure(failures, `Role/${SANDBOX_MANAGER_SERVICE_ACCOUNT}`, `sandbox-manager Role must permit ${expectedResource}`);
-    }
-  }
-  if (roleResources.has('persistentvolumes')) {
-    addFailure(failures, `Role/${SANDBOX_MANAGER_SERVICE_ACCOUNT}`, 'sandbox-manager app Role must not permit persistentvolumes');
-  }
-  if (!hasServiceAccountSubject(roleBinding, SANDBOX_MANAGER_SERVICE_ACCOUNT, namespace)
-    || asRecord(roleBinding.roleRef).name !== SANDBOX_MANAGER_SERVICE_ACCOUNT) {
-    addFailure(failures, `RoleBinding/${SANDBOX_MANAGER_SERVICE_ACCOUNT}`, 'sandbox-manager RoleBinding must bind the dedicated ServiceAccount');
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP must mount asbcp-config as config volume');
   }
 }
 
@@ -1428,12 +1409,58 @@ function checkWebServerRouteEnv(documents: readonly Record<string, unknown>[], f
     return;
   }
 
+  const web = deploymentContainer(documents, 'agentsmith-web', 'web');
   const envFrom = deploymentContainerEnvFrom(documents, 'agentsmith-web', 'web');
-  if (!hasEnvFromRef(envFrom, 'configMapRef', 'agentsmith-app-config')) {
-    addFailure(failures, 'Deployment/agentsmith-web', 'web must consume agentsmith-app-config for Web-owned API routes');
+  if (envFrom.length > 0) {
+    addFailure(failures, 'Deployment/agentsmith-web', 'web must use explicit env key projections instead of envFrom');
   }
-  if (!hasEnvFromRef(envFrom, 'secretRef', 'agentsmith-app-secrets')) {
-    addFailure(failures, 'Deployment/agentsmith-web', 'web must consume agentsmith-app-secrets for Web-owned API routes');
+  for (const key of [
+    'NEXT_PUBLIC_API_BASE',
+    'NEXT_PUBLIC_KEYCLOAK_URL',
+    'NEXT_PUBLIC_KEYCLOAK_REALM',
+    'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID',
+    'PUBLIC_KEYCLOAK_BASE_URL',
+    'INTERNAL_KEYCLOAK_BASE_URL',
+  ]) {
+    const ref = containerConfigMapKeyRef(web, key);
+    if (ref.name !== AGENTSMITH_APP_CONFIG_MAP || ref.key !== key) {
+      addFailure(
+        failures,
+        'Deployment/agentsmith-web',
+        `web must project ${key} from ${AGENTSMITH_APP_CONFIG_MAP}/${key}`,
+      );
+    }
+  }
+  for (const key of ['MONGO_URL', 'MONGO_DB_NAME']) {
+    const ref = containerSecretKeyRef(web, key);
+    if (ref.name !== AGENTSMITH_APP_SECRET || ref.key !== key) {
+      addFailure(
+        failures,
+        'Deployment/agentsmith-web',
+        `web must project ${key} from ${AGENTSMITH_APP_SECRET}/${key}`,
+      );
+    }
+  }
+  const projectedKeys = projectedEnvKeys(documents, web);
+  for (const forbiddenKey of [
+    'ASBCP_INTERNAL_BASE_URL',
+    'ASBCP_SERVICE_KEY',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'MINIO_ENDPOINT',
+    'MINIO_PORT',
+    'MINIO_USE_SSL',
+    'MINIO_BUCKET',
+    'MINIO_ACCESS_KEY',
+    'MINIO_SECRET_KEY',
+    'AFSCP_SERVICE_TOKEN',
+    'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
+    'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+  ]) {
+    if (projectedKeys.has(forbiddenKey)) {
+      addFailure(failures, 'Deployment/agentsmith-web', `web must not project ${forbiddenKey}`);
+    }
   }
 }
 
@@ -1454,7 +1481,7 @@ export function checkRenderedOutput(renderedYaml: string): CheckResult {
     checkLlmupContract(parsed.documents, failures);
     checkAfscpContract(parsed.documents, failures);
     checkRolloutChecksumAnnotations(parsed.documents, failures);
-    checkSandboxManagerContract(parsed.documents, failures);
+    checkAsbcpContract(parsed.documents, failures);
   }
 
   return {

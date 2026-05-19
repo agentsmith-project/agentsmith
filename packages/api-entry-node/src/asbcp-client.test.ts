@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SandboxManagerClient, SandboxManagerHttpError } from './sandbox-manager-client.js';
+import { AsbcpClient, AsbcpHttpError } from './asbcp-client.js';
 
 const originalFetch = globalThis.fetch;
 
-describe('SandboxManagerClient', () => {
+describe('AsbcpClient', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -27,7 +27,7 @@ describe('SandboxManagerClient', () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080/', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080/', 'svc-key');
     const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
       image: 'runner:latest',
       workspace_binding_id: 'flib_demo',
@@ -40,16 +40,16 @@ describe('SandboxManagerClient', () => {
   it('maps status 404 to offline phase', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
 
     expect(status).toEqual({ phase: 'offline' });
   });
 
-  it('throws sandbox_manager_error on exec http error', async () => {
+  it('throws asbcp_error on exec http error', async () => {
     globalThis.fetch = vi.fn(async () => new Response('boom', { status: 500 })) as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     await expect(client.exec('ws_1', 'proj_1', 'workload_1', ['bash', '-lc', 'echo 1'])).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_UNAVAILABLE',
     });
@@ -64,7 +64,7 @@ describe('SandboxManagerClient', () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080/', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080/', 'svc-key');
     await expect(client.checkReady()).resolves.toBeUndefined();
   });
 
@@ -73,7 +73,7 @@ describe('SandboxManagerClient', () => {
       .mockResolvedValueOnce(new Response('temporary', { status: 503 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ phase: 'Running' }), { status: 200 })) as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
     expect(status.phase).toBe('Running');
   });
@@ -81,9 +81,9 @@ describe('SandboxManagerClient', () => {
   it('maps 403 to AGENT_SANDBOX_FORBIDDEN', async () => {
     globalThis.fetch = vi.fn(async () => new Response('forbidden', { status: 403 })) as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const request = client.keepalive('ws_1', 'proj_1', 'workload_1');
-    await expect(request).rejects.toBeInstanceOf(SandboxManagerHttpError);
+    await expect(request).rejects.toBeInstanceOf(AsbcpHttpError);
     await expect(request).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_FORBIDDEN',
       status: 403,
@@ -115,7 +115,7 @@ describe('SandboxManagerClient', () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const result = await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
       namespace_id: 'ns_project_1',
       mount_binding_id: 'wmb_demo',
@@ -129,7 +129,7 @@ describe('SandboxManagerClient', () => {
   it('treats delete workspace binding 404 as success', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
 
-    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).resolves.toBeUndefined();
   });
 });

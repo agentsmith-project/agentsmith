@@ -23,7 +23,7 @@ const APP_CONFIG = 'ConfigMap/agentsmith-app-config';
 const APP_SECRET = 'Secret/agentsmith-app-secrets';
 const INGRESS = 'Ingress/agentsmith';
 const LLMUP_BASE_URL = 'http://agentsmith-llmup:8080';
-const SANDBOX_MANAGER_URL = 'http://agentsmith-sandbox-manager:8080';
+const ASBCP_INTERNAL_BASE_URL = 'http://agentsmith-sandbox-control-plane:8080';
 const INTERNAL_API_HTTP_BASE = 'http://agentsmith-api:20000/api/v1';
 const INTERNAL_API_WS_BASE = 'ws://agentsmith-api:20000';
 const SUBSTRATE_SERVICES = ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'] as const;
@@ -215,7 +215,7 @@ function checkIngressAddressTruth(
     addFailure(failures, INGRESS, '/api/v1 must route to agentsmith-api:20000');
   }
   for (const [route, backend] of routes) {
-    if (backend.serviceName === 'agentsmith-llmup' || backend.serviceName === 'agentsmith-sandbox-manager') {
+    if (backend.serviceName === 'agentsmith-llmup' || backend.serviceName === 'agentsmith-sandbox-control-plane') {
       addFailure(failures, INGRESS, `${backend.serviceName} must not be exposed through ingress (${route})`);
     }
   }
@@ -231,8 +231,8 @@ function checkInternalServices(
   if (!collectServicePorts(documents, 'agentsmith-llmup').includes(8080)) {
     addFailure(failures, 'Service/agentsmith-llmup', 'agentsmith-llmup Service must expose internal port 8080');
   }
-  if (!collectServicePorts(documents, 'agentsmith-sandbox-manager').includes(8080)) {
-    addFailure(failures, 'Service/agentsmith-sandbox-manager', 'agentsmith-sandbox-manager Service must expose internal port 8080');
+  if (!collectServicePorts(documents, 'agentsmith-sandbox-control-plane').includes(8080)) {
+    addFailure(failures, 'Service/agentsmith-sandbox-control-plane', 'agentsmith-sandbox-control-plane Service must expose internal port 8080');
   }
   for (const service of SUBSTRATE_SERVICES) {
     const serviceName = substrateServiceName(service);
@@ -298,7 +298,7 @@ function checkConfigAddressTruth(config: Record<string, unknown>, failures: Chec
 
   requireConfigValue(failures, config, 'INTERNAL_API_BASE_URL', INTERNAL_API_HTTP_BASE);
   requireConfigValue(failures, config, 'AGENT_EXECUTION_HTTP_BASE_URL', INTERNAL_API_HTTP_BASE);
-  requireConfigValue(failures, config, 'SANDBOX_MANAGER_URL', SANDBOX_MANAGER_URL);
+  requireConfigValue(failures, config, 'ASBCP_INTERNAL_BASE_URL', ASBCP_INTERNAL_BASE_URL);
   requireConfigValue(failures, config, 'MBOS_UNIVERSAL_PROXY_BASE_URL', LLMUP_BASE_URL);
   requireConfigValue(failures, config, 'LLMUP_INTERNAL_BASE_URL', LLMUP_BASE_URL);
   requireConfigValue(failures, config, 'INTERNAL_KEYCLOAK_BASE_URL', substrateKeycloakInternalBaseUrl());
@@ -314,19 +314,13 @@ function checkConfigAddressTruth(config: Record<string, unknown>, failures: Chec
     addFailure(failures, APP_CONFIG, 'AGENT_EXECUTION_WS_BASE_URL must generate /api/v1/agent-execution/ws on agentsmith-api');
   }
 
-  if (Object.prototype.hasOwnProperty.call(config, 'SANDBOX_MANAGER_INTERNAL_BASE_URL')) {
-    addFailure(failures, APP_CONFIG, 'SANDBOX_MANAGER_INTERNAL_BASE_URL is not consumed by the API; render SANDBOX_MANAGER_URL');
-  }
-  if (Object.prototype.hasOwnProperty.call(config, 'SANDBOX_SERVICE_KEY')) {
-    addFailure(failures, APP_CONFIG, 'SANDBOX_SERVICE_KEY must be in app Secret, not ConfigMap');
-  }
   if (Object.prototype.hasOwnProperty.call(config, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')) {
     addFailure(failures, APP_CONFIG, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN must be in app Secret, not ConfigMap');
   }
 }
 
 function checkSecretAddressTruth(secret: Record<string, unknown>, failures: CheckFailure[]): void {
-  requireSecretValue(failures, secret, 'SANDBOX_SERVICE_KEY');
+  requireSecretValue(failures, secret, 'ASBCP_SERVICE_KEY');
   requireSecretValue(failures, secret, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
   requireSecretUrl(failures, secret, 'DATABASE_URL', 'substrate-postgresql', SUBSTRATE_NATIVE_PORTS.postgresql);
   requireSecretUrl(failures, secret, 'MONGO_URL', 'substrate-mongodb', SUBSTRATE_NATIVE_PORTS.mongodb);

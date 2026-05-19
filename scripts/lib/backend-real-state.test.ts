@@ -98,8 +98,8 @@ describe('backend-real-state', () => {
         source "${helper}"
         printf '%s\\n%s\\n%s\\n' \
           "$(backend_real_state_root)" \
-          "$(backend_real_tmp_file integration-release-user-story/sandbox-manager.yaml)" \
-          "$(backend_real_resolve_runtime_path artifacts/backend-real/current/integration-release-user-story/sandbox-manager.log)"
+          "$(backend_real_tmp_file integration-release-user-story/asbcp.yaml)" \
+          "$(backend_real_resolve_runtime_path artifacts/backend-real/current/integration-release-user-story/asbcp.log)"
       `,
       tempRoot,
       {
@@ -109,10 +109,10 @@ describe('backend-real-state', () => {
 
     expect(output[0]).toBe(path.join(tempRoot, 'artifacts/backend-real/current'));
     expect(output[1]).toBe(
-      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/sandbox-manager.yaml'),
+      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/asbcp.yaml'),
     );
     expect(output[2]).toBe(
-      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/sandbox-manager.log'),
+      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/asbcp.log'),
     );
   });
 

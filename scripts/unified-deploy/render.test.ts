@@ -162,15 +162,6 @@ function containerEnvEntry(
     .find((entry) => entry.name === envName) ?? {};
 }
 
-function resourceStringsFromRules(resource: Record<string, unknown>): Set<string> {
-  const rules = Array.isArray(resource.rules) ? resource.rules.map(asRecord) : [];
-  return new Set(rules.flatMap((rule) =>
-    Array.isArray(rule.resources)
-      ? rule.resources.filter((item): item is string => typeof item === 'string')
-      : [],
-  ));
-}
-
 function serviceBackends(rendered: string): Map<string, string> {
   const routes = new Map<string, string>();
   for (const document of parsedDocuments(rendered)) {
@@ -267,6 +258,44 @@ function deploymentContainerEnvFrom(
   return Array.isArray(asRecord(container).envFrom)
     ? asRecord(container).envFrom as Record<string, unknown>[]
     : [];
+}
+
+function resourceFieldKeys(
+  documents: readonly Record<string, unknown>[],
+  kind: 'ConfigMap' | 'Secret',
+  name: string,
+): string[] {
+  const field = kind === 'ConfigMap' ? 'data' : 'stringData';
+  return Object.keys(asRecord(findResource(documents, kind, name)[field]));
+}
+
+function projectedEnvKeys(
+  documents: readonly Record<string, unknown>[],
+  deploymentName: string,
+  containerName: string,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const env of deploymentContainerEnv(documents, deploymentName, containerName)) {
+    if (typeof env.name === 'string') {
+      keys.add(env.name);
+    }
+  }
+  for (const envFrom of deploymentContainerEnvFrom(documents, deploymentName, containerName)) {
+    const configMapName = asRecord(envFrom.configMapRef).name;
+    if (typeof configMapName === 'string') {
+      for (const key of resourceFieldKeys(documents, 'ConfigMap', configMapName)) {
+        keys.add(key);
+      }
+    }
+    const secretName = asRecord(envFrom.secretRef).name;
+    if (typeof secretName === 'string') {
+      for (const key of resourceFieldKeys(documents, 'Secret', secretName)) {
+        keys.add(key);
+      }
+    }
+  }
+
+  return keys;
 }
 
 function servicePort(
@@ -404,11 +433,11 @@ describe('unified deploy render producer', () => {
         'Deployment/agentsmith-web',
         'Deployment/agentsmith-api',
         'Deployment/agentsmith-llmup',
-        'Deployment/agentsmith-sandbox-manager',
+        'Deployment/agentsmith-sandbox-control-plane',
         'Service/agentsmith-web',
         'Service/agentsmith-api',
         'Service/agentsmith-llmup',
-        'Service/agentsmith-sandbox-manager',
+        'Service/agentsmith-sandbox-control-plane',
         'Service/substrate-postgresql',
         'Service/substrate-mongodb',
         'Service/substrate-redis',
@@ -419,10 +448,10 @@ describe('unified deploy render producer', () => {
         'EndpointSlice/substrate-redis',
         'EndpointSlice/substrate-minio',
         'EndpointSlice/substrate-keycloak',
-        'ServiceAccount/agentsmith-sandbox-manager',
-        'Role/agentsmith-sandbox-manager',
-        'RoleBinding/agentsmith-sandbox-manager',
-        'ConfigMap/sandbox-manager-config',
+        'ServiceAccount/agentsmith-sandbox-control-plane',
+        'Role/agentsmith-sandbox-control-plane',
+        'RoleBinding/agentsmith-sandbox-control-plane',
+        'ConfigMap/asbcp-config',
         'Job/agentsmith-product-schema-bootstrap',
         'Job/afscp-schema-bootstrap',
         'Job/afscp-volume-bootstrap',
@@ -434,8 +463,8 @@ describe('unified deploy render producer', () => {
       ]));
       expect(namesByKind).not.toContain('Namespace/agentsmith');
       expect(namesByKind).not.toEqual(expect.arrayContaining([
-        'ClusterRole/agentsmith-sandbox-manager-pv',
-        'ClusterRoleBinding/agentsmith-sandbox-manager-pv',
+        'ClusterRole/agentsmith-sandbox-control-plane-pv',
+        'ClusterRoleBinding/agentsmith-sandbox-control-plane-pv',
       ]));
       expect(namesByKind.some((name) => name.startsWith('ClusterRole/'))).toBe(false);
       expect(namesByKind.some((name) => name.startsWith('ClusterRoleBinding/'))).toBe(false);
@@ -459,8 +488,8 @@ describe('unified deploy render producer', () => {
 
     expect(appNames).not.toContain('Namespace/agentsmith');
     expect(preflightNames).toContain('Namespace/agentsmith');
-    expect(preflightNames).toContain('ClusterRole/agentsmith-sandbox-manager-pv');
-    expect(preflightNames).toContain('ClusterRoleBinding/agentsmith-sandbox-manager-pv');
+    expect(preflightNames).toContain('ClusterRole/agentsmith-sandbox-control-plane-pv');
+    expect(preflightNames).toContain('ClusterRoleBinding/agentsmith-sandbox-control-plane-pv');
 
     await expect(renderUnifiedDeployToString({
       profile: 'existing-cluster',
@@ -519,18 +548,72 @@ describe('unified deploy render producer', () => {
     expect([...routes.values()]).not.toContain('agentsmith-llmup');
   });
 
-  it('gives the Web-owned API routes the app secrets needed by Next.js server routes', async () => {
+  it('projects only web-safe config and secrets into the Web-owned API routes', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
     const routes = serviceBackends(rendered.output);
     const envFrom = deploymentContainerEnvFrom(documents, 'agentsmith-web', 'web');
+    const webKeys = projectedEnvKeys(documents, 'agentsmith-web', 'web');
+    const apiKeys = projectedEnvKeys(documents, 'agentsmith-api', 'api');
 
     expect(routes.get('/api/public')).toBe('agentsmith-web');
     expect(routes.get('/api/system')).toBe('agentsmith-web');
-    expect(envFrom).toEqual(expect.arrayContaining([
+    expect(envFrom).toEqual([]);
+    for (const key of [
+      'NEXT_PUBLIC_API_BASE',
+      'NEXT_PUBLIC_KEYCLOAK_URL',
+      'NEXT_PUBLIC_KEYCLOAK_REALM',
+      'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID',
+      'PUBLIC_KEYCLOAK_BASE_URL',
+      'INTERNAL_KEYCLOAK_BASE_URL',
+    ]) {
+      expect(containerEnvEntry(documents, 'agentsmith-web', 'web', key)).toEqual({
+        name: key,
+        valueFrom: {
+          configMapKeyRef: {
+            name: 'agentsmith-app-config',
+            key,
+          },
+        },
+      });
+    }
+    for (const key of ['MONGO_URL', 'MONGO_DB_NAME']) {
+      expect(containerEnvEntry(documents, 'agentsmith-web', 'web', key)).toEqual({
+        name: key,
+        valueFrom: {
+          secretKeyRef: {
+            name: 'agentsmith-app-secrets',
+            key,
+          },
+        },
+      });
+    }
+    expect(webKeys.has('ASBCP_INTERNAL_BASE_URL')).toBe(false);
+    expect(webKeys.has('ASBCP_SERVICE_KEY')).toBe(false);
+    expect(webKeys.has('DATABASE_URL')).toBe(false);
+    expect(webKeys.has('REDIS_URL')).toBe(false);
+    expect(webKeys.has('MINIO_ACCESS_KEY')).toBe(false);
+    expect(webKeys.has('MINIO_SECRET_KEY')).toBe(false);
+    expect(apiKeys.has('ASBCP_INTERNAL_BASE_URL')).toBe(true);
+    expect(apiKeys.has('ASBCP_SERVICE_KEY')).toBe(true);
+  });
+
+  it('rejects Web env projections that reintroduce ASBCP internal URL or service key', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const web = deploymentContainer(documents, 'agentsmith-web', 'web');
+    web.envFrom = [
       { configMapRef: { name: 'agentsmith-app-config' } },
       { secretRef: { name: 'agentsmith-app-secrets' } },
-    ]));
+    ];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('web must use explicit env key projections instead of envFrom');
+    expect(text).toContain('web must not project ASBCP_INTERNAL_BASE_URL');
+    expect(text).toContain('web must not project ASBCP_SERVICE_KEY');
   });
 
   it('keeps default web and api images aligned to the shared app image build output', async () => {
@@ -1063,66 +1146,63 @@ describe('unified deploy render producer', () => {
     expect(text).toContain('/usr/local/bin/afscp-volume-bootstrap --ensure --check --timeout=60s');
   });
 
-  it('renders the sandbox-manager startup contract without leaking storage secrets through ConfigMaps', async () => {
+  it('renders the ASBCP startup contract without leaking raw storage env into the ASBCP runtime', async () => {
     const rendered = await renderUnifiedDeployFromFiles({
       profile: 'local-kind',
       substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
     });
     const documents = parsedDocuments(rendered.output);
-    const configMap = findResource(documents, 'ConfigMap', 'sandbox-manager-config');
+    const configMap = findResource(documents, 'ConfigMap', 'asbcp-config');
     const appConfigMap = findResource(documents, 'ConfigMap', 'agentsmith-app-config');
     const configData = asRecord(configMap.data);
     const appConfigData = asRecord(appConfigMap.data);
-    const managerConfig = typeof configData['manager-config.yaml'] === 'string'
-      ? configData['manager-config.yaml']
+    const asbcpConfig = typeof configData['config.yaml'] === 'string'
+      ? configData['config.yaml']
       : '';
-    const podSpec = deploymentPodSpec(documents, 'agentsmith-sandbox-manager');
-    const sandboxManager = deploymentContainer(documents, 'agentsmith-sandbox-manager', 'sandbox-manager');
-    const volumeMounts = Array.isArray(sandboxManager.volumeMounts)
-      ? sandboxManager.volumeMounts.map(asRecord)
+    const podSpec = deploymentPodSpec(documents, 'agentsmith-sandbox-control-plane');
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+    const volumeMounts = Array.isArray(asbcp.volumeMounts)
+      ? asbcp.volumeMounts.map(asRecord)
       : [];
     const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
 
-    expect(managerConfig).toContain('version: 1');
-    expect(managerConfig).toContain('httpPort: 8080');
-    expect(managerConfig).toContain('requestIdHeader: X-Request-Id');
-    expect(managerConfig).toContain('headerName: X-Service-Key');
-    expect(managerConfig).toContain('requestTimeout: 15s');
-    expect(managerConfig).toContain('namespace: agentsmith');
-    expect(managerConfig).not.toMatch(/^afscp:\s*$/mu);
-    expect(managerConfig).not.toContain(appConfigData.AFSCP_BASE_URL);
-    expect(managerConfig).not.toContain('tokenEnv:');
+    expect(asbcpConfig).toContain('version: 1');
+    expect(asbcpConfig).toContain('httpPort: 8080');
+    expect(asbcpConfig).not.toMatch(/^afscp:\s*$/mu);
+    expect(asbcpConfig).not.toContain(appConfigData.AFSCP_BASE_URL);
+    expect(asbcpConfig).not.toContain('tokenEnv:');
+    expect(appConfigData.ASBCP_INTERNAL_BASE_URL).toBe('http://agentsmith-sandbox-control-plane:8080');
     expect(appConfigData.AFSCP_CALLER_SERVICE).toBe('agentsmith-api');
     expect(appConfigData.AFSCP_BOOTSTRAP_CALLER_SERVICE).toBe('agentsmith-bootstrap');
-    expect(appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE).toBe('agentsmith-sandbox-manager');
-    expect(configData.SANDBOX_SERVICE_KEY).toBeUndefined();
+    expect(appConfigData.AFSCP_ORCHESTRATOR_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
+    expect(configData.ASBCP_SERVICE_KEY).toBeUndefined();
     expect(configData.JUICEFS_STORAGE_SECRET_KEY).toBeUndefined();
     expect(appConfigData.MINIO_SECRET_KEY).toBeUndefined();
 
-    expect(podSpec.serviceAccountName).toBe('agentsmith-sandbox-manager');
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'CONFIG_PATH')).toEqual({
-      name: 'CONFIG_PATH',
-      value: '/etc/sandbox-manager/manager-config.yaml',
+    expect(podSpec.serviceAccountName).toBe('agentsmith-sandbox-control-plane');
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_CONFIG_PATH')).toEqual({
+      name: 'ASBCP_CONFIG_PATH',
+      value: '/etc/asbcp/asbcp-config.yaml',
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'SERVICE_KEYS')).toEqual({
-      name: 'SERVICE_KEYS',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_SERVICE_KEYS')).toEqual({
+      name: 'ASBCP_SERVICE_KEYS',
       valueFrom: {
         secretKeyRef: {
           name: 'agentsmith-app-secrets',
-          key: 'SANDBOX_SERVICE_KEY',
+          key: 'ASBCP_SERVICE_KEY',
         },
       },
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'K8S_NAMESPACE')).toEqual({
-      name: 'K8S_NAMESPACE',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_WORKLOAD_NAMESPACE')).toEqual({
+      name: 'ASBCP_WORKLOAD_NAMESPACE',
       value: 'agentsmith',
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_INTERNAL_BASE_URL')).toEqual({
-      name: 'AFSCP_INTERNAL_BASE_URL',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_AFSCP_INTERNAL_BASE_URL')).toEqual({
+      name: 'ASBCP_AFSCP_INTERNAL_BASE_URL',
       value: appConfigData.AFSCP_BASE_URL,
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_TOKEN')).toEqual({
-      name: 'AFSCP_ORCHESTRATOR_TOKEN',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_AFSCP_ORCHESTRATOR_TOKEN')).toEqual({
+      name: 'ASBCP_AFSCP_ORCHESTRATOR_TOKEN',
       valueFrom: {
         secretKeyRef: {
           name: 'agentsmith-app-secrets',
@@ -1130,92 +1210,100 @@ describe('unified deploy render producer', () => {
         },
       },
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_CALLER_SERVICE')).toEqual({
-      name: 'AFSCP_CALLER_SERVICE',
-      value: 'agentsmith-sandbox-manager',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_AFSCP_CALLER_SERVICE')).toEqual({
+      name: 'ASBCP_AFSCP_CALLER_SERVICE',
+      value: 'agentsmith-sandbox-control-plane',
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ACTOR_TYPE')).toEqual({
-      name: 'AFSCP_ACTOR_TYPE',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_AFSCP_ACTOR_TYPE')).toEqual({
+      name: 'ASBCP_AFSCP_ACTOR_TYPE',
       value: 'system',
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ACTOR_ID')).toEqual({
-      name: 'AFSCP_ACTOR_ID',
-      value: 'agentsmith-sandbox-manager',
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_AFSCP_ACTOR_ID')).toEqual({
+      name: 'ASBCP_AFSCP_ACTOR_ID',
+      value: 'agentsmith-sandbox-control-plane',
     });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_BASE_URL')).toEqual({});
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN')).toEqual({});
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'AFSCP_ORCHESTRATOR_CALLER_SERVICE')).toEqual({});
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'JUICEFS_STORAGE_ENDPOINT')).toEqual({
-      name: 'JUICEFS_STORAGE_ENDPOINT',
-      value: 'http://substrate-minio.agentsmith.svc.cluster.local:9000',
-    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'AFSCP_BASE_URL')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'AFSCP_ORCHESTRATOR_CALLER_SERVICE')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'JUICEFS_STORAGE_ENDPOINT')).toEqual({});
     expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE).toBeUndefined();
     expect(appConfigData.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE).toBeUndefined();
     expect(appConfigData.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'JUICEFS_STORAGE_ACCESS_KEY')).toEqual({
-      name: 'JUICEFS_STORAGE_ACCESS_KEY',
-      valueFrom: {
-        secretKeyRef: {
-          name: 'agentsmith-app-secrets',
-          key: 'MINIO_ACCESS_KEY',
-        },
-      },
-    });
-    expect(containerEnvEntry(documents, 'agentsmith-sandbox-manager', 'sandbox-manager', 'JUICEFS_STORAGE_SECRET_KEY')).toEqual({
-      name: 'JUICEFS_STORAGE_SECRET_KEY',
-      valueFrom: {
-        secretKeyRef: {
-          name: 'agentsmith-app-secrets',
-          key: 'MINIO_SECRET_KEY',
-        },
-      },
-    });
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'JUICEFS_STORAGE_ACCESS_KEY')).toEqual({});
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'JUICEFS_STORAGE_SECRET_KEY')).toEqual({});
     expect(volumeMounts).toEqual(expect.arrayContaining([
       {
         name: 'config',
-        mountPath: '/etc/sandbox-manager/manager-config.yaml',
-        subPath: 'manager-config.yaml',
+        mountPath: '/etc/asbcp/asbcp-config.yaml',
+        subPath: 'config.yaml',
       },
     ]));
+    const legacyAsbcpConfigPath = ['/etc/asbcp', 'config.yaml'].join('/');
+    expect(rendered.output).not.toContain(legacyAsbcpConfigPath);
     expect(volumes).toEqual(expect.arrayContaining([
       {
         name: 'config',
         configMap: {
-          name: 'sandbox-manager-config',
+          name: 'asbcp-config',
         },
       },
     ]));
   });
 
-  it('renders a dedicated sandbox-manager runtime identity with only namespaced app permissions', async () => {
+  it('keeps ASBCP render validation at the consumer boundary instead of provider schema and RBAC details', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
-    const role = findResource(documents, 'Role', 'agentsmith-sandbox-manager');
-    const roleBinding = findResource(documents, 'RoleBinding', 'agentsmith-sandbox-manager');
-    const clusterRole = findResource(documents, 'ClusterRole', 'agentsmith-sandbox-manager-pv');
-    const clusterRoleBinding = findResource(documents, 'ClusterRoleBinding', 'agentsmith-sandbox-manager-pv');
-    const roleResources = resourceStringsFromRules(role);
-    const roleSubjects = Array.isArray(roleBinding.subjects) ? roleBinding.subjects.map(asRecord) : [];
+    const configMap = findResource(documents, 'ConfigMap', 'asbcp-config');
+    const role = findResource(documents, 'Role', 'agentsmith-sandbox-control-plane');
 
-    for (const expectedResource of [
-      'pods',
-      'pods/status',
-      'pods/exec',
-      'persistentvolumeclaims',
-      'secrets',
-      'events',
-    ]) {
-      expect(roleResources.has(expectedResource)).toBe(true);
-    }
-    expect(roleResources.has('persistentvolumes')).toBe(false);
-    expect(roleSubjects).toEqual(expect.arrayContaining([
+    asRecord(configMap.data)['config.yaml'] = 'provider_owned_schema: true\n';
+    role.rules = [
       {
-        kind: 'ServiceAccount',
-        name: 'agentsmith-sandbox-manager',
-        namespace: 'agentsmith',
+        apiGroups: [''],
+        resources: ['pods'],
+        verbs: ['get'],
       },
-    ]));
-    expect(asRecord(roleBinding.roleRef).name).toBe('agentsmith-sandbox-manager');
+    ];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).not.toContain('ASBCP config must include');
+    expect(text).not.toContain('ASBCP Role must permit');
+    expect(text).not.toContain('ASBCP app Role must not permit');
+  });
+
+  it('rejects ASBCP consumer boundary drift in image, URL, key, and config path', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+    const appConfigMap = findResource(documents, 'ConfigMap', 'agentsmith-app-config');
+    const appSecret = findResource(documents, 'Secret', 'agentsmith-app-secrets');
+
+    asbcp.image = 'ghcr.io/example/asbcp:dev';
+    containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_CONFIG_PATH').value = ['/etc/asbcp', 'config.yaml'].join('/');
+    asRecord(appConfigMap.data).ASBCP_INTERNAL_BASE_URL = 'https://public.example.com/asbcp';
+    delete asRecord(appSecret.stringData).ASBCP_SERVICE_KEY;
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
+    expect(text).toContain('ASBCP_INTERNAL_BASE_URL must point to the internal ASBCP Service');
+    expect(text).toContain('ASBCP_SERVICE_KEY must be rendered only as an app Secret value');
+    expect(text).toContain('ASBCP must set ASBCP_CONFIG_PATH to the canonical asbcp-config.yaml path');
+  });
+
+  it('renders a dedicated ASBCP runtime identity without public PV preflight RBAC', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const clusterRole = findResource(documents, 'ClusterRole', 'agentsmith-sandbox-control-plane-pv');
+    const clusterRoleBinding = findResource(documents, 'ClusterRoleBinding', 'agentsmith-sandbox-control-plane-pv');
+    const podSpec = deploymentPodSpec(documents, 'agentsmith-sandbox-control-plane');
+
+    expect(podSpec.serviceAccountName).toBe('agentsmith-sandbox-control-plane');
     expect(clusterRole).toEqual({});
     expect(clusterRoleBinding).toEqual({});
   });
@@ -1329,20 +1417,22 @@ API_REPLICAS=2
     const appConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'agentsmith-app-config', 'data');
     const appSecretChecksum = resourceDataChecksum(documents, 'Secret', 'agentsmith-app-secrets', 'stringData');
     const llmupConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'agentsmith-llmup-config', 'data');
-    const sandboxConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'sandbox-manager-config', 'data');
+    const asbcpConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'asbcp-config', 'data');
 
-    for (const deploymentName of ['agentsmith-web', 'agentsmith-api']) {
-      expect(deploymentPodTemplateAnnotations(documents, deploymentName)).toMatchObject({
-        'agentsmith.mbos.dev/checksum-app-config': appConfigChecksum,
-        'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
-      });
-    }
+    expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-web')).toMatchObject({
+      'agentsmith.mbos.dev/checksum-app-config': appConfigChecksum,
+      'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
+    });
+    expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-api')).toMatchObject({
+      'agentsmith.mbos.dev/checksum-app-config': appConfigChecksum,
+      'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
+    });
     expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-llmup')).toMatchObject({
       'agentsmith.mbos.dev/checksum-llmup-config': llmupConfigChecksum,
       'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
     });
-    expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-sandbox-manager')).toMatchObject({
-      'agentsmith.mbos.dev/checksum-sandbox-manager-config': sandboxConfigChecksum,
+    expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-sandbox-control-plane')).toMatchObject({
+      'agentsmith.mbos.dev/checksum-asbcp-config': asbcpConfigChecksum,
       'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
     });
 
@@ -1375,7 +1465,10 @@ API_REPLICAS=2
       ),
     });
     const appSecretChangedDocuments = parsedDocuments(appSecretChanged.output);
-    for (const deploymentName of ['agentsmith-web', 'agentsmith-api', 'agentsmith-llmup', 'agentsmith-sandbox-manager']) {
+    expect(
+      deploymentPodTemplateAnnotations(appSecretChangedDocuments, 'agentsmith-web')['agentsmith.mbos.dev/checksum-app-secrets'],
+    ).not.toBe(appSecretChecksum);
+    for (const deploymentName of ['agentsmith-api', 'agentsmith-llmup', 'agentsmith-sandbox-control-plane']) {
       expect(
         deploymentPodTemplateAnnotations(appSecretChangedDocuments, deploymentName)['agentsmith.mbos.dev/checksum-app-secrets'],
       ).not.toBe(appSecretChecksum);
@@ -1484,7 +1577,7 @@ API_REPLICAS=2
     const substrateTruth = `${await readFile(join(fixturesDir, 'substrate-truth.valid.env'), 'utf8')}
 PUBLIC_BASE_URL=http://wrong.example.test
 PUBLIC_API_BASE_URL=http://wrong.example.test/api/v1
-SANDBOX_SERVICE_KEY=substrate_should_not_override_app_secret
+ASBCP_SERVICE_KEY=substrate_should_not_override_app_secret
 `;
 
     await expect(renderUnifiedDeployToString({
@@ -1492,7 +1585,7 @@ SANDBOX_SERVICE_KEY=substrate_should_not_override_app_secret
       siteEnv: await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
       substrateTruth,
     })).rejects.toThrow(
-      /PUBLIC_BASE_URL is not allowed|PUBLIC_API_BASE_URL is not allowed|SANDBOX_SERVICE_KEY is not allowed/u,
+      /PUBLIC_BASE_URL is not allowed|PUBLIC_API_BASE_URL is not allowed|ASBCP_SERVICE_KEY is not allowed/u,
     );
   });
 
@@ -1545,6 +1638,29 @@ SANDBOX_SERVICE_KEY=substrate_should_not_override_app_secret
     const text = checkRenderedOutput(rendered).failures.map((failure) => failure.message).join('\n');
 
     expect(text).toContain('llmup Service must remain ClusterIP');
+  });
+
+  it('rejects public exposure of ASBCP through Service type or ingress route', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const service = findResource(documents, 'Service', 'agentsmith-sandbox-control-plane');
+    const ingress = findResource(documents, 'Ingress', 'agentsmith');
+    const rules = Array.isArray(asRecord(ingress.spec).rules) ? asRecord(ingress.spec).rules as unknown[] : [];
+    const paths = Array.isArray(asRecord(asRecord(rules[0]).http).paths)
+      ? asRecord(asRecord(rules[0]).http).paths as unknown[]
+      : [];
+    const firstPath = asRecord(paths[0]);
+
+    asRecord(service.spec).type = 'LoadBalancer';
+    firstPath.path = '/asbcp';
+    asRecord(asRecord(firstPath.backend).service).name = 'agentsmith-sandbox-control-plane';
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('ASBCP Service must remain ClusterIP');
+    expect(text).toContain('ASBCP services must remain internal only');
   });
 
   it('fingerprints redacted rendered manifests so secret value changes do not change evidence', () => {

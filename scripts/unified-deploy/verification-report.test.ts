@@ -45,7 +45,7 @@ function writeSmokeEvidence(root: string): string {
       { deployment: 'agentsmith-web', status: 'passed' },
       { deployment: 'agentsmith-api', status: 'passed' },
       { deployment: 'agentsmith-llmup', status: 'passed' },
-      { deployment: 'agentsmith-sandbox-manager', status: 'passed' },
+      { deployment: 'agentsmith-sandbox-control-plane', status: 'passed' },
     ],
     route_probes: [
       { name: 'web-public-workspaces', status: 'passed', status_code: 200 },

@@ -19,7 +19,7 @@ import {
 import { buildTaskHomePaths, buildTaskHomeSegment } from './notebook-task/task-models.js';
 import type { ProjectAfscpResourceOwnershipStore } from './project-afscp-namespace-store.js';
 import type { ProjectStorageBootstrapServicePort } from './project-storage-bootstrap-service.js';
-import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './sandbox-manager-client.js';
+import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './asbcp-client.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 const INTERNAL_AGENT_WORKSPACE_COLLECTION = 'internal_agent_file_library_workspaces';

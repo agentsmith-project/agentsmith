@@ -37,8 +37,8 @@ The substrate module owns dependency lifecycle, destructive reset, dependency
 health, dependency readiness reseed, and one authoritative substrate connection
 truth file consumed by app deployment.
 
-The substrate module does not own AgentSmith `web`, `api`, `llmup`,
-sandbox-manager, runner workloads, Kubernetes app manifests, product bootstrap,
+The substrate module does not own AgentSmith `web`, `api`, `llmup`, the
+internal sandbox execution service (ASBCP), runner workloads, Kubernetes app manifests, product bootstrap,
 release verification, or release reports.
 
 ### Keycloak
@@ -59,10 +59,16 @@ App components are:
 - `web`
 - `api`
 - `llmup`
-- sandbox-manager
+- internal sandbox execution service (`agentsmith-sandbox-control-plane`, ASBCP)
 - managed Agent task runner deployment configuration and runtime support
 - Kubernetes `Deployment`, `Service`, `Ingress`, `ConfigMap`, `Secret`,
   service account, role, and role binding resources required by those components
+
+ASBCP is a deployment/internal backend dependency, not a product-facing route,
+system management surface, or browser-visible concept. ASBCP URL/key values are
+server/deploy/internal-gate only and must not be rendered as `NEXT_PUBLIC_*`,
+browser bundle values, UI messages, i18n keys, or user-guide troubleshooting
+steps.
 
 `api` is fixed to `replicas=1`. There is no API replica operator setting, and
 autoscalers targeting `api` are forbidden.
@@ -180,7 +186,7 @@ Release evidence separates these sections:
 
 - substrate status and redacted substrate truth fingerprint;
 - rendered app manifest fingerprint and resource summary;
-- app rollout status for `web`, `api`, `llmup`, and sandbox-manager;
+- app rollout status for `web`, `api`, `llmup`, and the internal sandbox execution service (ASBCP);
 - ingress route probes for `/api/public/workspaces`, `/api/v1/me/profile`, and
   `/api/v1/agent-execution/ws`;
 - llmup config/health proof, including app-owned config, app-owned secret

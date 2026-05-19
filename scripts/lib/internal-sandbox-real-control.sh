@@ -8,23 +8,18 @@ STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}"
 source "${STATE_FILE}"
 
 COMMAND="${1:-status}"
-MANAGER_PID_FILE="${INTERNAL_REAL_DIR}/sandbox-manager.pid"
+ASBCP_PID_FILE="${INTERNAL_REAL_DIR}/asbcp.pid"
+ASBCP_CONTAINER_ID_FILE="${INTERNAL_REAL_DIR}/asbcp.container"
+ASBCP_CONTAINER_NAME="${ASBCP_CONTAINER_NAME:-agentsmith-asbcp-$(basename "${INTERNAL_REAL_DIR}" | tr -cs 'A-Za-z0-9_.-' '-')}"
+ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/asbcp-image.lock}"
+ASBCP_PORT="${ASBCP_PORT:-28080}"
+ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"
+ASBCP_LOG="${ASBCP_LOG:-${INTERNAL_REAL_DIR}/asbcp.log}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE:-${ASBCP_SERVICE_KEY:-}}"
+ASBCP_CONFIG_PATH="${ASBCP_CONFIG_PATH:-}"
+ASBCP_CONTAINER_CONFIG_PATH="/etc/asbcp/asbcp-config.yaml"
 
 info() { echo "[internal-sandbox-control] $*"; }
-
-launch_detached_shell() {
-  local log_file="$1"
-  local command="$2"
-  local pid
-  : > "${log_file}"
-  if command -v setsid >/dev/null 2>&1; then
-    setsid bash -lc "${command}" >> "${log_file}" 2>&1 < /dev/null &
-  else
-    nohup bash -lc "${command}" >> "${log_file}" 2>&1 < /dev/null &
-  fi
-  pid="$!"
-  printf '%s\n' "${pid}"
-}
 
 read_pid() {
   local file="$1"
@@ -53,21 +48,21 @@ port_pids() {
 }
 
 port_ready() {
-  curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1
+  curl -fsS -H "X-Service-Key: ${ASBCP_SERVICE_KEY_VALUE}" "${ASBCP_INTERNAL_BASE_URL%/}/readyz" >/dev/null 2>&1
 }
 
 kill_port_listeners() {
   local pid
-  for pid in $(port_pids "${SANDBOX_PORT}"); do
+  for pid in $(port_pids "${ASBCP_PORT}"); do
     kill "${pid}" >/dev/null 2>&1 || true
   done
   for _ in $(seq 1 20); do
-    if [[ -z "$(port_pids "${SANDBOX_PORT}")" ]]; then
+    if [[ -z "$(port_pids "${ASBCP_PORT}")" ]]; then
       return 0
     fi
     sleep 1
   done
-  for pid in $(port_pids "${SANDBOX_PORT}"); do
+  for pid in $(port_pids "${ASBCP_PORT}"); do
     kill -9 "${pid}" >/dev/null 2>&1 || true
   done
 }
@@ -93,86 +88,128 @@ stop_pid() {
   rm -f "${file}"
 }
 
-start_manager() {
-  local pid
-  local afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
-  pid="$(read_pid "${MANAGER_PID_FILE}")"
+resolve_asbcp_image() {
+  local image digest_hex repeated
+  image="${ASBCP_IMAGE:-}"
+  if [[ -z "${image}" && -f "${ASBCP_IMAGE_LOCK_PATH}" ]]; then
+    image="$(awk -F= '$1 == "asbcp_source_image" { print $2 }' "${ASBCP_IMAGE_LOCK_PATH}" | tail -n1)"
+  fi
+  [[ -n "${image}" ]] || { echo "[internal-sandbox-control] missing ASBCP_IMAGE and image lock: ${ASBCP_IMAGE_LOCK_PATH}" >&2; exit 1; }
+  if [[ ! "${image}" =~ @sha256:[a-f0-9]{64}$ ]]; then
+    echo "[internal-sandbox-control] ASBCP_IMAGE must be pinned by digest: ${image}" >&2
+    exit 1
+  fi
+  digest_hex="${image##*@sha256:}"
+  repeated="${digest_hex//${digest_hex:0:1}/}"
+  if [[ -z "${repeated}" ]]; then
+    echo "[internal-sandbox-control] ASBCP_IMAGE uses a placeholder digest and is not pullable: ${image}" >&2
+    exit 1
+  fi
+  printf '%s\n' "${image}"
+}
+
+asbcp_container_id() {
+  if [[ -f "${ASBCP_CONTAINER_ID_FILE}" ]]; then
+    tr -d '[:space:]' < "${ASBCP_CONTAINER_ID_FILE}"
+  fi
+}
+
+asbcp_container_running() {
+  local container_id
+  container_id="$(asbcp_container_id)"
+  [[ -n "${container_id}" ]] || return 1
+  docker inspect -f '{{.State.Running}}' "${container_id}" 2>/dev/null | grep -qx 'true'
+}
+
+start_asbcp() {
+  local pid image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
+  local -a docker_args
+  pid="$(read_pid "${ASBCP_PID_FILE}")"
   if pid_alive "${pid}" && port_ready; then
-    info "manager already running pid=${pid}"
+    info "ASBCP already running pid=${pid}"
     return 0
   fi
   if port_ready; then
-    info "manager already running on :${SANDBOX_PORT} without tracked pid"
+    info "ASBCP already running at ${ASBCP_INTERNAL_BASE_URL} without tracked pid"
     return 0
   fi
-  if [[ -n "$(port_pids "${SANDBOX_PORT}")" ]]; then
+  if [[ -n "$(port_pids "${ASBCP_PORT}")" ]]; then
     kill_port_listeners
   fi
+  [[ -n "${ASBCP_CONFIG_PATH}" ]] || { echo "[internal-sandbox-control] missing ASBCP_CONFIG_PATH" >&2; exit 1; }
+  [[ -f "${ASBCP_CONFIG_PATH}" ]] || { echo "[internal-sandbox-control] ASBCP config not found: ${ASBCP_CONFIG_PATH}" >&2; exit 1; }
+  [[ -n "${ASBCP_SERVICE_KEY_VALUE}" ]] || { echo "[internal-sandbox-control] missing ASBCP_SERVICE_KEY" >&2; exit 1; }
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}}"
-  afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+  afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
   afscp_actor_type="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"
   afscp_actor_id="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_caller_service}}}"
-  [[ -n "${afscp_internal_base_url}" ]] || { echo "[internal-sandbox-control] missing AFSCP_INTERNAL_BASE_URL for sandbox manager" >&2; exit 1; }
-  [[ -n "${afscp_orchestrator_token}" ]] || { echo "[internal-sandbox-control] missing AFSCP_ORCHESTRATOR_TOKEN for sandbox manager" >&2; exit 1; }
-  launch_detached_shell "${SANDBOX_LOG}" "
-    cd '${SANDBOX_ROOT}/manager-service' && \
-    env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-      CONFIG_PATH='${CONFIG_PATH}' \
-      SERVICE_KEYS='${SANDBOX_SERVICE_KEY_VALUE}' \
-      AFSCP_INTERNAL_BASE_URL='${afscp_internal_base_url}' \
-      AFSCP_ORCHESTRATOR_TOKEN='${afscp_orchestrator_token}' \
-      AFSCP_CALLER_SERVICE='${afscp_caller_service}' \
-      AFSCP_ACTOR_TYPE='${afscp_actor_type}' \
-      AFSCP_ACTOR_ID='${afscp_actor_id}' \
-      JUICEFS_CSI_DRIVER='${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}' \
-      JUICEFS_STORAGE_CAPACITY='${AFSCP_STORAGE_CAPACITY:-1Pi}' \
-      JUICEFS_STORAGE_CLASS_NAME='${AFSCP_STORAGE_CLASS_NAME:-}' \
-      JUICEFS_MOUNT_OPTIONS='${AFSCP_STORAGE_CSI_MOUNT_OPTIONS:-}' \
-      JUICEFS_SUBDIR='${AFSCP_STORAGE_CSI_SUBDIR:-}' \
-      JUICEFS_MOUNT_SERVICE_ACCOUNT='${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}' \
-      JUICEFS_MOUNT_IMAGE='${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}' \
-      JUICEFS_STORAGE_ENDPOINT='${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}' \
-      JUICEFS_STORAGE_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
-      JUICEFS_STORAGE_SECRET_KEY='${MINIO_SECRET_KEY}' \
-      STORAGE_ENDPOINT='localhost:19000' \
-      STORAGE_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
-      STORAGE_SECRET_KEY='${MINIO_SECRET_KEY}' \
-      STORAGE_BUCKET='${MINIO_BUCKET}' \
-      STORAGE_USE_SSL='false' \
-      KUBECONFIG='${KUBECONFIG:-}' \
-      go run ./cmd/manager
-  " > "${MANAGER_PID_FILE}"
+  [[ -n "${afscp_internal_base_url}" ]] || { echo "[internal-sandbox-control] missing AFSCP_INTERNAL_BASE_URL for ASBCP" >&2; exit 1; }
+  [[ -n "${afscp_orchestrator_token}" ]] || { echo "[internal-sandbox-control] missing AFSCP_ORCHESTRATOR_TOKEN for ASBCP" >&2; exit 1; }
+  command -v docker >/dev/null 2>&1 || { echo "[internal-sandbox-control] docker is required to run ASBCP image" >&2; exit 1; }
+  image="$(resolve_asbcp_image)"
+  if ! docker image inspect "${image}" >/dev/null 2>&1; then
+    info "pulling ASBCP image ${image}"
+    docker pull --platform linux/amd64 "${image}" >/dev/null
+  fi
+  docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker_args=(
+    run
+    --rm
+    --name "${ASBCP_CONTAINER_NAME}"
+    --network host
+    -v "${ASBCP_CONFIG_PATH}:${ASBCP_CONTAINER_CONFIG_PATH}:ro"
+    -e "ASBCP_CONFIG_PATH=${ASBCP_CONTAINER_CONFIG_PATH}"
+    -e "ASBCP_SERVICE_KEYS=${ASBCP_SERVICE_KEY_VALUE}"
+    -e "ASBCP_WORKLOAD_NAMESPACE=${K8S_NAMESPACE}"
+    -e "ASBCP_AFSCP_INTERNAL_BASE_URL=${afscp_internal_base_url}"
+    -e "ASBCP_AFSCP_ORCHESTRATOR_TOKEN=${afscp_orchestrator_token}"
+    -e "ASBCP_AFSCP_CALLER_SERVICE=${afscp_caller_service}"
+    -e "ASBCP_AFSCP_ACTOR_TYPE=${afscp_actor_type}"
+    -e "ASBCP_AFSCP_ACTOR_ID=${afscp_actor_id}"
+  )
+  if [[ -n "${KUBECONFIG:-}" && -f "${KUBECONFIG}" ]]; then
+    docker_args+=(-e "KUBECONFIG=${KUBECONFIG}" -v "${KUBECONFIG}:${KUBECONFIG}:ro")
+  fi
+  : > "${ASBCP_LOG}"
+  env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+    docker "${docker_args[@]}" "${image}" >> "${ASBCP_LOG}" 2>&1 &
+  pid="$!"
+  printf '%s\n' "${pid}" > "${ASBCP_PID_FILE}"
+  printf '%s\n' "${ASBCP_CONTAINER_NAME}" > "${ASBCP_CONTAINER_ID_FILE}"
   for _ in $(seq 1 60); do
     if port_ready; then
-      info "manager ready"
+      info "ASBCP ready"
       return 0
     fi
     sleep 1
   done
-  echo "[internal-sandbox-control] manager failed to become ready" >&2
-  tail -n 120 "${SANDBOX_LOG}" >&2 || true
+  echo "[internal-sandbox-control] ASBCP failed to become ready" >&2
+  tail -n 120 "${ASBCP_LOG}" >&2 || true
   exit 1
 }
 
-stop_manager() {
-  stop_pid "${MANAGER_PID_FILE}"
+stop_asbcp() {
+  docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  rm -f "${ASBCP_CONTAINER_ID_FILE}"
+  stop_pid "${ASBCP_PID_FILE}"
   kill_port_listeners
 }
 
 status() {
-  local manager_pid
-  manager_pid="$(read_pid "${MANAGER_PID_FILE}")"
-  echo "manager_pid=${manager_pid:-}"
-  echo "manager_alive=$(pid_alive "${manager_pid}" && echo 1 || echo 0)"
-  echo "manager_listener_pids=$(tr '\n' ',' <<< \"$(port_pids "${SANDBOX_PORT}")\" | sed 's/,$//')"
-  echo "manager_ready=$(port_ready && echo 1 || echo 0)"
+  local asbcp_pid
+  asbcp_pid="$(read_pid "${ASBCP_PID_FILE}")"
+  echo "asbcp_pid=${asbcp_pid:-}"
+  echo "asbcp_alive=$(pid_alive "${asbcp_pid}" && echo 1 || echo 0)"
+  echo "asbcp_container_running=$(asbcp_container_running && echo 1 || echo 0)"
+  echo "asbcp_listener_pids=$(tr '\n' ',' <<< \"$(port_pids "${ASBCP_PORT}")\" | sed 's/,$//')"
+  echo "asbcp_ready=$(port_ready && echo 1 || echo 0)"
 }
 
 case "${COMMAND}" in
-  start-manager) start_manager ;;
-  stop-manager) stop_manager ;;
-  restart-manager) stop_manager; start_manager ;;
+  start-asbcp) start_asbcp ;;
+  stop-asbcp) stop_asbcp ;;
+  restart-asbcp) stop_asbcp; start_asbcp ;;
   status) status ;;
   *)
     echo "[internal-sandbox-control] unknown command: ${COMMAND}" >&2

@@ -28,7 +28,7 @@ type CommandCall = {
 };
 
 const APP_DIGEST = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const SANDBOX_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const ASBCP_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const LLMUP_DIGEST = 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
@@ -175,7 +175,7 @@ function writeLocalKindImageSiteEnv(root: string, mutate: (source: string) => st
     .replace(/^API_IMAGE=.*$/mu, `API_IMAGE=kind-registry:5000/mbos/agentsmith-app@${APP_DIGEST}`)
     .replace(/^LLMUP_IMAGE=.*$/mu, `LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`)
     .replace(/^AFSCP_IMAGE=.*$/mu, `AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`)
-    .replace(/^SANDBOX_MANAGER_IMAGE=.*$/mu, `SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager@${SANDBOX_DIGEST}`)
+    .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`)
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, `MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`)
     .replace(/^INGRESS_NGINX_CONTROLLER_IMAGE=.*$/mu, `INGRESS_NGINX_CONTROLLER_IMAGE=kind-registry:5000/mbos/ingress-nginx-controller@${INGRESS_CONTROLLER_DIGEST}`)
     .replace(/^INGRESS_NGINX_CERTGEN_IMAGE=.*$/mu, `INGRESS_NGINX_CERTGEN_IMAGE=kind-registry:5000/mbos/ingress-nginx-kube-webhook-certgen@${INGRESS_CERTGEN_DIGEST}`)));
@@ -187,7 +187,7 @@ function writeMutableLocalKindImageSiteEnv(root: string): string {
     .replace(/^API_IMAGE=.*$/mu, 'API_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev')
     .replace(/^LLMUP_IMAGE=.*$/mu, 'LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy:v0.2.27')
     .replace(/^AFSCP_IMAGE=.*$/mu, 'AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane:local-kind-dev')
-    .replace(/^SANDBOX_MANAGER_IMAGE=.*$/mu, 'SANDBOX_MANAGER_IMAGE=kind-registry:5000/mbos/sandbox-manager:local-kind-dev')
+    .replace(/^ASBCP_IMAGE=.*$/mu, 'ASBCP_IMAGE=kind-registry:5000/mbos/agentsmith-sandbox-control-plane:local-kind-dev')
     .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, 'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner:local-kind-dev'));
 }
 
@@ -1383,19 +1383,20 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[11]?.input).toContain('name: afscp-schema-check');
     expect(applyCalls[11]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
     expect(applyCalls[11]?.input).toContain(`value: ${`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`}`);
+    expect(applyCalls[11]?.input).not.toContain('name: agentsmith-web-secrets');
     expect(applyCalls[11]?.input).not.toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
     expect(applyCalls[11]?.input).not.toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
     expect(applyCalls[11]?.input).not.toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[11]?.input).not.toContain('sentinel_minio_secret');
     expect(applyCalls[11]?.input).not.toContain('MINIO_PORT: "9000"');
     expect(applyCalls[11]?.input).not.toContain('INTERNAL_KEYCLOAK_BASE_URL: http://substrate-keycloak:8080');
     expect(applyCalls[11]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
     expect(applyCalls[11]?.input).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
     expect(applyCalls[11]?.input).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
-    expect(applyCalls[11]?.input).toContain('value: http://substrate-minio.agentsmith.svc.cluster.local:9000');
     expect(applyCalls[11]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-config: sha256:[a-f0-9]{64}/u);
     expect(applyCalls[11]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-app-secrets: sha256:[a-f0-9]{64}/u);
     expect(applyCalls[11]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-llmup-config: sha256:[a-f0-9]{64}/u);
-    expect(applyCalls[11]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-sandbox-manager-config: sha256:[a-f0-9]{64}/u);
+    expect(applyCalls[11]?.input).toMatch(/agentsmith\.mbos\.dev\/checksum-asbcp-config: sha256:[a-f0-9]{64}/u);
     expect(applyCalls[11]?.input).toContain('name: afscp-jvs-cwd');
     expect(applyCalls[11]?.input).toContain('mountPath: /var/lib/afscp/jvs-cwd');
     expect(applyCalls[11]?.input).toContain('claimName: afscp-default-volume');
@@ -1420,7 +1421,7 @@ describe('unified deploy local-kind live rollout producer', () => {
       expect.stringContaining('rollout status deployment/agentsmith-web'),
       expect.stringContaining('rollout status deployment/agentsmith-api'),
       expect.stringContaining('rollout status deployment/agentsmith-llmup'),
-      expect.stringContaining('rollout status deployment/agentsmith-sandbox-manager'),
+      expect.stringContaining('rollout status deployment/agentsmith-sandbox-control-plane'),
     ]));
     const rolloutCommands = rolloutCalls.map((call) => call.args.join(' '));
     expect(rolloutCommands.some((command) =>

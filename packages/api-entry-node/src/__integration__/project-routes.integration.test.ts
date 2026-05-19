@@ -535,7 +535,7 @@ describe('api-entry-node project routes integration', () => {
       },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
     const { baseUrl } = startServerWithDeps(deps);
@@ -600,7 +600,7 @@ describe('api-entry-node project routes integration', () => {
       },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
     const { baseUrl } = startServerWithDeps(deps);

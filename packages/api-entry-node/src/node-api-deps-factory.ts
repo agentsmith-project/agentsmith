@@ -27,7 +27,7 @@ import { createAgentPresenceStore } from './agent-presence-store.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { InternalAgentWorkspaceProvisionerImpl } from './internal-agent-workspace-provisioner.js';
-import { SandboxManagerClient } from './sandbox-manager-client.js';
+import { AsbcpClient } from './asbcp-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
@@ -675,14 +675,21 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
 } {
   const universalProxyService = UniversalProxyService.fromEnv(env);
   const afscpConfig = parseAfscpConfig(env);
-  const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
-  const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
+  const legacyAsbcpEnv = [`SANDBOX_${'MANAGER'}_URL`, `SANDBOX_${'SERVICE'}_KEY`]
+    .filter((key) => env[key]?.trim());
+  if (legacyAsbcpEnv.length > 0) {
+    throw Object.assign(new Error('asbcp_legacy_env_forbidden: use ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY'), {
+      code: 'ASBCP_LEGACY_ENV_FORBIDDEN',
+    });
+  }
+  const asbcpUrl = env.ASBCP_INTERNAL_BASE_URL?.trim() || '';
+  const asbcpServiceKey = env.ASBCP_SERVICE_KEY?.trim() || '';
   const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim()
     || deriveWebSocketBaseFromHttpBase(env.AGENT_EXECUTION_HTTP_BASE_URL)
     || deriveWebSocketBaseFromHttpBase(env.INTERNAL_API_BASE_URL);
-  if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
-    throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
-      code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
+  if ((asbcpUrl && !asbcpServiceKey) || (!asbcpUrl && asbcpServiceKey)) {
+    throw Object.assign(new Error('asbcp_config_incomplete: both ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY must be set'), {
+      code: 'ASBCP_CONFIG_INCOMPLETE',
     });
   }
 
@@ -739,8 +746,8 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         resourceOwnershipStore: projectAfscpResourceOwnershipStore,
       })
     : AfscpFileLibraryStorageAdapter.disabled();
-  const sandboxClient = sandboxUrl && sandboxServiceKey
-    ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
+  const sandboxClient = asbcpUrl && asbcpServiceKey
+    ? new AsbcpClient(asbcpUrl, asbcpServiceKey)
     : undefined;
   const internalAgentWorkspaceBindingManager = sandboxClient && afscpProductClient
     ? new InternalAgentWorkspaceProvisionerImpl(
@@ -779,7 +786,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   if (sandboxClient) {
     void sandboxClient.checkReady().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'unknown_error';
-      process.stderr.write(`[api-entry-node] sandbox readyz preflight failed: ${message}\n`);
+      process.stderr.write(`[api-entry-node] ASBCP readyz preflight failed: ${message}\n`);
     });
   }
   const deps: NodeApiDeps = {

@@ -8,7 +8,7 @@ import {
   createInternalAgentTaskRunnerViaApi,
   createAgentTaskViaApi,
   createProjectInWorkspace,
-  deleteInternalWorkloadViaManager,
+  deleteInternalWorkloadViaAsbcp,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   keycloakLoginToWorkspace,
@@ -22,13 +22,13 @@ import {
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
-  waitForExpiredWorkloadReleasedViaManager,
+  waitForExpiredWorkloadReleasedViaAsbcp,
 } from './integration-real-helpers';
 
 function requireReclaimEnv(): { namespace: string } {
   const namespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim();
-  if (!process.env.SANDBOX_MANAGER_URL?.trim()) throw new Error('missing_SANDBOX_MANAGER_URL');
-  if (!process.env.SANDBOX_SERVICE_KEY?.trim()) throw new Error('missing_SANDBOX_SERVICE_KEY');
+  if (!process.env.ASBCP_INTERNAL_BASE_URL?.trim()) throw new Error('missing_ASBCP_INTERNAL_BASE_URL');
+  if (!process.env.ASBCP_SERVICE_KEY?.trim()) throw new Error('missing_ASBCP_SERVICE_KEY');
   if (!process.env.INTERNAL_SANDBOX_REAL_STATE_FILE?.trim()) throw new Error('missing_INTERNAL_SANDBOX_REAL_STATE_FILE');
   if (!namespace) throw new Error('missing_INTERNAL_AGENT_K8S_NAMESPACE');
   return { namespace };
@@ -57,7 +57,7 @@ function buildAgentTaskIntent(token: string, fileName: string): string {
 }
 
 test.describe('@lane-real internal sandbox reclaim', () => {
-  test('reclaims idle workload pods, preserves unexpired pods across manager restart, and releases pods through manager after restart', async ({ page }) => {
+  test('reclaims idle workload pods, preserves unexpired pods across ASBCP restart, and releases pods through ASBCP after restart', async ({ page }) => {
     test.setTimeout(1_200_000);
     const { namespace } = requireReclaimEnv();
     const apiKey = requireApiKey();
@@ -133,7 +133,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       workloadId: workloadId1,
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
-    await waitForExpiredWorkloadReleasedViaManager({
+    await waitForExpiredWorkloadReleasedViaAsbcp({
       namespace,
       workloadId: workloadId1,
       timeoutMs: 60_000,
@@ -166,8 +166,8 @@ test.describe('@lane-real internal sandbox reclaim', () => {
 
     const workloadId2 = sanitizeWorkloadId(taskId2);
     const workloadPod2 = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
-    await runInternalSandboxControl('stop-manager');
-    await runInternalSandboxControl('start-manager');
+    await runInternalSandboxControl('stop-asbcp');
+    await runInternalSandboxControl('start-asbcp');
 
     const workloadPod2AfterRestart = await waitForWorkloadPodIdentity({
       namespace,
@@ -184,7 +184,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     });
     expect(workloadPod2AfterManagerSettled).toEqual(workloadPod2);
 
-    await deleteInternalWorkloadViaManager({
+    await deleteInternalWorkloadViaAsbcp({
       workspaceId: 'ws_default',
       projectId,
       workloadId: workloadId2,

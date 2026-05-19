@@ -28,7 +28,7 @@ data:
   AFSCP_READINESS_PROFILE: "runtime"
   AFSCP_API_MODE: "internal"
   AFSCP_API_DEPLOYMENT_GLOBAL_ALLOWED_CALLERS: "agentsmith-api:product:operation_inspector,agentsmith-bootstrap:admin:volume_admin|operation_inspector|operator_admin"
-  AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS: "agentsmith-bootstrap:admin:namespace_admin,agentsmith-api:product:namespace_admin|repo_admin|repo_lifecycle_admin|restore_admin|template_admin|export_admin|mount_admin|operation_inspector,agentsmith-sandbox-manager:orchestrator:orchestrator_mount"
+  AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS: "agentsmith-bootstrap:admin:namespace_admin,agentsmith-api:product:namespace_admin|repo_admin|repo_lifecycle_admin|restore_admin|template_admin|export_admin|mount_admin|operation_inspector,agentsmith-sandbox-control-plane:orchestrator:orchestrator_mount"
   AFSCP_API_VOLUME_ROOTS: "{{AFSCP_DEFAULT_VOLUME_ID}}={{AFSCP_VOLUME_ROOT_PATH}}"
   AFSCP_VOLUME_ROOTS: "{{AFSCP_DEFAULT_VOLUME_ID}}={{AFSCP_VOLUME_ROOT_PATH}}"
   AFSCP_DEFAULT_VOLUME_ID: "{{AFSCP_DEFAULT_VOLUME_ID}}"
@@ -90,7 +90,7 @@ stringData:
   AFSCP_API_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
   AFSCP_EXPORT_GATEWAY_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
   AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_API_SERVICE_TOKENS: "agentsmith-api={{AFSCP_SERVICE_TOKEN}},agentsmith-bootstrap={{AFSCP_BOOTSTRAP_SERVICE_TOKEN}},agentsmith-sandbox-manager={{AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
+  AFSCP_API_SERVICE_TOKENS: "agentsmith-api={{AFSCP_SERVICE_TOKEN}},agentsmith-bootstrap={{AFSCP_BOOTSTRAP_SERVICE_TOKEN}},agentsmith-sandbox-control-plane={{AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
 ---
 apiVersion: v1
 kind: Secret

@@ -1,7 +1,7 @@
 import type { AgentRecord } from './resource-models.js';
 import { isAbsolute, join, normalize } from 'node:path';
 import { isManagedAgentRunner } from './agent-runner-profile.js';
-import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
+import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './asbcp-client.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
@@ -11,7 +11,7 @@ import {
   INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
 } from '@mbos/contracts';
 
-interface SandboxManagerClientLike {
+interface AsbcpClientLike {
   createOrEnsurePod(
     workspaceId: string,
     projectId: string,
@@ -399,7 +399,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
-    private readonly sandboxClient: SandboxManagerClientLike,
+    private readonly sandboxClient: AsbcpClientLike,
     private readonly agentExecution: AgentExecutionLike,
     private readonly wsBaseUrl: string,
     options?: InternalAgentPodManagerOptions,

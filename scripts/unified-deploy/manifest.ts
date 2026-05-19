@@ -28,7 +28,7 @@ const REQUIRED_APP_COMPONENTS = [
   'afscp-volume-bootstrap',
   'afscp-worker',
   'afscp-export-gateway',
-  'sandbox-manager',
+  'asbcp',
   'managed-runner-support',
 ] as const;
 const REQUIRED_ROUTES = [

@@ -263,22 +263,22 @@ const runtime = {
   },
   execution_urls: {
     websocket_base: env.AGENT_EXECUTION_WS_BASE_URL ?? null,
-    sandbox_manager: env.SANDBOX_MANAGER_URL ?? null,
+    asbcp_internal_base: env.ASBCP_INTERNAL_BASE_URL ?? null,
   },
   container_or_pod_urls: {
     websocket_callback: env.AGENT_EXECUTION_WS_BASE_URL ?? null,
-    sandbox_callback: env.SANDBOX_MANAGER_URL ?? null,
+    asbcp_callback: env.ASBCP_INTERNAL_BASE_URL ?? null,
   },
   ports: {
     api: env.INTEGRATION_API_PORT ?? env.PORT_API ?? env.API_PORT ?? null,
     web: env.INTEGRATION_WEB_PORT ?? env.PORT_WEB ?? env.WEB_PORT ?? null,
     keycloak: env.INTEGRATION_KEYCLOAK_PORT ?? env.KEYCLOAK_PORT ?? null,
-    sandbox: env.INTERNAL_SANDBOX_MANAGER_PORT ?? env.SANDBOX_HOST_PORT ?? null,
+    asbcp: env.INTERNAL_ASBCP_PORT ?? env.ASBCP_HOST_PORT ?? null,
   },
   image_refs: {
     runner: env.INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE ?? env.INTEGRATION_INTERNAL_AGENT_IMAGE ?? env.RUNNER_IMAGE ?? null,
     verify: env.VERIFY_RUNNER_IMAGE ?? null,
-    sandbox_manager: env.SANDBOX_MANAGER_IMAGE ?? env.K8S_SANDBOX_MANAGER_IMAGE ?? null,
+    asbcp: env.ASBCP_IMAGE ?? null,
   },
   workspace_model: {
     runner_mode: 'managed_agent_task',
@@ -312,7 +312,7 @@ const keys = [
   'KEYCLOAK_ISSUER_URL',
   'MBOS_UNIVERSAL_PROXY_BASE_URL',
   'AGENT_EXECUTION_WS_BASE_URL',
-  'SANDBOX_MANAGER_URL',
+  'ASBCP_INTERNAL_BASE_URL',
   'INTERNAL_AGENT_K8S_NAMESPACE',
   'INTEGRATION_INTERNAL_AGENT_IMAGE',
   'INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE',

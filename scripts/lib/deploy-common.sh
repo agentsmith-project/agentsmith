@@ -505,7 +505,7 @@ compose_runtime_no_proxy() {
   merge_no_proxy_entries \
     "${RUNTIME_ADDITIONAL_NO_PROXY:-}" \
     "${NO_PROXY:-${no_proxy:-}}" \
-    "postgres,mongo,redis,minio,keycloak,api,web,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager" \
+    "postgres,mongo,redis,minio,keycloak,api,web,universal-proxy,host.docker.internal,postgres-external,minio-external,agentsmith-sandbox-control-plane" \
     "$(no_proxy_hosts_from_inputs "$@")"
 }
 

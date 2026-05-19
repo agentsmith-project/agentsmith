@@ -57,7 +57,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -114,7 +114,7 @@ describe('ProjectStorageBootstrapService', () => {
             ],
           },
           {
-            caller_service: 'agentsmith-sandbox-manager',
+            caller_service: 'agentsmith-sandbox-control-plane',
             roles: ['orchestrator_mount'],
           },
         ],
@@ -194,7 +194,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
     const projectKey = {
@@ -233,7 +233,7 @@ describe('ProjectStorageBootstrapService', () => {
         namespace_id: existing.namespace_id,
         default_volume_id: 'vol_default',
         allowed_callers: expect.arrayContaining([
-          { caller_service: 'agentsmith-sandbox-manager', roles: ['orchestrator_mount'] },
+          { caller_service: 'agentsmith-sandbox-control-plane', roles: ['orchestrator_mount'] },
         ]),
       }),
       signal: undefined,
@@ -270,7 +270,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn(), checkNamespaceVolumeBinding },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
     const projectKey = {
@@ -356,7 +356,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn(), checkNamespaceVolumeBinding },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
     const projectKey = {
@@ -416,7 +416,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -481,7 +481,7 @@ describe('ProjectStorageBootstrapService', () => {
         },
         defaultVolumeId: 'raw\nsvc-secret-token',
         productCallerService: 'agentsmith api',
-        orchestratorCallerService: 'agentsmith-sandbox-manager',
+        orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       });
     } catch (error) {
       caught = error;
@@ -510,7 +510,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -550,7 +550,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -581,7 +581,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -620,7 +620,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -665,7 +665,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -713,7 +713,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -758,7 +758,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -798,7 +798,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -847,7 +847,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -916,7 +916,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -963,7 +963,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1010,7 +1010,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1064,7 +1064,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1117,7 +1117,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1163,7 +1163,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1212,7 +1212,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1259,7 +1259,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 
@@ -1326,7 +1326,7 @@ describe('ProjectStorageBootstrapService', () => {
       client: { upsertNamespace, putNamespaceVolumeBinding, getOperation: vi.fn() },
       defaultVolumeId: 'vol_default',
       productCallerService: 'agentsmith-api',
-      orchestratorCallerService: 'agentsmith-sandbox-manager',
+      orchestratorCallerService: 'agentsmith-sandbox-control-plane',
       correlationIdFactory: () => 'corr-generated',
     });
 

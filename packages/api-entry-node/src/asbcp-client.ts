@@ -42,21 +42,21 @@ export interface SandboxWorkspaceBindingResponse {
   updated_at?: string;
 }
 
-export class SandboxManagerHttpError extends Error {
+export class AsbcpHttpError extends Error {
   code: string;
   status: number;
   operation: string;
 
   constructor(input: { status: number; operation: string; message: string; code: string }) {
     super(input.message);
-    this.name = 'SandboxManagerHttpError';
+    this.name = 'AsbcpHttpError';
     this.status = input.status;
     this.operation = input.operation;
     this.code = input.code;
   }
 }
 
-export class SandboxManagerClient {
+export class AsbcpClient {
   private readonly normalizedBaseUrl: string;
 
   constructor(
@@ -146,32 +146,32 @@ export class SandboxManagerClient {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (signal?.aborted) {
-        throw SandboxManagerClient.buildAbortError(signal.reason);
+        throw AsbcpClient.buildAbortError(signal.reason);
       }
       try {
         const resp = await request();
         if (!resp.ok && this.isRetryableStatus(resp.status) && attempt < maxAttempts) {
           if (signal?.aborted) {
-            throw SandboxManagerClient.buildAbortError(signal.reason);
+            throw AsbcpClient.buildAbortError(signal.reason);
           }
-          await SandboxManagerClient.sleep(200 * (2 ** (attempt - 1)));
+          await AsbcpClient.sleep(200 * (2 ** (attempt - 1)));
           continue;
         }
         return resp;
       } catch (error) {
         if (signal?.aborted) {
-          throw SandboxManagerClient.buildAbortError(signal.reason ?? error);
+          throw AsbcpClient.buildAbortError(signal.reason ?? error);
         }
         lastError = error;
         if (attempt >= maxAttempts) break;
         if (signal?.aborted) {
-          throw SandboxManagerClient.buildAbortError(signal.reason ?? error);
+          throw AsbcpClient.buildAbortError(signal.reason ?? error);
         }
-        await SandboxManagerClient.sleep(200 * (2 ** (attempt - 1)));
+        await AsbcpClient.sleep(200 * (2 ** (attempt - 1)));
       }
     }
     const message = lastError instanceof Error ? lastError.message : 'unknown_network_error';
-    throw Object.assign(new Error(`sandbox_manager_network_error: ${operation} ${message}`), {
+    throw Object.assign(new Error(`asbcp_network_error: ${operation} ${message}`), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
     });
   }
@@ -184,11 +184,11 @@ export class SandboxManagerClient {
     const resp = await this.requestWithRetry(operation, request, signal);
     if (resp.ok) return resp;
     const text = await resp.text().catch(() => '');
-    throw new SandboxManagerHttpError({
+    throw new AsbcpHttpError({
       status: resp.status,
       operation,
       code: this.mapErrorCode(resp.status),
-      message: `sandbox_manager_error: ${operation} ${resp.status} ${text}`.trim(),
+      message: `asbcp_error: ${operation} ${resp.status} ${text}`.trim(),
     });
   }
 
@@ -261,11 +261,11 @@ export class SandboxManagerClient {
     }));
     if (!resp.ok && resp.status !== 404) {
       const text = await resp.text().catch(() => '');
-      throw new SandboxManagerHttpError({
+      throw new AsbcpHttpError({
         status: resp.status,
         operation: 'delete_workspace_binding',
         code: this.mapErrorCode(resp.status),
-        message: `sandbox_manager_error: delete_workspace_binding ${resp.status} ${text}`.trim(),
+        message: `asbcp_error: delete_workspace_binding ${resp.status} ${text}`.trim(),
       });
     }
   }
@@ -290,11 +290,11 @@ export class SandboxManagerClient {
         return { phase: 'offline' };
       }
       const text = await resp.text().catch(() => '');
-      throw new SandboxManagerHttpError({
+      throw new AsbcpHttpError({
         status: resp.status,
         operation: 'get_pod_status',
         code: this.mapErrorCode(resp.status),
-        message: `sandbox_manager_error: get_pod_status ${resp.status} ${text}`.trim(),
+        message: `asbcp_error: get_pod_status ${resp.status} ${text}`.trim(),
       });
     }
     return await resp.json() as PodStatusResponse;
@@ -318,11 +318,11 @@ export class SandboxManagerClient {
     }), signal);
     if (!resp.ok && resp.status !== 404) {
       const text = await resp.text().catch(() => '');
-      throw new SandboxManagerHttpError({
+      throw new AsbcpHttpError({
         status: resp.status,
         operation: 'delete_pod',
         code: this.mapErrorCode(resp.status),
-        message: `sandbox_manager_error: delete_pod ${resp.status} ${text}`.trim(),
+        message: `asbcp_error: delete_pod ${resp.status} ${text}`.trim(),
       });
     }
   }

@@ -4816,7 +4816,7 @@ export async function patchWorkloadPodExpiry(args: {
   }
 }
 
-export async function releaseExpiredWorkloadsViaManager(args: {
+export async function releaseExpiredWorkloadsViaAsbcp(args: {
   namespace: string;
   workloadId: string;
   now?: Date;
@@ -4850,7 +4850,7 @@ export async function releaseExpiredWorkloadsViaManager(args: {
   });
   let released = 0;
   for (const target of targets) {
-    await deleteInternalWorkloadViaManager({
+    await deleteInternalWorkloadViaAsbcp({
       workspaceId: target.workspaceId,
       projectId: target.projectId,
       workloadId: target.workloadId,
@@ -4860,7 +4860,7 @@ export async function releaseExpiredWorkloadsViaManager(args: {
   return { released, targets };
 }
 
-export async function waitForExpiredWorkloadReleasedViaManager(args: {
+export async function waitForExpiredWorkloadReleasedViaAsbcp(args: {
   namespace: string;
   workloadId: string;
   timeoutMs?: number;
@@ -4868,7 +4868,7 @@ export async function waitForExpiredWorkloadReleasedViaManager(args: {
   await expect
     .poll(
       async () => {
-        const result = await releaseExpiredWorkloadsViaManager({
+        const result = await releaseExpiredWorkloadsViaAsbcp({
           namespace: args.namespace,
           workloadId: args.workloadId,
         });
@@ -4943,18 +4943,18 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
     });
 }
 
-export async function deleteInternalWorkloadViaManager(args: {
+export async function deleteInternalWorkloadViaAsbcp(args: {
   workspaceId: string;
   projectId: string;
   workloadId: string;
 }): Promise<void> {
-  const managerBase = process.env.SANDBOX_MANAGER_URL?.trim();
-  const serviceKey = process.env.SANDBOX_SERVICE_KEY?.trim();
-  if (!managerBase || !serviceKey) {
-    throw new Error("sandbox_manager_env_missing");
+  const asbcpBase = process.env.ASBCP_INTERNAL_BASE_URL?.trim();
+  const serviceKey = process.env.ASBCP_SERVICE_KEY?.trim();
+  if (!asbcpBase || !serviceKey) {
+    throw new Error("asbcp_env_missing");
   }
   const response = await fetch(
-    `${managerBase.replace(/\/+$/, "")}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
+    `${asbcpBase.replace(/\/+$/, "")}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
     {
       method: "DELETE",
       headers: {

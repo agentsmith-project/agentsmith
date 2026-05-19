@@ -747,7 +747,7 @@ exit 0
     expect(script).toContain('require_parent_owned_process_truth "INTEGRATION_PARENT_STACK_WEB_ROOT_PID" "web"');
     expect(script).toContain('if parent_stack_reuse_enabled; then');
     expect(script).toContain('require_parent_owned_existing_stack_reuse_truth');
-    expect(script).toContain('else\n  preflight_managed_agent_task_sandbox_env');
+    expect(script).toContain('else\n  preflight_managed_agent_task_asbcp_env');
     expect(script).toContain('next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"');
     expect(script).toContain('next_generated_root_finalize_lane_cleanup');
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED="${INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED:-${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}}"');
@@ -772,16 +772,16 @@ exit 0
       {
         AGENT_EXECUTION_WS_BASE_URL: '',
         INTERNAL_AGENT_K8S_NAMESPACE: '',
-        SANDBOX_MANAGER_URL: '',
-        SANDBOX_SERVICE_KEY: '',
+        ASBCP_INTERNAL_BASE_URL: '',
+        ASBCP_SERVICE_KEY: '',
       },
       'e2e/integration-visual-review.spec.ts',
     );
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('Managed Agent Task backend-real coverage requires sandbox bootstrap');
-    expect(result.stderr).toContain('SANDBOX_MANAGER_URL');
-    expect(result.stderr).toContain('SANDBOX_SERVICE_KEY');
+    expect(result.stderr).toContain('Managed Agent Task backend-real coverage requires ASBCP bootstrap');
+    expect(result.stderr).toContain('ASBCP_INTERNAL_BASE_URL');
+    expect(result.stderr).toContain('ASBCP_SERVICE_KEY');
     expect(result.stderr).toContain('AGENT_EXECUTION_WS_BASE_URL');
     expect(result.stderr).toContain('INTERNAL_AGENT_K8S_NAMESPACE');
     expect(result.stderr).toContain('run-internal-agent-task-real-gate.sh --visual-review');
@@ -908,7 +908,7 @@ exit 0
       'AFSCP_SERVICE_TOKEN=agentsmith-local-afscp-product-token',
       'AFSCP_BOOTSTRAP_CALLER_SERVICE=agentsmith-bootstrap',
       'AFSCP_BOOTSTRAP_SERVICE_TOKEN=agentsmith-local-afscp-bootstrap-token',
-      'AFSCP_ORCHESTRATOR_CALLER_SERVICE=agentsmith-sandbox-manager',
+      'AFSCP_ORCHESTRATOR_CALLER_SERVICE=agentsmith-sandbox-control-plane',
       'AFSCP_ORCHESTRATOR_SERVICE_TOKEN=agentsmith-local-afscp-orchestrator-token',
     ];
     for (const envLog of [

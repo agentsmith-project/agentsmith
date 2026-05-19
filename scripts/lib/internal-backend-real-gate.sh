@@ -163,7 +163,7 @@ internal_real_gate_write_sandbox_config() {
 version: 1
 
 server:
-  httpPort: ${SANDBOX_PORT}
+  httpPort: ${ASBCP_PORT}
   requestIdHeader: X-Request-Id
   timeouts:
     readHeader: 5s
@@ -259,13 +259,6 @@ files:
     bin: tar
     rejectSymlinks: true
 
-storage:
-  endpoint: localhost:${INTEGRATION_MINIO_API_PORT}
-  accessKey: ${MINIO_ACCESS_KEY:-mbos}
-  secretKey: ${MINIO_SECRET_KEY:-mbos_dev_password}
-  bucket: ${MINIO_BUCKET:-mbos-dev}
-  useSSL: false
-
 buffer:
   capacity: 10000
 EOF
@@ -279,26 +272,21 @@ internal_real_gate_write_sandbox_state_file() {
 
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
-  afscp_caller_service="${AFSCP_CALLER_SERVICE:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}}"
+  afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
   afscp_actor_type="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"
   afscp_actor_id="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_caller_service}}}"
 
   cat > "${state_file}" <<EOF
 ROOT_DIR="${ROOT_DIR}"
-SANDBOX_ROOT="${SANDBOX_ROOT}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR}"
-CONFIG_PATH="${config_path}"
-SANDBOX_PORT="${SANDBOX_PORT}"
-SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
+ASBCP_IMAGE="${ASBCP_IMAGE:-}"
+ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/asbcp-image.lock}"
+ASBCP_CONFIG_PATH="${config_path}"
+ASBCP_PORT="${ASBCP_PORT}"
+ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
-SANDBOX_LOG="${sandbox_log}"
-AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}"
-AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}"
-AFSCP_STORAGE_CLASS_NAME="${STORAGE_CLASS_NAME}"
-AFSCP_STORAGE_CSI_MOUNT_OPTIONS="${MOUNT_OPTIONS}"
-AFSCP_STORAGE_CSI_SUBDIR="${SUBDIR}"
-AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
-AFSCP_STORAGE_CSI_MOUNT_IMAGE="${MOUNT_IMAGE_OVERRIDE}"
+ASBCP_LOG="${sandbox_log}"
 AFSCP_INTERNAL_BASE_URL="${afscp_internal_base_url}"
 AFSCP_ORCHESTRATOR_TOKEN="${afscp_orchestrator_token}"
 AFSCP_CALLER_SERVICE="${afscp_caller_service}"
@@ -309,10 +297,6 @@ AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${afscp_
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-${afscp_orchestrator_token}}"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-${afscp_actor_type}}"
 AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_actor_id}}"
-AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
-MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
 KUBECONFIG="${KUBECONFIG:-}"
 EOF
 }
@@ -320,7 +304,7 @@ EOF
 internal_real_gate_stop_runtime() {
   local state_file="$1"
 
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
 }
 
 internal_real_gate_reset_runtime() {
@@ -331,9 +315,9 @@ internal_real_gate_reset_runtime() {
   kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
   kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
 
-  existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
+  existing_sandbox_pid="$(lsof -tiTCP:${ASBCP_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
   if [[ -n "${existing_sandbox_pid}" ]]; then
-    internal_real_gate_info "terminating stale sandbox manager on :${SANDBOX_PORT} (pid=${existing_sandbox_pid})"
+    internal_real_gate_info "terminating stale ASBCP on :${ASBCP_PORT} (pid=${existing_sandbox_pid})"
     kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
       if ! kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
@@ -342,7 +326,7 @@ internal_real_gate_reset_runtime() {
       sleep 1
     done
     if kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
-      echo "[internal-real-gate] failed to stop stale sandbox manager on :${SANDBOX_PORT}" >&2
+      echo "[internal-real-gate] failed to stop stale ASBCP on :${ASBCP_PORT}" >&2
       return 1
     fi
   fi
@@ -382,7 +366,7 @@ prepare_internal_backend_real_gate_runtime() {
   internal_real_gate_ensure_afscp_storage_csi
 
   KIND_GATEWAY="$(internal_real_gate_resolve_kind_gateway)"
-  SANDBOX_MANAGER_URL_VALUE="${SANDBOX_MANAGER_URL:-http://127.0.0.1:${SANDBOX_PORT}}"
+  ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"
   AGENT_EXECUTION_WS_BASE_URL_VALUE="ws://${KIND_GATEWAY}:${API_PORT}"
   AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="${AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
 
@@ -410,15 +394,15 @@ prepare_internal_backend_real_spec_runtime() {
   spec_runtime_dir="${INTERNAL_REAL_DIR}/${spec_slug}"
   mkdir -p "${spec_runtime_dir}"
   spec_state_file="${spec_runtime_dir}/sandbox-control.env"
-  spec_config_path="${spec_runtime_dir}/sandbox-manager.yaml"
-  spec_sandbox_log="${spec_runtime_dir}/sandbox-manager.log"
+  spec_config_path="${spec_runtime_dir}/asbcp-config.yaml"
+  spec_sandbox_log="${spec_runtime_dir}/asbcp.log"
 
   cp "${CONFIG_PATH}" "${spec_config_path}"
   internal_real_gate_write_sandbox_state_file "${spec_state_file}" "${spec_config_path}" "${spec_sandbox_log}"
   internal_real_gate_reset_runtime "${spec_state_file}"
 
-  echo "[internal-real-gate] starting isolated sandbox manager for ${spec_slug} on :${SANDBOX_PORT}" >&2
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2
+  echo "[internal-real-gate] starting isolated ASBCP for ${spec_slug} on :${ASBCP_PORT}" >&2
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-asbcp 1>&2
   CURRENT_SANDBOX_STATE_FILE="${spec_state_file}"
   printf '%s\n' "${spec_state_file}"
 }

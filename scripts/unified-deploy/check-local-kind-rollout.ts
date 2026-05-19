@@ -335,7 +335,7 @@ const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-api',
   'agentsmith-llmup',
   ...AFSCP_WORKLOAD_DEPLOYMENTS,
-  'agentsmith-sandbox-manager',
+  'agentsmith-sandbox-control-plane',
 ] as const;
 const SECRET_FIELD_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
 const SECRET_VALUE_PATTERN = /(?:password|secret|token|access[_-]?key|api[_-]?key|credential|client[_-]?secret)/iu;
@@ -1688,7 +1688,7 @@ async function checkInternalIngressExposure(options: {
   const probe: RouteProbeEvidence = {
     name: 'internal-services-not-exposed',
     path: 'Ingress/agentsmith',
-    expected: 'public ingress must not route to agentsmith-llmup or agentsmith-sandbox-manager',
+    expected: 'public ingress must not route to agentsmith-llmup or agentsmith-sandbox-control-plane',
     status: 'failed',
   };
 
@@ -1732,7 +1732,7 @@ async function checkInternalIngressExposure(options: {
   }
 
   const forbidden = services.filter((service) =>
-    service === 'agentsmith-llmup' || service === 'agentsmith-sandbox-manager',
+    service === 'agentsmith-llmup' || service === 'agentsmith-sandbox-control-plane',
   );
   if (forbidden.length > 0) {
     return {

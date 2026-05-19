@@ -269,7 +269,7 @@ resolve_afscp_local_runtime_defaults() {
   export AFSCP_SERVICE_TOKEN="\${AFSCP_SERVICE_TOKEN:-fixture-afscp-service-token}"
   export AFSCP_BOOTSTRAP_CALLER_SERVICE="\${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
   export AFSCP_BOOTSTRAP_SERVICE_TOKEN="\${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-fixture-afscp-bootstrap-token}"
-  export AFSCP_ORCHESTRATOR_CALLER_SERVICE="\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+  export AFSCP_ORCHESTRATOR_CALLER_SERVICE="\${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
   export AFSCP_ORCHESTRATOR_SERVICE_TOKEN="\${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-fixture-afscp-orchestrator-token}"
 }
 
@@ -431,8 +431,8 @@ function runSession(fixture: SessionFixture, sessionName = 'agent-task-backend-r
       KEYCLOAK_CLIENT_ID: 'agentsmith-web',
       MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://127.0.0.1:39080',
       MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: 'fixture-admin-token',
-      SANDBOX_MANAGER_URL: 'http://127.0.0.1:39200',
-      SANDBOX_SERVICE_KEY: 'fixture-sandbox-service-key',
+      ASBCP_INTERNAL_BASE_URL: 'http://127.0.0.1:39200',
+      ASBCP_SERVICE_KEY: 'fixture-sandbox-service-key',
       AGENT_EXECUTION_WS_BASE_URL: 'ws://127.0.0.1:28191/api/v1/agent-execution/ws',
       INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-test',
     },

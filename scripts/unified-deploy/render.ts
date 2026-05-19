@@ -60,7 +60,7 @@ type RolloutChecksumKey =
   | 'AGENTSMITH_APP_CONFIG_CHECKSUM'
   | 'AGENTSMITH_APP_SECRETS_CHECKSUM'
   | 'AGENTSMITH_LLMUP_CONFIG_CHECKSUM'
-  | 'SANDBOX_MANAGER_CONFIG_CHECKSUM'
+  | 'ASBCP_CONFIG_CHECKSUM'
   | 'AFSCP_RUNTIME_CONFIG_CHECKSUM'
   | 'AFSCP_RUNTIME_SECRETS_CHECKSUM';
 
@@ -70,13 +70,13 @@ const REQUIRED_DEPLOY_ENV = [
   'PUBLIC_BASE_URL',
   'PUBLIC_API_BASE_URL',
   'RUNNER_PUBLIC_API_BASE_URL',
-  'SANDBOX_SERVICE_KEY',
+  'ASBCP_SERVICE_KEY',
   'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
   'WEB_IMAGE',
   'API_IMAGE',
   'LLMUP_IMAGE',
   'AFSCP_IMAGE',
-  'SANDBOX_MANAGER_IMAGE',
+  'ASBCP_IMAGE',
   'MANAGED_RUNNER_IMAGE',
   'INGRESS_NGINX_CONTROLLER_IMAGE',
   'INGRESS_NGINX_CERTGEN_IMAGE',
@@ -242,7 +242,7 @@ function withRolloutChecksumPlaceholders(context: RenderContext): RenderContext 
     AGENTSMITH_APP_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     AGENTSMITH_APP_SECRETS_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     AGENTSMITH_LLMUP_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
-    SANDBOX_MANAGER_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
+    ASBCP_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     AFSCP_RUNTIME_CONFIG_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
     AFSCP_RUNTIME_SECRETS_CHECKSUM: ROLLOUT_CHECKSUM_PLACEHOLDER,
   };
@@ -274,7 +274,7 @@ function computeRolloutChecksums(renderedYaml: string): Record<RolloutChecksumKe
     AGENTSMITH_APP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'agentsmith-app-config', 'data'),
     AGENTSMITH_APP_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'agentsmith-app-secrets', 'stringData'),
     AGENTSMITH_LLMUP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'agentsmith-llmup-config', 'data'),
-    SANDBOX_MANAGER_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'sandbox-manager-config', 'data'),
+    ASBCP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'asbcp-config', 'data'),
     AFSCP_RUNTIME_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'afscp-runtime-config', 'data'),
     AFSCP_RUNTIME_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'afscp-runtime-secrets', 'stringData'),
   };

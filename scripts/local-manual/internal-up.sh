@@ -25,6 +25,6 @@ restart_api_with_mode 1
 ensure_internal_runner_state
 
 internal_info "ready"
-internal_info "Sandbox manager: ${INTERNAL_SANDBOX_MANAGER_URL_VALUE}"
+internal_info "ASBCP: ${ASBCP_INTERNAL_BASE_URL_VALUE}"
 internal_info "Namespace: ${K8S_NAMESPACE}"
 trap - EXIT INT TERM

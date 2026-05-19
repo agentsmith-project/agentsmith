@@ -31,27 +31,25 @@ function parseCapturedEnv(filePath: string): CapturedEnv {
   return Object.fromEntries(entries);
 }
 
-function runStartManagerAndCaptureEnv(extraStateEnv = ''): CapturedEnv {
+function runStartAsbcpAndCaptureEnv(extraStateEnv = ''): CapturedEnv {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-'));
   tempRoots.push(tempRoot);
 
   const binDir = path.join(tempRoot, 'bin');
   const internalDir = path.join(tempRoot, 'internal');
-  const sandboxRoot = path.join(tempRoot, 'sandbox');
-  const managerServiceDir = path.join(sandboxRoot, 'manager-service');
   const stateFile = path.join(tempRoot, 'sandbox-control.env');
-  const captureFile = path.join(tempRoot, 'manager-env.capture');
-  const configPath = path.join(tempRoot, 'sandbox-manager.yaml');
+  const captureFile = path.join(tempRoot, 'asbcp-env.capture');
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const asbcpImage = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 
   mkdirSync(binDir, { recursive: true });
   mkdirSync(internalDir, { recursive: true });
-  mkdirSync(managerServiceDir, { recursive: true });
 
   writeExecutable(
     path.join(binDir, 'curl'),
     `#!/usr/bin/env bash
-if [[ -f "\${AFSCP_CAPTURE_READY_FILE}" ]]; then
+if [[ -f "\${ASBCP_CAPTURE_READY_FILE}" ]]; then
   exit 0
 fi
 exit 7
@@ -64,26 +62,54 @@ exit 0
 `,
   );
   writeExecutable(
-    path.join(binDir, 'setsid'),
+    path.join(binDir, 'docker'),
     `#!/usr/bin/env bash
-exec "$@"
-`,
-  );
-  writeExecutable(
-    path.join(binDir, 'go'),
-    `#!/usr/bin/env bash
-if [[ "$1" != "run" || "$2" != "./cmd/manager" ]]; then
-  printf 'unexpected go command: %s\\n' "$*" >&2
+set -euo pipefail
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "rm" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" ]]; then
+  printf 'true\\n'
+  exit 0
+fi
+if [[ "$1" != "run" ]]; then
+  printf 'unexpected docker command: %s\\n' "$*" >&2
   exit 2
 fi
+shift
 {
-  printf 'AFSCP_INTERNAL_BASE_URL=%s\\n' "\${AFSCP_INTERNAL_BASE_URL:-}"
-  printf 'AFSCP_ORCHESTRATOR_TOKEN=%s\\n' "\${AFSCP_ORCHESTRATOR_TOKEN:-}"
-  printf 'AFSCP_CALLER_SERVICE=%s\\n' "\${AFSCP_CALLER_SERVICE:-}"
-  printf 'AFSCP_ACTOR_TYPE=%s\\n' "\${AFSCP_ACTOR_TYPE:-}"
-  printf 'AFSCP_ACTOR_ID=%s\\n' "\${AFSCP_ACTOR_ID:-}"
-  printf 'CONFIG_PATH=%s\\n' "\${CONFIG_PATH:-}"
-} > "\${AFSCP_CAPTURE_READY_FILE}"
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      -e)
+        printf '%s\\n' "$2"
+        shift 2
+        ;;
+      -v)
+        printf 'VOLUME=%s\\n' "$2"
+        shift 2
+        ;;
+      --name)
+        printf 'CONTAINER_NAME=%s\\n' "$2"
+        shift 2
+        ;;
+      --rm)
+        shift
+        ;;
+      --network)
+        shift 2
+        ;;
+      *)
+        if [[ "$1" == *@sha256:* ]]; then
+          printf 'IMAGE=%s\\n' "$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+} > "\${ASBCP_CAPTURE_READY_FILE}"
 `,
   );
 
@@ -103,13 +129,15 @@ fi
   writeFileSync(
     stateFile,
     `ROOT_DIR="${tempRoot}"
-SANDBOX_ROOT="${sandboxRoot}"
 INTERNAL_REAL_DIR="${internalDir}"
-CONFIG_PATH="${configPath}"
-SANDBOX_PORT="28081"
-SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
+ASBCP_IMAGE="${asbcpImage}"
+ASBCP_IMAGE_LOCK_PATH="${path.join(tempRoot, 'asbcp-image.lock')}"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28081"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28081"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
 K8S_NAMESPACE="agentsmith"
-SANDBOX_LOG="${path.join(internalDir, 'sandbox-manager.log')}"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
 AFSCP_STORAGE_CSI_DRIVER="csi.juicefs.com"
 AFSCP_STORAGE_CAPACITY="1Pi"
 AFSCP_STORAGE_CLASS_NAME="juicefs-sc"
@@ -118,10 +146,10 @@ AFSCP_STORAGE_CSI_SUBDIR=""
 AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT=""
 AFSCP_STORAGE_CSI_MOUNT_IMAGE=""
 AFSCP_BASE_URL="http://127.0.0.1:28090"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-manager"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-control-plane"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="system"
-AFSCP_ORCHESTRATOR_ACTOR_ID="agentsmith-local-manager"
+AFSCP_ORCHESTRATOR_ACTOR_ID="agentsmith-local-asbcp"
 AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="http://minio.internal:9000"
 MINIO_ACCESS_KEY="minio-ak"
 MINIO_SECRET_KEY="minio-sk"
@@ -134,7 +162,7 @@ ${extraStateEnv}
 
   const childEnv = {
     ...process.env,
-    AFSCP_CAPTURE_READY_FILE: captureFile,
+    ASBCP_CAPTURE_READY_FILE: captureFile,
     INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
     PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
   };
@@ -148,7 +176,7 @@ ${extraStateEnv}
     delete childEnv[key];
   }
 
-  execFileSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-manager'], {
+  execFileSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
     cwd: repoRoot,
     env: childEnv,
     stdio: 'pipe',
@@ -167,49 +195,56 @@ describe('internal sandbox real control', () => {
     }
   });
 
-  it('maps local-manual AFSCP state values into the sandbox-manager env contract', () => {
-    const capturedEnv = runStartManagerAndCaptureEnv();
+  it('maps local-manual AFSCP state values into the ASBCP image env contract', () => {
+    const capturedEnv = runStartAsbcpAndCaptureEnv();
 
-    expect(capturedEnv.AFSCP_INTERNAL_BASE_URL).toBe('http://127.0.0.1:28090');
-    expect(capturedEnv.AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
-    expect(capturedEnv.AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-manager');
-    expect(capturedEnv.AFSCP_ACTOR_TYPE).toBe('system');
-    expect(capturedEnv.AFSCP_ACTOR_ID).toBe('agentsmith-local-manager');
-    expect(capturedEnv.CONFIG_PATH).toMatch(/sandbox-manager\.yaml$/u);
+    expect(capturedEnv.ASBCP_CONFIG_PATH).toBe('/etc/asbcp/asbcp-config.yaml');
+    expect(capturedEnv.ASBCP_SERVICE_KEYS).toBe('sandbox-service-key');
+    expect(capturedEnv.ASBCP_WORKLOAD_NAMESPACE).toBe('agentsmith');
+    expect(capturedEnv.ASBCP_AFSCP_INTERNAL_BASE_URL).toBe('http://127.0.0.1:28090');
+    expect(capturedEnv.ASBCP_AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
+    expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
+    expect(capturedEnv.ASBCP_AFSCP_ACTOR_TYPE).toBe('system');
+    expect(capturedEnv.ASBCP_AFSCP_ACTOR_ID).toBe('agentsmith-local-asbcp');
+    expect(capturedEnv.VOLUME).toMatch(/asbcp\.yaml:\/etc\/asbcp\/asbcp-config\.yaml:ro$/u);
+    expect(capturedEnv.IMAGE).toMatch(/agentsmith-sandbox-control-plane:test@sha256:[a-f0-9]{64}$/u);
   });
 
-  it('prefers canonical sandbox-manager base URL and token env over legacy state aliases', () => {
-    const capturedEnv = runStartManagerAndCaptureEnv(`
+  it('prefers canonical ASBCP AFSCP env over product caller aliases', () => {
+    const capturedEnv = runStartAsbcpAndCaptureEnv(`
 AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"
 AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="formal-sandbox-manager"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="formal-asbcp"
 AFSCP_ACTOR_TYPE="service"
 AFSCP_ACTOR_ID="formal-sandbox-actor"
 `);
 
-    expect(capturedEnv.AFSCP_INTERNAL_BASE_URL).toBe('http://formal-afscp.internal:28090');
-    expect(capturedEnv.AFSCP_ORCHESTRATOR_TOKEN).toBe('formal-orchestrator-token');
-    expect(capturedEnv.AFSCP_CALLER_SERVICE).toBe('formal-sandbox-manager');
-    expect(capturedEnv.AFSCP_ACTOR_TYPE).toBe('service');
-    expect(capturedEnv.AFSCP_ACTOR_ID).toBe('formal-sandbox-actor');
+    expect(capturedEnv.ASBCP_AFSCP_INTERNAL_BASE_URL).toBe('http://formal-afscp.internal:28090');
+    expect(capturedEnv.ASBCP_AFSCP_ORCHESTRATOR_TOKEN).toBe('formal-orchestrator-token');
+    expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('formal-asbcp');
+    expect(capturedEnv.ASBCP_AFSCP_ACTOR_TYPE).toBe('service');
+    expect(capturedEnv.ASBCP_AFSCP_ACTOR_ID).toBe('formal-sandbox-actor');
   });
 
   it('keeps the orchestrator caller when a product caller alias is also present', () => {
-    const capturedEnv = runStartManagerAndCaptureEnv(`
+    const capturedEnv = runStartAsbcpAndCaptureEnv(`
 AFSCP_CALLER_SERVICE="agentsmith-api"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-manager"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-control-plane"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
 `);
 
-    expect(capturedEnv.AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
-    expect(capturedEnv.AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-manager');
+    expect(capturedEnv.ASBCP_AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
+    expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
   });
 
-  it('exposes only sandbox manager runtime commands', () => {
+  it('exposes only ASBCP image runtime commands', () => {
     const source = readFileSync('scripts/lib/internal-sandbox-real-control.sh', 'utf8');
 
-    expect(source).toContain('start-manager) start_manager ;;');
-    expect(source).toContain('stop-manager) stop_manager ;;');
+    expect(source).toContain('start-asbcp) start_asbcp ;;');
+    expect(source).toContain('stop-asbcp) stop_asbcp ;;');
+    expect(source).toContain('restart-asbcp) stop_asbcp; start_asbcp ;;');
+    expect(source).not.toContain('start-manager');
+    expect(source).not.toContain('stop-manager');
     expect(source).not.toContain('./cmd/cleaner');
     expect(source).not.toContain('sandbox-cleaner');
     expect(source).not.toContain('start-cleaner');
@@ -229,11 +264,10 @@ AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
     writeFileSync(
       stateFile,
       `ROOT_DIR="${tempRoot}"
-SANDBOX_ROOT="${tempRoot}/sandbox"
 INTERNAL_REAL_DIR="${internalDir}"
-SANDBOX_PORT="28081"
-SANDBOX_SERVICE_KEY_VALUE="sandbox-service-key"
-SANDBOX_LOG="${path.join(internalDir, 'sandbox-manager.log')}"
+ASBCP_PORT="28081"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
 `,
       'utf8',
     );
@@ -251,5 +285,38 @@ SANDBOX_LOG="${path.join(internalDir, 'sandbox-manager.log')}"
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('unknown command: start-cleaner');
     expect(result.stderr).not.toContain('cmd/cleaner');
+  });
+
+  it('rejects the removed manager command alias', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-no-manager-'));
+    tempRoots.push(tempRoot);
+
+    const stateFile = path.join(tempRoot, 'sandbox-control.env');
+    const internalDir = path.join(tempRoot, 'internal');
+    mkdirSync(internalDir, { recursive: true });
+    writeFileSync(
+      stateFile,
+      `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_PORT="28081"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-manager'], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('unknown command: start-manager');
   });
 });

@@ -5,7 +5,6 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
@@ -85,8 +84,9 @@ INTEGRATION_REDIS_PORT="${INTEGRATION_REDIS_PORT:-26379}"
 INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"
 INTEGRATION_MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT:-29001}"
 INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-28081}"
-SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
-SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
+ASBCP_PORT="${INTERNAL_ASBCP_PORT:-28080}"
+ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"
+ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
@@ -115,7 +115,7 @@ AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1
 AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_internal_${API_PORT}}"
 AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
 AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-agentsmith-bootstrap}"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-manager}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
 AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-agentsmith-local-afscp-product-token}"
 AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-agentsmith-local-afscp-bootstrap-token}"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
@@ -126,14 +126,14 @@ resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${INTEGRATION_KEYCLO
 gate_evidence_init "${INTERNAL_REAL_DIR}" "internal_backend_real"
 gate_write_runtime_descriptor "${INTERNAL_REAL_DIR}" "internal_backend_real"
 gate_write_resolved_env "${INTERNAL_REAL_DIR}"
-SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
-CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
+ASBCP_LOG="${INTERNAL_ASBCP_LOG:-${INTERNAL_REAL_DIR}/asbcp.log}"
+CONFIG_PATH="${INTERNAL_ASBCP_CONFIG:-${INTERNAL_REAL_DIR}/asbcp-config.yaml}"
 CONFIG_PATH="$(realpath -m "${CONFIG_PATH}")"
 CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
 STATE_FILE="${INTERNAL_REAL_DIR}/sandbox-control.env"
-SANDBOX_LOG="$(realpath -m "${SANDBOX_LOG}")"
-SANDBOX_LOG_DIR="$(dirname "${SANDBOX_LOG}")"
-mkdir -p "${SANDBOX_LOG_DIR}"
+ASBCP_LOG="$(realpath -m "${ASBCP_LOG}")"
+ASBCP_LOG_DIR="$(dirname "${ASBCP_LOG}")"
+mkdir -p "${ASBCP_LOG_DIR}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 KEEP_FAILED_ENV="${INTERNAL_REAL_KEEP_FAILED_ENV:-0}"
 GATE_STATUS=0
@@ -383,14 +383,14 @@ fi
 
 cleanup() {
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${GATE_STATUS}" -ne 0 ]]; then
-    info "keeping failed sandbox manager environment for inspection"
+    info "keeping failed ASBCP environment for inspection"
     if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" && -f "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
       # shellcheck disable=SC1090
       source "${CURRENT_SANDBOX_STATE_FILE}"
-      info "sandbox_log=${SANDBOX_LOG}"
+      info "asbcp_log=${ASBCP_LOG:-}"
       info "state_file=${CURRENT_SANDBOX_STATE_FILE}"
     else
-      info "sandbox_log=${SANDBOX_LOG}"
+      info "asbcp_log=${ASBCP_LOG}"
       info "state_file=${STATE_FILE}"
     fi
     info "visual_artifacts=${INTERNAL_VISUAL_ARTIFACT_DIR}"
@@ -398,7 +398,7 @@ cleanup() {
   fi
   stop_internal_afscp_local_runtime
   if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -444,8 +444,8 @@ run_internal_spec() {
   (
     cd "${ROOT_DIR}" && \
       BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
-      SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL_VALUE}" \
-      SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
+      ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \
+      ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \
       DATABASE_URL="postgresql://mbos:mbos_dev_password@127.0.0.1:${INTEGRATION_POSTGRES_PORT}/mbos" \
       MONGO_URL="${MONGO_URL}" \
       MONGO_DB_NAME="${MONGO_DB_NAME}" \
@@ -521,7 +521,7 @@ run_internal_spec_grep() {
   read -r spec_api_port spec_web_port <<< "${resolved_ports}"
   spec_slug="$(basename "${spec}" .spec.ts)-${spec_api_port}"
   spec_state_file="$(prepare_internal_backend_real_spec_runtime "${spec_slug}")"
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_asbcp" "passed" "port ${ASBCP_PORT}"
   if [[ -n "${label}" ]]; then
     info "running ${spec} --grep ${label}"
     run_internal_spec "${spec}" "${spec_api_port}" "${spec_web_port}" "${spec_state_file}" --grep "${label}" "${extra_args[@]}"
@@ -536,7 +536,7 @@ run_internal_spec_grep() {
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${spec_slug}" "${spec} failed with status ${spec_status}"
   fi
   if [[ "${KEEP_FAILED_ENV}" != "1" || "${spec_status}" -eq 0 ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
   return "${spec_status}"
 }
@@ -562,7 +562,7 @@ run_internal_reclaim_spec() {
 
   reclaim_state_file="$(prepare_internal_backend_real_spec_runtime "integration-internal-sandbox-reclaim")" || reclaim_status=$?
   if [[ "${reclaim_status}" -eq 0 ]]; then
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_asbcp" "passed" "port ${ASBCP_PORT}"
     run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "${reclaim_api_port}" "${reclaim_web_port}" "${reclaim_state_file}" || reclaim_status=$?
   fi
   if [[ "${reclaim_status}" -eq 0 ]]; then
@@ -571,7 +571,7 @@ run_internal_reclaim_spec() {
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}"
   fi
   if [[ -n "${reclaim_state_file}" && ( "${KEEP_FAILED_ENV}" != "1" || "${reclaim_status}" -eq 0 ) ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${reclaim_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${reclaim_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
   return "${reclaim_status}"
 }
@@ -594,7 +594,7 @@ run_internal_workspace_specs() {
 
   workspace_state_file="$(prepare_internal_backend_real_spec_runtime "integration-internal-agent-task-workspace")" || workspace_status=$?
   if [[ "${workspace_status}" -eq 0 ]]; then
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_asbcp" "passed" "port ${ASBCP_PORT}"
     run_internal_spec e2e/integration-agent-task-runner.spec.ts "${API_PORT}" "${WEB_PORT}" "${workspace_state_file}" --grep "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner"
     workspace_status=$?
   fi
@@ -604,10 +604,10 @@ run_internal_workspace_specs() {
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}"
   fi
   if [[ "${workspace_status}" -eq 0 ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
     run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))" || reclaim_status=$?
   elif [[ "${KEEP_FAILED_ENV}" != "1" && -n "${workspace_state_file}" ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
 
   if [[ "${workspace_status}" -ne 0 ]]; then
@@ -645,7 +645,7 @@ if [[ "${GATE_MODE}" == "visual-review" ]]; then
   VISUAL_REVIEW_STATUS=0
   VISUAL_REVIEW_STATE_FILE="$(prepare_internal_backend_real_spec_runtime "integration-visual-review")" || VISUAL_REVIEW_STATUS=$?
   if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec_asbcp" "passed" "port ${ASBCP_PORT}"
     run_internal_spec e2e/integration-visual-review.spec.ts "${API_PORT}" "${WEB_PORT}" "${VISUAL_REVIEW_STATE_FILE}" || VISUAL_REVIEW_STATUS=$?
   fi
   if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
@@ -654,7 +654,7 @@ if [[ "${GATE_MODE}" == "visual-review" ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}"
   fi
   if [[ -n "${VISUAL_REVIEW_STATE_FILE:-}" && ( "${KEEP_FAILED_ENV}" != "1" || "${VISUAL_REVIEW_STATUS}" -eq 0 ) ]]; then
-    INTERNAL_SANDBOX_REAL_STATE_FILE="${VISUAL_REVIEW_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${VISUAL_REVIEW_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
   fi
   GATE_STATUS="${VISUAL_REVIEW_STATUS}"
   set -e

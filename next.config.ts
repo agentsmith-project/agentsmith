@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from 'next-intl/plugin';
+import path from 'node:path';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
@@ -19,6 +20,10 @@ const nextConfig: NextConfig = {
   },
   webpack: (config) => {
     config.resolve ??= {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      '@mbos/api-entry-node': path.resolve(__dirname, 'packages/api-entry-node/src/index.ts'),
+    };
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),
       '.js': ['.ts', '.tsx', '.js'],

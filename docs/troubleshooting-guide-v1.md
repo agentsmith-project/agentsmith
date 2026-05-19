@@ -110,9 +110,22 @@ make local-real-up
 ```
 
 ### 重建本地真实环境
+重新初始化本地真实环境时，单独运行 reset；它会清理并重新拉起环境。
+
 ```bash
 make local-real-reset
+```
+
+从干净或已停止状态启动时，运行：
+
+```bash
 make local-real-up
+```
+
+reset 后不要再追加 `make local-real-up`；要查看状态运行：
+
+```bash
+make local-real-status
 ```
 
 ### Maintainer-only: 重建 backend-real stack

@@ -23,6 +23,8 @@ ASBCP_LOG="${ASBCP_LOG:-${INTERNAL_REAL_DIR}/asbcp.log}"
 ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE:-${ASBCP_SERVICE_KEY:-}}"
 ASBCP_CONFIG_PATH="${ASBCP_CONFIG_PATH:-}"
 ASBCP_CONTAINER_CONFIG_PATH="/etc/asbcp/asbcp-config.yaml"
+ASBCP_CONTAINER_KUBECONFIG_PATH="${ASBCP_CONTAINER_KUBECONFIG_PATH:-/etc/asbcp/kubeconfig}"
+ASBCP_PROJECTED_KUBECONFIG_PATH="${ASBCP_PROJECTED_KUBECONFIG_PATH:-${INTERNAL_REAL_DIR}/asbcp-kubeconfig}"
 
 info() { echo "[internal-sandbox-control] $*"; }
 
@@ -114,6 +116,25 @@ resolve_asbcp_image() {
   asbcp_resolve_locked_image "${ASBCP_IMAGE:-}" "${ASBCP_IMAGE_LOCK_PATH}"
 }
 
+resolve_asbcp_host_kubeconfig_path() {
+  local configured="${ASBCP_HOST_KUBECONFIG_PATH:-${KUBECONFIG:-}}"
+  [[ -n "${configured}" ]] || return 1
+  [[ "${configured}" != *:* ]] || return 2
+  realpath -m "${configured}"
+}
+
+prepare_asbcp_kubeconfig_projection() {
+  local source_path="$1"
+  local target_path="${ASBCP_PROJECTED_KUBECONFIG_PATH}"
+  local tmp_path
+  mkdir -p "$(dirname "${target_path}")"
+  tmp_path="${target_path}.tmp.$$"
+  cp "${source_path}" "${tmp_path}"
+  chmod 0644 "${tmp_path}"
+  mv "${tmp_path}" "${target_path}"
+  printf '%s\n' "${target_path}"
+}
+
 asbcp_container_id() {
   if [[ -f "${ASBCP_CONTAINER_ID_FILE}" ]]; then
     tr -d '[:space:]' < "${ASBCP_CONTAINER_ID_FILE}"
@@ -129,6 +150,7 @@ asbcp_container_running() {
 
 start_asbcp() {
   local pid image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
+  local host_kubeconfig projected_kubeconfig resolve_status
   local -a docker_args
   pid="$(read_pid "${ASBCP_PID_FILE}")"
   if pid_alive "${pid}" && port_ready; then
@@ -145,6 +167,16 @@ start_asbcp() {
   [[ -n "${ASBCP_CONFIG_PATH}" ]] || { echo "[internal-sandbox-control] missing ASBCP_CONFIG_PATH" >&2; exit 1; }
   [[ -f "${ASBCP_CONFIG_PATH}" ]] || { echo "[internal-sandbox-control] ASBCP config not found: ${ASBCP_CONFIG_PATH}" >&2; exit 1; }
   [[ -n "${ASBCP_SERVICE_KEY_VALUE}" ]] || { echo "[internal-sandbox-control] missing ASBCP_SERVICE_KEY" >&2; exit 1; }
+  host_kubeconfig="$(resolve_asbcp_host_kubeconfig_path)" || {
+    resolve_status=$?
+    if [[ "${resolve_status}" == "2" ]]; then
+      echo "[internal-sandbox-control] KUBECONFIG must be a single file path for ASBCP container projection" >&2
+    else
+      echo "[internal-sandbox-control] missing KUBECONFIG for ASBCP container projection" >&2
+    fi
+    exit 1
+  }
+  [[ -f "${host_kubeconfig}" ]] || { echo "[internal-sandbox-control] KUBECONFIG not found: ${host_kubeconfig}" >&2; exit 1; }
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}}"
   afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
@@ -159,13 +191,16 @@ start_asbcp() {
     docker pull --platform linux/amd64 "${image}" >/dev/null
   fi
   docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  projected_kubeconfig="$(prepare_asbcp_kubeconfig_projection "${host_kubeconfig}")"
   docker_args=(
     run
     --rm
     --name "${ASBCP_CONTAINER_NAME}"
     --network host
     -v "${ASBCP_CONFIG_PATH}:${ASBCP_CONTAINER_CONFIG_PATH}:ro"
+    -v "${projected_kubeconfig}:${ASBCP_CONTAINER_KUBECONFIG_PATH}:ro"
     -e "ASBCP_CONFIG_PATH=${ASBCP_CONTAINER_CONFIG_PATH}"
+    -e "KUBECONFIG=${ASBCP_CONTAINER_KUBECONFIG_PATH}"
     -e "ASBCP_SERVICE_KEYS=${ASBCP_SERVICE_KEY_VALUE}"
     -e "ASBCP_WORKLOAD_NAMESPACE=${K8S_NAMESPACE}"
     -e "ASBCP_AFSCP_INTERNAL_BASE_URL=${afscp_internal_base_url}"
@@ -174,9 +209,6 @@ start_asbcp() {
     -e "ASBCP_AFSCP_ACTOR_TYPE=${afscp_actor_type}"
     -e "ASBCP_AFSCP_ACTOR_ID=${afscp_actor_id}"
   )
-  if [[ -n "${KUBECONFIG:-}" && -f "${KUBECONFIG}" ]]; then
-    docker_args+=(-e "KUBECONFIG=${KUBECONFIG}" -v "${KUBECONFIG}:${KUBECONFIG}:ro")
-  fi
   : > "${ASBCP_LOG}"
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
     docker "${docker_args[@]}" "${image}" > >(redact_internal_sandbox_output >> "${ASBCP_LOG}") 2>&1 &
@@ -192,23 +224,26 @@ start_asbcp() {
   done
   echo "[internal-sandbox-control] ASBCP failed to become ready" >&2
   tail -n 120 "${ASBCP_LOG}" >&2 || true
+  rm -f "${ASBCP_PROJECTED_KUBECONFIG_PATH}"
   exit 1
 }
 
 stop_asbcp() {
   docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
   rm -f "${ASBCP_CONTAINER_ID_FILE}"
+  rm -f "${ASBCP_PROJECTED_KUBECONFIG_PATH}"
   stop_pid "${ASBCP_PID_FILE}"
   kill_port_listeners
 }
 
 status() {
-  local asbcp_pid
+  local asbcp_pid listener_pids
   asbcp_pid="$(read_pid "${ASBCP_PID_FILE}")"
+  listener_pids="$(tr '\n' ',' <<< "$(port_pids "${ASBCP_PORT}")" | sed 's/,$//')"
   echo "asbcp_pid=${asbcp_pid:-}"
   echo "asbcp_alive=$(pid_alive "${asbcp_pid}" && echo 1 || echo 0)"
   echo "asbcp_container_running=$(asbcp_container_running && echo 1 || echo 0)"
-  echo "asbcp_listener_pids=$(tr '\n' ',' <<< \"$(port_pids "${ASBCP_PORT}")\" | sed 's/,$//')"
+  echo "asbcp_listener_pids=${listener_pids}"
   echo "asbcp_ready=$(port_ready && echo 1 || echo 0)"
 }
 

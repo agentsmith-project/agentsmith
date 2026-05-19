@@ -84,6 +84,8 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"');
     expect(script).toContain('AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"');
     expect(script).toContain('AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"');
+    expect(script).toContain('ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"');
+    expect(script).toContain('KUBECONFIG="${ASBCP_KUBECONFIG_PATH}"');
     expect(script).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp');
     expect(script).not.toMatch(/^afscp:\s*$/mu);
     expect(script).not.toContain('http://127.0.0.1:28090');

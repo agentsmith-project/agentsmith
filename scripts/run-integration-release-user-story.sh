@@ -115,6 +115,27 @@ release_user_story_secret_fingerprint() {
   printf 'sha256:%s\n' "${digest}"
 }
 
+release_user_story_asbcp_kubeconfig_path() {
+  local configured="${KUBECONFIG:-}"
+  local cluster_name="${KIND_CLUSTER_NAME:-${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}}"
+  if [[ -n "${configured}" ]]; then
+    realpath -m "${configured}"
+    return 0
+  fi
+  if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
+    realpath -m "${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+    return 0
+  fi
+  if [[ -z "${cluster_name}" ]]; then
+    cluster_name="agentsmith"
+  fi
+  if [[ -n "${DEPLOY_ROOT:-}" ]]; then
+    printf '%s/state/local-kind/kind-%s.kubeconfig\n' "${DEPLOY_ROOT}" "${cluster_name}"
+    return 0
+  fi
+  printf '%s/agentsmith/local-kind/kind-%s.kubeconfig\n' "${HOME}" "${cluster_name}"
+}
+
 run_release_user_story_clean_env() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
@@ -273,6 +294,7 @@ KIND_NODE_NAME="$(
     "${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}" \
     "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}"
 )"
+ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
 
 ensure_kind_image() {
   local image="$1"
@@ -474,7 +496,7 @@ AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="$(release_user_story_secret_fingerprint "$
 AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"
 AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"
 AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"
-KUBECONFIG="${KUBECONFIG:-}"
+KUBECONFIG="${ASBCP_KUBECONFIG_PATH}"
 EOF
 
 info "starting ASBCP from locked image"

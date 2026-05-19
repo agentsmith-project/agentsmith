@@ -211,7 +211,10 @@ ensure_agent_task_diagnostics_state_ready() {
 }
 
 ensure_kind_cluster() {
-  ensure_local_kind_cluster
+  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  LOCAL_KIND_CONFIG_PATH="${KIND_CONFIG_PATH}" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane" \
+    ensure_local_kind_cluster
 }
 
 ensure_local_image() {
@@ -2593,10 +2596,28 @@ resolve_local_manual_asbcp_image() {
   asbcp_resolve_locked_image "${ASBCP_IMAGE:-}" "${ASBCP_IMAGE_LOCK_PATH}"
 }
 
+resolve_local_manual_asbcp_kubeconfig_path() {
+  local configured="${KUBECONFIG:-}"
+  if [[ -n "${configured}" ]]; then
+    realpath -m "${configured}"
+    return 0
+  fi
+  if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
+    realpath -m "${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+    return 0
+  fi
+  if declare -F scenario_kind_kubeconfig_path >/dev/null 2>&1; then
+    scenario_kind_kubeconfig_path "${LOCAL_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME}}"
+    return 0
+  fi
+  printf '%s/agentsmith/local-kind/kind-%s.kubeconfig\n' "${HOME}" "${LOCAL_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME}}"
+}
+
 write_internal_state_env() {
   ensure_internal_common_runtime_env
-  local asbcp_image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
+  local asbcp_image asbcp_kubeconfig_path afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
   asbcp_image="$(resolve_local_manual_asbcp_image)"
+  asbcp_kubeconfig_path="$(resolve_local_manual_asbcp_kubeconfig_path)"
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
   afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
@@ -2623,7 +2644,7 @@ AFSCP_ORCHESTRATOR_ACTOR_TYPE="${afscp_actor_type}"
 AFSCP_ORCHESTRATOR_ACTOR_ID="${afscp_actor_id}"
 AFSCP_ACTOR_TYPE="${afscp_actor_type}"
 AFSCP_ACTOR_ID="${afscp_actor_id}"
-KUBECONFIG="${KUBECONFIG:-}"
+KUBECONFIG="${asbcp_kubeconfig_path}"
 EOF
 }
 

@@ -101,15 +101,16 @@ if (!res.ok) {
 }
 NODE
 
-WORKLOAD_ID="$(node - <<'NODE' "${TASK_ID}"
-const id = process.argv[2];
-const normalized = id.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
-process.stdout.write(normalized || 'workload');
-NODE
-)"
+TASK_WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"
 
 for _ in $(seq 1 90); do
-  POD_NAME="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "workload_id=${WORKLOAD_ID}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  POD_LIST_JSON="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "app=managed-workload" -o json 2>/dev/null || true)"
+  if [[ -n "${POD_LIST_JSON}" ]]; then
+    if ! POD_NAME="$(printf '%s' "${POD_LIST_JSON}" | node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" "${TASK_ID}" "${TASK_WS_ID}" "${PROJECT_ID}")"; then
+      echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_selector_error task=${TASK_ID} expected_pod=workload-${TASK_WORKLOAD_ID} workload_id_prefix=${TASK_WORKLOAD_ID}" >&2
+      exit 1
+    fi
+  fi
   if [[ -n "${POD_NAME}" ]]; then
     break
   fi
@@ -117,7 +118,7 @@ for _ in $(seq 1 90); do
 done
 
 if [[ -z "${POD_NAME:-}" ]]; then
-  echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_not_observed task=${TASK_ID}" >&2
+  echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_not_observed task=${TASK_ID} expected_pod=workload-${TASK_WORKLOAD_ID} workload_id_prefix=${TASK_WORKLOAD_ID}" >&2
   exit 1
 fi
 

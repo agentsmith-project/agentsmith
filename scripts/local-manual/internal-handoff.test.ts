@@ -1290,6 +1290,8 @@ SH
       AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-control-plane"
       AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
       ASBCP_SERVICE_KEY_VALUE="state-asbcp-service-key"
+      unset KUBECONFIG
+      HOME="\${SNIPPET_TEMP_ROOT}/home"
       write_internal_state_env
       cat "$INTERNAL_SANDBOX_STATE_FILE"
     `);
@@ -1297,6 +1299,7 @@ SH
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('AFSCP_INTERNAL_BASE_URL="http://state-afscp.internal"');
     expect(result.stdout).toContain('AFSCP_CALLER_SERVICE="agentsmith-sandbox-control-plane"');
+    expect(result.stdout).toMatch(/KUBECONFIG=".*\/home\/agentsmith\/local-kind\/kind-agentsmith\.kubeconfig"/u);
     expect(result.stdout).toContain('ASBCP_SERVICE_KEY_FINGERPRINT="sha256:');
     expect(result.stdout).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="sha256:');
     expect(result.stdout).not.toContain('ASBCP_SERVICE_KEY_VALUE=');

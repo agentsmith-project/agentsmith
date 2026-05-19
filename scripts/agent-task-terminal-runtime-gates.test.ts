@@ -360,6 +360,34 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('finalTruth: secondCloseTruth');
   });
 
+  it('locates internal managed workload pods by current ASBCP label truth without exact workload_id matching', async () => {
+    const internalSmoke = await readFile(
+      path.resolve(process.cwd(), 'scripts/agent-task-terminal-internal-real-smoke.sh'),
+      'utf-8',
+    );
+    const selector = await readFile(
+      path.resolve(process.cwd(), 'scripts/lib/agent-task-workload-pod-selector.mjs'),
+      'utf-8',
+    );
+
+    expect(internalSmoke).toContain('scripts/lib/agent-task-workload-pod-selector.mjs');
+    expect(internalSmoke).toContain('TASK_WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"');
+    expect(internalSmoke).toContain('-l "app=managed-workload" -o json');
+    expect(internalSmoke).toContain('workload_pod_selector_error');
+    expect(internalSmoke).toContain('expected_pod=workload-${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).toContain('workload_id_prefix=${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
+    expect(internalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
+
+    expect(selector).toContain("item.app === 'managed-workload'");
+    expect(selector).toContain('isDerivedLabelId(item.workspaceId, workspaceId)');
+    expect(selector).toContain('isDerivedLabelId(item.projectId, projectId)');
+    expect(selector).toContain('item.podName === expectedPodName');
+    expect(selector).toContain('isTaskWorkloadId(item.workloadId, taskWorkloadId)');
+    expect(selector).toContain('labelId === sanitized || labelId.startsWith(`${sanitized}-`)');
+    expect(selector).toContain('workloadId === taskWorkloadId || workloadId.startsWith(`${taskWorkloadId}-`)');
+  });
+
   it('runs the runtime matrix before the UX gate so UI evidence sits on top of terminal session truth', async () => {
     const uxGate = await readFile(
       path.resolve(process.cwd(), 'scripts/agent-task-terminal-ux-real-gate.sh'),

@@ -52,6 +52,7 @@ function renderSandboxState(env: Record<string, string>): string {
           ASBCP_PORT="28080"
           ASBCP_INTERNAL_BASE_URL_VALUE="http://127.0.0.1:28080"
           ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+          KIND_CLUSTER_NAME="agentsmith"
           K8S_NAMESPACE="agentsmith-sandbox"
           CSI_DRIVER="csi.juicefs.com"
           STORAGE_CAPACITY="1Pi"
@@ -76,6 +77,7 @@ function renderSandboxState(env: Record<string, string>): string {
           ...env,
           REPO_ROOT: repoRoot,
           TEMP_ROOT: tempRoot,
+          HOME: path.join(tempRoot, 'home'),
           STATE_FILE: stateFile,
         },
         encoding: 'utf8',
@@ -235,6 +237,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(state).toContain('AFSCP_CALLER_SERVICE="formal-asbcp"');
     expect(state).toContain('AFSCP_ACTOR_TYPE="service"');
     expect(state).toContain('AFSCP_ACTOR_ID="formal-sandbox-actor"');
+    expect(state).toMatch(/KUBECONFIG=".*\/home\/agentsmith\/local-kind\/kind-agentsmith\.kubeconfig"/u);
     expect(state).toContain('ASBCP_SERVICE_KEY_FINGERPRINT="sha256:');
     expect(state).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="sha256:');
     expect(state).not.toContain('ASBCP_SERVICE_KEY_VALUE=');

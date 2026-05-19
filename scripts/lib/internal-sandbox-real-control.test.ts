@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -55,6 +56,7 @@ function runStartAsbcpAndCaptureEnv(extraStateEnv = ''): CapturedEnv {
   const stateFile = path.join(tempRoot, 'sandbox-control.env');
   const captureFile = path.join(tempRoot, 'asbcp-env.capture');
   const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
   const asbcpImage = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 
   mkdirSync(binDir, { recursive: true });
@@ -102,7 +104,19 @@ shift
         shift 2
         ;;
       -v)
-        printf 'VOLUME=%s\\n' "$2"
+        case "$2" in
+          *:/etc/asbcp/asbcp-config.yaml:ro)
+            printf 'CONFIG_VOLUME=%s\\n' "$2"
+            ;;
+          *:/etc/asbcp/kubeconfig:ro)
+            printf 'KUBECONFIG_VOLUME=%s\\n' "$2"
+            source_path="\${2%%:/etc/asbcp/kubeconfig:ro}"
+            printf 'KUBECONFIG_VOLUME_MODE=%s\\n' "$(stat -c '%a' "$source_path")"
+            ;;
+          *)
+            printf 'VOLUME=%s\\n' "$2"
+            ;;
+        esac
         shift 2
         ;;
       --name)
@@ -139,6 +153,8 @@ shift
 `,
     'utf8',
   );
+  writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+  chmodSync(kubeconfigPath, 0o600);
 
   writeFileSync(
     stateFile,
@@ -168,7 +184,7 @@ AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT_VALUE="http://minio.internal:9000"
 MINIO_ACCESS_KEY="minio-ak"
 MINIO_SECRET_KEY="minio-sk"
 MINIO_BUCKET="mbos-dev"
-KUBECONFIG=""
+KUBECONFIG="${kubeconfigPath}"
 ${extraStateEnv}
 `,
     'utf8',
@@ -208,12 +224,15 @@ function runStartAsbcpAndCaptureLogWithSecretEcho(): string {
   const internalDir = path.join(tempRoot, 'internal');
   const stateFile = path.join(tempRoot, 'sandbox-control.env');
   const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
   const logPath = path.join(internalDir, 'asbcp.log');
   const readyFile = path.join(tempRoot, 'asbcp-ready.marker');
 
   mkdirSync(binDir, { recursive: true });
   mkdirSync(internalDir, { recursive: true });
   writeFileSync(configPath, 'version: 1\n', 'utf8');
+  writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+  chmodSync(kubeconfigPath, 0o600);
 
   writeExecutable(
     path.join(binDir, 'curl'),
@@ -259,7 +278,7 @@ K8S_NAMESPACE="agentsmith"
 ASBCP_LOG="${logPath}"
 AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
 AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
-KUBECONFIG=""
+KUBECONFIG="${kubeconfigPath}"
 `,
     'utf8',
   );
@@ -286,12 +305,15 @@ function runStartAsbcpWithImage(options: { image?: string; lockImage?: string })
   const internalDir = path.join(tempRoot, 'internal');
   const stateFile = path.join(tempRoot, 'sandbox-control.env');
   const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
   const lockPath = path.join(tempRoot, 'asbcp-image.lock');
   const dockerRunMarker = path.join(tempRoot, 'docker-run.marker');
 
   mkdirSync(binDir, { recursive: true });
   mkdirSync(internalDir, { recursive: true });
   writeFileSync(configPath, 'version: 1\n', 'utf8');
+  writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+  chmodSync(kubeconfigPath, 0o600);
   if (options.lockImage !== undefined) {
     writeFileSync(lockPath, asbcpImageLockContent(options.lockImage), 'utf8');
   }
@@ -330,6 +352,7 @@ K8S_NAMESPACE="agentsmith"
 ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
 AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
 AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+KUBECONFIG="${kubeconfigPath}"
 `,
     'utf8',
   );
@@ -340,6 +363,46 @@ AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
       ...process.env,
       INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
       PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+    },
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
+function runStartAsbcpWithKubeconfigLine(kubeconfigLine: string): ReturnType<typeof spawnSync> {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-kubeconfig-'));
+  tempRoots.push(tempRoot);
+
+  const internalDir = path.join(tempRoot, 'internal');
+  const stateFile = path.join(tempRoot, 'sandbox-control.env');
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+
+  mkdirSync(internalDir, { recursive: true });
+  writeFileSync(configPath, 'version: 1\n', 'utf8');
+  writeFileSync(
+    stateFile,
+    `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@${ASBCP_DIGEST_A}"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="37981"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:37981"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+${kubeconfigLine}
+`,
+    'utf8',
+  );
+
+  return spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
     },
     encoding: 'utf8',
     stdio: 'pipe',
@@ -410,7 +473,10 @@ describe('internal sandbox real control', () => {
     expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
     expect(capturedEnv.ASBCP_AFSCP_ACTOR_TYPE).toBe('system');
     expect(capturedEnv.ASBCP_AFSCP_ACTOR_ID).toBe('agentsmith-local-asbcp');
-    expect(capturedEnv.VOLUME).toMatch(/asbcp\.yaml:\/etc\/asbcp\/asbcp-config\.yaml:ro$/u);
+    expect(capturedEnv.CONFIG_VOLUME).toMatch(/asbcp\.yaml:\/etc\/asbcp\/asbcp-config\.yaml:ro$/u);
+    expect(capturedEnv.KUBECONFIG).toBe('/etc/asbcp/kubeconfig');
+    expect(capturedEnv.KUBECONFIG_VOLUME).toMatch(/asbcp-kubeconfig:\/etc\/asbcp\/kubeconfig:ro$/u);
+    expect(capturedEnv.KUBECONFIG_VOLUME_MODE).toBe('644');
     expect(capturedEnv.IMAGE).toMatch(/agentsmith-sandbox-control-plane:test@sha256:[a-f0-9]{64}$/u);
   });
 
@@ -447,6 +513,16 @@ AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
     expect(log).toContain('[REDACTED]');
     expect(log).not.toContain('sandbox-service-key');
     expect(log).not.toContain('state-orchestrator-token');
+  });
+
+  it('fails closed before docker launch when ASBCP kubeconfig is missing or absent', () => {
+    const missing = runStartAsbcpWithKubeconfigLine('KUBECONFIG="/tmp/agentsmith-missing-asbcp.kubeconfig"');
+    const absent = runStartAsbcpWithKubeconfigLine('');
+
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('KUBECONFIG not found: /tmp/agentsmith-missing-asbcp.kubeconfig');
+    expect(absent.status).not.toBe(0);
+    expect(absent.stderr).toContain('missing KUBECONFIG for ASBCP container projection');
   });
 
   it('rejects digest-pinned non-ASBCP images before launching the internal container', () => {

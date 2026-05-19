@@ -17,6 +17,23 @@ internal_real_gate_secret_fingerprint() {
   printf 'sha256:%s\n' "${digest}"
 }
 
+internal_real_gate_asbcp_kubeconfig_path() {
+  local configured="${KUBECONFIG:-}"
+  if [[ -n "${configured}" ]]; then
+    realpath -m "${configured}"
+    return 0
+  fi
+  if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
+    realpath -m "${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+    return 0
+  fi
+  if declare -F scenario_kind_kubeconfig_path >/dev/null 2>&1; then
+    scenario_kind_kubeconfig_path "${LOCAL_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
+    return 0
+  fi
+  printf '%s/agentsmith/local-kind/kind-%s.kubeconfig\n' "${HOME}" "${LOCAL_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
+}
+
 internal_real_gate_require_host_tools() {
   if ! command -v kubectl >/dev/null 2>&1; then
     echo "[internal-real-gate] kubectl is required." >&2
@@ -283,8 +300,9 @@ internal_real_gate_write_sandbox_state_file() {
   local state_file="$1"
   local config_path="$2"
   local sandbox_log="$3"
-  local afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
+  local asbcp_kubeconfig_path afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
 
+  asbcp_kubeconfig_path="$(internal_real_gate_asbcp_kubeconfig_path)"
   afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"
   afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
   afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${AFSCP_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
@@ -312,7 +330,7 @@ AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${afscp_
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN_FINGERPRINT="$(internal_real_gate_secret_fingerprint "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-${afscp_orchestrator_token}}")"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-${afscp_actor_type}}"
 AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_actor_id}}"
-KUBECONFIG="${KUBECONFIG:-}"
+KUBECONFIG="${asbcp_kubeconfig_path}"
 EOF
 }
 

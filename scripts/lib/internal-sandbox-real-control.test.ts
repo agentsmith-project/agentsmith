@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -111,6 +112,10 @@ shift
           *:/etc/asbcp/kubeconfig:ro)
             printf 'KUBECONFIG_VOLUME=%s\\n' "$2"
             source_path="\${2%%:/etc/asbcp/kubeconfig:ro}"
+            source_dir="$(dirname "$source_path")"
+            printf 'KUBECONFIG_VOLUME_SOURCE=%s\\n' "$source_path"
+            printf 'KUBECONFIG_VOLUME_DIR=%s\\n' "$source_dir"
+            printf 'KUBECONFIG_VOLUME_DIR_MODE=%s\\n' "$(stat -c '%a' "$source_dir")"
             printf 'KUBECONFIG_VOLUME_MODE=%s\\n' "$(stat -c '%a' "$source_path")"
             ;;
           *)
@@ -127,6 +132,14 @@ shift
         shift
         ;;
       --network)
+        shift 2
+        ;;
+      --user)
+        printf 'CONTAINER_USER=%s\\n' "$2"
+        shift 2
+        ;;
+      --group-add)
+        printf 'CONTAINER_GROUP_ADD=%s\\n' "$2"
         shift 2
         ;;
       *)
@@ -475,9 +488,107 @@ describe('internal sandbox real control', () => {
     expect(capturedEnv.ASBCP_AFSCP_ACTOR_ID).toBe('agentsmith-local-asbcp');
     expect(capturedEnv.CONFIG_VOLUME).toMatch(/asbcp\.yaml:\/etc\/asbcp\/asbcp-config\.yaml:ro$/u);
     expect(capturedEnv.KUBECONFIG).toBe('/etc/asbcp/kubeconfig');
-    expect(capturedEnv.KUBECONFIG_VOLUME).toMatch(/asbcp-kubeconfig:\/etc\/asbcp\/kubeconfig:ro$/u);
-    expect(capturedEnv.KUBECONFIG_VOLUME_MODE).toBe('644');
+    expect(capturedEnv.KUBECONFIG_VOLUME).toMatch(
+      /asbcp-secrets\/asbcp-kubeconfig:\/etc\/asbcp\/kubeconfig:ro$/u,
+    );
+    expect(capturedEnv.KUBECONFIG_VOLUME_DIR_MODE).toBe('700');
+    expect(Number.parseInt(capturedEnv.KUBECONFIG_VOLUME_DIR_MODE ?? '0', 8) & 0o007).toBe(0);
+    expect(capturedEnv.KUBECONFIG_VOLUME_MODE).toBe('640');
+    expect(Number.parseInt(capturedEnv.KUBECONFIG_VOLUME_MODE ?? '0', 8) & 0o004).toBe(0);
+    expect(capturedEnv.CONTAINER_USER).toBe('10001:10001');
+    expect(capturedEnv.CONTAINER_GROUP_ADD).toBe(String(process.getgid?.()));
     expect(capturedEnv.IMAGE).toMatch(/agentsmith-sandbox-control-plane:test@sha256:[a-f0-9]{64}$/u);
+  });
+
+  it('cleans the private ASBCP kubeconfig projection on stop and startup failure', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-cleanup-'));
+    tempRoots.push(tempRoot);
+
+    const binDir = path.join(tempRoot, 'bin');
+    const internalDir = path.join(tempRoot, 'internal');
+    const stateFile = path.join(tempRoot, 'sandbox-control.env');
+    const configPath = path.join(tempRoot, 'asbcp.yaml');
+    const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
+    const projectedDir = path.join(internalDir, 'asbcp-secrets');
+    const legacyProjectedPath = path.join(internalDir, 'asbcp-kubeconfig');
+
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(internalDir, { recursive: true });
+    writeFileSync(configPath, 'version: 1\n', 'utf8');
+    writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+    chmodSync(kubeconfigPath, 0o600);
+    writeFileSync(
+      stateFile,
+      `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28083"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28083"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+KUBECONFIG="${kubeconfigPath}"
+`,
+      'utf8',
+    );
+
+    writeExecutable(path.join(binDir, 'curl'), '#!/usr/bin/env bash\nexit 7\n');
+    writeExecutable(path.join(binDir, 'lsof'), '#!/usr/bin/env bash\nexit 0\n');
+    writeExecutable(path.join(binDir, 'sleep'), '#!/usr/bin/env bash\nexit 0\n');
+    writeExecutable(path.join(binDir, 'seq'), '#!/usr/bin/env bash\nprintf "1\\n"\n');
+    writeExecutable(
+      path.join(binDir, 'docker'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "rm" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" ]]; then
+  exit 0
+fi
+exit 0
+`,
+    );
+
+    const env = {
+      ...process.env,
+      INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+    };
+
+    const failedStart = spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
+      cwd: repoRoot,
+      env,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(failedStart.status).not.toBe(0);
+    expect(statSync(projectedDir, { throwIfNoEntry: false })).toBeUndefined();
+    expect(statSync(legacyProjectedPath, { throwIfNoEntry: false })).toBeUndefined();
+
+    mkdirSync(projectedDir, { recursive: true, mode: 0o700 });
+    writeFileSync(path.join(projectedDir, 'asbcp-kubeconfig'), 'apiVersion: v1\n', { encoding: 'utf8', mode: 0o640 });
+    writeFileSync(legacyProjectedPath, 'apiVersion: v1\n', { encoding: 'utf8', mode: 0o644 });
+    chmodSync(projectedDir, 0o700);
+    chmodSync(path.join(projectedDir, 'asbcp-kubeconfig'), 0o640);
+    chmodSync(legacyProjectedPath, 0o644);
+
+    execFileSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'stop-asbcp'], {
+      cwd: repoRoot,
+      env,
+      stdio: 'pipe',
+    });
+
+    expect(statSync(projectedDir, { throwIfNoEntry: false })).toBeUndefined();
+    expect(statSync(legacyProjectedPath, { throwIfNoEntry: false })).toBeUndefined();
   });
 
   it('prefers canonical ASBCP AFSCP env over product caller aliases', () => {

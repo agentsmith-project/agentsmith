@@ -5678,7 +5678,7 @@ describe('project-file-library-routes', () => {
   it('keeps runtime access release blocked when sandbox still reports active workloads', async () => {
     const deps = createDeps();
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      throw new Error('sandbox_manager_error: delete_workspace_binding 409 {"error":"workspace binding has active workloads; delete workloads first: workload-task-active"}');
+      throw new Error('asbcp_runtime_error: delete_workspace_binding 409 {"error":"workspace binding has active workloads; delete workloads first: workload-task-active"}');
     });
     const created = await createReadyLibrary(deps);
     const libraryId = String(created.id);

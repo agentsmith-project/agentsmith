@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 import { Link } from '@/lib/i18n/routing';
+import { resolveSafeRouteErrorPresentation } from '@/lib/api/errors';
 
 /**
  * Global Error Boundary for locale-level errors.
@@ -19,6 +20,7 @@ export default function LocaleError({
 }) {
   const t = useTranslations('errors');
   const tc = useTranslations('common');
+  const errorPresentation = resolveSafeRouteErrorPresentation({ error, t });
 
   useEffect(() => {
     console.error('Application error:', error);
@@ -34,11 +36,11 @@ export default function LocaleError({
           {t('error_title')}
         </h1>
         <p className="mt-2 text-sm text-text-tertiary">
-          {error.message || t('error_message')}
+          {errorPresentation.description}
         </p>
-        {error.digest && (
+        {errorPresentation.reference && (
           <p className="mt-2 text-xs text-text-tertiary font-mono">
-            Error ID: {error.digest}
+            {t(errorPresentation.reference.labelKey)}: {errorPresentation.reference.value}
           </p>
         )}
         <div className="mt-6 flex gap-3">

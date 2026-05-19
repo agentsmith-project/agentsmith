@@ -1917,8 +1917,8 @@
     "entryRoute": "/en-US/system/login",
     "goal": "用真实 backend 走完发布关键用户故事，并把关键 UI 状态写成 trace bundle。",
     "sourceRef": "e2e/stories/backend-real/release-user-story-end-to-end.story.md#release-user-story-end-to-end",
-    "sourceFingerprint": "15173e3789bf6e01fee3d9e5d5b32de71d52d26f55b0495cc97793ce9faba849",
-    "storyFingerprint": "8c35bb0aec21f8b19cb6ff23682567f5e504f26ff062be0ac813378a243834cf",
+    "sourceFingerprint": "e3a00af4bc766b1847adf520cc0a864c80bd0f2681d8b4b99130e6ce76299b46",
+    "storyFingerprint": "daaeb27b1fc6e80649d9f329802fb196c16c81c72f319c2360589d31626d7f75",
     "stepMapFingerprint": "fa657983d3c3c5b022cca92b608060f53039a521af888b1299822b601379519b",
     "sceneIds": [
       "system-login",

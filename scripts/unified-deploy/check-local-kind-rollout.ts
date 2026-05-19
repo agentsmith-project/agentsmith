@@ -56,6 +56,11 @@ import {
   type SubstrateRuntimeTruthSummary,
 } from './substrate-lifecycle';
 import {
+  LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS,
+  LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
+  LEGACY_ASBCP_RESIDUE_MATCHERS,
+} from './asbcp-legacy-residue-negative-evidence';
+import {
   READINESS_STATE_ENV,
   runReadinessFieldIdentityMatches,
   validateRunReadinessStateForConsumer,
@@ -213,6 +218,24 @@ type RouteProbeEvidence = {
   diagnostic?: string;
 };
 
+type AsbcpImageAdoptionEvidence = {
+  status: StepStatus;
+  source_ref?: string;
+  source_digest?: string;
+  site_env_ref?: string;
+  rendered_ref?: string;
+  target_digest?: string;
+  running_pods: string[];
+  running_image_ids: string[];
+};
+
+type StaleResourceAbsenceEvidence = {
+  status: StepStatus;
+  scope: 'absence_only';
+  checked_kinds: string[];
+  absent: string[];
+};
+
 type LocalKindRolloutEvidence = {
   schema_version: 'agentsmith.unified-deploy.local-kind-rollout.evidence/v1';
   producer: 'local-kind-rollout';
@@ -235,6 +258,8 @@ type LocalKindRolloutEvidence = {
   image_preflight: LocalKindImagePreflightResult;
   operations: OperationEvidence[];
   rollouts: RolloutEvidence[];
+  asbcp_image_adoption: AsbcpImageAdoptionEvidence;
+  stale_resource_absence_check: StaleResourceAbsenceEvidence;
   llmup_config_health: LlmupConfigHealthEvidence;
   live_api_replica_check: {
     status: StepStatus;
@@ -282,6 +307,7 @@ type RenderedInputs = {
   appYaml: string;
   secretValues: string[];
   publicBaseUrl: string;
+  siteEnvValues: Record<string, string>;
 };
 
 type SiteEnvResolution = {
@@ -310,6 +336,7 @@ const LOCAL_KIND_INGRESS_CLASS = 'nginx';
 const LOCAL_KIND_CONTROL_PLANE_NODE = 'agentsmith-control-plane';
 const LOCAL_KIND_INGRESS_NODE_PORT = '30080';
 const LOCAL_KIND_INGRESS_HOST_PORT = '29180';
+const DEFAULT_ASBCP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
 const AFSCP_DEFAULT_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_RUNTIME_COMPONENT = 'afscp-runtime';
 const AFSCP_STORAGE_CSI_NAMESPACE = 'kube-system';
@@ -352,6 +379,21 @@ const EMPTY_LLMUP_CONFIG_HEALTH: LlmupConfigHealthEvidence = {
   readiness_path: '/health',
   liveness_path: '/health',
   rollout_status: 'skipped',
+};
+const EMPTY_ASBCP_IMAGE_ADOPTION: AsbcpImageAdoptionEvidence = {
+  status: 'skipped',
+  running_pods: [],
+  running_image_ids: [],
+};
+const STALE_RESOURCE_ABSENT_IDS = [
+  ...LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
+  ...LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS,
+] as const;
+const EMPTY_STALE_RESOURCE_ABSENCE: StaleResourceAbsenceEvidence = {
+  status: 'skipped',
+  scope: 'absence_only',
+  checked_kinds: [],
+  absent: [],
 };
 
 function rolloutTimeoutForDeployment(deployment: string): string {
@@ -1083,6 +1125,235 @@ async function resolveLocalKindClusterUid(options: {
 function listItems(resourceList: Record<string, unknown>): Record<string, unknown>[] {
   const items = resourceList.items;
   return Array.isArray(items) ? items.map(asRecord) : [];
+}
+
+function digestFromImageRef(value: string | undefined): string | undefined {
+  const match = value ? /(sha256:[a-fA-F0-9]{64})/u.exec(value) : undefined;
+  return match?.[1]?.toLowerCase();
+}
+
+async function readAsbcpSourceImageLock(): Promise<{ sourceRef?: string; sourceDigest?: string; failure?: CheckFailure }> {
+  try {
+    const source = await readFile(DEFAULT_ASBCP_IMAGE_LOCK_PATH, 'utf8');
+    const sourceRef = /^asbcp_source_image=(.+)$/mu.exec(source)?.[1]?.trim();
+    const sourceDigest = digestFromImageRef(sourceRef);
+    if (!sourceRef || !sourceDigest) {
+      return {
+        failure: {
+          path: 'image-adoption:asbcp-lock',
+          message: 'ASBCP image adoption evidence requires asbcp-image.lock with asbcp_source_image pinned by sha256 digest',
+        },
+      };
+    }
+
+    return { sourceRef, sourceDigest };
+  } catch (error: unknown) {
+    return {
+      failure: {
+        path: 'image-adoption:asbcp-lock',
+        message: `failed to read ASBCP image lock: ${errorMessage(error)}`,
+      },
+    };
+  }
+}
+
+function runningAsbcpImageIds(podList: Record<string, unknown>): { pods: string[]; imageIds: string[] } {
+  const pods: string[] = [];
+  const imageIds: string[] = [];
+
+  for (const pod of listItems(podList)) {
+    const status = asRecord(pod.status);
+    if (status.phase !== 'Running') {
+      continue;
+    }
+    const podName = resourceName(pod);
+    const containerStatuses = Array.isArray(status.containerStatuses)
+      ? status.containerStatuses.map(asRecord)
+      : [];
+    for (const containerStatus of containerStatuses) {
+      if (containerStatus.name !== 'asbcp' || typeof containerStatus.imageID !== 'string') {
+        continue;
+      }
+      pods.push(podName);
+      imageIds.push(containerStatus.imageID);
+    }
+  }
+
+  return { pods, imageIds };
+}
+
+async function checkAsbcpImageAdoption(options: {
+  siteEnvValues: Record<string, string>;
+  appYaml: string;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ evidence: AsbcpImageAdoptionEvidence; failures: CheckFailure[] }> {
+  const failures: CheckFailure[] = [];
+  const lock = await readAsbcpSourceImageLock();
+  if (lock.failure) {
+    failures.push(lock.failure);
+  }
+
+  const siteEnvRef = options.siteEnvValues.ASBCP_IMAGE;
+  const asbcpContainer = renderedDeploymentContainer(
+    options.appYaml,
+    'agentsmith-sandbox-control-plane',
+    'asbcp',
+  );
+  const renderedRef = typeof asbcpContainer.image === 'string' ? asbcpContainer.image : undefined;
+  const targetDigest = digestFromImageRef(renderedRef ?? siteEnvRef);
+
+  if (!siteEnvRef) {
+    addFailure(failures, 'image-adoption:ASBCP_IMAGE', 'generated site env must include ASBCP_IMAGE for ASBCP image adoption evidence');
+  }
+  if (!renderedRef) {
+    addFailure(failures, 'image-adoption:Deployment/agentsmith-sandbox-control-plane', 'rendered ASBCP Deployment must include an image ref');
+  }
+  if (siteEnvRef && renderedRef && siteEnvRef !== renderedRef) {
+    addFailure(failures, 'image-adoption:Deployment/agentsmith-sandbox-control-plane', 'rendered ASBCP Deployment image must match generated site env ASBCP_IMAGE');
+  }
+  if (lock.sourceDigest && targetDigest && lock.sourceDigest !== targetDigest) {
+    addFailure(
+      failures,
+      'image-adoption:agentsmith-sandbox-control-plane:digest',
+      `ASBCP source digest ${lock.sourceDigest} must match target/rendered digest ${targetDigest}`,
+    );
+  }
+  if (!targetDigest) {
+    addFailure(failures, 'image-adoption:agentsmith-sandbox-control-plane:digest', 'ASBCP target image must be pinned by sha256 digest');
+  }
+
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    'pods',
+    '-l',
+    'app.kubernetes.io/name=agentsmith,app.kubernetes.io/component=asbcp',
+    '-o',
+    'json',
+  ];
+  const podsResult = await kubectlJson({ ...options, args });
+  let runningPods: string[] = [];
+  let runningImageIds: string[] = [];
+  if (podsResult.ok) {
+    const live = runningAsbcpImageIds(podsResult.value);
+    runningPods = live.pods;
+    runningImageIds = live.imageIds;
+    if (runningImageIds.length === 0) {
+      addFailure(failures, 'live:Pod/agentsmith-sandbox-control-plane:imageID', 'running ASBCP Pod must expose status.containerStatuses[].imageID');
+    } else if (targetDigest) {
+      const mismatchedImageIds = runningImageIds.filter((imageId) => digestFromImageRef(imageId) !== targetDigest);
+      if (mismatchedImageIds.length > 0) {
+        addFailure(
+          failures,
+          'live:Pod/agentsmith-sandbox-control-plane:imageID',
+          `all running ASBCP Pod imageID digests must match target digest ${targetDigest}`,
+        );
+      }
+    }
+  } else {
+    failures.push({ ...podsResult.failure, path: 'live:Pod/agentsmith-sandbox-control-plane:imageID' });
+  }
+
+  return {
+    evidence: {
+      status: failures.length === 0 ? 'passed' : 'failed',
+      source_ref: lock.sourceRef,
+      source_digest: lock.sourceDigest,
+      site_env_ref: siteEnvRef,
+      rendered_ref: renderedRef,
+      target_digest: targetDigest,
+      running_pods: runningPods,
+      running_image_ids: runningImageIds,
+    },
+    failures,
+  };
+}
+
+function containsLegacyAsbcpResidue(resource: Record<string, unknown>): boolean {
+  const name = resourceName(resource).toLowerCase();
+  const serialized = JSON.stringify(resource).toLowerCase();
+
+  return LEGACY_ASBCP_RESIDUE_MATCHERS.some((matcher) =>
+    name.includes(matcher) || serialized.includes(matcher),
+  );
+}
+
+async function checkStaleResourceAbsence(options: {
+  namespace: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ evidence: StaleResourceAbsenceEvidence; failures: CheckFailure[] }> {
+  const failures: CheckFailure[] = [];
+  const checkedKinds = ['Deployment', 'Service', 'ConfigMap', 'ServiceAccount', 'Role', 'RoleBinding', 'ClusterRole', 'ClusterRoleBinding'];
+  const items: Record<string, unknown>[] = [];
+  const namespacedArgs = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    'deployment,service,configmap,serviceaccount,role,rolebinding',
+    '-o',
+    'json',
+    '--ignore-not-found',
+  ];
+  const namespacedResult = await kubectlJson({ ...options, args: namespacedArgs });
+  if (namespacedResult.ok) {
+    items.push(...listItems(namespacedResult.value));
+  } else {
+    failures.push({
+      ...namespacedResult.failure,
+      path: 'live:stale-legacy-asbcp:namespaced',
+      message: `failed to complete stale legacy ASBCP absence-only namespaced resource check: ${namespacedResult.failure.message}`,
+    });
+  }
+
+  const clusterArgs = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    'get',
+    'clusterrole,clusterrolebinding',
+    '-o',
+    'json',
+    '--ignore-not-found',
+  ];
+  const clusterResult = await kubectlJson({ ...options, args: clusterArgs });
+  if (clusterResult.ok) {
+    items.push(...listItems(clusterResult.value));
+  } else {
+    failures.push({
+      ...clusterResult.failure,
+      path: 'live:stale-legacy-asbcp:cluster-rbac',
+      message: `failed to complete stale legacy ASBCP absence-only local-kind PV RBAC check: ${clusterResult.failure.message}`,
+    });
+  }
+
+  for (const item of items) {
+    if (!containsLegacyAsbcpResidue(item)) {
+      continue;
+    }
+    addFailure(
+      failures,
+      `live:${resourceKind(item)}/${resourceName(item)}`,
+      'legacy ASBCP resource is present; this producer is absence-only and does not modify migrated clusters',
+    );
+  }
+
+  return {
+    evidence: {
+      status: failures.length === 0 ? 'passed' : 'failed',
+      scope: 'absence_only',
+      checked_kinds: checkedKinds,
+      absent: [...STALE_RESOURCE_ABSENT_IDS],
+    },
+    failures,
+  };
 }
 
 function metadataLabels(resource: Record<string, unknown>): Record<string, unknown> {
@@ -1961,6 +2232,7 @@ async function renderInputs(options: {
     appYaml: app.output,
     secretValues: collectRenderedSecretValues(app.output),
     publicBaseUrl: siteEnv.PUBLIC_BASE_URL,
+    siteEnvValues: siteEnv,
   };
 }
 
@@ -2598,6 +2870,8 @@ function createEmptyEvidence(params: {
     },
     operations: [],
     rollouts: [],
+    asbcp_image_adoption: EMPTY_ASBCP_IMAGE_ADOPTION,
+    stale_resource_absence_check: EMPTY_STALE_RESOURCE_ABSENCE,
     llmup_config_health: EMPTY_LLMUP_CONFIG_HEALTH,
     live_api_replica_check: { status: 'skipped' },
     forbidden_resource_check: { status: 'skipped', checked_kinds: [] },
@@ -3997,6 +4271,22 @@ export async function runLocalKindRolloutProducer(
     env,
     secretValues,
   });
+  const asbcpImageAdoption = await checkAsbcpImageAdoption({
+    siteEnvValues: rendered.siteEnvValues,
+    appYaml: rendered.appYaml,
+    namespace: safety.namespace,
+    kubeconfigPath: kubeconfig.path,
+    runner,
+    env,
+    secretValues,
+  });
+  const staleResourceAbsence = await checkStaleResourceAbsence({
+    namespace: safety.namespace,
+    kubeconfigPath: kubeconfig.path,
+    runner,
+    env,
+    secretValues,
+  });
   const routeProbes = await runRouteProbes({
     publicBaseUrl: options.publicBaseUrl ?? rendered.publicBaseUrl,
     namespace: safety.namespace,
@@ -4011,6 +4301,8 @@ export async function runLocalKindRolloutProducer(
     ...llmupConfigHealth.failures,
     ...liveApi.failures,
     ...forbiddenResources.failures,
+    ...asbcpImageAdoption.failures,
+    ...staleResourceAbsence.failures,
     ...routeProbes.failures,
   ];
 
@@ -4019,6 +4311,8 @@ export async function runLocalKindRolloutProducer(
     operations: operationsAfterRollout,
     rollouts: rollouts.rollouts,
     llmup_config_health: llmupConfigHealth.evidence,
+    asbcp_image_adoption: asbcpImageAdoption.evidence,
+    stale_resource_absence_check: staleResourceAbsence.evidence,
     live_api_replica_check: liveApi.evidence,
     forbidden_resource_check: forbiddenResources.evidence,
     route_probes: routeProbes.probes,

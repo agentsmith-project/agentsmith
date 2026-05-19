@@ -12,6 +12,12 @@ Owner: AgentSmith product and engineering.
 > preview-first restore language in this historical plan as background only, not
 > implementation or acceptance guidance.
 
+> Historical naming note: this plan predates the ASBCP naming cleanup. Older
+> sandbox execution owner wording in this document refers to the internal
+> sandbox execution service now named `agentsmith-sandbox-control-plane`
+> (ASBCP). Do not derive active source-build paths, env names, Kubernetes
+> identities, or sibling-source workflows from the older wording.
+
 Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is the GitHub-published image `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
@@ -528,7 +534,7 @@ Responsibilities:
 | Deployment/substrate | install JuiceFS CSI driver, create or configure the shared JuiceFS volume, provide storage-root Secret material to AFSCP only |
 | AFSCP | record volume metadata/capabilities, bind namespaces to volumes, resolve repo paths, execute save point/restore/template operations, issue export/mount bindings |
 | AgentSmith API | call AFSCP with service identity after product authorization; store only opaque AFSCP IDs |
-| Sandbox manager / Kubernetes / CSI | consume AFSCP repo/namespace/destination/TTL-scoped mount plan and SecretRef, then mount repo payload into task pod |
+| ASBCP / Kubernetes / CSI | consume AFSCP repo/namespace/destination/TTL-scoped mount plan and SecretRef, then mount repo payload into task pod |
 | Runner/task container | see only mounted HOME payload, not storage credentials or control root |
 
 AFSCP `volume ensure` is not a product operation for ordinary users. It should be handled by deployment/bootstrap or a system admin job. AgentSmith project initialization may ensure the project namespace and namespace-volume binding exist through the project storage bootstrap saga.
@@ -537,7 +543,7 @@ Bootstrap identity split:
 
 - deployment/bootstrap job owns volume admin and first namespace-volume binding bootstrap through deployment namespace policy.
 - AgentSmith product caller owns normal repo, save point, template, export, mount-binding, and operation-inspection calls after product authorization.
-- sandbox manager caller owns mount plan retrieval, heartbeat, release, and revoke confirmation.
+- ASBCP caller owns mount plan retrieval, heartbeat, release, and revoke confirmation.
 - ordinary end users never receive AFSCP roles; their permissions are enforced by AgentSmith before any AFSCP call.
 - product caller token/caller-service and bootstrap token/caller-service must be
   distinct. AgentSmith must fail fast at startup or configuration load if either
@@ -549,14 +555,14 @@ not advance from namespace upsert to binding until namespace readiness is known,
 unless AFSCP exposes a single durable ensure operation that explicitly owns both
 steps and returns a binding-ready result.
 
-Sandbox manager/Kubernetes/CSI contract:
+ASBCP/Kubernetes/CSI contract:
 
-- The sandbox manager consumes only AFSCP-issued mount plans scoped to one
+- ASBCP consumes only AFSCP-issued mount plans scoped to one
   repo/namespace/destination/TTL and the SecretRefs included in that plan.
-- The sandbox manager must not persist storage-root credentials, list arbitrary
+- ASBCP must not persist storage-root credentials, list arbitrary
   Kubernetes Secrets, read Secrets outside the scoped plan, or derive its own
   raw JuiceFS/root mount material.
-- The sandbox manager must not expose storage-root material, SecretRefs, raw paths,
+- ASBCP must not expose storage-root material, SecretRefs, raw paths,
   or control-root details to runner/task containers, terminal sessions, logs, or
   AgentSmith product DTOs.
 
@@ -693,10 +699,10 @@ Managed runner flow:
 1. AgentSmith creates or reuses a file library.
 2. AgentSmith acquires the task-file-library binding.
 3. AgentSmith creates an AFSCP workload mount binding for the file library repo with destination `/home/<file_library_home_segment>`.
-4. The sandbox manager fetches the AFSCP mount plan.
+4. ASBCP fetches the AFSCP mount plan.
 5. Kubernetes/CSI mounts only the repo payload subdir through JuiceFS CSI/subPath into the sandbox pod.
 6. The task container starts with `HOME=$TASK_HOME=/home/<file_library_home_segment>` and `cwd=$HOME/workspace`.
-7. The sandbox manager heartbeats and releases/revokes the mount binding when the pod/session ends.
+7. ASBCP heartbeats and releases/revokes the mount binding when the pod/session ends.
 
 Developer runner flow:
 
@@ -714,7 +720,7 @@ Developer runner flow:
   material.
 - If the current AFSCP contract cannot safely express this export-backed developer runner
   lease/connector abstraction, Slice 5 is blocked on an upstream AFSCP contract
-  change. Do not add an AgentSmith workaround, a dedicated developer sandbox-manager
+  change. Do not add an AgentSmith workaround, a dedicated developer ASBCP
   identity, or raw storage shortcuts.
 
 ### 3.6 Restore And Active Writers
@@ -726,7 +732,7 @@ admission. AgentSmith task holder state is a supplemental product preflight, not
 a parallel storage lock. Every writable terminal, run, and file browser export
 must be represented in AFSCP sessions or bindings. When Slice 5 is unblocked,
 every developer-runner access path must use the same representation. If any
-writer/access path cannot be represented, it is an AFSCP/sandbox-manager contract
+writer/access path cannot be represented, it is an AFSCP/ASBCP contract
 gap.
 
 Required behavior:
@@ -751,7 +757,7 @@ independent AFSCP release gates/contracts and internal-only access:
 - `afscp-export-gateway` when the Files UI storage adapter is backed by
   server-side WebDAV/export; an upstream first-class AFSCP file API can replace
   this backing path, but not the Files UI storage adapter boundary.
-- internal AFSCP API service accessible only to AgentSmith API and the sandbox manager.
+- internal AFSCP API service accessible only to AgentSmith API and ASBCP.
 - optional future WebDAV gateway ingress/base URL for productized user-computer connector traffic; this is not required in this milestone and is not the AFSCP internal API.
 - service credentials configured through deployment secrets.
 - storage readiness checks plus AFSCP image/release evidence for its internal
@@ -768,8 +774,8 @@ Substrates remain outside the app pods:
 - JuiceFS metadata/object-store substrate as required by the selected volume.
 
 JuiceFS CSI driver remains cluster infrastructure. AFSCP internals may hold
-volume metadata and generate sandbox-manager-only mount plans. Outside AFSCP
-internals, only the sandbox manager may receive plan-scoped CSI SecretRefs
+volume metadata and generate ASBCP-only mount plans. Outside AFSCP
+internals, only ASBCP may receive plan-scoped CSI SecretRefs
 needed for Kubernetes/CSI to mount one repo payload for one destination/TTL. It
 must not receive or persist storage-root credentials. AgentSmith product
 callers, frontend, runners, and task containers never receive SecretRefs,
@@ -778,7 +784,7 @@ storage-root details, or control-root material.
 AgentSmith gates and deployment templates must name this bootstrap boundary as
 AFSCP/substrate, for example `AFSCP_STORAGE_CSI_*` and
 `AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT`. Provider-specific JuiceFS env names
-are allowed only at the sandbox-manager/AFSCP substrate process boundary when
+are allowed only at the ASBCP/AFSCP substrate process boundary when
 that component is the selected implementation. They are not File Library product
 config, runner config, API DTOs, or acceptance evidence.
 
@@ -806,7 +812,7 @@ Do not create AgentSmith workarounds for upstream gaps such as unsafe local
 mounts, raw JuiceFS credential handling, control-root exposure, product
 authorization inside AFSCP, or AgentSmith-side parsing of private storage state.
 The boundary rule is simple: AgentSmith owns product catalog and permission;
-AFSCP owns storage control; sandbox manager, Kubernetes, and CSI own task HOME
+AFSCP owns storage control; ASBCP, Kubernetes, and CSI own task HOME
 mounting; runner containers only consume mounted HOME.
 
 ### 3.9 Cross-System Saga And Reconciliation
@@ -875,7 +881,7 @@ Storage-dependent API behavior:
 | Task create with new file library | Do not create the repo or runnable task workspace until project storage is ready; if a product task row is created early, it stays `waiting_for_project_storage` and is not runnable. |
 | Task create from template | Validate product template availability first, then block/reconcile until storage is ready before cloning the AFSCP template. |
 | Bind existing file library to task | Requires project storage ready, resource generation match, file-library lifecycle visibility, and confirmed reusable binding state. |
-| Workload mount binding / terminal start | Must not request AFSCP mount binding or sandbox manager plan until project storage and file-library repo are ready. |
+| Workload mount binding / terminal start | Must not request AFSCP mount binding or ASBCP plan until project storage and file-library repo are ready. |
 | Save point and direct restore | Typed block or retryable pending response until project storage, target file library, and selected save point are ready; out-of-date restore state remains a separate typed state. |
 | Template create/publish/use/clone | Product metadata visibility may be shown, but AFSCP template create/clone waits for project storage ready and source/target generation match. |
 | Server-side export / future connector | Must not create export/session/lease until project storage and resource lifecycle are ready. |
@@ -993,7 +999,7 @@ AFSCP has the core storage-control primitives needed for this direction:
 - direct restore by save point, including typed blockers and operation status.
 - repo template create/clone.
 - export sessions.
-- workload mount binding and sandbox-manager-only plan.
+- workload mount binding and ASBCP-only plan.
 - operation/audit model.
 
 Known gaps or integration risks:
@@ -1001,7 +1007,7 @@ Known gaps or integration risks:
 1. No first-class file browser API. AgentSmith must use a Files UI storage
    adapter backed by server-side WebDAV/export or request/add an upstream
    first-class AFSCP file API.
-2. Workload mount binding depends on a sandbox manager/Kubernetes/CSI contract: payload-only mount, plan-scoped SecretRef RBAC, no arbitrary Secret reads, heartbeat, release, revoke, and confirmed-unmounted terminal states.
+2. Workload mount binding depends on an ASBCP/Kubernetes/CSI contract: payload-only mount, plan-scoped SecretRef RBAC, no arbitrary Secret reads, heartbeat, release, revoke, and confirmed-unmounted terminal states.
 3. Current AgentSmith raw local mount UX conflicts with AFSCP security model and
    must be deleted from product flows. Productized user-computer WebDAV
    connector is deferred to a separate connector milestone; the Files UI storage
@@ -1218,17 +1224,17 @@ TDD first:
 
 - task binding creates AFSCP workload mount binding.
 - task create/bind/mount paths require project storage ready before repo create,
-  workload mount binding, terminal start, or sandbox manager plan fetch.
-- mount plan is fetched only by sandbox manager identity.
+  workload mount binding, terminal start, or ASBCP plan fetch.
+- mount plan is fetched only by ASBCP identity.
 - task pod receives only payload root mounted at HOME.
-- sandbox manager cannot list/read arbitrary Kubernetes Secrets and consumes only AFSCP plan-scoped SecretRefs.
+- ASBCP cannot list/read arbitrary Kubernetes Secrets and consumes only AFSCP plan-scoped SecretRefs.
 - release/revoke/heartbeat updates are idempotent.
 - active writable mount blocks direct restore.
 - binding reuse is denied while the previous mount/export session is releasing, expired, failed, or otherwise uncertain.
 
 Implementation:
 
-- replace sandbox-manager raw `metadata_url`/storage endpoint contract with AFSCP mount binding + sandbox manager plan.
+- replace raw `metadata_url`/storage endpoint contract with AFSCP mount binding + ASBCP plan.
 - keep AgentSmith task binding generation and holder fences.
 
 Acceptance:
@@ -1259,7 +1265,7 @@ Implementation:
 
 - provide the AFSCP export-backed developer runner lease/connector path that preserves the same HOME semantics.
 - do not add a second product model for developer files.
-- if the current AFSCP contract cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer sandbox-manager identity or raw storage workaround.
+- if the current AFSCP contract cannot support the safe lease/connector abstraction, stop Slice 5 and open the upstream AFSCP contract change; do not add a dedicated developer ASBCP identity or raw storage workaround.
 - while Slice 5 is blocked, the active `workspace-access` / `task_home_binding`
   contract exposes only `mode: pre_mounted`; developer runner file access fails
   closed with an explicit 409 and must not surface placeholder connector modes.
@@ -1519,7 +1525,7 @@ This milestone is complete only when:
 5. Files browser faithfully reflects the user-visible HOME/repo payload root for every AFSCP-backed file library, including normal dot folders, and opens the HOME root by default. `workspace/` remains an ordinary directory inside HOME and is the default agent/terminal working directory, not the Files browser root.
 6. Save point, restore, and template dialogs tell users the scope is the whole file library HOME, which is the task HOME when bound, including hidden agent runtime folders, not only the current `workspace/` view.
 7. Platform-managed Project secrets, managed OAuth credentials, execution tickets, runner connection secrets, WebDAV/export passwords, AFSCP credentials, and storage-root material are not automatically leaked or persisted into HOME payload. The handoff and tests distinguish this from user/agent-authored secret text files, which are user data risk rather than a platform guarantee.
-8. Managed runner uses AFSCP workload mount binding and a sandbox-manager-only repo/namespace/destination/TTL-scoped mount plan. The sandbox manager cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers; Kubernetes/CSI performs the pod mount.
+8. Managed runner uses AFSCP workload mount binding and an ASBCP-only repo/namespace/destination/TTL-scoped mount plan. ASBCP cannot list/read arbitrary Kubernetes Secrets, cannot persist root credentials, and never exposes storage-root material to runner/task containers; Kubernetes/CSI performs the pod mount.
 9. Developer runner uses the selected AFSCP export-backed lease/connector path with short TTL, revoke, heartbeat/reconcile, and AFSCP export/session accounting when Slice 5 is unblocked and implemented. If the current AFSCP contract cannot support this safely, Slice 5 remains officially blocked upstream with upstream blocker evidence, a no-workaround record, and no developer-runner-specific backend-real/deploy smoke required for this round.
 10. Save point list/create works.
 11. Direct restore confirm works; cancel before confirm leaves files unchanged, restore blocks active or uncertain writers, restore admission verifies repo generation/lifecycle/writer fence, out-of-date restore state is typed, and restore operation pending is shown as restoring/reconciling until the backend reports terminal success before success feedback appears.
@@ -1547,7 +1553,7 @@ The implementation must keep these active documents aligned as behavior lands:
 
 - `docs/contracts/afscp-file-libraries-architecture.md`: canonical AFSCP shared-volume repo model and Files adapter boundary.
 - `docs/contracts/files-frontend-module-map.md`: frontend module contract for the AFSCP-backed file-library surface.
-- `docs/contracts/internal-agent-workspace-binding-model-v1.md`: managed runner authority through AFSCP workload mount binding, sandbox-manager-only mount plan, and task HOME contract; developer runner authority through the export-backed lease/connector path, or through the upstream blocker/no-workaround record while Slice 5 remains blocked.
+- `docs/contracts/internal-agent-workspace-binding-model-v1.md`: managed runner authority through AFSCP workload mount binding, ASBCP-only mount plan, and task HOME contract; developer runner authority through the export-backed lease/connector path, or through the upstream blocker/no-workaround record while Slice 5 remains blocked.
 - `docs/agent-task-runner-runbook.md`: AFSCP-backed HOME runtime and no-secret persistence rules.
 - `docs/user-guides/file-library-access-model.md`: user-facing file library access model. The current milestone must not expose raw JuiceFS local mount guidance; productized WebDAV connector guidance belongs only in a later connector milestone.
 - Deleted raw JuiceFS docs such as `docs/contracts/juicefs-file-libraries-architecture.md`

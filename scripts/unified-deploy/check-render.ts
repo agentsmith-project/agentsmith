@@ -63,6 +63,13 @@ const ASBCP_CONFIG_MAP = 'asbcp-config';
 const ASBCP_CONFIG_PATH = '/etc/asbcp/asbcp-config.yaml';
 const ASBCP_IMAGE_REPOSITORY_PATTERN = /(?:^|\/)agentsmith-sandbox-control-plane(?=[:@])/u;
 const IMAGE_SHA256_DIGEST_PATTERN = /@sha256:[a-f0-9]{64}$/iu;
+
+function isAsbcpCanonicalIdentifier(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized === 'asbcp'
+    || normalized === ASBCP_SERVICE_ACCOUNT
+    || normalized.startsWith(`${ASBCP_SERVICE_ACCOUNT}-`);
+}
 const LLMUP_CONFIG_MAP = 'agentsmith-llmup-config';
 const LLMUP_CONFIG_PATH = '/app/config/config.yaml';
 const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
@@ -334,7 +341,7 @@ function checkIngressRoutes(documents: readonly Record<string, unknown>[], failu
     if (serviceName.includes('afscp') || route.includes('afscp')) {
       addFailure(failures, 'Ingress/agentsmith', 'AFSCP services must remain internal only');
     }
-    if (serviceName === ASBCP_SERVICE_ACCOUNT || serviceName.includes('sandbox-control-plane') || route.includes('asbcp')) {
+    if (isAsbcpCanonicalIdentifier(serviceName) || route.includes('asbcp')) {
       addFailure(failures, 'Ingress/agentsmith', 'ASBCP services must remain internal only');
     }
   }
@@ -347,8 +354,7 @@ function selectorTargetsInternalOnlyComponent(selector: Record<string, unknown>)
 
     return normalizedValue === 'llmup'
       || normalizedValue.includes('llmup')
-      || normalizedValue === 'asbcp'
-      || normalizedValue.includes('sandbox-control-plane')
+      || isAsbcpCanonicalIdentifier(normalizedValue)
       || normalizedValue.includes('afscp')
       || (normalizedKey.includes('component') && (
         normalizedValue === 'llmup'
@@ -366,8 +372,7 @@ function serviceExposesInternalOnlyComponent(document: Record<string, unknown>):
 
   const selector = asRecord(asRecord(document.spec).selector);
   return resourceName(document).toLowerCase().includes('llmup')
-    || resourceName(document) === ASBCP_SERVICE_ACCOUNT
-    || resourceName(document).toLowerCase().includes('sandbox-control-plane')
+    || isAsbcpCanonicalIdentifier(resourceName(document))
     || resourceName(document).toLowerCase().includes('afscp')
     || componentLabel(document) === 'llmup'
     || componentLabel(document) === 'asbcp'
@@ -392,11 +397,10 @@ function serviceExposesAsbcpComponent(document: Record<string, unknown>): boolea
   }
 
   const selector = asRecord(asRecord(document.spec).selector);
-  return resourceName(document) === ASBCP_SERVICE_ACCOUNT
-    || resourceName(document).toLowerCase().includes('sandbox-control-plane')
+  return isAsbcpCanonicalIdentifier(resourceName(document))
     || componentLabel(document) === 'asbcp'
     || Object.values(selector).some((value) => typeof value === 'string' && (
-      value.toLowerCase() === 'asbcp' || value.toLowerCase().includes('sandbox-control-plane')
+      isAsbcpCanonicalIdentifier(value)
     ));
 }
 

@@ -86,6 +86,7 @@ vi.mock('next-intl', () => ({
       terminal_error_invalid_shell: "This task couldn't start a terminal in the current environment.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
       terminal_error_session_not_ready: 'Terminal session is not ready. Try reopening it later.',
+      terminal_error_execution_environment_unavailable: 'The task execution environment is unavailable right now. Please try again later.',
       terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
       terminal_recovery_hint: 'End this terminal session, then reopen it from the task header when you are ready to retry.',
       terminal_max_sessions_reached: 'You can run up to 3 terminal sessions in one task.',
@@ -311,6 +312,47 @@ describe('TaskTerminalPanel', () => {
     expect(renderedCopy).not.toMatch(/diagnostics/i);
     expect(mockToastError).toHaveBeenCalledWith(
       'Terminal session is not ready. Try reopening it later.',
+    );
+  });
+
+  it('does not expose unsafe ASBCP or internal terminal failure details', async () => {
+    const unsafeReason = [
+      'ASBCP_INTERNAL_BASE_URL=http://asbcp.agentsmith.svc.cluster.local:28080',
+      'ASBCP_SERVICE_KEY=raw-secret',
+      'control plane sandbox workload failed',
+      'image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1.0.0@sha256:abcdef1234567890',
+      'localhost:28080',
+      'internal error',
+    ].join(' ');
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error(unsafeReason));
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_unsafe_terminal_reason"
+        taskTitle="terminal-unsafe-reason"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Failed');
+      expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent(
+        'The task execution environment is unavailable right now. Please try again later.',
+      );
+    });
+
+    const renderedCopy = screen.getByTestId('agent-tasks__task-terminal').textContent ?? '';
+    expect(renderedCopy).not.toMatch(/ASBCP|ASBCP_INTERNAL_BASE_URL|ASBCP_SERVICE_KEY/i);
+    expect(renderedCopy).not.toMatch(/control plane|sandbox workload|internal error/i);
+    expect(renderedCopy).not.toMatch(/ghcr\.io|sha256|svc\.cluster\.local|localhost/i);
+    expect(mockToastError).toHaveBeenCalledWith(
+      'The task execution environment is unavailable right now. Please try again later.',
     );
   });
 
@@ -3094,7 +3136,7 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => {
       expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent('Failed');
       expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent(
-        'Terminal unavailable: close rejected',
+        'Terminal unavailable: The task execution environment is unavailable right now. Please try again later.',
       );
     });
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
@@ -3167,7 +3209,7 @@ describe('TaskTerminalPanel', () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId('agent-tasks__task-terminal')).toHaveTextContent(
-        'Terminal unavailable: pending close rejected',
+        'Terminal unavailable: The task execution environment is unavailable right now. Please try again later.',
       );
     });
     expect(onOpenChange).not.toHaveBeenCalledWith(false);

@@ -8,6 +8,11 @@ Status: `decision_required_analysis`
 > listed below and the code they reference; reopen this analysis only after a product/engineering decision records the
 > intended terminal lifecycle model.
 
+> Historical naming note: this analysis predates the ASBCP naming cleanup.
+> Older sandbox execution owner wording here refers to the internal sandbox
+> execution service now named `agentsmith-sandbox-control-plane` (ASBCP), and
+> must not be used as active env, Kubernetes identity, or source-build guidance.
+
 ## 1. Scope
 
 This document summarizes the current implementation truth of AgentSmith internal-agent terminal mode, evaluates whether the current pod reclamation behavior matches the product model, and records decision options for the development team.
@@ -60,7 +65,7 @@ Current defaults and minimums:
 - `INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS = 180`
 - `INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS = 600`
 
-When the pod is created, AgentSmith passes both values to sandbox manager:
+When the pod is created, AgentSmith passes both values to ASBCP:
 
 - `idle_timeout_sec`
 - `max_lifetime_sec`
@@ -162,7 +167,7 @@ There are currently three different lifecycle models in play:
 
 1. product-facing terminal session lifecycle
 2. AgentSmith execution-layer terminal pending/idle/max-runtime lifecycle
-3. sandbox manager pod idle/max-lifetime lifecycle
+3. ASBCP pod idle/max-lifetime lifecycle
 
 These three models are related, but not unified.
 
@@ -203,7 +208,7 @@ Impact:
 - the product surface may present terminal as a durable working context
 - the substrate can reclaim the actual execution environment much earlier
 
-Even if sandbox manager internally refreshes activity based on runner behavior, that is not expressed as an AgentSmith contract and therefore remains a hidden coupling.
+Even if ASBCP internally refreshes activity based on runner behavior, that is not expressed as an AgentSmith contract and therefore remains a hidden coupling.
 
 ### Finding 4: current behavior is safer for infrastructure than for product coherence
 
@@ -275,7 +280,7 @@ When the last holder disappears, AgentSmith explicitly releases the workload.
 
 In that model:
 
-- sandbox manager `idle_timeout_sec` and `max_lifetime_sec` still exist
+- ASBCP `idle_timeout_sec` and `max_lifetime_sec` still exist
 - but they act as substrate guardrails and failure containment
 - they do not silently replace the product lifecycle contract
 

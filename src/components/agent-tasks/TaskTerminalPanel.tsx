@@ -277,6 +277,7 @@ function getClosableSessionIdFromResolution(
 }
 
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
+  const executionEnvironmentUnavailable = t('terminal_error_execution_environment_unavailable');
   const safeTaskSurfaceMessage = resolveAgentTaskSafeErrorMessage({
     rawMessage: reason,
     audience: 'terminal',
@@ -307,9 +308,9 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
     return t('terminal_max_sessions_reached');
   }
   if (containsAgentTaskUnsafeErrorTerm(reason)) {
-    return t('terminal_error_connection_failed');
+    return executionEnvironmentUnavailable;
   }
-  return reason;
+  return executionEnvironmentUnavailable;
 }
 
 function describeTerminalFailureKind(

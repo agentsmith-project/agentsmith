@@ -32,8 +32,9 @@ release lines, or UI objects.
      redirect, issuer, or TLS settings.
 
 3. AgentSmith app workloads run in Kubernetes.
-   - App components are `web`, `api`, `llmup`, sandbox-manager, managed runner
-     deployment configuration, and required Kubernetes resources.
+   - App components are `web`, `api`, `llmup`, the ASBCP image-provided
+     internal task execution service, managed runner deployment configuration,
+     and required Kubernetes resources.
    - App components consume generated configuration from the deployment system
      and must not invent dependency addresses.
 
@@ -70,7 +71,7 @@ The app deployment renders Kubernetes resources for:
 - `web`
 - `api`
 - `llmup`
-- sandbox-manager
+- ASBCP image-provided internal task execution service
 - managed runner workload support
 - required service accounts, roles, services, ingress, config maps, and secrets
 

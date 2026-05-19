@@ -1421,6 +1421,7 @@
     "endpoint_disabled_title": "端点已禁用",
     "endpoint_disabled_hint": "此端点已被禁用。",
     "request_id": "请求 ID",
+    "error_id": "错误 ID",
     "error_code": "错误码",
     "badRequest": {
       "title": "无效请求",
@@ -3482,6 +3483,7 @@
       "terminal_error_invalid_shell": "当前环境无法为这个任务启动终端。",
       "terminal_error_connection_failed": "终端连接未能建立，请重试。",
       "terminal_error_session_not_ready": "终端会话尚未就绪，请稍后重新打开。",
+      "terminal_error_execution_environment_unavailable": "任务执行环境暂不可用，请稍后重试。",
       "terminal_error_taken_over": "这个终端已经在另一个浏览器标签页中打开。若要在这里继续，请重新打开终端。",
       "terminal_process_lost": "终端进程已丢失，无法继续连接。",
       "terminal_close_tombstone_timeout": "终端结束超时，系统无法确认终端已结束。",

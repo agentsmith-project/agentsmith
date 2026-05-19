@@ -89,6 +89,34 @@ describe('check-doc-governance historical document detection', () => {
     expect(runbook).not.toContain('managed runner 和 Developer runner 两条 task/terminal/recovery smoke 都有证据');
   });
 
+  it('keeps active ASBCP-facing docs from sending developers back to sibling source or sandbox-manager guidance', () => {
+    const activeDocs = [
+      'DEVELOPMENT.md',
+      'docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md',
+      'docs/engineering/internal-agent-terminal-pod-lifecycle-analysis-v1.md',
+      'docs/engineering/file-library-version-management-fast-path-plan-v1.md',
+      'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+    ];
+
+    for (const relativePath of activeDocs) {
+      const content = readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+      expect(content).not.toMatch(/\.\.\/mbos-sandbox-v1|mbos-sandbox-v1/u);
+      expect(content).not.toMatch(/\bsandbox-manager\b|\bsandbox manager\b|\bSandbox Manager\b|\bsandbox_manager\b|\b[Ss]andboxManager\b/u);
+      expect(content).not.toMatch(/\bSANDBOX_MANAGER[A-Z0-9_]*\b|\bSANDBOX_SOURCE_DIR\b/u);
+      expect(content).not.toMatch(/\bsandbox workload\b/iu);
+    }
+
+    const development = readFileSync(resolve(process.cwd(), 'DEVELOPMENT.md'), 'utf8');
+    expect(development).toContain('ASBCP image/contract');
+
+    const historicalPlan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md'),
+      'utf8',
+    );
+    expect(historicalPlan).toContain('本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明');
+    expect(historicalPlan).toContain('当前 AgentSmith producer 只报告 absence');
+  });
+
   it('keeps the persistent HOME implementation plan from reintroducing Developer local HOME smoke', () => {
     const plan = readFileSync(
       resolve(process.cwd(), 'docs/engineering/agent-task-persistent-home-runtime-plan.md'),

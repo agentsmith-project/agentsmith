@@ -16,9 +16,18 @@ import {
   updateRunReadinessStateField,
 } from '../governance/run-readiness-state';
 import { DEFAULT_SITE_ENV_PATH } from './render';
+import {
+  LEGACY_ASBCP_CHECKSUM_FRAGMENT,
+  LEGACY_ASBCP_CONFIGMAP_NAME,
+  LEGACY_ASBCP_KUBERNETES_IDENTITY,
+  LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS,
+  LEGACY_ASBCP_LOCAL_KIND_PV_RBAC_NAME,
+  LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
+} from './asbcp-legacy-residue-negative-evidence';
 
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
+const asbcpImageLockPath = join(process.cwd(), 'infra', 'deploy', 'shared', 'asbcp-image.lock');
 
 type CommandCall = {
   command: string;
@@ -28,12 +37,21 @@ type CommandCall = {
 };
 
 const APP_DIGEST = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const ASBCP_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const ASBCP_DIGEST = readAsbcpLockDigest();
+const OLD_ASBCP_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const LLMUP_DIGEST = 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const MANAGED_RUNNER_DIGEST = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
 const AFSCP_DIGEST = 'sha256:abababababababababababababababababababababababababababababababab';
+
+function readAsbcpLockDigest(): string {
+  const match = /^asbcp_source_image=.*@(sha256:[a-f0-9]{64})$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
+  if (!match?.[1]) {
+    throw new Error('asbcp-image.lock must include asbcp_source_image pinned by sha256 digest');
+  }
+  return match[1];
+}
 
 function dockerInspectContainer(options: {
   id: string;
@@ -182,13 +200,9 @@ function writeLocalKindImageSiteEnv(root: string, mutate: (source: string) => st
 }
 
 function writeMutableLocalKindImageSiteEnv(root: string): string {
-  return writeSiteEnv(root, (source) => source
+  return writeLocalKindImageSiteEnv(root, (source) => source
     .replace(/^WEB_IMAGE=.*$/mu, 'WEB_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev')
-    .replace(/^API_IMAGE=.*$/mu, 'API_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev')
-    .replace(/^LLMUP_IMAGE=.*$/mu, 'LLMUP_IMAGE=kind-registry:5000/mbos/llm-universal-proxy:v0.2.27')
-    .replace(/^AFSCP_IMAGE=.*$/mu, 'AFSCP_IMAGE=kind-registry:5000/mbos/agentsmith-fs-control-plane:local-kind-dev')
-    .replace(/^ASBCP_IMAGE=.*$/mu, 'ASBCP_IMAGE=kind-registry:5000/mbos/agentsmith-sandbox-control-plane:local-kind-dev')
-    .replace(/^MANAGED_RUNNER_IMAGE=.*$/mu, 'MANAGED_RUNNER_IMAGE=kind-registry:5000/mbos/agentsmith-managed-runner:local-kind-dev'));
+    .replace(/^API_IMAGE=.*$/mu, 'API_IMAGE=kind-registry:5000/mbos/agentsmith-app:local-kind-dev'));
 }
 
 function sha256(value: string): string {
@@ -425,6 +439,28 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
         status: { readyReplicas: 1, availableReplicas: 1 },
       });
     }
+    if (joined.includes('get pods -l app.kubernetes.io/name=agentsmith,app.kubernetes.io/component=asbcp -o json')) {
+      return jsonResult({
+        kind: 'PodList',
+        items: [
+          {
+            kind: 'Pod',
+            metadata: { name: 'agentsmith-sandbox-control-plane-test-pod' },
+            status: {
+              phase: 'Running',
+              containerStatuses: [
+                {
+                  name: 'asbcp',
+                  image: `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+                  imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+                  ready: true,
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
     if (joined.includes('get deployment,service,configmap,ingress,horizontalpodautoscaler')) {
       return jsonResult({
         kind: 'List',
@@ -441,6 +477,12 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
           },
         ],
       });
+    }
+    if (joined.includes('get deployment,service,configmap,serviceaccount,role,rolebinding')) {
+      return jsonResult({ kind: 'List', items: [] });
+    }
+    if (joined.includes('get clusterrole,clusterrolebinding')) {
+      return jsonResult({ kind: 'List', items: [] });
     }
     if (joined.includes('get scaledobjects.keda.sh,scaledjobs.keda.sh')) {
       return jsonResult({ kind: 'List', items: [] });
@@ -1477,6 +1519,27 @@ describe('unified deploy local-kind live rollout producer', () => {
     ]));
     expect(result.evidence.image_preflight.status).toBe('passed');
     expect(result.evidence.image_preflight.image_refs).toContain(`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
+    expect(result.evidence.asbcp_image_adoption).toMatchObject({
+      status: 'passed',
+      source_digest: ASBCP_DIGEST,
+      target_digest: ASBCP_DIGEST,
+      site_env_ref: `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+      rendered_ref: `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+      running_image_ids: [
+        `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+      ],
+    });
+    expect(result.evidence.stale_resource_absence_check).toMatchObject({
+      status: 'passed',
+      scope: 'absence_only',
+      absent: expect.arrayContaining([
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[0],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[1],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[2],
+        LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS[0],
+        LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS[1],
+      ]),
+    });
     expect(result.evidence.llmup_config_health).toMatchObject({
       status: 'passed',
       config_map: 'agentsmith-llmup-config',
@@ -1487,6 +1550,76 @@ describe('unified deploy local-kind live rollout producer', () => {
     });
     expect(result.evidence.live_api_replica_check.ready_replicas).toBe(1);
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('fails ASBCP image adoption when running Pods are mixed old and target digests', async () => {
+    const root = tempDir('local-kind-mixed-asbcp-image-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get pods -l app.kubernetes.io/name=agentsmith,app.kubernetes.io/component=asbcp -o json')) {
+        return jsonResult({
+          kind: 'PodList',
+          items: [
+            {
+              kind: 'Pod',
+              metadata: { name: 'agentsmith-sandbox-control-plane-new' },
+              status: {
+                phase: 'Running',
+                containerStatuses: [
+                  {
+                    name: 'asbcp',
+                    imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+                  },
+                ],
+              },
+            },
+            {
+              kind: 'Pod',
+              metadata: { name: 'agentsmith-sandbox-control-plane-old' },
+              status: {
+                phase: 'Running',
+                containerStatuses: [
+                  {
+                    name: 'asbcp',
+                    imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${OLD_ASBCP_DIGEST}`,
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'live:Pod/agentsmith-sandbox-control-plane:imageID',
+        message: expect.stringContaining('all running ASBCP Pod imageID digests must match target digest'),
+      }),
+    ]));
+    expect(result.evidence.asbcp_image_adoption).toMatchObject({
+      status: 'failed',
+      target_digest: ASBCP_DIGEST,
+      running_image_ids: expect.arrayContaining([
+        `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+        `docker-pullable://kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${OLD_ASBCP_DIGEST}`,
+      ]),
+    });
   });
 
   it('runs an AFSCP functional convergence check after workload rollouts and captures runtime diagnostics when it fails', async () => {
@@ -2850,6 +2983,76 @@ describe('unified deploy local-kind live rollout producer', () => {
         message: expect.stringContaining('execution-gateway'),
       }),
     ]));
+  });
+
+  it.each([
+    {
+      name: 'Deployment',
+      query: 'namespaced',
+      item: {
+        kind: 'Deployment',
+        metadata: { name: LEGACY_ASBCP_KUBERNETES_IDENTITY },
+        spec: { replicas: 1 },
+      },
+    },
+    {
+      name: 'checksum annotation',
+      query: 'namespaced',
+      item: {
+        kind: 'ConfigMap',
+        metadata: {
+          name: LEGACY_ASBCP_CONFIGMAP_NAME,
+          annotations: {
+            [`agentsmith.mbos.dev/${LEGACY_ASBCP_CHECKSUM_FRAGMENT}-config`]: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+        },
+      },
+    },
+    {
+      name: 'local-kind PV ClusterRole',
+      query: 'cluster',
+      item: {
+        kind: 'ClusterRole',
+        metadata: { name: LEGACY_ASBCP_LOCAL_KIND_PV_RBAC_NAME },
+      },
+    },
+  ])('fails live stale legacy ASBCP absence-only check on $name residue', async ({ query, item }) => {
+    const root = tempDir('local-kind-stale-legacy-asbcp-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const runner: LocalKindCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (query === 'namespaced' && joined.includes('get deployment,service,configmap,serviceaccount,role,rolebinding')) {
+        return jsonResult({ kind: 'List', items: [item] });
+      }
+      if (query === 'cluster' && joined.includes('get clusterrole,clusterrolebinding')) {
+        return jsonResult({ kind: 'List', items: [item] });
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      siteEnvPath,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: `live:${item.kind}/${item.metadata.name}`,
+        message: expect.stringContaining('absence-only'),
+      }),
+    ]));
+    expect(result.evidence.stale_resource_absence_check).toMatchObject({
+      status: 'failed',
+      scope: 'absence_only',
+    });
   });
 
   it('fails live forbidden-resource guard when an autoscaler targets agentsmith-api', async () => {

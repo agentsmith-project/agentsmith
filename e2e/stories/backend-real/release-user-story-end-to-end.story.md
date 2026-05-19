@@ -9,7 +9,7 @@
   "preconditions": [
     "backend-real stack is ready",
     "Keycloak and provider API key are configured",
-    "sandbox manager is ready"
+    "task execution environment is ready"
   ],
   "seedData": [
     "ws_default"

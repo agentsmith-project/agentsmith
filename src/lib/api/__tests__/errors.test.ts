@@ -1,13 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockToastError } = vi.hoisted(() => ({
+  mockToastError: vi.fn(),
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: {
+    error: mockToastError,
+  },
+}));
+
 import {
   APIError,
   containsAgentTaskUnsafeErrorTerm,
+  containsUserFacingUnsafeInfrastructureTerm,
+  formatErrorForToast,
+  handleErrorForToast,
   findAgentTaskSafeErrorCode,
   isErrorResponse,
   parseErrorResponse,
   resolveApiErrorPresentation,
   resolveErrorMessageByCode,
+  resolveSafeRouteErrorPresentation,
 } from '@/lib/api/errors';
+
+beforeEach(() => {
+  mockToastError.mockClear();
+});
 
 describe('resolveErrorMessageByCode', () => {
   it('returns mapped message when code exists', () => {
@@ -261,7 +280,99 @@ describe('resolveApiErrorPresentation', () => {
     'raw event',
     'raw diagnostics',
     'internal path',
+    'ASBCP_INTERNAL_BASE_URL=http://asbcp.agentsmith.svc.cluster.local',
+    'ASBCP_SERVICE_KEY leaked',
+    'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1@sha256:1234',
+    'sandbox workload failed',
+    'control plane unavailable',
   ])('recognizes ordinary task unsafe copy term "%s"', (term) => {
     expect(containsAgentTaskUnsafeErrorTerm(term)).toBe(true);
+  });
+
+  it.each([
+    'ASBCP failed with internal error',
+    'ASBCP_INTERNAL_BASE_URL=http://asbcp.agentsmith.svc.cluster.local',
+    'ASBCP_SERVICE_KEY is missing',
+    'ASBCP_IMAGE=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1.0.0@sha256:abcdef1234567890',
+    'The control plane failed sandbox workload lifecycle checks',
+    'internal URL http://asbcp.agentsmith.svc.cluster.local:28080',
+    'service DNS asbcp.agentsmith.svc.cluster.local failed',
+    'localhost:28080 refused the connection',
+  ])('recognizes unsafe infrastructure detail "%s"', (term) => {
+    expect(containsUserFacingUnsafeInfrastructureTerm(term)).toBe(true);
+  });
+
+  it.each([
+    [400, 'VALIDATION_ERROR'],
+    [409, 'RESOURCE_CONFLICT'],
+  ])('sanitizes unsafe infrastructure details for API presentation status %s', (statusCode, errorCode) => {
+    const presentation = resolveApiErrorPresentation({
+      error: new APIError(
+        errorCode,
+        'ASBCP_INTERNAL_BASE_URL=http://asbcp.agentsmith.svc.cluster.local ASBCP_SERVICE_KEY=secret image ghcr.io/app@sha256:abcdef localhost',
+        'req-unsafe-api',
+        statusCode,
+      ),
+      t,
+    });
+
+    expect(presentation.description).toBe('An unexpected error occurred.');
+    expect(presentation.description).not.toMatch(/ASBCP|ASBCP_SERVICE_KEY|ghcr\.io|sha256|svc\.cluster\.local|localhost/i);
+  });
+
+  it('preserves readable safe business conflict messages', () => {
+    const presentation = resolveApiErrorPresentation({
+      error: new APIError('RESOURCE_CONFLICT', 'Project name already exists.', 'req-safe-conflict', 409),
+      t,
+    });
+
+    expect(presentation).toEqual({
+      title: 'Conflict',
+      description: 'Project name already exists.',
+    });
+    expect(new APIError('RESOURCE_CONFLICT', 'Project name already exists.', 'req-safe-conflict', 409).getUserMessage())
+      .toBe('Project name already exists.');
+  });
+
+  it('sanitizes APIError and ordinary Error toast paths without hiding safe messages', () => {
+    const unsafeApiError = new APIError(
+      'RESOURCE_CONFLICT',
+      'ASBCP_SERVICE_KEY leaked through localhost and ghcr.io/app@sha256:abcdef',
+      'req-toast',
+      409,
+    );
+    const unsafeError = new Error('ASBCP_INTERNAL_BASE_URL http://asbcp.agentsmith.svc.cluster.local localhost');
+
+    expect(unsafeApiError.getUserMessage()).toBe('An unexpected error occurred. Please try again.');
+    expect(formatErrorForToast(unsafeError)).toBe('An unexpected error occurred');
+
+    handleErrorForToast(unsafeApiError);
+    handleErrorForToast(unsafeError);
+    handleErrorForToast(new Error('Workspace name already exists.'));
+
+    expect(mockToastError).toHaveBeenNthCalledWith(1, 'An unexpected error occurred. Please try again.');
+    expect(mockToastError).toHaveBeenNthCalledWith(2, 'An unexpected error occurred');
+    expect(mockToastError).toHaveBeenNthCalledWith(3, 'Workspace name already exists.');
+  });
+
+  it('uses safe route boundary copy while retaining only a public error id', () => {
+    const presentation = resolveSafeRouteErrorPresentation({
+      error: Object.assign(
+        new Error(
+          'ASBCP_INTERNAL_BASE_URL http://asbcp.agentsmith.svc.cluster.local ASBCP_SERVICE_KEY ghcr.io/image@sha256:abcdef1234567890',
+        ),
+        { digest: 'err_digest_123' },
+      ),
+      t,
+    });
+
+    expect(presentation).toEqual({
+      description: 'An unexpected error occurred. Please try again.',
+      reference: {
+        labelKey: 'error_id',
+        value: 'err_digest_123',
+      },
+    });
+    expect(presentation.description).not.toMatch(/ASBCP|ASBCP_SERVICE_KEY|ghcr\.io|sha256|svc\.cluster\.local/i);
   });
 });

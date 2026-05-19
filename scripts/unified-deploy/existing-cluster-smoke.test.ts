@@ -11,15 +11,41 @@ import {
   type ExistingClusterSmokeProducerOptions,
 } from './check-existing-cluster-smoke';
 import { DEFAULT_SITE_ENV_PATH } from './render';
+import {
+  LEGACY_ASBCP_CHECKSUM_FRAGMENT,
+  LEGACY_ASBCP_CONFIGMAP_NAME,
+  LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
+} from './asbcp-legacy-residue-negative-evidence';
 
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
+const asbcpImageLockPath = join(process.cwd(), 'infra', 'deploy', 'shared', 'asbcp-image.lock');
 
 type CommandCall = {
   command: string;
   args: string[];
   input: string;
 };
+
+const ASBCP_SOURCE_REF = readAsbcpLockSourceRef();
+const ASBCP_DIGEST = readAsbcpLockDigest();
+const OLD_ASBCP_DIGEST = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+function readAsbcpLockSourceRef(): string {
+  const match = /^asbcp_source_image=(.+)$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
+  if (!match?.[1]) {
+    throw new Error('asbcp-image.lock must include asbcp_source_image');
+  }
+  return match[1];
+}
+
+function readAsbcpLockDigest(): string {
+  const match = /@(sha256:[a-f0-9]{64})$/u.exec(ASBCP_SOURCE_REF);
+  if (!match?.[1]) {
+    throw new Error('asbcp-image.lock ASBCP source image must be pinned by sha256 digest');
+  }
+  return match[1];
+}
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
@@ -47,7 +73,8 @@ function writeExistingClusterSiteEnv(root: string): string {
       .replace(/^UNIFIED_DEPLOY_PROFILE=.*$/mu, 'UNIFIED_DEPLOY_PROFILE=existing-cluster')
       .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.test')
       .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.test/api/v1')
-      .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.test/api/v1'),
+      .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.test/api/v1')
+      .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=${ASBCP_SOURCE_REF}`),
     'utf8',
   );
   return siteEnvPath;
@@ -147,6 +174,28 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
         status: { readyReplicas: 1, availableReplicas: 1 },
       });
     }
+    if (joined.includes('get pods -l app.kubernetes.io/name=agentsmith,app.kubernetes.io/component=asbcp -o json')) {
+      return jsonResult({
+        kind: 'PodList',
+        items: [
+          {
+            kind: 'Pod',
+            metadata: { name: 'agentsmith-sandbox-control-plane-test-pod' },
+            status: {
+              phase: 'Running',
+              containerStatuses: [
+                {
+                  name: 'asbcp',
+                  image: ASBCP_SOURCE_REF,
+                  imageID: `docker-pullable://${ASBCP_SOURCE_REF}`,
+                  ready: true,
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
     if (joined.includes('get deployment,service,configmap,ingress,horizontalpodautoscaler')) {
       return jsonResult({
         kind: 'List',
@@ -157,6 +206,9 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
           { kind: 'Deployment', metadata: { name: 'agentsmith-sandbox-control-plane' }, spec: { replicas: 1 } },
         ],
       });
+    }
+    if (joined.includes('get deployment,service,configmap,serviceaccount,role,rolebinding')) {
+      return jsonResult({ kind: 'List', items: [] });
     }
     if (joined.includes('get scaledobjects.keda.sh') || joined.includes('get scaledjobs.keda.sh')) {
       return jsonResult({ kind: 'List', items: [] });
@@ -439,8 +491,96 @@ describe('unified deploy existing-cluster smoke producer', () => {
       ready_replicas: 1,
     });
     expect(result.evidence.forbidden_resource_check.status).toBe('passed');
+    expect(result.evidence.asbcp_image_adoption).toMatchObject({
+      status: 'passed',
+      source_ref: ASBCP_SOURCE_REF,
+      source_digest: ASBCP_DIGEST,
+      target_digest: ASBCP_DIGEST,
+      site_env_ref: ASBCP_SOURCE_REF,
+      rendered_ref: ASBCP_SOURCE_REF,
+      running_image_ids: [`docker-pullable://${ASBCP_SOURCE_REF}`],
+    });
+    expect(result.evidence.stale_resource_absence_check).toMatchObject({
+      status: 'passed',
+      scope: 'absence_only',
+      absent: expect.arrayContaining([
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[0],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[1],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[2],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[4],
+        LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS[5],
+      ]),
+    });
     expect(result.evidence.llmup_config_health.status).toBe('passed');
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('fails ASBCP image adoption when running Pods are mixed old and target digests', async () => {
+    const root = tempDir('existing-cluster-mixed-asbcp-image-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get pods -l app.kubernetes.io/name=agentsmith,app.kubernetes.io/component=asbcp -o json')) {
+        return jsonResult({
+          kind: 'PodList',
+          items: [
+            {
+              kind: 'Pod',
+              metadata: { name: 'agentsmith-sandbox-control-plane-new' },
+              status: {
+                phase: 'Running',
+                containerStatuses: [
+                  {
+                    name: 'asbcp',
+                    imageID: `docker-pullable://${ASBCP_SOURCE_REF}`,
+                  },
+                ],
+              },
+            },
+            {
+              kind: 'Pod',
+              metadata: { name: 'agentsmith-sandbox-control-plane-old' },
+              status: {
+                phase: 'Running',
+                containerStatuses: [
+                  {
+                    name: 'asbcp',
+                    imageID: `docker-pullable://ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.9.0@${OLD_ASBCP_DIGEST}`,
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'live:Pod/agentsmith-sandbox-control-plane:imageID',
+        message: expect.stringContaining('all running ASBCP Pod imageID digests must match target digest'),
+      }),
+    ]));
+    expect(result.evidence.asbcp_image_adoption).toMatchObject({
+      status: 'failed',
+      target_digest: ASBCP_DIGEST,
+      running_image_ids: expect.arrayContaining([
+        `docker-pullable://${ASBCP_SOURCE_REF}`,
+        `docker-pullable://ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.9.0@${OLD_ASBCP_DIGEST}`,
+      ]),
+    });
   });
 
   it('fails fast on a failed product schema bootstrap Job before AFSCP and Deployment controllers', async () => {
@@ -657,6 +797,53 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(result.evidence.forbidden_resource_check.keda_api).toMatchObject({
       status: 'no-api',
       checked: false,
+    });
+  });
+
+  it('fails stale legacy ASBCP absence-only check when old resources are present', async () => {
+    const root = tempDir('existing-cluster-stale-legacy-asbcp-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get deployment,service,configmap,serviceaccount,role,rolebinding')) {
+        return jsonResult({
+          kind: 'List',
+          items: [
+            {
+              kind: 'ConfigMap',
+              metadata: {
+                name: LEGACY_ASBCP_CONFIGMAP_NAME,
+                annotations: {
+                  [`agentsmith.mbos.dev/${LEGACY_ASBCP_CHECKSUM_FRAGMENT}-config`]: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                },
+              },
+            },
+          ],
+        });
+      }
+
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: `live:ConfigMap/${LEGACY_ASBCP_CONFIGMAP_NAME}`,
+        message: expect.stringContaining('absence-only'),
+      }),
+    ]));
+    expect(result.evidence.stale_resource_absence_check).toMatchObject({
+      status: 'failed',
+      scope: 'absence_only',
     });
   });
 

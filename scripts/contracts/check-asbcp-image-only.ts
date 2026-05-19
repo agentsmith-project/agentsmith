@@ -26,6 +26,8 @@ const ACTIVE_SCAN_ROOTS = [
   'infra/deploy',
   'infra/flows',
   'e2e',
+  'docs/contracts',
+  'docs/UXUI',
   'docs/user-guides',
   'scripts/unified-deploy',
   'scripts/lib',
@@ -59,14 +61,53 @@ const NEGATIVE_FIXTURE_FILES = new Set([
   'scripts/unified-deploy/address-truth.test.ts',
   'scripts/unified-deploy/local-kind-images.test.ts',
   'scripts/unified-deploy/substrate-boundary.test.ts',
+  'src/components/agent-tasks/__tests__/TaskTerminalPanel.test.tsx',
+  'src/lib/api/__tests__/errors.test.ts',
 ]);
 
 const MIGRATION_NOTE_FILES = new Set([
   'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
 ]);
 
+const SANITIZER_IMPLEMENTATION_FILES = new Set([
+  'src/lib/api/errors.ts',
+]);
+
+const LEGACY_RESIDUE_NEGATIVE_EVIDENCE_ALLOWANCE = {
+  file: 'scripts/unified-deploy/asbcp-legacy-residue-negative-evidence.ts',
+  reason: 'allow-asbcp-legacy-residue-negative-evidence',
+  labels: new Set([
+    'legacy ASBCP Kubernetes identity',
+    'legacy ASBCP component name',
+    'legacy ASBCP component snake name',
+  ]),
+} as const;
+
+const PRODUCT_CONTRACT_DOC_FILES = new Set([
+  'docs/contracts/auth-permission-model.md',
+  'docs/contracts/frontend-backend-gating-matrix.md',
+  'docs/contracts/frontend-resource-policy-governance-v1.md',
+  'docs/contracts/product-terminology.md',
+  'docs/contracts/route-gate-test-checklist.md',
+  'docs/contracts/usage-limits-summary-contract.md',
+  'docs/contracts/user-story-contract-v1.md',
+]);
+
+function isProductContractDoc(file: string): boolean {
+  return (
+    PRODUCT_CONTRACT_DOC_FILES.has(file)
+    || /^docs\/contracts\/[^/]+-frontend-module-map\.md$/u.test(file)
+  );
+}
+
 function isUserFacingSurface(file: string): boolean {
   if (file.startsWith('docs/user-guides/')) {
+    return true;
+  }
+  if (file.startsWith('docs/UXUI/')) {
+    return true;
+  }
+  if (isProductContractDoc(file)) {
     return true;
   }
   if (!file.startsWith('src/')) {
@@ -98,6 +139,21 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
   {
     label: 'legacy ASBCP component name',
     pattern: /\bsandbox-manager\b/u,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP manager display name',
+    pattern: /\bsandbox manager\b/iu,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP component snake name',
+    pattern: /\bsandbox_manager\b/u,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP manager camel name',
+    pattern: /\b[Ss]andboxManager\b/u,
     checkPath: true,
   },
   {
@@ -141,6 +197,16 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
     checkPath: true,
   },
   {
+    label: 'legacy ASBCP cleaner source command path',
+    pattern: /(?:^|[^\w.])(?:\.\/)?cmd\/cleaner\b/u,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP sandboxes API path',
+    pattern: /\/v1\/sandboxes\b/u,
+    checkPath: true,
+  },
+  {
     label: 'legacy ASBCP config path',
     pattern: /\/etc\/asbcp\/config\.yaml\b/u,
     checkPath: true,
@@ -153,6 +219,16 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
   {
     label: 'legacy ASBCP sandbox control plane env prefix',
     pattern: /\bSANDBOX_CONTROL_PLANE[A-Z0-9_]*\b/u,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP sandbox control plane shorthand',
+    pattern: /(?<!agentsmith-)sandbox-control-plane\b/u,
+    checkPath: true,
+  },
+  {
+    label: 'legacy ASBCP sandbox control plane symbol',
+    pattern: /\b[Ss]andboxControlPlane\b|\bsandbox_control_plane\b/u,
     checkPath: true,
   },
   {
@@ -181,6 +257,21 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
     appliesTo: isUserFacingSurface,
   },
   {
+    label: 'user-facing ASBCP image input',
+    pattern: /\bASBCP_IMAGE\b/u,
+    appliesTo: isUserFacingSurface,
+  },
+  {
+    label: 'user-facing ASBCP image reference',
+    pattern: /\bghcr\.io\b/iu,
+    appliesTo: isUserFacingSurface,
+  },
+  {
+    label: 'user-facing image digest',
+    pattern: /@sha256:[a-f0-9]{6,}\b/iu,
+    appliesTo: isUserFacingSurface,
+  },
+  {
     label: 'user-facing control plane terminology',
     pattern: /\bcontrol plane\b/iu,
     appliesTo: isUserFacingSurface,
@@ -190,10 +281,40 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
     pattern: /\bworkload lifecycle\b/iu,
     appliesTo: isUserFacingSurface,
   },
+  {
+    label: 'user-facing sandbox workload terminology',
+    pattern: /\bsandbox workload\b/iu,
+    appliesTo: isUserFacingSurface,
+  },
+  {
+    label: 'user-facing internal URL terminology',
+    pattern: /\binternal URL\b|\bhttps?:\/\/[^\s"'<>]*asbcp[^\s"'<>]*(?:\.internal|\.svc|\.cluster\.local)[^\s"'<>]*/iu,
+    appliesTo: isUserFacingSurface,
+  },
 ] as const;
 
 function isAllowedForbiddenReference(file: string): boolean {
-  return NEGATIVE_FIXTURE_FILES.has(file) || MIGRATION_NOTE_FILES.has(file);
+  return (
+    NEGATIVE_FIXTURE_FILES.has(file)
+    || MIGRATION_NOTE_FILES.has(file)
+    || SANITIZER_IMPLEMENTATION_FILES.has(file)
+  );
+}
+
+function isAllowedLegacyResidueNegativeEvidence(file: string, line: string, forbidden: ForbiddenPattern): boolean {
+  return file === LEGACY_RESIDUE_NEGATIVE_EVIDENCE_ALLOWANCE.file
+    && line.includes(LEGACY_RESIDUE_NEGATIVE_EVIDENCE_ALLOWANCE.reason)
+    && LEGACY_RESIDUE_NEGATIVE_EVIDENCE_ALLOWANCE.labels.has(forbidden.label);
+}
+
+function isAllowedProductTerminologyClassifier(file: string, line: string): boolean {
+  return (
+    file === 'docs/contracts/product-terminology.md'
+    && (
+      line.includes('execution service (ASBCP)')
+      || line.includes('ASBCP is a developer/operator deployment term only')
+    )
+  );
 }
 
 function patternAppliesToFile(forbidden: ForbiddenPattern, file: string): boolean {
@@ -265,7 +386,12 @@ export function checkAsbcpImageOnly(options: { rootDir?: string } = {}): AsbcpIm
         if (!patternAppliesToFile(forbidden, file)) {
           continue;
         }
-        if (forbidden.pattern.test(line) && !isAllowedForbiddenReference(file)) {
+        if (
+          forbidden.pattern.test(line)
+          && !isAllowedForbiddenReference(file)
+          && !isAllowedLegacyResidueNegativeEvidence(file, line, forbidden)
+          && !isAllowedProductTerminologyClassifier(file, line)
+        ) {
           failures.push({
             path: file,
             line: index + 1,

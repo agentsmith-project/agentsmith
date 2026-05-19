@@ -339,8 +339,8 @@ make local-manual-internal-status
 1. 本地 `kind-agentsmith`
 2. `agentsmith-sandbox` namespace
 3. JuiceFS CSI
-4. local sandbox manager
-5. sandbox workload
+4. ASBCP image/contract 驱动的 internal task execution service
+5. task execution workload
 
 结束后如果想回到默认 external-only 模式：
 

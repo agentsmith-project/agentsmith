@@ -23,6 +23,44 @@ const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   },
 ];
 
+const ACTIVE_ASBCP_GUIDANCE_FILES = new Set([
+  'DEVELOPMENT.md',
+  'docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md',
+  'docs/engineering/internal-agent-terminal-pod-lifecycle-analysis-v1.md',
+  'docs/engineering/file-library-version-management-fast-path-plan-v1.md',
+  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+]);
+
+const HISTORICAL_ASBCP_REFERENCE_NOTICES = new Map([
+  [
+    'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
+    '本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明',
+  ],
+]);
+
+const ACTIVE_ASBCP_GUIDANCE_RULES: Array<{ rule: string; regex: RegExp; detail: string }> = [
+  {
+    rule: 'legacy-asbcp-source-guidance',
+    regex: /\.\.\/mbos-sandbox-v1|\bmbos-sandbox-v1\b/u,
+    detail: 'Active docs must use ASBCP image/contract collaboration, not sibling sandbox source guidance.',
+  },
+  {
+    rule: 'legacy-asbcp-manager-guidance',
+    regex: /\bsandbox-manager\b|\bsandbox manager\b|\bSandbox Manager\b|\bsandbox_manager\b|\b[Ss]andboxManager\b/u,
+    detail: 'Active docs must not route developers back to sandbox-manager terminology.',
+  },
+  {
+    rule: 'legacy-asbcp-env-guidance',
+    regex: /\bSANDBOX_MANAGER[A-Z0-9_]*\b|\bSANDBOX_SOURCE_DIR\b/u,
+    detail: 'Active docs must not use legacy sandbox manager env guidance.',
+  },
+  {
+    rule: 'product-unsafe-sandbox-workload-guidance',
+    regex: /\bsandbox workload\b/iu,
+    detail: 'Active docs should describe task execution workload/environment instead of sandbox workload.',
+  },
+];
+
 type Violation = {
   file: string;
   line: number;
@@ -229,6 +267,46 @@ function findViolations(filePath: string, content: string): Violation[] {
   return violations;
 }
 
+function checkActiveAsbcpGuidance(filePath: string, content: string): Violation[] {
+  const relativePath = toRel(filePath);
+  if (!ACTIVE_ASBCP_GUIDANCE_FILES.has(relativePath)) {
+    return [];
+  }
+
+  const violations: Violation[] = [];
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (const rule of ACTIVE_ASBCP_GUIDANCE_RULES) {
+      if (!rule.regex.test(line)) {
+        continue;
+      }
+      violations.push({
+        file: relativePath,
+        line: i + 1,
+        rule: rule.rule,
+        detail: `${rule.detail} Found: ${line.trim()}`,
+      });
+    }
+  }
+  return violations;
+}
+
+function checkHistoricalAsbcpReferenceNotice(filePath: string, content: string): Violation[] {
+  const relativePath = toRel(filePath);
+  const requiredNotice = HISTORICAL_ASBCP_REFERENCE_NOTICES.get(relativePath);
+  if (!requiredNotice || content.includes(requiredNotice)) {
+    return [];
+  }
+
+  return [{
+    file: relativePath,
+    line: 1,
+    rule: 'missing-historical-asbcp-reference-notice',
+    detail: 'Historical ASBCP old-name/source-build references require an exact-file historical notice and reason.',
+  }];
+}
+
 function isExternalLink(link: string): boolean {
   return (
     link.startsWith('http://')
@@ -364,6 +442,8 @@ function main(): void {
   for (const file of files) {
     const content = fs.readFileSync(file, 'utf8');
     violations.push(...findViolations(file, content));
+    violations.push(...checkActiveAsbcpGuidance(file, content));
+    violations.push(...checkHistoricalAsbcpReferenceNotice(file, content));
     violations.push(...checkMarkdownLinks(file, content));
     violations.push(...checkHistoricalDocsPlacement(file, content));
   }

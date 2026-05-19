@@ -1421,6 +1421,7 @@
     "endpoint_disabled_title": "Endpoint Disabled",
     "endpoint_disabled_hint": "This endpoint has been disabled.",
     "request_id": "Request ID",
+    "error_id": "Error ID",
     "error_code": "Error Code",
     "badRequest": {
       "title": "Invalid Request",
@@ -3482,6 +3483,7 @@
       "terminal_error_invalid_shell": "This task couldn't start a terminal in the current environment.",
       "terminal_error_connection_failed": "The terminal connection could not be opened. Please retry.",
       "terminal_error_session_not_ready": "Terminal session is not ready. Try reopening it later.",
+      "terminal_error_execution_environment_unavailable": "The task execution environment is unavailable right now. Please try again later.",
       "terminal_error_taken_over": "This terminal was opened in another browser tab. Reopen it here if you want to continue.",
       "terminal_process_lost": "The terminal process was lost and cannot be reconnected.",
       "terminal_close_tombstone_timeout": "The terminal close timed out; the system could not confirm that the terminal ended.",

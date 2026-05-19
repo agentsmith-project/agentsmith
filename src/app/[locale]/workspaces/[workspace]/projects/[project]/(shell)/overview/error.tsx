@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { AlertCircle } from 'lucide-react';
+import { resolveSafeRouteErrorPresentation } from '@/lib/api/errors';
 
 export default function OverviewError({
   error,
@@ -13,6 +14,7 @@ export default function OverviewError({
   reset: () => void;
 }) {
   const t = useTranslations('errors');
+  const errorPresentation = resolveSafeRouteErrorPresentation({ error, t });
 
   useEffect(() => {
     console.error('Overview page error:', error);
@@ -25,8 +27,13 @@ export default function OverviewError({
         {t('error_title')}
       </h2>
       <p className="text-sm text-text-tertiary mt-2">
-        {error.message || t('error_message')}
+        {errorPresentation.description}
       </p>
+      {errorPresentation.reference && (
+        <p className="mt-2 text-xs text-text-tertiary font-mono">
+          {t(errorPresentation.reference.labelKey)}: {errorPresentation.reference.value}
+        </p>
+      )}
       <Button onClick={reset} className="mt-4">
         {t('try_again')}
       </Button>

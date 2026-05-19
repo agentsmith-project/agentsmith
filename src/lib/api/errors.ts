@@ -112,7 +112,7 @@ export class APIError extends Error {
       FILE_LIBRARY_STORAGE_NOT_READY: 'Project file storage is not ready yet. Wait for initialization to finish, then try again.',
     };
 
-    return customMessages[this.errorCode] || this.message;
+    return customMessages[this.errorCode] || sanitizeUserFacingErrorMessage(this.message);
   }
 }
 
@@ -134,6 +134,16 @@ export interface ErrorTranslator {
 }
 
 export type AgentTaskErrorAudience = 'task' | 'terminal';
+
+export type SafeRouteErrorReference = {
+  labelKey: 'request_id' | 'error_id';
+  value: string;
+};
+
+export type SafeRouteErrorPresentation = {
+  description: string;
+  reference: SafeRouteErrorReference | null;
+};
 
 const AGENT_TASK_SAFE_ERROR_CODES = [
   'agent_runner_unavailable',
@@ -216,6 +226,22 @@ const AGENT_TASK_UNSAFE_ERROR_TERMS = [
   'internal_path',
 ] as const;
 
+const USER_FACING_UNSAFE_INFRASTRUCTURE_ERROR_PATTERNS: readonly RegExp[] = [
+  /\basbcp\b/iu,
+  /\bASBCP_(?:INTERNAL_BASE_URL|SERVICE_KEY|IMAGE)\b/u,
+  /\bghcr\.io\b/iu,
+  /\bsha256(?::[a-f0-9]{6,})?\b/iu,
+  /\bsvc\.cluster\.local\b/iu,
+  /\blocalhost\b|\b127\.0\.0\.1\b/iu,
+  /\bcontrol plane\b/iu,
+  /\bworkload lifecycle\b/iu,
+  /\bsandbox workload\b/iu,
+  /\binternal (?:url|error)\b/iu,
+  /\b(?:https?|wss?):\/\/[^\s"'<>]*(?:\.internal|\.svc|\.cluster\.local|localhost|127\.0\.0\.1)[^\s"'<>]*/iu,
+];
+
+const USER_FACING_SAFE_INFRASTRUCTURE_FALLBACK = 'An unexpected error occurred. Please try again.';
+
 function normalizeErrorToken(value: string): string {
   return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
@@ -237,7 +263,24 @@ export function findAgentTaskSafeErrorCode(value: string | null | undefined): st
 export function containsAgentTaskUnsafeErrorTerm(value: string | null | undefined): boolean {
   if (!value) return false;
   const normalized = value.toLowerCase();
-  return AGENT_TASK_UNSAFE_ERROR_TERMS.some((term) => normalized.includes(term));
+  return AGENT_TASK_UNSAFE_ERROR_TERMS.some((term) => normalized.includes(term))
+    || containsUserFacingUnsafeInfrastructureTerm(value);
+}
+
+export function containsUserFacingUnsafeInfrastructureTerm(
+  value: string | null | undefined,
+): boolean {
+  if (!value) return false;
+  return USER_FACING_UNSAFE_INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+export function sanitizeUserFacingErrorMessage(
+  value: string | null | undefined,
+  fallback = USER_FACING_SAFE_INFRASTRUCTURE_FALLBACK,
+): string {
+  const candidate = value?.trim();
+  if (!candidate) return fallback;
+  return containsUserFacingUnsafeInfrastructureTerm(candidate) ? fallback : candidate;
 }
 
 function pickTranslated(
@@ -289,6 +332,51 @@ function pickErrorDetailString(
   return typeof value === 'string' ? value : null;
 }
 
+function readPublicErrorReference(error: unknown): SafeRouteErrorReference | null {
+  if (error instanceof APIError && error.requestId) {
+    return {
+      labelKey: 'request_id',
+      value: error.requestId,
+    };
+  }
+  if (!isObjectRecord(error)) {
+    return null;
+  }
+  if (typeof error.digest === 'string' && error.digest.length > 0) {
+    return {
+      labelKey: 'error_id',
+      value: error.digest,
+    };
+  }
+  if (typeof error.request_id === 'string' && error.request_id.length > 0) {
+    return {
+      labelKey: 'request_id',
+      value: error.request_id,
+    };
+  }
+  if (typeof error.error_id === 'string' && error.error_id.length > 0) {
+    return {
+      labelKey: 'error_id',
+      value: error.error_id,
+    };
+  }
+  return null;
+}
+
+export function resolveSafeRouteErrorPresentation(args: {
+  error: unknown;
+  t: ErrorTranslator;
+}): SafeRouteErrorPresentation {
+  return {
+    description: pickTranslated(
+      args.t,
+      ['error_message'],
+      'An unexpected error occurred. Please try again.',
+    ),
+    reference: readPublicErrorReference(args.error),
+  };
+}
+
 export function resolveApiErrorPresentation(args: {
   error: APIError;
   t: ErrorTranslator;
@@ -298,7 +386,11 @@ export function resolveApiErrorPresentation(args: {
   const { error, t, context, fallbackMessage } = args;
   const unknownTitle = pickTranslated(t, ['unknown.title'], 'Error');
   const unknownDescription = pickTranslated(t, ['unknown.description'], 'An unexpected error occurred.');
-  const defaultDescription = error.message || fallbackMessage || unknownDescription;
+  const defaultDescription = sanitizeUserFacingErrorMessage(
+    error.message || fallbackMessage || unknownDescription,
+    unknownDescription,
+  );
+  const defaultErrorMessage = sanitizeUserFacingErrorMessage(error.message, defaultDescription);
   const safeTaskSurfaceDescription =
     resolveAgentTaskSafeErrorMessage({ rawMessage: error.errorCode, audience: 'task', t })
     ?? resolveAgentTaskSafeErrorMessage({ rawMessage: error.message, audience: 'task', t })
@@ -338,9 +430,9 @@ export function resolveApiErrorPresentation(args: {
   }
 
   if (error.errorCode === 'AGENT_OFFLINE') {
-    return {
-      title: pickTranslated(t, ['agentOffline.title'], unknownTitle),
-      description: pickTranslated(t, ['agentOffline.description'], defaultDescription),
+      return {
+        title: pickTranslated(t, ['agentOffline.title'], unknownTitle),
+        description: pickTranslated(t, ['agentOffline.description'], defaultDescription),
     };
   }
   if (error.errorCode === 'AGENT_TIMEOUT') {
@@ -366,7 +458,10 @@ export function resolveApiErrorPresentation(args: {
     case 400:
       return {
         title: pickTranslated(t, ['badRequest.title'], 'Invalid Request'),
-        description: error.message || pickTranslated(t, ['badRequest.description'], defaultDescription),
+        description: sanitizeUserFacingErrorMessage(
+          error.message,
+          pickTranslated(t, ['badRequest.description'], defaultDescription),
+        ),
       };
     case 401:
       return {
@@ -405,7 +500,10 @@ export function resolveApiErrorPresentation(args: {
     case 409:
       return {
         title: pickTranslated(t, ['conflict.title'], 'Conflict'),
-        description: error.message || pickTranslated(t, ['conflict.description'], defaultDescription),
+        description: sanitizeUserFacingErrorMessage(
+          error.message,
+          pickTranslated(t, ['conflict.description'], defaultDescription),
+        ),
       };
     case 429:
       return {
@@ -427,7 +525,7 @@ export function resolveApiErrorPresentation(args: {
     default:
       return {
         title: unknownTitle,
-        description: defaultDescription,
+        description: defaultErrorMessage,
       };
   }
 }
@@ -500,9 +598,9 @@ export function formatErrorForToast(error: APIError | Error, t?: (key: string) =
     return error.getUserMessage();
   }
   if (t) {
-    return error.message || t('unknown_error');
+    return sanitizeUserFacingErrorMessage(error.message, t('unknown_error'));
   }
-  return error.message || 'An unexpected error occurred';
+  return sanitizeUserFacingErrorMessage(error.message, 'An unexpected error occurred');
 }
 
 /**
@@ -517,7 +615,7 @@ export function handleErrorForToast(error: unknown, context?: string): void {
       console.error(`[${context}]`, error);
     }
   } else if (error instanceof Error) {
-    toast.error(error.message || 'An unexpected error occurred');
+    toast.error(formatErrorForToast(error));
     if (context) {
       console.error(`[${context}]`, error);
     }
@@ -536,7 +634,7 @@ export function formatErrorWithRequestID(error: APIError | Error): string {
   if (error instanceof APIError && error.requestId) {
     return `${error.getUserMessage()}\n\nRequest ID: ${error.requestId}`;
   }
-  return error.message || 'An unexpected error occurred';
+  return sanitizeUserFacingErrorMessage(error.message, 'An unexpected error occurred');
 }
 
 /**

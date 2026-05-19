@@ -298,7 +298,7 @@ JVS 和 AFSCP active path 禁止：
 
 JVS 只输出 operator-safe 状态、错误码和必要的 clone timing。clone timing 用于工程证据，不进入用户文案。
 
-如果 JVS 缺少 direct clone 能力或 metadata-only status / doctor 能力，由负责 team member 修改 `../jvs`。如果真实环境缺 JuiceFS / mount / sandbox 能力，需要同步修改 `../mbos-sandbox-v1`，但不得因此在 JVS 里增加 copy fallback。
+如果 JVS 缺少 direct clone 能力或 metadata-only status / doctor 能力，由负责 team member 修改 `../jvs`。如果真实环境缺 JuiceFS / mount / sandbox execution 能力，应通过 ASBCP image/contract 协作修复内部 sandbox execution service 的发布镜像或合同；这不是 JVS hot path workaround，也不得因此在 JVS 里增加 copy fallback。
 
 ## 8. 跨项目开发 slices
 
@@ -546,7 +546,7 @@ Recovery：
 风险：
 
 - AFSCP 当前连续 `409` 和 manual recovery 可能需要先清理历史 control root 残留；这是 Pre-GA 可接受的一次性收口，不应为旧残留设计兼容路径。
-- JVS / JuiceFS clone 能力如果在本地真实 lane 不稳定，可能需要同步修 `../mbos-sandbox-v1` 的 mount 或环境初始化。
+- JVS / JuiceFS clone 能力如果在本地真实 lane 不稳定，可能需要通过 ASBCP image/contract 协作修复内部 sandbox execution service 的 mount 或环境初始化；这不是 JVS hot path workaround，不能回退到 sibling source build。
 - project 模板可见性需要复用现有 project 权限，不能临时用角色名做门禁。
 - HTTP intake/admission 变快后，用户会更早看到 running，因此 failure / recovery copy 必须足够明确，避免用户反复点击。
 

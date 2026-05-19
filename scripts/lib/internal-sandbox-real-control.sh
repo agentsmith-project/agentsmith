@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ASBCP_IMAGE_ERROR_PREFIX="[internal-sandbox-control]"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/asbcp-image-lock.sh"
+
 STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}"
 [[ -n "${STATE_FILE}" ]] || { echo "[internal-sandbox-control] missing INTERNAL_SANDBOX_REAL_STATE_FILE" >&2; exit 1; }
 [[ -f "${STATE_FILE}" ]] || { echo "[internal-sandbox-control] state file not found: ${STATE_FILE}" >&2; exit 1; }
@@ -89,23 +94,7 @@ stop_pid() {
 }
 
 resolve_asbcp_image() {
-  local image digest_hex repeated
-  image="${ASBCP_IMAGE:-}"
-  if [[ -z "${image}" && -f "${ASBCP_IMAGE_LOCK_PATH}" ]]; then
-    image="$(awk -F= '$1 == "asbcp_source_image" { print $2 }' "${ASBCP_IMAGE_LOCK_PATH}" | tail -n1)"
-  fi
-  [[ -n "${image}" ]] || { echo "[internal-sandbox-control] missing ASBCP_IMAGE and image lock: ${ASBCP_IMAGE_LOCK_PATH}" >&2; exit 1; }
-  if [[ ! "${image}" =~ @sha256:[a-f0-9]{64}$ ]]; then
-    echo "[internal-sandbox-control] ASBCP_IMAGE must be pinned by digest: ${image}" >&2
-    exit 1
-  fi
-  digest_hex="${image##*@sha256:}"
-  repeated="${digest_hex//${digest_hex:0:1}/}"
-  if [[ -z "${repeated}" ]]; then
-    echo "[internal-sandbox-control] ASBCP_IMAGE uses a placeholder digest and is not pullable: ${image}" >&2
-    exit 1
-  fi
-  printf '%s\n' "${image}"
+  asbcp_resolve_locked_image "${ASBCP_IMAGE:-}" "${ASBCP_IMAGE_LOCK_PATH}"
 }
 
 asbcp_container_id() {

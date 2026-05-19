@@ -15,7 +15,7 @@ import {
   renderUnifiedDeployFromFiles,
   renderUnifiedDeployToString,
 } from './render';
-import { checkApiProductionEntrypointScripts, checkRenderedOutput } from './check-render';
+import { checkApiProductionEntrypointScripts, checkRenderedOutput, checkRenderedProfile } from './check-render';
 import { fingerprintRenderedManifest, writeProducerEvidence } from './evidence';
 import { DEFAULT_MANIFEST_PATH } from './manifest';
 
@@ -125,6 +125,18 @@ function resourceDataChecksum(
 
 function replaceEnvLine(source: string, key: string, value: string): string {
   return source.replace(new RegExp(`^${key}=.*$`, 'mu'), `${key}=${value}`);
+}
+
+function runCheckRenderCli(args: readonly string[]) {
+  const tsxCli = join(process.cwd(), 'node_modules', '.bin', 'tsx');
+  return spawnSync(tsxCli, ['scripts/unified-deploy/check-render.ts', ...args], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      FORCE_COLOR: '0',
+    },
+  });
 }
 
 function deploymentPodSpec(
@@ -375,6 +387,92 @@ describe('unified deploy render producer', () => {
     });
 
     expect(result.status).toBe(0);
+  });
+
+  it('can check a rendered profile against an explicit generated site env fixture', async () => {
+    const root = tempDir('agentsmith-render-site-env-');
+    const siteEnvPath = join(root, 'generated-site.env');
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'ASBCP_IMAGE',
+      `ghcr.io/example/agentsmith-sandbox-control-plane:v2.0.3@sha256:${'a'.repeat(64)}`,
+    );
+    writeFileSync(siteEnvPath, siteEnv, 'utf8');
+
+    const failures = await checkRenderedProfile('local-kind', { siteEnvPath });
+
+    expect(failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'local-kind:Deployment/agentsmith-sandbox-control-plane',
+        message: 'ASBCP image must use the canonical agentsmith-sandbox-control-plane repository',
+      }),
+    ]));
+  });
+
+  it('rejects local-kind internal ASBCP registry refs for existing-cluster site env checks', async () => {
+    const root = tempDir('agentsmith-render-site-env-kind-registry-');
+    const siteEnvPath = join(root, 'generated-site.env');
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'ASBCP_IMAGE',
+      `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@sha256:${'a'.repeat(64)}`,
+    );
+    writeFileSync(siteEnvPath, siteEnv, 'utf8');
+
+    const existingClusterFailures = await checkRenderedProfile('existing-cluster', { siteEnvPath });
+    const localKindFailures = await checkRenderedProfile('local-kind', { siteEnvPath });
+
+    expect(existingClusterFailures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'existing-cluster:Deployment/agentsmith-sandbox-control-plane',
+        message: 'ASBCP local-kind registry image is only allowed for local-kind renders',
+      }),
+    ]));
+    expect(localKindFailures.filter((failure) => failure.message.includes('ASBCP image'))).toEqual([]);
+  });
+
+  it('can focus the render CLI on local-kind generated site env checks', async () => {
+    const root = tempDir('agentsmith-render-cli-kind-registry-');
+    const siteEnvPath = join(root, 'generated-site.env');
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'ASBCP_IMAGE',
+      `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@sha256:${'a'.repeat(64)}`,
+    );
+    writeFileSync(siteEnvPath, siteEnv, 'utf8');
+
+    const allResult = runCheckRenderCli([`--site-env=${siteEnvPath}`]);
+    expect(allResult.status).toBe(1);
+    expect(allResult.stderr).toContain('existing-cluster:Deployment/agentsmith-sandbox-control-plane');
+    expect(allResult.stderr).toContain('ASBCP local-kind registry image is only allowed for local-kind renders');
+
+    const localKindResult = runCheckRenderCli(['--profile=local-kind', `--site-env=${siteEnvPath}`]);
+    expect(localKindResult.status).toBe(0);
+    expect(localKindResult.stdout).toContain('[unified-deploy] render check passed for local-kind');
+    expect(`${localKindResult.stdout}\n${localKindResult.stderr}`).not.toContain('existing-cluster:');
+  });
+
+  it('rejects unknown render CLI profile values', () => {
+    const result = runCheckRenderCli(['--profile=staging']);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unknown --profile value: staging');
+    expect(result.stderr).toContain('expected local-kind, existing-cluster, or all');
+  });
+
+  it('accepts canonical GHCR ASBCP digest refs for existing-cluster site env checks', async () => {
+    const root = tempDir('agentsmith-render-site-env-ghcr-');
+    const siteEnvPath = join(root, 'generated-site.env');
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'ASBCP_IMAGE',
+      `ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.3@sha256:${'b'.repeat(64)}`,
+    );
+    writeFileSync(siteEnvPath, siteEnv, 'utf8');
+
+    const failures = await checkRenderedProfile('existing-cluster', { siteEnvPath });
+
+    expect(failures.filter((failure) => failure.message.includes('ASBCP image'))).toEqual([]);
   });
 
   it('rejects absolute and parent-traversal template paths before rendering', async () => {
@@ -779,9 +877,21 @@ describe('unified deploy render producer', () => {
     expect(productSchemaJobContainer.image).toBe(siteEnv.API_IMAGE);
     expect(productSchemaJobContainer.command).toEqual(['node']);
     expect(productSchemaJobContainer.args).toEqual(['packages/api-entry-node/dist/product-schema-bootstrap.js']);
-    expect(productSchemaJobContainer.envFrom).toEqual(expect.arrayContaining([
-      { configMapRef: { name: 'agentsmith-app-config' } },
-      { secretRef: { name: 'agentsmith-app-secrets' } },
+    expect(productSchemaJobContainer.envFrom ?? []).toEqual([]);
+    expect(productSchemaJobContainer.env).toEqual([
+      {
+        name: 'DATABASE_URL',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'agentsmith-app-secrets',
+            key: 'DATABASE_URL',
+          },
+        },
+      },
+    ]);
+    expect(productSchemaJobContainer.env).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'ASBCP_INTERNAL_BASE_URL' }),
+      expect.objectContaining({ name: 'ASBCP_SERVICE_KEY' }),
     ]));
     expect(ingressPorts.get('/api/v1')).toBe(20000);
   });
@@ -819,8 +929,10 @@ describe('unified deploy render producer', () => {
     productSchemaJobContainer.image = 'ghcr.io/mbos/agentsmith-app:wrong';
     productSchemaJobContainer.command = ['npm'];
     productSchemaJobContainer.args = ['run', 'api:node:start'];
+    productSchemaJobContainer.env = [];
     productSchemaJobContainer.envFrom = [
       { configMapRef: { name: 'agentsmith-app-config' } },
+      { secretRef: { name: 'agentsmith-app-secrets' } },
     ];
 
     const text = checkRenderedOutput(stringifyDocuments(documents)).failures
@@ -831,7 +943,60 @@ describe('unified deploy render producer', () => {
     expect(text).toContain('product schema bootstrap Job must use agentsmith-app ServiceAccount');
     expect(text).toContain('product schema bootstrap Job must use the rendered API image');
     expect(text).toContain('product schema bootstrap Job must run node packages/api-entry-node/dist/product-schema-bootstrap.js');
-    expect(text).toContain('product schema bootstrap Job must consume agentsmith-app-config and agentsmith-app-secrets');
+    expect(text).toContain('product schema bootstrap Job must project DATABASE_URL from agentsmith-app-secrets/DATABASE_URL');
+    expect(text).toContain('product schema bootstrap Job must use explicit env key projections instead of envFrom');
+    expect(text).toContain('product schema bootstrap Job must not project ASBCP_INTERNAL_BASE_URL');
+    expect(text).toContain('product schema bootstrap Job must not project ASBCP_SERVICE_KEY');
+  });
+
+  it('rejects product schema bootstrap Jobs that alias ASBCP config or secret keys', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+    const productSchemaJobSpec = asRecord(productSchemaJob.spec);
+    const productSchemaJobPodSpec = asRecord(asRecord(productSchemaJobSpec.template).spec);
+    const productSchemaJobContainer = podSpecContainer(
+      productSchemaJobPodSpec,
+      'containers',
+      'agentsmith-product-schema-bootstrap',
+    );
+
+    productSchemaJobContainer.env = [
+      {
+        name: 'DATABASE_URL',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'agentsmith-app-secrets',
+            key: 'DATABASE_URL',
+          },
+        },
+      },
+      {
+        name: 'BOOTSTRAP_INTERNAL_URL_ALIAS',
+        valueFrom: {
+          configMapKeyRef: {
+            name: 'agentsmith-app-config',
+            key: 'ASBCP_INTERNAL_BASE_URL',
+          },
+        },
+      },
+      {
+        name: 'BOOTSTRAP_SERVICE_KEY_ALIAS',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'agentsmith-app-secrets',
+            key: 'ASBCP_SERVICE_KEY',
+          },
+        },
+      },
+    ];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('product schema bootstrap Job must not project ASBCP_INTERNAL_BASE_URL');
+    expect(text).toContain('product schema bootstrap Job must not project ASBCP_SERVICE_KEY');
   });
 
   it('renders AFSCP runtime components with the bounded internal JVS runtime contract', async () => {
@@ -1308,6 +1473,20 @@ describe('unified deploy render producer', () => {
       .join('\n');
 
     expect(text).toContain('ASBCP image must be pinned by sha256 digest');
+  });
+
+  it('rejects same-tail ASBCP image refs from non-canonical registries in rendered Deployment', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+
+    asbcp.image = `ghcr.io/example/agentsmith-sandbox-control-plane:v2.0.3@sha256:${'a'.repeat(64)}`;
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
   });
 
   it('accepts ASBCP local-kind registry image refs pinned by sha256 digest', async () => {

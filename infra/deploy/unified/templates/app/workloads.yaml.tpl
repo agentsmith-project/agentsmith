@@ -30,11 +30,12 @@ spec:
             - node
           args:
             - packages/api-entry-node/dist/product-schema-bootstrap.js
-          envFrom:
-            - configMapRef:
-                name: agentsmith-app-config
-            - secretRef:
-                name: agentsmith-app-secrets
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentsmith-app-secrets
+                  key: DATABASE_URL
 ---
 apiVersion: apps/v1
 kind: Deployment

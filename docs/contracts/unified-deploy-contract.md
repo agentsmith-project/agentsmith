@@ -70,6 +70,44 @@ server/deploy/internal-gate only and must not be rendered as `NEXT_PUBLIC_*`,
 browser bundle values, UI messages, i18n keys, or user-guide troubleshooting
 steps.
 
+### ASBCP Consumer And Adoption
+
+ASBCP adoption in AgentSmith is image consumption only; ASBCP release, API
+schema, and provider operations remain ASBCP-repo-owned.
+
+`infra/deploy/shared/asbcp-image.lock` is the AgentSmith input. It contains
+`asbcp_version`, `asbcp_source_image`, `asbcp_release_url`, and
+`asbcp_commit_sha`. The version, image tag, release URL tag, and commit SHA must
+match the same ASBCP release, and `asbcp_source_image` must include an immutable
+`@sha256` digest.
+
+During release adoption, compare the ASBCP GitHub Release asset
+`asbcp-final-manifest.json` with the lock: version/tag, source image digest,
+release URL tag, and commit SHA must match. ASBCP API contract version truth
+lives in that manifest, not in the AgentSmith lock.
+
+Lock update/adoption procedure:
+
+- Download the target release asset `asbcp-final-manifest.json`.
+- Update `infra/deploy/shared/asbcp-image.lock` from the release tag, digest,
+  release URL, and commit; do not add API contract version to the lock.
+- Run `npm run contracts:check-asbcp-manifest-lock -- --manifest <downloaded-asbcp-final-manifest.json>`.
+
+Minimal focused diagnostics after a lock/adoption change are:
+
+- `npm run contracts:check-asbcp-image-only`
+- `npm run test:unified-deploy:local-kind:images:unit`
+- `npm run test:unified-deploy:render`
+- `npm run test:unified-deploy:address-truth`
+
+Ordinary lock adoption does not require rerunning the Agent task/workload main
+chain.
+
+If the backend-real/local-real launcher path changes, also prove launcher image
+identity against the same locked digest before using Agent task runtime smoke as
+behavioral evidence. Stage rehearsal or release signing may additionally run
+the heavier runtime path.
+
 `api` is fixed to `replicas=1`. There is no API replica operator setting, and
 autoscalers targeting `api` are forbidden.
 

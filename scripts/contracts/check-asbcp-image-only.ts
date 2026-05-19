@@ -39,6 +39,7 @@ const ACTIVE_SCAN_ROOTS = [
 const ACTIVE_SCAN_FILES = [
   'Makefile',
   'package.json',
+  'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
   'scripts/lib/internal-sandbox-real-control.sh',
   'scripts/run-internal-agent-task-real-gate.sh',
   'scripts/run-integration-release-user-story.sh',
@@ -61,6 +62,8 @@ const NEGATIVE_FIXTURE_FILES = new Set([
   'scripts/unified-deploy/address-truth.test.ts',
   'scripts/unified-deploy/local-kind-images.test.ts',
   'scripts/unified-deploy/substrate-boundary.test.ts',
+  'src/components/agent-tasks/__tests__/ConversationPanel.test.tsx',
+  'src/components/agent-tasks/__tests__/TaskHeader.test.tsx',
   'src/components/agent-tasks/__tests__/TaskTerminalPanel.test.tsx',
   'src/lib/api/__tests__/errors.test.ts',
 ]);
@@ -68,6 +71,11 @@ const NEGATIVE_FIXTURE_FILES = new Set([
 const MIGRATION_NOTE_FILES = new Set([
   'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
 ]);
+const HISTORICAL_REFERENCE_LINE_LIMIT = 40;
+const HISTORICAL_REFERENCE_SENTINELS = [
+  /\bhistorical\/reference\b/iu,
+  /\bHistorical\/reference migration note\b/iu,
+] as const;
 
 const SANITIZER_IMPLEMENTATION_FILES = new Set([
   'src/lib/api/errors.ts',
@@ -222,11 +230,6 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
     checkPath: true,
   },
   {
-    label: 'legacy ASBCP sandbox control plane shorthand',
-    pattern: /(?<!agentsmith-)sandbox-control-plane\b/u,
-    checkPath: true,
-  },
-  {
     label: 'legacy ASBCP sandbox control plane symbol',
     pattern: /\b[Ss]andboxControlPlane\b|\bsandbox_control_plane\b/u,
     checkPath: true,
@@ -287,16 +290,29 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
     appliesTo: isUserFacingSurface,
   },
   {
+    label: 'user-facing sandbox terminology',
+    pattern: /(?:^|[^\w-])sandbox(?![\w-])/iu,
+    appliesTo: isUserFacingSurface,
+    checkPath: true,
+  },
+  {
     label: 'user-facing internal URL terminology',
     pattern: /\binternal URL\b|\bhttps?:\/\/[^\s"'<>]*asbcp[^\s"'<>]*(?:\.internal|\.svc|\.cluster\.local)[^\s"'<>]*/iu,
     appliesTo: isUserFacingSurface,
   },
 ] as const;
 
-function isAllowedForbiddenReference(file: string): boolean {
+function hasHistoricalReferenceSentinel(source: string): boolean {
+  return source
+    .split(/\r?\n/u)
+    .slice(0, HISTORICAL_REFERENCE_LINE_LIMIT)
+    .some((line) => HISTORICAL_REFERENCE_SENTINELS.some((pattern) => pattern.test(line)));
+}
+
+function isAllowedForbiddenReference(file: string, source: string): boolean {
   return (
     NEGATIVE_FIXTURE_FILES.has(file)
-    || MIGRATION_NOTE_FILES.has(file)
+    || (MIGRATION_NOTE_FILES.has(file) && hasHistoricalReferenceSentinel(source))
     || SANITIZER_IMPLEMENTATION_FILES.has(file)
   );
 }
@@ -315,6 +331,21 @@ function isAllowedProductTerminologyClassifier(file: string, line: string): bool
       || line.includes('ASBCP is a developer/operator deployment term only')
     )
   );
+}
+
+function isAllowedUserFacingSandboxReference(file: string, line: string, forbidden: ForbiddenPattern): boolean {
+  return forbidden.label === 'user-facing sandbox terminology'
+    && (
+      (
+        file === 'docs/contracts/product-terminology.md'
+        && line.includes('the internal sandbox')
+      )
+      || (
+        file === 'docs/user-guides/uxui-review-runbook.md'
+        && line.includes('sandbox runner')
+        && line.includes('owner diagnostic')
+      )
+    );
 }
 
 function patternAppliesToFile(forbidden: ForbiddenPattern, file: string): boolean {
@@ -360,12 +391,18 @@ function collectFiles(rootDir: string): string[] {
   return [...files].sort();
 }
 
+export function collectAsbcpImageOnlyFiles(options: { rootDir?: string } = {}): string[] {
+  return collectFiles(options.rootDir ?? REPO_ROOT);
+}
+
 export function checkAsbcpImageOnly(options: { rootDir?: string } = {}): AsbcpImageOnlyResult {
   const rootDir = options.rootDir ?? REPO_ROOT;
   const failures: AsbcpImageOnlyFailure[] = [];
 
   for (const file of collectFiles(rootDir)) {
-    if (!isAllowedForbiddenReference(file)) {
+    const source = readFileSync(repoPath(file, rootDir), 'utf8');
+    const isAllowedReference = isAllowedForbiddenReference(file, source);
+    if (!isAllowedReference) {
       for (const forbidden of FORBIDDEN_PATTERNS) {
         if (forbidden.checkPath !== true || !patternAppliesToFile(forbidden, file)) {
           continue;
@@ -380,7 +417,6 @@ export function checkAsbcpImageOnly(options: { rootDir?: string } = {}): AsbcpIm
       }
     }
 
-    const source = readFileSync(repoPath(file, rootDir), 'utf8');
     source.split(/\r?\n/u).forEach((line, index) => {
       for (const forbidden of FORBIDDEN_PATTERNS) {
         if (!patternAppliesToFile(forbidden, file)) {
@@ -388,9 +424,10 @@ export function checkAsbcpImageOnly(options: { rootDir?: string } = {}): AsbcpIm
         }
         if (
           forbidden.pattern.test(line)
-          && !isAllowedForbiddenReference(file)
+          && !isAllowedReference
           && !isAllowedLegacyResidueNegativeEvidence(file, line, forbidden)
           && !isAllowedProductTerminologyClassifier(file, line)
+          && !isAllowedUserFacingSandboxReference(file, line, forbidden)
         ) {
           failures.push({
             path: file,

@@ -11,12 +11,14 @@ AgentSmith now has one deployment model with two profiles:
 
 ## Runtime Shape
 
-- AgentSmith app components run in Kubernetes: Web, API, llmup, the internal sandbox execution service, and managed runner workloads.
+- AgentSmith app components run in Kubernetes: Web, API, llmup, the internal task execution service, and managed runner workloads.
 - API replicas are intentionally fixed at `1` in this milestone.
 - PostgreSQL, MongoDB, Redis, MinIO, and Keycloak are substrate services. The current substrate module is Docker-only.
 - Keycloak is a substrate dependency, not an app pod.
 - Ingress exposes the app through one HTTP entrypoint.
 - Product verification must use focused product flows; route smoke alone is not product proof.
+- Operator adoption details for pinned internal component images live in the
+  [Unified Deploy Contract](../contracts/unified-deploy-contract.md).
 
 ## Developer Machine Versus Deploy
 

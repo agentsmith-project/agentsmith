@@ -6,6 +6,7 @@ export LOCAL_MANUAL_ENABLE_INTERNAL=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
+source "${ROOT_DIR}/scripts/lib/asbcp-image-lock.sh"
 
 LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED="${LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED:-0}"
 LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED="${LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED:-0}"
@@ -2574,26 +2575,7 @@ EOF
 }
 
 resolve_local_manual_asbcp_image() {
-  local image digest_hex repeated
-  image="${ASBCP_IMAGE:-}"
-  if [[ -z "${image}" && -f "${ASBCP_IMAGE_LOCK_PATH}" ]]; then
-    image="$(awk -F= '$1 == "asbcp_source_image" { print $2 }' "${ASBCP_IMAGE_LOCK_PATH}" | tail -n1)"
-  fi
-  [[ -n "${image}" ]] || {
-    internal_err "missing ASBCP_IMAGE and image lock: ${ASBCP_IMAGE_LOCK_PATH}"
-    exit 1
-  }
-  if [[ ! "${image}" =~ @sha256:[a-f0-9]{64}$ ]]; then
-    internal_err "ASBCP_IMAGE must be pinned by digest: ${image}"
-    exit 1
-  fi
-  digest_hex="${image##*@sha256:}"
-  repeated="${digest_hex//${digest_hex:0:1}/}"
-  if [[ -z "${repeated}" ]]; then
-    internal_err "ASBCP_IMAGE uses a placeholder digest and is not pullable: ${image}"
-    exit 1
-  fi
-  printf '%s\n' "${image}"
+  asbcp_resolve_locked_image "${ASBCP_IMAGE:-}" "${ASBCP_IMAGE_LOCK_PATH}"
 }
 
 write_internal_state_env() {

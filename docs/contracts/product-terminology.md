@@ -184,6 +184,11 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 - A terminal can belong to an active run/test run or be a standalone task terminal created from the task's bound runner.
 - Product-facing terminal UX must describe session lifecycle truth, not treat terminal as a generic floating panel.
 
+33. `任务执行环境 / task execution environment`
+- Product-facing term for the environment where Agent tasks run.
+- Use it as the primary user-side wording in UI, i18n, status, and errors.
+- Do not expose deployment service names, image references, internal URLs, keys, or provider error codes through this term.
+
 ## Deploy Terms
 
 These terms belong to `docs/contracts/unified-deploy-contract.md` and define the
@@ -226,6 +231,9 @@ current deploy vocabulary.
 - ASBCP is a developer/operator deployment term only. It must not become a
   visible UI route, user-guide concept, i18n label, system management side, or
   user access entrypoint.
+- This terminology contract only records that product-facing prohibition. Lock
+  update, manifest comparison, and focused deploy diagnostics belong in
+  `docs/contracts/unified-deploy-contract.md`, not here.
 
 7. `app-managed llmup`
 - Deployment ownership term.

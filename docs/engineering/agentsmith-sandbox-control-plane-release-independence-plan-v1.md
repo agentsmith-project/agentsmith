@@ -1,8 +1,36 @@
 # AgentSmith Sandbox Control Plane (ASBCP) 独立发布改造计划 v1
 
-状态：已按用户补充与 team review 修订，可 handoff 给开发团队；ASBCP repo 文档落地后，本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明，不作为 ASBCP release/config 长期权威
-日期：2026-05-18
+状态：handoff 收口中；本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明，不作为 ASBCP release/config 长期权威
+日期：2026-05-19（原计划创建于 2026-05-18）
 目标读者：后续开发团队、发布治理负责人、跨仓库集成负责人
+
+## Current state as of 2026-05-19
+
+ASBCP-side P1-P3 已基本完成：public GitHub repo、`v2.0.5` release、GHCR digest image、GitHub Release asset `asbcp-final-manifest.json`、AgentSmith `infra/deploy/shared/asbcp-image.lock` 均已存在；当前 AgentSmith lock pin 到 `v2.0.5` / commit `c372a6fe8c8c9cfb28d03a32b75febe10bb0c392` / digest `sha256:f164abe93ecbf9b964e532f1b931a688e1d633a9f3e580d872558fd478958883`。
+
+后续工作必须从当前 guard/evidence 出发：先读取或运行现有 `contracts:check-asbcp-image-only`、lock parser/image producer/render/address-truth 等 focused diagnostics，再处理仍命中的差距；不要重复执行历史 P1-P3。
+
+本文件的阅读方式：
+
+- 第 1-11 节保留 clean-cut 背景、历史迁移计划和边界说明，不是当前待办清单。
+- 第 12-16 节中关于 ASBCP provider release/test/schema/DoD 的内容也只作为 historical/reference；后续 provider 真相回到 ASBCP repo。
+- 当前执行真相只看 AgentSmith consumer closeout、`docs/contracts/unified-deploy-contract.md` 的 ASBCP consumer/adoption 小节和最新 guard/evidence。
+- 唯一操作/采纳入口是 `docs/contracts/unified-deploy-contract.md`；`docs/contracts/product-terminology.md` 只保留术语禁止规则，不承载 lock 更新、manifest 比对或 gate/focused diagnostics 流程。
+
+剩余收口拆分为两类，不扩展成新治理体系：
+
+AgentSmith consumer closeout：
+
+- manifest-vs-lock focused diagnostic
+- launcher image identity check（仅 backend-real/local-real launcher/runtime path 变化、阶段 rehearsal 或 release signing 时需要）
+- bootstrap secret 投影边界
+- guard/doc cleanup
+
+ASBCP provider follow-ups（由 ASBCP repo 承载；参考 `agentsmith-sandbox-control-plane` repo 的 `scripts/verify-release.sh`、`docs/contracts/`、`docs/RELEASE_GATES.md`、`docs/runbooks/`，不写成 AgentSmith 长期权威）：
+
+- ASBCP API contract version truth
+- ASBCP error envelope/log 脱敏
+- 后续 provider release/test/schema/DoD 漂移
 
 ## 1. 目标
 
@@ -76,7 +104,7 @@ ASBCP repo 是 ASBCP 治理唯一来源，并拥有 canonical schema/contract。
 
 AgentSmith 对 ASBCP 的消费分两层：`ASBCP_IMAGE` 是部署 image 输入，也可供 backend-real/local-real internal container launcher 启动同一 image-only 路径；`ASBCP_INTERNAL_BASE_URL` 与 `ASBCP_SERVICE_KEY` 是 server/internal API 调用输入。`ASBCP_IMAGE`、image ref/digest、`ASBCP_INTERNAL_BASE_URL` 与 `ASBCP_SERVICE_KEY` 均不得进入 `NEXT_PUBLIC_*`、web/Next/browser runtime、frontend route payload、MSW public fixture、UI 文案或 i18n namespace。前端只看到后端映射后的 Agent task 状态和产品侧错误表达，不得透传 ASBCP/provider/internal 错误码、internal URL/key 或 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload 等内部术语。AgentSmith 不新增用户可见 repo selector 或 runner image selector。
 
-## 5. 当前实现真相
+## 5. 历史基线真相（2026-05-18）
 
 本节是计划创建时（2026-05-18）的基线快照，用于说明为什么需要 clean cut，不是执行时必须重复清理的固定返工清单。每个 slice 开始前必须以当前 guard、测试和 evidence 为准，先确认漂移仍存在，再处理仍命中的项。
 
@@ -141,7 +169,7 @@ repo-local 治理资产按当前 ASBCP guard 的 required/minimal 收敛；如�
 | 首轮 required/minimal | release manifest schema/说明、`docs/READINESS_EVIDENCE.md` | docs 中只保留 schema/说明；`asbcp-final-manifest.json` 由 release workflow 生成并作为 GitHub Release asset canonical evidence |
 | 首轮 required/minimal | `docs/contracts/` | 只覆盖 active API、auth、AFSCP mount-plan dependency、operation/error contract |
 | 首轮 required/minimal | `docs/runbooks/` | 只覆盖 local dev、release、rollback/rollforward、K8s operations、diagnostics 的必要路径 |
-| 首轮 required/minimal | `docs/DEVELOPMENT_GOVERNANCE.md`、最小 `docs/RISK_REGISTER.md`、`docs/adr/README.md` | 只放当前 guard 需要的维护规则、已知风险状态和 ADR 索引；不扩展成 AFSCP 级风险/ADR 流程 |
+| 首轮 required/minimal | `docs/DEVELOPMENT_GOVERNANCE.md`、最小 `docs/RISK_REGISTER.md`、当前 ASBCP guard required 的 `docs/adr` 最小资产/索引 | 只放当前 guard 需要的维护规则、已知风险状态和 ADR 索引；不扩展成 AFSCP 级风险/ADR 流程 |
 
 唯一权威 release gate：
 
@@ -178,7 +206,7 @@ repo-local 治理资产按当前 ASBCP guard 的 required/minimal 收敛；如�
 
 AgentSmith 消费合同：
 
-- 新增 `infra/deploy/shared/asbcp-image.lock`。
+- 保留并维护现有 `infra/deploy/shared/asbcp-image.lock`。
 - lock 至少记录 `asbcp_version`、`asbcp_source_image`、`asbcp_release_url`、`asbcp_commit_sha`。
 - `asbcp_source_image` 必须是 `ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:vX.Y.Z@sha256:<digest>`。
 - `asbcp_version`、image tag、GitHub Release tag 和 `asbcp_release_url` 中的 tag 都固定为同一个带 `v` 的 `vX.Y.Z`。
@@ -211,7 +239,7 @@ backend-real/local-real 运行合同：
 | AgentSmith 删除 | `../mbos-sandbox-v1` source build、`SANDBOX_SOURCE_DIR`、`--sandbox-source-dir`、旧 `/v1/sandboxes` surface、对旧 source command 的 invocation：`cmd/manager` / `./cmd/manager` / `go run ./cmd/manager` / `cmd/cleaner` / `go build -o asbcp ./cmd/manager`（AgentSmith 不创建或迁移 `cmd/asbcp`；`cmd/asbcp` 只属于 ASBCP repo）、`SANDBOX_MANAGER` / `SANDBOX_MANAGER_...` 及常见 camel/Pascal/snake/kebab 变体、`SANDBOX_CONTROL_PLANE` / `SANDBOX_CONTROL_PLANE_...` 及常见 camel/Pascal/snake 代码符号变体、`SANDBOX_SERVICE_KEY`、`agentsmith-sandbox-manager` K8s identity、`mbos/sandbox-manager` local-kind repo、`/etc/asbcp/config.yaml`、`/etc/sandbox-manager/manager-config.yaml`、ASBCP raw storage credential env、`NEXT_PUBLIC_ASBCP_*` 或任何 web/Next/browser ASBCP 配置 |
 | AgentSmith 保留 | `ASBCP_IMAGE` digest lock consumption、server/internal-only `ASBCP_INTERNAL_BASE_URL` + `ASBCP_SERVICE_KEY` API client wiring、Deployment/Service wiring、无 public ingress 检查、AFSCP caller/token wiring、Agent task 主链 consumer smoke |
 
-## 10. 当前漂移矩阵
+## 10. 历史漂移矩阵（2026-05-18 基线）
 
 本矩阵同样是计划创建时（2026-05-18）的基线快照。执行前先跑当前静态 guard、focused tests 或读取最新 evidence；已经被后续提交收敛的行不应重复返工。
 
@@ -234,6 +262,8 @@ backend-real/local-real 运行合同：
 | ASBCP config path 漂移 | `/etc/asbcp/asbcp-config.yaml` | ASBCP runtime worker + AgentSmith render worker | Docker/K8s contract tests |
 
 ## 11. 实施阶段
+
+阅读方式：P0-P6 是历史迁移记录；截至 2026-05-19，ASBCP-side repo/release/image/manifest 已基本完成，不应作为新待办重跑。当前 AgentSmith 后续收口只保留 P4-P6 中仍命中最新 guard/evidence 的 consumer/adoption 边界；ASBCP provider release/test/schema/DoD 回到 ASBCP repo。
 
 ### P0. 冻结 ASBCP 命名、缩写与 active contract
 
@@ -353,7 +383,7 @@ backend-real/local-real 运行合同：
 
 工作：
 
-- 新增 `infra/deploy/shared/asbcp-image.lock`，pin P3 发布的 GHCR digest。
+- 维护或更新现有 `infra/deploy/shared/asbcp-image.lock`，pin ASBCP GHCR digest。
 - 修改 unified deploy image producer：ASBCP image 不再 `docker build` sibling source，而是读取 lock 后 pull/tag/push。
 - local-kind target repo 固定为 `kind-registry:5000/mbos/agentsmith-sandbox-control-plane`，target tag 使用 release tag 或 rehearsal tag；最终 target digest evidence 来自 push 后解析的 `image:tag@digest`、render manifest 和运行中 Pod `status.containerStatuses[].imageID`，不把 digest 写成 target repo 名。
 - 删除或废弃 `SANDBOX_SOURCE_DIR`、`--sandbox-source-dir`、`siblingSandboxSourceDir()` 等标准路径。
@@ -372,7 +402,7 @@ backend-real/local-real 运行合同：
 
 验收：
 
-- 在没有 `../mbos-sandbox-v1` 的环境中，AgentSmith image producer、backend-real/full diagnostics 计划路径、`make local-real-up/status/reset/down` 和 render tests 仍能通过，且不会访问 sibling source。
+- 在没有 `../mbos-sandbox-v1` 的环境中，AgentSmith image producer、backend-real/full diagnostics 计划路径和 render tests 仍能通过；slice TDD 用 focused script/unit tests 证明 `make local-real-up/status/reset/down` 不访问 sibling source，实际 `make local-real-*` 保留给阶段 rehearsal、失败排障或 release signing。
 - `npm run test:unified-deploy:local-kind:images:unit` 覆盖 ASBCP digest lock 与禁止 source build。
 - `npm run test:unified-deploy:render`、`npm run test:unified-deploy:address-truth` 通过，并证明 rendered Deployment 只接受 digest ref。
 - adoption/rehearsal 必须证明旧 `agentsmith-sandbox-manager` Deployment/Service/ConfigMap/RBAC/local-kind PV RBAC/checksum annotation 相关资源无残留；当前 evidence 是 absence-only，只能说明检查时未发现旧资源，不能声明迁移集群已被自动清理。
@@ -395,17 +425,18 @@ backend-real/local-real 运行合同：
 - ASBCP repo 先完成 `scripts/verify-release.sh`，发布 GHCR image。
 - P5 是 AgentSmith consumer adoption 验证/diagnostics，不是 ASBCP release gate；每个 AgentSmith slice 只跑受影响 focused diagnostics，最终收口回到现有 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 - 发布/采纳 handoff 时读取 GitHub Release asset `asbcp-final-manifest.json`，与 `asbcp-image.lock` 的 `asbcp_version`、`asbcp_source_image`、`asbcp_release_url`、`asbcp_commit_sha` 做一次比对；日常 lock parser 仍只做离线格式检查。
-- AgentSmith 更新 `asbcp-image.lock` 后，每个 slice 默认只运行轻量 lock/render focused diagnostics：
+- 普通 lock adoption 不要求重跑 Agent task/workload 主链；AgentSmith 更新 `asbcp-image.lock` 后，每个 slice 默认只运行轻量 lock/render focused diagnostics：
+  - `npm run contracts:check-asbcp-image-only`
   - `npm run test:unified-deploy:local-kind:images:unit`
   - `npm run test:unified-deploy:render`，但必须使用 generated site env 或等价 digest fixture
   - `npm run test:unified-deploy:address-truth`
-- standalone local-kind rollout diagnostics 仅用于阶段 rehearsal 或失败排障，不作为发布前每次必跑项：
+- standalone local-kind rollout diagnostics 与 `make local-real-*` 仅用于阶段 rehearsal、失败排障或 release signing，不作为普通 lock adoption 必跑项：
   - `npm run test:unified-deploy:local-kind:images`
   - `npm run test:unified-deploy:local-kind`
-- 如改动影响 Agent task runner/terminal runtime，再补：
+- 只有 backend-real/local-real launcher/runtime path 变化、阶段 rehearsal 或 release signing，才补 Agent task runner/terminal runtime 主链证据：
   - 运行覆盖 `test:agent-task:runner:fast` 与 `test:skills:fast` alias 的一个物理 producer，并在 evidence 中注明覆盖 alias；除非需要分别验证 npm alias wiring，不要求重复物理执行。
   - 必要时 `npm run test:skills:backend-real`
-- P5 focused diagnostics 或 release:ready campaign-scoped evidence 必须覆盖 `scripts/run-integration-release-user-story.sh` 和 `scripts/backend-real-full-gate.sh` 所在路径，证明它们不再访问 sibling source。
+- 普通 slice TDD 用 focused script/unit tests 覆盖 `scripts/run-integration-release-user-story.sh` 和 `scripts/backend-real-full-gate.sh` 所在路径，证明它们不再访问 sibling source；阶段 rehearsal 或 release signing 再由 campaign-scoped evidence 收口。
 - 发布签署只看现有 `npm run release:ready` campaign-scoped evidence；不要在每个小 slice 重复跑 standalone heavy diagnostics。
 
 验收：
@@ -413,7 +444,7 @@ backend-real/local-real 运行合同：
 - AgentSmith release rehearsal 不会访问 `../mbos-sandbox-v1`。
 - ASBCP source digest -> target digest 的映射有证据；generated site env、部署 manifest、运行中 Pod `status.containerStatuses[].imageID` 对同一个 target digest 一致。
 - ASBCP lock 中 `asbcp_version`、image tag、GitHub Release tag 和 release URL tag 都是同一个 `vX.Y.Z`；发布/采纳时已用 ASBCP GitHub Release asset `asbcp-final-manifest.json` 与 lock 字段完成一次比对，真实 version/tag/digest/commit provenance 以该 release asset 为准。
-- Agent task 创建、workspace binding、workload create/keepalive/exec/release/delete 主链通过。
+- Agent task 创建、workspace binding、workload create/keepalive/exec/release/delete 主链只在 backend-real/local-real launcher/runtime path 变化、阶段 rehearsal 或 release signing 时作为行为证据。
 - P5 rehearsal/consumer adoption 必须证明旧 `agentsmith-sandbox-manager` 资源不存在；当前 AgentSmith evidence 是 absence-only，只能说明检查时未发现旧资源，不能声明迁移集群已被自动清理。
 - ASBCP release gate 与 AgentSmith consumer adoption 验证/diagnostics 分离清楚；最终收口回到现有 `verify` / `release:ready`。
 
@@ -423,9 +454,10 @@ backend-real/local-real 运行合同：
 
 工作：
 
-- AgentSmith 唯一 consumer doc 入口固定为 `docs/contracts/unified-deploy-contract.md` 的 ASBCP deployment/internal backend dependency 小节；本文件只保留历史迁移计划与边界说明。
+- AgentSmith 唯一操作/采纳入口固定为 `docs/contracts/unified-deploy-contract.md` 的 ASBCP consumer/adoption 小节；本文件只保留历史迁移计划与边界说明。
 - 该入口只说明：ASBCP 是外部发布 image 依赖；如何更新 `asbcp-image.lock`；发布/采纳时如何用 GitHub Release asset `asbcp-final-manifest.json` 与 lock 字段做一次比对；需要跑哪些 consumer adoption 验证/diagnostics，最终如何回到现有 `verify` / `release:ready`。
-- AgentSmith product-facing user docs、UI 文案和 i18n 不直接出现 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload、ASBCP image ref/digest、URL/key 或 internal 错误码；只有 ASBCP repo docs 与 developer/operator/deployment docs 可以使用 ASBCP canonical names，且必须先说明它是内部后端服务。
+- `docs/contracts/product-terminology.md` 只保留术语禁止规则：说明 ASBCP 不能进入 product-facing user docs/UI/i18n/用户侧失败路径；它不承载 lock 更新、manifest 比对、gate 或 focused diagnostics 流程。
+- AgentSmith product governance、product-facing user docs、UI 文案和 i18n 不直接出现 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload、ASBCP image ref/digest、URL/key 或 internal 错误码；只有 ASBCP repo-local governance/release/config docs 与 AgentSmith developer/operator/deployment docs 可以使用 ASBCP canonical names，且必须先说明它是内部后端服务。
 - ASBCP repo 文档落地后，本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明；ASBCP release/config 长期权威只看 ASBCP repo。
 - ASBCP README 说明：如何运行 `scripts/verify-release.sh`、如何发布、AgentSmith 如何消费。
 - 删除或归档旧 `mbos-sandbox-v1`、`SANDBOX_SOURCE_DIR`、本地 source build、`SANDBOX_MANAGER` / `SANDBOX_MANAGER_...` 文档；active docs 也必须被分类清理或 exact path + reason allowlist 覆盖，不能因为 guard 跳过 `docs/engineering/` 就报告绿色；如果保留为历史材料，必须是 exact path + reason allowlist，并证明不能被 Make/npm/GitHub Actions/release/local-real/backend-real wrapper 间接调用。
@@ -440,12 +472,12 @@ backend-real/local-real 运行合同：
 验收：
 
 - 新人只读 ASBCP README 和 release 文档即可完成 ASBCP image 发布。
-- 新人只读 `docs/contracts/unified-deploy-contract.md` 的 ASBCP consumer 入口即可完成 image lock 更新和集成验证。
+- 新人只读 `docs/contracts/unified-deploy-contract.md` 的 ASBCP 操作/采纳入口即可完成 image lock 更新和集成验证。
 - 文档里没有 active 指引要求开发者回到 `mbos-sandbox-v1` sibling source build 或 `SANDBOX_MANAGER` / `SANDBOX_MANAGER_...` 配置。
 
-## 12. TDD 与验证策略
+## 12. TDD 与验证策略（historical/reference）
 
-先写或调整测试，再改实现：
+本节保留迁移期测试拆分。ASBCP repo 相关 release/test/schema/DoD 只作为 provider-side historical/reference；当前 AgentSmith slice 以 `docs/contracts/unified-deploy-contract.md` 的 focused diagnostics 为准，普通 lock adoption 不重跑 Agent task/workload 主链。
 
 - ASBCP repo：
   - module layout + module path/import path guard：`manager-service/go.mod` 是唯一 Go module root，module path 为 `github.com/agentsmith-project/agentsmith-sandbox-control-plane`。
@@ -466,20 +498,23 @@ backend-real/local-real 运行合同：
   - render test，断言 `ASBCP_IMAGE` 从 generated site env 进入 manifest 且为 `@sha256` digest ref。
   - address truth test，断言 ASBCP 不暴露 public ingress。
   - API deps/unit：server-side `ASBCP_INTERNAL_BASE_URL` + `ASBCP_SERVICE_KEY` 成对校验；负向证明 `ASBCP_IMAGE` 不得被 server API config 使用；旧 key 不再生效或触发明确失败。
-  - frontend/static guard：禁止 `NEXT_PUBLIC_ASBCP_*`，禁止 `ASBCP_IMAGE`、ASBCP image ref/digest、ASBCP URL/key、ASBCP/provider/internal 错误码进入 web/Next/browser runtime、client bundle、UI route payload、MSW public fixture、i18n 文案、product-facing user guides 或用户侧失败路径；operator/deployment guides 属于允许路径，但必须先说明 ASBCP 是内部后端服务。
-  - backend-real/full diagnostics script tests，断言不再依赖 sibling source，且 `make local-real-up/status/reset/down` 走同一 image-only 路径。
+  - frontend/static guard：禁止 `NEXT_PUBLIC_ASBCP_*`，禁止 `ASBCP_IMAGE`、ASBCP image ref/digest、ASBCP URL/key、ASBCP/provider/internal 错误码进入 web/Next/browser runtime、client bundle、UI route payload、MSW public fixture、i18n 文案、product-facing user guides 或用户侧失败路径；AgentSmith developer/operator/deployment docs 属于允许路径，但必须先说明 ASBCP 是内部后端服务。
+  - backend-real/full diagnostics script tests，断言不再依赖 sibling source；`make local-real-up/status/reset/down` 的实际运行保留给阶段 rehearsal、失败排障或 release signing。
   - AFSCP caller/token consistency test。
   - static guard，禁止 canonical active forbidden list、active source build、旧 env、旧 K8s identity、旧 image repo 回退路径、`/etc/asbcp/config.yaml` 或 `/etc/sandbox-manager/manager-config.yaml` config path 漂移。
-  - focused local-kind rollout，证明 source digest -> target digest 映射存在，且 Pod `status.containerStatuses[].imageID` 实际使用 target digest；URL/key-only smoke 不得作为 image adoption 证据。
+  - focused local-kind rollout 只在阶段 rehearsal、失败排障或 release signing 使用，证明 source digest -> target digest 映射存在，且 Pod `status.containerStatuses[].imageID` 实际使用 target digest；URL/key-only smoke 不得作为 image adoption 证据。
 
 门禁原则：
 
 - 每个 slice 只跑最小相关 focused diagnostics。
+- 普通 lock adoption 不要求重跑 Agent task/workload 主链；slice TDD 用 focused script/unit tests 证明 no sibling source。
 - ASBCP release gate 与 AgentSmith consumer adoption 验证/diagnostics 分离。
-- 跨 repo 集成完成后按阶段 rehearsal 或失败排障需要再跑 standalone local-kind rollout；发布签署只看现有 `release:ready` campaign-scoped evidence。
+- 跨 repo 集成完成后按阶段 rehearsal、失败排障或 release signing 需要再跑 standalone local-kind rollout / `make local-real-*`；发布签署只看现有 `release:ready` campaign-scoped evidence。
 - 最终发布前才跑 AgentSmith `npm run release:ready`。
 
-## 13. 风险与处理
+## 13. 风险与处理（historical/reference）
+
+本节是迁移期 review 记录；ASBCP provider-side 风险按 ASBCP repo 的 `scripts/verify-release.sh`、`docs/contracts/`、`docs/RELEASE_GATES.md` 和 `docs/runbooks/` 跟进，AgentSmith 不承载长期权威。
 
 ASBCP/AFSCP 缩写混淆：
 
@@ -509,7 +544,7 @@ K8s 资源残留：
 API contract 漂移：
 
 - 风险：ASBCP release 后 AgentSmith client 调用失败。
-- 处理：ASBCP `asbcp-final-manifest.json` 写 API contract version、完整 `release_notes.body_source`、`changelog_summary` 和 `known_breaking_changes`；`changelog_summary` 从当前 `CHANGELOG.md` 版本小节中除 `Breaking Changes` 外的非空 `- ` bullet 汇总，GitHub Release body 由 `release_notes.body_source` 写出且只展示 manifest 中的字段，更多背景链接 `CHANGELOG.md`；digest/API contract evidence 只引用或派生自该 manifest；AgentSmith lock 不记录 API contract version，consumer adoption 验证必须覆盖 workspace binding 与 workload 主链。
+- 处理：ASBCP provider-side 已由 ASBCP repo contract/release follow-up 覆盖；`asbcp-final-manifest.json` 写 API contract version，ASBCP repo `scripts/verify-release.sh` 与 `docs/contracts/` 维护其真相。AgentSmith lock 不记录 API contract version，只在采纳时比对 manifest 与 lock 字段；普通 lock adoption 不要求重跑 workspace binding 与 workload 主链。
 
 raw storage env 回流：
 
@@ -525,6 +560,11 @@ ASBCP 暴露到浏览器或 product-facing user docs：
 
 - 风险：`ASBCP_SERVICE_KEY` / `ASBCP_INTERNAL_BASE_URL` 被做成 `NEXT_PUBLIC_ASBCP_*`、进入 web/Next/browser runtime、MSW public fixture、UI 文案、product-facing user guides 或用户侧失败路径，造成内部拓扑/密钥泄露，并把工程后端服务误写成用户访问入口。
 - 处理：`ASBCP_IMAGE` 只走部署 image 输入和 backend-real/local-real internal container launcher，`ASBCP_INTERNAL_BASE_URL` / `ASBCP_SERVICE_KEY` 只走 server/internal API；同一个 Secret 中的 service key 同时投影到 AgentSmith server Deployment 的 `ASBCP_SERVICE_KEY` 与 ASBCP Deployment 的 `ASBCP_SERVICE_KEYS`，ConfigMap 只承载非敏感配置；增加 env/static/bundle/i18n/product-facing-user-guides/failure-path guard。用户侧只看到 Agent task 状态和可操作错误，产品侧主词统一说“任务执行环境”，“托管运行环境”只能作为说明性同义词；不透传 ASBCP/provider/internal 错误码，不看到 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload/internal URL/key/image ref/digest。
+
+ASBCP error envelope/log 脱敏：
+
+- 风险：provider 错误 envelope 或日志脱敏规则漂移后，AgentSmith 误把内部错误码、URL/key 或 image identity 暴露到用户侧。
+- 处理：ASBCP provider-side 已由 ASBCP repo `docs/contracts/`、`docs/runbooks/` 与 `scripts/verify-release.sh` follow-up 覆盖；AgentSmith 只验证用户侧映射为“任务执行环境”相关状态/错误表达，不维护 provider error taxonomy。
 
 Go module root 返工：
 
@@ -546,21 +586,23 @@ release digest 不可追溯：
 - 风险：只有 mutable tag 或缺少 public pull 证据，AgentSmith lock 无法证明消费的是同一个可追溯发布物。
 - 处理：ASBCP release 必须输出 version/tag/digest/commit/API contract version，用 fresh Docker config 真实验证匿名 GHCR tag resolution/pull，并记录 `same_digest_proof` 证明 tag resolved digest、build-push digest 与 anonymous digest 三者一致；`same_digest_proof` 只代表 published image identity，不代表 pushed image 的容器行为证据。`asbcp-final-manifest.json` 固定为 GitHub Release asset。AgentSmith lock 只记录并离线静态校验 version/tag/digest/release URL tag/commit SHA 格式，发布/采纳时再用该 manifest 与 lock 字段做一次比对。
 
-## 14. 开发任务拆分
+## 14. 开发任务拆分（historical/reference）
 
-建议按以下顺序分配给 team：
+原迁移期 worker 拆分如下；当前剩余工作只分为 AgentSmith consumer closeout 与 ASBCP provider follow-ups。
 
 1. ASBCP naming worker：负责 repo identity、`manager-service` module path/import/binary/docs/license/changelog 的 clean rename；不得把 Go module 迁到 repo root。
 2. ASBCP contract/smoke worker：负责 active API contract、Dockerfile contract / image build、K8s render、AFSCP mount-plan fixture 与旧 smoke 清理，先于 release workflow 发布收口完成。
 3. ASBCP governance/release worker：负责 ASBCP-lite required/minimal 文档、release gate、CI、release workflow source hardening、P3 GHCR service image 发布、`asbcp-final-manifest.json`/public pull evidence 和 `images/runner` 非 active fixture 归类。
 4. AgentSmith image dependency worker：负责 `asbcp-image.lock`、`asbcp_version` 与 image/GitHub Release tag/release URL tag 同为 `vX.Y.Z` 的一致性校验、image producer、render/local-kind tests、static guard。
 5. AgentSmith runtime integration worker：负责 `ASBCP_IMAGE` 部署输入/internal container launcher 与 `ASBCP_INTERNAL_BASE_URL`/`ASBCP_SERVICE_KEY` server/internal API 输入拆分、同一个 Secret 中的 service key 同时投影为 AgentSmith server `ASBCP_SERVICE_KEY` 与 ASBCP 容器 `ASBCP_SERVICE_KEYS` 的部署渲染边界、禁止 `NEXT_PUBLIC_ASBCP_*`、K8s/RBAC/AFSCP caller clean cut、backend-real/full diagnostics、local manual、raw storage env 移除、focused rollout，并拉 cross-repo contract reviewer 校验 AFSCP caller/token 一致性。
-6. Docs/governance migration worker：负责把 ASBCP provider governance 从 AgentSmith 迁到 ASBCP repo，AgentSmith 只保留 `docs/contracts/unified-deploy-contract.md` 这个 developer/operator/deployment consumer 入口；UI/product-facing user docs/i18n 不直接暴露 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload、ASBCP image ref/digest、URL/key 或 internal 错误码。
+6. Docs/governance migration worker：负责把 ASBCP provider governance 从 AgentSmith 迁到 ASBCP repo，AgentSmith 只保留 `docs/contracts/unified-deploy-contract.md` 这个 developer/operator/deployment 操作/采纳入口；UI/product-facing user docs/i18n 不直接暴露 ASBCP/control plane/workload lifecycle/sandbox/sandbox workload、ASBCP image ref/digest、URL/key 或 internal 错误码。
 7. Review worker：只读审查跨 repo 命名矩阵、ASBCP/AFSCP 边界、旧名 guard、是否还有 source build 回退路径。
 
 每个 worker 必须先补测试或守卫，再改实现；不得用 fallback 把 sibling source build 或旧 env 留在 release path。
 
-## 15. 完成定义
+## 15. 完成定义（historical/reference）
+
+本节保留原迁移 DoD。ASBCP provider release/test/schema/DoD 只作为 ASBCP repo 参考；AgentSmith 当前完成标准以 consumer closeout、`docs/contracts/unified-deploy-contract.md` 和最新 guard/evidence 为准。
 
 ASBCP 独立发布完成时必须满足：
 
@@ -589,7 +631,7 @@ AgentSmith consumer 迁移完成时必须满足：
 - raw storage credential 不再作为 ASBCP 运行合同。
 - AgentSmith 无 ASBCP 源码构建和发布治理残留。
 
-## 16. Team Review 记录
+## 16. Team Review 记录（historical/reference）
 
 调研与 review 已覆盖：
 
@@ -601,6 +643,7 @@ AgentSmith consumer 迁移完成时必须满足：
 - Security exposure review：确认 `ASBCP_IMAGE` 是部署 image 输入和 backend-real/local-real internal container launcher，`ASBCP_INTERNAL_BASE_URL`、`ASBCP_SERVICE_KEY` 只允许 server/internal API 和 internal diagnostics 使用；K8s wiring 中同一个 Secret 中的 service key 同时投影到 AgentSmith server Deployment 的 `ASBCP_SERVICE_KEY` 与 ASBCP Deployment 的 `ASBCP_SERVICE_KEYS`，非敏感 URL/config 才可进 ConfigMap；禁止 `NEXT_PUBLIC_ASBCP_*` 和 web/Next/browser runtime 暴露 ASBCP image ref/digest、URL/key 或 internal 错误码。
 - Module layout review：为减少返工，本轮保留 `manager-service` 作为 Go module root，repo root 只放治理、release wrapper、VERSION 和 evidence。
 - Release evidence review：release gate 必须阻塞式证明 Dockerfile contract / image build、K8s、readiness、active API fake-fixture evidence；P2 只做 release workflow source/hardening、pre-push gate、CHANGELOG parse guard 和 manifest generation logic 的 dry-run/static/focused tests，P3 才执行真实 tag、build-push、anonymous tag resolution/pull、GitHub Release 和 final manifest release asset。`same_digest_proof` 是 published image identity evidence，证明 tag resolved digest、build-push digest 与 anonymous digest 三者一致；不是 pushed image 的容器行为证据，也不证明 release gate 验证的是 pushed digest。GitHub Release body 等说明中的 digest/API contract evidence 只能从 GitHub Release asset `asbcp-final-manifest.json` 派生或引用，Release body 只展示 manifest 中的字段且由 `release_notes.body_source` 写出。
+- 最新收敛 review：第 12-16 节中的 ASBCP provider release/test/schema/DoD 均降级为 historical/reference；AgentSmith 当前执行真相只保留 consumer closeout 与 unified deploy contract。
 
 实现前最后检查重点：
 

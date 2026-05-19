@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { asRecord, type CheckFailure, type CheckResult } from './manifest';
+import {
+  TARGET_PROFILES,
+  asRecord,
+  isUnifiedDeployProfile,
+  type CheckFailure,
+  type CheckResult,
+  type UnifiedDeployProfile,
+} from './manifest';
 import { checkApiSingleReplica } from './check-api-single-replica';
 import {
   componentLabel,
@@ -61,7 +68,8 @@ const API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS = [
 const ASBCP_SERVICE_ACCOUNT = 'agentsmith-sandbox-control-plane';
 const ASBCP_CONFIG_MAP = 'asbcp-config';
 const ASBCP_CONFIG_PATH = '/etc/asbcp/asbcp-config.yaml';
-const ASBCP_IMAGE_REPOSITORY_PATTERN = /(?:^|\/)agentsmith-sandbox-control-plane(?=[:@])/u;
+const ASBCP_GHCR_IMAGE_REPOSITORY_PATTERN = /^ghcr\.io\/agentsmith-project\/agentsmith-sandbox-control-plane(?=[:@])/u;
+const ASBCP_LOCAL_KIND_IMAGE_REPOSITORY_PATTERN = /^kind-registry:5000\/mbos\/agentsmith-sandbox-control-plane(?=[:@])/u;
 const IMAGE_SHA256_DIGEST_PATTERN = /@sha256:[a-f0-9]{64}$/iu;
 
 function isAsbcpCanonicalIdentifier(value: string): boolean {
@@ -96,6 +104,22 @@ type ApiProductionEntrypointOptions = {
   apiPackage?: PackageJsonLike;
   dockerfileText?: string;
 };
+
+type RenderCheckOptions = {
+  siteEnvPath?: string;
+  substrateTruthPath?: string;
+  manifestPath?: string;
+  templatesRoot?: string;
+  profile?: RenderCheckProfile;
+};
+
+type RenderedOutputCheckOptions = {
+  profile?: UnifiedDeployProfile;
+};
+
+type RenderCheckProfile = UnifiedDeployProfile | 'all';
+
+const RENDER_CHECK_PROFILE_EXPECTED = 'local-kind, existing-cluster, or all';
 
 function addFailure(failures: CheckFailure[], resourcePath: string, message: string): void {
   failures.push({ path: resourcePath, message });
@@ -580,6 +604,27 @@ function projectedEnvKeys(
   return keys;
 }
 
+function projectedEnvNamesAndSourceKeys(
+  documents: readonly Record<string, unknown>[],
+  container: Record<string, unknown>,
+): Set<string> {
+  const keys = projectedEnvKeys(documents, container);
+  const env = Array.isArray(container.env) ? container.env.map(asRecord) : [];
+  for (const entry of env) {
+    const valueFrom = asRecord(entry.valueFrom);
+    const configMapKey = asRecord(valueFrom.configMapKeyRef).key;
+    if (typeof configMapKey === 'string') {
+      keys.add(configMapKey);
+    }
+    const secretKey = asRecord(valueFrom.secretKeyRef).key;
+    if (typeof secretKey === 'string') {
+      keys.add(secretKey);
+    }
+  }
+
+  return keys;
+}
+
 function containerPorts(container: Record<string, unknown>): number[] {
   const ports = Array.isArray(container.ports) ? container.ports : [];
   return ports
@@ -725,16 +770,31 @@ function checkProductSchemaBootstrapJob(
     );
   }
 
-  const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
-  if (
-    !hasEnvFromRef(envFrom, 'configMapRef', AGENTSMITH_APP_CONFIG_MAP)
-    || !hasEnvFromRef(envFrom, 'secretRef', AGENTSMITH_APP_SECRET)
-  ) {
+  const databaseUrlRef = containerSecretKeyRef(container, 'DATABASE_URL');
+  if (databaseUrlRef.name !== AGENTSMITH_APP_SECRET || databaseUrlRef.key !== 'DATABASE_URL') {
     addFailure(
       failures,
       `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
-      'product schema bootstrap Job must consume agentsmith-app-config and agentsmith-app-secrets',
+      'product schema bootstrap Job must project DATABASE_URL from agentsmith-app-secrets/DATABASE_URL',
     );
+  }
+  const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
+  if (envFrom.length > 0) {
+    addFailure(
+      failures,
+      `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+      'product schema bootstrap Job must use explicit env key projections instead of envFrom',
+    );
+  }
+  const projectedKeys = projectedEnvNamesAndSourceKeys(documents, container);
+  for (const forbiddenKey of ['ASBCP_INTERNAL_BASE_URL', 'ASBCP_SERVICE_KEY']) {
+    if (projectedKeys.has(forbiddenKey)) {
+      addFailure(
+        failures,
+        `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+        `product schema bootstrap Job must not project ${forbiddenKey}`,
+      );
+    }
   }
 }
 
@@ -1290,7 +1350,11 @@ function checkRolloutChecksumAnnotations(documents: readonly Record<string, unkn
   }
 }
 
-function checkAsbcpContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+function checkAsbcpContract(
+  documents: readonly Record<string, unknown>[],
+  failures: CheckFailure[],
+  options: RenderedOutputCheckOptions,
+): void {
   const deployment = resourceByKindName(documents, 'Deployment', ASBCP_SERVICE_ACCOUNT);
   const podSpec = deploymentPodSpec(documents, ASBCP_SERVICE_ACCOUNT);
   const container = deploymentContainer(documents, ASBCP_SERVICE_ACCOUNT, 'asbcp');
@@ -1315,8 +1379,12 @@ function checkAsbcpContract(documents: readonly Record<string, unknown>[], failu
     addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP must use its dedicated ServiceAccount');
   }
   const asbcpImage = typeof container.image === 'string' ? container.image : '';
-  if (!ASBCP_IMAGE_REPOSITORY_PATTERN.test(asbcpImage)) {
+  const isGhcrImage = ASBCP_GHCR_IMAGE_REPOSITORY_PATTERN.test(asbcpImage);
+  const isLocalKindImage = ASBCP_LOCAL_KIND_IMAGE_REPOSITORY_PATTERN.test(asbcpImage);
+  if (!isGhcrImage && !isLocalKindImage) {
     addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
+  } else if (isLocalKindImage && options.profile !== undefined && options.profile !== 'local-kind') {
+    addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP local-kind registry image is only allowed for local-kind renders');
   } else if (!IMAGE_SHA256_DIGEST_PATTERN.test(asbcpImage)) {
     addFailure(failures, `Deployment/${ASBCP_SERVICE_ACCOUNT}`, 'ASBCP image must be pinned by sha256 digest');
   }
@@ -1450,7 +1518,7 @@ function checkWebServerRouteEnv(documents: readonly Record<string, unknown>[], f
       );
     }
   }
-  const projectedKeys = projectedEnvKeys(documents, web);
+  const projectedKeys = projectedEnvNamesAndSourceKeys(documents, web);
   for (const forbiddenKey of [
     'ASBCP_INTERNAL_BASE_URL',
     'ASBCP_SERVICE_KEY',
@@ -1473,7 +1541,10 @@ function checkWebServerRouteEnv(documents: readonly Record<string, unknown>[], f
   }
 }
 
-export function checkRenderedOutput(renderedYaml: string): CheckResult {
+export function checkRenderedOutput(
+  renderedYaml: string,
+  options: RenderedOutputCheckOptions = {},
+): CheckResult {
   const parsed = parseKubernetesDocuments(renderedYaml);
   const failures = [...parsed.failures, ...checkApiSingleReplica(renderedYaml).failures];
 
@@ -1490,7 +1561,7 @@ export function checkRenderedOutput(renderedYaml: string): CheckResult {
     checkLlmupContract(parsed.documents, failures);
     checkAfscpContract(parsed.documents, failures);
     checkRolloutChecksumAnnotations(parsed.documents, failures);
-    checkAsbcpContract(parsed.documents, failures);
+    checkAsbcpContract(parsed.documents, failures, options);
   }
 
   return {
@@ -1499,19 +1570,89 @@ export function checkRenderedOutput(renderedYaml: string): CheckResult {
   };
 }
 
-async function checkRenderedProfile(profile: 'local-kind' | 'existing-cluster'): Promise<CheckFailure[]> {
-  const rendered = await renderUnifiedDeployFromFiles({ profile });
-  return checkRenderedOutput(rendered.output).failures.map((failure) => ({
+export async function checkRenderedProfile(
+  profile: UnifiedDeployProfile,
+  options: RenderCheckOptions = {},
+): Promise<CheckFailure[]> {
+  const rendered = await renderUnifiedDeployFromFiles({
+    profile,
+    siteEnvPath: options.siteEnvPath,
+    substrateTruthPath: options.substrateTruthPath,
+    manifestPath: options.manifestPath,
+    templatesRoot: options.templatesRoot,
+  });
+  return checkRenderedOutput(rendered.output, { profile }).failures.map((failure) => ({
     path: `${profile}:${failure.path}`,
     message: failure.message,
   }));
 }
 
+function parseRenderCheckProfile(value: string): RenderCheckProfile {
+  if (value === 'all' || isUnifiedDeployProfile(value)) {
+    return value;
+  }
+
+  throw new Error(`unknown --profile value: ${value}; expected ${RENDER_CHECK_PROFILE_EXPECTED}`);
+}
+
+function selectedRenderProfiles(profile: RenderCheckProfile | undefined): UnifiedDeployProfile[] {
+  if (profile === undefined || profile === 'all') {
+    return [...TARGET_PROFILES];
+  }
+
+  return [profile];
+}
+
+function parseCliOptions(argv: readonly string[]): RenderCheckOptions {
+  const options: RenderCheckOptions = {};
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? '';
+    if (arg === '--profile') {
+      const value = argv[index + 1];
+      if (typeof value !== 'string' || value.startsWith('--')) {
+        throw new Error(`--profile requires a value; expected ${RENDER_CHECK_PROFILE_EXPECTED}`);
+      }
+      options.profile = parseRenderCheckProfile(value);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--profile=')) {
+      options.profile = parseRenderCheckProfile(arg.slice('--profile='.length));
+      continue;
+    }
+    if (arg.startsWith('--site-env=')) {
+      options.siteEnvPath = arg.slice('--site-env='.length);
+      continue;
+    }
+    if (arg.startsWith('--substrate-truth=')) {
+      options.substrateTruthPath = arg.slice('--substrate-truth='.length);
+      continue;
+    }
+    if (arg.startsWith('--manifest=')) {
+      options.manifestPath = arg.slice('--manifest='.length);
+      continue;
+    }
+    if (arg.startsWith('--templates-root=')) {
+      options.templatesRoot = arg.slice('--templates-root='.length);
+      continue;
+    }
+
+    throw new Error(`unknown argument: ${arg}`);
+  }
+
+  return options;
+}
+
 async function main(): Promise<void> {
+  const options = parseCliOptions(process.argv.slice(2));
+  const profiles = selectedRenderProfiles(options.profile);
+  const profileFailures = (await Promise.all(
+    profiles.map((profile) => checkRenderedProfile(profile, options)),
+  )).flat();
   const failures = [
     ...checkApiProductionEntrypointScripts().failures,
-    ...await checkRenderedProfile('local-kind'),
-    ...await checkRenderedProfile('existing-cluster'),
+    ...profileFailures,
   ];
 
   if (failures.length > 0) {
@@ -1532,7 +1673,7 @@ async function main(): Promise<void> {
     failures: [],
   });
 
-  process.stdout.write(`[unified-deploy] render check passed for local-kind, existing-cluster\n[unified-deploy] evidence: ${evidence.paths.report_path}\n`);
+  process.stdout.write(`[unified-deploy] render check passed for ${profiles.join(', ')}\n[unified-deploy] evidence: ${evidence.paths.report_path}\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

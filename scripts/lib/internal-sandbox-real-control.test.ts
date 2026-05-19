@@ -13,6 +13,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 type CapturedEnv = Record<string, string>;
 
 const tempRoots: string[] = [];
+const ASBCP_DIGEST_A = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+const ASBCP_DIGEST_B = 'sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+const ASBCP_CANONICAL_V1_IMAGE = `ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1.0.0@${ASBCP_DIGEST_A}`;
+const ASBCP_CANONICAL_V1_WRONG_DIGEST_IMAGE = `ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v1.0.0@${ASBCP_DIGEST_B}`;
+
+function asbcpImageLockContent(image: string): string {
+  return [
+    'asbcp_version=v1.0.0',
+    `asbcp_source_image=${image}`,
+    'asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v1.0.0',
+    'asbcp_commit_sha=1234567890abcdef1234567890abcdef12345678',
+    '',
+  ].join('\n');
+}
 
 function writeExecutable(filePath: string, content: string): void {
   writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o755 });
@@ -185,6 +199,118 @@ ${extraStateEnv}
   return parseCapturedEnv(captureFile);
 }
 
+function runStartAsbcpWithImage(options: { image?: string; lockImage?: string }): ReturnType<typeof spawnSync> {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-image-'));
+  tempRoots.push(tempRoot);
+
+  const binDir = path.join(tempRoot, 'bin');
+  const internalDir = path.join(tempRoot, 'internal');
+  const stateFile = path.join(tempRoot, 'sandbox-control.env');
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const lockPath = path.join(tempRoot, 'asbcp-image.lock');
+  const dockerRunMarker = path.join(tempRoot, 'docker-run.marker');
+
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(internalDir, { recursive: true });
+  writeFileSync(configPath, 'version: 1\n', 'utf8');
+  if (options.lockImage !== undefined) {
+    writeFileSync(lockPath, asbcpImageLockContent(options.lockImage), 'utf8');
+  }
+
+  writeExecutable(
+    path.join(binDir, 'curl'),
+    `#!/usr/bin/env bash
+if [[ -f "${dockerRunMarker}" ]]; then
+  exit 0
+fi
+exit 7
+`,
+  );
+  writeExecutable(path.join(binDir, 'lsof'), '#!/usr/bin/env bash\nexit 0\n');
+  writeExecutable(
+    path.join(binDir, 'docker'),
+    `#!/usr/bin/env bash
+if [[ "$1" == "run" ]]; then
+  touch "${dockerRunMarker}"
+fi
+exit 0
+`,
+  );
+
+  writeFileSync(
+    stateFile,
+    `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+${options.image === undefined ? '' : `ASBCP_IMAGE="${options.image}"`}
+ASBCP_IMAGE_LOCK_PATH="${lockPath}"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28081"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28081"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+`,
+    'utf8',
+  );
+
+  return spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+    },
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
+function runLocalManualAsbcpImageResolver(options: string | { image?: string; lockImage?: string }): ReturnType<typeof spawnSync> {
+  const resolverOptions = typeof options === 'string' ? { image: options } : options;
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-asbcp-image-'));
+  tempRoots.push(tempRoot);
+
+  const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
+  const envFile = path.join(tempRoot, '.env.local-manual');
+  const internalEnvFile = path.join(tempRoot, 'local-manual-internal.env');
+  const lockPath = path.join(tempRoot, 'asbcp-image.lock');
+
+  mkdirSync(path.dirname(envFile), { recursive: true });
+  writeFileSync(envFile, '', 'utf8');
+  writeFileSync(internalEnvFile, '', 'utf8');
+  if (resolverOptions.lockImage !== undefined) {
+    writeFileSync(lockPath, asbcpImageLockContent(resolverOptions.lockImage), 'utf8');
+  }
+
+  return spawnSync(
+    'bash',
+    [
+      '-lc',
+      `
+        set -euo pipefail
+        export ENV_FILE="${envFile}"
+        export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+        export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
+        export LOCAL_MANUAL_INTERNAL_ENV_FILE="${internalEnvFile}"
+        export ASBCP_IMAGE_LOCK_PATH="${lockPath}"
+        source "${repoRoot}/scripts/local-manual/internal-common.sh"
+        ${resolverOptions.image === undefined ? 'unset ASBCP_IMAGE' : `ASBCP_IMAGE="${resolverOptions.image}"`}
+        resolve_local_manual_asbcp_image
+      `,
+    ],
+    {
+      cwd: repoRoot,
+      env: { ...process.env },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+}
+
 describe('internal sandbox real control', () => {
   afterEach(() => {
     while (tempRoots.length > 0) {
@@ -235,6 +361,62 @@ AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
 
     expect(capturedEnv.ASBCP_AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
     expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
+  });
+
+  it('rejects digest-pinned non-ASBCP images before launching the internal container', () => {
+    const result = runStartAsbcpWithImage({
+      image: 'ghcr.io/example/not-asbcp:v1.0.0@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE must use canonical agentsmith-sandbox-control-plane repository');
+  });
+
+  it('rejects same-tail ASBCP images from the wrong owner before launching the internal container', () => {
+    const result = runStartAsbcpWithImage({
+      image: `ghcr.io/example/agentsmith-sandbox-control-plane:v1.0.0@${ASBCP_DIGEST_A}`,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE must use canonical ASBCP image repository');
+  });
+
+  it('rejects ASBCP_IMAGE overrides whose digest differs from the readable image lock', () => {
+    const result = runStartAsbcpWithImage({
+      image: ASBCP_CANONICAL_V1_WRONG_DIGEST_IMAGE,
+      lockImage: ASBCP_CANONICAL_V1_IMAGE,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE digest must match asbcp-image.lock');
+  });
+
+  it('rejects digest-pinned non-ASBCP images resolved from the image lock', () => {
+    const result = runStartAsbcpWithImage({
+      lockImage: 'ghcr.io/example/not-asbcp:v1.0.0@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE must use canonical agentsmith-sandbox-control-plane repository');
+  });
+
+  it('rejects digest-pinned non-ASBCP images in the local-real resolver', () => {
+    const result = runLocalManualAsbcpImageResolver(
+      'ghcr.io/example/not-asbcp:v1.0.0@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE must use canonical agentsmith-sandbox-control-plane repository');
+  });
+
+  it('rejects ASBCP_IMAGE overrides with a digest that differs from the local-real image lock', () => {
+    const result = runLocalManualAsbcpImageResolver({
+      image: ASBCP_CANONICAL_V1_WRONG_DIGEST_IMAGE,
+      lockImage: ASBCP_CANONICAL_V1_IMAGE,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ASBCP_IMAGE digest must match asbcp-image.lock');
   });
 
   it('exposes only ASBCP image runtime commands', () => {

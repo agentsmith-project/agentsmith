@@ -251,10 +251,11 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 2. universal-proxy
 3. Node API
 4. Next Web
+5. local internal sandbox（kind / JuiceFS / ASBCP task execution service）
 
 收成一条正式链路。`local-real` 是人类入口名，底层仍映射到已注册的 `local-manual` runtime line。
 
-默认 `local-real` 只保证真实本地平台可用，不自动创建 Agent task 诊断资源或本机 runner 诊断资源。需要这些证据，或需要本机完整验证 sandbox / JuiceFS 时，再按 owner runbook 显式执行底层 diagnostic adapter。
+默认 `local-real-up` 会拉起真实本地平台和 internal sandbox；它仍不自动创建 Agent task 诊断资源或本机 runner 诊断资源。需要这些证据时，再按 owner runbook 显式执行底层 diagnostic adapter。
 
 ### First-time setup
 
@@ -297,13 +298,13 @@ PROXY_PORT=39080
 4. 底层 down adapter 默认不再清理未追踪的端口监听，避免误停其它工作线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
 5. 当前单机基线是同一时刻只运行一条工作线；切换前先执行上一条线的 `*-down` 或 `*-reset`
 
-### Start platform only
+### Start platform with internal sandbox
 
 ```bash
 make local-real-up
 ```
 
-这一步只启动平台，不自动创建 Agent task 诊断资源。
+这一步启动平台并拉起 internal sandbox，不自动创建 Agent task 诊断资源。
 
 ### Prepare Agent task diagnostics only when owner runbook requires it
 
@@ -325,14 +326,14 @@ make local-manual-seed-agent-task
 make local-real-status
 ```
 
-### Enable local internal sandbox only when owner runbook requires it
+### Inspect or rerun local internal sandbox when owner runbook requires it
 
 ```bash
 make local-manual-internal-up
 make local-manual-internal-status
 ```
 
-这组命令是 internal owner diagnostic adapter，不是普通本机真实环境入口。
+`make local-real-up` / `make local-real-reset` 已经会调用 `local-manual-internal-up`。这组命令是 internal owner diagnostic adapter，只在需要聚焦重跑或排障 internal sandbox 时直接使用。
 
 这一步会在底层 `local-manual` runtime line 基础上补：
 
@@ -353,6 +354,8 @@ make local-manual-internal-down
 ```bash
 make local-real-reset
 ```
+
+这一步会重建本地真实环境，并重新拉起 internal sandbox。
 
 ### Stop everything
 

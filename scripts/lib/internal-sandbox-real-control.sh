@@ -29,6 +29,9 @@ ASBCP_CONTAINER_GID="${ASBCP_CONTAINER_GID:-10001}"
 ASBCP_KUBECONFIG_GROUP_GID="${ASBCP_KUBECONFIG_GROUP_GID:-$(id -g)}"
 ASBCP_PROJECTED_KUBECONFIG_DIR="${ASBCP_PROJECTED_KUBECONFIG_DIR:-${INTERNAL_REAL_DIR}/asbcp-secrets}"
 ASBCP_PROJECTED_KUBECONFIG_PATH="${ASBCP_PROJECTED_KUBECONFIG_PATH:-${ASBCP_PROJECTED_KUBECONFIG_DIR}/asbcp-kubeconfig}"
+ASBCP_PROJECTED_CONFIG_PATH="${ASBCP_PROJECTED_CONFIG_PATH:-${ASBCP_PROJECTED_KUBECONFIG_DIR}/asbcp-config.yaml}"
+ASBCP_PROJECTION_DIR_BASENAME="asbcp-secrets"
+ASBCP_PROJECTION_MARKER_NAME=".agentsmith-asbcp-projection"
 ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH="${INTERNAL_REAL_DIR}/asbcp-kubeconfig"
 
 info() { echo "[internal-sandbox-control] $*"; }
@@ -128,17 +131,27 @@ resolve_asbcp_host_kubeconfig_path() {
   realpath -m "${configured}"
 }
 
-prepare_asbcp_kubeconfig_projection() {
+prepare_asbcp_projection_dir() {
+  local target_dir="$1"
+  local marker_tmp
+  mkdir -p "${target_dir}"
+  chmod 0700 "${target_dir}"
+  marker_tmp="${target_dir}/${ASBCP_PROJECTION_MARKER_NAME}.tmp.$$"
+  printf 'agentsmith-asbcp-projection\n' > "${marker_tmp}"
+  chmod 0600 "${marker_tmp}"
+  mv "${marker_tmp}" "${target_dir}/${ASBCP_PROJECTION_MARKER_NAME}"
+}
+
+prepare_asbcp_file_projection() {
   local source_path="$1"
-  local target_path="${ASBCP_PROJECTED_KUBECONFIG_PATH}"
+  local target_path="$2"
   local target_dir
   local tmp_path
   target_dir="$(dirname "${target_path}")"
-  if [[ "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}" != "${target_path}" ]]; then
+  if [[ "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}" != "${ASBCP_PROJECTED_KUBECONFIG_PATH}" ]]; then
     rm -f "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}"
   fi
-  mkdir -p "${target_dir}"
-  chmod 0700 "${target_dir}"
+  prepare_asbcp_projection_dir "${target_dir}"
   tmp_path="${target_path}.tmp.$$"
   rm -f "${tmp_path}"
   if ! (umask 0077; cp "${source_path}" "${tmp_path}"); then
@@ -154,15 +167,41 @@ prepare_asbcp_kubeconfig_projection() {
   printf '%s\n' "${target_path}"
 }
 
-cleanup_asbcp_kubeconfig_projection() {
-  rm -f "${ASBCP_PROJECTED_KUBECONFIG_PATH}"
-  if [[ "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}" != "${ASBCP_PROJECTED_KUBECONFIG_PATH}" ]]; then
-    rm -f "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}"
+prepare_asbcp_config_projection() {
+  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_CONFIG_PATH}"
+}
+
+prepare_asbcp_kubeconfig_projection() {
+  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_KUBECONFIG_PATH}"
+}
+
+owned_asbcp_projection_dir() {
+  local configured_dir="$1"
+  local internal_real_dir projection_dir marker_path
+  [[ -n "${configured_dir}" ]] || return 1
+  internal_real_dir="$(realpath -m "${INTERNAL_REAL_DIR}")"
+  projection_dir="$(realpath -m "${configured_dir}")"
+  [[ "${projection_dir}" != "${internal_real_dir}" ]] || return 1
+  case "${projection_dir}/" in
+    "${internal_real_dir}/"*) ;;
+    *) return 1 ;;
+  esac
+  [[ "$(basename "${projection_dir}")" == "${ASBCP_PROJECTION_DIR_BASENAME}" ]] || return 1
+  marker_path="${projection_dir}/${ASBCP_PROJECTION_MARKER_NAME}"
+  [[ -f "${marker_path}" ]] || return 1
+  printf '%s\n' "${projection_dir}"
+}
+
+cleanup_asbcp_projection() {
+  local projection_dir legacy_path internal_real_dir
+  projection_dir="$(owned_asbcp_projection_dir "${ASBCP_PROJECTED_KUBECONFIG_DIR}")" || projection_dir=""
+  if [[ -n "${projection_dir}" ]]; then
+    rm -rf "${projection_dir}"
   fi
-  case "${ASBCP_PROJECTED_KUBECONFIG_DIR}" in
-    "${INTERNAL_REAL_DIR}"/*)
-      rm -rf "${ASBCP_PROJECTED_KUBECONFIG_DIR}"
-      ;;
+  internal_real_dir="$(realpath -m "${INTERNAL_REAL_DIR}")"
+  legacy_path="$(realpath -m "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}")"
+  case "${legacy_path}" in
+    "${internal_real_dir}/"*) rm -f "${legacy_path}" ;;
   esac
 }
 
@@ -181,7 +220,7 @@ asbcp_container_running() {
 
 start_asbcp() {
   local pid image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
-  local host_kubeconfig projected_kubeconfig resolve_status
+  local host_kubeconfig projected_config projected_kubeconfig resolve_status
   local -a docker_args
   pid="$(read_pid "${ASBCP_PID_FILE}")"
   if pid_alive "${pid}" && port_ready; then
@@ -222,6 +261,7 @@ start_asbcp() {
     docker pull --platform linux/amd64 "${image}" >/dev/null
   fi
   docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  projected_config="$(prepare_asbcp_config_projection "${ASBCP_CONFIG_PATH}")"
   projected_kubeconfig="$(prepare_asbcp_kubeconfig_projection "${host_kubeconfig}")"
   docker_args=(
     run
@@ -230,7 +270,7 @@ start_asbcp() {
     --network host
     --user "${ASBCP_CONTAINER_UID}:${ASBCP_CONTAINER_GID}"
     --group-add "${ASBCP_KUBECONFIG_GROUP_GID}"
-    -v "${ASBCP_CONFIG_PATH}:${ASBCP_CONTAINER_CONFIG_PATH}:ro"
+    -v "${projected_config}:${ASBCP_CONTAINER_CONFIG_PATH}:ro"
     -v "${projected_kubeconfig}:${ASBCP_CONTAINER_KUBECONFIG_PATH}:ro"
     -e "ASBCP_CONFIG_PATH=${ASBCP_CONTAINER_CONFIG_PATH}"
     -e "KUBECONFIG=${ASBCP_CONTAINER_KUBECONFIG_PATH}"
@@ -257,14 +297,14 @@ start_asbcp() {
   done
   echo "[internal-sandbox-control] ASBCP failed to become ready" >&2
   tail -n 120 "${ASBCP_LOG}" >&2 || true
-  cleanup_asbcp_kubeconfig_projection
+  cleanup_asbcp_projection
   exit 1
 }
 
 stop_asbcp() {
   docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
   rm -f "${ASBCP_CONTAINER_ID_FILE}"
-  cleanup_asbcp_kubeconfig_projection
+  cleanup_asbcp_projection
   stop_pid "${ASBCP_PID_FILE}"
   kill_port_listeners
 }

@@ -2,6 +2,21 @@
 
 internal_real_gate_info() { echo "[internal-real-gate] $*"; }
 
+internal_real_gate_secret_fingerprint() {
+  local value="${1:-}"
+  local digest
+  if [[ -z "${value}" ]]; then
+    printf '\n'
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest="$(printf '%s' "${value}" | sha256sum | awk '{print $1}')"
+  else
+    digest="$(printf '%s' "${value}" | shasum -a 256 | awk '{print $1}')"
+  fi
+  printf 'sha256:%s\n' "${digest}"
+}
+
 internal_real_gate_require_host_tools() {
   if ! command -v kubectl >/dev/null 2>&1; then
     echo "[internal-real-gate] kubectl is required." >&2
@@ -284,21 +299,32 @@ ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/
 ASBCP_CONFIG_PATH="${config_path}"
 ASBCP_PORT="${ASBCP_PORT}"
 ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
-ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
+ASBCP_SERVICE_KEY_FINGERPRINT="$(internal_real_gate_secret_fingerprint "${ASBCP_SERVICE_KEY_VALUE}")"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
 ASBCP_LOG="${sandbox_log}"
 AFSCP_INTERNAL_BASE_URL="${afscp_internal_base_url}"
-AFSCP_ORCHESTRATOR_TOKEN="${afscp_orchestrator_token}"
+AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="$(internal_real_gate_secret_fingerprint "${afscp_orchestrator_token}")"
 AFSCP_CALLER_SERVICE="${afscp_caller_service}"
 AFSCP_ACTOR_TYPE="${afscp_actor_type}"
 AFSCP_ACTOR_ID="${afscp_actor_id}"
 AFSCP_BASE_URL="${AFSCP_BASE_URL:-${afscp_internal_base_url}}"
 AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-${afscp_caller_service}}"
-AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-${afscp_orchestrator_token}}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN_FINGERPRINT="$(internal_real_gate_secret_fingerprint "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-${afscp_orchestrator_token}}")"
 AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-${afscp_actor_type}}"
 AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_actor_id}}"
 KUBECONFIG="${KUBECONFIG:-}"
 EOF
+}
+
+internal_real_gate_start_runtime() {
+  local state_file="$1"
+  local afscp_orchestrator_token
+  afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
+
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" \
+    ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" \
+    AFSCP_ORCHESTRATOR_TOKEN="${afscp_orchestrator_token}" \
+    bash "${CONTROL_SCRIPT}" start-asbcp 1>&2
 }
 
 internal_real_gate_stop_runtime() {
@@ -402,7 +428,7 @@ prepare_internal_backend_real_spec_runtime() {
   internal_real_gate_reset_runtime "${spec_state_file}"
 
   echo "[internal-real-gate] starting isolated ASBCP for ${spec_slug} on :${ASBCP_PORT}" >&2
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-asbcp 1>&2
+  internal_real_gate_start_runtime "${spec_state_file}"
   CURRENT_SANDBOX_STATE_FILE="${spec_state_file}"
   printf '%s\n' "${spec_state_file}"
 }

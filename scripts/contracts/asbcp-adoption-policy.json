@@ -1,0 +1,18 @@
+{
+  "schema_id": "https://agentsmith.dev/schemas/agentsmith/asbcp-adoption-policy.v1.json",
+  "schema_version": "v1",
+  "final_manifest_schema": {
+    "schema_id": "https://agentsmith.dev/schemas/asbcp/final-manifest.v1.json",
+    "manifest_schema_version": "v1"
+  },
+  "supported_api_contract_versions": [
+    "v1"
+  ],
+  "breaking_changes_allowlist": [
+    {
+      "id": "ASBCP-BC-0001",
+      "summary": "pre-GA clean cut makes durable terminal truth the workload DELETE authority; missing durable release fact plus pod absence returns fail-closed retryable 409 workload_release_incomplete, release facts require the ConfigMap fact store/RBAC path, and workspace-binding reconciliation is fail-closed when provider prerequisites or binding state cannot be proven.",
+      "expires_on": "2027-05-19"
+    }
+  ]
+}

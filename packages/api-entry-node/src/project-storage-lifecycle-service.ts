@@ -212,6 +212,7 @@ export class ProjectStorageLifecycleService implements ProjectStorageLifecycleSe
         ...(input.requestId ? { delete_correlation_id: input.requestId } : {}),
         updated_at: now,
       });
+      let workspaceBindingReleased = true;
       try {
         await this.internalAgentWorkspaceBindingManager?.deleteWorkspaceBinding({
           workspaceId: input.workspaceId,
@@ -222,9 +223,10 @@ export class ProjectStorageLifecycleService implements ProjectStorageLifecycleSe
         }
       } catch (error) {
         lastErrorCode = safeTeardownErrorCode(error);
+        workspaceBindingReleased = false;
       }
 
-      if (this.fileLibraryStorageAdapter?.enabled && library.status !== 'deleted') {
+      if (this.fileLibraryStorageAdapter?.enabled && library.status !== 'deleted' && workspaceBindingReleased) {
         try {
           await this.fileLibraryStorageAdapter.deleteRepoForLibrary({
             workspaceId: input.workspaceId,

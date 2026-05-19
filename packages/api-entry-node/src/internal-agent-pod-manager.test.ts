@@ -119,6 +119,213 @@ describe('internal-agent-pod-manager', () => {
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 
+  it('polls GET after an async PUT ensure response instead of requiring PUT to return Running', async () => {
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce({ phase: 'offline' })
+      .mockResolvedValueOnce({ phase: 'Pending' })
+      .mockResolvedValueOnce({ phase: 'Running' });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({
+      httpStatus: 202,
+      workloadId: 'task_1',
+      status: 'accepted',
+      operationId: 'op_task_1',
+      correlationId: 'corr_task_1',
+    });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('continues with GET polling after PUT ensure times out when workload id is already known', async () => {
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce({ phase: 'offline' })
+      .mockResolvedValueOnce({ phase: 'Pending' })
+      .mockResolvedValueOnce({ phase: 'Running' });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_network_error: create_or_ensure_pod request timeout'),
+      { code: 'AGENT_SANDBOX_UNAVAILABLE' },
+    ));
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('continues with GET polling after PUT ensure returns HTTP 504 with an empty body', async () => {
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce({ phase: 'offline' })
+      .mockResolvedValueOnce({ phase: 'Pending' })
+      .mockResolvedValueOnce({ phase: 'Running' });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_error: create_or_ensure_pod 504'),
+      {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        operation: 'create_or_ensure_pod',
+        status: 504,
+      },
+    ));
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails from GET poll evidence after PUT ensure times out and the workload is failed', async () => {
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce({ phase: 'offline' })
+      .mockResolvedValueOnce({ phase: 'Failed' });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_network_error: create_or_ensure_pod TimeoutError'),
+      { code: 'AGENT_SANDBOX_UNAVAILABLE' },
+    ));
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_POD_FAILED',
+      message: 'sandbox_pod_failed',
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(2);
+  });
+
   it('fails fast when the workspace mount library root is not the file library root', async () => {
     const manager = new InternalAgentPodManagerImpl(
       {
@@ -616,6 +823,75 @@ describe('internal-agent-pod-manager', () => {
     expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
+
+  it.each([404, 409] as const)(
+    'fails terminal workload cleanup as retryable release incomplete on delete %i without creating a replacement',
+    async (status) => {
+      const deletePod = vi.fn().mockRejectedValue(Object.assign(
+        new Error(`asbcp_error: delete_pod ${status} release terminal truth missing`),
+        {
+          code: status === 409 ? 'AGENT_SANDBOX_RELEASE_INCOMPLETE' : 'AGENT_SANDBOX_NOT_FOUND',
+          status,
+          operation: 'delete_pod',
+          retryable: status === 409,
+          requestId: `asbcp_req_delete_${status}`,
+        },
+      ));
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockResolvedValueOnce({ phase: 'Completed' })
+            .mockResolvedValueOnce({ phase: 'Running' }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec: vi.fn(),
+        },
+        {
+          getAgentOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+          getAgentSessionOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+        },
+        'ws://api:20000',
+        {
+          phasePollIntervalMs: 1,
+          onlinePollIntervalMs: 1,
+        },
+      );
+
+      await expect(manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      })).rejects.toMatchObject({
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_terminal_workload',
+        retryable: true,
+        releaseDiagnostic: expect.objectContaining({
+          status,
+          operation: 'delete_pod',
+          requestId: `asbcp_req_delete_${status}`,
+        }),
+      });
+
+      expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserves a running workload pod when the runner process exists but session dispatch readiness never arrives', async () => {
     let now = 0;

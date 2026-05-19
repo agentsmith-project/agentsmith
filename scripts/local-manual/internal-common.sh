@@ -129,6 +129,21 @@ mkdir -p "${INTERNAL_REAL_DIR}"
 internal_info() { echo "[local-manual-internal] $*"; }
 internal_err() { echo "[local-manual-internal] ERROR: $*" >&2; }
 
+local_manual_internal_secret_fingerprint() {
+  local value="${1:-}"
+  local digest
+  if [[ -z "${value}" ]]; then
+    printf '\n'
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest="$(printf '%s' "${value}" | sha256sum | awk '{print $1}')"
+  else
+    digest="$(printf '%s' "${value}" | shasum -a 256 | awk '{print $1}')"
+  fi
+  printf 'sha256:%s\n' "${digest}"
+}
+
 require_local_manual_context() {
   local active
   active="$(current_active_scenario || true)"
@@ -2580,8 +2595,13 @@ resolve_local_manual_asbcp_image() {
 
 write_internal_state_env() {
   ensure_internal_common_runtime_env
-  local asbcp_image
+  local asbcp_image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
   asbcp_image="$(resolve_local_manual_asbcp_image)"
+  afscp_internal_base_url="${AFSCP_INTERNAL_BASE_URL:-${AFSCP_BASE_URL:-http://127.0.0.1:28090}}"
+  afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
+  afscp_caller_service="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
+  afscp_actor_type="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"
+  afscp_actor_id="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${afscp_caller_service}}}"
   cat > "${INTERNAL_SANDBOX_STATE_FILE}" <<EOF
 ROOT_DIR="${ROOT_DIR}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR}"
@@ -2590,19 +2610,19 @@ ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH}"
 ASBCP_CONFIG_PATH="${INTERNAL_ASBCP_CONFIG}"
 ASBCP_PORT="${INTERNAL_SANDBOX_PORT}"
 ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
-ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
+ASBCP_SERVICE_KEY_FINGERPRINT="$(local_manual_internal_secret_fingerprint "${ASBCP_SERVICE_KEY_VALUE}")"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
 ASBCP_LOG="${INTERNAL_ASBCP_LOG}"
-AFSCP_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
-AFSCP_INTERNAL_BASE_URL="${AFSCP_BASE_URL:-http://127.0.0.1:28090}"
-AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
-AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
-AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}"
-AFSCP_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}"
-AFSCP_ORCHESTRATOR_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
-AFSCP_ORCHESTRATOR_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
-AFSCP_ACTOR_TYPE="${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}"
-AFSCP_ACTOR_ID="${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-agentsmith-sandbox-control-plane}}"
+AFSCP_BASE_URL="${afscp_internal_base_url}"
+AFSCP_INTERNAL_BASE_URL="${afscp_internal_base_url}"
+AFSCP_ORCHESTRATOR_CALLER_SERVICE="${afscp_caller_service}"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN_FINGERPRINT="$(local_manual_internal_secret_fingerprint "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-${afscp_orchestrator_token}}")"
+AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="$(local_manual_internal_secret_fingerprint "${afscp_orchestrator_token}")"
+AFSCP_CALLER_SERVICE="${afscp_caller_service}"
+AFSCP_ORCHESTRATOR_ACTOR_TYPE="${afscp_actor_type}"
+AFSCP_ORCHESTRATOR_ACTOR_ID="${afscp_actor_id}"
+AFSCP_ACTOR_TYPE="${afscp_actor_type}"
+AFSCP_ACTOR_ID="${afscp_actor_id}"
 KUBECONFIG="${KUBECONFIG:-}"
 EOF
 }
@@ -2628,10 +2648,12 @@ restore_local_manual_external_mode() {
 
 start_internal_runtime() {
   ensure_internal_common_runtime_env
+  local afscp_orchestrator_token
+  afscp_orchestrator_token="${AFSCP_ORCHESTRATOR_TOKEN:-${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-agentsmith-local-afscp-orchestrator-token}}"
   write_internal_sandbox_config
   write_internal_state_env
   stop_internal_sandbox_runtime
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${afscp_orchestrator_token}" bash "${CONTROL_SCRIPT}" start-asbcp
 }
 
 restart_api_with_mode() {

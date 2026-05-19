@@ -199,6 +199,84 @@ ${extraStateEnv}
   return parseCapturedEnv(captureFile);
 }
 
+function runStartAsbcpAndCaptureLogWithSecretEcho(): string {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-log-'));
+  tempRoots.push(tempRoot);
+
+  const binDir = path.join(tempRoot, 'bin');
+  const internalDir = path.join(tempRoot, 'internal');
+  const stateFile = path.join(tempRoot, 'sandbox-control.env');
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const logPath = path.join(internalDir, 'asbcp.log');
+  const readyFile = path.join(tempRoot, 'asbcp-ready.marker');
+
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(internalDir, { recursive: true });
+  writeFileSync(configPath, 'version: 1\n', 'utf8');
+
+  writeExecutable(
+    path.join(binDir, 'curl'),
+    `#!/usr/bin/env bash
+[[ -f "${readyFile}" ]] && exit 0
+exit 7
+`,
+  );
+  writeExecutable(path.join(binDir, 'lsof'), '#!/usr/bin/env bash\nexit 0\n');
+  writeExecutable(
+    path.join(binDir, 'docker'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "rm" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" ]]; then
+  printf 'true\\n'
+  exit 0
+fi
+if [[ "$1" != "run" ]]; then
+  exit 0
+fi
+printf 'boot ASBCP_SERVICE_KEYS=sandbox-service-key ASBCP_AFSCP_ORCHESTRATOR_TOKEN=state-orchestrator-token\\n'
+touch "${readyFile}"
+sleep 0.1
+`,
+  );
+
+  writeFileSync(
+    stateFile,
+    `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28082"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28082"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${logPath}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+KUBECONFIG=""
+`,
+    'utf8',
+  );
+
+  execFileSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+    },
+    stdio: 'pipe',
+  });
+
+  return readFileSync(logPath, 'utf8');
+}
+
 function runStartAsbcpWithImage(options: { image?: string; lockImage?: string }): ReturnType<typeof spawnSync> {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-image-'));
@@ -361,6 +439,14 @@ AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
 
     expect(capturedEnv.ASBCP_AFSCP_ORCHESTRATOR_TOKEN).toBe('state-orchestrator-token');
     expect(capturedEnv.ASBCP_AFSCP_CALLER_SERVICE).toBe('agentsmith-sandbox-control-plane');
+  });
+
+  it('redacts ASBCP service key and AFSCP orchestrator token from launcher logs', () => {
+    const log = runStartAsbcpAndCaptureLogWithSecretEcho();
+
+    expect(log).toContain('[REDACTED]');
+    expect(log).not.toContain('sandbox-service-key');
+    expect(log).not.toContain('state-orchestrator-token');
   });
 
   it('rejects digest-pinned non-ASBCP images before launching the internal container', () => {

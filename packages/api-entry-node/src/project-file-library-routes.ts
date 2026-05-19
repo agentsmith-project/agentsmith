@@ -529,6 +529,7 @@ function mapDeleteRepoRouteError(error: unknown): {
   statusCode: number;
   errorCode: string;
   message: string;
+  context?: Record<string, unknown>;
 } {
   if (isDeleteRepoPendingContractFailure(error)) {
     return {
@@ -559,6 +560,7 @@ function mapDeleteRepoRouteError(error: unknown): {
       ? 'FILE_LIBRARY_DELETE_FAILED'
       : mapped.errorCode,
     message: mapped.message,
+    ...(mapped.context ? { context: mapped.context } : {}),
   };
 }
 
@@ -2818,6 +2820,10 @@ export async function handleProjectFileLibraryRoutes(args: {
           libraryId,
         });
       }
+      await (deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner)?.deleteWorkspaceBinding({
+        workspaceId,
+        fileLibraryId: libraryId,
+      });
       await deps.fileLibraryStorageAdapter.deleteRepoForLibrary({
         workspaceId,
         projectId,
@@ -2825,10 +2831,6 @@ export async function handleProjectFileLibraryRoutes(args: {
         actorUserId: user.id,
         requestId,
         reason: 'file_library_delete',
-      });
-      await (deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner)?.deleteWorkspaceBinding({
-        workspaceId,
-        fileLibraryId: libraryId,
       });
       await catalogRepo.delete(workspaceId, projectId, libraryId);
       res.statusCode = 204;
@@ -2874,6 +2876,11 @@ export async function handleProjectFileLibraryRoutes(args: {
             reason: 'not_empty_or_compensation',
           },
         });
+      } else if (mapped.context?.retryable === true) {
+        await catalogRepo.update(workspaceId, projectId, libraryId, {
+          status: 'deleting',
+          delete_correlation_id: requestId,
+        });
       } else if (!isFailedLibraryCleanup) {
         await catalogRepo.update(workspaceId, projectId, libraryId, {
           status: 'degraded',
@@ -2884,6 +2891,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         error_code: mapped.errorCode,
         message: mapped.message,
         ...(mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY' ? { file_library_id: libraryId } : {}),
+        ...(mapped.context ?? {}),
       });
     }
     return true;

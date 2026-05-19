@@ -10210,6 +10210,252 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('does not archive an active internal task when ASBCP hard teardown returns retryable 409', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releaseError = Object.assign(
+      new Error('asbcp_error: delete_pod 409 release terminal truth missing'),
+      {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_archive_release_409',
+      },
+    );
+    const requestHardTeardown = vi.fn(async () => {
+      throw releaseError;
+    });
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_archive_409',
+      name: 'Internal Archive 409 Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_archive_409', {
+      id: 'task_internal_archive_409',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal archive 409 task',
+      agent_id: 'agent_internal_archive_409',
+      agent_name: 'Internal Archive 409 Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_archive_409',
+      runId: 'run_internal_archive_409',
+      runnerId: 'agent_internal_archive_409',
+      resolvedRunnerId: 'agent_internal_archive_409',
+      requestId: 'req_internal_archive_409',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_archive_409',
+      } as never,
+      method: 'PATCH',
+      req: { headers: { 'x-request-id': 'req_archive_release_409' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ status: 'archived' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+      message: 'agent_task_internal_workload_release_pending',
+      task_id: 'task_internal_archive_409',
+      retryable: true,
+      release_diagnostic: expect.objectContaining({
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        request_id: 'asbcp_req_archive_release_409',
+      }),
+    }));
+    expect(requestHardTeardown).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_archive_409'),
+    });
+    await expect(deps.docStore.get<Record<string, unknown>>(
+      notebookTasksCollection('ws_default'),
+      'task_internal_archive_409',
+    )).resolves.toMatchObject({
+      status: 'active',
+    });
+  });
+
+  it('redacts secret-bearing ASBCP errors before writing internal workload release warnings', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const requestHardTeardown = vi.fn(async () => {
+        throw Object.assign(
+          new Error(
+            'asbcp_error: delete_pod 409 token=raw-release-token Authorization: Bearer raw-bearer-token api_key=raw-api-key release terminal truth missing',
+          ),
+          {
+            code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+            status: 409,
+            operation: 'delete_pod',
+            retryable: true,
+            requestId: 'asbcp_req_warn_redaction_409',
+          },
+        );
+      });
+      deps.internalWorkloadCoordinator = {
+        requestHardTeardown,
+      } as never;
+      deps.agentResourceService.getAgent = vi.fn(async () => ({
+        id: 'agent_internal_warn_redaction',
+        name: 'Internal Warn Redaction Agent',
+        mode: 'internal',
+        interaction_kind: 'notebook',
+        status: 'enabled',
+      }) as never);
+
+      const now = new Date().toISOString();
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_warn_redaction', {
+        id: 'task_internal_warn_redaction',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Internal warn redaction task',
+        agent_id: 'agent_internal_warn_redaction',
+        agent_name: 'Internal Warn Redaction Agent',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+        taskId: 'task_internal_warn_redaction',
+        runId: 'run_internal_warn_redaction',
+        runnerId: 'agent_internal_warn_redaction',
+        resolvedRunnerId: 'agent_internal_warn_redaction',
+        requestId: 'req_internal_warn_redaction',
+        startedAt: now,
+        heartbeatAt: now,
+      }))).resolves.toBe(true);
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_warn_redaction',
+        } as never,
+        method: 'PATCH',
+        req: { headers: { 'x-request-id': 'req_warn_redaction' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json: vi.fn(),
+        readBody: vi.fn(async () => ({ status: 'archived' })),
+      })).resolves.toBe(true);
+
+      const serializedWarnings = JSON.stringify(warnSpy.mock.calls);
+      expect(serializedWarnings).not.toContain('raw-release-token');
+      expect(serializedWarnings).not.toContain('raw-bearer-token');
+      expect(serializedWarnings).not.toContain('raw-api-key');
+      expect(serializedWarnings).toContain('[redacted]');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not return terminal close success when internal workload release returns retryable 409', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const deleteSession = vi.fn(async () => {
+      throw Object.assign(new Error('asbcp_error: delete_pod 409 release terminal truth missing'), {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_terminal_close_409',
+      });
+    });
+    deps.notebookTerminalService = {
+      getSessionWithinScope: vi.fn(async () => ({
+        id: 'term_close_release_409',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_close_release_409',
+        userId: 'user_1',
+        resolvedRunnerId: 'agent_terminal_close_release_409',
+      })),
+      deleteSession,
+    } as never;
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_close_release_409', {
+      id: 'task_terminal_close_release_409',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Terminal close release 409 task',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    const res = { statusCode: 0, end: vi.fn() } as never;
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskTerminalSession',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_close_release_409',
+        terminalSessionId: 'term_close_release_409',
+      } as never,
+      method: 'DELETE',
+      req: { headers: { 'x-request-id': 'req_terminal_close_release_409' }, url: '' } as never,
+      res,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+      message: 'agent_task_internal_workload_release_pending',
+      task_id: 'task_terminal_close_release_409',
+      retryable: true,
+      release_diagnostic: expect.objectContaining({
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        request_id: 'asbcp_req_terminal_close_409',
+      }),
+    }));
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(0);
+    expect((res as { end: ReturnType<typeof vi.fn> }).end).not.toHaveBeenCalled();
+  });
+
   it('does not route archive or delete hard teardown from legacy task agent fields', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);

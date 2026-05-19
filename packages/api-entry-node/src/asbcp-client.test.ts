@@ -37,13 +37,42 @@ describe('AsbcpClient', () => {
     expect(result.pod.phase).toBe('Running');
   });
 
-  it('maps status 404 to offline phase', async () => {
+  it('accepts async ensure metadata without requiring PUT to return a Running pod', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      workload_id: 'workload_1',
+      status: 'accepted',
+      correlation_id: 'corr_1',
+      operation_id: 'op_1',
+    }), { status: 202 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
+      image: 'runner:latest',
+      workspace_binding_id: 'flib_demo',
+    });
+
+    expect(result).toMatchObject({
+      httpStatus: 202,
+      workloadId: 'workload_1',
+      status: 'accepted',
+      correlationId: 'corr_1',
+      operationId: 'op_1',
+    });
+    expect(result.pod).toBeUndefined();
+  });
+
+  it('maps status 404 to offline current status without treating it as delete terminal confirmation', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
 
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
 
-    expect(status).toEqual({ phase: 'offline' });
+    expect(status).toEqual({
+      phase: 'offline',
+      message: 'pod_not_found_current_status',
+      status_source: 'current_status',
+      delete_terminal_confirmed: false,
+    });
   });
 
   it('throws asbcp_error on exec http error', async () => {
@@ -90,6 +119,67 @@ describe('AsbcpClient', () => {
     });
   });
 
+  it('redacts sensitive ASBCP response fields from http error messages', async () => {
+    const rawToken = 'sk_live_sensitive_token';
+    const rawPassword = 'plain-password-value';
+    const rawApiKey = 'api-key-value';
+    const responseText = `${JSON.stringify({
+      error: 'upstream rejected credentials',
+      token: rawToken,
+      password: rawPassword,
+    })} API key: ${rawApiKey}`;
+    globalThis.fetch = vi.fn(async () => new Response(responseText, { status: 500 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+
+    let caught: unknown;
+    try {
+      await client.keepalive('ws_1', 'proj_1', 'workload_1');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 500,
+      operation: 'keepalive',
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain(rawToken);
+    expect((caught as Error).message).not.toContain(rawPassword);
+    expect((caught as Error).message).not.toContain(rawApiKey);
+    expect((caught as Error).message).toContain('[redacted]');
+  });
+
+  it('redacts ASBCP service key lists and object-shaped service key values from errors', async () => {
+    const rawServiceKeys = 'raw-asbcp-service-keys-token';
+    const rawNestedServiceKey = 'raw-object-shaped-service-key';
+    const responseText = [
+      `ASBCP_SERVICE_KEYS=${rawServiceKeys}`,
+      JSON.stringify({
+        service_key: {
+          value: rawNestedServiceKey,
+        },
+      }),
+    ].join(' ');
+    globalThis.fetch = vi.fn(async () => new Response(responseText, { status: 500 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+
+    let caught: unknown;
+    try {
+      await client.keepalive('ws_1', 'proj_1', 'workload_1');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain(rawServiceKeys);
+    expect((caught as Error).message).not.toContain(rawNestedServiceKey);
+    expect((caught as Error).message).toContain('[redacted]');
+  });
+
   it('ensures workspace binding through the binding endpoint', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe('http://sandbox:8080/v1/workspaces/ws_1/projects/proj_1/workspace-bindings/wmb_demo');
@@ -126,10 +216,153 @@ describe('AsbcpClient', () => {
     expect(result.mount_binding_id).toBe('wmb_demo');
   });
 
-  it('treats delete workspace binding 404 as success', async () => {
+  it('returns a distinguishable error for delete workspace binding 404 instead of treating it as success', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
 
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
-    await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).resolves.toBeUndefined();
+    await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_FOUND',
+      status: 404,
+      operation: 'delete_workspace_binding',
+    });
+  });
+
+  it('returns a distinguishable error for delete pod 404 instead of treating it as release success', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    await expect(client.deletePod('ws_1', 'proj_1', 'workload_1')).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_FOUND',
+      status: 404,
+      operation: 'delete_pod',
+    });
+  });
+
+  it('maps delete pod 409 by stable ASBCP release-incomplete code', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'workload_release_incomplete',
+        message: 'delete is waiting for durable ASBCP terminal truth',
+        request_id: 'asbcp_req_delete_409',
+      },
+    }), {
+      status: 409,
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.deletePod('ws_1', 'proj_1', 'workload_1');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      status: 409,
+      operation: 'delete_pod',
+      retryable: true,
+      requestId: 'asbcp_req_delete_409',
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain('delete is waiting for durable ASBCP terminal truth');
+    expect((caught as Error).message).toContain('asbcp_req_delete_409');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps delete workspace binding 409 by stable ASBCP release-incomplete code', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'workspace_binding_release_incomplete',
+        message: 'workspace binding delete is waiting for safe workload closure proof',
+        request_id: 'asbcp_req_binding_release_409',
+      },
+    }), { status: 409 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      status: 409,
+      operation: 'delete_workspace_binding',
+      retryable: true,
+      requestId: 'asbcp_req_binding_release_409',
+    });
+  });
+
+  it('keeps same-round top-level ASBCP release-incomplete code compatibility', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      code: 'workload_release_incomplete',
+      message: 'delete is waiting for durable ASBCP terminal truth',
+      request_id: 'asbcp_req_top_level_release_409',
+    }), { status: 409 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    await expect(client.deletePod('ws_1', 'proj_1', 'workload_1')).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      status: 409,
+      operation: 'delete_pod',
+      retryable: true,
+      requestId: 'asbcp_req_top_level_release_409',
+    });
+  });
+
+  it('does not map release-looking messages without a stable ASBCP code to release pending', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'conflict',
+        message: 'release terminal fact missing',
+        request_id: 'asbcp_req_generic_conflict',
+      },
+    }), { status: 409 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.deletePod('ws_1', 'proj_1', 'workload_1');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_CONFLICT',
+      status: 409,
+      operation: 'delete_pod',
+      retryable: false,
+      requestId: 'asbcp_req_generic_conflict',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not map non-release ASBCP 409 codes to release pending', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'workspace_binding_active_workloads',
+        message: 'workspace binding has active workloads; delete workloads first',
+        request_id: 'asbcp_req_binding_active_workloads',
+      },
+    }), { status: 409 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_CONFLICT',
+      status: 409,
+      operation: 'delete_workspace_binding',
+      retryable: false,
+      requestId: 'asbcp_req_binding_active_workloads',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

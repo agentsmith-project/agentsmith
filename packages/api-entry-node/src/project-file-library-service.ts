@@ -38,6 +38,23 @@ export class FileLibraryTemplateClonePendingError extends Error {
   }
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readErrorStringField(error: unknown, field: string): string | undefined {
+  if (!isObjectRecord(error)) {
+    return undefined;
+  }
+  const value = error[field];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function isRetryableAsbcpInfrastructureConflict(error: unknown): boolean {
+  const code = readErrorStringField(error, 'code');
+  return code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+}
+
 export function mapFileLibraryInfraError(error: unknown): {
   statusCode: number;
   errorCode: string;
@@ -62,6 +79,17 @@ export function mapFileLibraryInfraError(error: unknown): {
       statusCode: error.status === 'pending' ? 409 : 503,
       errorCode: error.status === 'pending' ? 'PROJECT_STORAGE_PENDING' : 'PROJECT_STORAGE_BLOCKED',
       message: error.message,
+    };
+  }
+  if (isRetryableAsbcpInfrastructureConflict(error)) {
+    return {
+      statusCode: 409,
+      errorCode: 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT',
+      message: 'file_library_retryable_infrastructure_conflict',
+      context: {
+        retryable: true,
+        retry_after_ms: FILE_LIBRARY_OPERATION_RETRY_AFTER_MS,
+      },
     };
   }
   const rawMessage = error instanceof Error ? error.message : 'file_library_operation_failed';

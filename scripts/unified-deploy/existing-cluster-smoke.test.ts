@@ -5,12 +5,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  runExistingClusterPreApplyPreflight,
   runExistingClusterSmokeProducer,
   type ExistingClusterCommandRunner,
   type ExistingClusterHttpProbeRunner,
   type ExistingClusterSmokeProducerOptions,
 } from './check-existing-cluster-smoke';
-import { DEFAULT_SITE_ENV_PATH } from './render';
+import { DEFAULT_SITE_ENV_PATH, renderUnifiedDeployFromFiles } from './render';
 import {
   LEGACY_ASBCP_CHECKSUM_FRAGMENT,
   LEGACY_ASBCP_CONFIGMAP_NAME,
@@ -74,6 +75,7 @@ function writeExistingClusterSiteEnv(root: string, asbcpImage: string = ASBCP_SO
       .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.test')
       .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.test/api/v1')
       .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.test/api/v1')
+      .replace(/^ASBCP_SERVICE_KEY=.*$/mu, 'ASBCP_SERVICE_KEY=agentsmith_test_asbcp_service_key')
       .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=${asbcpImage}`),
     'utf8',
   );
@@ -151,6 +153,9 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
     calls.push({ command, args, input: options.input ?? '' });
     const joined = args.join(' ');
 
+    if (joined.includes('auth can-i')) {
+      return { exitCode: 0, stdout: 'yes\n', stderr: '' };
+    }
     if (joined.includes('get namespace agentsmith')) {
       return jsonResult({ kind: 'Namespace', metadata: { name: 'agentsmith' } });
     }
@@ -268,6 +273,170 @@ async function runSmoke(
 }
 
 describe('unified deploy existing-cluster smoke producer', () => {
+  it('fails ASBCP pre-apply RBAC preflight before apply and redacts operator diagnostics', async () => {
+    const root = tempDir('existing-cluster-preflight-rbac-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    writeFileSync(
+      siteEnvPath,
+      readFileSync(siteEnvPath, 'utf8')
+        .replace(/^ASBCP_SERVICE_KEY=.*$/mu, 'ASBCP_SERVICE_KEY=raw_asbcp_secret_token_123')
+        .replace(/^AFSCP_ORCHESTRATOR_SERVICE_TOKEN=.*$/mu, 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN=raw_orchestrator_token_456'),
+      'utf8',
+    );
+    const calls: CommandCall[] = [];
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      if (args.join(' ').includes('auth can-i get persistentvolumes')) {
+        return {
+          exitCode: 1,
+          stdout: 'no\n',
+          stderr: 'Forbidden: raw_asbcp_secret_token_123 raw_orchestrator_token_456 cannot get persistentvolumes',
+        };
+      }
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runSmoke({
+      siteEnvPath,
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+    const report = readFileSync(result.evidence.paths.report_path, 'utf8');
+
+    expect(result.status).toBe('failed');
+    expect(calls.some((call) => call.args.includes('apply'))).toBe(false);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:rbac:asbcp:persistentvolumes:get',
+        message: expect.stringContaining('operator preflight'),
+      }),
+    ]));
+    expect(result.evidence.pre_apply_preflight.status).toBe('failed');
+    expect(report).toContain('[REDACTED]');
+    expect(report).not.toContain('raw_asbcp_secret_token_123');
+    expect(report).not.toContain('raw_orchestrator_token_456');
+  });
+
+  it('checks ASBCP Secret projection, AFSCP caller role, and public ingress before apply', async () => {
+    const root = tempDir('existing-cluster-preflight-static-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const runner = createPassingRunner([]);
+
+    const missingProjection = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output.replace(
+        /\n            - name: ASBCP_AFSCP_ORCHESTRATOR_TOKEN\n              valueFrom:\n                secretKeyRef:\n                  name: agentsmith-app-secrets\n                  key: AFSCP_ORCHESTRATOR_SERVICE_TOKEN/u,
+        '',
+      ),
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+    const missingRole = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output.replace(
+        'agentsmith-sandbox-control-plane:orchestrator:orchestrator_mount',
+        'agentsmith-sandbox-control-plane:orchestrator:operation_inspector',
+      ),
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+    const publicAsbcpIngress = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output.replace(
+        '          - path: /api/v1\n',
+        [
+          '          - path: /asbcp',
+          '            pathType: Prefix',
+          '            backend:',
+          '              service:',
+          '                name: agentsmith-sandbox-control-plane',
+          '                port:',
+          '                  number: 8080',
+          '          - path: /api/v1',
+          '',
+        ].join('\n'),
+      ),
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+
+    expect(missingProjection.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:Deployment/agentsmith-sandbox-control-plane:ASBCP_AFSCP_ORCHESTRATOR_TOKEN',
+        message: expect.stringContaining('agentsmith-app-secrets/AFSCP_ORCHESTRATOR_SERVICE_TOKEN'),
+      }),
+    ]));
+    expect(missingRole.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:ConfigMap/afscp-runtime-config:allowed-callers',
+        message: expect.stringContaining('orchestrator_mount'),
+      }),
+    ]));
+    expect(publicAsbcpIngress.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:Ingress/agentsmith:no-public-ingress',
+        message: expect.stringContaining('ASBCP'),
+      }),
+    ]));
+  });
+
+  it('does not live-check namespace RBAC that the app manifest creates for a fresh namespace', async () => {
+    const root = tempDir('existing-cluster-preflight-fresh-namespace-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const calls: CommandCall[] = [];
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      calls.push({ command, args, input: options.input ?? '' });
+      const joined = args.join(' ');
+      if (joined.includes('auth can-i') && joined.includes('-n agentsmith')) {
+        return {
+          exitCode: 1,
+          stdout: 'no\n',
+          stderr: 'namespace Role is not present until app apply',
+        };
+      }
+      if (joined.includes('auth can-i')) {
+        return { exitCode: 0, stdout: 'yes\n', stderr: '' };
+      }
+      return createPassingRunner([])(command, args, options);
+    };
+
+    const result = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output,
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(calls.filter((call) => call.args.includes('can-i')).map((call) => call.args.join(' ')))
+      .not.toEqual(expect.arrayContaining([expect.stringContaining('-n agentsmith')]));
+  });
+
   it('fails closed and writes evidence when kubeconfig is missing', async () => {
     const home = tempDir('existing-cluster-home-');
     const evidenceDir = tempDir('existing-cluster-evidence-');

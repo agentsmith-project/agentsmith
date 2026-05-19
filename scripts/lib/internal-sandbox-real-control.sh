@@ -26,6 +26,23 @@ ASBCP_CONTAINER_CONFIG_PATH="/etc/asbcp/asbcp-config.yaml"
 
 info() { echo "[internal-sandbox-control] $*"; }
 
+redact_internal_sandbox_output() {
+  local line redacted secret
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    redacted="${line}"
+    for secret in \
+      "${ASBCP_SERVICE_KEY_VALUE:-}" \
+      "${ASBCP_SERVICE_KEY:-}" \
+      "${AFSCP_ORCHESTRATOR_TOKEN:-}" \
+      "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}"; do
+      if [[ "${#secret}" -ge 4 ]]; then
+        redacted="${redacted//${secret}/[REDACTED]}"
+      fi
+    done
+    printf '%s\n' "${redacted}"
+  done
+}
+
 read_pid() {
   local file="$1"
   if [[ -f "${file}" ]]; then
@@ -162,7 +179,7 @@ start_asbcp() {
   fi
   : > "${ASBCP_LOG}"
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-    docker "${docker_args[@]}" "${image}" >> "${ASBCP_LOG}" 2>&1 &
+    docker "${docker_args[@]}" "${image}" > >(redact_internal_sandbox_output >> "${ASBCP_LOG}") 2>&1 &
   pid="$!"
   printf '%s\n' "${pid}" > "${ASBCP_PID_FILE}"
   printf '%s\n' "${ASBCP_CONTAINER_NAME}" > "${ASBCP_CONTAINER_ID_FILE}"

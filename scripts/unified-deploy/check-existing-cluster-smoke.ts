@@ -184,6 +184,19 @@ type KedaApiEvidence = {
   item_count: number;
 };
 
+type PreApplyPreflightCheckEvidence = {
+  name: string;
+  status: StepStatus;
+  command?: string;
+  diagnostic?: string;
+};
+
+type PreApplyPreflightEvidence = {
+  status: StepStatus;
+  checks: PreApplyPreflightCheckEvidence[];
+  operator_diagnostics: string[];
+};
+
 type ExistingClusterSmokeEvidence = {
   schema_version: 'agentsmith.unified-deploy.existing-cluster-smoke.evidence/v1';
   producer: 'existing-cluster-smoke';
@@ -199,6 +212,7 @@ type ExistingClusterSmokeEvidence = {
   rendered_config_fingerprint: string;
   substrate_truth_fingerprint: string;
   manifest_summary: ResourceSummary;
+  pre_apply_preflight: PreApplyPreflightEvidence;
   operations: OperationEvidence[];
   rollouts: RolloutEvidence[];
   asbcp_image_adoption: AsbcpImageAdoptionEvidence;
@@ -275,6 +289,10 @@ const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-llmup',
   'agentsmith-sandbox-control-plane',
 ] as const;
+const ASBCP_SERVICE_ACCOUNT = 'agentsmith-sandbox-control-plane';
+const AGENTSMITH_APP_SECRET = 'agentsmith-app-secrets';
+const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
+const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
 const DEFAULT_ASBCP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
 const EMPTY_SUMMARY: ResourceSummary = {
   total: 0,
@@ -293,6 +311,11 @@ const EMPTY_ASBCP_IMAGE_ADOPTION: AsbcpImageAdoptionEvidence = {
   status: 'skipped',
   running_pods: [],
   running_image_ids: [],
+};
+const EMPTY_PRE_APPLY_PREFLIGHT: PreApplyPreflightEvidence = {
+  status: 'skipped',
+  checks: [],
+  operator_diagnostics: [],
 };
 const STALE_RESOURCE_ABSENT_IDS = LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS;
 const EMPTY_STALE_RESOURCE_ABSENCE: StaleResourceAbsenceEvidence = {
@@ -1138,6 +1161,417 @@ function renderedStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function renderedResourceRules(resource: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(resource.rules) ? resource.rules.map(asRecord) : [];
+}
+
+function ruleAllows(rule: Record<string, unknown>, resource: string, verb: string): boolean {
+  const resources = renderedStringArray(rule.resources);
+  const verbs = renderedStringArray(rule.verbs);
+  return (resources.includes(resource) || resources.includes('*'))
+    && (verbs.includes(verb) || verbs.includes('*'));
+}
+
+function roleAllows(role: Record<string, unknown>, resource: string, verb: string): boolean {
+  return renderedResourceRules(role).some((rule) => ruleAllows(rule, resource, verb));
+}
+
+function roleBindingConnectsServiceAccount(options: {
+  binding: Record<string, unknown>;
+  roleName: string;
+  serviceAccountName: string;
+  namespace: string;
+}): boolean {
+  const roleRef = asRecord(options.binding.roleRef);
+  const subjects = Array.isArray(options.binding.subjects)
+    ? options.binding.subjects.map(asRecord)
+    : [];
+  return roleRef.kind === 'Role'
+    && roleRef.name === options.roleName
+    && subjects.some((subject) =>
+      subject.kind === 'ServiceAccount'
+      && subject.name === options.serviceAccountName
+      && (subject.namespace === undefined || subject.namespace === options.namespace),
+    );
+}
+
+function renderedContainerEnvValue(container: Record<string, unknown>, name: string): string | undefined {
+  const entry = renderedContainerEnvEntry(container, name);
+  return typeof entry.value === 'string' ? entry.value : undefined;
+}
+
+function renderedContainerSecretKeyRef(container: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(asRecord(renderedContainerEnvEntry(container, name).valueFrom).secretKeyRef);
+}
+
+function preflightDiagnostic(message: string, secretValues: readonly string[]): string {
+  return redactDiagnostic(`operator preflight: ${message}`, secretValues);
+}
+
+function addPreflightFailure(
+  failures: CheckFailure[],
+  checks: PreApplyPreflightCheckEvidence[],
+  pathName: string,
+  checkName: string,
+  message: string,
+  secretValues: readonly string[],
+): void {
+  const diagnostic = preflightDiagnostic(message, secretValues);
+  addFailure(failures, pathName, diagnostic);
+  checks.push({
+    name: checkName,
+    status: 'failed',
+    diagnostic,
+  });
+}
+
+function callerHasRole(value: string, service: string, actorType: string, role: string): boolean {
+  return value.split(',').some((entry) => {
+    const [entryService, entryActorType, roles] = entry.split(':');
+    return entryService === service
+      && entryActorType === actorType
+      && typeof roles === 'string'
+      && roles.split('|').includes(role);
+  });
+}
+
+function ingressBackends(renderedYaml: string): Array<{ path: string; service: string }> {
+  const parsed = parseKubernetesDocuments(renderedYaml);
+  const backends: Array<{ path: string; service: string }> = [];
+
+  for (const document of parsed.documents) {
+    if (resourceKind(document) !== 'Ingress') {
+      continue;
+    }
+    const rules = Array.isArray(asRecord(document.spec).rules) ? asRecord(document.spec).rules as unknown[] : [];
+    for (const rule of rules) {
+      const paths = Array.isArray(asRecord(asRecord(rule).http).paths)
+        ? asRecord(asRecord(rule).http).paths as unknown[]
+        : [];
+      for (const pathEntry of paths) {
+        const pathRecord = asRecord(pathEntry);
+        const routePath = typeof pathRecord.path === 'string' ? pathRecord.path : '';
+        const service = asRecord(asRecord(pathRecord.backend).service).name;
+        if (typeof service === 'string') {
+          backends.push({ path: routePath, service });
+        }
+      }
+    }
+  }
+
+  return backends;
+}
+
+function runStaticPreApplyPreflight(options: {
+  appYaml: string;
+  namespace: string;
+  secretValues: readonly string[];
+}): { checks: PreApplyPreflightCheckEvidence[]; failures: CheckFailure[] } {
+  const checks: PreApplyPreflightCheckEvidence[] = [];
+  const failures: CheckFailure[] = [];
+  const parsed = parseKubernetesDocuments(options.appYaml);
+
+  if (!parsed.ok) {
+    for (const failure of parsed.failures) {
+      addPreflightFailure(
+        failures,
+        checks,
+        `preflight:${failure.path}`,
+        'rendered-yaml-parse',
+        `rendered manifest must parse before existing-cluster apply: ${failure.message}`,
+        options.secretValues,
+      );
+    }
+    return { checks, failures };
+  }
+
+  for (const document of parsed.documents) {
+    const kind = resourceKind(document);
+    if (kind === 'ClusterRole' || kind === 'ClusterRoleBinding') {
+      addPreflightFailure(
+        failures,
+        checks,
+        `preflight:${resourceId(document)}`,
+        'no-asbcp-cluster-rbac-in-app-manifest',
+        'ASBCP app manifest must not render cluster-scoped RBAC; operators must grant any required PV permissions outside the app manifest',
+        options.secretValues,
+      );
+    }
+  }
+
+  const serviceAccount = findRenderedResource(options.appYaml, 'ServiceAccount', ASBCP_SERVICE_ACCOUNT);
+  const role = findRenderedResource(options.appYaml, 'Role', ASBCP_SERVICE_ACCOUNT);
+  const roleBinding = findRenderedResource(options.appYaml, 'RoleBinding', ASBCP_SERVICE_ACCOUNT);
+  const deploymentPodSpec = renderedDeploymentPodSpec(options.appYaml, ASBCP_SERVICE_ACCOUNT);
+  const asbcp = renderedDeploymentContainer(options.appYaml, ASBCP_SERVICE_ACCOUNT, 'asbcp');
+  const appSecret = asRecord(findRenderedResource(options.appYaml, 'Secret', AGENTSMITH_APP_SECRET).stringData);
+  const afscpConfig = asRecord(findRenderedResource(options.appYaml, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
+  const afscpSecret = asRecord(findRenderedResource(options.appYaml, 'Secret', AFSCP_RUNTIME_SECRET).stringData);
+
+  if (resourceName(serviceAccount) !== ASBCP_SERVICE_ACCOUNT) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:ServiceAccount/${ASBCP_SERVICE_ACCOUNT}`,
+      'asbcp-service-account-rendered',
+      'ASBCP dedicated ServiceAccount must be rendered before existing-cluster apply',
+      options.secretValues,
+    );
+  }
+  if (deploymentPodSpec.serviceAccountName !== ASBCP_SERVICE_ACCOUNT) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:Deployment/${ASBCP_SERVICE_ACCOUNT}:serviceAccountName`,
+      'asbcp-service-account-projection',
+      'ASBCP Deployment must use the dedicated agentsmith-sandbox-control-plane ServiceAccount',
+      options.secretValues,
+    );
+  }
+  for (const check of ASBCP_NAMESPACE_RBAC_RENDER_CHECKS) {
+    if (!roleAllows(role, check.resource, check.verb)) {
+      addPreflightFailure(
+        failures,
+        checks,
+        check.path,
+        `asbcp-namespace-rbac:${check.name}`,
+        `ASBCP app manifest must render namespace Role permission ${check.verb} ${check.resource}; pre-apply must not live-check app-created namespace RBAC`,
+        options.secretValues,
+      );
+    }
+  }
+  if (!roleBindingConnectsServiceAccount({
+    binding: roleBinding,
+    roleName: ASBCP_SERVICE_ACCOUNT,
+    serviceAccountName: ASBCP_SERVICE_ACCOUNT,
+    namespace: options.namespace,
+  })) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:RoleBinding/${ASBCP_SERVICE_ACCOUNT}`,
+      'asbcp-namespace-rolebinding',
+      'ASBCP app manifest must bind its namespace Role to the dedicated ServiceAccount',
+      options.secretValues,
+    );
+  }
+
+  for (const [envName, secretKey] of [
+    ['ASBCP_SERVICE_KEYS', 'ASBCP_SERVICE_KEY'],
+    ['ASBCP_AFSCP_ORCHESTRATOR_TOKEN', 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN'],
+  ] as const) {
+    const ref = renderedContainerSecretKeyRef(asbcp, envName);
+    if (ref.name !== AGENTSMITH_APP_SECRET || ref.key !== secretKey) {
+      addPreflightFailure(
+        failures,
+        checks,
+        `preflight:Deployment/${ASBCP_SERVICE_ACCOUNT}:${envName}`,
+        `asbcp-secret-projection:${envName}`,
+        `${envName} must project ${AGENTSMITH_APP_SECRET}/${secretKey}; raw service tokens must not be written into manifests or artifacts`,
+        options.secretValues,
+      );
+    }
+    if (typeof appSecret[secretKey] !== 'string' || !appSecret[secretKey]) {
+      addPreflightFailure(
+        failures,
+        checks,
+        `preflight:Secret/${AGENTSMITH_APP_SECRET}:${secretKey}`,
+        `asbcp-secret-key:${secretKey}`,
+        `${AGENTSMITH_APP_SECRET}/${secretKey} must be present for the projected ASBCP env contract`,
+        options.secretValues,
+      );
+    }
+  }
+
+  const afscpBaseUrl = renderedContainerEnvValue(asbcp, 'ASBCP_AFSCP_INTERNAL_BASE_URL') ?? '';
+  if (!new RegExp(`^http://afscp-api\\.${options.namespace}\\.svc\\.cluster\\.local:8080$`, 'u').test(afscpBaseUrl)) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:Deployment/${ASBCP_SERVICE_ACCOUNT}:ASBCP_AFSCP_INTERNAL_BASE_URL`,
+      'asbcp-afscp-internal-base-url',
+      'ASBCP_AFSCP_INTERNAL_BASE_URL must point to the namespace-local internal afscp-api Service',
+      options.secretValues,
+    );
+  }
+  if (renderedContainerEnvValue(asbcp, 'ASBCP_AFSCP_CALLER_SERVICE') !== ASBCP_SERVICE_ACCOUNT) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:Deployment/${ASBCP_SERVICE_ACCOUNT}:ASBCP_AFSCP_CALLER_SERVICE`,
+      'asbcp-afscp-caller-service',
+      'ASBCP_AFSCP_CALLER_SERVICE must use the ASBCP caller identity authorized by AFSCP',
+      options.secretValues,
+    );
+  }
+
+  const allowedCallers = String(afscpConfig.AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS ?? '');
+  if (!callerHasRole(allowedCallers, ASBCP_SERVICE_ACCOUNT, 'orchestrator', 'orchestrator_mount')) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}:allowed-callers`,
+      'afscp-allowed-caller-orchestrator-mount',
+      'AFSCP namespace allowed callers must include agentsmith-sandbox-control-plane:orchestrator with orchestrator_mount role',
+      options.secretValues,
+    );
+  }
+  if (!String(afscpSecret.AFSCP_API_SERVICE_TOKENS ?? '').split(',').some((entry) => entry.startsWith(`${ASBCP_SERVICE_ACCOUNT}=`))) {
+    addPreflightFailure(
+      failures,
+      checks,
+      `preflight:Secret/${AFSCP_RUNTIME_SECRET}:AFSCP_API_SERVICE_TOKENS`,
+      'afscp-orchestrator-token-binding',
+      'AFSCP_API_SERVICE_TOKENS must include a token binding for the ASBCP orchestrator caller',
+      options.secretValues,
+    );
+  }
+
+  const exposedInternalBackends = ingressBackends(options.appYaml).filter((backend) =>
+    backend.service === 'agentsmith-llmup'
+    || backend.service === ASBCP_SERVICE_ACCOUNT
+    || backend.service.includes('afscp'),
+  );
+  if (exposedInternalBackends.length > 0) {
+    addPreflightFailure(
+      failures,
+      checks,
+      'preflight:Ingress/agentsmith:no-public-ingress',
+      'no-public-ingress-internal-services',
+      `public ingress must not expose internal ASBCP/AFSCP/llmup services: ${exposedInternalBackends.map((backend) => `${backend.path}->${backend.service}`).join(', ')}`,
+      options.secretValues,
+    );
+  }
+
+  if (failures.length === 0) {
+    checks.push({
+      name: 'static-render-contract',
+      status: 'passed',
+      diagnostic: 'ASBCP Secret projection, AFSCP caller binding, orchestrator token binding, and no-public-ingress checks passed',
+    });
+  }
+
+  return { checks, failures };
+}
+
+const ASBCP_NAMESPACE_RBAC_RENDER_CHECKS = [
+  { name: 'pods-create', path: 'preflight:rbac:asbcp:pods:create', verb: 'create', resource: 'pods', namespaceScoped: true },
+  { name: 'pods-get', path: 'preflight:rbac:asbcp:pods:get', verb: 'get', resource: 'pods', namespaceScoped: true },
+  { name: 'pods-list', path: 'preflight:rbac:asbcp:pods:list', verb: 'list', resource: 'pods', namespaceScoped: true },
+  { name: 'pods-watch', path: 'preflight:rbac:asbcp:pods:watch', verb: 'watch', resource: 'pods', namespaceScoped: true },
+  { name: 'pods-delete', path: 'preflight:rbac:asbcp:pods:delete', verb: 'delete', resource: 'pods', namespaceScoped: true },
+  { name: 'pods-exec-create', path: 'preflight:rbac:asbcp:pods/exec:create', verb: 'create', resource: 'pods/exec', namespaceScoped: true },
+  { name: 'pvc-create', path: 'preflight:rbac:asbcp:persistentvolumeclaims:create', verb: 'create', resource: 'persistentvolumeclaims', namespaceScoped: true },
+  { name: 'pvc-get', path: 'preflight:rbac:asbcp:persistentvolumeclaims:get', verb: 'get', resource: 'persistentvolumeclaims', namespaceScoped: true },
+  { name: 'pvc-list', path: 'preflight:rbac:asbcp:persistentvolumeclaims:list', verb: 'list', resource: 'persistentvolumeclaims', namespaceScoped: true },
+  { name: 'pvc-delete', path: 'preflight:rbac:asbcp:persistentvolumeclaims:delete', verb: 'delete', resource: 'persistentvolumeclaims', namespaceScoped: true },
+  { name: 'secrets-get', path: 'preflight:rbac:asbcp:secrets:get', verb: 'get', resource: 'secrets', namespaceScoped: true },
+  { name: 'secrets-create', path: 'preflight:rbac:asbcp:secrets:create', verb: 'create', resource: 'secrets', namespaceScoped: true },
+  { name: 'events-create', path: 'preflight:rbac:asbcp:events:create', verb: 'create', resource: 'events', namespaceScoped: true },
+] as const;
+
+const ASBCP_RBAC_PREFLIGHT_CHECKS = [
+  { name: 'persistentvolumes-get', path: 'preflight:rbac:asbcp:persistentvolumes:get', verb: 'get', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-list', path: 'preflight:rbac:asbcp:persistentvolumes:list', verb: 'list', resource: 'persistentvolumes', namespaceScoped: false },
+] as const;
+
+function canIArgs(options: {
+  kubeconfigPath: string;
+  namespace: string;
+  verb: string;
+  resource: string;
+  namespaceScoped: boolean;
+}): string[] {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    'auth',
+    'can-i',
+    options.verb,
+    options.resource,
+    '--as',
+    `system:serviceaccount:${options.namespace}:${ASBCP_SERVICE_ACCOUNT}`,
+  ];
+  if (options.namespaceScoped) {
+    args.push('-n', options.namespace);
+  }
+
+  return args;
+}
+
+async function runRbacPreApplyPreflight(options: {
+  namespace: string;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ checks: PreApplyPreflightCheckEvidence[]; failures: CheckFailure[] }> {
+  const checks: PreApplyPreflightCheckEvidence[] = [];
+  const failures: CheckFailure[] = [];
+
+  for (const check of ASBCP_RBAC_PREFLIGHT_CHECKS) {
+    const args = canIArgs({
+      kubeconfigPath: options.kubeconfigPath,
+      namespace: options.namespace,
+      verb: check.verb,
+      resource: check.resource,
+      namespaceScoped: check.namespaceScoped,
+    });
+    const result = await options.runner('kubectl', args, {
+      cwd: REPO_ROOT,
+      env: {
+        ...options.env,
+        KUBECONFIG: options.kubeconfigPath,
+      },
+      timeoutMs: KUBECTL_TIMEOUT_MS,
+    });
+    const diagnostic = redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues);
+    const passed = result.exitCode === 0 && result.stdout.trim().toLowerCase() === 'yes';
+
+    checks.push({
+      name: `rbac:${check.name}`,
+      status: passed ? 'passed' : 'failed',
+      command: commandText(args),
+      diagnostic: passed ? undefined : diagnostic,
+    });
+
+    if (!passed) {
+      addFailure(
+        failures,
+        check.path,
+        preflightDiagnostic(
+          `ASBCP ServiceAccount lacks operator-owned cluster permission ${check.verb} ${check.resource}; grant the required PV permission outside the app manifest, then rerun preflight. ${diagnostic}`,
+          options.secretValues,
+        ),
+      );
+    }
+  }
+
+  return { checks, failures };
+}
+
+export async function runExistingClusterPreApplyPreflight(options: {
+  appYaml: string;
+  namespace: string;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ evidence: PreApplyPreflightEvidence; failures: CheckFailure[] }> {
+  const staticPreflight = runStaticPreApplyPreflight(options);
+  const rbacPreflight = await runRbacPreApplyPreflight(options);
+  const failures = [...staticPreflight.failures, ...rbacPreflight.failures];
+  const operatorDiagnostics = failures.map((failure) => redactDiagnostic(failure.message, options.secretValues));
+
+  return {
+    evidence: {
+      status: failures.length === 0 ? 'passed' : 'failed',
+      checks: [...staticPreflight.checks, ...rbacPreflight.checks],
+      operator_diagnostics: operatorDiagnostics,
+    },
+    failures,
+  };
+}
+
 function buildLlmupConfigHealthEvidence(
   appYaml: string,
   rollouts: readonly RolloutEvidence[],
@@ -1595,6 +2029,7 @@ function createEmptyEvidence(params: {
     rendered_config_fingerprint: 'unavailable',
     substrate_truth_fingerprint: 'unavailable',
     manifest_summary: EMPTY_SUMMARY,
+    pre_apply_preflight: EMPTY_PRE_APPLY_PREFLIGHT,
     operations: [],
     rollouts: [],
     asbcp_image_adoption: EMPTY_ASBCP_IMAGE_ADOPTION,
@@ -2172,6 +2607,23 @@ export async function runExistingClusterSmokeProducer(
     return finish(baseEvidence, evidenceDir);
   }
 
+  const preApplyPreflight = await runExistingClusterPreApplyPreflight({
+    appYaml: rendered.appYaml,
+    namespace: rendered.namespace,
+    kubeconfigPath: kubeconfig.path,
+    runner,
+    env,
+    secretValues: renderedSecretValues,
+  });
+  const preApplyEvidence = {
+    ...baseEvidence,
+    pre_apply_preflight: preApplyPreflight.evidence,
+    failures: preApplyPreflight.failures,
+  };
+  if (preApplyPreflight.failures.length > 0) {
+    return finish(preApplyEvidence, evidenceDir);
+  }
+
   const apply = await runApplySequence({
     appYaml: rendered.appYaml,
     namespace: rendered.namespace,
@@ -2181,7 +2633,7 @@ export async function runExistingClusterSmokeProducer(
     secretValues: renderedSecretValues,
   });
   const afterApplyEvidence = {
-    ...baseEvidence,
+    ...preApplyEvidence,
     operations: [...baseEvidence.operations, ...apply.operations],
     failures: apply.failures,
   };

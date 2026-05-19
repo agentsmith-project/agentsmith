@@ -203,4 +203,77 @@ describe('ProjectStorageLifecycleService', () => {
     });
     expect(deleteRepoForLibrary).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    [
+      'release-incomplete 409',
+      Object.assign(new Error('asbcp_error: delete_workspace_binding 409 release terminal fact missing'), {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_workspace_binding',
+        retryable: true,
+        requestId: 'asbcp_req_binding_release_409',
+      }),
+    ],
+    [
+      'generic binding delete failure',
+      new Error('workspace_binding_delete_failed'),
+    ],
+  ])('does not delete repos when workspace binding delete fails with %s', async (_caseName, bindingError) => {
+    const docStore = new InMemoryJsonDocStore();
+    const namespaceStore = new ProjectAfscpNamespaceStore(docStore, () => '2026-05-09T00:00:00.000Z');
+    await namespaceStore.markProjectNamespaceReady({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      namespaceUpsertOperationId: 'op_namespace_ready',
+      volumeBindingOperationId: 'op_binding_ready',
+    });
+    await seedReadyLibrary({ docStore });
+    const deleteRepoForLibrary = vi.fn(async () => undefined);
+    const workspaceBindingManager = createWorkspaceBindingManager();
+    workspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw bindingError;
+    });
+    const service = new ProjectStorageLifecycleService({
+      docStore,
+      namespaceStore,
+      fileLibraryStorageAdapter: createStorageAdapter({ deleteRepoForLibrary }),
+      internalAgentWorkspaceBindingManager: workspaceBindingManager,
+      nowIso: () => '2026-05-09T00:00:10.000Z',
+    });
+
+    await expect(service.beginProjectStorageTeardown({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorUserId: 'user_owner',
+      requestId: 'req_project_delete_binding_failed',
+      reason: 'project_delete',
+    })).resolves.toMatchObject({
+      status: 'retryable',
+      retryable: true,
+      deletedRepositories: 0,
+      releasedMountBindings: 0,
+    });
+
+    expect(workspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: 'flib_123',
+    });
+    expect(deleteRepoForLibrary).not.toHaveBeenCalled();
+    await expect(namespaceStore.getProjectNamespace({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    })).resolves.toMatchObject({
+      status: 'deleting',
+      retryable: true,
+    });
+    await expect(new JsonDocProjectFileLibraryCatalogRepo(docStore).getById(
+      'ws_default',
+      'proj_1',
+      'flib_123',
+    )).resolves.toMatchObject({
+      status: 'deleting',
+      delete_correlation_id: 'req_project_delete_binding_failed',
+    });
+  });
 });

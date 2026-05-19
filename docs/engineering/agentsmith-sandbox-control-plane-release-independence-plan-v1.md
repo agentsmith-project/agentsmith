@@ -6,7 +6,7 @@
 
 ## Current state as of 2026-05-19
 
-ASBCP-side P1-P3 已基本完成：public GitHub repo、`v2.0.5` release、GHCR digest image、GitHub Release asset `asbcp-final-manifest.json`、AgentSmith `infra/deploy/shared/asbcp-image.lock` 均已存在；当前 AgentSmith lock pin 到 `v2.0.5` / commit `c372a6fe8c8c9cfb28d03a32b75febe10bb0c392` / digest `sha256:f164abe93ecbf9b964e532f1b931a688e1d633a9f3e580d872558fd478958883`。
+ASBCP-side P1-P3 已基本完成：public GitHub repo、`v2.0.6` release、GHCR digest image、GitHub Release asset `asbcp-final-manifest.json`、AgentSmith `infra/deploy/shared/asbcp-image.lock` 均已存在；当前 AgentSmith lock pin 到 `v2.0.6` / commit `d6d28104f05c68ad22776256055a63ac9f56a9a7` / digest `sha256:891d924f279c38ef85a30094ca9879ea22e27e4830942b29f489e45401117371`。
 
 后续工作必须从当前 guard/evidence 出发：先读取或运行现有 `contracts:check-asbcp-image-only`、lock parser/image producer/render/address-truth 等 focused diagnostics，再处理仍命中的差距；不要重复执行历史 P1-P3。
 

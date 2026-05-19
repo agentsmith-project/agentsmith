@@ -1,7 +1,7 @@
 import type { AgentRecord } from './resource-models.js';
 import { isAbsolute, join, normalize } from 'node:path';
 import { isManagedAgentRunner } from './agent-runner-profile.js';
-import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './asbcp-client.js';
+import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody, SandboxPodEnsureResponse } from './asbcp-client.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
@@ -18,7 +18,7 @@ interface AsbcpClientLike {
     workloadId: string,
     body: SandboxPodCreateBody,
     signal?: AbortSignal,
-  ): Promise<{ httpStatus: number; pod: PodStatusResponse }>;
+  ): Promise<SandboxPodEnsureResponse>;
   getPodStatus(
     workspaceId: string,
     projectId: string,
@@ -109,6 +109,8 @@ interface DiagnosticError {
   code?: string;
   operation?: string;
   status?: number;
+  requestId?: string;
+  retryable?: boolean;
 }
 
 interface RunnerHealthDiagnostic {
@@ -158,6 +160,56 @@ function readErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+function readErrorName(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.name;
+  }
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  return typeof error.name === 'string' ? error.name : undefined;
+}
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return typeof error === 'string' ? error : '';
+}
+
+function readErrorOperation(error: unknown): string | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  return typeof error.operation === 'string' ? error.operation : undefined;
+}
+
+function readErrorStatus(error: unknown): number | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  return typeof error.status === 'number' && Number.isFinite(error.status) ? error.status : undefined;
+}
+
+function isCreateOrEnsureTimeoutError(error: unknown): boolean {
+  const name = readErrorName(error);
+  if (name === 'AbortError' || name === 'TimeoutError') {
+    return true;
+  }
+  const message = readErrorMessage(error);
+  const operation = readErrorOperation(error);
+  const status = readErrorStatus(error);
+  if (
+    status === 504
+    && (operation === 'create_or_ensure_pod' || /\bcreate_or_ensure_pod\b/i.test(message))
+  ) {
+    return true;
+  }
+  return readErrorCode(error) === 'AGENT_SANDBOX_UNAVAILABLE'
+    && /\b(create_or_ensure_pod|ensure)\b/i.test(message)
+    && /(aborted|abort|timeout|timed out)/i.test(message);
+}
+
 function normalizeDiagnosticError(error: unknown): DiagnosticError {
   const record = isRecord(error) ? error : {};
   const name = error instanceof Error
@@ -171,13 +223,38 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
   const status = typeof record.status === 'number' && Number.isFinite(record.status)
     ? record.status
     : undefined;
+  const requestId = typeof record.requestId === 'string' && record.requestId.trim().length > 0
+    ? record.requestId.trim()
+    : undefined;
+  const retryable = typeof record.retryable === 'boolean' ? record.retryable : undefined;
   return {
     message,
     ...(name ? { name } : {}),
     ...(code ? { code } : {}),
     ...(operation ? { operation } : {}),
     ...(status !== undefined ? { status } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(retryable !== undefined ? { retryable } : {}),
   };
+}
+
+function isTerminalWorkloadReleaseIncomplete(error: unknown): boolean {
+  const status = readErrorStatus(error);
+  return status === 404
+    || status === 409
+    || readErrorCode(error) === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+}
+
+function buildTerminalWorkloadReleaseIncompleteError(error: unknown): Error {
+  const releaseError = Object.assign(new Error('sandbox_release_incomplete'), {
+    code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+    status: 409,
+    operation: 'delete_terminal_workload',
+    retryable: true,
+    releaseDiagnostic: normalizeDiagnosticError(error),
+  });
+  (releaseError as Error & { cause?: unknown }).cause = error;
+  return releaseError;
 }
 
 function normalizeAgentWebSocketBaseUrl(value: string): string {
@@ -738,52 +815,71 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     throwIfAborted(signal);
     this.checkDeadline(deadline);
     if (isTerminalPodPhase(status.phase)) {
-      await this.runAbortableSandboxRpc(
-        (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal).catch(() => undefined),
-        signal,
-      );
+      try {
+        await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal),
+          signal,
+        );
+      } catch (error) {
+        throwIfAborted(signal);
+        if (isTerminalWorkloadReleaseIncomplete(error)) {
+          throw buildTerminalWorkloadReleaseIncompleteError(error);
+        }
+        throw error;
+      }
       throwIfAborted(signal);
       status = { phase: 'offline' };
     }
 
     if (status.phase === 'offline') {
       throwIfAborted(signal);
-      await this.runAbortableSandboxRpc(
-        (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
-          image: config.image,
-          env: {
-            MBOS_AGENT_WS_URL: wsUrl,
-            MBOS_AGENT_KEY: config.rawKey,
-            MBOS_RUNNER_MODE: 'k8s_internal',
-            MBOS_AGENT_CODEX_YOLO: '1',
-            MBOS_AGENT_RUNNER_DEBUG: '1',
-            MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
-            MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
-            MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
-            MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
-            ...(config.env ?? {}),
-            TASK_HOME: workspaceMount.taskHomePath,
-            HOME: workspaceMount.taskHomePath,
-            WORKSPACE_PATH: workspaceMount.workspacePath,
-            ARTIFACTS_PATH: workspaceMount.artifactsPath,
-            MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
-          },
-          cpu_request: config.cpuRequest ?? '500m',
-          cpu_limit: config.cpuLimit ?? '2',
-          memory_request: config.memoryRequest ?? '512Mi',
-          memory_limit: config.memoryLimit ?? '4Gi',
-          idle_timeout_sec: idleTimeoutSec,
-          max_lifetime_sec: maxLifetimeSec,
-          workspace_binding_id: workspaceMount.bindingId,
-        }, rpcSignal),
-        signal,
-      );
+      try {
+        await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
+            image: config.image,
+            env: {
+              MBOS_AGENT_WS_URL: wsUrl,
+              MBOS_AGENT_KEY: config.rawKey,
+              MBOS_RUNNER_MODE: 'k8s_internal',
+              MBOS_AGENT_CODEX_YOLO: '1',
+              MBOS_AGENT_RUNNER_DEBUG: '1',
+              MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+              MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
+              MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
+              MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
+              ...(config.env ?? {}),
+              TASK_HOME: workspaceMount.taskHomePath,
+              HOME: workspaceMount.taskHomePath,
+              WORKSPACE_PATH: workspaceMount.workspacePath,
+              ARTIFACTS_PATH: workspaceMount.artifactsPath,
+              MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
+            },
+            cpu_request: config.cpuRequest ?? '500m',
+            cpu_limit: config.cpuLimit ?? '2',
+            memory_request: config.memoryRequest ?? '512Mi',
+            memory_limit: config.memoryLimit ?? '4Gi',
+            idle_timeout_sec: idleTimeoutSec,
+            max_lifetime_sec: maxLifetimeSec,
+            workspace_binding_id: workspaceMount.bindingId,
+          }, rpcSignal),
+          signal,
+        );
+      } catch (error) {
+        throwIfAborted(signal);
+        if (!isCreateOrEnsureTimeoutError(error)) {
+          throw error;
+        }
+      }
       throwIfAborted(signal);
       status = await this.runAbortableSandboxRpc(
         (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
         signal,
       );
       throwIfAborted(signal);
+    }
+
+    if (status.phase === 'Failed') {
+      throw Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' });
     }
 
     if (status.phase !== 'Running') {

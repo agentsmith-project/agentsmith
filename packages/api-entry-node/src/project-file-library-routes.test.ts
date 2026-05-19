@@ -1573,6 +1573,57 @@ describe('project-file-library-routes', () => {
     await expect(emptyDeps.docStore.get('project_file_libraries', String(emptyCreated.id))).resolves.toBeNull();
   });
 
+  it('does not delete repo storage when workspace binding delete returns release-incomplete 409', async () => {
+    const storageAdapter = createStorageAdapter();
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw Object.assign(
+        new Error('asbcp_error: delete_workspace_binding 409 token=raw-binding-release-token release terminal fact missing'),
+        {
+          code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+          status: 409,
+          operation: 'delete_workspace_binding',
+          retryable: true,
+          requestId: 'asbcp_req_binding_release_409',
+        },
+      );
+    });
+    const json = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_delete_binding_release_409' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(storageAdapter.deleteRepoForLibrary).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT',
+      message: 'file_library_retryable_infrastructure_conflict',
+      retryable: true,
+      retry_after_ms: 2000,
+    }));
+    expect(JSON.stringify(json.mock.calls)).not.toContain('raw-binding-release-token');
+    await expect(deps.docStore.get('project_file_libraries', libraryId)).resolves.toMatchObject({
+      status: 'deleting',
+      delete_correlation_id: 'req_delete_binding_release_409',
+    });
+  });
+
   it('blocks deleting a task-bound file library with safe bound-task fields and keeps the library ready', async () => {
     const deps = createDeps();
     const created = await createReadyLibrary(deps);
@@ -4702,6 +4753,52 @@ describe('project-file-library-routes', () => {
     );
     expect(releasedTask).toMatchObject({ id: seededTask.taskId });
     expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(/wmb_|ns_|repo_|mount|credential|control_root/);
+  });
+
+  it('maps ASBCP runtime workload release 409 to a retryable infrastructure conflict', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_runtime_asbcp_409',
+      title: 'Release runtime ASBCP 409 task',
+    });
+    deps.internalAgentPodManager.releasePod = vi.fn(async () => {
+      throw Object.assign(new Error('asbcp_error: delete_pod 409 secret=raw-secret-token release terminal truth missing'), {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_file_runtime_release_409',
+      });
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_file_runtime_release_409' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT',
+      message: 'file_library_retryable_infrastructure_conflict',
+      file_library_id: libraryId,
+    }));
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(
+      /raw-secret-token|secret=|wmb_|ns_|repo_|mount|credential|control_root/,
+    );
   });
 
   it.each(['ready', 'releasing', 'release_pending'] as const)(

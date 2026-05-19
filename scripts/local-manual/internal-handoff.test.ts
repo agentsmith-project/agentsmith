@@ -1282,22 +1282,28 @@ SH
     expect(result.stderr).toContain('JVS binary SHA-256 mismatch');
   });
 
-  it('writes sandbox state with the orchestrator AFSCP caller and canonical token env', () => {
+  it('writes sandbox state with the orchestrator AFSCP caller and token fingerprints only', () => {
     const result = runInternalCommonSnippet(`
       INTERNAL_SANDBOX_STATE_FILE="\${SNIPPET_TEMP_ROOT}/sandbox-control.env"
       AFSCP_BASE_URL="http://state-afscp.internal"
       AFSCP_CALLER_SERVICE="agentsmith-api"
       AFSCP_ORCHESTRATOR_CALLER_SERVICE="agentsmith-sandbox-control-plane"
       AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
-      ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+      ASBCP_SERVICE_KEY_VALUE="state-asbcp-service-key"
       write_internal_state_env
       cat "$INTERNAL_SANDBOX_STATE_FILE"
     `);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('AFSCP_INTERNAL_BASE_URL="http://state-afscp.internal"');
-    expect(result.stdout).toContain('AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"');
     expect(result.stdout).toContain('AFSCP_CALLER_SERVICE="agentsmith-sandbox-control-plane"');
+    expect(result.stdout).toContain('ASBCP_SERVICE_KEY_FINGERPRINT="sha256:');
+    expect(result.stdout).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="sha256:');
+    expect(result.stdout).not.toContain('ASBCP_SERVICE_KEY_VALUE=');
+    expect(result.stdout).not.toContain('state-asbcp-service-key');
+    expect(result.stdout).not.toContain('AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"');
+    expect(result.stdout).not.toContain('AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"');
+    expect(result.stdout).not.toContain('state-orchestrator-token');
     expect(result.stdout).not.toContain('AFSCP_CALLER_SERVICE="agentsmith-api"');
   });
 
@@ -2049,9 +2055,12 @@ SH
 
   it('keeps local-real internal sandbox handoff manager-only', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const startBody = functionBody(common, 'start_internal_runtime');
 
     expect(common).toContain('bash "${CONTROL_SCRIPT}" start-asbcp');
     expect(common).toContain('bash "${CONTROL_SCRIPT}" stop-asbcp');
+    expect(startBody).toContain('ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"');
+    expect(startBody).toContain('AFSCP_ORCHESTRATOR_TOKEN="${afscp_orchestrator_token}"');
     expect(common).not.toContain('start-cleaner');
     expect(common).not.toContain('stop-cleaner');
     expect(common).not.toContain('INTERNAL_SANDBOX_CLEANER');

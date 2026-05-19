@@ -80,13 +80,28 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('AFSCP_ACTOR_TYPE_VALUE="${AFSCP_ACTOR_TYPE:-${AFSCP_ORCHESTRATOR_ACTOR_TYPE:-system}}"');
     expect(script).toContain('AFSCP_ACTOR_ID_VALUE="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_CALLER_SERVICE_VALUE}}}"');
     expect(script).toContain('AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}"');
-    expect(script).toContain('AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}"');
+    expect(script).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="$(release_user_story_secret_fingerprint "${AFSCP_ORCHESTRATOR_TOKEN_VALUE}")"');
     expect(script).toContain('AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"');
     expect(script).toContain('AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"');
     expect(script).toContain('AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"');
-    expect(script).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp');
+    expect(script).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp');
     expect(script).not.toMatch(/^afscp:\s*$/mu);
     expect(script).not.toContain('http://127.0.0.1:28090');
+  });
+
+  it('keeps release user story ASBCP state artifact free of raw service tokens', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const stateBlockStart = script.indexOf('cat > "${ASBCP_STATE_FILE}" <<EOF');
+    const stateBlockEnd = script.indexOf('\nEOF', stateBlockStart);
+    const stateBlock = script.slice(stateBlockStart, stateBlockEnd);
+    const startLine = 'INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp';
+
+    expect(stateBlockStart).toBeGreaterThanOrEqual(0);
+    expect(stateBlock).toContain('ASBCP_SERVICE_KEY_FINGERPRINT=');
+    expect(stateBlock).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT=');
+    expect(stateBlock).not.toContain('ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"');
+    expect(stateBlock).not.toContain('AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}"');
+    expect(script).toContain(startLine);
   });
 
   it('starts the wrapper-owned AFSCP local runtime before ASBCP and cleans it up', () => {

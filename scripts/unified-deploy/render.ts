@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
@@ -31,6 +31,8 @@ import { parseKubernetesDocuments, resourceKind, resourceName } from './kubernet
 
 export const DEFAULT_SITE_ENV_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'unified', 'env', 'site.env.example');
 export const DEFAULT_TEMPLATES_ROOT = path.join(REPO_ROOT, 'infra', 'deploy', 'unified');
+const DEFAULT_ASBCP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
+const GENERATED_ASBCP_SERVICE_KEY = `asbcp_ephemeral_${randomBytes(32).toString('base64url')}`;
 
 type RenderUnifiedDeployOptions = {
   profile?: UnifiedDeployProfile;
@@ -173,6 +175,35 @@ function validateEnv(values: Record<string, string>): void {
       throw new Error(`${key} contains a double quote; template-safe env values are required`);
     }
   }
+}
+
+async function readAsbcpImageFromLock(lockPath: string = DEFAULT_ASBCP_IMAGE_LOCK_PATH): Promise<string> {
+  const source = await readFile(lockPath, 'utf8');
+  const image = /^asbcp_source_image=(.+)$/mu.exec(source)?.[1]?.trim();
+  if (!image || !/@sha256:[a-f0-9]{64}$/iu.test(image)) {
+    throw new Error(`${path.relative(REPO_ROOT, lockPath)} must include asbcp_source_image pinned by sha256 digest`);
+  }
+
+  return image;
+}
+
+async function withDerivedDeployEnv(options: {
+  values: Record<string, string>;
+}): Promise<Record<string, string>> {
+  const values = { ...options.values };
+
+  if (!values.ASBCP_IMAGE) {
+    values.ASBCP_IMAGE = await readAsbcpImageFromLock();
+  }
+
+  if (
+    values.ASBCP_SERVICE_KEY === ''
+    && Object.prototype.hasOwnProperty.call(values, 'ASBCP_SERVICE_KEY')
+  ) {
+    values.ASBCP_SERVICE_KEY = GENERATED_ASBCP_SERVICE_KEY;
+  }
+
+  return values;
 }
 
 function resolveProfile(optionsProfile: UnifiedDeployProfile | undefined, envProfile: string | undefined): UnifiedDeployProfile {
@@ -360,7 +391,9 @@ export async function renderUnifiedDeployToString(options: RenderUnifiedDeployOp
   const siteEnvPath = resolvePath(options.siteEnvPath, DEFAULT_SITE_ENV_PATH);
   const substrateTruthPath = resolvePath(options.substrateTruthPath, DEFAULT_SUBSTRATE_TRUTH_PATH);
   const siteEnv = options.siteEnv ?? await readFile(siteEnvPath, 'utf8');
-  const deployEnv = parseSiteEnv(siteEnv);
+  const deployEnv = await withDerivedDeployEnv({
+    values: parseSiteEnv(siteEnv),
+  });
   const substrateTruthSource = options.substrateTruth ?? await readFile(substrateTruthPath, 'utf8');
   const substrateTruth = parseSubstrateTruth(substrateTruthSource, {
     sourcePath: substrateTruthPath,

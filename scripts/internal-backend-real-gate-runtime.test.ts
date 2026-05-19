@@ -132,7 +132,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE');
     expect(helper).not.toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).toContain('render_k8s_external_dependency_services \\');
-    expect(helper).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-asbcp 1>&2');
+    expect(helper).toContain('internal_real_gate_start_runtime "${spec_state_file}"');
     expect(helper).not.toContain('start-cleaner');
     expect(helper).not.toContain('stop-cleaner');
     expect(helper).not.toContain('with-cleaner');
@@ -219,7 +219,7 @@ describe('internal backend-real gate runtime contract', () => {
     );
   });
 
-  it('writes AFSCP ASBCP env values into isolated sandbox state instead of relying on YAML config', () => {
+  it('writes only non-sensitive AFSCP ASBCP identity into isolated sandbox state instead of raw tokens', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const state = renderSandboxState({
       AFSCP_INTERNAL_BASE_URL: 'http://formal-afscp.internal:28090',
@@ -232,10 +232,16 @@ describe('internal backend-real gate runtime contract', () => {
     });
 
     expect(state).toContain('AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"');
-    expect(state).toContain('AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"');
     expect(state).toContain('AFSCP_CALLER_SERVICE="formal-asbcp"');
     expect(state).toContain('AFSCP_ACTOR_TYPE="service"');
     expect(state).toContain('AFSCP_ACTOR_ID="formal-sandbox-actor"');
+    expect(state).toContain('ASBCP_SERVICE_KEY_FINGERPRINT="sha256:');
+    expect(state).toContain('AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="sha256:');
+    expect(state).not.toContain('ASBCP_SERVICE_KEY_VALUE=');
+    expect(state).not.toContain('sandbox-service-key');
+    expect(state).not.toContain('AFSCP_ORCHESTRATOR_TOKEN="formal-orchestrator-token"');
+    expect(state).not.toContain('AFSCP_ORCHESTRATOR_SERVICE_TOKEN="formal-orchestrator-token"');
+    expect(state).not.toContain('legacy-orchestrator-token');
     expect(state).not.toContain('CLEANER_');
     expect(state).not.toContain('sandbox-cleaner');
     expect(helper).not.toMatch(/^afscp:\s*$/mu);

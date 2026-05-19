@@ -381,6 +381,44 @@ describe('unified deploy render producer', () => {
     expect(result.status).not.toBe(0);
   });
 
+  it('keeps tracked site env example free of raw ASBCP service key material', async () => {
+    const siteEnv = await readFile(DEFAULT_SITE_ENV_PATH, 'utf8');
+
+    expect(siteEnv).toContain('ASBCP_SERVICE_KEY=');
+    expect(siteEnv).not.toContain('agentsmith_dev_asbcp_service_key');
+    expect(siteEnv).toMatch(/^ASBCP_SERVICE_KEY=$/mu);
+  });
+
+  it('renders an untracked ephemeral ASBCP service key instead of a public fixed placeholder', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const appSecret = findResource(documents, 'Secret', 'agentsmith-app-secrets');
+    const serviceKey = asRecord(appSecret.stringData).ASBCP_SERVICE_KEY;
+
+    expect(serviceKey).toEqual(expect.stringMatching(/^asbcp_ephemeral_[A-Za-z0-9_-]{32,}$/u));
+    expect(serviceKey).not.toBe('__EXAMPLE_ASBCP_SERVICE_KEY_SET_IN_UNTRACKED_SITE_ENV__');
+  });
+
+  it('derives ASBCP_IMAGE from the shared lock when site env leaves it unset', async () => {
+    const root = tempDir('agentsmith-render-lock-asbcp-image-');
+    const siteEnvPath = join(root, 'site.env');
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'ASBCP_IMAGE',
+      '',
+    );
+    writeFileSync(siteEnvPath, siteEnv, 'utf8');
+
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+
+    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.6@sha256:891d924f279c38ef85a30094ca9879ea22e27e4830942b29f489e45401117371');
+  });
+
   it('keeps default producer evidence artifacts out of git', () => {
     const result = spawnSync('git', ['check-ignore', '-q', 'artifacts/unified-deploy/example.json'], {
       cwd: process.cwd(),

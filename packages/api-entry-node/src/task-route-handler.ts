@@ -59,6 +59,7 @@ import {
   resetInternalWorkloadHolderCoordinatorForTests,
   resolveInternalWorkloadCoordinator,
 } from './internal-workload-coordinator.js';
+import { redactAsbcpLogText } from './asbcp-client.js';
 import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
@@ -1914,6 +1915,85 @@ async function releaseTaskFileLibraryBindingWithAudit(input: {
   return releaseResult;
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readDiagnosticString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readDiagnosticNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function buildSafeInternalWorkloadReleaseDiagnostic(error: unknown): Record<string, unknown> | undefined {
+  const errorRecord = isObjectRecord(error) ? error : {};
+  const releaseDiagnostic = isObjectRecord(errorRecord.releaseDiagnostic)
+    ? errorRecord.releaseDiagnostic
+    : errorRecord;
+  const code = readDiagnosticString(releaseDiagnostic, 'code');
+  const operation = readDiagnosticString(releaseDiagnostic, 'operation');
+  const requestId = readDiagnosticString(releaseDiagnostic, 'requestId')
+    ?? readDiagnosticString(releaseDiagnostic, 'request_id');
+  const status = readDiagnosticNumber(releaseDiagnostic, 'status');
+  const retryable = typeof releaseDiagnostic.retryable === 'boolean'
+    ? releaseDiagnostic.retryable
+    : undefined;
+  const diagnostic = {
+    ...(code ? { code } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(operation ? { operation } : {}),
+    ...(requestId ? { request_id: requestId } : {}),
+    ...(retryable !== undefined ? { retryable } : {}),
+  };
+  return Object.keys(diagnostic).length > 0 ? diagnostic : undefined;
+}
+
+function buildInternalWorkloadReleasePendingError(
+  identity: InternalTaskWorkloadIdentity,
+  cause: unknown,
+): Error {
+  const error = Object.assign(new Error('agent_task_internal_workload_release_pending'), {
+    code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+    statusCode: 409,
+    retryable: true,
+    taskId: identity.taskId,
+    releaseDiagnostic: buildSafeInternalWorkloadReleaseDiagnostic(cause),
+  });
+  (error as Error & { cause?: unknown }).cause = cause;
+  return error;
+}
+
+function isInternalWorkloadReleasePendingError(error: unknown): boolean {
+  if (!isObjectRecord(error)) {
+    return false;
+  }
+  const code = readDiagnosticString(error, 'code');
+  return code === 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING'
+    || code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+}
+
+function buildInternalWorkloadReleasePendingResponse(
+  taskId: string,
+  error: unknown,
+): Record<string, unknown> {
+  const diagnostic = buildSafeInternalWorkloadReleaseDiagnostic(error);
+  return {
+    error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+    message: 'agent_task_internal_workload_release_pending',
+    task_id: taskId,
+    retryable: true,
+    ...(diagnostic ? { release_diagnostic: diagnostic } : {}),
+  };
+}
+
+function safeTaskRouteDiagnosticMessage(error: unknown): string {
+  return redactAsbcpLogText(error instanceof Error ? error.message : String(error));
+}
+
 async function maybeReleaseInternalAgentWorkload(
   deps: NodeApiDeps,
   identity: InternalTaskWorkloadIdentity,
@@ -1944,39 +2024,35 @@ async function maybeReleaseInternalAgentWorkload(
   }
   const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
   if (internalWorkloadCoordinator) {
-    const released = await internalWorkloadCoordinator.requestHardTeardown({
-      workspaceId: identity.workspaceId,
-      projectId: identity.projectId,
-      workloadId: sanitizeWorkloadId(identity.taskId),
-    }).then(
-      () => true,
-      (err: unknown) => {
-        console.warn(
-          '[sandbox] requestHardTeardown failed for task %s: %s',
-          identity.taskId,
-          err instanceof Error ? err.message : err,
-        );
-        return false;
-      },
-    );
-    if (!released) return;
-    await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+    try {
+      await internalWorkloadCoordinator.requestHardTeardown({
+        workspaceId: identity.workspaceId,
+        projectId: identity.projectId,
+        workloadId: sanitizeWorkloadId(identity.taskId),
+      });
+      await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+    } catch (err) {
+      console.warn(
+        '[sandbox] requestHardTeardown failed for task %s: %s',
+        identity.taskId,
+        safeTaskRouteDiagnosticMessage(err),
+      );
+      throw buildInternalWorkloadReleasePendingError(identity, err);
+    }
     return;
   }
   if (!deps.internalAgentPodManager) return;
-  const released = await deps.internalAgentPodManager.releasePod(
-    identity.workspaceId,
-    identity.projectId,
-    sanitizeWorkloadId(identity.taskId),
-  ).then(
-    () => true,
-    (err: unknown) => {
-      console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, err instanceof Error ? err.message : err);
-      return false;
-    },
-  );
-  if (!released) return;
-  await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+  try {
+    await deps.internalAgentPodManager.releasePod(
+      identity.workspaceId,
+      identity.projectId,
+      sanitizeWorkloadId(identity.taskId),
+    );
+    await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+  } catch (err) {
+    console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, safeTaskRouteDiagnosticMessage(err));
+    throw buildInternalWorkloadReleasePendingError(identity, err);
+  }
 }
 
 async function maybeReleaseInternalAgentWorkspaceBinding(
@@ -2143,7 +2219,7 @@ async function requestNotebookRunHardTeardown(input: {
 }
 
 function normalizeErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return safeTaskRouteDiagnosticMessage(error);
 }
 
 function buildTaskRunnerEvidenceMissingResponse(input: {
@@ -3794,14 +3870,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
       return true;
     }
-    const deleted = await deps.notebookTerminalService.deleteSession({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      taskId: route.taskId,
-      userId: user.id,
-      sessionId: route.terminalSessionId,
-      waitForFinalization: true,
-    });
+    let deleted: boolean;
+    try {
+      deleted = await deps.notebookTerminalService.deleteSession({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: route.taskId,
+        userId: user.id,
+        sessionId: route.terminalSessionId,
+        waitForFinalization: true,
+      });
+    } catch (error) {
+      if (!isInternalWorkloadReleasePendingError(error)) {
+        throw error;
+      }
+      json(res, 409, buildInternalWorkloadReleasePendingResponse(route.taskId, error));
+      return true;
+    }
     if (!deleted) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
       return true;
@@ -4134,6 +4219,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }));
       return true;
     }
+    const archiveResolvedRunnerId = previousStatus === 'active' && body.status === 'archived'
+      ? readActiveRunResolvedRunnerId(sharedActive)
+      : '';
+    if (archiveResolvedRunnerId) {
+      try {
+        await maybeReleaseInternalAgentWorkload(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          taskId: task.id,
+          userId: task.owner_user_id,
+          agentId: archiveResolvedRunnerId,
+        }, {
+          force: true,
+        });
+      } catch (error) {
+        if (!isInternalWorkloadReleasePendingError(error)) {
+          throw error;
+        }
+        json(res, 409, buildInternalWorkloadReleasePendingResponse(task.id, error));
+        return true;
+      }
+    }
     if (typeof body.title === 'string' && body.title.trim()) {
       task.title = body.title.trim();
     }
@@ -4146,21 +4253,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       docStore: deps.docStore,
       task,
     });
-    if (
-      previousStatus === 'active'
-      && task.status === 'archived'
-      && readActiveRunResolvedRunnerId(sharedActive)
-    ) {
-      await maybeReleaseInternalAgentWorkload(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        taskId: task.id,
-        userId: task.owner_user_id,
-        agentId: readActiveRunResolvedRunnerId(sharedActive),
-      }, {
-        force: true,
-      });
-    }
     json(res, 200, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
     return true;
   }

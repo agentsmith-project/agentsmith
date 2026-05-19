@@ -91,11 +91,16 @@ Lock update/adoption procedure:
 - Download the target release asset `asbcp-final-manifest.json`.
 - Update `infra/deploy/shared/asbcp-image.lock` from the release tag, digest,
   release URL, and commit; do not add API contract version to the lock.
-- Run `npm run contracts:check-asbcp-manifest-lock -- --manifest <downloaded-asbcp-final-manifest.json>`.
+- Run `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`, or
+  `npm run contracts:check-asbcp-manifest-lock -- --manifest <downloaded-asbcp-final-manifest.json>`.
+- Keep downloaded manifests as local evidence inputs when useful, but do not
+  treat checked-in fixtures as release adoption proof. The adoption gate must
+  read the authoritative downloaded release manifest.
 
 Minimal focused diagnostics after a lock/adoption change are:
 
 - `npm run contracts:check-asbcp-image-only`
+- `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`
 - `npm run test:unified-deploy:local-kind:images:unit`
 - `npm run test:unified-deploy:render` for the static template contract
 - `npm run test:unified-deploy:render -- --profile=local-kind --site-env=<generated-local-kind-site-env>` when proving local-kind image adoption against generated digest refs

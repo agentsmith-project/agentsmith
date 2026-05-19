@@ -1,3 +1,129 @@
+const REDACTED_ASBCP_VALUE = '[redacted]';
+const ASBCP_ERROR_TEXT_MAX_CHARS = 2_000;
+const SENSITIVE_ASBCP_FIELD_PATTERN =
+  String.raw`(?:token|secret|password|api[\s_-]*key|access[\s_-]*key|service[\s_-]*keys?|authorization)`;
+const SENSITIVE_JSON_FIELD_RE = new RegExp(
+  String.raw`("(?:(?:[^"\\]|\\.)*)${SENSITIVE_ASBCP_FIELD_PATTERN}(?:(?:[^"\\]|\\.)*)"\s*:\s*)"((?:[^"\\]|\\.)*)"`,
+  'gi',
+);
+const SENSITIVE_JSON_OBJECT_VALUE_FIELD_RE = new RegExp(
+  String.raw`("(?:(?:[^"\\]|\\.)*)${SENSITIVE_ASBCP_FIELD_PATTERN}(?:(?:[^"\\]|\\.)*)"\s*:\s*\{\s*"value"\s*:\s*)"((?:[^"\\]|\\.)*)"`,
+  'gi',
+);
+const SENSITIVE_IDENTIFIER_OBJECT_VALUE_FIELD_RE = new RegExp(
+  String.raw`(\b[A-Z0-9_-]*${SENSITIVE_ASBCP_FIELD_PATTERN}[A-Z0-9_-]*\b\s*[:=]\s*\{\s*value\s*[:=]\s*)([^\s,;}]+)`,
+  'gi',
+);
+const SENSITIVE_LABEL_KV_FIELD_RE = new RegExp(
+  String.raw`(\b${SENSITIVE_ASBCP_FIELD_PATTERN}\b\s*[:=]\s*)([^\s,;}"']+)`,
+  'gi',
+);
+const SENSITIVE_IDENTIFIER_KV_FIELD_RE = new RegExp(
+  String.raw`(\b[A-Z0-9_-]*${SENSITIVE_ASBCP_FIELD_PATTERN}[A-Z0-9_-]*\b\s*[:=]\s*)([^\s,;}"']+)`,
+  'gi',
+);
+const SENSITIVE_BEARER_RE = /(\b(?:bearer|basic)\s+)[A-Za-z0-9._~+/-]+=*/gi;
+
+export function redactAsbcpLogText(value: string): string {
+  const truncated = value.length > ASBCP_ERROR_TEXT_MAX_CHARS
+    ? `${value.slice(0, ASBCP_ERROR_TEXT_MAX_CHARS)} [truncated]`
+    : value;
+  return truncated
+    .replace(SENSITIVE_JSON_OBJECT_VALUE_FIELD_RE, `$1"${REDACTED_ASBCP_VALUE}"`)
+    .replace(SENSITIVE_JSON_FIELD_RE, `$1"${REDACTED_ASBCP_VALUE}"`)
+    .replace(SENSITIVE_IDENTIFIER_OBJECT_VALUE_FIELD_RE, `$1${REDACTED_ASBCP_VALUE}`)
+    .replace(SENSITIVE_BEARER_RE, `$1${REDACTED_ASBCP_VALUE}`)
+    .replace(SENSITIVE_IDENTIFIER_KV_FIELD_RE, `$1${REDACTED_ASBCP_VALUE}`)
+    .replace(SENSITIVE_LABEL_KV_FIELD_RE, `$1${REDACTED_ASBCP_VALUE}`);
+}
+
+function buildAsbcpErrorMessage(operation: string, status: number, responseText: string): string {
+  const safeText = redactAsbcpLogText(responseText).trim();
+  return `asbcp_error: ${operation} ${status}${safeText ? ` ${safeText}` : ''}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function readStringField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): string | undefined {
+  return readNonEmptyString(record[snakeKey]) ?? (camelKey ? readNonEmptyString(record[camelKey]) : undefined);
+}
+
+function parseAsbcpJsonObject(responseText: string): Record<string, unknown> | undefined {
+  if (!responseText.trim().startsWith('{')) {
+    return undefined;
+  }
+  try {
+    const payload = JSON.parse(responseText) as unknown;
+    return isRecord(payload) ? payload : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readAsbcpErrorRecord(responseText: string): Record<string, unknown> | undefined {
+  const payload = parseAsbcpJsonObject(responseText);
+  if (!payload) {
+    return undefined;
+  }
+  return isRecord(payload.error) ? payload.error : payload;
+}
+
+function readAsbcpErrorCode(responseText: string): string | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readStringField(error, 'code')
+    ?? readStringField(error, 'error_code', 'errorCode');
+}
+
+function readAsbcpRequestIdFromBody(responseText: string): string | undefined {
+  const payload = parseAsbcpJsonObject(responseText);
+  if (!payload) {
+    return undefined;
+  }
+  const error = isRecord(payload.error) ? payload.error : undefined;
+  return (error
+    ? readStringField(error, 'request_id', 'requestId')
+      ?? readStringField(error, 'correlation_id', 'correlationId')
+    : undefined)
+    ?? readStringField(payload, 'request_id', 'requestId')
+    ?? readStringField(payload, 'correlation_id', 'correlationId');
+}
+
+function readAsbcpResponseRequestId(resp: Response, responseText: string): string | undefined {
+  return readNonEmptyString(resp.headers.get('x-request-id'))
+    ?? readNonEmptyString(resp.headers.get('x-asbcp-request-id'))
+    ?? readAsbcpRequestIdFromBody(responseText);
+}
+
+function isAsbcpReleaseDeleteOperation(operation: string): boolean {
+  return operation === 'delete_pod' || operation === 'delete_workspace_binding';
+}
+
+const ASBCP_RELEASE_INCOMPLETE_ERROR_CODES = new Set([
+  'workload_release_incomplete',
+  'workspace_binding_release_incomplete',
+]);
+
+function isAsbcpReleaseUnconfirmedConflict(
+  status: number,
+  operation: string,
+  responseText: string,
+): boolean {
+  if (status !== 409 || !isAsbcpReleaseDeleteOperation(operation)) {
+    return false;
+  }
+  const asbcpCode = readAsbcpErrorCode(responseText);
+  return asbcpCode !== undefined && ASBCP_RELEASE_INCOMPLETE_ERROR_CODES.has(asbcpCode);
+}
+
 export interface PodStatusResponse {
   pod_name?: string;
   phase: string;
@@ -5,6 +131,8 @@ export interface PodStatusResponse {
   started_at?: string;
   expires_at?: string;
   message?: string;
+  status_source?: 'current_status';
+  delete_terminal_confirmed?: boolean;
 }
 
 export interface ExecResponse {
@@ -42,17 +170,88 @@ export interface SandboxWorkspaceBindingResponse {
   updated_at?: string;
 }
 
+export interface SandboxPodEnsureResponse {
+  httpStatus: number;
+  pod?: PodStatusResponse;
+  workloadId?: string;
+  status?: string;
+  correlationId?: string;
+  operationId?: string;
+}
+
+function readPodStatusResponse(value: unknown): PodStatusResponse | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const phase = readNonEmptyString(value.phase);
+  if (!phase) {
+    return undefined;
+  }
+  const status: PodStatusResponse = { phase };
+  const podName = readNonEmptyString(value.pod_name);
+  const ip = readNonEmptyString(value.ip);
+  const startedAt = readNonEmptyString(value.started_at);
+  const expiresAt = readNonEmptyString(value.expires_at);
+  const message = readNonEmptyString(value.message);
+  if (podName) status.pod_name = podName;
+  if (ip) status.ip = ip;
+  if (startedAt) status.started_at = startedAt;
+  if (expiresAt) status.expires_at = expiresAt;
+  if (message) status.message = message;
+  if (value.status_source === 'current_status') {
+    status.status_source = 'current_status';
+  }
+  if (typeof value.delete_terminal_confirmed === 'boolean') {
+    status.delete_terminal_confirmed = value.delete_terminal_confirmed;
+  }
+  return status;
+}
+
+function parsePodEnsurePayload(httpStatus: number, payload: unknown): SandboxPodEnsureResponse {
+  if (!isRecord(payload)) {
+    return { httpStatus };
+  }
+  const nestedPod = readPodStatusResponse(payload.pod);
+  const inlinePod = readPodStatusResponse(payload);
+  const pod = nestedPod ?? inlinePod;
+  const workloadId = readStringField(payload, 'workload_id', 'workloadId');
+  const status = readStringField(payload, 'status');
+  const correlationId = readStringField(payload, 'correlation_id', 'correlationId');
+  const operationId = readStringField(payload, 'operation_id', 'operationId');
+  return {
+    httpStatus,
+    ...(pod ? { pod } : {}),
+    ...(workloadId ? { workloadId } : {}),
+    ...(status ? { status } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    ...(operationId ? { operationId } : {}),
+  };
+}
+
 export class AsbcpHttpError extends Error {
   code: string;
   status: number;
   operation: string;
+  retryable: boolean;
+  requestId?: string;
 
-  constructor(input: { status: number; operation: string; message: string; code: string }) {
-    super(input.message);
+  constructor(input: {
+    status: number;
+    operation: string;
+    message: string;
+    code: string;
+    retryable?: boolean;
+    requestId?: string;
+  }) {
+    super(redactAsbcpLogText(input.message));
     this.name = 'AsbcpHttpError';
     this.status = input.status;
     this.operation = input.operation;
     this.code = input.code;
+    this.retryable = input.retryable ?? false;
+    if (input.requestId) {
+      this.requestId = input.requestId;
+    }
   }
 }
 
@@ -80,6 +279,17 @@ export class AsbcpClient {
     );
     error.name = 'AbortError';
     return error;
+  }
+
+  private static isAbortLikeNetworkError(error: unknown): boolean {
+    const name = error instanceof Error ? error.name : undefined;
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      return true;
+    }
+    const message = error instanceof Error
+      ? error.message
+      : (typeof error === 'string' ? error : '');
+    return /(aborted|abort|timeout|timed out)/i.test(message);
   }
 
   private buildUrl(path: string): string {
@@ -125,9 +335,14 @@ export class AsbcpClient {
     return controller.signal;
   }
 
-  private mapErrorCode(status: number): string {
+  private mapErrorCode(status: number, operation: string, responseText: string): string {
     if (status === 403) return 'AGENT_SANDBOX_FORBIDDEN';
     if (status === 404) return 'AGENT_SANDBOX_NOT_FOUND';
+    if (status === 409) {
+      return isAsbcpReleaseUnconfirmedConflict(status, operation, responseText)
+        ? 'AGENT_SANDBOX_RELEASE_INCOMPLETE'
+        : 'AGENT_SANDBOX_CONFLICT';
+    }
     if (status === 429) return 'AGENT_SANDBOX_RATE_LIMITED';
     if (status >= 500) return 'AGENT_SANDBOX_UNAVAILABLE';
     return 'AGENT_SANDBOX_HTTP_ERROR';
@@ -135,6 +350,11 @@ export class AsbcpClient {
 
   private isRetryableStatus(status: number): boolean {
     return status === 429 || status === 502 || status === 503 || status === 504;
+  }
+
+  private isRetryableHttpError(status: number, operation: string, responseText: string): boolean {
+    return this.isRetryableStatus(status)
+      || isAsbcpReleaseUnconfirmedConflict(status, operation, responseText);
   }
 
   private async requestWithRetry(
@@ -163,6 +383,7 @@ export class AsbcpClient {
           throw AsbcpClient.buildAbortError(signal.reason ?? error);
         }
         lastError = error;
+        if (AsbcpClient.isAbortLikeNetworkError(error)) break;
         if (attempt >= maxAttempts) break;
         if (signal?.aborted) {
           throw AsbcpClient.buildAbortError(signal.reason ?? error);
@@ -170,7 +391,7 @@ export class AsbcpClient {
         await AsbcpClient.sleep(200 * (2 ** (attempt - 1)));
       }
     }
-    const message = lastError instanceof Error ? lastError.message : 'unknown_network_error';
+    const message = redactAsbcpLogText(lastError instanceof Error ? lastError.message : 'unknown_network_error');
     throw Object.assign(new Error(`asbcp_network_error: ${operation} ${message}`), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
     });
@@ -187,8 +408,10 @@ export class AsbcpClient {
     throw new AsbcpHttpError({
       status: resp.status,
       operation,
-      code: this.mapErrorCode(resp.status),
-      message: `asbcp_error: ${operation} ${resp.status} ${text}`.trim(),
+      code: this.mapErrorCode(resp.status, operation, text),
+      retryable: this.isRetryableHttpError(resp.status, operation, text),
+      requestId: readAsbcpResponseRequestId(resp, text),
+      message: buildAsbcpErrorMessage(operation, resp.status, text),
     });
   }
 
@@ -206,7 +429,7 @@ export class AsbcpClient {
     workloadId: string,
     body: SandboxPodCreateBody,
     signal?: AbortSignal,
-  ): Promise<{ httpStatus: number; pod: PodStatusResponse }> {
+  ): Promise<SandboxPodEnsureResponse> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
       + `/projects/${encodeURIComponent(projectId)}`
@@ -218,10 +441,7 @@ export class AsbcpClient {
       body: JSON.stringify(body),
       signal: this.buildRequestSignal(150_000, signal),
     }), signal);
-    return {
-      httpStatus: resp.status,
-      pod: await resp.json() as PodStatusResponse,
-    };
+    return parsePodEnsurePayload(resp.status, await resp.json().catch(() => undefined));
   }
 
   async ensureWorkspaceBinding(
@@ -259,13 +479,15 @@ export class AsbcpClient {
       headers: this.headers(),
       signal: AbortSignal.timeout(15_000),
     }));
-    if (!resp.ok && resp.status !== 404) {
+    if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       throw new AsbcpHttpError({
         status: resp.status,
         operation: 'delete_workspace_binding',
-        code: this.mapErrorCode(resp.status),
-        message: `asbcp_error: delete_workspace_binding ${resp.status} ${text}`.trim(),
+        code: this.mapErrorCode(resp.status, 'delete_workspace_binding', text),
+        retryable: this.isRetryableHttpError(resp.status, 'delete_workspace_binding', text),
+        requestId: readAsbcpResponseRequestId(resp, text),
+        message: buildAsbcpErrorMessage('delete_workspace_binding', resp.status, text),
       });
     }
   }
@@ -287,17 +509,24 @@ export class AsbcpClient {
     }), signal);
     if (!resp.ok) {
       if (resp.status === 404) {
-        return { phase: 'offline' };
+        return {
+          phase: 'offline',
+          message: 'pod_not_found_current_status',
+          status_source: 'current_status',
+          delete_terminal_confirmed: false,
+        };
       }
       const text = await resp.text().catch(() => '');
       throw new AsbcpHttpError({
         status: resp.status,
         operation: 'get_pod_status',
-        code: this.mapErrorCode(resp.status),
-        message: `asbcp_error: get_pod_status ${resp.status} ${text}`.trim(),
+        code: this.mapErrorCode(resp.status, 'get_pod_status', text),
+        retryable: this.isRetryableHttpError(resp.status, 'get_pod_status', text),
+        requestId: readAsbcpResponseRequestId(resp, text),
+        message: buildAsbcpErrorMessage('get_pod_status', resp.status, text),
       });
     }
-    return await resp.json() as PodStatusResponse;
+    return readPodStatusResponse(await resp.json().catch(() => undefined)) ?? { phase: 'unknown' };
   }
 
   async deletePod(
@@ -316,13 +545,15 @@ export class AsbcpClient {
       headers: this.headers(),
       signal: this.buildRequestSignal(15_000, signal),
     }), signal);
-    if (!resp.ok && resp.status !== 404) {
+    if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       throw new AsbcpHttpError({
         status: resp.status,
         operation: 'delete_pod',
-        code: this.mapErrorCode(resp.status),
-        message: `asbcp_error: delete_pod ${resp.status} ${text}`.trim(),
+        code: this.mapErrorCode(resp.status, 'delete_pod', text),
+        retryable: this.isRetryableHttpError(resp.status, 'delete_pod', text),
+        requestId: readAsbcpResponseRequestId(resp, text),
+        message: buildAsbcpErrorMessage('delete_pod', resp.status, text),
       });
     }
   }

@@ -100,6 +100,21 @@ AFSCP_ACTOR_ID_VALUE="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_C
 
 info() { echo "[integration-release-user-story] $*"; }
 
+release_user_story_secret_fingerprint() {
+  local value="${1:-}"
+  local digest
+  if [[ -z "${value}" ]]; then
+    printf '\n'
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest="$(printf '%s' "${value}" | sha256sum | awk '{print $1}')"
+  else
+    digest="$(printf '%s' "${value}" | shasum -a 256 | awk '{print $1}')"
+  fi
+  printf 'sha256:%s\n' "${digest}"
+}
+
 run_release_user_story_clean_env() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
@@ -451,11 +466,11 @@ ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/
 ASBCP_CONFIG_PATH="${CONFIG_PATH}"
 ASBCP_PORT="${ASBCP_PORT}"
 ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}"
-ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}"
+ASBCP_SERVICE_KEY_FINGERPRINT="$(release_user_story_secret_fingerprint "${ASBCP_SERVICE_KEY_VALUE}")"
 ASBCP_LOG="${ASBCP_LOG}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
 AFSCP_INTERNAL_BASE_URL="${AFSCP_INTERNAL_BASE_URL_VALUE}"
-AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}"
+AFSCP_ORCHESTRATOR_TOKEN_FINGERPRINT="$(release_user_story_secret_fingerprint "${AFSCP_ORCHESTRATOR_TOKEN_VALUE}")"
 AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE_VALUE}"
 AFSCP_ACTOR_TYPE="${AFSCP_ACTOR_TYPE_VALUE}"
 AFSCP_ACTOR_ID="${AFSCP_ACTOR_ID_VALUE}"
@@ -463,7 +478,7 @@ KUBECONFIG="${KUBECONFIG:-}"
 EOF
 
 info "starting ASBCP from locked image"
-INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" start-asbcp
+INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp
 
 info "running full integration release user story"
 (

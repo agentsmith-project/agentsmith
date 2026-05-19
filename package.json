@@ -154,6 +154,7 @@
     "contracts:check-current-real-session-coverage": "tsx scripts/contracts/check-current-real-session-coverage.ts",
     "contracts:check-asbcp-image-only": "tsx scripts/contracts/check-asbcp-image-only.ts",
     "contracts:check-asbcp-manifest-lock": "tsx scripts/contracts/check-asbcp-manifest-lock.ts",
+    "contracts:check-asbcp-adoption": "tsx scripts/contracts/check-asbcp-manifest-lock.ts",
     "contracts:check-product-terminology": "tsx scripts/contracts/check-product-terminology.ts",
     "contracts:check-unified-deploy-vocabulary": "tsx scripts/contracts/check-unified-deploy-vocabulary.ts",
     "contracts:check-engineering-governance": "tsx scripts/contracts/check-engineering-governance.ts",

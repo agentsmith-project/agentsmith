@@ -176,6 +176,7 @@ const SECRET_LIKE_TOKEN_PATTERN = /\b[^\s,"]*(?:password|secret|token)[^\s,"]*/g
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const ASBCP_CANONICAL_SOURCE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const ASBCP_RELEASE_URL_PREFIX = 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/';
+const ASBCP_VERSION_PATTERN = /^v\d+\.\d+\.\d+$/u;
 const COMMIT_SHA_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/iu;
 
 function errorMessage(error: unknown): string {
@@ -389,6 +390,9 @@ export function parseAsbcpImageLock(
 
   if (!version) {
     throw new Error(`${sourceName} must include asbcp_version`);
+  }
+  if (!ASBCP_VERSION_PATTERN.test(version)) {
+    throw new Error(`${sourceName} asbcp_version must use vX.Y.Z`);
   }
   if (!sourceImage) {
     throw new Error(`${sourceName} must include asbcp_source_image`);

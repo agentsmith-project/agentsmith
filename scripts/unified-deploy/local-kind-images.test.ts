@@ -298,6 +298,12 @@ asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v
 asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v0.1.0
 asbcp_commit_sha=not-a-sha
 `)).toThrow(/asbcp_commit_sha/u);
+    expect(() => parseAsbcpImageLock(`\
+asbcp_version=0.1.0
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:0.1.0@${ASBCP_DIGEST}
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/0.1.0
+asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)).toThrow(/asbcp_version.*v/u);
   });
 
   it('keeps app Dockerfile build-context COPY sources present in the repo', () => {

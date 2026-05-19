@@ -54,6 +54,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@mbos/api-entry-node': path.resolve(__dirname, './packages/api-entry-node/src/index.ts'),
     },
   },
 });

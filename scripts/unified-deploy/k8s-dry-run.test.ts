@@ -13,6 +13,10 @@ import { DEFAULT_SITE_ENV_PATH } from './render';
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
 
+function replaceEnvLine(source: string, key: string, value: string): string {
+  return source.replace(new RegExp(`^${key}=.*$`, 'mu'), `${key}=${value}`);
+}
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
@@ -108,6 +112,46 @@ describe('unified deploy k8s server-side dry-run producer', () => {
     expect(result.evidence.profiles[0]?.manifest_summary.resources).toContain('Deployment/agentsmith-api');
     expect(result.evidence.profiles[0]?.dry_run.command).toBe('kubectl apply --dry-run=server -f -');
     expect(result.evidence.profiles[0]?.dry_run.scope_note).toContain('namespace');
+  });
+
+  it('runs profile-aware static render checks before kubectl dry-run', async () => {
+    const root = tempDir('unified-k8s-dry-run-profile-');
+    const evidenceDir = tempDir('unified-k8s-dry-run-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = join(root, 'generated-site.env');
+    writeFileSync(
+      siteEnvPath,
+      replaceEnvLine(
+        readFileSync(DEFAULT_SITE_ENV_PATH, 'utf8'),
+        'ASBCP_IMAGE',
+        `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@sha256:${'a'.repeat(64)}`,
+      ),
+      'utf8',
+    );
+    const calls: Array<{ command: string; args: string[]; input: string }> = [];
+    const runner: KubectlRunner = async (command, args, options) => {
+      calls.push({ command, args, input: options.input });
+      return { exitCode: 0, stdout: 'dry-run ok', stderr: '' };
+    };
+
+    const result = await runK8sDryRunProducer({
+      profiles: ['existing-cluster'],
+      siteEnvPath,
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(calls).toEqual([]);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'existing-cluster:Deployment/agentsmith-sandbox-control-plane',
+        message: 'ASBCP local-kind registry image is only allowed for local-kind renders',
+      }),
+    ]));
+    expect(result.evidence.profiles[0]?.dry_run.status).toBe('skipped');
   });
 
   it('captures kubectl server-side dry-run failures as failed producer evidence', async () => {

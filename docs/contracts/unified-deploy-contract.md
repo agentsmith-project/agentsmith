@@ -97,7 +97,9 @@ Minimal focused diagnostics after a lock/adoption change are:
 
 - `npm run contracts:check-asbcp-image-only`
 - `npm run test:unified-deploy:local-kind:images:unit`
-- `npm run test:unified-deploy:render`
+- `npm run test:unified-deploy:render` for the static template contract
+- `npm run test:unified-deploy:render -- --profile=local-kind --site-env=<generated-local-kind-site-env>` when proving local-kind image adoption against generated digest refs
+- `npm run test:unified-deploy:render -- --profile=existing-cluster --site-env=<generated-existing-cluster-site-env>` when proving existing-cluster image adoption against generated digest refs
 - `npm run test:unified-deploy:address-truth`
 
 Ordinary lock adoption does not require rerunning the Agent task/workload main

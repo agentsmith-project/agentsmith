@@ -456,7 +456,7 @@ export function checkAsbcpManifestLock(options: {
   const manifestSource = readTextFile(manifestPath, 'manifest.path', failures);
   const lockSource = readTextFile(lockPath, 'lock.path', failures);
 
-  if (!manifestSource || !lockSource) {
+  if (manifestSource === null || lockSource === null) {
     return { ok: failures.length === 0, failures };
   }
 

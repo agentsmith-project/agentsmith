@@ -65,7 +65,7 @@ function writeKubeconfig(root: string): string {
   return kubeconfigPath;
 }
 
-function writeExistingClusterSiteEnv(root: string): string {
+function writeExistingClusterSiteEnv(root: string, asbcpImage: string = ASBCP_SOURCE_REF): string {
   const siteEnvPath = join(root, 'site.env');
   writeFileSync(
     siteEnvPath,
@@ -74,7 +74,7 @@ function writeExistingClusterSiteEnv(root: string): string {
       .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.test')
       .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.test/api/v1')
       .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.test/api/v1')
-      .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=${ASBCP_SOURCE_REF}`),
+      .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=${asbcpImage}`),
     'utf8',
   );
   return siteEnvPath;
@@ -320,6 +320,34 @@ describe('unified deploy existing-cluster smoke producer', () => {
       expect.objectContaining({
         path: 'namespace:agentsmith',
         message: expect.stringContaining('must already exist'),
+      }),
+    ]));
+    expect(calls.some((call) => call.args.includes('apply'))).toBe(false);
+  });
+
+  it('fails static validation before apply when existing-cluster render uses a local-kind ASBCP image', async () => {
+    const root = tempDir('existing-cluster-local-kind-image-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const calls: CommandCall[] = [];
+
+    const result = await runSmoke({
+      siteEnvPath: writeExistingClusterSiteEnv(
+        root,
+        `kind-registry:5000/mbos/agentsmith-sandbox-control-plane@${ASBCP_DIGEST}`,
+      ),
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'static:Deployment/agentsmith-sandbox-control-plane',
+        message: 'ASBCP local-kind registry image is only allowed for local-kind renders',
       }),
     ]));
     expect(calls.some((call) => call.args.includes('apply'))).toBe(false);

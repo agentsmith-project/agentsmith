@@ -1486,9 +1486,9 @@ async function runRouteProbes(options: {
   };
 }
 
-function staticCheckFailures(appYaml: string): CheckFailure[] {
+function staticCheckFailures(appYaml: string, profile: 'existing-cluster'): CheckFailure[] {
   const checks = [
-    checkRenderedOutput(appYaml),
+    checkRenderedOutput(appYaml, { profile }),
     checkApiSingleReplica(appYaml),
   ];
 
@@ -2145,7 +2145,7 @@ export async function runExistingClusterSmokeProducer(
   const renderedSecretValues = rendered.secretValues;
   const renderedConfigFingerprint = fingerprintRenderedManifest(rendered.appYaml);
   const manifestSummary = summarizeRenderedManifest(rendered.appYaml);
-  const staticFailures = staticCheckFailures(rendered.appYaml)
+  const staticFailures = staticCheckFailures(rendered.appYaml, 'existing-cluster')
     .map((failure) => ({
       path: failure.path,
       message: redactDiagnostic(failure.message, renderedSecretValues),

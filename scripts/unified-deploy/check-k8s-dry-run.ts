@@ -385,7 +385,7 @@ async function dryRunProfile(options: {
     manifestSummary = summarizeRenderedManifest(rendered.output);
     renderedSecretValues = collectRenderedSecretValues(rendered.output);
 
-    const renderCheck = checkRenderedOutput(rendered.output);
+    const renderCheck = checkRenderedOutput(rendered.output, { profile: options.profile });
     if (!renderCheck.ok) {
       profileFailures.push(...renderCheck.failures.map((failure) =>
         prefixedFailure(options.profile, failure, renderedSecretValues),

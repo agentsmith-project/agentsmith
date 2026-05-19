@@ -102,6 +102,30 @@ describe('checkAsbcpManifestLock', () => {
     });
   });
 
+  it('rejects an empty release manifest instead of treating it like a missing read failure', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root);
+    const manifestPath = writeFixture(root, 'asbcp-final-manifest.json', '');
+
+    const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('manifest');
+    expect(failureText(result)).toContain('failed to parse');
+  });
+
+  it('rejects an empty ASBCP image lock instead of treating it like a missing read failure', () => {
+    const root = tempRoot();
+    const lockPath = writeFixture(root, 'asbcp-image.lock', '');
+    const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', manifest());
+
+    const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('lock.asbcp_version');
+    expect(failureText(result)).toContain('lock.asbcp_source_image');
+  });
+
   it('rejects a manifest version/tag that does not match the lock version', () => {
     const root = tempRoot();
     const lockPath = writeLock(root);

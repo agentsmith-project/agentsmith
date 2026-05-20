@@ -655,6 +655,7 @@ exit 0
     expect(existsSync(fixture.afscpLifecycleLog)).toBe(false);
     const commands = readFileSync(fixture.commandsLog, 'utf8');
     expect(commands).toContain('npx playwright test');
+    expect(commands).toContain('npx tsx scripts/integration-keycloak-init.ts --redirects-only');
     expect(commands).not.toContain('make deps-bootstrap');
     expect(commands).not.toContain('npm run integration:deps:init:postgres');
     expect(commands).not.toContain('npm run integration:deps:init:keycloak');
@@ -756,6 +757,11 @@ exit 0
     expect(script).toContain('resolve_afscp_local_runtime_defaults "${API_PORT}" "vol_integration"');
     expect(script).toContain('ensure_integration_afscp_local_runtime');
     expect(script).toContain('stop_integration_afscp_local_runtime');
+    expect(script).toContain('sync_keycloak_redirects_for_current_runtime()');
+    expect(script).toContain('npx tsx scripts/integration-keycloak-init.ts --redirects-only');
+    expect(script.indexOf('sync_keycloak_redirects_for_current_runtime')).toBeLessThan(
+      script.indexOf('gate_run_auth_preflight "${INTEGRATION_LOG_DIR}"'),
+    );
     expect(clearLaneOwnerIndex).toBeGreaterThanOrEqual(0);
     expect(normalizeIndex).toBeGreaterThanOrEqual(0);
     expect(clearLaneOwnerIndex).toBeLessThan(normalizeIndex);

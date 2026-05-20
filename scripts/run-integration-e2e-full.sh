@@ -476,6 +476,12 @@ run_clean_with_integration_env() {
     "$@"
 }
 
+sync_keycloak_redirects_for_current_runtime() {
+  run_clean_with_integration_env npx tsx scripts/integration-keycloak-init.ts --redirects-only >/dev/null
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "keycloak_redirects" "passed" "${PLAYWRIGHT_BASE_URL}"
+  record_service keycloak_redirects ready "${PLAYWRIGHT_BASE_URL}"
+}
+
 start_background_job() {
   local log_file="$1"
   shift
@@ -997,6 +1003,8 @@ if [[ "${test_routes_status}" != "200" ]]; then
   exit 1
 fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_test_routes" "passed" "${PLAYWRIGHT_BASE_URL}/api/test/system/workspaces/seed"
+
+sync_keycloak_redirects_for_current_runtime
 
 ACCESS_TOKEN="$(gate_run_auth_preflight "${INTEGRATION_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${INTEGRATION_API_BASE}/api/v1/me/profile" "failed to obtain integration token" "integration token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "integration dev-admin token bootstrap"

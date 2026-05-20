@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   isRetryableKeycloakInitError,
+  resolveIntegrationKeycloakRedirectBases,
   runKeycloakInitOnce,
   runKeycloakInitWithRetry,
 } from './integration-keycloak-init';
@@ -9,6 +10,36 @@ import {
 describe('integration-keycloak-init', () => {
   it('exports a zero-argument single-run entrypoint', () => {
     expect(runKeycloakInitOnce).toHaveLength(0);
+  });
+
+  it('includes actual runtime web origins instead of relying only on a fixed port list', () => {
+    const bases = resolveIntegrationKeycloakRedirectBases({
+      INTEGRATION_WEB_PORT: '3065',
+      WEB_PORT: '3091',
+      PORT_WEB: '3105',
+      INTEGRATION_WEB_PORTS: '3201',
+      INTEGRATION_BASE_URL: 'http://localhost:3065/zh-CN/workspaces/ws_default/login',
+      BASE_URL: 'http://127.0.0.1:33077/en-US/login',
+      RUNTIME_BROWSER_WEB_BASE_URL: 'http://localhost:38191',
+      RUNTIME_HOST_WEB_BASE_URL: 'http://127.0.0.1:38191',
+      KEYCLOAK_REDIRECT_BASE_URL: 'http://localhost:39091',
+      INTEGRATION_PUBLIC_WEB_BASES: 'https://agentsmith.example.test/app,http://localhost:4101/path',
+    });
+
+    expect(bases).toContain('http://localhost:3065');
+    expect(bases).toContain('http://127.0.0.1:3065');
+    expect(bases).toContain('http://localhost:3091');
+    expect(bases).toContain('http://127.0.0.1:3091');
+    expect(bases).toContain('http://localhost:3105');
+    expect(bases).toContain('http://127.0.0.1:3105');
+    expect(bases).toContain('http://localhost:3201');
+    expect(bases).toContain('http://127.0.0.1:3201');
+    expect(bases).toContain('http://127.0.0.1:33077');
+    expect(bases).toContain('http://localhost:38191');
+    expect(bases).toContain('http://127.0.0.1:38191');
+    expect(bases).toContain('http://localhost:39091');
+    expect(bases).toContain('https://agentsmith.example.test');
+    expect(bases).toContain('http://localhost:4101');
   });
 
   it('retries a transient realm update failure once and then succeeds', async () => {

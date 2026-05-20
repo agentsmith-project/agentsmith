@@ -67,9 +67,19 @@ const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const keycloakDirectoryClientId = process.env.KEYCLOAK_DIRECTORY_CLIENT_ID ?? 'agentsmith-directory';
 const keycloakDirectoryClientSecret = process.env.KEYCLOAK_DIRECTORY_CLIENT_SECRET ?? 'agentsmith-directory-secret';
-const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
-const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021,3041,3051,3061,3066,3069,3070,3071,3081,3091,3101';
-const integrationPublicWebBasesRaw = process.env.INTEGRATION_PUBLIC_WEB_BASES ?? '';
+const defaultIntegrationWebPorts = ['3001', '3011', '3021', '3041', '3051', '3061', '3066', '3069', '3070', '3071', '3081', '3091', '3101'];
+const dynamicWebBaseEnvKeys = [
+  'KEYCLOAK_REDIRECT_BASE_URL',
+  'BASE_URL',
+  'INTEGRATION_BASE_URL',
+  'RUNTIME_BROWSER_WEB_BASE_URL',
+  'RUNTIME_HOST_WEB_BASE_URL',
+] as const;
+const dynamicWebPortEnvKeys = [
+  'INTEGRATION_WEB_PORT',
+  'WEB_PORT',
+  'PORT_WEB',
+] as const;
 const publicKeycloakBaseUrlRaw = process.env.PUBLIC_KEYCLOAK_BASE_URL ?? '';
 const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
 const keycloakSsoIdleSec = Number(process.env.KEYCLOAK_SSO_IDLE_TIMEOUT_SEC ?? '43200');
@@ -486,23 +496,62 @@ function toOriginAndRedirect(base: string): { origin: string; redirect: string }
   return { origin, redirect: `${origin}/*` };
 }
 
-async function ensureClientRedirects(token: string): Promise<void> {
-  const config = await getClientConfig(token, keycloakClientId);
-  const extraWebPorts = integrationWebPortsRaw
+function parseCsvValues(value: string | undefined): string[] {
+  return (value ?? '')
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
-  const requiredBases = [
-    `http://localhost:${integrationWebPort}`,
-    `http://127.0.0.1:${integrationWebPort}`,
-    'http://localhost:3000',
-    'http://localhost:3001',
-    ...extraWebPorts.flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`]),
-    ...integrationPublicWebBasesRaw
-      .split(',')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0),
-  ];
+}
+
+function addWebBase(target: Set<string>, raw: string | undefined): void {
+  const value = raw?.trim();
+  if (!value) {
+    return;
+  }
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      target.add(parsed.origin);
+    }
+  } catch {
+    // Ignore malformed optional env values; Keycloak init still validates through its API.
+  }
+}
+
+function addLoopbackWebPort(target: Set<string>, raw: string | undefined): void {
+  const port = raw?.trim();
+  if (!port || !/^\d+$/.test(port)) {
+    return;
+  }
+  target.add(`http://localhost:${port}`);
+  target.add(`http://127.0.0.1:${port}`);
+}
+
+export function resolveIntegrationKeycloakRedirectBases(env: NodeJS.ProcessEnv = process.env): string[] {
+  const bases = new Set<string>();
+
+  for (const port of defaultIntegrationWebPorts) {
+    addLoopbackWebPort(bases, port);
+  }
+  for (const port of parseCsvValues(env.INTEGRATION_WEB_PORTS)) {
+    addLoopbackWebPort(bases, port);
+  }
+  for (const key of dynamicWebPortEnvKeys) {
+    addLoopbackWebPort(bases, env[key]);
+  }
+  for (const key of dynamicWebBaseEnvKeys) {
+    addWebBase(bases, env[key]);
+  }
+  for (const base of parseCsvValues(env.INTEGRATION_PUBLIC_WEB_BASES)) {
+    addWebBase(bases, base);
+  }
+
+  return Array.from(bases);
+}
+
+async function ensureClientRedirects(token: string): Promise<void> {
+  const config = await getClientConfig(token, keycloakClientId);
+  const requiredBases = resolveIntegrationKeycloakRedirectBases();
 
   const nextRedirects = new Set<string>(Array.isArray(config.redirectUris) ? config.redirectUris : []);
   const nextOrigins = new Set<string>(Array.isArray(config.webOrigins) ? config.webOrigins : []);
@@ -642,8 +691,18 @@ export async function runKeycloakInitOnce(): Promise<void> {
   process.stdout.write('[integration-keycloak-init] done\n');
 }
 
+export async function runKeycloakRedirectsOnlyOnce(): Promise<void> {
+  const token = await getAdminToken();
+  await ensureClientRedirects(token);
+  process.stdout.write('[integration-keycloak-init] redirects-only done\n');
+}
+
 export async function main(): Promise<void> {
-  await runKeycloakInitWithRetry();
+  const redirectsOnly = process.argv.includes('--redirects-only')
+    || process.env.INTEGRATION_KEYCLOAK_INIT_SCOPE === 'redirects-only';
+  await runKeycloakInitWithRetry({
+    run: redirectsOnly ? runKeycloakRedirectsOnlyOnce : runKeycloakInitOnce,
+  });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

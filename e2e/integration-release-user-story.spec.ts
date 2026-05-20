@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test';
 import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -537,23 +537,100 @@ async function openTaskWorkspaceArtifactsFolder(args: {
   await openFolderByName(args.page, '.artifacts');
 }
 
-async function openFolderByName(page: Page, name: string): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
-    if (!(await visibleDialog.isVisible().catch(() => false))) {
-      break;
-    }
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+function normalizeFilesBrowsePrefix(value: string | null | undefined): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return '';
+  const withoutLeading = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+  return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
+}
+
+function currentFilesBrowsePrefix(page: Page): string {
+  return normalizeFilesBrowsePrefix(new URL(page.url()).searchParams.get('prefix'));
+}
+
+function fileEntriesResponseMatchesPrefix(response: Response, expectedPrefix: string): boolean {
+  const url = new URL(response.url());
+  if (!url.pathname.endsWith('/entries')) return false;
+  return normalizeFilesBrowsePrefix(url.searchParams.get('path')) === normalizeFilesBrowsePrefix(expectedPrefix);
+}
+
+async function expectFilesCurrentPrefix(
+  page: Page,
+  expectedPrefix: string,
+  options?: { timeoutMs?: number },
+): Promise<void> {
+  const normalizedExpectedPrefix = normalizeFilesBrowsePrefix(expectedPrefix);
+  await expect.poll(() => currentFilesBrowsePrefix(page), {
+    timeout: options?.timeoutMs ?? 10_000,
+    intervals: [100, 250, 500, 1_000],
+    message: `Files did not navigate to prefix ${normalizedExpectedPrefix || '<root>'}`,
+  }).toBe(normalizedExpectedPrefix);
+}
+
+async function readPrefixFromFolderRow(row: Locator, folderName: string): Promise<string> {
+  const rowId = await row.getAttribute('data-row-id');
+  if (!rowId?.startsWith('p:')) {
+    throw new Error(`files_folder_row_missing_prefix:${folderName}:${rowId ?? '<missing>'}`);
   }
-  const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
-  await expect(folderRow).toBeVisible({ timeout: 30_000 });
-  const button = folderRow.getByRole('button').first();
-  if (await button.isVisible().catch(() => false)) {
-    await button.dblclick();
+  return normalizeFilesBrowsePrefix(rowId.slice(2));
+}
+
+async function closeVisibleFilesDialog(page: Page): Promise<void> {
+  const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
+  if (!(await visibleDialog.isVisible().catch(() => false))) {
     return;
   }
-  await folderRow.dblclick();
+  await page.keyboard.press('Escape');
+  await expect(visibleDialog).toBeHidden({ timeout: 10_000 });
+}
+
+async function openFolderByName(page: Page, name: string): Promise<void> {
+  await closeVisibleFilesDialog(page);
+
+  let expectedPrefix = '';
+  let lastPrefix = currentFilesBrowsePrefix(page);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
+    await expect(folderRow).toBeVisible({ timeout: 30_000 });
+    expectedPrefix = await readPrefixFromFolderRow(folderRow, name);
+    if (lastPrefix === expectedPrefix) {
+      await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+
+    const targetEntriesResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'GET'
+      && response.ok()
+      && fileEntriesResponseMatchesPrefix(response, expectedPrefix)
+    ), { timeout: 10_000 }).catch(() => null);
+    const button = folderRow.getByRole('button').first();
+    if (await button.isVisible().catch(() => false)) {
+      await button.dblclick();
+    } else {
+      await folderRow.dblclick();
+    }
+
+    const opened = await expectFilesCurrentPrefix(page, expectedPrefix, { timeoutMs: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (opened) {
+      await targetEntriesResponsePromise;
+      await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('files__object-row').filter({ hasText: name }).first()).toBeHidden({
+        timeout: 10_000,
+      }).catch(() => undefined);
+      return;
+    }
+
+    lastPrefix = currentFilesBrowsePrefix(page);
+    await page.getByRole('button', { name: /^clear selection$/i }).click({ timeout: 2_000 }).catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error(
+    `files_folder_open_failed:${name}:expected_prefix=${expectedPrefix || '<unknown>'}:actual_prefix=${lastPrefix || '<root>'}`,
+  );
 }
 
 async function waitForTaskArtifacts(args: {

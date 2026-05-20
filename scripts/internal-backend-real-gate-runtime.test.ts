@@ -95,6 +95,9 @@ describe('internal backend-real gate runtime contract', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const reclaimSpec = read('e2e/integration-internal-sandbox-reclaim.spec.ts');
     const developmentGuide = read('DEVELOPMENT.md');
+    const secondRunIndex = reclaimSpec.indexOf('const secondRun = await startAgentTaskRunViaApi');
+    const secondOutcomeIndex = reclaimSpec.indexOf('runnerOutputActivityId: secondRun.runnerOutputActivityId');
+    const asbcpRestartIndex = reclaimSpec.indexOf("await runInternalSandboxControl('stop-asbcp')");
 
     expect(agentTaskGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
 
@@ -168,6 +171,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_REBUILD_IMAGE=0 \\');
 
     expect(reclaimSpec).toContain('deleteInternalWorkloadViaAsbcp');
+    expect(secondRunIndex).toBeGreaterThanOrEqual(0);
+    expect(secondOutcomeIndex).toBeGreaterThan(secondRunIndex);
+    expect(asbcpRestartIndex).toBeGreaterThan(secondOutcomeIndex);
     expect(reclaimSpec).not.toContain('start-cleaner');
     expect(reclaimSpec).not.toContain('stop-cleaner');
     expect(reclaimSpec).not.toContain('run-cleaner-once');
@@ -297,6 +303,10 @@ describe('internal backend-real gate runtime contract', () => {
     const integrationCallIndex = agentTaskGate.indexOf('bash scripts/run-integration-e2e-full.sh "${spec}" "$@"');
 
     expect(integrationCallIndex).toBeGreaterThanOrEqual(0);
+    expect(agentTaskGate).toContain('local spec_kubeconfig');
+    expect(agentTaskGate).toContain('spec_kubeconfig="$(internal_real_gate_asbcp_kubeconfig_path)"');
+    expect(agentTaskGate).toContain('KUBECONFIG="${spec_kubeconfig}" \\');
+    expect(agentTaskGate.indexOf('KUBECONFIG="${spec_kubeconfig}" \\')).toBeLessThan(integrationCallIndex);
     for (const assignment of [
       'INTEGRATION_BOOTSTRAP_DEPS=false \\',
       'INTEGRATION_INIT_DEPS=false \\',

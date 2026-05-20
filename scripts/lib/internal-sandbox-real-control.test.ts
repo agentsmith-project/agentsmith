@@ -278,6 +278,10 @@ if [[ "$1" == "inspect" ]]; then
   printf 'true\\n'
   exit 0
 fi
+if [[ "$1" == "logs" ]]; then
+  printf 'boot ASBCP_SERVICE_KEYS=sandbox-service-key ASBCP_AFSCP_ORCHESTRATOR_TOKEN=state-orchestrator-token\\n'
+  exit 0
+fi
 if [[ "$1" != "run" ]]; then
   exit 0
 fi
@@ -316,6 +320,115 @@ KUBECONFIG="${kubeconfigPath}"
   });
 
   return readFileSync(logPath, 'utf8');
+}
+
+function runStartAsbcpWithLongRunningContainerProcess(): ReturnType<typeof spawnSync> {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-detached-'));
+  tempRoots.push(tempRoot);
+
+  const binDir = path.join(tempRoot, 'bin');
+  const internalDir = path.join(tempRoot, 'internal');
+  const stateFile = path.join(tempRoot, 'sandbox-control.env');
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+  const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
+  const logPath = path.join(internalDir, 'asbcp.log');
+  const readyFile = path.join(tempRoot, 'asbcp-ready.marker');
+  const controlScript = path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh');
+
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(internalDir, { recursive: true });
+  writeFileSync(configPath, 'version: 1\n', 'utf8');
+  writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+  chmodSync(kubeconfigPath, 0o600);
+
+  writeExecutable(
+    path.join(binDir, 'curl'),
+    `#!/usr/bin/env bash
+[[ -f "${readyFile}" ]] && exit 0
+exit 7
+`,
+  );
+  writeExecutable(path.join(binDir, 'lsof'), '#!/usr/bin/env bash\nexit 0\n');
+  writeExecutable(
+    path.join(binDir, 'docker'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "rm" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" ]]; then
+  printf 'true\\n'
+  exit 0
+fi
+if [[ "$1" == "logs" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == "-f" ]]; then
+      sleep 5
+    fi
+  done
+  exit 0
+fi
+if [[ "$1" != "run" ]]; then
+  exit 0
+fi
+has_detach=0
+for arg in "$@"; do
+  if [[ "$arg" == "--detach" ]]; then
+    has_detach=1
+  fi
+done
+touch "${readyFile}"
+if [[ "$has_detach" == "1" ]]; then
+  printf 'fake-asbcp-container\\n'
+  exit 0
+fi
+sleep 5
+`,
+  );
+
+  writeFileSync(
+    stateFile,
+    `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28083"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28083"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${logPath}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+KUBECONFIG="${kubeconfigPath}"
+`,
+    'utf8',
+  );
+
+  const env = {
+    ...process.env,
+    INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+  };
+  const result = spawnSync('bash', [controlScript, 'start-asbcp'], {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout: 1_000,
+  });
+  spawnSync('bash', [controlScript, 'stop-asbcp'], {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout: 1_000,
+  });
+
+  return result;
 }
 
 function runStartAsbcpWithImage(options: { image?: string; lockImage?: string }): ReturnType<typeof spawnSync> {
@@ -761,6 +874,14 @@ AFSCP_ORCHESTRATOR_SERVICE_TOKEN="state-orchestrator-token"
     expect(log).toContain('[REDACTED]');
     expect(log).not.toContain('sandbox-service-key');
     expect(log).not.toContain('state-orchestrator-token');
+  });
+
+  it('returns after ASBCP is ready without waiting for the long-running container process', () => {
+    const result = runStartAsbcpWithLongRunningContainerProcess();
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('ASBCP ready');
   });
 
   it('fails closed before docker launch when ASBCP kubeconfig is missing or absent', () => {

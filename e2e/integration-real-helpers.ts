@@ -542,16 +542,28 @@ function rewritePreparedTaskRuntimePathsPrefix(
   };
 }
 
-async function spawnAndCapture(
+export type SpawnAndCaptureOptions = {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
+  timeoutLabel?: string;
+  killGraceMs?: number;
+};
+
+export async function spawnAndCapture(
   command: string,
   args: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+  options?: SpawnAndCaptureOptions,
 ): Promise<{
   code: number;
   stdout: string;
   stderr: string;
 }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timedOut = false;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const proc = spawn(command, args, {
       cwd: options?.cwd,
       env: options?.env,
@@ -565,10 +577,47 @@ async function spawnAndCapture(
     proc.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf-8");
     });
-    proc.once("error", reject);
+    const clearTimers = () => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+    };
+    const finish = (result: {
+      code: number;
+      stdout: string;
+      stderr: string;
+    }) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      resolve(result);
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      reject(error);
+    };
+    if (options?.timeoutMs && options.timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        const label = options.timeoutLabel?.trim() || command;
+        const separator = stderr.length > 0 && !stderr.endsWith("\n") ? "\n" : "";
+        stderr += `${separator}spawn_timeout:${label}:timeout_ms=${options.timeoutMs}\n`;
+        proc.kill("SIGTERM");
+        forceKillTimer = setTimeout(() => {
+          proc.kill("SIGKILL");
+          finish({
+            code: 124,
+            stdout,
+            stderr,
+          });
+        }, options.killGraceMs ?? 1_000);
+      }, options.timeoutMs);
+    }
+    proc.once("error", fail);
     proc.once("close", (code) => {
-      resolve({
-        code: code ?? 1,
+      finish({
+        code: timedOut ? 124 : code ?? 1,
         stdout,
         stderr,
       });
@@ -4167,7 +4216,11 @@ async function fetchManagedWorkloadPods(namespace: string): Promise<{
       "-o",
       "json",
     ],
-    { env: withoutProxyEnv(process.env) },
+    {
+      env: withoutProxyEnv(process.env),
+      timeoutMs: 10_000,
+      timeoutLabel: "kubectl_get_managed_workload_pods",
+    },
   );
 }
 
@@ -4540,6 +4593,8 @@ async function readAfscpStorageCsiStatus(namespace: string): Promise<{
       ["get", "daemonset", "juicefs-csi-node", "-n", namespace, "-o", "json"],
       {
         env: withoutProxyEnv(process.env),
+        timeoutMs: 10_000,
+        timeoutLabel: "kubectl_get_juicefs_csi_daemonset",
       },
     ),
     spawnAndCapture(
@@ -4555,6 +4610,8 @@ async function readAfscpStorageCsiStatus(namespace: string): Promise<{
       ],
       {
         env: withoutProxyEnv(process.env),
+        timeoutMs: 10_000,
+        timeoutLabel: "kubectl_get_juicefs_csi_controller",
       },
     ),
     spawnAndCapture(
@@ -4571,6 +4628,8 @@ async function readAfscpStorageCsiStatus(namespace: string): Promise<{
       ],
       {
         env: withoutProxyEnv(process.env),
+        timeoutMs: 10_000,
+        timeoutLabel: "kubectl_get_juicefs_csi_node_pods",
       },
     ),
   ]);
@@ -4631,9 +4690,13 @@ async function detectAfscpStorageCsiNamespace(): Promise<string> {
   const [controllerNamespace, nodeNamespace] = await Promise.all([
     spawnAndCapture("kubectl", ["get", "statefulset", "-A", "--no-headers"], {
       env: withoutProxyEnv(process.env),
+      timeoutMs: 10_000,
+      timeoutLabel: "kubectl_list_statefulsets_for_csi_namespace",
     }),
     spawnAndCapture("kubectl", ["get", "daemonset", "-A", "--no-headers"], {
       env: withoutProxyEnv(process.env),
+      timeoutMs: 10_000,
+      timeoutLabel: "kubectl_list_daemonsets_for_csi_namespace",
     }),
   ]);
 
@@ -4729,6 +4792,8 @@ export async function runInternalSandboxControl(
         ...withoutProxyEnv(process.env),
         INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
       },
+      timeoutMs: 90_000,
+      timeoutLabel: `internal_sandbox_control_${command}`,
     },
   );
   if (result.code !== 0) {
@@ -4907,7 +4972,11 @@ export async function patchWorkloadPodExpiry(args: {
       `expires_at=${args.expiresAt}`,
       "--overwrite",
     ],
-    { env: withoutProxyEnv(process.env) },
+    {
+      env: withoutProxyEnv(process.env),
+      timeoutMs: 15_000,
+      timeoutLabel: "kubectl_patch_workload_expiry",
+    },
   );
   if (result.code !== 0) {
     throw new Error(
@@ -5028,7 +5097,11 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
             "sh",
             taskHomePath,
           ],
-          { env: withoutProxyEnv(process.env) },
+          {
+            env: withoutProxyEnv(process.env),
+            timeoutMs: 20_000,
+            timeoutLabel: "kubectl_exec_internal_task_runtime_state",
+          },
         );
         const output = result.stdout;
         return {
@@ -5062,15 +5135,29 @@ export async function deleteInternalWorkloadViaAsbcp(args: {
   if (!asbcpBase || !serviceKey) {
     throw new Error("asbcp_env_missing");
   }
-  const response = await fetch(
-    `${asbcpBase.replace(/\/+$/, "")}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
-    {
-      method: "DELETE",
-      headers: {
-        "X-Service-Key": serviceKey,
+  const timeoutMs = 15_000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(
+      `${asbcpBase.replace(/\/+$/, "")}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "X-Service-Key": serviceKey,
+        },
+        signal: controller.signal,
       },
-    },
-  );
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `delete_internal_workload_request_failed:${args.workloadId}:timeout_ms=${timeoutMs}:${message}`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
   if (response.ok) {
     return { status: response.status, released: true, notFound: false };
   }

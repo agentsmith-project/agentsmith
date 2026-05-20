@@ -245,9 +245,16 @@ asbcp_container_running() {
   docker inspect -f '{{.State.Running}}' "${container_id}" 2>/dev/null | grep -qx 'true'
 }
 
+capture_asbcp_logs() {
+  local container_id
+  container_id="$(asbcp_container_id)"
+  container_id="${container_id:-${ASBCP_CONTAINER_NAME}}"
+  docker logs "${container_id}" 2>&1 | redact_internal_sandbox_output >> "${ASBCP_LOG}" || true
+}
+
 start_asbcp() {
   local pid image afscp_internal_base_url afscp_orchestrator_token afscp_caller_service afscp_actor_type afscp_actor_id
-  local host_kubeconfig projected_config projected_kubeconfig resolve_status
+  local host_kubeconfig projected_config projected_kubeconfig resolve_status container_id docker_start_stderr
   local -a docker_args
   pid="$(read_pid "${ASBCP_PID_FILE}")"
   if pid_alive "${pid}" && port_ready; then
@@ -292,6 +299,7 @@ start_asbcp() {
   projected_kubeconfig="$(prepare_asbcp_kubeconfig_projection "${host_kubeconfig}")"
   docker_args=(
     run
+    --detach
     --rm
     --name "${ASBCP_CONTAINER_NAME}"
     --network host
@@ -310,25 +318,41 @@ start_asbcp() {
     -e "ASBCP_AFSCP_ACTOR_ID=${afscp_actor_id}"
   )
   : > "${ASBCP_LOG}"
-  env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-    docker "${docker_args[@]}" "${image}" > >(redact_internal_sandbox_output >> "${ASBCP_LOG}") 2>&1 &
-  pid="$!"
-  printf '%s\n' "${pid}" > "${ASBCP_PID_FILE}"
-  printf '%s\n' "${ASBCP_CONTAINER_NAME}" > "${ASBCP_CONTAINER_ID_FILE}"
+  docker_start_stderr="$(mktemp "${INTERNAL_REAL_DIR}/asbcp-start-stderr.XXXXXX")"
+  if ! container_id="$(
+    env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+      docker "${docker_args[@]}" "${image}" 2> "${docker_start_stderr}"
+  )"; then
+    redact_internal_sandbox_output < "${docker_start_stderr}" >> "${ASBCP_LOG}" || true
+    rm -f "${docker_start_stderr}"
+    echo "[internal-sandbox-control] ASBCP container failed to start" >&2
+    tail -n 120 "${ASBCP_LOG}" >&2 || true
+    cleanup_asbcp_projection
+    exit 1
+  fi
+  redact_internal_sandbox_output < "${docker_start_stderr}" >> "${ASBCP_LOG}" || true
+  rm -f "${docker_start_stderr}"
+  container_id="$(tr -d '[:space:]' <<< "${container_id}")"
+  container_id="${container_id:-${ASBCP_CONTAINER_NAME}}"
+  printf '%s\n' "${container_id}" > "${ASBCP_CONTAINER_ID_FILE}"
+  rm -f "${ASBCP_PID_FILE}"
   for _ in $(seq 1 60); do
     if port_ready; then
+      capture_asbcp_logs
       info "ASBCP ready"
       return 0
     fi
     sleep 1
   done
   echo "[internal-sandbox-control] ASBCP failed to become ready" >&2
+  capture_asbcp_logs
   tail -n 120 "${ASBCP_LOG}" >&2 || true
   cleanup_asbcp_projection
   exit 1
 }
 
 stop_asbcp() {
+  capture_asbcp_logs
   docker rm -f "${ASBCP_CONTAINER_NAME}" >/dev/null 2>&1 || true
   rm -f "${ASBCP_CONTAINER_ID_FILE}"
   cleanup_asbcp_projection

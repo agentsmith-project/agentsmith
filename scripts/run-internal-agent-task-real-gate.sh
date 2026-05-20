@@ -439,8 +439,10 @@ run_internal_spec() {
   shift 4
   local spec_log_dir
   local spec_agent_execution_ws_base_url
+  local spec_kubeconfig
   spec_log_dir="$(dirname "${spec_state_file}")/integration"
   spec_agent_execution_ws_base_url="ws://${KIND_GATEWAY}:${spec_api_port}"
+  spec_kubeconfig="$(internal_real_gate_asbcp_kubeconfig_path)"
   (
     cd "${ROOT_DIR}" && \
       BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
@@ -454,6 +456,7 @@ run_internal_spec() {
       MINIO_PORT="${INTEGRATION_MINIO_API_PORT}" \
       KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
       KEYCLOAK_URL="${KEYCLOAK_BASE_URL%/}/realms" \
+      KUBECONFIG="${spec_kubeconfig}" \
       INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \
       AFSCP_STORAGE_CSI_DRIVER="${CSI_DRIVER}" \
       AFSCP_STORAGE_CAPACITY="${STORAGE_CAPACITY}" \

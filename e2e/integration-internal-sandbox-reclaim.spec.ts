@@ -178,15 +178,30 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       fileLibraryId: restartFileLibraryId,
     });
     const token2 = `INTERNAL_RESTART_RECLAIM_${Date.now()}`;
-    await startAgentTaskRunViaApi({
+    const secondArtifactName = `restart-reclaim-${Date.now()}.md`;
+    const secondRun = await startAgentTaskRunViaApi({
       page,
       workspaceId: 'ws_default',
       projectId,
       taskId: taskId2,
-      intent: buildAgentTaskIntent(token2, `restart-reclaim-${Date.now()}.md`),
+      intent: buildAgentTaskIntent(token2, secondArtifactName),
     });
 
     const workloadId2 = sanitizeWorkloadId(taskId2);
+    await waitForAgentTaskExecutionOutcome({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId: taskId2,
+      token: token2,
+      runnerOutputActivityId: secondRun.runnerOutputActivityId,
+      runId: secondRun.runId,
+      namespace,
+      workloadId: workloadId2,
+      timeoutMs: 180_000,
+      startEvidenceTimeoutMs: 60_000,
+    });
+
     const workloadPod2 = await waitForWorkloadPodIdentity({
       namespace,
       workspaceId: 'ws_default',

@@ -36,6 +36,7 @@ import {
   resolveTerminalSessionCreateTimeoutMs,
   runTerminalCommandInSession,
   runTerminalCommandViaWs,
+  spawnAndCapture,
   startAgentTaskRunViaApi,
   startMockFeishuMcpServer,
   startMockJiraServer,
@@ -220,6 +221,21 @@ describe('integration-real-helpers', () => {
     status: () => 200,
     json: async () => body,
     text: async () => JSON.stringify(body),
+  });
+
+  it('bounds spawned diagnostic commands with an explicit timeout', async () => {
+    const result = await spawnAndCapture(
+      process.execPath,
+      ['-e', 'setInterval(() => {}, 1000)'],
+      {
+        timeoutMs: 50,
+        timeoutLabel: 'unit_spawn_timeout',
+        killGraceMs: 50,
+      },
+    );
+
+    expect(result.code).toBe(124);
+    expect(result.stderr).toContain('spawn_timeout:unit_spawn_timeout:timeout_ms=50');
   });
 
   describe('terminal session API helper', () => {

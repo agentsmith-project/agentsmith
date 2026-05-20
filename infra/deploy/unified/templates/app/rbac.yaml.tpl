@@ -34,7 +34,7 @@ metadata:
     rendered-by: agentsmith-unified-deploy
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/status", "pods/exec", "persistentvolumeclaims", "secrets", "events"]
+    resources: ["pods", "pods/status", "pods/exec", "persistentvolumeclaims", "secrets", "events", "configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

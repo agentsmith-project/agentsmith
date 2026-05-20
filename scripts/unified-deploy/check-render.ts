@@ -461,6 +461,37 @@ function checkNamespacedAppBoundary(documents: readonly Record<string, unknown>[
   }
 }
 
+function ruleAllowsResourceVerbs(
+  resource: Record<string, unknown>,
+  expectedResource: string,
+  requiredVerbs: readonly string[],
+): boolean {
+  const rules = Array.isArray(resource.rules) ? resource.rules.map(asRecord) : [];
+  return rules.some((rule) => {
+    const resources = Array.isArray(rule.resources)
+      ? rule.resources.filter((item): item is string => typeof item === 'string')
+      : [];
+    const verbs = Array.isArray(rule.verbs)
+      ? rule.verbs.filter((item): item is string => typeof item === 'string')
+      : [];
+    if (!resources.includes(expectedResource) && !resources.includes('*')) {
+      return false;
+    }
+    return requiredVerbs.every((verb) => verbs.includes(verb) || verbs.includes('*'));
+  });
+}
+
+function checkAsbcpWorkloadFactRbac(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  const role = resourceByKindName(documents, 'Role', ASBCP_SERVICE_ACCOUNT);
+  if (!ruleAllowsResourceVerbs(role, 'configmaps', ['get', 'list', 'create', 'update', 'patch', 'delete'])) {
+    addFailure(
+      failures,
+      `Role/${ASBCP_SERVICE_ACCOUNT}`,
+      'ASBCP Role must permit workload fact ConfigMap access',
+    );
+  }
+}
+
 function checkAppConfig(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   const config = documents.find((document) =>
     resourceKind(document) === 'ConfigMap' && resourceName(document) === 'agentsmith-app-config',
@@ -1555,6 +1586,7 @@ export function checkRenderedOutput(
     checkIngressRoutes(parsed.documents, failures);
     checkInternalServiceTypes(parsed.documents, failures);
     checkNamespacedAppBoundary(parsed.documents, failures);
+    checkAsbcpWorkloadFactRbac(parsed.documents, failures);
     checkAppConfig(parsed.documents, failures);
     checkWebServerRouteEnv(parsed.documents, failures);
     checkRunnableAppWorkloads(parsed.documents, failures);

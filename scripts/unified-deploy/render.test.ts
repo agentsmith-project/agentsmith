@@ -416,7 +416,7 @@ describe('unified deploy render producer', () => {
     const documents = parsedDocuments(rendered.output);
     const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
 
-    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.6@sha256:891d924f279c38ef85a30094ca9879ea22e27e4830942b29f489e45401117371');
+    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.7@sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200');
   });
 
   it('keeps default producer evidence artifacts out of git', () => {
@@ -1453,28 +1453,59 @@ describe('unified deploy render producer', () => {
     ]));
   });
 
-  it('keeps ASBCP render validation at the consumer boundary instead of provider schema and RBAC details', async () => {
+  it('keeps ASBCP render validation at the consumer boundary instead of provider schema details', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
     const configMap = findResource(documents, 'ConfigMap', 'asbcp-config');
-    const role = findResource(documents, 'Role', 'agentsmith-sandbox-control-plane');
 
     asRecord(configMap.data)['config.yaml'] = 'provider_owned_schema: true\n';
-    role.rules = [
-      {
-        apiGroups: [''],
-        resources: ['pods'],
-        verbs: ['get'],
-      },
-    ];
 
     const text = checkRenderedOutput(stringifyDocuments(documents)).failures
       .map((failure) => failure.message)
       .join('\n');
 
     expect(text).not.toContain('ASBCP config must include');
-    expect(text).not.toContain('ASBCP Role must permit');
     expect(text).not.toContain('ASBCP app Role must not permit');
+  });
+
+  it('renders ASBCP workload fact ConfigMap permissions required by the provider contract', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const role = findResource(documents, 'Role', 'agentsmith-sandbox-control-plane');
+    const rules = Array.isArray(role.rules) ? role.rules.map(asRecord) : [];
+    const configMapRule = rules.find((rule) =>
+      Array.isArray(rule.resources) && rule.resources.includes('configmaps'),
+    ) ?? {};
+    const verbs = Array.isArray(configMapRule.verbs) ? configMapRule.verbs : [];
+
+    expect(verbs).toEqual(expect.arrayContaining(['get', 'list', 'create', 'update', 'patch', 'delete']));
+    expect(checkRenderedOutput(rendered.output).failures).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'Role/agentsmith-sandbox-control-plane',
+        message: expect.stringContaining('workload fact ConfigMap'),
+      }),
+    ]));
+  });
+
+  it('rejects ASBCP Role drift that removes workload fact ConfigMap access', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const role = findResource(documents, 'Role', 'agentsmith-sandbox-control-plane');
+
+    role.rules = [
+      {
+        apiGroups: [''],
+        resources: ['pods'],
+        verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
+      },
+    ];
+
+    expect(checkRenderedOutput(stringifyDocuments(documents)).failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'Role/agentsmith-sandbox-control-plane',
+        message: expect.stringContaining('workload fact ConfigMap'),
+      }),
+    ]));
   });
 
   it('rejects ASBCP consumer boundary drift in image, URL, key, and config path', async () => {

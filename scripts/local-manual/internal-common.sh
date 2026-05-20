@@ -2311,6 +2311,7 @@ ensure_afscp_local_runtime_workload_mount_secret_refs() {
     configured=1
     if [[ "${secret_namespace}" == "${K8S_NAMESPACE}" && "${secret_name}" == "${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME}" ]]; then
       internal_info "reconciling local AFSCP workload mount SecretRef for ${volume_id}"
+      ensure_agentsmith_owned_namespace "${secret_namespace}"
       afscp_create_local_workload_mount_secret "${secret_namespace}" "${secret_name}"
     else
       internal_info "validating configured AFSCP workload mount SecretRef for ${volume_id}"
@@ -2403,22 +2404,49 @@ afscp_runtime_shell_prefix() {
   printf 'cd %q && set -a && source %q && set +a' "${AFSCP_ROOT}" "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
 }
 
+afscp_docker_bind_root() {
+  local runtime_root volume_root jvs_cwd
+  runtime_root="$(afscp_canonical_path "${INTERNAL_REAL_DIR}")"
+  volume_root="$(afscp_canonical_path "${AFSCP_VOLUME_ROOT}")"
+  jvs_cwd="$(afscp_canonical_path "${AFSCP_JVS_CWD}")"
+
+  case "${volume_root}/" in
+    "${runtime_root}/"*) ;;
+    *)
+      internal_err "AFSCP_VOLUME_ROOT ${volume_root} must stay under INTERNAL_REAL_DIR ${runtime_root} for the image-backed local-real runtime"
+      return 1
+      ;;
+  esac
+  case "${jvs_cwd}/" in
+    "${runtime_root}/"*) ;;
+    *)
+      internal_err "AFSCP_JVS_CWD ${jvs_cwd} must stay under INTERNAL_REAL_DIR ${runtime_root} for the image-backed local-real runtime"
+      return 1
+      ;;
+  esac
+
+  printf '%s\n' "${runtime_root}"
+}
+
 afscp_docker_run() {
   local rm_flag="$1"
+  local bind_root
   shift
+  bind_root="$(afscp_docker_bind_root)" || return 1
   docker run "${rm_flag}" \
     --network host \
     --user "$(id -u):$(id -g)" \
     --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
-    --volume "${AFSCP_VOLUME_ROOT}:${AFSCP_VOLUME_ROOT}:rw" \
-    --volume "${AFSCP_JVS_CWD}:${AFSCP_JVS_CWD}:rw" \
+    --volume "${bind_root}:${bind_root}:rw" \
     "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@"
 }
 
 afscp_docker_start() {
   local container_id_file="$1"
   local container_name="$2"
+  local bind_root
   shift 2
+  bind_root="$(afscp_docker_bind_root)" || return 1
 
   docker rm -f "${container_name}" >/dev/null 2>&1 || true
   rm -f "${container_id_file}" "${container_id_file}.logs.pid"
@@ -2427,8 +2455,7 @@ afscp_docker_start() {
     --network host \
     --user "$(id -u):$(id -g)" \
     --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
-    --volume "${AFSCP_VOLUME_ROOT}:${AFSCP_VOLUME_ROOT}:rw" \
-    --volume "${AFSCP_JVS_CWD}:${AFSCP_JVS_CWD}:rw" \
+    --volume "${bind_root}:${bind_root}:rw" \
     "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@" > "${container_id_file}"
 }
 

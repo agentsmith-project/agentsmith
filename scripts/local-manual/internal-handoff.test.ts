@@ -1554,6 +1554,7 @@ SH
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('apply --validate=false -f -');
     expect(result.stdout).toContain('create secret generic afscp-local-runtime -n agentsmith-sandbox');
     expect(result.stdout).toContain('--from-literal=name=vol-local-manual');
     expect(result.stdout).toContain('--from-literal=metaurl=postgres://');
@@ -1565,6 +1566,36 @@ SH
     expect(result.stdout).toContain('--from-literal=secret-key=');
     expect(result.stdout).toContain('apply -f -');
     expect(result.stdout).toContain('get secret afscp-local-runtime -n agentsmith-sandbox -o json');
+  });
+
+  it('binds the AFSCP image runtime parent dir instead of the JuiceFS mountpoint itself', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      runtime_root="\${SNIPPET_TEMP_ROOT}/runtime"
+      mkdir -p "$bin" "$runtime_root/afscp-volume-root" "$runtime_root/afscp-jvs-cwd"
+      cat > "$bin/docker" <<'SH'
+#!/usr/bin/env bash
+printf 'docker %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/docker.log"
+exit 0
+SH
+      chmod +x "$bin/docker"
+      export PATH="$bin:$PATH"
+      INTERNAL_REAL_DIR="$runtime_root"
+      AFSCP_VOLUME_ROOT="$runtime_root/afscp-volume-root"
+      AFSCP_JVS_CWD="$runtime_root/afscp-jvs-cwd"
+      AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE="$runtime_root/afscp.env"
+      AFSCP_LOCAL_RUNTIME_IMAGE="example/afscp:test"
+      printf 'AFSCP_ENVIRONMENT=local-real\\n' > "$AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE"
+      afscp_docker_run --rm /usr/local/bin/afscp-migrate --apply
+      cat "\${SNIPPET_TEMP_ROOT}/docker.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('--volume ');
+    expect(result.stdout).toContain('/runtime:/');
+    expect(result.stdout).not.toContain('/afscp-volume-root:/');
+    expect(result.stdout).not.toContain('/afscp-jvs-cwd:/');
   });
 
   it('fails closed when workload mount SecretRefs point at a non-default local-real volume', () => {

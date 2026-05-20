@@ -176,6 +176,7 @@ rm -f \
 
 ensure_file_library_afscp_local_runtime() {
   echo "File library gate ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
+  AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}" bash "${ROOT_DIR}/scripts/afscp-jvs-image-smoke.sh"
   FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED=1
   (
     unset AFSCP_API_PORT AFSCP_API_LISTEN_ADDR AFSCP_EXPORT_GATEWAY_PORT AFSCP_EXPORT_GATEWAY_LISTEN_ADDR

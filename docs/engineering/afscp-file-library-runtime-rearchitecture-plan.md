@@ -18,7 +18,7 @@ Owner: AgentSmith product and engineering.
 > (ASBCP). Do not derive active source-build paths, env names, Kubernetes
 > identities, or sibling-source workflows from the older wording.
 
-Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is the GitHub-published image `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
+Primary input: File Library storage runtime uses the AFSCP runtime image selected by unified deploy env `AFSCP_IMAGE`; the current example default is the GitHub-published image `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2`, and release evidence must prove the selected tag/digest is usable. AgentSmith remains the product authority for workspace/project, permissions, file library catalog, task binding, task file template availability, UX, and audit projection.
 
 ## 1. Executive Summary
 

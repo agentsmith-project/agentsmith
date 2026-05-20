@@ -243,6 +243,18 @@ function runTraceValidator(root: string, reportPath = join(root, 'validation.jso
 }
 
 describe('backend-real full gate runtime ownership contract', () => {
+  it('fails fast when the pinned AFSCP image cannot run JVS and JuiceFS clone', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const helperStart = script.indexOf('ensure_file_library_afscp_local_runtime()');
+    const helperEnd = script.indexOf('FILE_LIBRARY_AFSCP_LOCAL_RUNTIME_OWNED=1', helperStart);
+    const helperBody = script.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    expect(helperBody).toContain('scripts/afscp-jvs-image-smoke.sh');
+    expect(helperBody).toContain('AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}"');
+  });
+
   it('treats file-library resource recovery as a required substep with dedicated reports instead of smoke-only success', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 
@@ -808,7 +820,7 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(helper).toContain('export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"');
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
-    expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1}}"');
+    expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"');
     expect(helper).toContain('reset_afscp_local_runtime_for_gate()');
     expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_data');
   });

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1}}"
+AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"
 EXPECTED_JVS_SHA256="${EXPECTED_JVS_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"
-EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f7628764ce2430b2b754a7375ca67f637ad08}"
+EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f762bc436f0d3dc7c7c1d60847992c3a82718}"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentsmith-afscp-jvs-image-smoke.XXXXXX")"
 container_id=""
@@ -41,6 +41,17 @@ if ! docker image inspect "${AFSCP_IMAGE}" >/dev/null 2>&1; then
 fi
 
 docker run --rm --network=none --entrypoint /usr/local/bin/jvs "${AFSCP_IMAGE}" afscp --help > "${tmp_dir}/jvs-afscp-help.txt"
+docker run --rm --network=none --entrypoint /usr/local/bin/juicefs "${AFSCP_IMAGE}" version > "${tmp_dir}/juicefs-version.txt"
+docker run --rm --network=none --entrypoint /usr/local/bin/juicefs "${AFSCP_IMAGE}" clone --help > "${tmp_dir}/juicefs-clone-help.txt"
+
+if ! grep -q '^juicefs version ' "${tmp_dir}/juicefs-version.txt"; then
+  err "embedded /usr/local/bin/juicefs did not report a version"
+  exit 1
+fi
+if ! grep -q 'juicefs clone' "${tmp_dir}/juicefs-clone-help.txt"; then
+  err "embedded /usr/local/bin/juicefs does not expose clone"
+  exit 1
+fi
 
 container_id="$(docker create --network none --entrypoint /usr/local/bin/jvs "${AFSCP_IMAGE}" afscp --help)"
 docker cp "${container_id}:/usr/local/bin/jvs" "${tmp_dir}/jvs" >/dev/null
@@ -52,4 +63,5 @@ if [[ "${actual_sha}" != "${EXPECTED_JVS_SHA256}" ]]; then
 fi
 
 info "passed: /usr/local/bin/jvs afscp --help works and SHA-256 matches ${actual_sha}"
+info "passed: /usr/local/bin/juicefs version and clone --help work"
 info "scope: focused pinned-image smoke only; not full AFSCP runtime readiness"

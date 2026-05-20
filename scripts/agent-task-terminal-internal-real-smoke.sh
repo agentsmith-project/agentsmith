@@ -103,6 +103,7 @@ NODE
 
 TASK_WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"
 
+POD_NAME=""
 for _ in $(seq 1 90); do
   POD_LIST_JSON="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "app=managed-workload" -o json 2>/dev/null || true)"
   if [[ -n "${POD_LIST_JSON}" ]]; then

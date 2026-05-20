@@ -163,7 +163,11 @@ ensure_local_manual_ready() {
 
 ensure_agent_task_diagnostics_ready() {
   ensure_agent_task_diagnostics_state_ready
-  ensure_local_manual_runner_connected
+  if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}" == "1" ]]; then
+    ensure_local_manual_runner_connected
+  else
+    internal_info "skipping local Developer runner diagnostics process startup"
+  fi
 }
 
 stop_local_manual_runner_for_internal_api_restart() {
@@ -2704,5 +2708,9 @@ ensure_internal_runner_state() {
       exit 1
     fi
   fi
-  ensure_local_manual_runner_connected
+  if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}" == "1" ]]; then
+    ensure_local_manual_runner_connected
+  else
+    internal_info "skipping local Developer runner diagnostics process startup"
+  fi
 }

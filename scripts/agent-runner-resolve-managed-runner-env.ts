@@ -124,11 +124,7 @@ async function main(): Promise<void> {
     readSimpleEnvValue(summary, 'AGENT_RUNNER_ID'),
     readNestedString(state, ['agent_runner', 'id']),
   );
-  const developerRunnerKey = firstNonEmpty(
-    process.env.AGENT_KEY,
-    readSimpleEnvValue(summary, 'AGENT_RUNNER_KEY'),
-    readSimpleEnvValue(summary, 'AGENT_KEY'),
-  );
+  const developerRunnerKey = firstNonEmpty(process.env.AGENT_KEY);
   const stateWsUrl = firstNonEmpty(
     process.env.AGENT_WS_URL,
     readSimpleEnvValue(summary, 'AGENT_RUNNER_WS_URL'),
@@ -157,10 +153,11 @@ async function main(): Promise<void> {
     }
     if (runner.runner_provider === 'developer') {
       const wsUrl = stateWsUrl || service.buildConnectionInfo(runner).ws_url;
+      const key = developerRunnerKey || (await service.createAgentKey(workspaceId, projectId, runner.id)).key;
       process.stdout.write([
         `AGENT_RUNNER_ID=${assertEnvSafe(runner.id, 'agent_runner_id')}`,
         `AGENT_WS_URL=${assertEnvSafe(wsUrl, 'agent_ws_url')}`,
-        `AGENT_KEY=${assertEnvSafe(developerRunnerKey, 'agent_key')}`,
+        `AGENT_KEY=${assertEnvSafe(key, 'agent_key')}`,
         '',
       ].join('\n'));
       return;

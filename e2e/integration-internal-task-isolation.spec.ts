@@ -244,11 +244,15 @@ test.describe('@lane-real internal Agent Task isolation by user', () => {
 
       const ownerPod = await waitForWorkloadPodIdentity({
         namespace,
+        workspaceId,
+        projectId,
         workloadId: sanitizeWorkloadId(ownerTaskId),
         timeoutMs: 180_000,
       });
       const memberPod = await waitForWorkloadPodIdentity({
         namespace,
+        workspaceId,
+        projectId,
         workloadId: sanitizeWorkloadId(memberTaskId),
         timeoutMs: 180_000,
       });

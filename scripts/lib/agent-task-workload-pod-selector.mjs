@@ -43,7 +43,12 @@ function isTaskWorkloadId(workloadId, taskWorkloadId) {
 function isDerivedLabelId(labelId, sourceId) {
   if (!sourceId) return true;
   const sanitized = sanitizeWorkloadId(sourceId);
-  return labelId === sanitized || labelId.startsWith(`${sanitized}-`);
+  return (
+    labelId === sourceId ||
+    labelId === sanitized ||
+    labelId.startsWith(`${sourceId}-`) ||
+    labelId.startsWith(`${sanitized}-`)
+  );
 }
 
 export function selectManagedWorkloadPodForTask(input) {

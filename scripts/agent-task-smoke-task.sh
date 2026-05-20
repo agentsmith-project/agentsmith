@@ -93,22 +93,28 @@ discover_workspace_file_library_id() {
     return 0
   fi
   if [[ -n "${WORKSPACE_FILE_LIBRARY_ID}" ]]; then
-    if api_json_request GET "${BASE}/file-libraries/${WORKSPACE_FILE_LIBRARY_ID}" >/dev/null 2>&1; then
+    local library_json reusable_id
+    library_json="$(api_json_request GET "${BASE}/file-libraries/${WORKSPACE_FILE_LIBRARY_ID}" || true)"
+    reusable_id="$(
+      printf '%s' "${library_json}" | node "${ROOT_DIR}/scripts/lib/file-library-reuse-selector.mjs" || true
+    )"
+    if [[ "${reusable_id}" == "${WORKSPACE_FILE_LIBRARY_ID}" ]]; then
       return 0
     fi
+    echo "[smoke] workspace file library ${WORKSPACE_FILE_LIBRARY_ID} is not projected as reusable; creating a new task workspace." >&2
     WORKSPACE_FILE_LIBRARY_ID=""
   fi
   local libraries_json discovered
   libraries_json="$(api_json_request GET "${BASE}/file-libraries" || true)"
   discovered="$(
-    printf '%s' "${libraries_json}" | \
-      node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);const items=Array.isArray(j.items)?j.items:[];const ready=items.find(item=>item&&item.status==="ready"&&typeof item.id==="string");if(ready?.id){process.stdout.write(ready.id);return;}process.exit(2);}catch{process.exit(2)}})' \
-      || true
+    printf '%s' "${libraries_json}" | node "${ROOT_DIR}/scripts/lib/file-library-reuse-selector.mjs" || true
   )"
   if [[ -z "${discovered}" ]]; then
-    echo "[smoke] ERROR: missing WORKSPACE_FILE_LIBRARY_ID and failed to discover a ready file library for project ${PROJECT_ID}" >&2
-    return 1
+    echo "[smoke] no reusable ready file library projected for project ${PROJECT_ID}; creating a new task workspace." >&2
+    WORKSPACE_MODE="create_new"
+    return 0
   fi
+  WORKSPACE_MODE="use_existing"
   WORKSPACE_FILE_LIBRARY_ID="${discovered}"
   state_set_string workspace.current_library_id "${WORKSPACE_FILE_LIBRARY_ID}"
 }
@@ -210,6 +216,7 @@ run_attempt() {
         body.workspace_mode = "create_new";
         body.workspace_name = workspaceName || `${title} Workspace`;
       } else {
+        body.workspace_mode = "use_existing";
         body.workspace_file_library_id = workspaceLibraryId;
       }
       console.log(JSON.stringify(body));

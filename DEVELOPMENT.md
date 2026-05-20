@@ -255,7 +255,7 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 收成一条正式链路。`local-real` 是人类入口名，底层仍映射到已注册的 `local-manual` runtime line。
 
-默认 `local-real-up` 会拉起真实本地平台和 internal sandbox；它仍不自动创建 Agent task 诊断资源或本机 runner 诊断资源。需要这些证据时，再按 owner runbook 显式执行底层 diagnostic adapter。
+默认 `local-real-up` / `local-real-reset` 会拉起真实本地平台和 internal sandbox；internal sandbox 启动前会确保 managed Agent task diagnostic state。它不会启动本机 Developer runner 诊断进程；需要本机 runner 诊断时，再按 owner runbook 显式执行底层 diagnostic adapter。
 
 ### First-time setup
 
@@ -304,11 +304,11 @@ PROXY_PORT=39080
 make local-real-up
 ```
 
-这一步启动平台并拉起 internal sandbox，不自动创建 Agent task 诊断资源。
+这一步启动平台、拉起 internal sandbox，并在 internal sandbox 启动前确保 managed Agent task diagnostic state；它不启动本机 Developer runner 诊断进程。
 
 ### Prepare Agent task diagnostics only when owner runbook requires it
 
-这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要 Agent task 诊断证据时再按 runbook 执行。
+这一步是底层 owner diagnostic adapter。普通本机真实环境先从 `make local-real-up` 开始；只有需要单独重建或排障本机 Developer runner 诊断链路时再按 runbook 执行。
 
 ```bash
 make local-manual-seed-agent-task
@@ -317,8 +317,15 @@ make local-manual-seed-agent-task
 这一步会：
 
 1. 刷新 `dev-admin` token
-2. 创建 project / credential / endpoint / managed runner config
-3. 输出 Agent task URL
+2. 创建 project / credential / endpoint / Developer runner config
+3. 启动本机 Developer runner 诊断进程
+4. 输出 Agent task URL
+
+如果 owner runbook 只需要重建 managed Agent task diagnostic state，不启动本机 Developer runner，则使用显式环境：
+
+```bash
+AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 bash scripts/local-manual/seed-agent-task-diagnostics.sh
+```
 
 ### Check status
 
@@ -355,7 +362,7 @@ make local-manual-internal-down
 make local-real-reset
 ```
 
-这一步会重建本地真实环境，并重新拉起 internal sandbox。
+这一步会重建本地真实环境、确保 managed Agent task diagnostic state，并重新拉起 internal sandbox；它不启动本机 Developer runner 诊断进程。
 
 ### Stop everything
 

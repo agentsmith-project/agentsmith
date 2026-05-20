@@ -79,6 +79,21 @@ json_get_optional() {
   node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s); let v=j; for(const p of process.argv[1].split(".")){ if(!p) continue; v=v?.[p]; } if(v==null){ process.exit(0);} process.stdout.write(String(v)); })' "$1"
 }
 
+secret_fingerprint() {
+  local value="${1:-}"
+  local digest
+  if [[ -z "${value}" ]]; then
+    printf '\n'
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest="$(printf '%s' "${value}" | sha256sum | awk '{print $1}')"
+  else
+    digest="$(printf '%s' "${value}" | shasum -a 256 | awk '{print $1}')"
+  fi
+  printf 'sha256:%s\n' "${digest}"
+}
+
 api_curl() {
   curl -sS "$@"
 }
@@ -170,6 +185,12 @@ AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL="$(printf '%s' "${seed_resp}" | json_get 
 AGENT_TASK_MODEL_SETTING_REVISION="$(printf '%s' "${seed_resp}" | json_get agent_task_model_setting.setting_revision)"
 WS_URL="$(printf '%s' "${seed_resp}" | json_get ws_url)"
 AGENT_RUNNER_KEY="$(printf '%s' "${seed_resp}" | json_get_optional agent_key)"
+AGENT_RUNNER_KEY_PRESENT="false"
+AGENT_RUNNER_KEY_FINGERPRINT=""
+if [[ -n "${AGENT_RUNNER_KEY}" ]]; then
+  AGENT_RUNNER_KEY_PRESENT="true"
+  AGENT_RUNNER_KEY_FINGERPRINT="$(secret_fingerprint "${AGENT_RUNNER_KEY}")"
+fi
 state_set_string agent_runner.id "${AGENT_RUNNER_ID}"
 state_set_string agent_runner.name "${AGENT_RUNNER_NAME}"
 state_set_string agent_runner.runner_provider "${AGENT_RUNNER_PROVIDER}"
@@ -195,7 +216,8 @@ ENDPOINT_ID=${ENDPOINT_ID}
 AGENT_RUNNER_ID=${AGENT_RUNNER_ID}
 AGENT_RUNNER_PROVIDER=${AGENT_RUNNER_PROVIDER}
 AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}
-AGENT_RUNNER_KEY=${AGENT_RUNNER_KEY}
+AGENT_RUNNER_KEY_PRESENT=${AGENT_RUNNER_KEY_PRESENT}
+AGENT_RUNNER_KEY_FINGERPRINT=${AGENT_RUNNER_KEY_FINGERPRINT}
 AGENT_TASK_MODEL_SETTING_ENDPOINT_ID=${AGENT_TASK_MODEL_SETTING_ENDPOINT_ID}
 AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL=${AGENT_TASK_MODEL_SETTING_DEFAULT_MODEL}
 AGENT_TASK_MODEL_SETTING_REVISION=${AGENT_TASK_MODEL_SETTING_REVISION}
@@ -206,6 +228,7 @@ PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}
 MODEL_MAX_CONTEXT_TOKENS=${MODEL_MAX_CONTEXT_TOKENS}
 MODEL_MAX_OUTPUT_TOKENS=${MODEL_MAX_OUTPUT_TOKENS}
 EOF
+unset AGENT_RUNNER_KEY
 
 echo
 echo "[init] done. Files written:"

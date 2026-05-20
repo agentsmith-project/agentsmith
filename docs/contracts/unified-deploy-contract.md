@@ -96,6 +96,13 @@ Lock update/adoption procedure:
 - Keep downloaded manifests as local evidence inputs when useful, but do not
   treat checked-in fixtures as release adoption proof. The adoption gate must
   read the authoritative downloaded release manifest.
+- A lock-only adoption change fails the explicit adoption gate when it does not
+  provide an authoritative manifest input or equivalent CI evidence that ran the
+  same check. The image-only shape guard can still pass for ordinary lock
+  syntax; it is not release adoption proof.
+- `infra/deploy/unified/env/site.env.example` intentionally keeps a blank
+  `ASBCP_SERVICE_KEY=` entry so offline render can generate or inject a secret.
+  The tracked example must not contain a real or placeholder secret value.
 
 Minimal focused diagnostics after a lock/adoption change are:
 

@@ -481,7 +481,7 @@ agent-task-runner:
 		echo "  make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	@env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
@@ -507,7 +507,7 @@ agent-runner-init-resources:
 		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_messages' make agent-runner-init-resources"; \
 		exit 1; \
 	fi
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	@env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	PRESET_ENDPOINT_API_KEY="$(PRESET_ENDPOINT_API_KEY)" \
 	PRESET_ENDPOINT_MODEL="$(PRESET_ENDPOINT_MODEL)" \
 	PRESET_ANTHROPIC_ENDPOINT_BASE_URL="$(PRESET_ANTHROPIC_ENDPOINT_BASE_URL)" \
@@ -584,7 +584,7 @@ local-real-up:
 	$(MAKE) substrate-up
 	$(MAKE) substrate-reseed
 	$(MAKE) local-manual-up
-	$(MAKE) local-manual-internal-up
+	LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 $(MAKE) local-manual-internal-up
 
 local-real-status:
 	npx tsx scripts/governance/local-real-status.ts
@@ -596,8 +596,16 @@ local-real-down:
 	$(MAKE) local-manual-down
 
 local-real-reset:
-	$(MAKE) local-manual-reset
-	$(MAKE) local-manual-internal-up
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/local-manual-down.sh
+	$(MAKE) substrate-reset SUBSTRATE=local-dev
+	$(MAKE) substrate-up SUBSTRATE=local-dev
+	$(MAKE) substrate-reseed SUBSTRATE=local-dev
+	$(MAKE) local-manual-up
+	AGENT_RUNNER_SEED_MODE=managed_agent_task \
+	LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \
+	$(MAKE) local-manual-seed-agent-task
+	LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 $(MAKE) local-manual-internal-up
 
 local-manual-internal-up:
 	./scripts/local-manual-internal-up.sh

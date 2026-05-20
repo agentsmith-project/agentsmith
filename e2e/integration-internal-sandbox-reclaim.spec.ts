@@ -125,20 +125,42 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       workloadId: workloadId1,
     });
 
-    await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
+    await waitForWorkloadPodPresent({
+      namespace,
+      workspaceId: 'ws_default',
+      projectId,
+      workloadId: workloadId1,
+      timeoutMs: 120_000,
+    });
     await page.waitForTimeout(15_000);
-    await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 10_000 });
+    await waitForWorkloadPodPresent({
+      namespace,
+      workspaceId: 'ws_default',
+      projectId,
+      workloadId: workloadId1,
+      timeoutMs: 10_000,
+    });
     await patchWorkloadPodExpiry({
       namespace,
+      workspaceId: 'ws_default',
+      projectId,
       workloadId: workloadId1,
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
     await waitForExpiredWorkloadReleasedViaAsbcp({
       namespace,
+      workspaceId: 'ws_default',
+      projectId,
       workloadId: workloadId1,
       timeoutMs: 60_000,
     });
-    await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
+    await waitForWorkloadPodDeleted({
+      namespace,
+      workspaceId: 'ws_default',
+      projectId,
+      workloadId: workloadId1,
+      timeoutMs: 120_000,
+    });
 
     await waitForAfscpStorageCsiReady({ namespace: process.env.AFSCP_STORAGE_CSI_NAMESPACE?.trim() || "kube-system" });
 
@@ -165,12 +187,20 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     });
 
     const workloadId2 = sanitizeWorkloadId(taskId2);
-    const workloadPod2 = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
+    const workloadPod2 = await waitForWorkloadPodIdentity({
+      namespace,
+      workspaceId: 'ws_default',
+      projectId,
+      workloadId: workloadId2,
+      timeoutMs: 120_000,
+    });
     await runInternalSandboxControl('stop-asbcp');
     await runInternalSandboxControl('start-asbcp');
 
     const workloadPod2AfterRestart = await waitForWorkloadPodIdentity({
       namespace,
+      workspaceId: 'ws_default',
+      projectId,
       workloadId: workloadId2,
       timeoutMs: 30_000,
     });
@@ -179,6 +209,8 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     await page.waitForTimeout(15_000);
     const workloadPod2AfterManagerSettled = await waitForWorkloadPodIdentity({
       namespace,
+      workspaceId: 'ws_default',
+      projectId,
       workloadId: workloadId2,
       timeoutMs: 10_000,
     });
@@ -189,7 +221,13 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       projectId,
       workloadId: workloadId2,
     });
-    await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
+    await waitForWorkloadPodDeleted({
+      namespace,
+      workspaceId: 'ws_default',
+      projectId,
+      workloadId: workloadId2,
+      timeoutMs: 120_000,
+    });
 
     expect(true).toBe(true);
   });

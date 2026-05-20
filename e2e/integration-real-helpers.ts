@@ -20,6 +20,10 @@ import {
   summarizeAgentTaskPod,
   summarizeAgentTaskTraces,
 } from "./agent-task-execution-outcome";
+import {
+  sanitizeWorkloadId as sanitizeAgentTaskWorkloadId,
+  selectManagedWorkloadPodForTask,
+} from "../scripts/lib/agent-task-workload-pod-selector.mjs";
 import * as managedRunnerSeedModule from "../scripts/agent-runner-seed-managed-runner-core";
 import type {
   DefaultManagedRunnerSeedInput,
@@ -2293,13 +2297,7 @@ export async function createInternalAgentTaskRunnerViaApi(
 }
 
 export function sanitizeWorkloadId(id: string): string {
-  const normalized = id
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 63);
-  return normalized || "workload";
+  return sanitizeAgentTaskWorkloadId(id);
 }
 
 export type AgentTaskApiRecord = {
@@ -3877,6 +3875,38 @@ export type WorkloadPodSnapshot = {
   exitCode?: number | null;
 };
 
+type KubernetesPodItem = {
+  metadata?: {
+    name?: string;
+    uid?: string;
+    labels?: Record<string, string>;
+    annotations?: Record<string, string>;
+    deletionTimestamp?: string;
+    finalizers?: unknown[];
+  };
+  status?: {
+    phase?: string;
+    reason?: string;
+    conditions?: Array<{ type?: string; status?: string; reason?: string }>;
+    containerStatuses?: Array<{
+      ready?: boolean;
+      state?: {
+        waiting?: { reason?: string };
+        terminated?: { exitCode?: number; reason?: string };
+      };
+    }>;
+  };
+};
+
+type KubernetesPodListPayload = {
+  items?: KubernetesPodItem[];
+};
+
+type ManagedWorkloadPodSelection = {
+  podName: string;
+  workloadId: string;
+};
+
 export type ExpiredWorkloadReleaseTarget = {
   podName: string;
   workspaceId: string;
@@ -3887,35 +3917,95 @@ export type ExpiredWorkloadReleaseTarget = {
   finalizers: string[];
 };
 
+function parseWorkloadPodListPayload(payloadText: string): KubernetesPodListPayload {
+  return JSON.parse(payloadText || "{}") as KubernetesPodListPayload;
+}
+
+function parseWorkloadPodListPayloadSafely(payloadText: string): KubernetesPodListPayload {
+  try {
+    return parseWorkloadPodListPayload(payloadText);
+  } catch {
+    return {};
+  }
+}
+
+function readPodName(item: KubernetesPodItem): string {
+  return item.metadata?.name?.trim() ?? "";
+}
+
+function readPodLabel(item: KubernetesPodItem, key: string): string {
+  return item.metadata?.labels?.[key]?.trim() ?? "";
+}
+
+function matchesWorkloadIdPrefix(workloadId: string, workloadIdPrefix: string): boolean {
+  return workloadId === workloadIdPrefix || workloadId.startsWith(`${workloadIdPrefix}-`);
+}
+
+function matchesDerivedLabelId(labelId: string, sourceId?: string): boolean {
+  const source = sourceId?.trim();
+  if (!source) return true;
+  const sanitized = sanitizeWorkloadId(source);
+  return (
+    labelId === source ||
+    labelId === sanitized ||
+    labelId.startsWith(`${source}-`) ||
+    labelId.startsWith(`${sanitized}-`)
+  );
+}
+
+function isManagedWorkloadTargetPod(input: {
+  podName: string;
+  workloadId: string;
+  workloadIdPrefix: string;
+}): boolean {
+  return input.podName === `workload-${input.workloadIdPrefix}`
+    && matchesWorkloadIdPrefix(input.workloadId, input.workloadIdPrefix);
+}
+
+function selectManagedWorkloadPodItem(args: {
+  payloadText: string;
+  workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
+}): { item: KubernetesPodItem } & ManagedWorkloadPodSelection | null {
+  const payload = parseWorkloadPodListPayload(args.payloadText);
+  const selected = selectManagedWorkloadPodForTask({
+    taskId: args.workloadId,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    payload,
+  }) as ManagedWorkloadPodSelection | null;
+  if (!selected?.podName) return null;
+
+  const item = (payload.items ?? []).find(
+    (candidate) =>
+      readPodName(candidate) === selected.podName &&
+      readPodLabel(candidate, "workload_id") === selected.workloadId,
+  );
+  return item ? { ...selected, item } : null;
+}
+
 export function selectExpiredWorkloadReleaseTargets(args: {
   payload: string;
   now?: Date;
   workloadId?: string;
+  workspaceId?: string;
+  projectId?: string;
 }): ExpiredWorkloadReleaseTarget[] {
   const now = args.now ?? new Date();
-  const workloadFilter = args.workloadId?.trim();
-  let payload: {
-    items?: Array<{
-      metadata?: {
-        name?: string;
-        labels?: Record<string, string>;
-        annotations?: Record<string, string>;
-        deletionTimestamp?: string;
-        finalizers?: unknown[];
-      };
-    }>;
-  };
-  try {
-    payload = JSON.parse(args.payload || "{}") as typeof payload;
-  } catch {
-    return [];
-  }
+  const workloadFilter = args.workloadId?.trim()
+    ? sanitizeWorkloadId(args.workloadId)
+    : undefined;
+  const workspaceFilter = args.workspaceId?.trim();
+  const projectFilter = args.projectId?.trim();
+  const payload = parseWorkloadPodListPayloadSafely(args.payload);
 
   return (payload.items ?? []).flatMap((item) => {
     const metadata = item.metadata ?? {};
     const labels = metadata.labels ?? {};
     const annotations = metadata.annotations ?? {};
     const podName = metadata.name?.trim();
+    const app = labels.app?.trim();
     const workspaceId = labels.workspace_id?.trim();
     const projectId = labels.project_id?.trim();
     const workloadId = labels.workload_id?.trim();
@@ -3923,7 +4013,23 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     if (!podName || !workspaceId || !projectId || !workloadId || !expiresAt) {
       return [];
     }
-    if (workloadFilter && workloadId !== workloadFilter) {
+    if (app !== "managed-workload") {
+      return [];
+    }
+    if (!matchesDerivedLabelId(workspaceId, workspaceFilter)) {
+      return [];
+    }
+    if (!matchesDerivedLabelId(projectId, projectFilter)) {
+      return [];
+    }
+    if (
+      workloadFilter &&
+      !isManagedWorkloadTargetPod({
+        podName,
+        workloadId,
+        workloadIdPrefix: workloadFilter,
+      })
+    ) {
       return [];
     }
     const expiresAtMs = Date.parse(expiresAt);
@@ -3933,9 +4039,9 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     const deletionTimestamp = metadata.deletionTimestamp?.trim();
     return [{
       podName,
-      workspaceId,
-      projectId,
-      workloadId,
+      workspaceId: workspaceFilter ?? workspaceId,
+      projectId: projectFilter ?? projectId,
+      workloadId: workloadFilter ?? workloadId,
       expiresAt,
       ...(deletionTimestamp ? { deletionTimestamp } : {}),
       finalizers: (metadata.finalizers ?? []).filter(
@@ -4016,24 +4122,14 @@ async function fetchTaskRealtimeSnapshot(args: {
 export function parseWorkloadPodSnapshot(
   payloadText: string,
 ): WorkloadPodSnapshot | null {
-  const payload = JSON.parse(payloadText || "{}") as {
-    items?: Array<{
-      metadata?: { name?: string; uid?: string };
-      status?: {
-        phase?: string;
-        reason?: string;
-        conditions?: Array<{ type?: string; status?: string; reason?: string }>;
-        containerStatuses?: Array<{
-          ready?: boolean;
-          state?: {
-            waiting?: { reason?: string };
-            terminated?: { exitCode?: number; reason?: string };
-          };
-        }>;
-      };
-    }>;
-  };
+  const payload = parseWorkloadPodListPayload(payloadText);
   const item = payload.items?.[0];
+  return item ? parseWorkloadPodItemSnapshot(item) : null;
+}
+
+function parseWorkloadPodItemSnapshot(
+  item: KubernetesPodItem,
+): WorkloadPodSnapshot | null {
   if (!item) return null;
   const containerStatuses = item.status?.containerStatuses ?? [];
   const readyCondition =
@@ -4069,26 +4165,42 @@ export function parseWorkloadPodSnapshot(
   };
 }
 
-async function fetchWorkloadPodSnapshot(args: {
-  namespace: string;
-  workloadId: string;
-}): Promise<WorkloadPodSnapshot | null> {
-  const result = await spawnAndCapture(
+async function fetchManagedWorkloadPods(namespace: string): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+}> {
+  return spawnAndCapture(
     "kubectl",
     [
       "get",
       "pods",
       "-n",
-      args.namespace,
+      namespace,
       "-l",
-      `workload_id=${args.workloadId}`,
+      "app=managed-workload",
       "-o",
       "json",
     ],
     { env: withoutProxyEnv(process.env) },
   );
+}
+
+async function fetchWorkloadPodSnapshot(args: {
+  namespace: string;
+  workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
+}): Promise<WorkloadPodSnapshot | null> {
+  const result = await fetchManagedWorkloadPods(args.namespace);
   if (result.code !== 0) return null;
-  return parseWorkloadPodSnapshot(result.stdout);
+  const selection = selectManagedWorkloadPodItem({
+    payloadText: result.stdout,
+    workloadId: args.workloadId,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+  });
+  return selection ? parseWorkloadPodItemSnapshot(selection.item) : null;
 }
 
 async function readArtifactText(artifactPath?: string): Promise<string | null> {
@@ -4258,6 +4370,8 @@ export async function collectInternalTaskFailureContext(args: {
       ? fetchWorkloadPodSnapshot({
           namespace: args.namespace,
           workloadId: args.workloadId,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
         })
       : Promise.resolve(null),
   ]);
@@ -4329,6 +4443,8 @@ export async function waitForAgentTaskExecutionOutcome(args: {
         ? fetchWorkloadPodSnapshot({
             namespace: args.namespace,
             workloadId: args.workloadId,
+            workspaceId: args.workspaceId,
+            projectId: args.projectId,
           })
         : Promise.resolve(null),
     ]);
@@ -4640,27 +4756,23 @@ export async function runInternalSandboxControl(
 export async function waitForWorkloadPodPresent(args: {
   namespace: string;
   workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
   timeoutMs?: number;
 }): Promise<string> {
   let podName = "";
   await expect
     .poll(
       async () => {
-        const result = await spawnAndCapture(
-          "kubectl",
-          [
-            "get",
-            "pods",
-            "-n",
-            args.namespace,
-            "-l",
-            `workload_id=${args.workloadId}`,
-            "-o",
-            "jsonpath={.items[0].metadata.name}",
-          ],
-          { env: withoutProxyEnv(process.env) },
-        );
-        podName = result.stdout.trim();
+        const result = await fetchManagedWorkloadPods(args.namespace);
+        if (result.code !== 0) return null;
+        const selection = selectManagedWorkloadPodItem({
+          payloadText: result.stdout,
+          workloadId: args.workloadId,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+        });
+        podName = selection?.podName ?? "";
         return podName.length > 0 ? podName : null;
       },
       { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
@@ -4672,31 +4784,26 @@ export async function waitForWorkloadPodPresent(args: {
 export async function waitForWorkloadPodIdentity(args: {
   namespace: string;
   workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
   timeoutMs?: number;
 }): Promise<{ name: string; uid: string }> {
   let pod = { name: "", uid: "" };
   await expect
     .poll(
       async () => {
-        const result = await spawnAndCapture(
-          "kubectl",
-          [
-            "get",
-            "pods",
-            "-n",
-            args.namespace,
-            "-l",
-            `workload_id=${args.workloadId}`,
-            "-o",
-            'jsonpath={.items[0].metadata.name}{"\\n"}{.items[0].metadata.uid}',
-          ],
-          { env: withoutProxyEnv(process.env) },
-        );
-        const [name, uid] = result.stdout
-          .split("\n")
-          .map((value) => value.trim())
-          .filter(Boolean);
-        pod = { name: name ?? "", uid: uid ?? "" };
+        const result = await fetchManagedWorkloadPods(args.namespace);
+        if (result.code !== 0) return null;
+        const selection = selectManagedWorkloadPodItem({
+          payloadText: result.stdout,
+          workloadId: args.workloadId,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+        });
+        pod = {
+          name: selection?.podName ?? "",
+          uid: selection?.item.metadata?.uid?.trim() ?? "",
+        };
         return pod.name && pod.uid ? pod : null;
       },
       { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
@@ -4708,6 +4815,8 @@ export async function waitForWorkloadPodIdentity(args: {
 export async function waitForWorkloadPodReady(args: {
   namespace: string;
   workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
   timeoutMs?: number;
 }): Promise<WorkloadPodSnapshot & { name: string; uid: string; ready: true }> {
   const timeoutMs = args.timeoutMs ?? 180_000;
@@ -4719,6 +4828,8 @@ export async function waitForWorkloadPodReady(args: {
     latestPod = await fetchWorkloadPodSnapshot({
       namespace: args.namespace,
       workloadId: args.workloadId,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
     });
     if (
       latestPod?.name &&
@@ -4760,26 +4871,26 @@ export async function waitForWorkloadPodReady(args: {
 export async function waitForWorkloadPodDeleted(args: {
   namespace: string;
   workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
   timeoutMs?: number;
 }): Promise<void> {
   await expect
     .poll(
       async () => {
-        const result = await spawnAndCapture(
-          "kubectl",
-          [
-            "get",
-            "pods",
-            "-n",
-            args.namespace,
-            "-l",
-            `workload_id=${args.workloadId}`,
-            "-o",
-            "jsonpath={.items[*].metadata.name}",
-          ],
-          { env: withoutProxyEnv(process.env) },
-        );
-        return result.stdout.trim();
+        const result = await fetchManagedWorkloadPods(args.namespace);
+        if (result.code !== 0) {
+          throw new Error(
+            `workload_pod_list_failed:${args.workloadId}:${result.stderr || result.stdout}`,
+          );
+        }
+        const selection = selectManagedWorkloadPodItem({
+          payloadText: result.stdout,
+          workloadId: args.workloadId,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+        });
+        return selection?.podName ?? "";
       },
       { timeout: args.timeoutMs ?? 300_000, intervals: [2_000, 5_000, 10_000] },
     )
@@ -4789,11 +4900,15 @@ export async function waitForWorkloadPodDeleted(args: {
 export async function patchWorkloadPodExpiry(args: {
   namespace: string;
   workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
   expiresAt: string;
 }): Promise<void> {
   const podName = await waitForWorkloadPodPresent({
     namespace: args.namespace,
     workloadId: args.workloadId,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
     timeoutMs: 30_000,
   });
   const result = await spawnAndCapture(
@@ -4816,28 +4931,23 @@ export async function patchWorkloadPodExpiry(args: {
   }
 }
 
+export type InternalWorkloadDeleteResult = {
+  status: number;
+  released: boolean;
+  notFound: boolean;
+};
+
 export async function releaseExpiredWorkloadsViaAsbcp(args: {
   namespace: string;
+  workspaceId: string;
+  projectId: string;
   workloadId: string;
   now?: Date;
 }): Promise<{
   released: number;
   targets: ExpiredWorkloadReleaseTarget[];
 }> {
-  const result = await spawnAndCapture(
-    "kubectl",
-    [
-      "get",
-      "pods",
-      "-n",
-      args.namespace,
-      "-l",
-      `workload_id=${args.workloadId}`,
-      "-o",
-      "json",
-    ],
-    { env: withoutProxyEnv(process.env) },
-  );
+  const result = await fetchManagedWorkloadPods(args.namespace);
   if (result.code !== 0) {
     throw new Error(
       `release_expired_workloads_list_failed:${args.workloadId}:${result.stderr || result.stdout}`,
@@ -4847,36 +4957,50 @@ export async function releaseExpiredWorkloadsViaAsbcp(args: {
     payload: result.stdout,
     now: args.now,
     workloadId: args.workloadId,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
   });
   let released = 0;
   for (const target of targets) {
-    await deleteInternalWorkloadViaAsbcp({
+    const deleteResult = await deleteInternalWorkloadViaAsbcp({
       workspaceId: target.workspaceId,
       projectId: target.projectId,
       workloadId: target.workloadId,
     });
-    released += 1;
+    if (deleteResult.released) {
+      released += 1;
+      continue;
+    }
   }
   return { released, targets };
 }
 
 export async function waitForExpiredWorkloadReleasedViaAsbcp(args: {
   namespace: string;
+  workspaceId: string;
+  projectId: string;
   workloadId: string;
   timeoutMs?: number;
 }): Promise<void> {
+  let observedExpiredTarget = false;
   await expect
     .poll(
       async () => {
         const result = await releaseExpiredWorkloadsViaAsbcp({
           namespace: args.namespace,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
           workloadId: args.workloadId,
         });
-        return result.released;
+        observedExpiredTarget = observedExpiredTarget || result.targets.length > 0;
+        if (result.released > 0) return "released";
+        return observedExpiredTarget
+          ? "awaiting_asbcp_release_terminal_fact"
+          : "waiting_for_expired_workload_target";
       },
       { timeout: args.timeoutMs ?? 60_000, intervals: [1_000, 2_000, 5_000] },
     )
-    .toBeGreaterThan(0);
+    .toBe("released");
 }
 
 export async function expectInternalTaskRuntimeStateInPod(args: {
@@ -4947,7 +5071,7 @@ export async function deleteInternalWorkloadViaAsbcp(args: {
   workspaceId: string;
   projectId: string;
   workloadId: string;
-}): Promise<void> {
+}): Promise<InternalWorkloadDeleteResult> {
   const asbcpBase = process.env.ASBCP_INTERNAL_BASE_URL?.trim();
   const serviceKey = process.env.ASBCP_SERVICE_KEY?.trim();
   if (!asbcpBase || !serviceKey) {
@@ -4962,12 +5086,16 @@ export async function deleteInternalWorkloadViaAsbcp(args: {
       },
     },
   );
-  if (!response.ok && response.status !== 404) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `delete_internal_workload_failed:${response.status}:${body}`,
-    );
+  if (response.ok) {
+    return { status: response.status, released: true, notFound: false };
   }
+  if (response.status === 404) {
+    return { status: response.status, released: false, notFound: true };
+  }
+  const body = await response.text().catch(() => "");
+  throw new Error(
+    `delete_internal_workload_failed:${response.status}:${body}`,
+  );
 }
 
 export async function waitForAgentPresenceOnline(

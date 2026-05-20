@@ -45,24 +45,31 @@ function extractFunctionBody(source: string, functionName: string): string {
 }
 
 function extractShellFunctionBody(source: string, functionName: string): string {
-  const lines = source.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `${functionName}() {`);
-  if (start === -1) {
-    throw new Error(`missing shell function: ${functionName}`);
-  }
-
-  const end = lines.findIndex((line, index) => index > start && line.trim() === '}');
-  if (end === -1) {
-    throw new Error(`unterminated shell function: ${functionName}`);
-  }
-
-  return lines.slice(start + 1, end).join('\n');
+  return extractBlockBody(source, `${functionName}() {`);
 }
 
 function findRequiredTrimmedLineIndex(source: string, expectedLine: string): number {
   const index = source.split(/\r?\n/).findIndex((line) => line.trim() === expectedLine);
   expect(index, `missing line: ${expectedLine}`).toBeGreaterThanOrEqual(0);
   return index;
+}
+
+function extractMakeTargetBody(source: string, target: string): string {
+  const lines = source.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `${target}:` || line.startsWith(`${target}:`));
+  if (start === -1) {
+    throw new Error(`missing Makefile target: ${target}`);
+  }
+
+  const body: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (line && !line.startsWith('\t') && /^[A-Za-z0-9_.-]+:/u.test(line)) {
+      break;
+    }
+    body.push(line);
+  }
+  return body.join('\n');
 }
 
 function extractCaptureBlocks(source: string, traceName: string): string[] {
@@ -365,6 +372,10 @@ describe('Agent Task terminal runtime gates', () => {
       path.resolve(process.cwd(), 'scripts/agent-task-terminal-internal-real-smoke.sh'),
       'utf-8',
     );
+    const localManualInternalSmoke = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/internal-smoke.sh'),
+      'utf-8',
+    );
     const selector = await readFile(
       path.resolve(process.cwd(), 'scripts/lib/agent-task-workload-pod-selector.mjs'),
       'utf-8',
@@ -379,13 +390,88 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
     expect(internalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
 
+    expect(localManualInternalSmoke).toContain('scripts/lib/agent-task-workload-pod-selector.mjs');
+    expect(localManualInternalSmoke).toContain('WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"');
+    expect(localManualInternalSmoke).toContain('-l "app=managed-workload" -o json');
+    expect(localManualInternalSmoke).toContain('workload_pod_selector_error');
+    expect(localManualInternalSmoke).toContain('expected_pod=workload-${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).toContain('workload_id_prefix=${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
+    expect(localManualInternalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
+
     expect(selector).toContain("item.app === 'managed-workload'");
     expect(selector).toContain('isDerivedLabelId(item.workspaceId, workspaceId)');
     expect(selector).toContain('isDerivedLabelId(item.projectId, projectId)');
     expect(selector).toContain('item.podName === expectedPodName');
     expect(selector).toContain('isTaskWorkloadId(item.workloadId, taskWorkloadId)');
-    expect(selector).toContain('labelId === sanitized || labelId.startsWith(`${sanitized}-`)');
+    expect(selector).toContain('labelId === sourceId');
+    expect(selector).toContain('labelId === sanitized');
+    expect(selector).toContain('labelId.startsWith(`${sanitized}-`)');
     expect(selector).toContain('workloadId === taskWorkloadId || workloadId.startsWith(`${taskWorkloadId}-`)');
+  });
+
+  it('initializes internal terminal smoke POD_NAME before polling under set -u', async () => {
+    const internalSmoke = await readFile(
+      path.resolve(process.cwd(), 'scripts/agent-task-terminal-internal-real-smoke.sh'),
+      'utf-8',
+    );
+
+    const podNameInitLine = findRequiredTrimmedLineIndex(internalSmoke, 'POD_NAME=""');
+    const pollLoopLine = findRequiredTrimmedLineIndex(internalSmoke, 'for _ in $(seq 1 90); do');
+    const firstPodNameReadLine = findRequiredTrimmedLineIndex(internalSmoke, 'if [[ -n "${POD_NAME}" ]]; then');
+    const fallbackCheckLine = findRequiredTrimmedLineIndex(internalSmoke, 'if [[ -z "${POD_NAME:-}" ]]; then');
+
+    expect(podNameInitLine).toBeLessThan(pollLoopLine);
+    expect(pollLoopLine).toBeLessThan(firstPodNameReadLine);
+    expect(firstPodNameReadLine).toBeLessThan(fallbackCheckLine);
+  });
+
+  it('documents local-real internal sandbox startup as ensuring managed Agent task diagnostic state', async () => {
+    const development = await readFile(
+      path.resolve(process.cwd(), 'DEVELOPMENT.md'),
+      'utf-8',
+    );
+
+    expect(development).toContain('internal sandbox 启动前会确保 managed Agent task diagnostic state');
+    expect(development).toContain('它不会启动本机 Developer runner 诊断进程');
+    expect(development).toContain('这一步启动平台、拉起 internal sandbox，并在 internal sandbox 启动前确保 managed Agent task diagnostic state');
+    expect(development).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0');
+    expect(development).not.toContain('仍不自动创建 Agent task 诊断资源');
+    expect(development).not.toContain('不自动创建 Agent task 诊断资源');
+  });
+
+  it('keeps local-real reset managed-only without starting the local Developer runner diagnostics process', async () => {
+    const makefile = await readFile(
+      path.resolve(process.cwd(), 'Makefile'),
+      'utf-8',
+    );
+    const internalCommon = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/internal-common.sh'),
+      'utf-8',
+    );
+
+    const localManualReset = extractMakeTargetBody(makefile, 'local-manual-reset');
+    const localRealUp = extractMakeTargetBody(makefile, 'local-real-up');
+    const localRealReset = extractMakeTargetBody(makefile, 'local-real-reset');
+    const ensureInternalRunnerState = extractShellFunctionBody(internalCommon, 'ensure_internal_runner_state');
+
+    expect(localManualReset).toContain('$(MAKE) local-manual-seed-agent-task');
+    expect(localRealUp).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 $(MAKE) local-manual-internal-up');
+    expect(localRealReset).not.toContain('$(MAKE) local-manual-reset');
+    expect(localRealReset).toContain('$(MAKE) substrate-reset SUBSTRATE=local-dev');
+    expect(localRealReset).toContain('$(MAKE) substrate-up SUBSTRATE=local-dev');
+    expect(localRealReset).toContain('$(MAKE) substrate-reseed SUBSTRATE=local-dev');
+    expect(localRealReset).toContain('$(MAKE) local-manual-up');
+    expect(localRealReset).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
+    expect(localRealReset).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0');
+    expect(localRealReset).toContain('$(MAKE) local-manual-seed-agent-task');
+    expect(localRealReset).toContain('$(MAKE) local-manual-internal-up');
+    expect(localRealReset.indexOf('AGENT_RUNNER_SEED_MODE=managed_agent_task')).toBeLessThan(
+      localRealReset.indexOf('$(MAKE) local-manual-internal-up'),
+    );
+    expect(ensureInternalRunnerState).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1');
+    expect(ensureInternalRunnerState).toContain('ensure_local_manual_runner_connected');
+    expect(ensureInternalRunnerState).toContain('skipping local Developer runner diagnostics process startup');
   });
 
   it('runs the runtime matrix before the UX gate so UI evidence sits on top of terminal session truth', async () => {
@@ -536,6 +622,10 @@ describe('Agent Task terminal runtime gates', () => {
       path.resolve(process.cwd(), 'scripts/agent-runner-resolve-managed-runner-env.ts'),
       'utf-8',
     );
+    const makefile = await readFile(
+      path.resolve(process.cwd(), 'Makefile'),
+      'utf-8',
+    );
 
     expect(seedDiagnostics).toContain('AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"');
     expect(initResources).toContain('AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"');
@@ -555,9 +645,15 @@ describe('Agent Task terminal runtime gates', () => {
     expect(initResources).toContain('AGENT_RUNNER_DEFAULT_ENDPOINT_ID=${AGENT_RUNNER_DEFAULT_ENDPOINT_ID}');
     expect(initResources).toContain('AGENT_RUNNER_ID=${AGENT_RUNNER_ID}');
     expect(initResources).toContain('AGENT_RUNNER_PROVIDER=${AGENT_RUNNER_PROVIDER}');
-    expect(initResources).toContain('AGENT_RUNNER_KEY=${AGENT_RUNNER_KEY}');
-    expect(runnerEnvResolver).toContain('readSimpleEnvValue(summary, \'AGENT_RUNNER_KEY\')');
+    expect(initResources).toContain('AGENT_RUNNER_KEY_PRESENT=${AGENT_RUNNER_KEY_PRESENT}');
+    expect(initResources).toContain('AGENT_RUNNER_KEY_FINGERPRINT=${AGENT_RUNNER_KEY_FINGERPRINT}');
+    expect(initResources).not.toContain('AGENT_RUNNER_KEY=${AGENT_RUNNER_KEY}');
+    expect(initResources).not.toMatch(/^AGENT_RUNNER_KEY=\$\{AGENT_RUNNER_KEY\}$/mu);
+    expect(runnerEnvResolver).toContain('await service.createAgentKey(workspaceId, projectId, runner.id)');
+    expect(runnerEnvResolver).not.toContain('readSimpleEnvValue(summary, \'AGENT_RUNNER_KEY\')');
+    expect(runnerEnvResolver).not.toContain('readSimpleEnvValue(summary, \'AGENT_KEY\')');
     expect(runnerEnvResolver).toContain("runner.runner_provider === 'developer'");
+    expect(makefile).toContain('@env -u http_proxy -u https_proxy -u all_proxy');
     expect(initResources).not.toContain('agent_runner.key');
     expect(initResources).not.toContain('managed runner key written');
     expect(initResources).not.toContain('/agents');
@@ -705,7 +801,7 @@ describe('Agent Task terminal runtime gates', () => {
     );
 
     expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-internal-up/);
-    expect(makefile).toMatch(/local-real-reset:[\s\S]*\$\(MAKE\) local-manual-reset[\s\S]*\$\(MAKE\) local-manual-internal-up/);
+    expect(makefile).toMatch(/local-real-reset:[\s\S]*AGENT_RUNNER_SEED_MODE=managed_agent_task[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0[\s\S]*\$\(MAKE\) local-manual-seed-agent-task[\s\S]*\$\(MAKE\) local-manual-internal-up/);
     expect(startApi).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
     expect(startApi).toContain("MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT='${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT}'");
   });

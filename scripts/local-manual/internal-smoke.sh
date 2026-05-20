@@ -11,8 +11,12 @@ TOKEN="$(cat "$(backend_real_token_file)")"
 PROJECT_ID="$(state_get project.id)"
 
 TASK_ID="$(
-  node - <<'NODE' "${TOKEN}" "${WORKSPACE_ID}" "${PROJECT_ID}" "${PORT_API}"
-const [token, workspaceId, projectId, port] = process.argv.slice(2);
+  node - <<'NODE' "${TOKEN}" "${WORKSPACE_ID}" "${PROJECT_ID}" "${PORT_API}" "${ROOT_DIR}"
+import { pathToFileURL } from 'node:url';
+
+const [token, workspaceId, projectId, port, rootDir] = process.argv.slice(2);
+const selectorUrl = new URL('scripts/lib/file-library-reuse-selector.mjs', pathToFileURL(`${rootDir}/`));
+const { selectReusableTaskWorkspaceFileLibraryId } = await import(selectorUrl.href);
 const base = `http://localhost:${port}/api/v1/workspaces/${workspaceId}/projects/${projectId}`;
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 const request = async (url, init) => {
@@ -22,16 +26,14 @@ const request = async (url, init) => {
   return text ? JSON.parse(text) : null;
 };
 const libraries = await request(`${base}/file-libraries`, { headers: { Authorization: `Bearer ${token}` } });
-const workspaceLibraryId = Array.isArray(libraries?.items)
-  ? libraries.items.find((item) => item?.status === 'ready')?.id
-  : null;
+const workspaceLibraryId = selectReusableTaskWorkspaceFileLibraryId(libraries);
 const task = await request(`${base}/tasks`, {
   method: 'POST',
   headers,
   body: JSON.stringify({
     title: `Internal Smoke ${Date.now()}`,
     ...(workspaceLibraryId
-      ? { workspace_file_library_id: workspaceLibraryId }
+      ? { workspace_mode: 'use_existing', workspace_file_library_id: workspaceLibraryId }
       : { workspace_mode: 'create_new' }),
   }),
 });
@@ -48,15 +50,17 @@ process.stdout.write(taskId);
 NODE
 )"
 
-WORKLOAD_ID="$(node - <<'NODE' "${TASK_ID}"
-const id = process.argv[2];
-const normalized = id.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
-process.stdout.write(normalized || 'workload');
-NODE
-)"
+WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"
 
+POD_NAME=""
 for _ in $(seq 1 60); do
-  POD_NAME="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "workload_id=${WORKLOAD_ID}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  POD_LIST_JSON="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "app=managed-workload" -o json 2>/dev/null || true)"
+  if [[ -n "${POD_LIST_JSON}" ]]; then
+    if ! POD_NAME="$(printf '%s' "${POD_LIST_JSON}" | node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" "${TASK_ID}" "${WORKSPACE_ID}" "${PROJECT_ID}")"; then
+      internal_err "internal smoke failed: workload_pod_selector_error task=${TASK_ID} expected_pod=workload-${WORKLOAD_ID} workload_id_prefix=${WORKLOAD_ID}"
+      exit 1
+    fi
+  fi
   if [[ -n "${POD_NAME}" ]]; then
     internal_info "internal smoke passed"
     internal_info "Task: ${TASK_ID}"
@@ -66,5 +70,5 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
-internal_err "internal smoke failed: workload pod not observed for task ${TASK_ID}"
+internal_err "internal smoke failed: workload pod not observed for task ${TASK_ID} expected_pod=workload-${WORKLOAD_ID} workload_id_prefix=${WORKLOAD_ID}"
 exit 1

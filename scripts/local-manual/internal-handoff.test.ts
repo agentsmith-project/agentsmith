@@ -221,6 +221,81 @@ internal_info() { :; }
   }
 }
 
+type InternalSmokeTaskCreateCall = {
+  url: string;
+  method: string;
+  body: Record<string, unknown> | null;
+};
+
+function extractInternalSmokeTaskCreateSource(): string {
+  const source = readFileSync('scripts/local-manual/internal-smoke.sh', 'utf8');
+  const match = source.match(
+    /TASK_ID="\$\(\s*\n\s*node - <<'NODE' "\$\{TOKEN\}" "\$\{WORKSPACE_ID\}" "\$\{PROJECT_ID\}" "\$\{PORT_API\}" "\$\{ROOT_DIR\}"\s*\n([\s\S]*?)\nNODE\n\)"/u,
+  );
+  if (!match?.[1]) {
+    throw new Error('internal_smoke_task_create_source_not_found');
+  }
+  return match[1];
+}
+
+function runInternalSmokeTaskCreateSource(fileLibraries: Record<string, unknown>): InternalSmokeTaskCreateCall[] {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-internal-smoke-create-'));
+  const callsPath = path.join(tempRoot, 'calls.json');
+  const source = extractInternalSmokeTaskCreateSource();
+  const harness = [
+    "import { writeFileSync } from 'node:fs';",
+    'const calls = [];',
+    `const fileLibraries = ${JSON.stringify(fileLibraries)};`,
+    'function response(status, body) {',
+    '  return {',
+    '    ok: status >= 200 && status < 300,',
+    '    status,',
+    '    text: async () => JSON.stringify(body),',
+    '  };',
+    '}',
+    'globalThis.fetch = async (url, init = {}) => {',
+    '  const href = String(url);',
+    '  const method = typeof init.method === "string" ? init.method : "GET";',
+    '  const body = typeof init.body === "string" ? JSON.parse(init.body) : null;',
+    '  calls.push({ url: href, method, body });',
+    '  if (href.endsWith("/file-libraries")) return response(200, fileLibraries);',
+    '  if (href.endsWith("/tasks")) return response(201, { id: "task_internal_smoke" });',
+    '  if (href.endsWith("/tasks/task_internal_smoke/runs")) return response(200, { id: "run_internal_smoke" });',
+    '  return response(404, { error: `unexpected:${method}:${href}` });',
+    '};',
+    `process.on('beforeExit', () => writeFileSync(${JSON.stringify(callsPath)}, JSON.stringify(calls, null, 2)));`,
+    source,
+  ].join('\n');
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ['-', 'mock_token', 'ws_default', 'proj_1', '20000', process.cwd()],
+      {
+        cwd: process.cwd(),
+        input: harness,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+    if (result.status !== 0) {
+      throw new Error(`internal_smoke_task_create_failed:${result.status}:${result.stderr}`);
+    }
+    return JSON.parse(readFileSync(callsPath, 'utf8')) as InternalSmokeTaskCreateCall[];
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function taskCreatePayloadFromInternalSmoke(fileLibraries: Record<string, unknown>): Record<string, unknown> {
+  const calls = runInternalSmokeTaskCreateSource(fileLibraries);
+  const taskCreateCall = calls.find((call) => call.method === 'POST' && call.url.endsWith('/tasks'));
+  if (!taskCreateCall?.body) {
+    throw new Error(`internal_smoke_task_create_call_missing:${JSON.stringify(calls)}`);
+  }
+  return taskCreateCall.body;
+}
+
 describe('local-manual internal handoff', () => {
   it('restores external mode even when the previous API ready marker is gone', () => {
     const result = runExternalModeRestore();
@@ -343,6 +418,72 @@ describe('local-manual internal handoff', () => {
     expect(lines.slice(0, restartIndex)).not.toContain('ensure_internal_runner_state');
     expect(lines.slice(0, restartIndex)).not.toContain('ensure_agent_task_diagnostics_ready');
     expect(lines[restartIndex + 1]).toBe('ensure_internal_runner_state');
+  });
+
+  it('does not reuse ready file libraries that are still bound to active tasks', () => {
+    const payload = taskCreatePayloadFromInternalSmoke({
+      items: [
+        {
+          id: 'fl_active',
+          status: 'ready',
+          task_home_binding_status: 'bound',
+          bound_task_visible: true,
+          bound_task_status: 'active',
+        },
+      ],
+    });
+
+    expect(payload).toMatchObject({
+      workspace_mode: 'create_new',
+    });
+    expect(payload).not.toHaveProperty('workspace_file_library_id');
+  });
+
+  it('reuses only backend-projected unbound file libraries for internal smoke tasks', () => {
+    const payload = taskCreatePayloadFromInternalSmoke({
+      items: [
+        { id: 'fl_pending', status: 'pending', task_home_binding_status: 'unbound', bound_task_visible: false },
+        { id: 'fl_bound', status: 'ready', task_home_binding_status: 'bound', bound_task_visible: false },
+        { id: 'fl_reusable', status: 'ready', task_home_binding_status: 'unbound', bound_task_visible: false },
+      ],
+    });
+
+    expect(payload).toMatchObject({
+      workspace_mode: 'use_existing',
+      workspace_file_library_id: 'fl_reusable',
+    });
+  });
+
+  it('creates a new internal smoke workspace when file-library list fields are unclear', () => {
+    const missingListPayload = taskCreatePayloadFromInternalSmoke({});
+    const unclearFieldsPayload = taskCreatePayloadFromInternalSmoke({
+      items: [
+        { id: 'fl_ready_legacy_shape', status: 'ready' },
+        { id: 'fl_ready_missing_visibility', status: 'ready', task_home_binding_status: 'unbound' },
+      ],
+    });
+
+    expect(missingListPayload).toMatchObject({
+      workspace_mode: 'create_new',
+    });
+    expect(missingListPayload).not.toHaveProperty('workspace_file_library_id');
+    expect(unclearFieldsPayload).toMatchObject({
+      workspace_mode: 'create_new',
+    });
+    expect(unclearFieldsPayload).not.toHaveProperty('workspace_file_library_id');
+  });
+
+  it('keeps owner diagnostic task-create payloads fail-closed on reusable file-library selection', () => {
+    const internalSmoke = readFileSync('scripts/local-manual/internal-smoke.sh', 'utf8');
+    const agentTaskSmoke = readFileSync('scripts/agent-task-smoke-task.sh', 'utf8');
+
+    expect(internalSmoke).toContain('selectReusableTaskWorkspaceFileLibraryId(libraries)');
+    expect(internalSmoke).toContain(
+      "? { workspace_mode: 'use_existing', workspace_file_library_id: workspaceLibraryId }",
+    );
+    expect(agentTaskSmoke).toContain('file-library-reuse-selector.mjs');
+    expect(agentTaskSmoke).toContain('body.workspace_mode = "use_existing";');
+    expect(agentTaskSmoke).toContain('body.workspace_file_library_id = workspaceLibraryId;');
   });
 
   it('splits managed runner state preparation from local runner process launch', () => {

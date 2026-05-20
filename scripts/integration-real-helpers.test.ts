@@ -27,6 +27,7 @@ import {
   expectTerminalSessionRunnerEvidenceViaApi,
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
+  releaseExpiredWorkloadsViaAsbcp,
   resolveAgentTaskCreateTimeoutMs,
   resolveAgentTaskRunFinalState,
   selectExpiredWorkloadReleaseTargets,
@@ -38,10 +39,16 @@ import {
   startAgentTaskRunViaApi,
   startMockFeishuMcpServer,
   startMockJiraServer,
+  waitForExpiredWorkloadReleasedViaAsbcp,
+  waitForWorkloadPodDeleted,
+  waitForWorkloadPodIdentity,
+  waitForWorkloadPodPresent,
   waitForTerminalSessionFinalTruthViaApi,
   waitForRunnerOutputToken,
 } from '../e2e/integration-real-helpers';
 import { evaluateAgentTaskExecutionSnapshot } from '../e2e/agent-task-execution-outcome';
+
+const originalFetch = globalThis.fetch;
 
 type TerminalTestServer = {
   url: string;
@@ -121,27 +128,68 @@ function parseClientFrame(raw: Buffer): Record<string, unknown> {
 }
 
 async function withMockKubectlPodSnapshot<T>(
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | Record<string, unknown>[],
   run: (input: { argLogPath: string }) => Promise<T>,
 ): Promise<T> {
   const previousPath = process.env.PATH;
   const previousNamespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE;
   const previousKubectlArgLog = process.env.KUBECTL_ARG_LOG;
+  const previousKubectlStatePath = process.env.KUBECTL_STATE_PATH;
   const binDir = await mkdtemp(path.join(tmpdir(), 'agentsmith-kubectl-'));
   const kubectlPath = path.join(binDir, 'kubectl');
   const argLogPath = path.join(binDir, 'kubectl-args.log');
+  const statePath = path.join(binDir, 'kubectl-state.json');
   const script = [
     '#!/usr/bin/env node',
     'const fs = require("node:fs");',
     'const logPath = process.env.KUBECTL_ARG_LOG;',
-    'if (logPath) fs.appendFileSync(logPath, process.argv.slice(2).join(" ") + "\\n");',
-    `process.stdout.write(${JSON.stringify(JSON.stringify(payload))});`,
-    'process.stdout.write("\\n");',
+    'const statePath = process.env.KUBECTL_STATE_PATH;',
+    'const args = process.argv.slice(2);',
+    'if (logPath) fs.appendFileSync(logPath, args.join(" ") + "\\n");',
+    `const snapshots = ${JSON.stringify(Array.isArray(payload) ? payload : [payload])};`,
+    'let callIndex = 0;',
+    'if (statePath && fs.existsSync(statePath)) {',
+    '  callIndex = Number(JSON.parse(fs.readFileSync(statePath, "utf8")).callIndex || 0);',
+    '}',
+    'const payload = snapshots[Math.min(callIndex, snapshots.length - 1)] || {};',
+    'if (statePath) fs.writeFileSync(statePath, JSON.stringify({ callIndex: callIndex + 1 }));',
+    'const selector = args[args.indexOf("-l") + 1] || "";',
+    'const output = args[args.indexOf("-o") + 1] || "json";',
+    'const items = Array.isArray(payload.items) ? payload.items : [];',
+    'const readLabel = (item, key) => {',
+    '  const value = item && item.metadata && item.metadata.labels && item.metadata.labels[key];',
+    '  return typeof value === "string" ? value : "";',
+    '};',
+    'const filtered = items.filter((item) => {',
+    '  if (selector === "app=managed-workload") return readLabel(item, "app") === "managed-workload";',
+    '  if (selector.startsWith("workload_id=")) return readLabel(item, "workload_id") === selector.slice("workload_id=".length);',
+    '  return true;',
+    '});',
+    'if (output === "json") {',
+    '  process.stdout.write(JSON.stringify({ ...payload, items: filtered }));',
+    '  process.stdout.write("\\n");',
+    '  process.exit(0);',
+    '}',
+    'if (output.includes(".items[*].metadata.name")) {',
+    '  process.stdout.write(filtered.map((item) => item && item.metadata && item.metadata.name || "").filter(Boolean).join(" "));',
+    '  process.exit(0);',
+    '}',
+    'if (output.includes(".items[0].metadata.name") && output.includes(".items[0].metadata.uid")) {',
+    '  const item = filtered[0];',
+    '  if (item) process.stdout.write(`${item.metadata?.name || ""}\\n${item.metadata?.uid || ""}`);',
+    '  process.exit(0);',
+    '}',
+    'if (output.includes(".items[0].metadata.name")) {',
+    '  const item = filtered[0];',
+    '  if (item) process.stdout.write(item.metadata?.name || "");',
+    '  process.exit(0);',
+    '}',
   ].join('\n');
 
   await writeFile(kubectlPath, script, { mode: 0o755 });
   process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ''}`;
   process.env.KUBECTL_ARG_LOG = argLogPath;
+  process.env.KUBECTL_STATE_PATH = statePath;
   process.env.INTERNAL_AGENT_K8S_NAMESPACE = 'agentsmith-sandbox';
 
   try {
@@ -153,11 +201,14 @@ async function withMockKubectlPodSnapshot<T>(
     else process.env.INTERNAL_AGENT_K8S_NAMESPACE = previousNamespace;
     if (previousKubectlArgLog === undefined) delete process.env.KUBECTL_ARG_LOG;
     else process.env.KUBECTL_ARG_LOG = previousKubectlArgLog;
+    if (previousKubectlStatePath === undefined) delete process.env.KUBECTL_STATE_PATH;
+    else process.env.KUBECTL_STATE_PATH = previousKubectlStatePath;
     await rm(binDir, { recursive: true, force: true });
   }
 }
 
 afterEach(async () => {
+  globalThis.fetch = originalFetch;
   vi.clearAllMocks();
   const servers = terminalTestServers.splice(0);
   await Promise.all(servers.map((server) => server.close()));
@@ -1044,12 +1095,12 @@ describe('integration-real-helpers', () => {
       items: [
         {
           metadata: {
-            name: 'workload-target',
+            name: 'workload-task-target',
             labels: {
-              app: 'llm-sandbox',
+              app: 'managed-workload',
               workspace_id: 'ws_default',
               project_id: 'proj_1',
-              workload_id: 'task_target',
+              workload_id: 'task-target-15772034fcfa',
             },
             annotations: {
               expires_at: '2026-05-12T12:00:00Z',
@@ -1061,9 +1112,10 @@ describe('integration-real-helpers', () => {
           metadata: {
             name: 'workload-active',
             labels: {
+              app: 'managed-workload',
               workspace_id: 'ws_default',
               project_id: 'proj_1',
-              workload_id: 'task_target',
+              workload_id: 'task-target-15772034fcfa',
             },
             annotations: {
               expires_at: '2026-05-12T12:10:00Z',
@@ -1074,9 +1126,10 @@ describe('integration-real-helpers', () => {
           metadata: {
             name: 'workload-other',
             labels: {
+              app: 'managed-workload',
               workspace_id: 'ws_default',
               project_id: 'proj_1',
-              workload_id: 'task_other',
+              workload_id: 'task-other-15772034fcfa',
             },
             annotations: {
               expires_at: '2026-05-12T11:00:00Z',
@@ -1089,17 +1142,244 @@ describe('integration-real-helpers', () => {
     expect(selectExpiredWorkloadReleaseTargets({
       payload,
       now: new Date('2026-05-12T12:05:00Z'),
-      workloadId: 'task_target',
+      workloadId: 'task-target',
     })).toEqual([
       {
-        podName: 'workload-target',
+        podName: 'workload-task-target',
         workspaceId: 'ws_default',
         projectId: 'proj_1',
-        workloadId: 'task_target',
+        workloadId: 'task-target',
         expiresAt: '2026-05-12T12:00:00Z',
         finalizers: ['example.com/finalizer'],
       },
     ]);
+  });
+
+  it('releases expired managed workload through ASBCP with raw spec identity instead of derived pod labels', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test/';
+    process.env.ASBCP_SERVICE_KEY = 'service-key';
+
+    try {
+      await withMockKubectlPodSnapshot({
+        items: [
+          {
+            metadata: {
+              name: 'workload-task-release-identity',
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-raw-e04b05f9bca4',
+                workload_id: 'task-release-identity-15772034fcfa',
+              },
+              annotations: {
+                expires_at: '2026-05-12T12:00:00Z',
+              },
+            },
+          },
+        ],
+      }, async ({ argLogPath }) => {
+        await expect(releaseExpiredWorkloadsViaAsbcp({
+          namespace: 'agentsmith-sandbox',
+          workspaceId: 'ws_default',
+          projectId: 'proj_raw',
+          workloadId: 'task-release-identity',
+          now: new Date('2026-05-12T12:05:00Z'),
+        })).resolves.toMatchObject({
+          released: 1,
+          targets: [
+            expect.objectContaining({
+              podName: 'workload-task-release-identity',
+              workspaceId: 'ws_default',
+              projectId: 'proj_raw',
+              workloadId: 'task-release-identity',
+            }),
+          ],
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          'http://asbcp.test/v1/workspaces/ws_default/projects/proj_raw/workloads/task-release-identity',
+          expect.objectContaining({ method: 'DELETE' }),
+        );
+        const requestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? '');
+        expect(requestedUrl).not.toContain('ws-default-9f642c763af7');
+        expect(requestedUrl).not.toContain('proj-raw-e04b05f9bca4');
+        expect(requestedUrl).not.toContain('task-release-identity-15772034fcfa');
+        expect(await readFile(argLogPath, 'utf8')).toContain(
+          'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
+        );
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
+  });
+
+  it('does not count ASBCP 404 as expired workload release success while the pod still exists', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 404 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test';
+    process.env.ASBCP_SERVICE_KEY = 'service-key';
+
+    try {
+      await withMockKubectlPodSnapshot({
+        items: [
+          {
+            metadata: {
+              name: 'workload-task-release-404',
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-raw-e04b05f9bca4',
+                workload_id: 'task-release-404-15772034fcfa',
+              },
+              annotations: {
+                expires_at: '2026-05-12T12:00:00Z',
+              },
+            },
+          },
+        ],
+      }, async () => {
+        await expect(releaseExpiredWorkloadsViaAsbcp({
+          namespace: 'agentsmith-sandbox',
+          workspaceId: 'ws_default',
+          projectId: 'proj_raw',
+          workloadId: 'task-release-404',
+          now: new Date('2026-05-12T12:05:00Z'),
+        })).resolves.toMatchObject({
+          released: 0,
+          targets: [
+            expect.objectContaining({
+              podName: 'workload-task-release-404',
+              workspaceId: 'ws_default',
+              projectId: 'proj_raw',
+              workloadId: 'task-release-404',
+            }),
+          ],
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
+  });
+
+  it('does not count ASBCP 404 as expired workload release success when the pod is already absent', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 404 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test';
+    process.env.ASBCP_SERVICE_KEY = 'service-key';
+
+    try {
+      await withMockKubectlPodSnapshot([
+        {
+          items: [
+            {
+              metadata: {
+                name: 'workload-task-release-404-absent',
+                labels: {
+                  app: 'managed-workload',
+                  workspace_id: 'ws-default-9f642c763af7',
+                  project_id: 'proj-raw-e04b05f9bca4',
+                  workload_id: 'task-release-404-absent-15772034fcfa',
+                },
+                annotations: {
+                  expires_at: '2026-05-12T12:00:00Z',
+                },
+              },
+            },
+          ],
+        },
+        { items: [] },
+      ], async ({ argLogPath }) => {
+        await expect(releaseExpiredWorkloadsViaAsbcp({
+          namespace: 'agentsmith-sandbox',
+          workspaceId: 'ws_default',
+          projectId: 'proj_raw',
+          workloadId: 'task-release-404-absent',
+          now: new Date('2026-05-12T12:05:00Z'),
+        })).resolves.toMatchObject({
+          released: 0,
+          targets: [
+            expect.objectContaining({
+              podName: 'workload-task-release-404-absent',
+              workspaceId: 'ws_default',
+              projectId: 'proj_raw',
+              workloadId: 'task-release-404-absent',
+            }),
+          ],
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(await readFile(argLogPath, 'utf8')).toContain(
+          'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
+        );
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
+  });
+
+  it('does not let expired workload wait signoff use pod absence after ASBCP 404', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 404 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test';
+    process.env.ASBCP_SERVICE_KEY = 'service-key';
+
+    try {
+      await withMockKubectlPodSnapshot([
+        {
+          items: [
+            {
+              metadata: {
+                name: 'workload-task-wait-404-absent',
+                labels: {
+                  app: 'managed-workload',
+                  workspace_id: 'ws-default-9f642c763af7',
+                  project_id: 'proj-raw-e04b05f9bca4',
+                  workload_id: 'task-wait-404-absent-15772034fcfa',
+                },
+                annotations: {
+                  expires_at: '2026-05-12T12:00:00Z',
+                },
+              },
+            },
+          ],
+        },
+        { items: [] },
+      ], async () => {
+        await expect(waitForExpiredWorkloadReleasedViaAsbcp({
+          namespace: 'agentsmith-sandbox',
+          workspaceId: 'ws_default',
+          projectId: 'proj_raw',
+          workloadId: 'task-wait-404-absent',
+          timeoutMs: 500,
+        })).rejects.toThrow();
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
   });
 
   it('scopes Agent Task execution outcome polling to the current runner output activity boundary', async () => {
@@ -2513,7 +2793,16 @@ describe('integration-real-helpers', () => {
     await withMockKubectlPodSnapshot({
       items: [
         {
-          metadata: { name: podName, uid: 'pod-uid-derived' },
+          metadata: {
+            name: podName,
+            uid: 'pod-uid-derived',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws-default-9f642c763af7',
+              project_id: 'proj-1-e04b05f9bca4',
+              workload_id: `${workloadId}-15772034fcfa`,
+            },
+          },
           status: {
             phase: 'Running',
             conditions: [{ type: 'Ready', status: 'True' }],
@@ -2566,8 +2855,9 @@ describe('integration-real-helpers', () => {
       expect(thrown?.message).toContain('ready=true');
       expect(thrown?.message).not.toContain('pod: <missing>');
       expect(await readFile(argLogPath, 'utf8')).toContain(
-        `get pods -n agentsmith-sandbox -l workload_id=${workloadId} -o json`,
+        'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
       );
+      expect(await readFile(argLogPath, 'utf8')).not.toContain(`workload_id=${workloadId}`);
       expect(page.waitForTimeout).not.toHaveBeenCalled();
     });
   });
@@ -2580,7 +2870,16 @@ describe('integration-real-helpers', () => {
     await withMockKubectlPodSnapshot({
       items: [
         {
-          metadata: { name: podName, uid: 'pod-uid-timeout' },
+          metadata: {
+            name: podName,
+            uid: 'pod-uid-timeout',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws-default-9f642c763af7',
+              project_id: 'proj-1-e04b05f9bca4',
+              workload_id: `${workloadId}-15772034fcfa`,
+            },
+          },
           status: {
             phase: 'Pending',
             conditions: [{ type: 'Ready', status: 'False', reason: 'ContainersNotReady' }],
@@ -2633,9 +2932,67 @@ describe('integration-real-helpers', () => {
       expect(thrown?.message).toContain('ready_reason=ContainersNotReady');
       expect(thrown?.message).not.toContain('pod: <missing>');
       expect(await readFile(argLogPath, 'utf8')).toContain(
-        `get pods -n agentsmith-sandbox -l workload_id=${workloadId} -o json`,
+        'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
       );
+      expect(await readFile(argLogPath, 'utf8')).not.toContain(`workload_id=${workloadId}`);
       expect(page.waitForTimeout).not.toHaveBeenCalled();
+    });
+  });
+
+  it('observes managed workload pod presence and identity by ASBCP label truth instead of exact workload_id', async () => {
+    const workloadId = 'task-presence-diag';
+    const podName = `workload-${workloadId}`;
+
+    await withMockKubectlPodSnapshot({
+      items: [
+        {
+          metadata: {
+            name: 'workload-task-other',
+            uid: 'pod-uid-other',
+            labels: {
+              app: 'managed-workload',
+              workload_id: 'task-other-15772034fcfa',
+            },
+          },
+        },
+        {
+          metadata: {
+            name: podName,
+            uid: 'pod-uid-presence',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws-default-9f642c763af7',
+              project_id: 'proj-1-e04b05f9bca4',
+              workload_id: `${workloadId}-15772034fcfa`,
+            },
+          },
+        },
+      ],
+    }, async ({ argLogPath }) => {
+      await expect(waitForWorkloadPodPresent({
+        namespace: 'agentsmith-sandbox',
+        workloadId,
+        timeoutMs: 1_000,
+      })).resolves.toBe(podName);
+
+      await expect(waitForWorkloadPodIdentity({
+        namespace: 'agentsmith-sandbox',
+        workloadId,
+        timeoutMs: 1_000,
+      })).resolves.toEqual({
+        name: podName,
+        uid: 'pod-uid-presence',
+      });
+
+      await expect(waitForWorkloadPodDeleted({
+        namespace: 'agentsmith-sandbox',
+        workloadId,
+        timeoutMs: 10,
+      })).rejects.toThrow();
+
+      const argLog = await readFile(argLogPath, 'utf8');
+      expect(argLog).toContain('get pods -n agentsmith-sandbox -l app=managed-workload -o json');
+      expect(argLog).not.toContain(`workload_id=${workloadId}`);
     });
   });
 

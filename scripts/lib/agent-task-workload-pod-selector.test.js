@@ -74,6 +74,34 @@ describe('agent task workload pod selector', () => {
     expect(selected).toBeNull();
   });
 
+  it('accepts legacy raw workspace and project labels while matching the task-derived workload pod', () => {
+    const selected = selectManagedWorkloadPodForTask({
+      taskId,
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: `workload-${taskWorkloadId}`,
+              labels: {
+                app: 'managed-workload',
+                workspace_id: workspaceId,
+                project_id: projectId,
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(selected).toEqual({
+      podName: `workload-${taskWorkloadId}`,
+      workloadId: `${taskWorkloadId}-15772034fcfa`,
+    });
+  });
+
   it('requires the stable managed workload app and project labels before accepting a task-derived pod name', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId,

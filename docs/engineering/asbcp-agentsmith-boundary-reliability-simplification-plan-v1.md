@@ -111,7 +111,7 @@
 | --- | --- |
 | 问题 | ASBCP API contract 与实现可能漂移；AgentSmith 只更新 image digest 时可能误采纳 breaking change。 |
 | 真相源 | `api_contract_version` 真相只在 ASBCP 权威 release asset `asbcp-final-manifest.json`。`infra/deploy/shared/asbcp-image.lock` 只 pin image identity，不作为 contract version 真相。 |
-| 改动范围 | ASBCP release manifest 必须生成/发布权威 release asset `asbcp-final-manifest.json`，包含 `api_contract_version`、breaking changes 列表、image digest、tag、commit、manifest schema version。AgentSmith adoption gate 当前必须显式读取权威 manifest：`npm run contracts:check-asbcp-manifest-lock -- --manifest <downloaded-asbcp-final-manifest.json>`，或 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`。无 manifest input 时 `contracts:check-asbcp-adoption` 必须失败；checked-in fixture 只能作为 checker unit fixture，不能作为 adoption proof。Checker 校验 supported versions、breaking change ID allowlist、allowlist expiry、digest/tag/commit 自洽；summary 保留为非空说明，不作为脆弱 exact-match 门禁；过期 allowlist 或未知 breaking change ID 必须失败。Lock adoption PR 必须把 lock 与权威 manifest 作为同一采纳单元，lock-only 更新直接失败。当前 `npm run contracts:check` 只覆盖通用合同和 ASBCP image-only lock 形状，不提供 ASBCP release adoption proof。 |
+| 改动范围 | ASBCP release manifest 必须生成/发布权威 release asset `asbcp-final-manifest.json`，包含 `api_contract_version`、breaking changes 列表、image digest、tag、commit、manifest schema version。AgentSmith adoption gate 当前必须显式读取权威 manifest：`npm run contracts:check-asbcp-manifest-lock -- --manifest <downloaded-asbcp-final-manifest.json>`，或 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`。无 manifest input 时 `contracts:check-asbcp-adoption` 必须失败；checked-in fixture 只能作为 checker unit fixture，不能作为 adoption proof。Checker 校验 supported versions、breaking change ID allowlist、allowlist expiry、digest/tag/commit 自洽；summary 保留为非空说明，不作为脆弱 exact-match 门禁；过期 allowlist 或未知 breaking change ID 必须失败。Lock adoption PR 必须把 lock 与权威 manifest 作为同一采纳单元；“lock-only 更新失败”指显式 adoption gate 在缺少权威 manifest input 或等价 CI/check evidence 时失败，不表示已有合理 CI/check 运行了同等 manifest 校验仍应失败。当前 `npm run contracts:check` 只覆盖通用合同和 ASBCP image-only lock 形状，不提供 ASBCP release adoption proof。 |
 | 具体产物 | ASBCP `asbcp-final-manifest.json` JSON schema；AgentSmith manifest checker unit fixture；stable manifest input 或 official `asbcp-final-manifest.json` release asset；supported-version allowlist 文件或常量；expiry test；lock update test。 |
 | 验收标准 | ASBCP handler payload 与 OpenAPI/schema 一致；AgentSmith 不能只改 lock digest 跳过 manifest checker；unsupported `api_contract_version`、未知 breaking change、过期 allowlist、digest mismatch、缺失 manifest input 或 `asbcp-final-manifest.json` release asset 校验失败都让 adoption gate 失败。 |
 | 最小测试/gate | ASBCP OpenAPI/schema conformance tests；release manifest schema tests；AgentSmith manifest checker focused diagnostic（当前显式命令：`ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`，或 `npm run contracts:check-asbcp-manifest-lock -- --manifest <path>`）；checker unit fixtures；`npm run contracts:check-openapi`、`npm run openapi:check-generated`。 |
@@ -162,7 +162,7 @@
 - ASBCP DELETE 成功必须有 release 完成事实、pod 删除事实、terminal mark/status 事实；AgentSmith 404 语义只能通过 ASBCP GET/status runtime contract 或 ASBCP-owned durable terminal record 确认，不能误判成功。
 - Workspace-binding DELETE 必须依赖 binding-scoped workload fact source/index，或等价稳定 label + durable record；存在未 release workload 或 fact source 不可用时不删除存储绑定。
 - PUT ensure 在 write timeout 前返回可追踪状态，AgentSmith 使用 GET poll。
-- ASBCP 权威 release asset `asbcp-final-manifest.json` 提供 `api_contract_version` 和 breaking changes；AgentSmith 当前通过 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`，或 `npm run contracts:check-asbcp-manifest-lock -- --manifest <path>` 稳定读取 manifest input，checker 有 supported versions、breaking change ID allowlist、expiry 和 image identity 规则，lock-only 更新失败；checked-in fixtures 不作为 adoption proof。
+- ASBCP 权威 release asset `asbcp-final-manifest.json` 提供 `api_contract_version` 和 breaking changes；AgentSmith 当前通过 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`，或 `npm run contracts:check-asbcp-manifest-lock -- --manifest <path>` 稳定读取 manifest input，checker 有 supported versions、breaking change ID allowlist、expiry 和 image identity 规则。lock-only 失败边界限定在显式 adoption gate 缺少 manifest input 或等价 CI/check evidence；checked-in fixtures 不作为 adoption proof。
 - Existing-cluster preflight 用 live check 在部署前发现缺权限、缺 `ASBCP_AFSCP_*` 投影、AFSCP caller、orchestrator token 或 `orchestrator_mount` 角色问题，输出脱敏，AgentSmith app manifest 不包含 ASBCP ClusterRole。
 - Focused grep/redaction tests 证明 service key/token 不写入指定 state、log、report、`.artifacts`。
 - Route tail 和 K8s id/name/label mapping 有 fixture 或 table/property tests。
@@ -174,9 +174,9 @@
 | 项 | 内容 |
 | --- | --- |
 | 问题 | AgentSmith 部署/env 暴露 ASBCP image、service key、K8s/JuiceFS 细节，普通部署者心智成本高。 |
-| 改动范围 | Render 在 `ASBCP_IMAGE` 未显式给出时，从 `infra/deploy/shared/asbcp-image.lock` 派生 image digest。Tracked `site.env.example` 不再要求 `ASBCP_SERVICE_KEY` 明文。Secret 进入 ignored secret env，或由部署流程生成/注入 K8s Secret。 |
+| 改动范围 | Render 在 `ASBCP_IMAGE` 未显式给出时，从 `infra/deploy/shared/asbcp-image.lock` 派生 image digest。Tracked `site.env.example` 可以保留空的 `ASBCP_SERVICE_KEY=` 作为生成/注入触发，但不得出现 secret value。Secret 进入 ignored secret env，或由部署流程生成/注入 K8s Secret。 |
 | 具体产物 | Lock parser/render test；`site.env.example` static guard；ignored secret env 文档；K8s Secret injection render fixture；tag-only image rejection test。 |
-| 验收标准 | 普通 deploy 文档不要求手填 ASBCP image mutable tag 或 service key；未设置 `ASBCP_IMAGE` 时 render 使用 lock digest；tracked env example 不出现 `ASBCP_SERVICE_KEY=` 示例值；AgentSmith 不 build ASBCP 源码。 |
+| 验收标准 | 普通 deploy 文档不要求手填 ASBCP image mutable tag 或 service key；未设置 `ASBCP_IMAGE` 时 render 使用 lock digest；tracked env example 允许空的 `ASBCP_SERVICE_KEY=`，但不出现任何 secret value；AgentSmith 不 build ASBCP 源码。 |
 | 最小测试/gate | AgentSmith lock parser/image producer tests；unified deploy render tests；site env example guard；old source build path guard。 |
 
 ### P1-2. Makefile sandbox targets 下沉
@@ -229,7 +229,7 @@
 ### P1 阶段通过标准
 
 - `ASBCP_IMAGE` 未显式设置时，render 从 `infra/deploy/shared/asbcp-image.lock` 派生。
-- Tracked `site.env.example` 不要求或示例化 `ASBCP_SERVICE_KEY` 明文。
+- Tracked `site.env.example` 可保留空的 `ASBCP_SERVICE_KEY=` 触发生成/注入，但不得示例化或保存明文 secret value。
 - `sandbox-preflight`、`sandbox-api-dev`、`sandbox-joint-smoke` 不再作为普通开发入口出现。
 - Audit table、detail drawer、JSON copy/export 均通过同一个 projection sanitizer。
 - 普通用户 UI/audit 主视图只使用“任务执行环境”；维护者诊断视图只显示非敏感 release identity。
@@ -305,7 +305,7 @@ P0 adoption/reliability DoD：
 - ASBCP workload DELETE 和 workspace-binding DELETE 在故障注入与重试场景下不误判成功、不误删未 release 存储绑定；workspace-binding DELETE 的 binding-scoped fact source/index 不可用时 fail closed。
 - ASBCP PUT ensure 不超过 HTTP write timeout 长等 Pod Ready，AgentSmith 能按 GET poll 追踪 pending/running/offline/failed 等状态。
 - ASBCP route tail 和 K8s id/name/label mapping 有硬边界和测试。
-- ASBCP 权威 release asset `asbcp-final-manifest.json` 提供 API contract version 与 breaking changes；AgentSmith adoption checker 当前通过 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`，或 `npm run contracts:check-asbcp-manifest-lock -- --manifest <path>` 校验 stable manifest input、supported versions、breaking change ID allowlist、expiry 和 image identity，lock-only 更新不能绕过，checked-in fixtures 不能代表采纳事实。
+- ASBCP 权威 release asset `asbcp-final-manifest.json` 提供 API contract version 与 breaking changes；AgentSmith adoption checker 当前通过 `ASBCP_FINAL_MANIFEST=<downloaded-asbcp-final-manifest.json> npm run contracts:check-asbcp-adoption`，或 `npm run contracts:check-asbcp-manifest-lock -- --manifest <path>` 校验 stable manifest input、supported versions、breaking change ID allowlist、expiry 和 image identity。lock-only 不能绕过显式 adoption gate；如果已有 CI/check 提供同等 manifest 校验证据，则不算 lock-only 缺口。checked-in fixtures 不能代表采纳事实。
 - AgentSmith existing-cluster 在缺少 PV/RBAC/operator prerequisite、`ASBCP_AFSCP_*` 投影、AFSCP caller、orchestrator token 或 `orchestrator_mount` 角色时部署前失败，输出脱敏，且 app manifest 不包含 ASBCP ClusterRole。
 - AgentSmith launcher state、reports、logs、`.artifacts` 不保存 service key/token。
 - P0 涉及的新 runtime contract/config 已同步最小 schema、docs 和 tests。
@@ -313,7 +313,7 @@ P0 adoption/reliability DoD：
 P1 simplification DoD：
 
 - AgentSmith deploy render 在 `ASBCP_IMAGE` 未显式给出时从 `infra/deploy/shared/asbcp-image.lock` 派生。
-- Tracked `site.env.example` 不要求 `ASBCP_SERVICE_KEY` 明文；secret 进入 ignored secret env 或由部署流程生成/注入 K8s Secret。
+- Tracked `site.env.example` 可保留空的 `ASBCP_SERVICE_KEY=`，但不保存 `ASBCP_SERVICE_KEY` 明文值；secret 进入 ignored secret env 或由部署流程生成/注入 K8s Secret。
 - `sandbox-preflight`、`sandbox-api-dev`、`sandbox-joint-smoke` 已下沉为 owner diagnostics 或迁移到 internal scripts。
 - Audit table、detail drawer、JSON copy/export 经过统一 projection sanitizer。
 - 普通用户 UI/audit 主视图只使用“任务执行环境”，不暴露 ASBCP、internal URL、secret 或 K8s identity。

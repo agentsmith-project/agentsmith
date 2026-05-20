@@ -14,6 +14,7 @@ const DIGEST_A = `sha256:${'0123456789abcdef'.repeat(4)}`;
 const DIGEST_B = `sha256:${'fedcba9876543210'.repeat(4)}`;
 const COMMIT_A = '1234567890abcdef1234567890abcdef12345678';
 const COMMIT_B = 'abcdef1234567890abcdef1234567890abcdef12';
+const COMMIT_64 = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const API_CONTRACT_VERSION = 'v1';
 const BREAKING_CHANGE_ID = 'ASBCP-BC-0001';
 const BREAKING_CHANGE_SUMMARY = 'pre-GA clean cut for ASBCP release evidence schema and active workload smoke naming; no compatibility aliases are kept for retired manager/sandbox release surfaces.';
@@ -258,6 +259,19 @@ describe('checkAsbcpManifestLock', () => {
     expect(text).toContain(SCHEMA_VERSION);
   });
 
+  it('rejects top-level fields outside the ASBCP final manifest schema', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root);
+    const payload = manifest();
+    payload.extra_debug_field = 'schema drift must fail closed';
+    const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', payload);
+
+    const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('manifest.extra_debug_field');
+  });
+
   it('rejects an unsupported ASBCP API contract version', () => {
     const root = tempRoot();
     const lockPath = writeLock(root);
@@ -288,6 +302,25 @@ describe('checkAsbcpManifestLock', () => {
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('manifest.known_breaking_changes[0].summary');
+  });
+
+  it('rejects known breaking change fields outside the ASBCP final manifest schema', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root);
+    const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', manifest({
+      knownBreakingChanges: [
+        {
+          id: BREAKING_CHANGE_ID,
+          summary: BREAKING_CHANGE_SUMMARY,
+          operator_note: 'not part of the upstream schema',
+        },
+      ],
+    }));
+
+    const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('manifest.known_breaking_changes[0].operator_note');
   });
 
   it('rejects a known breaking change that is not allowlisted by AgentSmith adoption policy', () => {
@@ -449,7 +482,22 @@ describe('checkAsbcpManifestLock', () => {
     expect(failureText(result)).toContain(COMMIT_B);
   });
 
-  it('does not block P0 adoption when P2 release metadata is absent', () => {
+  it('rejects 64-character commit SHAs instead of accepting non-git-object digests', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root, { commitSha: COMMIT_64 });
+    const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', manifest({
+      commitSha: COMMIT_64,
+    }));
+
+    const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+    const text = failureText(result);
+
+    expect(result.ok).toBe(false);
+    expect(text).toContain('lock.asbcp_commit_sha');
+    expect(text).toContain('manifest.commit_sha');
+  });
+
+  it('rejects a manifest that omits ASBCP final-schema release metadata', () => {
     const root = tempRoot();
     const lockPath = writeLock(root);
     const payload = manifest();
@@ -459,11 +507,12 @@ describe('checkAsbcpManifestLock', () => {
     const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', payload);
 
     const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+    const text = failureText(result);
 
-    expect(result).toEqual({
-      ok: true,
-      failures: [],
-    });
+    expect(result.ok).toBe(false);
+    expect(text).toContain('manifest.known_risk_status_source');
+    expect(text).toContain('manifest.runbook_url');
+    expect(text).toContain('manifest.release_notes');
   });
 
   it('does not make runbook URL metadata consistency a P0 adoption blocker', () => {
@@ -481,23 +530,27 @@ describe('checkAsbcpManifestLock', () => {
     });
   });
 
-  it('does not make known risk source or release notes metadata consistency a P0 adoption blocker', () => {
+  it('rejects release metadata that does not match the ASBCP final manifest schema shape', () => {
     const root = tempRoot();
     const lockPath = writeLock(root);
     const manifestPath = writeJsonFixture(root, 'asbcp-final-manifest.json', manifest({
       knownRiskStatusSource: 'p2-release-ledger-draft',
       releaseNotes: {
-        body_source: 'draft release body',
-        github_release_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v9.9.9',
+        body_source: '',
+        github_release_url: 'not a uri',
+        extra_debug_field: 'must not be accepted',
       },
     }));
 
     const result = checkAsbcpManifestLock({ manifestPath, lockPath });
+    const text = failureText(result);
 
-    expect(result).toEqual({
-      ok: true,
-      failures: [],
-    });
+    expect(result.ok).toBe(false);
+    expect(text).toContain('manifest.known_risk_status_source');
+    expect(text).toContain(RISK_STATUS_SOURCE);
+    expect(text).toContain('manifest.release_notes.body_source');
+    expect(text).toContain('manifest.release_notes.github_release_url');
+    expect(text).toContain('manifest.release_notes.extra_debug_field');
   });
 
   it('rejects a manifest whose same_digest_proof.matches is false', () => {

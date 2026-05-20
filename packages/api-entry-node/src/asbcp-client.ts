@@ -230,6 +230,7 @@ function parsePodEnsurePayload(httpStatus: number, payload: unknown): SandboxPod
 
 export class AsbcpHttpError extends Error {
   code: string;
+  asbcpCode?: string;
   status: number;
   operation: string;
   retryable: boolean;
@@ -240,6 +241,7 @@ export class AsbcpHttpError extends Error {
     operation: string;
     message: string;
     code: string;
+    asbcpCode?: string;
     retryable?: boolean;
     requestId?: string;
   }) {
@@ -248,6 +250,9 @@ export class AsbcpHttpError extends Error {
     this.status = input.status;
     this.operation = input.operation;
     this.code = input.code;
+    if (input.asbcpCode) {
+      this.asbcpCode = input.asbcpCode;
+    }
     this.retryable = input.retryable ?? false;
     if (input.requestId) {
       this.requestId = input.requestId;
@@ -409,6 +414,7 @@ export class AsbcpClient {
       status: resp.status,
       operation,
       code: this.mapErrorCode(resp.status, operation, text),
+      asbcpCode: readAsbcpErrorCode(text),
       retryable: this.isRetryableHttpError(resp.status, operation, text),
       requestId: readAsbcpResponseRequestId(resp, text),
       message: buildAsbcpErrorMessage(operation, resp.status, text),
@@ -485,6 +491,7 @@ export class AsbcpClient {
         status: resp.status,
         operation: 'delete_workspace_binding',
         code: this.mapErrorCode(resp.status, 'delete_workspace_binding', text),
+        asbcpCode: readAsbcpErrorCode(text),
         retryable: this.isRetryableHttpError(resp.status, 'delete_workspace_binding', text),
         requestId: readAsbcpResponseRequestId(resp, text),
         message: buildAsbcpErrorMessage('delete_workspace_binding', resp.status, text),
@@ -521,6 +528,7 @@ export class AsbcpClient {
         status: resp.status,
         operation: 'get_pod_status',
         code: this.mapErrorCode(resp.status, 'get_pod_status', text),
+        asbcpCode: readAsbcpErrorCode(text),
         retryable: this.isRetryableHttpError(resp.status, 'get_pod_status', text),
         requestId: readAsbcpResponseRequestId(resp, text),
         message: buildAsbcpErrorMessage('get_pod_status', resp.status, text),
@@ -551,6 +559,7 @@ export class AsbcpClient {
         status: resp.status,
         operation: 'delete_pod',
         code: this.mapErrorCode(resp.status, 'delete_pod', text),
+        asbcpCode: readAsbcpErrorCode(text),
         retryable: this.isRetryableHttpError(resp.status, 'delete_pod', text),
         requestId: readAsbcpResponseRequestId(resp, text),
         message: buildAsbcpErrorMessage('delete_pod', resp.status, text),

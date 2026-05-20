@@ -19,11 +19,21 @@ describe('file library reuse selector', () => {
     })).toBeNull();
   });
 
-  it('reuses only ready libraries that the backend projects as unbound', () => {
+  it('reuses only ready libraries with explicit backend reusable affordance for the same actor', () => {
     expect(selectReusableTaskWorkspaceFileLibraryId({
       items: [
         { id: 'fl_creating', status: 'creating', task_home_binding_status: 'unbound', bound_task_visible: false },
-        { id: 'fl_reusable', status: 'ready', task_home_binding_status: 'unbound', bound_task_visible: false },
+        {
+          id: 'fl_reusable',
+          status: 'ready',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+          task_workspace_reuse_affordance: {
+            allowed: true,
+            same_actor: true,
+            runtime_writable_affordance: 'task_internal_home',
+          },
+        },
       ],
     })).toBe('fl_reusable');
     expect(selectReusableTaskWorkspaceFileLibraryId({
@@ -31,10 +41,15 @@ describe('file library reuse selector', () => {
       status: 'ready',
       task_home_binding_status: 'unbound',
       bound_task_visible: false,
+      task_workspace_reuse_affordance: {
+        allowed: true,
+        same_actor: true,
+        runtime_writable_affordance: 'task_internal_home',
+      },
     })).toBe('fl_reusable_detail');
   });
 
-  it('fails closed when the list response or binding fields are missing or contradictory', () => {
+  it('fails closed when the list response, binding fields, or reusable affordance are missing or contradictory', () => {
     expect(selectReusableTaskWorkspaceFileLibraryId(null)).toBeNull();
     expect(selectReusableTaskWorkspaceFileLibraryId({})).toBeNull();
     expect(selectReusableTaskWorkspaceFileLibraryId({
@@ -55,6 +70,23 @@ describe('file library reuse selector', () => {
           bound_task_visible: false,
           bound_task_status: 'active',
         },
+        {
+          id: 'fl_no_affordance',
+          status: 'ready',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+        },
+        {
+          id: 'fl_other_actor',
+          status: 'ready',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+          task_workspace_reuse_affordance: {
+            allowed: true,
+            same_actor: false,
+            runtime_writable_affordance: 'task_internal_home',
+          },
+        },
       ],
     })).toBeNull();
   });
@@ -65,12 +97,22 @@ describe('file library reuse selector', () => {
       status: 'ready',
       task_home_binding_status: 'unbound',
       bound_task_visible: false,
+      task_workspace_reuse_affordance: {
+        allowed: true,
+        same_actor: true,
+        runtime_writable_affordance: 'task_internal_home',
+      },
     })).toBe(true);
     expect(isReusableTaskWorkspaceFileLibrary({
       id: 'fl_redacted_bound',
       status: 'ready',
       task_home_binding_status: 'bound',
       bound_task_visible: false,
+      task_workspace_reuse_affordance: {
+        allowed: true,
+        same_actor: true,
+        runtime_writable_affordance: 'task_internal_home',
+      },
     })).toBe(false);
   });
 });

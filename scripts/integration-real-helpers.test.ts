@@ -1095,7 +1095,7 @@ describe('integration-real-helpers', () => {
       items: [
         {
           metadata: {
-            name: 'workload-task-target',
+            name: 'asbcp-ws-default-proj-1-task-target-15772034fcfa',
             labels: {
               app: 'managed-workload',
               workspace_id: 'ws_default',
@@ -1143,9 +1143,9 @@ describe('integration-real-helpers', () => {
       payload,
       now: new Date('2026-05-12T12:05:00Z'),
       workloadId: 'task-target',
-    })).toEqual([
+      })).toEqual([
       {
-        podName: 'workload-task-target',
+        podName: 'asbcp-ws-default-proj-1-task-target-15772034fcfa',
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         workloadId: 'task-target',
@@ -2941,7 +2941,7 @@ describe('integration-real-helpers', () => {
 
   it('observes managed workload pod presence and identity by ASBCP label truth instead of exact workload_id', async () => {
     const workloadId = 'task-presence-diag';
-    const podName = `workload-${workloadId}`;
+    const podName = `asbcp-ws-default-proj-1-${workloadId}-15772034fcfa`;
 
     await withMockKubectlPodSnapshot({
       items: [

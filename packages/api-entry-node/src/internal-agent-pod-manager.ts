@@ -107,6 +107,7 @@ interface DiagnosticError {
   message: string;
   name?: string;
   code?: string;
+  asbcpCode?: string;
   operation?: string;
   status?: number;
   requestId?: string;
@@ -158,6 +159,14 @@ function readErrorCode(error: unknown): string | undefined {
   }
   const code = error.code;
   return typeof code === 'string' ? code : undefined;
+}
+
+function readAsbcpCode(error: unknown): string | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  const asbcpCode = error.asbcpCode ?? error.asbcp_code;
+  return typeof asbcpCode === 'string' ? asbcpCode : undefined;
 }
 
 function readErrorName(error: unknown): string | undefined {
@@ -219,6 +228,9 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ? error.message
     : (typeof error === 'string' && error.trim() ? error : 'unknown_error');
   const code = typeof record.code === 'string' ? record.code : undefined;
+  const asbcpCode = typeof record.asbcpCode === 'string'
+    ? record.asbcpCode
+    : (typeof record.asbcp_code === 'string' ? record.asbcp_code : undefined);
   const operation = typeof record.operation === 'string' ? record.operation : undefined;
   const status = typeof record.status === 'number' && Number.isFinite(record.status)
     ? record.status
@@ -231,6 +243,7 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     message,
     ...(name ? { name } : {}),
     ...(code ? { code } : {}),
+    ...(asbcpCode ? { asbcpCode } : {}),
     ...(operation ? { operation } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(requestId ? { requestId } : {}),
@@ -239,10 +252,8 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
 }
 
 function isTerminalWorkloadReleaseIncomplete(error: unknown): boolean {
-  const status = readErrorStatus(error);
-  return status === 404
-    || status === 409
-    || readErrorCode(error) === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+  const code = readAsbcpCode(error) ?? readErrorCode(error);
+  return code === 'workload_release_incomplete';
 }
 
 function buildTerminalWorkloadReleaseIncompleteError(error: unknown): Error {

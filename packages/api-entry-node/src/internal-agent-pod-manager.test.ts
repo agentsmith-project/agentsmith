@@ -824,17 +824,21 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
 
-  it.each([404, 409] as const)(
-    'fails terminal workload cleanup as retryable release incomplete on delete %i without creating a replacement',
-    async (status) => {
+  it.each([
+    ['workload_release_incomplete', undefined],
+    ['AGENT_SANDBOX_RELEASE_INCOMPLETE', 'workload_release_incomplete'],
+  ] as const)(
+    'fails terminal workload cleanup as retryable release incomplete only for stable release code %s',
+    async (code, asbcpCode) => {
       const deletePod = vi.fn().mockRejectedValue(Object.assign(
-        new Error(`asbcp_error: delete_pod ${status} release terminal truth missing`),
+        new Error(`asbcp_error: delete_pod 409 release terminal truth missing`),
         {
-          code: status === 409 ? 'AGENT_SANDBOX_RELEASE_INCOMPLETE' : 'AGENT_SANDBOX_NOT_FOUND',
-          status,
+          code,
+          ...(asbcpCode ? { asbcpCode } : {}),
+          status: 409,
           operation: 'delete_pod',
-          retryable: status === 409,
-          requestId: `asbcp_req_delete_${status}`,
+          retryable: true,
+          requestId: `asbcp_req_delete_${code}`,
         },
       ));
       const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
@@ -882,13 +886,245 @@ describe('internal-agent-pod-manager', () => {
         operation: 'delete_terminal_workload',
         retryable: true,
         releaseDiagnostic: expect.objectContaining({
-          status,
+          status: 409,
+          code,
+          ...(asbcpCode ? { asbcpCode } : {}),
           operation: 'delete_pod',
-          requestId: `asbcp_req_delete_${status}`,
+          requestId: `asbcp_req_delete_${code}`,
         }),
       });
 
       expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['workspace_binding_release_incomplete', undefined],
+    ['AGENT_SANDBOX_RELEASE_INCOMPLETE', 'workspace_binding_release_incomplete'],
+  ] as const)(
+    'does not classify workspace binding release code %s as terminal workload release incomplete',
+    async (code, asbcpCode) => {
+      const deleteError = Object.assign(
+        new Error('asbcp_error: delete_pod 409 workspace binding release incomplete'),
+        {
+          code,
+          ...(asbcpCode ? { asbcpCode } : {}),
+          status: 409,
+          operation: 'delete_pod',
+          retryable: true,
+          requestId: `asbcp_req_delete_${code}`,
+        },
+      );
+      const deletePod = vi.fn().mockRejectedValue(deleteError);
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockResolvedValueOnce({ phase: 'Completed' })
+            .mockResolvedValueOnce({ phase: 'Running' }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec: vi.fn(),
+        },
+        {
+          getAgentOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+          getAgentSessionOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+        },
+        'ws://api:20000',
+        {
+          phasePollIntervalMs: 1,
+          onlinePollIntervalMs: 1,
+        },
+      );
+
+      let caught: unknown;
+      try {
+        await manager.ensureAgentReady({
+          workspaceId: 'ws_1',
+          projectId: 'proj_1',
+          workloadId: 'task_1',
+          sessionId: 'task_1',
+          agent: buildAgent({
+            image: 'runner:v1',
+            _internal_raw_key: 'ask_xxx',
+          }),
+          workspaceMount: buildWorkspaceMount(),
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({
+        code,
+        ...(asbcpCode ? { asbcpCode } : {}),
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: `asbcp_req_delete_${code}`,
+      });
+      expect(caught).not.toMatchObject({
+        operation: 'delete_terminal_workload',
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      });
+      expect(deletePod).toHaveBeenCalledTimes(1);
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not classify a normalized release code without a stable ASBCP code', async () => {
+    const deletePod = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_error: delete_pod 409 normalized code without stable upstream code'),
+      {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_delete_normalized_without_stable_code',
+      },
+    ));
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn()
+          .mockResolvedValueOnce({ phase: 'Completed' })
+          .mockResolvedValueOnce({ phase: 'Running' }),
+        createOrEnsurePod,
+        deletePod,
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValue(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValue(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    let caught: unknown;
+    try {
+      await manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      status: 409,
+      operation: 'delete_pod',
+      retryable: true,
+      requestId: 'asbcp_req_delete_normalized_without_stable_code',
+    });
+    expect(caught).not.toMatchObject({
+      operation: 'delete_terminal_workload',
+    });
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [404, 'AGENT_SANDBOX_NOT_FOUND'],
+    [409, 'AGENT_SANDBOX_CONFLICT'],
+  ] as const)(
+    'does not classify ordinary delete %i as terminal workload release incomplete',
+    async (status, code) => {
+      const deleteError = Object.assign(
+        new Error(`asbcp_error: delete_pod ${status} ordinary cleanup failure`),
+        {
+          code,
+          status,
+          operation: 'delete_pod',
+          retryable: false,
+          requestId: `asbcp_req_delete_plain_${status}`,
+        },
+      );
+      const deletePod = vi.fn().mockRejectedValue(deleteError);
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockResolvedValueOnce({ phase: 'Completed' })
+            .mockResolvedValueOnce({ phase: 'Running' }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec: vi.fn(),
+        },
+        {
+          getAgentOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+          getAgentSessionOnlineState: vi.fn()
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(false)
+            .mockReturnValue(true),
+        },
+        'ws://api:20000',
+        {
+          phasePollIntervalMs: 1,
+          onlinePollIntervalMs: 1,
+        },
+      );
+
+      let caught: unknown;
+      try {
+        await manager.ensureAgentReady({
+          workspaceId: 'ws_1',
+          projectId: 'proj_1',
+          workloadId: 'task_1',
+          sessionId: 'task_1',
+          agent: buildAgent({
+            image: 'runner:v1',
+            _internal_raw_key: 'ask_xxx',
+          }),
+          workspaceMount: buildWorkspaceMount(),
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({
+        code,
+        status,
+        operation: 'delete_pod',
+        retryable: false,
+        requestId: `asbcp_req_delete_plain_${status}`,
+      });
+      expect(caught).not.toMatchObject({
+        operation: 'delete_terminal_workload',
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      });
+      expect(deletePod).toHaveBeenCalledTimes(1);
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     },
   );

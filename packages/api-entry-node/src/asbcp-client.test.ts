@@ -261,6 +261,7 @@ describe('AsbcpClient', () => {
     expect(caught).toBeInstanceOf(AsbcpHttpError);
     expect(caught).toMatchObject({
       code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      asbcpCode: 'workload_release_incomplete',
       status: 409,
       operation: 'delete_pod',
       retryable: true,
@@ -284,6 +285,7 @@ describe('AsbcpClient', () => {
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      asbcpCode: 'workspace_binding_release_incomplete',
       status: 409,
       operation: 'delete_workspace_binding',
       retryable: true,
@@ -301,6 +303,7 @@ describe('AsbcpClient', () => {
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     await expect(client.deletePod('ws_1', 'proj_1', 'workload_1')).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      asbcpCode: 'workload_release_incomplete',
       status: 409,
       operation: 'delete_pod',
       retryable: true,

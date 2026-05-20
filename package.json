@@ -62,6 +62,7 @@
     "test:governance": "bash scripts/governance-default-gate.sh",
     "test:governance-tooling": "npm run test:run -- scripts/default-gate.test.ts scripts/contracts/check-current-gates.test.ts scripts/contracts/check-current-gate-results.test.ts scripts/contracts/check-current-governance-observability.test.ts scripts/governance/__tests__/current-gate-governance.test.ts scripts/governance/__tests__/current-gate-result-schema.test.ts scripts/governance/__tests__/current-workflow-governance.test.ts scripts/governance/__tests__/current-verification-campaign-manifest.test.ts scripts/governance/__tests__/verify-entrypoints.test.ts scripts/governance/__tests__/verify-impact-selector.test.ts",
     "test:contracts:asbcp-manifest-lock": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/contracts/check-asbcp-manifest-lock.test.ts",
+    "test:afscp-jvs-image:smoke": "bash scripts/afscp-jvs-image-smoke.sh",
     "test:agent-task:backend-real:smoke": "bash scripts/agent-task-real-smoke-gate.sh",
     "test:agent-task:backend-real:terminal": "bash scripts/agent-task-terminal-real-smoke.sh",
     "test:agent-task:backend-real:terminal:internal": "bash scripts/agent-task-terminal-internal-real-smoke.sh",

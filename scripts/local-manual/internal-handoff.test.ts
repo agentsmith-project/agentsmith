@@ -332,14 +332,17 @@ describe('local-manual internal handoff', () => {
     expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');
   });
 
-  it('starts AFSCP as a local-real dependency before the internal sandbox and AgentSmith API restart', () => {
+  it('starts AFSCP from the pinned image by default before the internal sandbox and AgentSmith API restart', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const up = readFileSync('scripts/local-manual/internal-up.sh', 'utf8');
 
     expect(common).toContain('AFSCP/JVS is a local development/test dependency, not the business deployment path');
-    expect(common).toContain('go run ./cmd/afscp-api --serve');
-    expect(common).toContain('go run ./cmd/afscp-worker --run-once');
-    expect(common).toContain('go run ./cmd/afscp-export-gateway --serve');
+    expect(common).toContain('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
+    expect(common).toContain('AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1}}"');
+    expect(common).toContain('afscp_docker_run --rm /usr/local/bin/afscp-worker --run-once');
+    expect(common).toContain('afscp_docker_start "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve');
+    expect(common).toContain('afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve');
+    expect(common).toContain('afscp_docker_start "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" /usr/local/bin/afscp-worker --loop');
     expect(common).toContain('AFSCP_API_MODE="${AFSCP_API_MODE:-internal}"');
     expect(common).toContain('AFSCP_API_SERVICE_TOKENS=');
     expect(common).toContain('AFSCP_WORKER_OPERATION_RECOVERY_ENABLED="${AFSCP_WORKER_OPERATION_RECOVERY_ENABLED:-true}"');
@@ -371,12 +374,36 @@ describe('local-manual internal handoff', () => {
     expect(afscpIndex).toBeLessThan(up.indexOf('restart_api_with_mode 1'));
   });
 
+  it('keeps sibling AFSCP source starts behind the explicit owner diagnostic mode', () => {
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const sourceRunOnceBody = functionBody(common, 'afscp_run_worker_once_source');
+    const sourceApiBody = functionBody(common, 'start_afscp_api_source');
+    const sourceGatewayBody = functionBody(common, 'start_afscp_export_gateway_source');
+    const sourceWorkerBody = functionBody(common, 'start_afscp_worker_loop_source');
+
+    expect(common).toContain('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
+    expect(functionBody(common, 'afscp_local_runtime_uses_source')).toContain('[[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "source" ]]');
+    expect(sourceRunOnceBody).toContain('go run ./cmd/afscp-worker --run-once');
+    expect(sourceApiBody).toContain('go run ./cmd/afscp-api --serve');
+    expect(sourceGatewayBody).toContain('go run ./cmd/afscp-export-gateway --serve');
+    expect(sourceWorkerBody).toContain('go run ./cmd/afscp-worker --run-once');
+  });
+
   it('guards every local-real AFSCP process start behind the host JuiceFS mount and workload SecretRef', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const guardBody = functionBody(common, 'ensure_afscp_local_runtime_mounts_and_write_env');
-    const exportGatewayBody = functionBody(common, 'start_afscp_export_gateway');
-    const apiBody = functionBody(common, 'start_afscp_api');
-    const workerBody = functionBody(common, 'start_afscp_worker_loop');
+    const exportGatewayBodies = [
+      functionBody(common, 'start_afscp_export_gateway_source'),
+      functionBody(common, 'start_afscp_export_gateway_image'),
+    ];
+    const apiBodies = [
+      functionBody(common, 'start_afscp_api_source'),
+      functionBody(common, 'start_afscp_api_image'),
+    ];
+    const workerBodies = [
+      functionBody(common, 'start_afscp_worker_loop_source'),
+      functionBody(common, 'start_afscp_worker_loop_image'),
+    ];
 
     expect(guardBody).toContain('ensure_afscp_local_runtime_volume_root');
     expect(guardBody).toContain('ensure_afscp_local_runtime_workload_mount_secret_refs');
@@ -388,12 +415,14 @@ describe('local-manual internal handoff', () => {
       guardBody.indexOf('write_afscp_local_runtime_env'),
     );
 
-    for (const body of [exportGatewayBody, apiBody, workerBody]) {
+    for (const body of [...exportGatewayBodies, ...apiBodies, ...workerBodies]) {
       expect(body).toContain('ensure_afscp_local_runtime_mounts_and_write_env');
       expect(body).not.toContain('write_afscp_local_runtime_env');
     }
-    expect(apiBody).toContain('afscp_wait_for_api_listener');
-    expect(apiBody).not.toContain('wait_http "${AFSCP_BASE_URL%/}/readyz"');
+    for (const body of apiBodies) {
+      expect(body).toContain('afscp_wait_for_api_listener');
+      expect(body).not.toContain('wait_http "${AFSCP_BASE_URL%/}/readyz"');
+    }
   });
 
   it('keeps local-real internal runner launch after the API switches to internal mode', () => {
@@ -408,7 +437,6 @@ describe('local-manual internal handoff', () => {
       'ensure_internal_runner_image',
       'ensure_afscp_storage_csi',
       'ensure_internal_external_dependency_services',
-      'resolve_afscp_jvs_binary',
       'ensure_afscp_local_runtime',
       'start_internal_runtime',
       'restart_api_with_mode:1',
@@ -439,12 +467,23 @@ describe('local-manual internal handoff', () => {
     expect(payload).not.toHaveProperty('workspace_file_library_id');
   });
 
-  it('reuses only backend-projected unbound file libraries for internal smoke tasks', () => {
+  it('reuses only backend-projected unbound file libraries with same-actor reusable affordance', () => {
     const payload = taskCreatePayloadFromInternalSmoke({
       items: [
         { id: 'fl_pending', status: 'pending', task_home_binding_status: 'unbound', bound_task_visible: false },
         { id: 'fl_bound', status: 'ready', task_home_binding_status: 'bound', bound_task_visible: false },
-        { id: 'fl_reusable', status: 'ready', task_home_binding_status: 'unbound', bound_task_visible: false },
+        { id: 'fl_unproven', status: 'ready', task_home_binding_status: 'unbound', bound_task_visible: false },
+        {
+          id: 'fl_reusable',
+          status: 'ready',
+          task_home_binding_status: 'unbound',
+          bound_task_visible: false,
+          task_workspace_reuse_affordance: {
+            allowed: true,
+            same_actor: true,
+            runtime_writable_affordance: 'task_internal_home',
+          },
+        },
       ],
     });
 
@@ -460,6 +499,7 @@ describe('local-manual internal handoff', () => {
       items: [
         { id: 'fl_ready_legacy_shape', status: 'ready' },
         { id: 'fl_ready_missing_visibility', status: 'ready', task_home_binding_status: 'unbound' },
+        { id: 'fl_ready_unproven_actor', status: 'ready', task_home_binding_status: 'unbound', bound_task_visible: false },
       ],
     });
 
@@ -537,10 +577,12 @@ describe('local-manual internal handoff', () => {
     expect(common).toContain('resolve_afscp_jvs_binary()');
     expect(common).toContain('prepare_afscp_jvs_release_artifact()');
     expect(common).toContain('AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.10}"');
+    expect(common).toContain('AFSCP_LOCAL_RUNTIME_IMAGE_JVS_SOURCE_REF="${AFSCP_LOCAL_RUNTIME_IMAGE_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f7628764ce2430b2b754a7375ca67f637ad08}"');
     expect(common).toContain('https://github.com/agentsmith-project/jvs/releases/download/${AFSCP_JVS_RELEASE_VERSION}');
     expect(common).toContain('afscp_verify_jvs_direct_contract "${AFSCP_JVS_BINARY_PATH}"');
     expect(common).not.toContain('AFSCP_JVS_RELEASE_VERSION="${AFSCP_JVS_RELEASE_VERSION:-v0.4.9}"');
     expect(common).not.toContain('releases/download/v0.4.9');
+    expect(common).not.toContain('jvs@v0.4.10:6a0f762bc436f0d3dc7c7c1d60847992c3a82718');
   });
 
   it('keeps the local-real internal env on the published JVS release default', () => {
@@ -549,6 +591,23 @@ describe('local-manual internal handoff', () => {
     expect(envSource).toContain('JVS defaults to the verified GitHub release artifact');
     expect(envSource).toContain('AFSCP_JVS_RELEASE_VERSION=${AFSCP_JVS_RELEASE_VERSION:-v0.4.10}');
     expect(envSource).not.toContain('releases/download/v0.4.9');
+  });
+
+  it('exposes a focused smoke for the pinned AFSCP image embedded JVS binary', () => {
+    const script = readFileSync('scripts/afscp-jvs-image-smoke.sh', 'utf8');
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
+
+    expect(packageJson.scripts['test:afscp-jvs-image:smoke']).toBe('bash scripts/afscp-jvs-image-smoke.sh');
+    expect(script).toContain('ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1');
+    expect(script).toContain('EXPECTED_JVS_SHA256="${EXPECTED_JVS_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"');
+    expect(script).toContain('EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f7628764ce2430b2b754a7375ca67f637ad08}"');
+    expect(script).toContain('docker run --rm --network=none --entrypoint /usr/local/bin/jvs');
+    expect(script).toContain('afscp --help');
+    expect(script).toContain('docker create --network none --entrypoint /usr/local/bin/jvs');
+    expect(script).toContain('docker cp "${container_id}:/usr/local/bin/jvs"');
+    expect(script).toContain('sha256sum "${tmp_dir}/jvs"');
+    expect(script).not.toContain('go run');
+    expect(script).not.toContain('../jvs');
   });
 
   it('does not default local-real internal env to a hard-coded JVS binary', () => {
@@ -627,6 +686,7 @@ FAKEGO
       export PATH="$bin_dir:$PATH"
 
       AFSCP_JVS_ROOT="$jvs_root"
+      AFSCP_LOCAL_RUNTIME_MODE=source
       AFSCP_JVS_SIBLING_CACHE_DIR="$cache_dir"
       AFSCP_JVS_SIBLING_BINARY_CACHE_PATH="$cached_binary"
       AFSCP_JVS_SIBLING_SOURCE_REF_PATH="$cache_dir/jvs-linux-amd64.source-ref"
@@ -759,6 +819,7 @@ fi
 exit 0
 JVS
       chmod +x "$direct_binary"
+      AFSCP_LOCAL_RUNTIME_MODE=source
       AFSCP_JVS_BINARY_PATH="$direct_binary"
       AFSCP_JVS_BINARY_SHA256="$(afscp_file_sha256 "$direct_binary")"
       AFSCP_RESTORE_RECOVERY_ENABLED=true

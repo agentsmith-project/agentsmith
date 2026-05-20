@@ -13,6 +13,11 @@
       "id": "ASBCP-BC-0001",
       "summary": "pre-GA clean cut makes durable terminal truth the workload DELETE authority; missing durable release fact plus pod absence returns fail-closed retryable 409 workload_release_incomplete, release facts require the ConfigMap fact store/RBAC path, and workspace-binding reconciliation is fail-closed when provider prerequisites or binding state cannot be proven.",
       "expires_on": "2027-05-19"
+    },
+    {
+      "id": "ASBCP-BC-0002",
+      "summary": "pre-GA workload and binding Kubernetes object names are now scope-qualified hashed identities; workload Pod status, keepalive, exec, release, and delete paths validate Pod annotations and labels against URL workspace/project/workload scope before operating.",
+      "expires_on": "2027-05-20"
     }
   ]
 }

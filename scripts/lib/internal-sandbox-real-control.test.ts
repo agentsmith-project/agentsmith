@@ -652,6 +652,82 @@ ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
     expect(readFileSync(path.join(unsafeDir, 'asbcp-kubeconfig'), 'utf8')).toBe('do not delete\n');
   });
 
+  it.each([
+    ['ASBCP_PROJECTED_CONFIG_PATH', 'asbcp-config.yaml'],
+    ['ASBCP_PROJECTED_KUBECONFIG_PATH', 'asbcp-kubeconfig'],
+  ] as const)(
+    'fails closed before writing ASBCP projection override %s outside the managed projection dir',
+    (overrideName, fileName) => {
+      const repoRoot = process.cwd();
+      const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-sandbox-control-unsafe-projection-'));
+      tempRoots.push(tempRoot);
+
+      const binDir = path.join(tempRoot, 'bin');
+      const internalDir = path.join(tempRoot, 'internal');
+      const unsafeDir = path.join(tempRoot, 'unsafe-projection');
+      const stateFile = path.join(tempRoot, 'sandbox-control.env');
+      const configPath = path.join(tempRoot, 'asbcp.yaml');
+      const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
+      const unsafeTarget = path.join(unsafeDir, fileName);
+      const dockerRunMarker = path.join(tempRoot, 'docker-run.marker');
+
+      mkdirSync(binDir, { recursive: true });
+      mkdirSync(internalDir, { recursive: true });
+      mkdirSync(unsafeDir, { recursive: true });
+      writeFileSync(configPath, 'version: 1\n', 'utf8');
+      writeFileSync(kubeconfigPath, 'apiVersion: v1\nkind: Config\n', { encoding: 'utf8', mode: 0o600 });
+      writeFileSync(unsafeTarget, 'owned elsewhere\n', 'utf8');
+      chmodSync(kubeconfigPath, 0o600);
+      writeExecutable(path.join(binDir, 'curl'), '#!/usr/bin/env bash\nexit 7\n');
+      writeExecutable(path.join(binDir, 'lsof'), '#!/usr/bin/env bash\nexit 0\n');
+      writeExecutable(path.join(binDir, 'sleep'), '#!/usr/bin/env bash\nexit 0\n');
+      writeExecutable(path.join(binDir, 'seq'), '#!/usr/bin/env bash\nprintf "1\\n"\n');
+      writeExecutable(
+        path.join(binDir, 'docker'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "run" ]]; then
+  touch "${dockerRunMarker}"
+fi
+exit 0
+`,
+      );
+      writeFileSync(
+        stateFile,
+        `ROOT_DIR="${tempRoot}"
+INTERNAL_REAL_DIR="${internalDir}"
+ASBCP_IMAGE="ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ASBCP_CONFIG_PATH="${configPath}"
+ASBCP_PORT="28085"
+ASBCP_INTERNAL_BASE_URL="http://127.0.0.1:28085"
+ASBCP_SERVICE_KEY_VALUE="sandbox-service-key"
+K8S_NAMESPACE="agentsmith"
+ASBCP_LOG="${path.join(internalDir, 'asbcp.log')}"
+AFSCP_INTERNAL_BASE_URL="http://127.0.0.1:28090"
+AFSCP_ORCHESTRATOR_TOKEN="state-orchestrator-token"
+KUBECONFIG="${kubeconfigPath}"
+${overrideName}="${unsafeTarget}"
+`,
+        'utf8',
+      );
+
+      const result = spawnSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'start-asbcp'], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('ASBCP projection target must stay in managed projection dir');
+      expect(statSync(dockerRunMarker, { throwIfNoEntry: false })).toBeUndefined();
+      expect(readFileSync(unsafeTarget, 'utf8')).toBe('owned elsewhere\n');
+    },
+  );
+
   it('prefers canonical ASBCP AFSCP env over product caller aliases', () => {
     const capturedEnv = runStartAsbcpAndCaptureEnv(`
 AFSCP_INTERNAL_BASE_URL="http://formal-afscp.internal:28090"

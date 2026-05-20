@@ -62,12 +62,33 @@ const ADOPTION_POLICY_SCHEMA_ID = 'https://agentsmith.dev/schemas/agentsmith/asb
 const ADOPTION_POLICY_SCHEMA_VERSION = 'v1';
 const FINAL_MANIFEST_ENV = 'ASBCP_FINAL_MANIFEST';
 const RELEASE_GATE = 'scripts/verify-release.sh';
+const KNOWN_RISK_STATUS_SOURCE = 'docs/RISK_REGISTER.md release_blocking column';
 const VERSION_PATTERN = /^v\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)*$/u;
 const DIGEST_PATTERN = /^sha256:[a-fA-F0-9]{64}$/u;
-const COMMIT_SHA_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/iu;
+const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/iu;
 const API_CONTRACT_VERSION_PATTERN = /^v\d+$/u;
 const BREAKING_CHANGE_ID_PATTERN = /^ASBCP-BC-\d{4}$/u;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
+const FINAL_MANIFEST_TOP_LEVEL_KEYS = new Set([
+  'schema_id',
+  'manifest_schema_version',
+  'asbcp_version',
+  'git_tag',
+  'commit_sha',
+  'image_ref',
+  'image_digest',
+  'api_contract_version',
+  'anonymous_pull',
+  'same_digest_proof',
+  'known_breaking_changes',
+  'changelog_summary',
+  'known_risk_status',
+  'known_risk_status_source',
+  'runbook_url',
+  'release_notes',
+  'release_gate',
+]);
+const KNOWN_BREAKING_CHANGE_KEYS = new Set(['id', 'summary']);
 function addFailure(failures: AsbcpManifestLockFailure[], field: string, message: string): void {
   failures.push({ field, message });
 }
@@ -257,6 +278,30 @@ function normalizedStringValue(object: JsonObject, key: string): string | null {
     return null;
   }
   return value.trim();
+}
+
+function isUri(value: string): boolean {
+  try {
+    // The upstream schema uses JSON Schema "format: uri"; URL gives us a
+    // stable structural check without depending on fragile release text.
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rejectUnexpectedKeys(
+  object: JsonObject,
+  allowedKeys: ReadonlySet<string>,
+  field: string,
+  failures: AsbcpManifestLockFailure[],
+): void {
+  for (const key of Object.keys(object)) {
+    if (!allowedKeys.has(key)) {
+      addFailure(failures, `${field}.${key}`, `${field} must not include ${key}`);
+    }
+  }
 }
 
 function normalizeDigest(digest: string): string {
@@ -918,6 +963,7 @@ function checkKnownBreakingChanges(
       return;
     }
 
+    rejectUnexpectedKeys(change, KNOWN_BREAKING_CHANGE_KEYS, baseField, failures);
     const id = stringField(change, 'id', `${baseField}.id`, failures, 'known_breaking_changes entry');
     stringField(change, 'summary', `${baseField}.summary`, failures, 'known_breaking_changes entry');
 
@@ -955,8 +1001,58 @@ function checkKnownBreakingChanges(
 function checkReleaseMetadata(manifest: JsonObject, failures: AsbcpManifestLockFailure[]): void {
   stringField(manifest, 'changelog_summary', 'manifest.changelog_summary', failures);
   stringField(manifest, 'known_risk_status', 'manifest.known_risk_status', failures);
+  const knownRiskStatusSource = stringField(
+    manifest,
+    'known_risk_status_source',
+    'manifest.known_risk_status_source',
+    failures,
+  );
+  const runbookUrl = stringField(manifest, 'runbook_url', 'manifest.runbook_url', failures);
+  const releaseNotes = objectField(manifest, 'release_notes', 'manifest.release_notes', failures);
   const releaseGate = stringField(manifest, 'release_gate', 'manifest.release_gate', failures);
 
+  if (knownRiskStatusSource && knownRiskStatusSource !== KNOWN_RISK_STATUS_SOURCE) {
+    addFailure(
+      failures,
+      'manifest.known_risk_status_source',
+      `known_risk_status_source must be ${KNOWN_RISK_STATUS_SOURCE}; actual ${knownRiskStatusSource}`,
+    );
+  }
+  if (runbookUrl && !isUri(runbookUrl)) {
+    addFailure(failures, 'manifest.runbook_url', `runbook_url must be a URI; actual ${runbookUrl}`);
+  }
+  if (releaseNotes) {
+    rejectUnexpectedKeys(
+      releaseNotes,
+      new Set(['body_source', 'github_release_url']),
+      'manifest.release_notes',
+      failures,
+    );
+    const bodySource = stringField(
+      releaseNotes,
+      'body_source',
+      'manifest.release_notes.body_source',
+      failures,
+      'release_notes',
+    );
+    const githubReleaseUrl = stringField(
+      releaseNotes,
+      'github_release_url',
+      'manifest.release_notes.github_release_url',
+      failures,
+      'release_notes',
+    );
+    if (bodySource && bodySource.trim().length === 0) {
+      addFailure(failures, 'manifest.release_notes.body_source', 'release_notes.body_source must be non-empty');
+    }
+    if (githubReleaseUrl && !isUri(githubReleaseUrl)) {
+      addFailure(
+        failures,
+        'manifest.release_notes.github_release_url',
+        `release_notes.github_release_url must be a URI; actual ${githubReleaseUrl}`,
+      );
+    }
+  }
   if (releaseGate && releaseGate !== RELEASE_GATE) {
     addFailure(failures, 'manifest.release_gate', `release_gate must be ${RELEASE_GATE}; actual ${releaseGate}`);
   }
@@ -969,6 +1065,7 @@ function checkManifestAgainstLock(
   currentDate: string,
   failures: AsbcpManifestLockFailure[],
 ): void {
+  rejectUnexpectedKeys(manifest, FINAL_MANIFEST_TOP_LEVEL_KEYS, 'manifest', failures);
   checkManifestSchema(manifest, policy, failures);
   checkManifestVersion(manifest, lock, failures);
   checkManifestCommit(manifest, lock, failures);

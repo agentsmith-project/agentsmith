@@ -81,6 +81,12 @@ AFSCP_API_LISTEN_ADDR="${AFSCP_API_LISTEN_ADDR:-127.0.0.1:${AFSCP_API_PORT}}"
 AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1:28091}"
 AFSCP_EXPORT_GATEWAY_PORT="${AFSCP_EXPORT_GATEWAY_PORT:-$(local_manual_port_from_url "${AFSCP_EXPORT_GATEWAY_BASE_URL}" 2>/dev/null || printf '28091')}"
 AFSCP_EXPORT_GATEWAY_LISTEN_ADDR="${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR:-127.0.0.1:${AFSCP_EXPORT_GATEWAY_PORT}}"
+AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
+AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1}}"
+AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX="${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX:-agentsmith-afscp-local-${AFSCP_API_PORT}}"
+AFSCP_API_CONTAINER_NAME="${AFSCP_API_CONTAINER_NAME:-${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX}-api}"
+AFSCP_WORKER_CONTAINER_NAME="${AFSCP_WORKER_CONTAINER_NAME:-${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX}-worker}"
+AFSCP_EXPORT_GATEWAY_CONTAINER_NAME="${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME:-${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX}-export-gateway}"
 AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-vol_local_manual}"
 AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME="${AFSCP_LOCAL_RUNTIME_WORKLOAD_MOUNT_SECRET_NAME:-afscp-local-runtime}"
 AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-agentsmith-api}"
@@ -110,16 +116,22 @@ AFSCP_JVS_SHA256SUMS_PATH="${AFSCP_JVS_SHA256SUMS_PATH:-}"
 AFSCP_JVS_RELEASE_URL="${AFSCP_JVS_RELEASE_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/${AFSCP_JVS_RELEASE_BINARY_NAME}}"
 AFSCP_JVS_SHA256SUMS_URL="${AFSCP_JVS_SHA256SUMS_URL:-${AFSCP_JVS_RELEASE_BASE_URL}/SHA256SUMS}"
 AFSCP_RESTORE_RECOVERY_ENABLED="${AFSCP_RESTORE_RECOVERY_ENABLED:-true}"
+AFSCP_LOCAL_RUNTIME_IMAGE_JVS_BINARY_SHA256="${AFSCP_LOCAL_RUNTIME_IMAGE_JVS_BINARY_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"
+AFSCP_LOCAL_RUNTIME_IMAGE_JVS_SOURCE_REF="${AFSCP_LOCAL_RUNTIME_IMAGE_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f7628764ce2430b2b754a7375ca67f637ad08}"
 AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256:-}"
 AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="${AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF:-}"
 AFSCP_LOCAL_RUNTIME_ENV_FILE="${AFSCP_LOCAL_RUNTIME_ENV_FILE:-${INTERNAL_REAL_DIR}/afscp-local-runtime.env}"
+AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE="${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE:-${INTERNAL_REAL_DIR}/afscp-local-runtime.docker.env}"
 AFSCP_API_PID_FILE="${AFSCP_API_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-api.pid}"
+AFSCP_API_CONTAINER_ID_FILE="${AFSCP_API_CONTAINER_ID_FILE:-${INTERNAL_REAL_DIR}/afscp-api.cid}"
 AFSCP_API_LOG="${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
 AFSCP_API_READY_FILE="${AFSCP_API_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-api.ready}"
 AFSCP_WORKER_PID_FILE="${AFSCP_WORKER_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-worker.pid}"
+AFSCP_WORKER_CONTAINER_ID_FILE="${AFSCP_WORKER_CONTAINER_ID_FILE:-${INTERNAL_REAL_DIR}/afscp-worker.cid}"
 AFSCP_WORKER_LOG="${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
 AFSCP_WORKER_READY_FILE="${AFSCP_WORKER_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-worker.ready}"
 AFSCP_EXPORT_GATEWAY_PID_FILE="${AFSCP_EXPORT_GATEWAY_PID_FILE:-${INTERNAL_REAL_DIR}/afscp-export-gateway.pid}"
+AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE="${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE:-${INTERNAL_REAL_DIR}/afscp-export-gateway.cid}"
 AFSCP_EXPORT_GATEWAY_LOG="${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
 AFSCP_EXPORT_GATEWAY_READY_FILE="${AFSCP_EXPORT_GATEWAY_READY_FILE:-${INTERNAL_REAL_DIR}/afscp-export-gateway.ready}"
 AFSCP_WORKER_INTERVAL_SECONDS="${AFSCP_WORKER_INTERVAL_SECONDS:-2}"
@@ -128,6 +140,26 @@ mkdir -p "${INTERNAL_REAL_DIR}"
 
 internal_info() { echo "[local-manual-internal] $*"; }
 internal_err() { echo "[local-manual-internal] ERROR: $*" >&2; }
+
+afscp_local_runtime_uses_image() {
+  [[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "image" ]]
+}
+
+afscp_local_runtime_uses_source() {
+  [[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "source" ]]
+}
+
+validate_afscp_local_runtime_mode() {
+  case "${AFSCP_LOCAL_RUNTIME_MODE}" in
+    image|source)
+      return 0
+      ;;
+    *)
+      internal_err "AFSCP_LOCAL_RUNTIME_MODE must be image or source, got ${AFSCP_LOCAL_RUNTIME_MODE}"
+      return 1
+      ;;
+  esac
+}
 
 local_manual_internal_secret_fingerprint() {
   local value="${1:-}"
@@ -732,6 +764,11 @@ resolve_afscp_jvs_binary() {
 afscp_runtime_export_line() {
   local key="$1"
   printf 'export %s=%q\n' "${key}" "${!key}"
+}
+
+afscp_runtime_docker_env_line() {
+  local key="$1"
+  printf '%s=%s\n' "${key}" "${!key}"
 }
 
 afscp_default_local_runtime_postgres_dsn() {
@@ -1430,7 +1467,15 @@ prepare_afscp_local_runtime_env() {
   AFSCP_STORAGE_READY="${AFSCP_STORAGE_READY:-true}"
   AFSCP_JVS_ENABLED="${AFSCP_JVS_ENABLED:-true}"
   AFSCP_JVS_READY="${AFSCP_JVS_READY:-true}"
-  resolve_afscp_jvs_binary
+  validate_afscp_local_runtime_mode || return 1
+  if afscp_local_runtime_uses_image; then
+    AFSCP_JVS_BINARY_PATH="/usr/local/bin/jvs"
+    AFSCP_JVS_BINARY_SHA256="${AFSCP_LOCAL_RUNTIME_IMAGE_JVS_BINARY_SHA256}"
+    AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="${AFSCP_JVS_BINARY_SHA256}"
+    AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="${AFSCP_LOCAL_RUNTIME_IMAGE_JVS_SOURCE_REF}"
+  else
+    resolve_afscp_jvs_binary
+  fi
   AFSCP_WEBDAV_ENABLED="${AFSCP_WEBDAV_ENABLED:-true}"
   AFSCP_WEBDAV_READY="${AFSCP_WEBDAV_READY:-true}"
   AFSCP_MOUNT_ENABLED="${AFSCP_MOUNT_ENABLED:-true}"
@@ -1524,10 +1569,76 @@ write_afscp_local_runtime_env() {
   chmod 0600 "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
 }
 
+write_afscp_local_runtime_docker_env() {
+  prepare_afscp_local_runtime_env
+  {
+    printf '# Generated by AgentSmith local-real for the pinned AFSCP image runtime.\n'
+    local key
+    for key in \
+      AFSCP_ENVIRONMENT \
+      AFSCP_SERVICE_NAME \
+      AFSCP_LISTEN_ADDR \
+      AFSCP_READINESS_PROFILE \
+      AFSCP_DATABASE_URL \
+      AFSCP_POSTGRES_DSN \
+      AFSCP_API_MODE \
+      AFSCP_API_POSTGRES_DSN \
+      AFSCP_API_SERVICE_TOKENS \
+      AFSCP_API_DEPLOYMENT_GLOBAL_ALLOWED_CALLERS \
+      AFSCP_API_DEPLOYMENT_NAMESPACE_ALLOWED_CALLERS \
+      AFSCP_API_VOLUME_ROOTS \
+      AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS \
+      AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL \
+      AFSCP_STORAGE_ENABLED \
+      AFSCP_STORAGE_READY \
+      AFSCP_JVS_ENABLED \
+      AFSCP_JVS_READY \
+      AFSCP_WEBDAV_ENABLED \
+      AFSCP_WEBDAV_READY \
+      AFSCP_MOUNT_ENABLED \
+      AFSCP_MOUNT_READY \
+      AFSCP_REPO_TEMPLATE_ENABLED \
+      AFSCP_REPO_TEMPLATE_READY \
+      AFSCP_REPO_PURGE_ENABLED \
+      AFSCP_REPO_PURGE_READY \
+      AFSCP_WORKER_OPERATION_RECOVERY_ENABLED \
+      AFSCP_WORKER_OWNER \
+      AFSCP_OPERATION_RECOVERY_LIMIT \
+      AFSCP_EXPORT_SESSION_RECONCILE_ENABLED \
+      AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN \
+      AFSCP_EXPORT_SESSION_RECONCILE_OWNER \
+      AFSCP_EXPORT_SESSION_RECONCILE_LIMIT \
+      AFSCP_WORKER_RUN_ONCE_TIMEOUT \
+      AFSCP_REPO_CREATE_RECOVERY_ENABLED \
+      AFSCP_REPO_LIFECYCLE_RECOVERY_ENABLED \
+      AFSCP_REPO_PURGE_RECOVERY_ENABLED \
+      AFSCP_SAVE_POINT_RECOVERY_ENABLED \
+      AFSCP_TEMPLATE_CREATE_RECOVERY_ENABLED \
+      AFSCP_TEMPLATE_CLONE_RECOVERY_ENABLED \
+      AFSCP_RESTORE_RECOVERY_ENABLED \
+      AFSCP_JVS_BINARY_PATH \
+      AFSCP_JVS_BINARY_SHA256 \
+      AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256 \
+      AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF \
+      AFSCP_JVS_CWD \
+      AFSCP_VOLUME_ROOTS \
+      AFSCP_EXPORT_GATEWAY_LISTEN_ADDR \
+      AFSCP_EXPORT_GATEWAY_POSTGRES_DSN \
+      AFSCP_EXPORT_GATEWAY_PREFIX \
+      AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS; do
+      afscp_runtime_docker_env_line "${key}"
+    done
+  } > "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}"
+  chmod 0600 "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}"
+}
+
 ensure_afscp_local_runtime_mounts_and_write_env() {
   ensure_afscp_local_runtime_volume_root
   ensure_afscp_local_runtime_workload_mount_secret_refs
   write_afscp_local_runtime_env
+  if afscp_local_runtime_uses_image; then
+    write_afscp_local_runtime_docker_env
+  fi
 }
 
 afscp_trim() {
@@ -2213,7 +2324,7 @@ ensure_afscp_local_runtime_workload_mount_secret_refs() {
   fi
 }
 
-ensure_afscp_local_runtime_prerequisites() {
+ensure_afscp_local_runtime_prerequisites_source() {
   if [[ ! -f "${AFSCP_ROOT}/cmd/afscp-api/main.go" ]]; then
     internal_err "missing AFSCP sibling repo at ${AFSCP_ROOT}; set AFSCP_ROOT to a checkout with cmd/afscp-api"
     exit 1
@@ -2236,7 +2347,31 @@ ensure_afscp_local_runtime_prerequisites() {
   fi
 }
 
-apply_afscp_postgres_migrations() {
+ensure_afscp_local_runtime_prerequisites_image() {
+  if ! command -v docker >/dev/null 2>&1; then
+    internal_err "docker is required to run the pinned AFSCP local-real image"
+    exit 1
+  fi
+  if [[ -z "${AFSCP_LOCAL_RUNTIME_IMAGE}" || "${AFSCP_LOCAL_RUNTIME_IMAGE}" != *@sha256:* ]]; then
+    internal_err "AFSCP_LOCAL_RUNTIME_IMAGE must be pinned by sha256 digest for local-real evidence"
+    exit 1
+  fi
+  if ! docker image inspect "${AFSCP_LOCAL_RUNTIME_IMAGE}" >/dev/null 2>&1; then
+    internal_info "pulling pinned AFSCP local-real image ${AFSCP_LOCAL_RUNTIME_IMAGE}"
+    docker pull "${AFSCP_LOCAL_RUNTIME_IMAGE}" >/dev/null
+  fi
+}
+
+ensure_afscp_local_runtime_prerequisites() {
+  validate_afscp_local_runtime_mode || exit 1
+  if afscp_local_runtime_uses_image; then
+    ensure_afscp_local_runtime_prerequisites_image
+    return
+  fi
+  ensure_afscp_local_runtime_prerequisites_source
+}
+
+apply_afscp_postgres_migrations_source() {
   prepare_afscp_local_runtime_env
   local migration
   internal_info "applying AFSCP local-real PostgreSQL migrations"
@@ -2250,8 +2385,61 @@ apply_afscp_postgres_migrations() {
   done
 }
 
+apply_afscp_postgres_migrations_image() {
+  ensure_afscp_local_runtime_mounts_and_write_env
+  internal_info "applying AFSCP local-real PostgreSQL migrations from pinned image"
+  afscp_docker_run --rm /usr/local/bin/afscp-migrate --apply --check --timeout=60s
+}
+
+apply_afscp_postgres_migrations() {
+  if afscp_local_runtime_uses_image; then
+    apply_afscp_postgres_migrations_image
+    return
+  fi
+  apply_afscp_postgres_migrations_source
+}
+
 afscp_runtime_shell_prefix() {
   printf 'cd %q && set -a && source %q && set +a' "${AFSCP_ROOT}" "${AFSCP_LOCAL_RUNTIME_ENV_FILE}"
+}
+
+afscp_docker_run() {
+  local rm_flag="$1"
+  shift
+  docker run "${rm_flag}" \
+    --network host \
+    --user "$(id -u):$(id -g)" \
+    --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
+    --volume "${AFSCP_VOLUME_ROOT}:${AFSCP_VOLUME_ROOT}:rw" \
+    --volume "${AFSCP_JVS_CWD}:${AFSCP_JVS_CWD}:rw" \
+    "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@"
+}
+
+afscp_docker_start() {
+  local container_id_file="$1"
+  local container_name="$2"
+  shift 2
+
+  docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  rm -f "${container_id_file}" "${container_id_file}.logs.pid"
+  docker run -d \
+    --name "${container_name}" \
+    --network host \
+    --user "$(id -u):$(id -g)" \
+    --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
+    --volume "${AFSCP_VOLUME_ROOT}:${AFSCP_VOLUME_ROOT}:rw" \
+    --volume "${AFSCP_JVS_CWD}:${AFSCP_JVS_CWD}:rw" \
+    "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@" > "${container_id_file}"
+}
+
+afscp_follow_container_logs() {
+  local container_id_file="$1"
+  local container_name="$2"
+  local log_file="$3"
+  (
+    docker logs -f "${container_name}" > "${log_file}" 2>&1 &
+    printf '%s\n' "$!" > "${container_id_file}.logs.pid"
+  )
 }
 
 afscp_stop_pid_file() {
@@ -2266,6 +2454,31 @@ afscp_stop_pid_file() {
     internal_info "stopping ${label} pid=${pid}"
     local_manual_stop_reclaimable_launcher_pid "${pid}"
   fi
+}
+
+afscp_stop_container_id_file() {
+  local container_id_file="$1"
+  local label="$2"
+  local container_name="$3"
+  local container_id=""
+  if ! command -v docker >/dev/null 2>&1; then
+    rm -f "${container_id_file}" "${container_id_file}.logs.pid"
+    return 0
+  fi
+  if [[ -f "${container_id_file}.logs.pid" ]]; then
+    local log_pid
+    log_pid="$(cat "${container_id_file}.logs.pid" 2>/dev/null || true)"
+    rm -f "${container_id_file}.logs.pid"
+    if [[ -n "${log_pid}" ]] && kill -0 "${log_pid}" >/dev/null 2>&1; then
+      kill "${log_pid}" >/dev/null 2>&1 || true
+    fi
+  fi
+  if [[ -f "${container_id_file}" ]]; then
+    container_id="$(cat "${container_id_file}" 2>/dev/null || true)"
+    rm -f "${container_id_file}"
+  fi
+  internal_info "stopping ${label} container ${container_name}"
+  docker rm -f "${container_id:-${container_name}}" >/dev/null 2>&1 || true
 }
 
 afscp_wait_for_gateway_listener() {
@@ -2306,12 +2519,25 @@ wait_afscp_api_ready() {
   write_ready_file "${AFSCP_API_READY_FILE}"
 }
 
-afscp_run_worker_once() {
+afscp_run_worker_once_source() {
   prepare_afscp_local_runtime_env
   ( cd "${AFSCP_ROOT}" && set -a && source "${AFSCP_LOCAL_RUNTIME_ENV_FILE}" && set +a && go run ./cmd/afscp-worker --run-once )
 }
 
-start_afscp_export_gateway() {
+afscp_run_worker_once_image() {
+  ensure_afscp_local_runtime_mounts_and_write_env
+  afscp_docker_run --rm /usr/local/bin/afscp-worker --run-once
+}
+
+afscp_run_worker_once() {
+  if afscp_local_runtime_uses_image; then
+    afscp_run_worker_once_image
+    return
+  fi
+  afscp_run_worker_once_source
+}
+
+start_afscp_export_gateway_source() {
   ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
   rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
@@ -2322,7 +2548,26 @@ start_afscp_export_gateway() {
   capture_listener_pid "${AFSCP_EXPORT_GATEWAY_PORT}" "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
 }
 
-start_afscp_api() {
+start_afscp_export_gateway_image() {
+  ensure_afscp_local_runtime_mounts_and_write_env
+  afscp_stop_container_id_file "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "AFSCP export gateway" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}"
+  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
+  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
+  internal_info "starting AFSCP export gateway from pinned image at ${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
+  afscp_docker_start "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve --listen-addr "${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
+  afscp_follow_container_logs "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" "${AFSCP_EXPORT_GATEWAY_LOG}"
+  afscp_wait_for_gateway_listener 120
+}
+
+start_afscp_export_gateway() {
+  if afscp_local_runtime_uses_image; then
+    start_afscp_export_gateway_image
+    return
+  fi
+  start_afscp_export_gateway_source
+}
+
+start_afscp_api_source() {
   ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
   rm -f "${AFSCP_API_READY_FILE}"
@@ -2333,7 +2578,26 @@ start_afscp_api() {
   capture_listener_pid "${AFSCP_API_PORT}" "${AFSCP_API_PID_FILE}" "AFSCP API"
 }
 
-start_afscp_worker_loop() {
+start_afscp_api_image() {
+  ensure_afscp_local_runtime_mounts_and_write_env
+  afscp_stop_container_id_file "${AFSCP_API_CONTAINER_ID_FILE}" "AFSCP API" "${AFSCP_API_CONTAINER_NAME}"
+  rm -f "${AFSCP_API_READY_FILE}"
+  wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
+  internal_info "starting AFSCP internal API from pinned image at ${AFSCP_BASE_URL}"
+  afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve --listen "${AFSCP_API_LISTEN_ADDR}"
+  afscp_follow_container_logs "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" "${AFSCP_API_LOG}"
+  afscp_wait_for_api_listener 120
+}
+
+start_afscp_api() {
+  if afscp_local_runtime_uses_image; then
+    start_afscp_api_image
+    return
+  fi
+  start_afscp_api_source
+}
+
+start_afscp_worker_loop_source() {
   ensure_afscp_local_runtime_mounts_and_write_env
   afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
   rm -f "${AFSCP_WORKER_READY_FILE}"
@@ -2350,6 +2614,30 @@ start_afscp_worker_loop() {
   fi
   internal_err "AFSCP worker loop failed to start; see ${AFSCP_WORKER_LOG}"
   exit 1
+}
+
+start_afscp_worker_loop_image() {
+  ensure_afscp_local_runtime_mounts_and_write_env
+  afscp_stop_container_id_file "${AFSCP_WORKER_CONTAINER_ID_FILE}" "AFSCP worker" "${AFSCP_WORKER_CONTAINER_NAME}"
+  rm -f "${AFSCP_WORKER_READY_FILE}"
+  internal_info "starting AFSCP worker loop from pinned image"
+  afscp_docker_start "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" /usr/local/bin/afscp-worker --loop --interval="${AFSCP_WORKER_INTERVAL_SECONDS}s"
+  afscp_follow_container_logs "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" "${AFSCP_WORKER_LOG}"
+  sleep 1
+  if docker ps -q --filter "name=^/${AFSCP_WORKER_CONTAINER_NAME}$" | grep -q .; then
+    write_ready_file "${AFSCP_WORKER_READY_FILE}"
+    return 0
+  fi
+  internal_err "AFSCP worker loop failed to start; see ${AFSCP_WORKER_LOG}"
+  exit 1
+}
+
+start_afscp_worker_loop() {
+  if afscp_local_runtime_uses_image; then
+    start_afscp_worker_loop_image
+    return
+  fi
+  start_afscp_worker_loop_source
 }
 
 afscp_operation_state_from_file() {
@@ -2479,7 +2767,7 @@ afscp_api_status() {
   esac
 }
 
-stop_afscp_local_runtime() {
+stop_afscp_local_runtime_source() {
   afscp_stop_pid_file "${AFSCP_WORKER_PID_FILE}" "AFSCP worker"
   afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
   afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
@@ -2487,6 +2775,25 @@ stop_afscp_local_runtime() {
   unmount_afscp_local_runtime_volume_root || unmount_status=$?
   rm -f "${AFSCP_WORKER_READY_FILE}" "${AFSCP_API_READY_FILE}" "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
   return "${unmount_status}"
+}
+
+stop_afscp_local_runtime_image() {
+  afscp_stop_container_id_file "${AFSCP_WORKER_CONTAINER_ID_FILE}" "AFSCP worker" "${AFSCP_WORKER_CONTAINER_NAME}"
+  afscp_stop_container_id_file "${AFSCP_API_CONTAINER_ID_FILE}" "AFSCP API" "${AFSCP_API_CONTAINER_NAME}"
+  afscp_stop_container_id_file "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "AFSCP export gateway" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}"
+  local unmount_status=0
+  unmount_afscp_local_runtime_volume_root || unmount_status=$?
+  rm -f "${AFSCP_WORKER_READY_FILE}" "${AFSCP_API_READY_FILE}" "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
+  return "${unmount_status}"
+}
+
+stop_afscp_local_runtime() {
+  validate_afscp_local_runtime_mode || return 1
+  if afscp_local_runtime_uses_image; then
+    stop_afscp_local_runtime_image
+    return
+  fi
+  stop_afscp_local_runtime_source
 }
 
 write_internal_sandbox_config() {

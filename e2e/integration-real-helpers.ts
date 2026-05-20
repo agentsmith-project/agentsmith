@@ -3954,12 +3954,10 @@ function matchesDerivedLabelId(labelId: string, sourceId?: string): boolean {
 }
 
 function isManagedWorkloadTargetPod(input: {
-  podName: string;
   workloadId: string;
   workloadIdPrefix: string;
 }): boolean {
-  return input.podName === `workload-${input.workloadIdPrefix}`
-    && matchesWorkloadIdPrefix(input.workloadId, input.workloadIdPrefix);
+  return matchesWorkloadIdPrefix(input.workloadId, input.workloadIdPrefix);
 }
 
 function selectManagedWorkloadPodItem(args: {
@@ -4025,7 +4023,6 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     if (
       workloadFilter &&
       !isManagedWorkloadTargetPod({
-        podName,
         workloadId,
         workloadIdPrefix: workloadFilter,
       })

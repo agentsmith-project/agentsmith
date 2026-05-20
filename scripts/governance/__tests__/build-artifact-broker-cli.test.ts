@@ -12,8 +12,8 @@ const RUN_ID = 'build-artifact-broker-cli-test';
 const APP_BASE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const APP_MC_DIGEST = `sha256:${'f'.repeat(64)}`;
 const APP_IMAGE_DIGEST = `sha256:${'d'.repeat(64)}`;
-const LLMUP_DIGEST = 'sha256:4996453b1353868ca9e99c584719c9905e1ebbbd6d2ff585378bc0050989583b';
-const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.27@${LLMUP_DIGEST}`;
+const LLMUP_DIGEST = 'sha256:c9de8dd036b1f5c3ff1280e61a8041b91e5e3dc6ed806bcfb7d983bde33ffeec';
+const LLMUP_SOURCE_IMAGE = `ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.39@${LLMUP_DIGEST}`;
 
 interface BrokerFixture {
   tempRoot: string;
@@ -177,8 +177,8 @@ describe('build artifact broker CLI adapter', () => {
     const fixture = stageBrokerFixture([
       'release_id=test-release',
       'agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release',
-      'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.27',
-      'llmup_version=v0.2.27',
+      'llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:v0.2.39',
+      'llmup_version=v0.2.39',
       `llmup_source_image=${LLMUP_SOURCE_IMAGE}`,
       `llmup_source_image_digest=${LLMUP_DIGEST}`,
       '',

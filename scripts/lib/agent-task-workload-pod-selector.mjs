@@ -22,9 +22,28 @@ function readLabel(item, key) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readAnnotation(item, key) {
+  const metadata = asRecord(asRecord(item)?.metadata);
+  const annotations = asRecord(metadata?.annotations);
+  const value = annotations?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function readPodName(item) {
   const metadata = asRecord(asRecord(item)?.metadata);
   const value = metadata?.name;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readDeletionTimestamp(item) {
+  const metadata = asRecord(asRecord(item)?.metadata);
+  const value = metadata?.deletionTimestamp;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readStatusPhase(item) {
+  const status = asRecord(asRecord(item)?.status);
+  const value = status?.phase;
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -53,7 +72,6 @@ function isDerivedLabelId(labelId, sourceId) {
 
 export function selectManagedWorkloadPodForTask(input) {
   const taskWorkloadId = sanitizeWorkloadId(input?.taskId);
-  const expectedPodName = `workload-${taskWorkloadId}`;
   const workspaceId = String(input?.workspaceId || '').trim();
   const projectId = String(input?.projectId || '').trim();
   const candidates = readItems(input?.payload)
@@ -63,11 +81,15 @@ export function selectManagedWorkloadPodForTask(input) {
       workspaceId: readLabel(item, 'workspace_id'),
       projectId: readLabel(item, 'project_id'),
       workloadId: readLabel(item, 'workload_id'),
+      expiresAt: readAnnotation(item, 'expires_at'),
+      phase: readStatusPhase(item),
+      deletionTimestamp: readDeletionTimestamp(item),
     }))
+    .filter((item) => item.podName.length > 0)
+    .filter((item) => !item.deletionTimestamp)
     .filter((item) => item.app === 'managed-workload')
     .filter((item) => isDerivedLabelId(item.workspaceId, workspaceId))
     .filter((item) => isDerivedLabelId(item.projectId, projectId))
-    .filter((item) => item.podName === expectedPodName)
     .filter((item) => isTaskWorkloadId(item.workloadId, taskWorkloadId));
 
   if (candidates.length === 0) {

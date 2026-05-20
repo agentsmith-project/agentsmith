@@ -142,11 +142,38 @@ prepare_asbcp_projection_dir() {
   mv "${marker_tmp}" "${target_dir}/${ASBCP_PROJECTION_MARKER_NAME}"
 }
 
+managed_asbcp_projection_dir() {
+  realpath -m "${INTERNAL_REAL_DIR}/${ASBCP_PROJECTION_DIR_BASENAME}"
+}
+
+validate_asbcp_projection_target_path() {
+  local target_path="$1"
+  local expected_basename="$2"
+  local managed_dir target_dir target_real marker_path
+  managed_dir="$(managed_asbcp_projection_dir)"
+  target_real="$(realpath -m "${target_path}")"
+  target_dir="$(realpath -m "$(dirname "${target_real}")")"
+  if [[ "${target_dir}" != "${managed_dir}" || "$(basename "${target_real}")" != "${expected_basename}" ]]; then
+    echo "[internal-sandbox-control] ASBCP projection target must stay in managed projection dir: ${managed_dir}/${expected_basename}" >&2
+    return 1
+  fi
+  marker_path="${target_dir}/${ASBCP_PROJECTION_MARKER_NAME}"
+  if [[ -e "${marker_path}" && ! -f "${marker_path}" ]]; then
+    echo "[internal-sandbox-control] ASBCP projection marker is not a regular file: ${marker_path}" >&2
+    return 1
+  fi
+  printf '%s\n' "${target_real}"
+}
+
 prepare_asbcp_file_projection() {
   local source_path="$1"
   local target_path="$2"
+  local expected_basename="$3"
   local target_dir
   local tmp_path
+  if ! target_path="$(validate_asbcp_projection_target_path "${target_path}" "${expected_basename}")"; then
+    return 1
+  fi
   target_dir="$(dirname "${target_path}")"
   if [[ "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}" != "${ASBCP_PROJECTED_KUBECONFIG_PATH}" ]]; then
     rm -f "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}"
@@ -168,11 +195,11 @@ prepare_asbcp_file_projection() {
 }
 
 prepare_asbcp_config_projection() {
-  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_CONFIG_PATH}"
+  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_CONFIG_PATH}" "asbcp-config.yaml"
 }
 
 prepare_asbcp_kubeconfig_projection() {
-  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_KUBECONFIG_PATH}"
+  prepare_asbcp_file_projection "$1" "${ASBCP_PROJECTED_KUBECONFIG_PATH}" "asbcp-kubeconfig"
 }
 
 owned_asbcp_projection_dir() {

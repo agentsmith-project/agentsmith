@@ -16,6 +16,14 @@ function hasBoundTaskSummary(value) {
   );
 }
 
+function hasSameActorReusableAffordance(value) {
+  const affordance = value.task_workspace_reuse_affordance;
+  return isRecord(affordance)
+    && affordance.allowed === true
+    && affordance.same_actor === true
+    && affordance.runtime_writable_affordance === 'task_internal_home';
+}
+
 export function isReusableTaskWorkspaceFileLibrary(value) {
   return isRecord(value)
     && typeof value.id === 'string'
@@ -23,6 +31,7 @@ export function isReusableTaskWorkspaceFileLibrary(value) {
     && value.status === 'ready'
     && value.task_home_binding_status === 'unbound'
     && value.bound_task_visible === false
+    && hasSameActorReusableAffordance(value)
     && !hasBoundTaskSummary(value);
 }
 

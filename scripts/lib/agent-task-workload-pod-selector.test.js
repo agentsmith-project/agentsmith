@@ -49,6 +49,69 @@ describe('agent task workload pod selector', () => {
     });
   });
 
+  it('selects ASBCP scoped/hash pod names by label truth instead of deriving the pod name locally', () => {
+    const scopedPodName = `asbcp-ws-default-proj-default-${taskWorkloadId}-8f3c2b1a`;
+    const selected = selectManagedWorkloadPodForTask({
+      taskId,
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: scopedPodName,
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-default-e04b05f9bca4',
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(selected).toEqual({
+      podName: scopedPodName,
+      workloadId: `${taskWorkloadId}-15772034fcfa`,
+    });
+  });
+
+  it('rejects ambiguous ASBCP pods that share the same workspace/project/workload label truth', () => {
+    expect(() => selectManagedWorkloadPodForTask({
+      taskId,
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: `asbcp-ws-default-proj-default-${taskWorkloadId}-aaaa`,
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-default-e04b05f9bca4',
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+            },
+          },
+          {
+            metadata: {
+              name: `asbcp-ws-default-proj-default-${taskWorkloadId}-bbbb`,
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-default-e04b05f9bca4',
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+            },
+          },
+        ],
+      },
+    })).toThrow('ambiguous_managed_workload_pod');
+  });
+
   it('does not match another task pod that only shares the managed workload app label', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId,

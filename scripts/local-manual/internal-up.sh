@@ -18,7 +18,9 @@ ensure_internal_runner_image
 ensure_afscp_storage_csi
 ensure_internal_external_dependency_services
 INTERNAL_RUNTIME_STARTED=1
-resolve_afscp_jvs_binary
+if afscp_local_runtime_uses_source; then
+  resolve_afscp_jvs_binary
+fi
 ensure_afscp_local_runtime
 start_internal_runtime
 restart_api_with_mode 1

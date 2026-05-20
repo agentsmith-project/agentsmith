@@ -130,6 +130,35 @@ if (!existsSync(path.join(rootDir, universalProxyRuntimeHelperPath))) {
   }
 }
 
+const afscpRuntimeHelperPath = 'scripts/lib/afscp-local-runtime.sh';
+if (!existsSync(path.join(rootDir, afscpRuntimeHelperPath))) {
+  failures.push('backend-real AFSCP startup must use scripts/lib/afscp-local-runtime.sh');
+} else {
+  const afscpRuntimeHelper = read(afscpRuntimeHelperPath);
+  if (!afscpRuntimeHelper.includes('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"')) {
+    failures.push('backend-real AFSCP startup must default to the pinned image runtime, not sibling source');
+  }
+  if (!afscpRuntimeHelper.includes('agentsmith-fs-control-plane:v1.0.6@sha256:9ddeb916ed77f5a4ecd751b59488a017564c27392c62ed97f69c1dbec1e497f1')) {
+    failures.push('backend-real AFSCP startup must pin the current released AFSCP image digest');
+  }
+}
+
+const afscpLocalRuntimeSource = read('scripts/local-manual/internal-common.sh');
+if (!afscpLocalRuntimeSource.includes('afscp_local_runtime_uses_source')) {
+  failures.push('AFSCP sibling source startup must be isolated behind explicit source diagnostic mode');
+}
+if (!afscpLocalRuntimeSource.includes('afscp_local_runtime_uses_image')) {
+  failures.push('AFSCP local-real startup must support the default image-backed mode');
+}
+for (const forbiddenDefault of [
+  'AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-source}"',
+  'AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-sibling}"',
+]) {
+  if (afscpLocalRuntimeSource.includes(forbiddenDefault)) {
+    failures.push(`AFSCP local-real startup must not default to sibling source mode via ${forbiddenDefault}`);
+  }
+}
+
 for (const line of CURRENT_RUNTIME_LINE_MANIFEST) {
   const helperPathTruth = readRuntimeLinePathTruthFromShell(line.id);
   if (line.runtimePath.linesRootRelative !== helperPathTruth.lines_root_relative) {

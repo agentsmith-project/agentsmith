@@ -385,8 +385,9 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('TASK_WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"');
     expect(internalSmoke).toContain('-l "app=managed-workload" -o json');
     expect(internalSmoke).toContain('workload_pod_selector_error');
-    expect(internalSmoke).toContain('expected_pod=workload-${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).toContain('pod_selector=app=managed-workload');
     expect(internalSmoke).toContain('workload_id_prefix=${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).not.toContain('expected_pod=workload-${TASK_WORKLOAD_ID}');
     expect(internalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
     expect(internalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
 
@@ -394,15 +395,17 @@ describe('Agent Task terminal runtime gates', () => {
     expect(localManualInternalSmoke).toContain('WORKLOAD_ID="$(node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" --sanitize "${TASK_ID}")"');
     expect(localManualInternalSmoke).toContain('-l "app=managed-workload" -o json');
     expect(localManualInternalSmoke).toContain('workload_pod_selector_error');
-    expect(localManualInternalSmoke).toContain('expected_pod=workload-${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).toContain('pod_selector=app=managed-workload');
     expect(localManualInternalSmoke).toContain('workload_id_prefix=${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).not.toContain('expected_pod=workload-${WORKLOAD_ID}');
     expect(localManualInternalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
     expect(localManualInternalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
 
     expect(selector).toContain("item.app === 'managed-workload'");
     expect(selector).toContain('isDerivedLabelId(item.workspaceId, workspaceId)');
     expect(selector).toContain('isDerivedLabelId(item.projectId, projectId)');
-    expect(selector).toContain('item.podName === expectedPodName');
+    expect(selector).not.toContain('expectedPodName');
+    expect(selector).not.toContain('item.podName === expectedPodName');
     expect(selector).toContain('isTaskWorkloadId(item.workloadId, taskWorkloadId)');
     expect(selector).toContain('labelId === sourceId');
     expect(selector).toContain('labelId === sanitized');

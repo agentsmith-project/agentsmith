@@ -55,19 +55,9 @@ function readItems(payload) {
   return Array.isArray(record?.items) ? record.items : [];
 }
 
-function isTaskWorkloadId(workloadId, taskWorkloadId) {
-  return workloadId === taskWorkloadId || workloadId.startsWith(`${taskWorkloadId}-`);
-}
-
-function isDerivedLabelId(labelId, sourceId) {
-  if (!sourceId) return true;
-  const sanitized = sanitizeWorkloadId(sourceId);
-  return (
-    labelId === sourceId ||
-    labelId === sanitized ||
-    labelId.startsWith(`${sourceId}-`) ||
-    labelId.startsWith(`${sanitized}-`)
-  );
+function matchesOptionalRawId(rawId, expectedId) {
+  if (!rawId) return false;
+  return expectedId ? rawId === expectedId : true;
 }
 
 export function selectManagedWorkloadPodForTask(input) {
@@ -78,9 +68,10 @@ export function selectManagedWorkloadPodForTask(input) {
     .map((item) => ({
       podName: readPodName(item),
       app: readLabel(item, 'app'),
-      workspaceId: readLabel(item, 'workspace_id'),
-      projectId: readLabel(item, 'project_id'),
-      workloadId: readLabel(item, 'workload_id'),
+      workspaceId: readAnnotation(item, 'mbos.io/workspace-id'),
+      projectId: readAnnotation(item, 'mbos.io/project-id'),
+      workloadId: readAnnotation(item, 'mbos.io/workload-id'),
+      labelWorkloadId: readLabel(item, 'workload_id'),
       expiresAt: readAnnotation(item, 'expires_at'),
       phase: readStatusPhase(item),
       deletionTimestamp: readDeletionTimestamp(item),
@@ -88,9 +79,9 @@ export function selectManagedWorkloadPodForTask(input) {
     .filter((item) => item.podName.length > 0)
     .filter((item) => !item.deletionTimestamp)
     .filter((item) => item.app === 'managed-workload')
-    .filter((item) => isDerivedLabelId(item.workspaceId, workspaceId))
-    .filter((item) => isDerivedLabelId(item.projectId, projectId))
-    .filter((item) => isTaskWorkloadId(item.workloadId, taskWorkloadId));
+    .filter((item) => matchesOptionalRawId(item.workspaceId, workspaceId))
+    .filter((item) => matchesOptionalRawId(item.projectId, projectId))
+    .filter((item) => item.workloadId === taskWorkloadId);
 
   if (candidates.length === 0) {
     return null;

@@ -367,7 +367,7 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('finalTruth: secondCloseTruth');
   });
 
-  it('locates internal managed workload pods by current ASBCP label truth without exact workload_id matching', async () => {
+  it('locates internal managed workload pods by raw ASBCP annotation truth with exact workload_id matching', async () => {
     const internalSmoke = await readFile(
       path.resolve(process.cwd(), 'scripts/agent-task-terminal-internal-real-smoke.sh'),
       'utf-8',
@@ -386,7 +386,8 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalSmoke).toContain('-l "app=managed-workload" -o json');
     expect(internalSmoke).toContain('workload_pod_selector_error');
     expect(internalSmoke).toContain('pod_selector=app=managed-workload');
-    expect(internalSmoke).toContain('workload_id_prefix=${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).toContain('workload_id=${TASK_WORKLOAD_ID}');
+    expect(internalSmoke).not.toContain('workload_id_prefix=${TASK_WORKLOAD_ID}');
     expect(internalSmoke).not.toContain('expected_pod=workload-${TASK_WORKLOAD_ID}');
     expect(internalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
     expect(internalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
@@ -396,21 +397,22 @@ describe('Agent Task terminal runtime gates', () => {
     expect(localManualInternalSmoke).toContain('-l "app=managed-workload" -o json');
     expect(localManualInternalSmoke).toContain('workload_pod_selector_error');
     expect(localManualInternalSmoke).toContain('pod_selector=app=managed-workload');
-    expect(localManualInternalSmoke).toContain('workload_id_prefix=${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).toContain('workload_id=${WORKLOAD_ID}');
+    expect(localManualInternalSmoke).not.toContain('workload_id_prefix=${WORKLOAD_ID}');
     expect(localManualInternalSmoke).not.toContain('expected_pod=workload-${WORKLOAD_ID}');
     expect(localManualInternalSmoke).not.toContain('-l "workload_id=${WORKLOAD_ID}"');
     expect(localManualInternalSmoke).not.toContain("jsonpath='{.items[0].metadata.name}'");
 
     expect(selector).toContain("item.app === 'managed-workload'");
-    expect(selector).toContain('isDerivedLabelId(item.workspaceId, workspaceId)');
-    expect(selector).toContain('isDerivedLabelId(item.projectId, projectId)');
+    expect(selector).toContain("workspaceId: readAnnotation(item, 'mbos.io/workspace-id')");
+    expect(selector).toContain("projectId: readAnnotation(item, 'mbos.io/project-id')");
+    expect(selector).toContain("workloadId: readAnnotation(item, 'mbos.io/workload-id')");
+    expect(selector).toContain('item.workloadId === taskWorkloadId');
+    expect(selector).not.toContain('isDerivedLabelId');
+    expect(selector).not.toContain('isTaskWorkloadId');
+    expect(selector).not.toContain('startsWith(`${taskWorkloadId}-`)');
     expect(selector).not.toContain('expectedPodName');
     expect(selector).not.toContain('item.podName === expectedPodName');
-    expect(selector).toContain('isTaskWorkloadId(item.workloadId, taskWorkloadId)');
-    expect(selector).toContain('labelId === sourceId');
-    expect(selector).toContain('labelId === sanitized');
-    expect(selector).toContain('labelId.startsWith(`${sanitized}-`)');
-    expect(selector).toContain('workloadId === taskWorkloadId || workloadId.startsWith(`${taskWorkloadId}-`)');
   });
 
   it('initializes internal terminal smoke POD_NAME before polling under set -u', async () => {

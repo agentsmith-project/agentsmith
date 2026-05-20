@@ -108,7 +108,7 @@ for _ in $(seq 1 90); do
   POD_LIST_JSON="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "app=managed-workload" -o json 2>/dev/null || true)"
   if [[ -n "${POD_LIST_JSON}" ]]; then
     if ! POD_NAME="$(printf '%s' "${POD_LIST_JSON}" | node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" "${TASK_ID}" "${TASK_WS_ID}" "${PROJECT_ID}")"; then
-      echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_selector_error task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${TASK_WS_ID} project_id=${PROJECT_ID} workload_id_prefix=${TASK_WORKLOAD_ID}" >&2
+      echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_selector_error task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${TASK_WS_ID} project_id=${PROJECT_ID} workload_id=${TASK_WORKLOAD_ID}" >&2
       exit 1
     fi
   fi
@@ -119,7 +119,7 @@ for _ in $(seq 1 90); do
 done
 
 if [[ -z "${POD_NAME:-}" ]]; then
-  echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_not_observed task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${TASK_WS_ID} project_id=${PROJECT_ID} workload_id_prefix=${TASK_WORKLOAD_ID}" >&2
+  echo "[agent-task-terminal-internal-smoke] FAILED workload_pod_not_observed task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${TASK_WS_ID} project_id=${PROJECT_ID} workload_id=${TASK_WORKLOAD_ID}" >&2
   exit 1
 fi
 

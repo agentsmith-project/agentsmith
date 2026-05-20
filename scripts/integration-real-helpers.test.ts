@@ -1090,7 +1090,7 @@ describe('integration-real-helpers', () => {
     });
   });
 
-  it('selects expired workload pods for manager-mediated release using workload labels and expires_at', () => {
+  it('selects expired workload pods for manager-mediated release using raw annotations and expires_at', () => {
     const payload = JSON.stringify({
       items: [
         {
@@ -1103,6 +1103,9 @@ describe('integration-real-helpers', () => {
               workload_id: 'task-target-15772034fcfa',
             },
             annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': 'task-target',
               expires_at: '2026-05-12T12:00:00Z',
             },
             finalizers: ['example.com/finalizer'],
@@ -1118,6 +1121,9 @@ describe('integration-real-helpers', () => {
               workload_id: 'task-target-15772034fcfa',
             },
             annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': 'task-target',
               expires_at: '2026-05-12T12:10:00Z',
             },
           },
@@ -1132,7 +1138,41 @@ describe('integration-real-helpers', () => {
               workload_id: 'task-other-15772034fcfa',
             },
             annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': 'task-other',
               expires_at: '2026-05-12T11:00:00Z',
+            },
+          },
+        },
+        {
+          metadata: {
+            name: 'workload-prefix-conflict',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws_default',
+              project_id: 'proj_1',
+              workload_id: 'task-target-extra-15772034fcfa',
+            },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': 'task-target-extra',
+              expires_at: '2026-05-12T11:30:00Z',
+            },
+          },
+        },
+        {
+          metadata: {
+            name: 'workload-labels-only',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws_default',
+              project_id: 'proj_1',
+              workload_id: 'task-target-15772034fcfa',
+            },
+            annotations: {
+              expires_at: '2026-05-12T11:45:00Z',
             },
           },
         },
@@ -1143,7 +1183,7 @@ describe('integration-real-helpers', () => {
       payload,
       now: new Date('2026-05-12T12:05:00Z'),
       workloadId: 'task-target',
-      })).toEqual([
+    })).toEqual([
       {
         podName: 'asbcp-ws-default-proj-1-task-target-15772034fcfa',
         workspaceId: 'ws_default',
@@ -1176,6 +1216,9 @@ describe('integration-real-helpers', () => {
                 workload_id: 'task-release-identity-15772034fcfa',
               },
               annotations: {
+                'mbos.io/workspace-id': 'ws_default',
+                'mbos.io/project-id': 'proj_raw',
+                'mbos.io/workload-id': 'task-release-identity',
                 expires_at: '2026-05-12T12:00:00Z',
               },
             },
@@ -1241,6 +1284,9 @@ describe('integration-real-helpers', () => {
                 workload_id: 'task-release-404-15772034fcfa',
               },
               annotations: {
+                'mbos.io/workspace-id': 'ws_default',
+                'mbos.io/project-id': 'proj_raw',
+                'mbos.io/workload-id': 'task-release-404',
                 expires_at: '2026-05-12T12:00:00Z',
               },
             },
@@ -1297,6 +1343,9 @@ describe('integration-real-helpers', () => {
                   workload_id: 'task-release-404-absent-15772034fcfa',
                 },
                 annotations: {
+                  'mbos.io/workspace-id': 'ws_default',
+                  'mbos.io/project-id': 'proj_raw',
+                  'mbos.io/workload-id': 'task-release-404-absent',
                   expires_at: '2026-05-12T12:00:00Z',
                 },
               },
@@ -1358,6 +1407,9 @@ describe('integration-real-helpers', () => {
                   workload_id: 'task-wait-404-absent-15772034fcfa',
                 },
                 annotations: {
+                  'mbos.io/workspace-id': 'ws_default',
+                  'mbos.io/project-id': 'proj_raw',
+                  'mbos.io/workload-id': 'task-wait-404-absent',
                   expires_at: '2026-05-12T12:00:00Z',
                 },
               },
@@ -2802,6 +2854,11 @@ describe('integration-real-helpers', () => {
               project_id: 'proj-1-e04b05f9bca4',
               workload_id: `${workloadId}-15772034fcfa`,
             },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': workloadId,
+            },
           },
           status: {
             phase: 'Running',
@@ -2879,6 +2936,11 @@ describe('integration-real-helpers', () => {
               project_id: 'proj-1-e04b05f9bca4',
               workload_id: `${workloadId}-15772034fcfa`,
             },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': workloadId,
+            },
           },
           status: {
             phase: 'Pending',
@@ -2939,7 +3001,7 @@ describe('integration-real-helpers', () => {
     });
   });
 
-  it('observes managed workload pod presence and identity by ASBCP label truth instead of exact workload_id', async () => {
+  it('observes managed workload pod presence and identity by raw ASBCP annotation truth', async () => {
     const workloadId = 'task-presence-diag';
     const podName = `asbcp-ws-default-proj-1-${workloadId}-15772034fcfa`;
 
@@ -2947,11 +3009,18 @@ describe('integration-real-helpers', () => {
       items: [
         {
           metadata: {
-            name: 'workload-task-other',
+            name: 'workload-task-presence-diag-extra',
             uid: 'pod-uid-other',
             labels: {
               app: 'managed-workload',
-              workload_id: 'task-other-15772034fcfa',
+              workspace_id: 'ws-default-9f642c763af7',
+              project_id: 'proj-1-e04b05f9bca4',
+              workload_id: `${workloadId}-extra-15772034fcfa`,
+            },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': `${workloadId}-extra`,
             },
           },
         },
@@ -2965,6 +3034,11 @@ describe('integration-real-helpers', () => {
               project_id: 'proj-1-e04b05f9bca4',
               workload_id: `${workloadId}-15772034fcfa`,
             },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': workloadId,
+            },
           },
         },
       ],
@@ -2972,12 +3046,16 @@ describe('integration-real-helpers', () => {
       await expect(waitForWorkloadPodPresent({
         namespace: 'agentsmith-sandbox',
         workloadId,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
         timeoutMs: 1_000,
       })).resolves.toBe(podName);
 
       await expect(waitForWorkloadPodIdentity({
         namespace: 'agentsmith-sandbox',
         workloadId,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
         timeoutMs: 1_000,
       })).resolves.toEqual({
         name: podName,
@@ -2987,6 +3065,8 @@ describe('integration-real-helpers', () => {
       await expect(waitForWorkloadPodDeleted({
         namespace: 'agentsmith-sandbox',
         workloadId,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
         timeoutMs: 10,
       })).rejects.toThrow();
 

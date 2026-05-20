@@ -10,7 +10,7 @@ const workspaceId = 'ws_default';
 const projectId = 'proj_default';
 
 describe('agent task workload pod selector', () => {
-  it('selects the current ASBCP pod when workload_id carries a generated suffix', () => {
+  it('selects the current ASBCP pod by raw ASBCP annotations when workload_id label carries a generated suffix', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId,
       workspaceId,
@@ -26,6 +26,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: 'task-other-15772034fcfa',
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': 'task-other',
+              },
             },
           },
           {
@@ -37,6 +42,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
             },
           },
         ],
@@ -45,11 +55,11 @@ describe('agent task workload pod selector', () => {
 
     expect(selected).toEqual({
       podName: `workload-${taskWorkloadId}`,
-      workloadId: `${taskWorkloadId}-15772034fcfa`,
+      workloadId: taskWorkloadId,
     });
   });
 
-  it('selects ASBCP scoped/hash pod names by label truth instead of deriving the pod name locally', () => {
+  it('selects ASBCP scoped/hash pod names by annotation truth instead of deriving the pod name locally', () => {
     const scopedPodName = `asbcp-ws-default-proj-default-${taskWorkloadId}-8f3c2b1a`;
     const selected = selectManagedWorkloadPodForTask({
       taskId,
@@ -66,6 +76,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
             },
           },
         ],
@@ -74,11 +89,11 @@ describe('agent task workload pod selector', () => {
 
     expect(selected).toEqual({
       podName: scopedPodName,
-      workloadId: `${taskWorkloadId}-15772034fcfa`,
+      workloadId: taskWorkloadId,
     });
   });
 
-  it('rejects ambiguous ASBCP pods that share the same workspace/project/workload label truth', () => {
+  it('rejects ambiguous ASBCP pods that share the same raw workspace/project/workload annotations', () => {
     expect(() => selectManagedWorkloadPodForTask({
       taskId,
       workspaceId,
@@ -94,6 +109,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
             },
           },
           {
@@ -104,6 +124,11 @@ describe('agent task workload pod selector', () => {
                 workspace_id: 'ws-default-9f642c763af7',
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
               },
             },
           },
@@ -128,6 +153,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: 'task-a512d9e420464a398d0f813b5f3d15a4-15772034fcfa',
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': 'task-a512d9e420464a398d0f813b5f3d15a4',
+              },
             },
           },
         ],
@@ -137,7 +167,37 @@ describe('agent task workload pod selector', () => {
     expect(selected).toBeNull();
   });
 
-  it('accepts legacy raw workspace and project labels while matching the task-derived workload pod', () => {
+  it('does not match task-extra when looking for task even if the hashed label shares the task prefix', () => {
+    const selected = selectManagedWorkloadPodForTask({
+      taskId: 'task',
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: 'workload-task-extra',
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-default-e04b05f9bca4',
+                workload_id: 'task-extra-15772034fcfa',
+              },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': 'task-extra',
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(selected).toBeNull();
+  });
+
+  it('requires raw ASBCP identity annotations instead of accepting legacy labels only', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId,
       workspaceId,
@@ -159,13 +219,10 @@ describe('agent task workload pod selector', () => {
       },
     });
 
-    expect(selected).toEqual({
-      podName: `workload-${taskWorkloadId}`,
-      workloadId: `${taskWorkloadId}-15772034fcfa`,
-    });
+    expect(selected).toBeNull();
   });
 
-  it('requires the stable managed workload app and project labels before accepting a task-derived pod name', () => {
+  it('requires the stable managed workload app label and raw project annotation before accepting a task pod', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId,
       workspaceId,
@@ -181,6 +238,11 @@ describe('agent task workload pod selector', () => {
                 project_id: 'proj-default-e04b05f9bca4',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
               },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
             },
           },
           {
@@ -191,6 +253,11 @@ describe('agent task workload pod selector', () => {
                 workspace_id: 'ws-default-9f642c763af7',
                 project_id: 'proj_other',
                 workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': 'proj_other',
+                'mbos.io/workload-id': taskWorkloadId,
               },
             },
           },

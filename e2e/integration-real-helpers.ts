@@ -3933,31 +3933,8 @@ function readPodName(item: KubernetesPodItem): string {
   return item.metadata?.name?.trim() ?? "";
 }
 
-function readPodLabel(item: KubernetesPodItem, key: string): string {
-  return item.metadata?.labels?.[key]?.trim() ?? "";
-}
-
-function matchesWorkloadIdPrefix(workloadId: string, workloadIdPrefix: string): boolean {
-  return workloadId === workloadIdPrefix || workloadId.startsWith(`${workloadIdPrefix}-`);
-}
-
-function matchesDerivedLabelId(labelId: string, sourceId?: string): boolean {
-  const source = sourceId?.trim();
-  if (!source) return true;
-  const sanitized = sanitizeWorkloadId(source);
-  return (
-    labelId === source ||
-    labelId === sanitized ||
-    labelId.startsWith(`${source}-`) ||
-    labelId.startsWith(`${sanitized}-`)
-  );
-}
-
-function isManagedWorkloadTargetPod(input: {
-  workloadId: string;
-  workloadIdPrefix: string;
-}): boolean {
-  return matchesWorkloadIdPrefix(input.workloadId, input.workloadIdPrefix);
+function readPodAnnotation(item: KubernetesPodItem, key: string): string {
+  return item.metadata?.annotations?.[key]?.trim() ?? "";
 }
 
 function selectManagedWorkloadPodItem(args: {
@@ -3978,7 +3955,7 @@ function selectManagedWorkloadPodItem(args: {
   const item = (payload.items ?? []).find(
     (candidate) =>
       readPodName(candidate) === selected.podName &&
-      readPodLabel(candidate, "workload_id") === selected.workloadId,
+      readPodAnnotation(candidate, "mbos.io/workload-id") === selected.workloadId,
   );
   return item ? { ...selected, item } : null;
 }
@@ -3991,9 +3968,7 @@ export function selectExpiredWorkloadReleaseTargets(args: {
   projectId?: string;
 }): ExpiredWorkloadReleaseTarget[] {
   const now = args.now ?? new Date();
-  const workloadFilter = args.workloadId?.trim()
-    ? sanitizeWorkloadId(args.workloadId)
-    : undefined;
+  const workloadFilter = args.workloadId?.trim();
   const workspaceFilter = args.workspaceId?.trim();
   const projectFilter = args.projectId?.trim();
   const payload = parseWorkloadPodListPayloadSafely(args.payload);
@@ -4004,9 +3979,9 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     const annotations = metadata.annotations ?? {};
     const podName = metadata.name?.trim();
     const app = labels.app?.trim();
-    const workspaceId = labels.workspace_id?.trim();
-    const projectId = labels.project_id?.trim();
-    const workloadId = labels.workload_id?.trim();
+    const workspaceId = annotations["mbos.io/workspace-id"]?.trim();
+    const projectId = annotations["mbos.io/project-id"]?.trim();
+    const workloadId = annotations["mbos.io/workload-id"]?.trim();
     const expiresAt = annotations.expires_at?.trim();
     if (!podName || !workspaceId || !projectId || !workloadId || !expiresAt) {
       return [];
@@ -4014,19 +3989,13 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     if (app !== "managed-workload") {
       return [];
     }
-    if (!matchesDerivedLabelId(workspaceId, workspaceFilter)) {
+    if (workspaceFilter && workspaceId !== workspaceFilter) {
       return [];
     }
-    if (!matchesDerivedLabelId(projectId, projectFilter)) {
+    if (projectFilter && projectId !== projectFilter) {
       return [];
     }
-    if (
-      workloadFilter &&
-      !isManagedWorkloadTargetPod({
-        workloadId,
-        workloadIdPrefix: workloadFilter,
-      })
-    ) {
+    if (workloadFilter && workloadId !== workloadFilter) {
       return [];
     }
     const expiresAtMs = Date.parse(expiresAt);
@@ -4036,9 +4005,9 @@ export function selectExpiredWorkloadReleaseTargets(args: {
     const deletionTimestamp = metadata.deletionTimestamp?.trim();
     return [{
       podName,
-      workspaceId: workspaceFilter ?? workspaceId,
-      projectId: projectFilter ?? projectId,
-      workloadId: workloadFilter ?? workloadId,
+      workspaceId,
+      projectId,
+      workloadId,
       expiresAt,
       ...(deletionTimestamp ? { deletionTimestamp } : {}),
       finalizers: (metadata.finalizers ?? []).filter(

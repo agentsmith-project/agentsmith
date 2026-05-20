@@ -57,7 +57,7 @@ for _ in $(seq 1 60); do
   POD_LIST_JSON="$(kubectl get pods -n "${K8S_NAMESPACE}" -l "app=managed-workload" -o json 2>/dev/null || true)"
   if [[ -n "${POD_LIST_JSON}" ]]; then
     if ! POD_NAME="$(printf '%s' "${POD_LIST_JSON}" | node "${ROOT_DIR}/scripts/lib/agent-task-workload-pod-selector.mjs" "${TASK_ID}" "${WORKSPACE_ID}" "${PROJECT_ID}")"; then
-      internal_err "internal smoke failed: workload_pod_selector_error task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${WORKSPACE_ID} project_id=${PROJECT_ID} workload_id_prefix=${WORKLOAD_ID}"
+      internal_err "internal smoke failed: workload_pod_selector_error task=${TASK_ID} pod_selector=app=managed-workload workspace_id=${WORKSPACE_ID} project_id=${PROJECT_ID} workload_id=${WORKLOAD_ID}"
       exit 1
     fi
   fi
@@ -70,5 +70,5 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
-internal_err "internal smoke failed: workload pod not observed for task ${TASK_ID} pod_selector=app=managed-workload workspace_id=${WORKSPACE_ID} project_id=${PROJECT_ID} workload_id_prefix=${WORKLOAD_ID}"
+internal_err "internal smoke failed: workload pod not observed for task ${TASK_ID} pod_selector=app=managed-workload workspace_id=${WORKSPACE_ID} project_id=${PROJECT_ID} workload_id=${WORKLOAD_ID}"
 exit 1

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import cjsSelector from './agent-task-workload-pod-selector.cjs';
 import {
   sanitizeWorkloadId,
   selectManagedWorkloadPodForTask,
@@ -271,5 +272,38 @@ describe('agent task workload pod selector', () => {
   it('uses the same task workload sanitizer as the internal AgentSmith runtime contract', () => {
     expect(sanitizeWorkloadId('TASK_ABC.123###')).toBe('task-abc-123');
     expect(sanitizeWorkloadId('---')).toBe('workload');
+  });
+
+  it('keeps the CommonJS logic entrypoint aligned for Playwright integration helpers', () => {
+    const input = {
+      taskId,
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: `asbcp-ws-default-proj-default-${taskWorkloadId}-8f3c2b1a`,
+              labels: {
+                app: 'managed-workload',
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    expect(cjsSelector.sanitizeWorkloadId('TASK_ABC.123###')).toBe(
+      sanitizeWorkloadId('TASK_ABC.123###'),
+    );
+    expect(cjsSelector.selectManagedWorkloadPodForTask(input)).toEqual(
+      selectManagedWorkloadPodForTask(input),
+    );
   });
 });

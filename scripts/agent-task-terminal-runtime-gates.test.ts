@@ -377,7 +377,7 @@ describe('Agent Task terminal runtime gates', () => {
       'utf-8',
     );
     const selector = await readFile(
-      path.resolve(process.cwd(), 'scripts/lib/agent-task-workload-pod-selector.mjs'),
+      path.resolve(process.cwd(), 'scripts/lib/agent-task-workload-pod-selector.cjs'),
       'utf-8',
     );
 

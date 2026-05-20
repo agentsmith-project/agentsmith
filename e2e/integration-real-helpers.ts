@@ -20,10 +20,6 @@ import {
   summarizeAgentTaskPod,
   summarizeAgentTaskTraces,
 } from "./agent-task-execution-outcome";
-import {
-  sanitizeWorkloadId as sanitizeAgentTaskWorkloadId,
-  selectManagedWorkloadPodForTask,
-} from "../scripts/lib/agent-task-workload-pod-selector.mjs";
 import * as managedRunnerSeedModule from "../scripts/agent-runner-seed-managed-runner-core";
 import type {
   DefaultManagedRunnerSeedInput,
@@ -34,6 +30,29 @@ import {
   readStoredAuthToken,
 } from "./integration-workspace-access";
 import { buildWorkspaceLoginLandingHref } from "@mbos/contracts/src/auth-handoff-paths";
+
+type WorkloadPodSelectorInput = {
+  taskId?: string;
+  workspaceId?: string;
+  projectId?: string;
+  payload?: unknown;
+};
+type WorkloadPodSelectorResult = {
+  podName: string;
+  workloadId: string;
+} | null;
+type WorkloadPodSelectorModule = {
+  sanitizeWorkloadId: (id: string) => string;
+  selectManagedWorkloadPodForTask: (
+    input: WorkloadPodSelectorInput,
+  ) => WorkloadPodSelectorResult;
+};
+const workloadPodSelector = require(
+  "../scripts/lib/agent-task-workload-pod-selector.cjs",
+) as WorkloadPodSelectorModule;
+const sanitizeAgentTaskWorkloadId = workloadPodSelector.sanitizeWorkloadId;
+const selectManagedWorkloadPodForTask =
+  workloadPodSelector.selectManagedWorkloadPodForTask;
 
 type ManagedRunnerSeedFn = (
   input: DefaultManagedRunnerSeedInput,

@@ -52,6 +52,7 @@ AgentSmith 仍保留：
 1. 发布执行适合拆，产品验收不适合拆。
 2. Runner 进程适合拆，Agent task / Files / Context Store / 调度真相不适合拆。
 3. Airgap 必须做成真实离线包；当前只有部分 archive/load helper，不是完整离线发布能力。
+4. 新 repo 创建时先参考 AgentSmith family 项目的治理启动纪律是合理的 bootstrap discipline：先建本地 sibling repo skeleton 和 bootstrap-only/docs-governance-first PR，只落治理、边界、quick gate 与 handoff 内容；不迁源码、不迁工具、不发布。quick gate 只表示可以让 repo-local team 进入专项工作，不表示 release readiness。
 
 ## 4. Repo 职责
 
@@ -66,7 +67,7 @@ AgentSmith 仍保留：
 1. AgentSmith 拥有产品 schema、初始化代码和 bootstrap 语义。
 2. Release kit 可以打包、渲染、执行和等待 bootstrap workload，并产出部署证据；它不解释产品 schema，也不改 bootstrap 业务逻辑。
 3. Runner repo 可以实现 builtin skills 的本地 runtime 和请求级投影消费；Context Store 权限、scope 和 managed credential 解析语义仍由 AgentSmith 定义。
-4. 新 repo 本地目录与 `agentsmith` 同级只是当前 workspace bootstrap 约定：`/home/percy/works/mbos-v1/agentsmith-release-kit`、`/home/percy/works/mbos-v1/agentsmith-runner`；CI/release 只认 normalized GitHub identity + provenance。canonical repo identity 固定为 `github.com/agentsmith-project/<repo>`，文档和创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。
+4. 新 repo 本地目录与 `agentsmith` 同级只是当前 workspace bootstrap 约定：`/home/percy/works/mbos-v1/<repo>`，当前目标为 `/home/percy/works/mbos-v1/agentsmith-release-kit`、`/home/percy/works/mbos-v1/agentsmith-runner`；远端 org 已有，文档和创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。CI/release 只认 normalized GitHub identity + provenance；canonical repo identity 固定为 `github.com/agentsmith-project/<repo>`。
 5. `agentsmith-runner` 是唯一 canonical runner repo；当前同级目录已有的 `agentsmith-codex-runner` 只能作为迁移输入或归档对象，不能成为第二条 runner 真相。任何正式 lock、release contract 或 CI adoption 指向 `agentsmith-codex-runner` 都必须 fail fast。
 
 ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith 只 pin digest 和验证 adoption，不拥有这些 provider 的 release gate。
@@ -349,15 +350,15 @@ P0 必须定义一份最小 provenance schema，供 release contract、release k
 工作：
 
 1. 在 AgentSmith 增加 repo ownership matrix。
-2. 增加 Repo Bootstrap Contract：本地 bootstrap 校验新 repo 位于 `/home/percy/works/mbos-v1/` 下与 `agentsmith` 同级；canonical repo identity 是 `github.com/agentsmith-project/<repo>`，文档示例使用 `https://github.com/agentsmith-project/<repo>.git`，本地 origin 可以是等价的 HTTPS 或 SSH，只要 normalize 后 identity 一致；GitHub Actions / repo CI 只校验 GitHub org/repo identity、artifact provenance、contract 和 image digest，不校验 Percy 机器路径。
+2. 增加 Repo Bootstrap Contract：本地 bootstrap 校验新 repo 位于 `/home/percy/works/mbos-v1/<repo>`，与 `agentsmith` 同级；远端 org 已有，canonical repo identity 是 `github.com/agentsmith-project/<repo>`，文档示例使用 `https://github.com/agentsmith-project/<repo>.git`，本地 origin 可以是等价的 HTTPS 或 SSH，只要 normalize 后 identity 一致；GitHub Actions / repo CI 只校验 GitHub org/repo identity、artifact provenance、contract 和 image digest，不校验 Percy 机器路径。
 3. 增加 New Repo Governance Bootstrap Contract：
    - P0 只定义，不创建 repo、不迁代码。
    - AFSCP/ASBCP family reference 只作为新 repo bootstrap 治理做法上的 ASBCP-lite / non-normative reference；只借鉴启动纪律：repo identity、scope boundary、docs/contracts/runbooks/ADR 入口、quick governance guard、单一 release gate 入口。不能成为源码依赖、合同依赖或 gate 依赖，也不复制领域模型、风险台账规模、证据分类体系或 gate 实现。
-   - 新 repo 必须先做 bootstrap-only/docs-governance-first PR；通过 quick gate 后，再让 repo-local team/owners 进入专项工作。
-   - minimum bootstrap pack 包含 README.md、AGENTS.md、DEVELOPMENT.md 或 DEVELOPER.md guide、RELEASE_GATES 或 verify-release 入口、contracts/runbooks/ADR 入口。
+   - 新 repo 创建时先做本地 sibling repo skeleton 和 bootstrap-only/docs-governance-first PR；通过 quick gate 后，再让 repo-local team/owners 进入项目内专项工作。
+   - minimum bootstrap pack 包含 README.md、AGENTS.md、DEVELOPMENT.md 或 DEVELOPER.md guide、RELEASE_GATES 或 verify-release 入口、contracts/runbooks/ADR 入口，以及简短 handoff section/file。
    - quick gate fail-fast 只检查：canonical repo identity、required bootstrap files、scope/non-goals、release gate 入口存在且不声称 release readiness、没有源码迁移、没有 family repo 源码/合同/gate 依赖、没有 raw secret、没有 mutable image 或 tag-only release claim。
    - quick gate 不是 release readiness；正式 release readiness 由 repo-local release gate 决定。
-   - repo-local team/owners 只是责任元数据，不是 release gate；主协调 agent 只做分发、审查和收口。
+   - repo-local team/owners 只是责任元数据，不是 release gate；进入后先领取互不重叠的 docs、contracts、runbooks、CI gate 或 implementation workstream，并受 repo-local AGENTS/README/DEVELOPMENT/RELEASE_GATES 约束；主协调 agent 只做分发、审查和收口。
 4. 固定 runner repo 命名：`agentsmith-runner` 是唯一 canonical repo，`agentsmith-codex-runner` 只作为迁移输入或归档对象；增加归档/redirect checklist，并让 release lock/adoption guard 拒绝 `agentsmith-codex-runner` producer。
 5. 同步更新权威合同和入口文档：`docs/contracts/unified-deploy-contract.md`、`docs/contracts/product-terminology.md`、runtime lines / unified deploy operations docs 必须增加 migration/vNext 说明，从 Docker-only/local-kind 当前主线逐步收敛到 deployment mode matrix 和 substrate connection truth；在 validator/fixtures 落地前，不能把 `external_declared` 写成当前已支持事实。
 6. 定义 deployment mode matrix：`target_cluster`、`substrate_source`、`distribution` 三轴，以及允许组合。
@@ -629,13 +630,14 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 
 必须确认：
 
-1. 对应新 repo 已完成 bootstrap-only/docs-governance-first PR，只包含 minimum bootstrap pack、repo-local team/owners 元数据和 quick gate。
-2. minimum bootstrap pack 至少包含 README.md、AGENTS.md、DEVELOPMENT.md 或 DEVELOPER.md guide、RELEASE_GATES 或 verify-release 入口、contracts/runbooks/ADR 入口。
+1. 对应新 repo 已完成本地 sibling repo skeleton 和 bootstrap-only/docs-governance-first PR，只包含 minimum bootstrap pack、repo-local team/owners 元数据和 quick gate。
+2. minimum bootstrap pack 至少包含 README.md、AGENTS.md、DEVELOPMENT.md 或 DEVELOPER.md guide、RELEASE_GATES 或 verify-release 入口、contracts/runbooks/ADR 入口，以及简短 handoff section/file。
 3. quick gate fail-fast 只检查 canonical repo identity、required bootstrap files、scope/non-goals、release gate 入口存在且不声称 release readiness、无源码迁移、无 family repo 源码/合同/gate 依赖、无 raw secret、无 mutable image 或 tag-only release claim。
 4. quick gate 只证明最小治理骨架存在，quick gate 不是 release readiness；正式 release readiness 由 repo-local release gate 决定。
 5. repo-local team/owners 只是责任元数据，不是 signoff gate；主协调 agent 只做分发、审查和收口。
-6. AFSCP/ASBCP family reference 仍只是新 repo bootstrap 治理做法上的 ASBCP-lite / non-normative reference，不能成为源码依赖、合同依赖或 gate 依赖。
-7. 如果复制 AFSCP/ASBCP gate 脚本作为权威 gate、把 sibling repo status 当 gate、或让 quick gate 变成 release readiness，停止并回到边界评审。
+6. team members 进入新 repo 后先领取互不重叠的 docs、contracts、runbooks、CI gate 或 implementation workstream，且必须受 repo-local AGENTS/README/DEVELOPMENT/RELEASE_GATES 约束。
+7. AFSCP/ASBCP family reference 仍只是新 repo bootstrap 治理做法上的 ASBCP-lite / non-normative reference，不能成为源码依赖、合同依赖或 gate 依赖；不得把 AFSCP/ASBCP 的源码、合同或 gate 当作新 repo 权威。
+8. 如果复制 AFSCP/ASBCP gate 脚本作为权威 gate、把 sibling repo status 当 gate、或让 quick gate 变成 release readiness，停止并回到边界评审。
 
 阶段收口必须回答：
 

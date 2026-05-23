@@ -103,6 +103,7 @@ describe('run-mock-lane-playwright', () => {
     expect(script.indexOf('/en-US/login\\n/en-US/login/workspace')).toBeGreaterThanOrEqual(0);
     expect(script).toContain('/en-US/workspaces/ws_default');
     expect(script).toContain('/en-US/workspaces/ws_default/settings');
+    expect(script).toContain('/en-US/user/third-party-accounts');
   });
 
   it('accepts login redirects as successful warm-route responses', () => {

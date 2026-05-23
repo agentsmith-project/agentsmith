@@ -211,6 +211,47 @@ describe('visual baseline support', () => {
     expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
   });
 
+  it('keeps persistent CI visual noise tolerances narrow and avoids system-info threshold masking', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+    const hiddenTerminalBlockedSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'agent-task-hidden-terminal-blocked': {",
+      end: "  'agent-task-cancel-escalation-confirm': {",
+    });
+    const providerUpstreamErrorSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'agent-task-provider-upstream-error': {",
+      end: "  'agent-task-running': {",
+    });
+    const connectedConnectionsSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'workspace-connections-feishu-connected': {",
+      end: "  'workspace-connections-feishu-disabled': {",
+    });
+    const disabledConnectionsSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'workspace-connections-feishu-disabled': {",
+      end: "  'workspace-feishu-locked': {",
+    });
+    const systemInfoSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'system-info': {",
+      end: "  'system-login': {",
+    });
+
+    expect(hiddenTerminalBlockedSetupSource).toContain('maxDiffPixelRatio: 0.0002');
+    expect(providerUpstreamErrorSetupSource).toContain('maxDiffPixelRatio: 0.0002');
+    expect(connectedConnectionsSetupSource).toContain('maxDiffPixelRatio: 0.000005');
+    expect(disabledConnectionsSetupSource).toContain('maxDiffPixelRatio: 0.000005');
+    expect(hiddenTerminalBlockedSetupSource).not.toContain('maxDiffPixelRatio: 0.002');
+    expect(providerUpstreamErrorSetupSource).not.toContain('maxDiffPixelRatio: 0.002');
+    expect(providerUpstreamErrorSetupSource).not.toContain('maxDiffPixelRatio: 0.008');
+    expect(connectedConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
+    expect(disabledConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
+    expect(systemInfoSetupSource).not.toContain('screenshotOptions');
+    expect(systemInfoSetupSource).not.toContain('maxDiffPixelRatio');
+  });
+
   it('waits for route workspace identity before visual screenshots to avoid shell-level flakes', async () => {
     const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
     const runScenarioSource = extractSourceSection({

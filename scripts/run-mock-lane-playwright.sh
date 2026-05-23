@@ -18,7 +18,7 @@ PORT_WEB="${PORT_WEB:-3001}"
 NEXT_DIST_DIR="${MOCK_NEXT_DIST_DIR:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/next-dist}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
-WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/user/profile\n/en-US/workspaces/ws_default/projects/proj_001/files'
+WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/user/profile\n/en-US/user/third-party-accounts\n/en-US/workspaces/ws_default/projects/proj_001/files'
 WARM_ROUTE_ATTEMPTS="${MOCK_LANE_WARM_ROUTE_ATTEMPTS:-15}"
 
 PID_FILE="${MOCK_STATE_DIR}/web.pid"

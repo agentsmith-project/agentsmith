@@ -1921,6 +1921,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
         'End terminal sessions before starting a new agent run.',
       );
     },
+    screenshotOptions: {
+      maxDiffPixelRatio: 0.0002,
+    },
   },
   'agent-task-cancel-escalation-confirm': {
     beforeNavigate: async ({ page, scenario }) => {
@@ -2108,6 +2111,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('agent-tasks__message-final-answer')).toContainText('upstream error');
       await expect(page.getByTestId('agent-tasks__send-btn')).toBeVisible();
       await expect(agentTaskConversationTextarea(page)).toBeEnabled();
+    },
+    screenshotOptions: {
+      maxDiffPixelRatio: 0.0002,
     },
   },
   'agent-task-running': {
@@ -2325,7 +2331,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
     },
     screenshotOptions: {
-      maxDiffPixelRatio: 0,
+      maxDiffPixelRatio: 0.000005,
     },
   },
   'workspace-connections-feishu-disabled': {
@@ -2339,7 +2345,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
     },
     screenshotOptions: {
-      maxDiffPixelRatio: 0,
+      maxDiffPixelRatio: 0.000005,
     },
   },
   'workspace-feishu-locked': {

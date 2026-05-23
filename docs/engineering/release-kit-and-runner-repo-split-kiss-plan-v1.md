@@ -72,6 +72,32 @@ AgentSmith 仍保留：
 
 ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith 只 pin digest 和验证 adoption，不拥有这些 provider 的 release gate。
 
+### 4.1 新 repo 启动纪律 / team handoff
+
+判断：这个要求合理。新建 `agentsmith-release-kit`、`agentsmith-runner`
+时，可以参考 AgentSmith family 里 AFSCP / ASBCP 的启动纪律；但
+AFSCP / ASBCP 只能作为 bootstrap discipline / family reference，不能作为
+源码依赖、合同依赖、gate 依赖或新 repo 的事实源。
+
+启动顺序：
+
+1. 在 `/home/percy/works/mbos-v1/<repo>` 创建与 `agentsmith` 同级的本地 repo；
+   canonical 远端身份固定为 `github.com/agentsmith-project/<repo>`。
+2. 先落 repo identity、scope boundary、non-goals、owner/team 元数据和
+   handoff 入口；再进入任何专项实现。
+3. 先提交 bootstrap-only/docs-governance-first PR，只包含 README、AGENTS/CODEOWNERS
+   或等价约束说明、DEVELOPMENT/DEVELOPER guide、contracts 入口、
+   runbooks 入口、ADR 入口、RELEASE_GATES 或 verify-release 入口，以及
+   repo-local handoff checklist。
+4. quick governance guard 只检查 repo identity、必需文档、scope/non-goals、
+   gate 入口存在、无 raw secret、无 mutable image/tag-only release claim、无
+   AFSCP/ASBCP 源码/合同/gate 依赖、未迁源码和工具。
+5. quick gate 通过后，才允许独立 team members 在新 repo 内领取互不重叠的
+   docs、contracts、runbooks、CI gate 或 implementation workstream。
+6. 新 repo 的事实源只能是 repo-local 文档、合同、runbook、ADR、gate 和
+   AgentSmith 发布出来的 versioned contract / image digest / release manifest；
+   不能回读 `agentsmith` 工作树或 sibling repo 状态当作事实源。
+
 ## 5. 不做
 
 本计划明确不做：
@@ -85,6 +111,9 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
 7. 不为旧字段、旧路径、旧 env 做长期双轨兼容；pre-GA 改动优先 fail fast。
 8. 不为小概率环境做厚重兜底；缺合同、缺 digest、缺镜像、缺权限就快速失败。
 9. 不把 AFSCP/ASBCP family reference 变成源码依赖、合同依赖、gate 依赖或新治理平台。
+10. 不复制大型治理体系，不把 quick gate 等同 release readiness，不把新 repo 的
+    sibling repo status 当 gate。
+11. 不把源码迁移、工具迁移或从 `agentsmith` 工作树读取事实作为新 repo 第一步。
 
 ## 6. 部署模式矩阵
 

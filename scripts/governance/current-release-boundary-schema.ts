@@ -2064,7 +2064,10 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
   }
 
   const hostname = url.hostname.toLowerCase();
-  const pathname = url.pathname.replace(/\/+$/u, '').toLowerCase();
+  const pathname = canonicalGitHubPathname(url.pathname);
+  if (pathname === null) {
+    return isGitHubSourceHost(hostname);
+  }
 
   if (hostname === 'github.com') {
     return pathname === '/agentsmith-project/agentsmith'
@@ -2089,6 +2092,24 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
   }
 
   return false;
+}
+
+function canonicalGitHubPathname(pathname: string): string | null {
+  try {
+    return decodeURIComponent(pathname)
+      .replace(/\/{2,}/gu, '/')
+      .replace(/\/+$/u, '')
+      .toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isGitHubSourceHost(hostname: string): boolean {
+  return hostname === 'github.com'
+    || hostname === 'raw.githubusercontent.com'
+    || hostname === 'codeload.github.com'
+    || hostname === 'api.github.com';
 }
 
 function validateStringArray(

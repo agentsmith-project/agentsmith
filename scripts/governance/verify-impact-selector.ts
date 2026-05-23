@@ -740,6 +740,10 @@ const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<strin
   'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts',
   'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
 };
+const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+  'release:contract': 'tsx scripts/governance/release-contract.ts',
+};
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
 const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
   'npm run contracts:check-limit-naming',
@@ -841,6 +845,17 @@ function isSafeContractPackageScriptChange(
     && isSafeContractsCheckSourceBoundaryInsertion(previousCommand, currentCommand);
 }
 
+function isSafeReleaseContractPackageScriptChange(
+  scriptName: string,
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  const exactReleaseContractCommand = SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS[scriptName];
+  return exactReleaseContractCommand !== undefined
+    && currentCommand === exactReleaseContractCommand
+    && (previousCommand === undefined || previousCommand === exactReleaseContractCommand);
+}
+
 function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {
   if (scriptName === 'test:governance') {
     return command === 'bash scripts/governance-default-gate.sh';
@@ -902,7 +917,8 @@ function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: re
       return false;
     }
     return isSafeGovernanceOrMockLanePackageScriptChange(scriptName, previousCommand, currentCommand)
-      || isSafeContractPackageScriptChange(scriptName, previousCommand, currentCommand);
+      || isSafeContractPackageScriptChange(scriptName, previousCommand, currentCommand)
+      || isSafeReleaseContractPackageScriptChange(scriptName, previousCommand, currentCommand);
   });
 }
 

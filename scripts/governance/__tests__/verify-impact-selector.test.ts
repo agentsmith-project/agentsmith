@@ -1289,6 +1289,85 @@ describe('verify impact selector', () => {
     });
   });
 
+  it('maps package.json release contract script additions to governance tooling only for exact safe commands', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+        'release:contract': 'tsx scripts/governance/release-contract.ts',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+      expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('keeps package.json fail-closed for non-exact release contract script commands', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+      },
+    };
+    const unsafeScriptSets = [
+      {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts && echo unsafe',
+      },
+      {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'release:contract': 'tsx scripts/governance/not-release-contract.ts',
+      },
+    ];
+
+    for (const scripts of unsafeScriptSets) {
+      withPackageJsonGitFixture(basePackageJson, { scripts }, ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['package.json'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'package.json',
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
+            manualReviewRequired: true,
+          }),
+        ]);
+      });
+    }
+  });
+
   it('keeps package.json fail-closed for non-exact contract guard script commands', () => {
     const basePackageJson = {
       scripts: {

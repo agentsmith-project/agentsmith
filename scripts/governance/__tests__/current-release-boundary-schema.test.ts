@@ -274,6 +274,8 @@ describe('current release boundary schema', () => {
   it.each([
     'http://localhost/artifacts/agentsmith-deploy-template-package.tgz',
     'http://127.0.0.1/artifacts/agentsmith-deploy-template-package.tgz',
+    'http://[::1]/artifacts/agentsmith-deploy-template-package.tgz',
+    'http://0.0.0.0/artifacts/agentsmith-deploy-template-package.tgz',
     'local://deploy-template-package/agentsmith-deploy-template-package.tgz',
   ])('rejects deploy template package local package_uri and artifact_uri %s', (packageUri) => {
     const packageRecord = cloneFixture('deploy-template-package.valid.json');

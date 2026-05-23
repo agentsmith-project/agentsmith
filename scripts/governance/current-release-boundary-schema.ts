@@ -2151,11 +2151,37 @@ function isLocalArtifactUri(value: string): boolean {
   }
 
   const protocol = url.protocol.toLowerCase();
-  const hostname = url.hostname.toLowerCase();
   return protocol === 'file:'
     || protocol === 'local:'
-    || hostname === 'localhost'
-    || hostname === '127.0.0.1';
+    || isLocalOrUnspecifiedHost(url.hostname);
+}
+
+function isLocalOrUnspecifiedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
+  return host === 'localhost'
+    || isLocalOrUnspecifiedIpv4Host(host)
+    || host === '::'
+    || host === '::1'
+    || host === '0:0:0:0:0:0:0:0'
+    || host === '0:0:0:0:0:0:0:1';
+}
+
+function isLocalOrUnspecifiedIpv4Host(host: string): boolean {
+  const parts = host.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  const octets = parts.map((part) => {
+    if (!/^\d+$/u.test(part)) {
+      return null;
+    }
+    const value = Number(part);
+    return value >= 0 && value <= 255 ? value : null;
+  });
+  if (octets.some((octet) => octet === null)) {
+    return false;
+  }
+  return octets.every((octet) => octet === 0) || octets[0] === 127;
 }
 
 function isLocalOrTraversalPath(value: string): boolean {

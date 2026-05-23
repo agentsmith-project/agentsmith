@@ -659,8 +659,11 @@ describe('release readiness human entrypoints', () => {
       for (const artifactUri of [
         '../agentsmith-release-contract.json',
         'scripts/governance/release-summary.ts',
+        'https://github.com/agentsmith-project/agentsmith.git/',
         'https://api.github.com/repos/agentsmith-project/agentsmith/tarball/main',
         'https://api.github.com/repos/agentsmith-project/agentsmith/git/trees/main',
+        'http://[::1]/artifacts/agentsmith-release-contract.json',
+        'http://0.0.0.0/artifacts/agentsmith-release-contract.json',
       ]) {
         writeJson(summaryPath, {
           ...validSummary,

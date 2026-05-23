@@ -817,11 +817,37 @@ function isLocalArtifactUri(value: string): boolean {
     return false;
   }
   const protocol = url.protocol.toLowerCase();
-  const hostname = url.hostname.toLowerCase();
   return protocol === 'file:'
     || protocol === 'local:'
-    || hostname === 'localhost'
-    || hostname === '127.0.0.1';
+    || isLocalOrUnspecifiedHost(url.hostname);
+}
+
+function isLocalOrUnspecifiedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
+  return host === 'localhost'
+    || isLocalOrUnspecifiedIpv4Host(host)
+    || host === '::'
+    || host === '::1'
+    || host === '0:0:0:0:0:0:0:0'
+    || host === '0:0:0:0:0:0:0:1';
+}
+
+function isLocalOrUnspecifiedIpv4Host(host: string): boolean {
+  const parts = host.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  const octets = parts.map((part) => {
+    if (!/^\d+$/u.test(part)) {
+      return null;
+    }
+    const value = Number(part);
+    return value >= 0 && value <= 255 ? value : null;
+  });
+  if (octets.some((octet) => octet === null)) {
+    return false;
+  }
+  return octets.every((octet) => octet === 0) || octets[0] === 127;
 }
 
 function isAgentSmithGitHubSourceUri(value: string): boolean {
@@ -833,7 +859,7 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
   }
 
   const hostname = url.hostname.toLowerCase();
-  const pathname = decodeArtifactPointer(url.pathname).toLowerCase();
+  const pathname = canonicalGitHubPathname(url.pathname);
   if (hostname === 'github.com') {
     return pathname === '/agentsmith-project/agentsmith'
       || pathname === '/agentsmith-project/agentsmith.git'
@@ -858,6 +884,13 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
       || pathname.startsWith(`${repoPath}/git/`);
   }
   return false;
+}
+
+function canonicalGitHubPathname(pathname: string): string {
+  return decodeArtifactPointer(pathname)
+    .replace(/\/{2,}/gu, '/')
+    .replace(/\/+$/u, '')
+    .toLowerCase();
 }
 
 function isAgentSmithProductSourcePointer(value: string): boolean {

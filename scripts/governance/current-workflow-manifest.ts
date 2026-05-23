@@ -621,6 +621,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
         artifactPaths: [
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],
@@ -663,7 +664,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'artifacts/governance-reports/**',
           'artifacts/backend-real/current/**',
           'artifacts/backend-real/runs/**',
+          '!artifacts/backend-real/runs/**/next-dist/**',
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],
@@ -724,6 +727,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
         artifactPaths: [
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],
@@ -742,6 +746,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
         artifactPaths: [
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],
@@ -767,6 +772,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'artifacts/gate-results/lane-visual/**',
           'artifacts/visual-baseline-reviews/**',
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],
@@ -793,7 +799,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         artifactPaths: [
           'artifacts/backend-real/runs/**',
+          '!artifacts/backend-real/runs/**/next-dist/**',
           'artifacts/mock-lane/runs/**',
+          '!artifacts/mock-lane/runs/**/next-dist/**',
           'test-results/**',
           'playwright-report/**',
         ],

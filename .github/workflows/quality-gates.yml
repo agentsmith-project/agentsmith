@@ -55,6 +55,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/mock-lane/runs/**
+            !artifacts/mock-lane/runs/**/next-dist/**
             test-results/**
             playwright-report/**
 
@@ -90,6 +91,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/mock-lane/runs/**
+            !artifacts/mock-lane/runs/**/next-dist/**
             test-results/**
             playwright-report/**
 
@@ -128,6 +130,7 @@ jobs:
             artifacts/gate-results/lane-visual/**
             artifacts/visual-baseline-reviews/**
             artifacts/mock-lane/runs/**
+            !artifacts/mock-lane/runs/**/next-dist/**
             test-results/**
             playwright-report/**
 
@@ -182,6 +185,8 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/backend-real/runs/**
+            !artifacts/backend-real/runs/**/next-dist/**
             artifacts/mock-lane/runs/**
+            !artifacts/mock-lane/runs/**/next-dist/**
             test-results/**
             playwright-report/**

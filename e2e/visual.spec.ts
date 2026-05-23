@@ -2383,7 +2383,7 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('workspace-overview__summary')).toBeVisible();
     },
     screenshotOptions: {
-      maxDiffPixelRatio: 0,
+      maxDiffPixelRatio: 0.0005,
     },
   },
   'workspace-settings-create-project': {

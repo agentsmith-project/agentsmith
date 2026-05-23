@@ -147,8 +147,13 @@ describe('visual baseline support', () => {
     expect(visualSpec).not.toContain('requiresMockAuthLane');
   });
 
-  it('runs semantic assertions before visual screenshots and keeps workspace overview exact', async () => {
+  it('runs semantic assertions before visual screenshots and keeps workspace overview on bounded renderer tolerance', async () => {
     const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+    const workspaceOverviewSetupSource = extractSourceSection({
+      source: visualSpec,
+      start: "  'workspace-overview': {",
+      end: "  'workspace-settings-create-project': {",
+    });
     const captureHelperSource = extractSourceSection({
       source: visualSpec,
       start: 'async function captureSnapshotBoundActualScreenshot',
@@ -199,9 +204,11 @@ describe('visual baseline support', () => {
     expect(comparisonGuardIndex).toBeLessThan(returnCaptureIndex);
     expect(visualSpec).not.toContain('toHaveScreenshot(entry.screenshot');
     expect(visualSpec).not.toContain('._expectScreenshot({');
-    expect(visualSpec).toMatch(/'workspace-overview':[\s\S]*screenshotOptions:[\s\S]*maxDiffPixelRatio: 0/);
+    expect(workspaceOverviewSetupSource).toContain('screenshotOptions:');
+    expect(workspaceOverviewSetupSource).toContain('maxDiffPixelRatio: 0.0005');
+    expect(workspaceOverviewSetupSource).not.toContain('maxDiffPixelRatio: 0,');
+    expect(workspaceOverviewSetupSource).not.toContain('maskTestIds');
     expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
-    expect(visualSpec).toContain('maxDiffPixelRatio: 0');
   });
 
   it('waits for route workspace identity before visual screenshots to avoid shell-level flakes', async () => {

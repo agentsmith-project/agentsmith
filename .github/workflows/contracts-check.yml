@@ -62,5 +62,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/mock-lane/runs/**
+            !artifacts/mock-lane/runs/**/next-dist/**
             test-results/**
             playwright-report/**

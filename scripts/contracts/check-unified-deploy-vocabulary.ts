@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 const DEPLOY_CONTRACT_PATH = 'docs/contracts/unified-deploy-contract.md';
 const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
 const CHECK_SCRIPT_COMMAND = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
+const RELEASE_KIT_SPLIT_PLAN_PATH = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
 
 const ACTIVE_DEPLOY_TRUTH_FILES = [
   'README.md',
   DEPLOY_CONTRACT_PATH,
+  RELEASE_KIT_SPLIT_PLAN_PATH,
+  'docs/engineering/README.md',
   'docs/contracts/README.md',
   'docs/contracts/product-terminology.md',
   'docs/CURRENT_BASELINE.md',
@@ -17,6 +20,7 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
   'docs/testing/verification-campaigns-v1.md',
   'docs/user-guides/README.md',
   'docs/user-guides/release-readiness-checklist.md',
+  'docs/user-guides/runtime-lines-matrix.md',
   'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/unified-deploy-operations.md',
   'docs/agent-task-runner-runbook.md',
@@ -52,6 +56,16 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
   'scripts/local-manual/seed-agent-task-diagnostics.sh',
   'scripts/local-manual/verify-agent-task-diagnostics.sh',
 ] as const;
+
+const P0_HANDOFF_BOUNDARY_FILES = new Set<string>([
+  RELEASE_KIT_SPLIT_PLAN_PATH,
+  'docs/engineering/README.md',
+  DEPLOY_CONTRACT_PATH,
+  'docs/contracts/README.md',
+  'docs/contracts/product-terminology.md',
+  'docs/user-guides/runtime-lines-matrix.md',
+  'docs/user-guides/unified-deploy-operations.md',
+]);
 
 const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
   {
@@ -428,6 +442,157 @@ function validateDeployContract(
   }
 }
 
+function hasAllPatterns(content: string, patterns: readonly RegExp[]): boolean {
+  return patterns.every((pattern) => pattern.test(content));
+}
+
+function hasBlockWithPatterns(blocks: readonly MarkdownBlock[], patterns: readonly RegExp[]): boolean {
+  return blocks.some((block) => patterns.every((pattern) => pattern.test(block.text)));
+}
+
+function validateP0HandoffBoundary(
+  path: string,
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  const currentMainline = hasAllPatterns(content, [
+    /\bcurrent\b/iu,
+    /\bDocker[- ]only\b/iu,
+    /\blocal-kind\b/iu,
+    /\bunified deploy\b/iu,
+    /\bmainline\b|主线/u,
+  ]);
+  const externalDeclaredBoundary = hasAllPatterns(content, [
+    /\bexternal_declared\b/u,
+    /\bP0\b/u,
+    /\bschema\b/iu,
+    /\bfixtures?\b/iu,
+    /\bvalidator\b/iu,
+    /\bevidence\s+boundary\b/iu,
+  ]);
+  const futureSupportBoundary = hasAllPatterns(content, [
+    /\bP2\b/u,
+    /\bP3\b/u,
+    /\bdoes not mean\b|\bnot\b[\s\S]{0,80}\bcomplete\b|不能|不得|不等于|未[\s\S]{0,40}支持/u,
+    /\breal Kubernetes\b|真实\s*(?:K8s|Kubernetes)|\bcloud\b|云端|\bairgap\b|离线|\bhandoff\b/iu,
+  ]);
+
+  if (!currentMainline || !externalDeclaredBoundary || !futureSupportBoundary) {
+    addFailure(
+      failures,
+      path,
+      `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy remains the current mainline; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
+    );
+  }
+}
+
+function validateReleaseKitSplitPlan(
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  const blocks = parseMarkdownBlocks(parseMarkdownLines(content));
+
+  if (
+    !hasBlockWithPatterns(blocks, [
+      /\bdeploy[-_ ]template[-_ ]package\b/u,
+      /\b(required|must)\b|必填|必须/u,
+    ])
+  ) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must document deploy_template_package as a required release contract field.',
+    );
+  }
+
+  if (
+    !/\bcontracts:check-release-kit-source-boundary\b/u.test(content)
+    || !/--scan-root\s+<repo>/u.test(content)
+    || !/\bdefaults?\b[\s\S]{0,120}\bfixtures?\b|\bfixtures?\b[\s\S]{0,120}\bdefaults?\b/iu.test(content)
+  ) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must document contracts:check-release-kit-source-boundary default fixture scan and explicit --scan-root <repo> handoff.',
+    );
+  }
+
+  if (
+    !hasBlockWithPatterns(blocks, [
+      /\bcontracts:check-repo-split-bootstrap\b/u,
+      /(?:^|[\s"'(（:：])(?:npm\s+run\s+)?contracts:check(?![-:\w])/iu,
+      /\bnot\b|\bnot\s+wired\b|暂不接入|不接入/u,
+    ])
+  ) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must document contracts:check-repo-split-bootstrap as an explicit new repo/CI handoff check that is not wired into total contracts:check.',
+    );
+  }
+
+  const familyReference = hasAllPatterns(content, [
+    /\bAFSCP\b/u,
+    /\bASBCP\b/u,
+    /\bfamily reference\b|\bASBCP[- ]lite\b|\bnon[- ]normative reference\b|家族参考|非规范性参考/u,
+  ]);
+  const noContractDependency = /\bnot\b[\s\S]{0,160}\bcontract dependenc(?:y|ies)\b|(?:不能|不得|不作为|不变成)[\s\S]{0,120}合同依赖|合同依赖[\s\S]{0,120}(?:不能|不得|不作为|不变成)/iu.test(content);
+  const noGateDependency = /\bnot\b[\s\S]{0,160}\bgate dependenc(?:y|ies)\b|(?:不能|不得|不作为|不变成)[\s\S]{0,120}(?:gate|门禁)\s*依赖|(?:gate|门禁)\s*依赖[\s\S]{0,120}(?:不能|不得|不作为|不变成)/iu.test(content);
+  if (!familyReference || !noContractDependency || !noGateDependency) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must state AFSCP/ASBCP family reference is ASBCP-lite/non-normative only and not a contract dependency or gate dependency.',
+    );
+  }
+
+  const bootstrapOnlyPr = /(?:bootstrap[- ]only|docs[-/]governance[- ]first)[\s\S]{0,120}\bPR\b/iu.test(content);
+  const repoLocalSpecialtyWork = /(?:then|再|之后|后)[\s\S]{0,220}(?:repo[- ]local|team|owners?|专项工作)/iu.test(content);
+  if (!bootstrapOnlyPr || !repoLocalSpecialtyWork) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must state new repos start with a bootstrap-only/docs-governance-first PR before repo-local team/owners start specialty work.',
+    );
+  }
+
+  const minimumBootstrapPack = hasBlockWithPatterns(blocks, [
+    /\bminimum bootstrap pack\b|最小(?:bootstrap\s*)?(?:治理)?骨架|最小\s*bootstrap\s*pack/iu,
+    /\bREADME\.md\b/u,
+    /\bAGENTS\.md\b/u,
+    /\bDEVELOPMENT(?:\.md)?\b|\bDEVELOPER(?:\.md)?\b|\bDEVELOPMENT\/DEVELOPER\b|developer guide/iu,
+    /\bRELEASE[_ ]GATES?\b|\bverify[- ]release\b/iu,
+    /\bcontracts?\b/iu,
+    /\brunbooks?\b/iu,
+    /\bADR\b/u,
+  ]);
+  if (!minimumBootstrapPack) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must list the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT/DEVELOPER guide, RELEASE_GATES/verify-release, and contracts/runbooks/ADR entrypoints.',
+    );
+  }
+
+  const quickGateBoundary = /\bquick gate\b/iu.test(content)
+    && (
+      /\bquick gate\b[\s\S]{0,120}\bnot\b[\s\S]{0,80}\brelease readiness\b/iu.test(content)
+      || /\bquick gate\b[\s\S]{0,120}不是[\s\S]{0,80}\brelease readiness\b/iu.test(content)
+    )
+    && (
+      /\brepo[- ]local\b[\s\S]{0,120}\brelease gate\b/iu.test(content)
+      || /\bformal\s+release readiness\b[\s\S]{0,160}\brepo[- ]local\s+release gate\b/iu.test(content)
+      || /正式\s*release readiness[\s\S]{0,160}repo[- ]local\s*release gate/u.test(content)
+    );
+  if (!quickGateBoundary) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must state quick gate is not release readiness; formal release readiness comes from the repo-local release gate.',
+    );
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -537,6 +702,12 @@ export function checkUnifiedDeployVocabulary(
     }
 
     validateNoSplitDeployVocabulary(path, content, failures);
+    if (P0_HANDOFF_BOUNDARY_FILES.has(path)) {
+      validateP0HandoffBoundary(path, content, failures);
+    }
+    if (path === RELEASE_KIT_SPLIT_PLAN_PATH) {
+      validateReleaseKitSplitPlan(content, failures);
+    }
     if (path === DEPLOY_CONTRACT_PATH) {
       validateDeployContract(content, failures);
     }

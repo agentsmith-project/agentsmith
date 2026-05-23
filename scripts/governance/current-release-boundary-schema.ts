@@ -396,8 +396,8 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
   {
     truth: 'runner_contract',
     owner: 'agentsmith shared-contract flow',
-    physical_source: '@mbos/agent-runner-contract schema/types/fixtures',
-    generator: 'contract package generator',
+    physical_source: '@mbos/agent-runner package (packages/agent-runner/src) schema/types/fixtures',
+    generator: 'current AgentSmith runner contract sync; P4 extracts @mbos/agent-runner-contract',
     validators: ['AgentSmith API', 'agentsmith-runner', 'AsyncAPI checks'],
     consumers: ['AgentSmith API', 'agentsmith-runner'],
     fail_fast: [
@@ -1035,8 +1035,8 @@ export function validateTruthMatrix(
       seenTruthIds.add(truth);
     }
     validateRequiredString(entry.owner, `${path}.owner`, failures);
-    validateRequiredString(entry.physical_source, `${path}.physical_source`, failures);
-    validateRequiredString(entry.generator, `${path}.generator`, failures);
+    const physicalSource = validateRequiredString(entry.physical_source, `${path}.physical_source`, failures);
+    const generator = validateRequiredString(entry.generator, `${path}.generator`, failures);
     validateStringArray(entry.validators, `${path}.validators`, failures);
     validateStringArray(entry.consumers, `${path}.consumers`, failures);
     validateStringArray(entry.fail_fast, `${path}.fail_fast`, failures);
@@ -1045,6 +1045,9 @@ export function validateTruthMatrix(
         path: `${path}.fail_fast`,
         reason: 'truth matrix entry must declare fail-fast conditions.',
       });
+    }
+    if (truth === 'runner_contract') {
+      validateCurrentRunnerContractTruthMatrixEntry(path, physicalSource, generator, failures);
     }
   });
 
@@ -1058,6 +1061,35 @@ export function validateTruthMatrix(
   }
 
   return finish(value as readonly CurrentTruthMatrixEntry[], failures);
+}
+
+function validateCurrentRunnerContractTruthMatrixEntry(
+  path: string,
+  physicalSource: string | undefined,
+  generator: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (physicalSource) {
+    if (/@mbos\/agent-runner-contract/u.test(physicalSource)) {
+      failures.push({
+        path: `${path}.physical_source`,
+        reason: 'runner_contract current physical_source must point to @mbos/agent-runner until P4, not @mbos/agent-runner-contract.',
+      });
+    }
+    if (!/(?:@mbos\/agent-runner\b|packages\/agent-runner(?:\/src)?\b)/u.test(physicalSource)) {
+      failures.push({
+        path: `${path}.physical_source`,
+        reason: 'runner_contract current physical_source must point to @mbos/agent-runner until P4.',
+      });
+    }
+  }
+
+  if (generator && !/\bP4\b/u.test(generator)) {
+    failures.push({
+      path: `${path}.generator`,
+      reason: 'runner_contract generator must state the P4 extraction boundary.',
+    });
+  }
 }
 
 export function validateReleaseKitEvidenceMapping(

@@ -9,6 +9,18 @@ AgentSmith now has one deployment model with two profiles:
 - `local-kind`: runs the same Kubernetes app topology on a developer machine, with Docker substrate services.
 - `existing-cluster`: applies the same app topology to an operator-owned Kubernetes cluster, consuming declared substrate connection truth.
 
+## Current vs P0 Handoff Boundary
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary
+only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
+handoff support.
+
+For this guide, `existing-cluster` smoke proves deployment wiring and routing
+for an operator-owned cluster. Product flows still come from AgentSmith focused
+evidence, and real release-kit repo checks require the explicit source-boundary
+handoff described in the split plan.
+
 ## Runtime Shape
 
 - AgentSmith app components run in Kubernetes: Web, API, llmup, the internal task execution service, and managed runner workloads.

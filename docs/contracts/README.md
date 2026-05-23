@@ -7,6 +7,13 @@ contract 导航；部署真相以当前 deploy contract 为准。
 
 部分 current contract 文件可能包含明确标注的 backlog/reference 小节。那些小节只用于保留未来设计方向，不是当前发布工作顺序，也不是必须执行的 gate 清单。
 
+## Current vs P0 Handoff Boundary
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary
+only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
+handoff support.
+
 基线入口：
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
 
@@ -29,6 +36,10 @@ contract 导航；部署真相以当前 deploy contract 为准。
 `existing-cluster` profiles、Docker-only substrate、Keycloak substrate、
 app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
 和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。
+
+Release contract handoff must include the required `deploy_template_package`
+field; release kit consumes that package instead of reading AgentSmith source
+paths.
 
 ## 核心合同
 

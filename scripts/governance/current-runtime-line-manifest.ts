@@ -80,6 +80,11 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
 ] as const;
 
+export const CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY = {
+  currentMainline: 'Current Docker-only local-kind unified deploy remains the current mainline.',
+  externalDeclared: '`external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.',
+} as const;
+
 export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinition[] = [
   {
     id: 'local-manual',

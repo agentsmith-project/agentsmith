@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import {
   CURRENT_RUNTIME_LINE_MANIFEST,
+  CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY,
   CURRENT_RUNTIME_SHARED_RULES,
   listCurrentLocalRuntimeLines,
   type CurrentRuntimeLineDefinition,
@@ -207,6 +208,11 @@ function renderRuntimeLinesMatrixBlock(): string {
     '## 持续生效的 runtime contract',
     '',
     ...renderRuleListZh('contract').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    '',
+    '## Current vs P0 Handoff Boundary',
+    '',
+    CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.currentMainline,
+    CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.externalDeclared,
     '',
     'AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成多套部署入口。',
     '',

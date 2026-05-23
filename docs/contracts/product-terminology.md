@@ -194,6 +194,12 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 These terms belong to `docs/contracts/unified-deploy-contract.md` and define the
 current deploy vocabulary.
 
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary
+only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
+handoff support. Product-facing terms must not present that P0 boundary as a
+new product capability.
+
 1. `AgentSmith deploy`
 - Operator-facing deployment workflow.
 - It is one deploy model with profiles, not separate product lines.

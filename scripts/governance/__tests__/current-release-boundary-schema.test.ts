@@ -326,6 +326,13 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it('requires deploy_template_package as a release contract field', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    delete contract.deploy_template_package;
+
+    expectInvalid(validateAgentSmithReleaseContract(contract), 'deploy_template_package is required');
+  });
+
   it('rejects missing provenance, self-referential provenance subjects, and wrong or local repo identity', () => {
     expect(normalizeReleaseBoundaryRemote('https://github.com/agentsmith-project/agentsmith.git'))
       .toBe(AGENTSMITH_CANONICAL_REPO);
@@ -654,6 +661,28 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateTruthMatrix(matrix),
       'truth matrix truth "release_contract" is declared more than once',
+    );
+  });
+
+  it('keeps runner_contract current physical source on @mbos/agent-runner until P4 extraction', () => {
+    const runnerContractEntry = CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX.find((entry) => entry.truth === 'runner_contract');
+
+    expect(runnerContractEntry).toMatchObject({
+      physical_source: expect.stringContaining('@mbos/agent-runner'),
+    });
+    expect(runnerContractEntry?.physical_source).not.toContain('@mbos/agent-runner-contract');
+    expect(runnerContractEntry?.generator).toContain('P4');
+
+    const futurePhysicalSource = structuredClone(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);
+    const index = futurePhysicalSource.findIndex((entry) => entry.truth === 'runner_contract');
+    futurePhysicalSource[index] = {
+      ...futurePhysicalSource[index],
+      physical_source: '@mbos/agent-runner-contract schema/types/fixtures',
+    };
+
+    expectInvalid(
+      validateTruthMatrix(futurePhysicalSource),
+      'runner_contract current physical_source must point to @mbos/agent-runner until P4',
     );
   });
 

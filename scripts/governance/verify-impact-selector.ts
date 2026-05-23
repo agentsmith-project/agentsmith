@@ -458,6 +458,7 @@ function isReleaseDeployPath(filePath: string): boolean {
     /^infra\/deploy\//,
     /^e2e\/integration-release-user-story/,
     /^e2e\/release-user-story/,
+    /^docs\/contracts\/unified-deploy-contract\.md$/,
     /^docs\/contracts\/.*release/i,
     /^docs\/contracts\/.*deployment/i,
     /^docs\/user-guides\/.*deploy/i,
@@ -479,6 +480,7 @@ function isReleaseBoundaryGuardPath(filePath: string): boolean {
     /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-repo-split-bootstrap(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-unified-deploy-vocabulary(?:\.test)?\.ts$/,
     /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
     /^scripts\/governance\/current-release-boundary-schema\.ts$/,
     /^scripts\/governance\/__tests__\/current-release-boundary-schema\.test\.ts$/,
@@ -971,6 +973,8 @@ function isDocsOnlyPath(filePath: string): boolean {
 
   return filePath === 'README.md'
     || filePath === 'DEVELOPMENT.md'
+    || filePath === 'docs/contracts/README.md'
+    || filePath === 'docs/contracts/product-terminology.md'
     || /^marketing\/.*\.md$/u.test(filePath)
     || /^docs\/(?:user-guides|testing|engineering)\/.*\.md$/u.test(filePath)
     || filePath === 'docs/current-engineering-governance-model.md'

@@ -2,7 +2,7 @@
 
 Status: `current_deploy_contract`
 Owner: Product + Engineering
-Last updated: 2026-05-07
+Last updated: 2026-05-23
 
 ## Authority
 
@@ -19,6 +19,18 @@ Deployment profiles describe environment preparation only:
   consuming the same declared substrate truth shape.
 
 Profiles are not separate products, release lines, or UI objects.
+
+## Current vs P0 Handoff Boundary
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary
+only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
+handoff support.
+
+The current `local-kind` evidence chain remains the default deploy evidence
+line for `release:ready`. `existing-cluster` route smoke can prove deploy
+wiring for an operator-owned cluster, but it does not by itself prove product
+flows, and it must not be counted as local-kind evidence.
 
 ## Runtime Topology
 
@@ -231,6 +243,18 @@ Required guards:
   introduced.
 
 Multi-replica API support requires a separate architecture plan.
+
+## Release Kit Handoff
+
+AgentSmith release contract output is the only handoff from product build truth
+to release kit deploy execution. The release contract must include
+`deploy_template_digest` and the required `deploy_template_package` field. The
+package records the deploy template package URI, package sha256, manifest
+sha256, and provenance.
+
+Release kit reads the release contract, `deploy_template_package`, generated
+artifacts, and operator inputs. It must not infer AgentSmith product source
+paths, import product packages, or create a second image inventory.
 
 ## Completion Evidence
 

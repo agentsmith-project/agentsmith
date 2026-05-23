@@ -21,6 +21,11 @@ Detailed commands live in:
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
+## Current vs P0 Handoff Boundary
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
+
 AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成多套部署入口。
 
 ## 运行线矩阵

@@ -4,6 +4,13 @@
 
 This directory holds engineering-side guidance, active implementation rationale, and closure records that support implementation and maintenance. It does not define product IA or UI style guidance.
 
+## Current vs P0 Handoff Boundary
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+`external_declared` in P0 is schema, fixture, validator, and evidence boundary
+only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
+handoff support.
+
 Current guidance and implementation plans:
 
 - [Current Engineering Governance Model](../current-engineering-governance-model.md) - current engineering governance truth; keep aligned with machine-readable manifests/contracts

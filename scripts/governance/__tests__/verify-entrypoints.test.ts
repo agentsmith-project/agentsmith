@@ -2337,6 +2337,98 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('runs pr verify for mixed docs/contracts and release boundary changes without unmapped or real blockers', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-contract-release-boundary-'));
+    const logPath = join(root, 'npm.log');
+    const changedFiles = [
+      'docs/contracts/README.md',
+      'docs/contracts/product-terminology.md',
+      'docs/contracts/unified-deploy-contract.md',
+      'scripts/contracts/check-unified-deploy-vocabulary.ts',
+      'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+    ];
+    try {
+      writeReportAwareFakeNpm(root, logPath);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--goal=pr',
+        '--run',
+        '--report-root',
+        root,
+        ...changedFiles.flatMap((changedFile) => ['--changed-file', changedFile]),
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Affected surfaces: docs-only; release-boundary-guard; release/deploy');
+      expect(result.stdout).toContain('npm run release:ready');
+      expect(result.stdout).not.toContain('unmapped-source');
+      expect(result.stderr).not.toContain('unmapped-source');
+      expect(result.stdout).not.toContain('--goal=real --run');
+      expect(result.stderr).not.toContain('--goal=real --run');
+      expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      expect(readFileSync(logPath, 'utf8').trim().split('\n')).toEqual([
+        'run verify:quick',
+        'run verify:default',
+        'run test:unified-deploy:unit',
+      ]);
+
+      const reportJson = readFileSync(join(root, 'story-acceptance-report.json'), 'utf8');
+      const reportMarkdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(reportJson).not.toContain('unmapped-source');
+      expect(reportJson).not.toContain('unmapped_source');
+      expect(reportMarkdown).not.toContain('unmapped-source');
+      expect(reportMarkdown).not.toContain('unmapped_source');
+      const report = JSON.parse(reportJson) as {
+        final_verdict: string;
+        recommended_commands: string[];
+        risk_summary: { warnings: string[] };
+        changed_file_impacts: ReportChangedFileImpact[];
+      };
+      expect(report.final_verdict).toBe('delegated_to_executed_verification_commands');
+      expect(report.recommended_commands).toEqual([
+        'npm run verify -- --goal=pr --run',
+        'npm run test:unified-deploy:unit',
+      ]);
+      expect(report.risk_summary.warnings.join('\n')).not.toContain('cannot execute npm run verify -- --goal=real --run');
+      expect(report.changed_file_impacts.flatMap((impact) => impact.matched_rules)).not.toContain('unmapped_source');
+      expect(report.changed_file_impacts).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          changed_file: 'docs/contracts/README.md',
+          matched_rules: ['docs_only'],
+        }),
+        expect.objectContaining({
+          changed_file: 'docs/contracts/product-terminology.md',
+          matched_rules: ['docs_only'],
+        }),
+        expect.objectContaining({
+          changed_file: 'docs/contracts/unified-deploy-contract.md',
+          matched_rules: ['release_deploy_operations'],
+        }),
+        expect.objectContaining({
+          changed_file: 'scripts/contracts/check-unified-deploy-vocabulary.ts',
+          matched_rules: ['release_boundary_guard'],
+        }),
+        expect.objectContaining({
+          changed_file: 'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+          matched_rules: ['release_boundary_guard'],
+        }),
+      ]));
+      expectCleanVerifyReportSurface(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('passes backend-real reuse env to real after default succeeds in the same run', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-reuse-'));
     const stdout: string[] = [];

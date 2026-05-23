@@ -924,6 +924,29 @@ describe('verify impact selector', () => {
     expect(plan.releaseVerdict).toBe(false);
   });
 
+  it('maps the unified deploy contract to V4 release/deploy impact with focused unit coverage only', () => {
+    const changedFile = 'docs/contracts/unified-deploy-contract.md';
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual(['npm run test:unified-deploy:unit']);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['release/deploy']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['release_deploy_operations'],
+        affectedSurfaces: ['release/deploy'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }),
+    ]);
+  });
+
   it('maps pure governance tooling sources to targeted V0/V1 without broad, manual, story, or unmapped impact', () => {
     const changedFiles = [
       'scripts/governance/verify-impact-selector.ts',
@@ -1022,6 +1045,8 @@ describe('verify impact selector', () => {
       'scripts/contracts/check-release-kit-source-boundary.test.ts',
       'scripts/contracts/check-repo-split-bootstrap.ts',
       'scripts/contracts/check-repo-split-bootstrap.test.ts',
+      'scripts/contracts/check-unified-deploy-vocabulary.ts',
+      'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
       'scripts/governance/current-release-boundary-schema.ts',
       'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
@@ -1076,6 +1101,88 @@ describe('verify impact selector', () => {
         broad_impact: false,
       })),
     ));
+  });
+
+  it('maps selected docs/contracts markdown to docs-only impact without broad unmapped expansion', () => {
+    const changedFiles = [
+      'docs/contracts/README.md',
+      'docs/contracts/product-terminology.md',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['docs-only']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['docs_only'],
+        affectedSurfaces: ['docs-only'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      })),
+    ));
+  });
+
+  it('keeps mixed docs/contracts and release boundary changes mapped without visual or real expansion', () => {
+    const changedFiles = [
+      'docs/contracts/README.md',
+      'docs/contracts/product-terminology.md',
+      'docs/contracts/unified-deploy-contract.md',
+      'scripts/contracts/check-unified-deploy-vocabulary.ts',
+      'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V4']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run test:unified-deploy:unit',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual([
+      'docs-only',
+      'release-boundary-guard',
+      'release/deploy',
+    ]);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.changedFileImpacts.flatMap((impact) => impact.matchedRules)).not.toContain('unmapped_source');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.releaseVerdict).toBe(false);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'docs/contracts/README.md',
+        matchedRules: ['docs_only'],
+      }),
+      expect.objectContaining({
+        changedFile: 'docs/contracts/product-terminology.md',
+        matchedRules: ['docs_only'],
+      }),
+      expect.objectContaining({
+        changedFile: 'docs/contracts/unified-deploy-contract.md',
+        matchedRules: ['release_deploy_operations'],
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-unified-deploy-vocabulary.ts',
+        matchedRules: ['release_boundary_guard'],
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+        matchedRules: ['release_boundary_guard'],
+      }),
+    ]));
   });
 
   it('maps package.json to governance tooling only when git diff is limited to safe governance and mock-lane npm scripts', () => {

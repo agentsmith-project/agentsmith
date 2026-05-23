@@ -45,6 +45,15 @@ type VisualReviewTraceMeta = {
   note: string;
 };
 
+type NavigationAttemptDiagnostic = {
+  attempt: number;
+  message: string;
+  lastUrl: string;
+  readyState: string;
+  bodyPreview: string;
+  routeProbe: string;
+};
+
 const VISUAL_REVIEW_STORY = loadStoryDefinitionSync('real-backend-visual-review');
 const VISUAL_REVIEW_STORY_BINDING = buildTraceStoryBinding(VISUAL_REVIEW_STORY);
 const PROJECT_SURFACE_HANDOFF_STORY = loadStoryDefinitionSync('project-surface-handoff-continuity');
@@ -89,10 +98,93 @@ async function clearAppState(page: Page): Promise<void> {
   await page.goto('about:blank');
 }
 
+const RETRYABLE_NAVIGATION_ERROR_MARKERS = [
+  'ERR_ABORTED',
+  'ERR_CONNECTION_REFUSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_EMPTY_RESPONSE',
+  'ERR_FAILED',
+  'ERR_HTTP2_PROTOCOL_ERROR',
+  'ERR_NETWORK_IO_SUSPENDED',
+  'ERR_TIMED_OUT',
+  'blank_navigation',
+  'empty_document',
+  'navigation_http_status:5',
+] as const;
+
+function isRetryableNavigationError(message: string): boolean {
+  return RETRYABLE_NAVIGATION_ERROR_MARKERS.some((marker) => message.includes(marker));
+}
+
+async function probeRouteForDiagnostic(page: Page, pathOrUrl: string): Promise<string> {
+  try {
+    const response = await page.request.get(pathOrUrl, {
+      failOnStatusCode: false,
+      timeout: 5_000,
+    });
+    const contentType = response.headers()['content-type'] ?? 'unknown';
+    return `status=${response.status()}:content_type=${contentType}`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `unavailable:${truncateDiagnosticBody(message)}`;
+  }
+}
+
+async function collectNavigationAttemptDiagnostic(
+  page: Page,
+  pathOrUrl: string,
+  attempt: number,
+  message: string,
+): Promise<NavigationAttemptDiagnostic> {
+  const lastUrl = page.isClosed() ? '<closed>' : page.url();
+  const readyState = page.isClosed()
+    ? '<closed>'
+    : await page.evaluate(() => document.readyState).catch(() => '<unavailable>');
+  const bodyText = page.isClosed()
+    ? '<closed>'
+    : await page.locator('body').textContent({ timeout: 1_000 }).catch(() => '');
+  const routeProbe = page.isClosed() ? '<closed>' : await probeRouteForDiagnostic(page, pathOrUrl);
+
+  return {
+    attempt,
+    message: truncateDiagnosticBody(message),
+    lastUrl,
+    readyState,
+    bodyPreview: truncateDiagnosticBody(bodyText ?? ''),
+    routeProbe,
+  };
+}
+
+function formatNavigationDiagnostics(diagnostics: NavigationAttemptDiagnostic[]): string {
+  return diagnostics
+    .map((entry) => [
+      `attempt=${entry.attempt}`,
+      `message=${entry.message}`,
+      `last_url=${entry.lastUrl}`,
+      `ready_state=${entry.readyState}`,
+      `body=${entry.bodyPreview}`,
+      `route_probe=${entry.routeProbe}`,
+    ].join(','))
+    .join(' | ');
+}
+
+async function resetPageAfterNavigationFailure(page: Page): Promise<void> {
+  if (page.isClosed()) {
+    return;
+  }
+  await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5_000 }).catch(() => {});
+}
+
 async function gotoWithRetry(page: Page, pathOrUrl: string): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const diagnostics: NavigationAttemptDiagnostic[] = [];
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      await page.goto(pathOrUrl, { waitUntil: 'domcontentloaded' });
+      const response = await page.goto(pathOrUrl, { waitUntil: 'domcontentloaded' });
+      const status = response?.status();
+      if (typeof status === 'number' && status >= 500) {
+        throw new Error(`navigation_http_status:${status}`);
+      }
       await page.waitForFunction(() => document.readyState === 'interactive' || document.readyState === 'complete');
       if (page.url() === 'about:blank') {
         throw new Error('blank_navigation');
@@ -104,10 +196,15 @@ async function gotoWithRetry(page: Page, pathOrUrl: string): Promise<void> {
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if ((!message.includes('ERR_ABORTED') && !message.includes('blank_navigation') && !message.includes('empty_document')) || attempt === 2) {
-        throw error;
+      const diagnostic = await collectNavigationAttemptDiagnostic(page, pathOrUrl, attempt + 1, message);
+      diagnostics.push(diagnostic);
+      if (!isRetryableNavigationError(message) || attempt === 4) {
+        throw new Error(
+          `visual_review_navigation_failed:path=${pathOrUrl}:diagnostics=${formatNavigationDiagnostics(diagnostics)}`,
+        );
       }
-      await page.waitForTimeout(500);
+      await resetPageAfterNavigationFailure(page);
+      await page.waitForTimeout(500 * (attempt + 1));
     }
   }
 }

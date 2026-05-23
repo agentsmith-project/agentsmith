@@ -69,6 +69,13 @@ function rehashArtifactProvenanceContainer(record: Record<string, unknown>): voi
   artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
 }
 
+const GITHUB_API_SOURCE_ROOT_ENDPOINTS = [
+  'https://api.github.com/repos/agentsmith-project/agentsmith/cont%65nts?ref=main',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/contents?ref=main',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/tarball',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/zipball',
+];
+
 describe('current release boundary schema', () => {
   it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, and runner manifest', () => {
     expect(validateDeployTemplatePackage(readFixture('deploy-template-package.valid.json')).ok).toBe(true);
@@ -242,6 +249,21 @@ describe('current release boundary schema', () => {
     expectInvalid(result, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
   });
 
+  it.each(GITHUB_API_SOURCE_ROOT_ENDPOINTS)(
+    'rejects deploy template package exact GitHub API source package_uri and artifact_uri %s',
+    (packageUri) => {
+      const packageRecord = cloneFixture('deploy-template-package.valid.json');
+      packageRecord.package_uri = packageUri;
+      artifactProvenanceOf(packageRecord).artifact_uri = packageUri;
+      rehashArtifactProvenanceContainer(packageRecord);
+
+      const result = validateDeployTemplatePackage(packageRecord);
+
+      expectInvalid(result, 'package_uri must be a remote/CI artifact URI');
+      expectInvalid(result, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
+    },
+  );
+
   it.each([
     'https://api.github.com/repos/agentsmith-project/agentsmith/git/blobs/0123456789abcdef0123456789abcdef01234567',
     'https://api.github.com/repos/agentsmith-project/agentsmith/git/trees/0123456789abcdef0123456789abcdef01234567',
@@ -268,6 +290,19 @@ describe('current release boundary schema', () => {
       'artifact_provenance.subject_uri must not point at local AgentSmith product source',
     );
   });
+
+  it.each(GITHUB_API_SOURCE_ROOT_ENDPOINTS)(
+    'rejects deploy template package exact GitHub API source subject_uri %s',
+    (subjectUri) => {
+      const packageRecord = cloneFixture('deploy-template-package.valid.json');
+      artifactProvenanceOf(packageRecord).subject_uri = subjectUri;
+
+      expectInvalid(
+        validateDeployTemplatePackage(packageRecord),
+        'artifact_provenance.subject_uri must not point at local AgentSmith product source',
+      );
+    },
+  );
 
   it('allows deploy template package GitHub Actions artifact API package_uri', () => {
     const packageRecord = cloneFixture('deploy-template-package.valid.json');

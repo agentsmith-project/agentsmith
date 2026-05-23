@@ -2084,11 +2084,15 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
   }
 
   if (hostname === 'api.github.com') {
-    return pathname.startsWith('/repos/agentsmith-project/agentsmith/tarball/')
-      || pathname.startsWith('/repos/agentsmith-project/agentsmith/zipball/')
-      || pathname.startsWith('/repos/agentsmith-project/agentsmith/contents/')
-      || pathname === '/repos/agentsmith-project/agentsmith/git'
-      || pathname.startsWith('/repos/agentsmith-project/agentsmith/git/');
+    const repoPath = '/repos/agentsmith-project/agentsmith';
+    return pathname === `${repoPath}/tarball`
+      || pathname.startsWith(`${repoPath}/tarball/`)
+      || pathname === `${repoPath}/zipball`
+      || pathname.startsWith(`${repoPath}/zipball/`)
+      || pathname === `${repoPath}/contents`
+      || pathname.startsWith(`${repoPath}/contents/`)
+      || pathname === `${repoPath}/git`
+      || pathname.startsWith(`${repoPath}/git/`);
   }
 
   return false;

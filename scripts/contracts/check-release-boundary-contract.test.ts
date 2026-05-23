@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -74,6 +74,34 @@ describe('check-release-boundary-contract', () => {
         expect.objectContaining({
           path: 'scripts/governance/__fixtures__/release-boundary/release-kit-evidence.valid.json',
           message: expect.stringContaining('Invalid JSON fixture'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports contradictory release-kit status and failure_class from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    const fixturePath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      'release-kit-evidence.valid.json',
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>;
+    fixture.status = 'passed';
+    fixture.failure_class = 'contract_drift';
+    writeFileSync(fixturePath, JSON.stringify(fixture, null, 2), 'utf8');
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/release-kit-evidence.valid.json',
+          message: expect.stringContaining('passed release kit evidence must use failure_class none'),
         }),
       ]),
     );

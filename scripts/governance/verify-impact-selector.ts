@@ -211,17 +211,19 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'governance_tooling',
   'unmapped_source',
 ];
-const COMMAND_ORDER = [
-  'npm run verify:quick',
-  'npm run verify:default',
-  'npm run verify:visual',
-  'npm run verify:real',
-  'npm run verify:release-real',
-] as const;
 const REAL_VERIFY_COMMAND = 'npm run verify:real';
 const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
+const COMMAND_ORDER = [
+  'npm run verify:quick',
+  'npm run verify:default',
+  'npm run verify:visual',
+  AGENT_TASK_RUNNER_FAST_COMMAND,
+  AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND,
+  REAL_VERIFY_COMMAND,
+  RELEASE_REAL_VERIFY_COMMAND,
+] as const;
 const BARE_AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
 const AGENT_TASK_INTEGRATION_WITH_API_COMMAND = 'npm run test:e2e:integration:agent-task:with-api';
 const UNIFIED_DEPLOY_UNIT_COMMAND = 'npm run test:unified-deploy:unit';

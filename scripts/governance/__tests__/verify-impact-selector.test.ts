@@ -637,10 +637,15 @@ describe('verify impact selector', () => {
     });
 
     expect(plan.requiredLevels).toContain('V3');
-    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
-    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run verify:visual',
+      'npm run test:agent-task:runner:fast',
+      'npm run test:agent-task:runner:backend-real',
+      'npm run verify:real',
+    ]);
     expect(plan.recommendedCommands).not.toContain('npm run test:e2e:integration:agent-task');
-    expect(plan.recommendedCommands).toContain('npm run verify:real');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.finalVerdict).toContain('not_evaluated');
     expect(plan.nextAction).toContain('npm run verify -- --goal=real --run');

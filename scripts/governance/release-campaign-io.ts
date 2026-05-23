@@ -1844,8 +1844,14 @@ const RELEASE_KIT_FALLBACK_MARKER_FIELDS = [
   'release_kit_version',
   'artifact_provenance',
 ] as const;
-const RELEASE_KIT_TEXT_EVIDENCE_FILE_PATTERN =
-  /(?:^\.env$|^env$|\.(?:log|txt|md|markdown|json|yaml|yml|env|ini|conf|cfg|properties))$/iu;
+const RELEASE_KIT_TEXT_EVIDENCE_FILE_NAMES = new Set([
+  '.env',
+  'env',
+  'kubeconfig',
+  'config',
+]);
+const RELEASE_KIT_TEXT_EVIDENCE_FILE_EXTENSION_PATTERN =
+  /\.(?:log|txt|md|markdown|json|yaml|yml|env|ini|conf|cfg|properties|kubeconfig)$/iu;
 const RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES = 1024 * 1024;
 const RELEASE_KIT_TARGET_BY_CHECK_ID: Partial<Record<string, CurrentReleaseKitEvidenceTarget>> = {
   unified_deploy_substrate_evidence: 'dependencies',
@@ -1882,7 +1888,10 @@ function isReleaseKitEvidencePayload(payload: Record<string, unknown>): boolean 
 }
 
 function isReleaseKitTextEvidenceFile(file: string): boolean {
-  return RELEASE_KIT_TEXT_EVIDENCE_FILE_PATTERN.test(basename(file));
+  const fileName = basename(file).toLowerCase();
+  return RELEASE_KIT_TEXT_EVIDENCE_FILE_NAMES.has(fileName)
+    || fileName.startsWith('.env.')
+    || RELEASE_KIT_TEXT_EVIDENCE_FILE_EXTENSION_PATTERN.test(fileName);
 }
 
 function releaseKitTextSecretDiagnostics(files: readonly string[]): readonly UnifiedDeployEvidenceDiagnostic[] {
@@ -1987,10 +1996,16 @@ function validateReleaseKitEvidenceSubjectFiles(
       );
     }
 
-    let materializedStats: ReturnType<typeof statSync>;
+    let materializedStats: ReturnType<typeof lstatSync>;
     let realMaterializedPath: string;
     try {
-      materializedStats = statSync(materializedPath);
+      materializedStats = lstatSync(materializedPath);
+      if (materializedStats.isSymbolicLink()) {
+        return unifiedDeployDiagnostic(
+          `${path} ${subjectPath}.path must not be a symlink: ${file.path}.`,
+          'contract_drift',
+        );
+      }
       if (!materializedStats.isFile()) {
         return unifiedDeployDiagnostic(
           `${path} ${subjectPath}.path is not a file: ${file.path}.`,

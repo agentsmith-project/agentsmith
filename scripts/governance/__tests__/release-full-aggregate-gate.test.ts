@@ -1297,6 +1297,32 @@ describe('release-full aggregate gate', () => {
     });
   });
 
+  it('fails when release-kit evidence reports passed with a non-none failure_class', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-status-failure-class-'));
+    seedPassedCampaign(campaignRoot);
+
+    const { step, path } = getUnifiedDeployFixturePath(
+      campaignRoot,
+      'lane-unified-deploy-local-kind',
+      'unified_deploy_local_kind_evidence',
+      'local-kind-rollout-fixture.json',
+    );
+    writeJson(path, releaseKitEvidenceFields(path, 'rollout', {
+      status: 'passed',
+      failure_class: 'contract_drift',
+    }));
+    writeCampaignEvidencePointer(campaignRoot, step);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('passed release kit evidence must use failure_class none');
+  });
+
   it('fails when release-kit evidence subject declares a missing materialized file', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-missing-'));
     seedPassedCampaign(campaignRoot);
@@ -1422,6 +1448,43 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
     expect(terminalResult.summary).toContain('evidence_subject.files[0]');
     expect(terminalResult.summary).toContain(oversizedSubjectPath);
     expect(terminalResult.summary).toContain('too large to scan safely');
+  });
+
+  it('fails when release-kit evidence subject declares a symlinked file', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-symlink-'));
+    seedPassedCampaign(campaignRoot);
+
+    const { step, path } = getUnifiedDeployFixturePath(
+      campaignRoot,
+      'lane-unified-deploy-local-kind',
+      'unified_deploy_local_kind_evidence',
+      'local-kind-rollout-fixture.json',
+    );
+    const targetContent = '{ "report": "rollout", "source": "symlink-target" }\n';
+    createFile(join(dirname(path), 'symlink-target-report.json'), targetContent);
+    symlinkSync('symlink-target-report.json', join(dirname(path), 'subject-report-symlink.json'), 'file');
+
+    const evidence = releaseKitEvidenceFields(path, 'rollout');
+    (evidence.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'subject-report-symlink.json',
+        sha256: sha256(targetContent),
+      },
+    ];
+    rehashReleaseKitEvidenceSubject(evidence, 'rollout');
+    writeJson(path, evidence);
+    writeCampaignEvidencePointer(campaignRoot, step);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('evidence_subject.files[0]');
+    expect(terminalResult.summary).toContain('subject-report-symlink.json');
+    expect(terminalResult.summary).toContain('symlink');
   });
 
   it('fails when release-kit evidence subject materializes through an escaped evidence root', () => {
@@ -1757,6 +1820,63 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
   });
 
   it.each([
+    ['.env.local', 'client_secret=plain-release-secret\n'],
+    ['kubeconfig', 'kind: Config\nclusters:\n- cluster: {}\n'],
+    ['config', 'client_secret=plain-release-secret\n'],
+  ])('fails when release-kit evidence directories contain secret-looking text file variant %s', (fileName, content) => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-text-variant-secret-'));
+    seedPassedCampaign(campaignRoot);
+
+    const { step, path } = getUnifiedDeployFixturePath(
+      campaignRoot,
+      'lane-unified-deploy-local-kind',
+      'unified_deploy_local_kind_evidence',
+      'local-kind-rollout-fixture.json',
+    );
+    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
+    createFile(join(dirname(path), fileName), content);
+    writeCampaignEvidencePointer(campaignRoot, step);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain(fileName);
+    expect(terminalResult.summary).toContain('secret-looking');
+  });
+
+  it.each([
+    ['operator.log', 'GITHUB_TOKEN=ghp_plainreleaseleak1234567890\n'],
+    ['operator.log', 'AWS_SECRET_ACCESS_KEY=plainreleaseawssecret1234567890\n'],
+  ])('fails when release-kit text evidence contains prefixed secret assignment in %s', (fileName, content) => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-prefixed-secret-'));
+    seedPassedCampaign(campaignRoot);
+
+    const { step, path } = getUnifiedDeployFixturePath(
+      campaignRoot,
+      'lane-unified-deploy-local-kind',
+      'unified_deploy_local_kind_evidence',
+      'local-kind-rollout-fixture.json',
+    );
+    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
+    createFile(join(dirname(path), fileName), content);
+    writeCampaignEvidencePointer(campaignRoot, step);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain(fileName);
+    expect(terminalResult.summary).toContain('secret-looking');
+  });
+
+  it.each([
     ['render-report.json', '{ "client_secret": "plain-release-secret" }\n'],
     ['values.yaml', 'kind: Config\nclusters:\n- cluster: {}\n'],
   ])('fails when release-kit evidence directories contain secret-looking %s artifacts', (fileName, content) => {
@@ -1792,6 +1912,35 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
     ])],
   ])('fails when release-kit text evidence %s is too large to scan safely', (fileName, content) => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-large-text-'));
+    seedPassedCampaign(campaignRoot);
+
+    const { step, path } = getUnifiedDeployFixturePath(
+      campaignRoot,
+      'lane-unified-deploy-local-kind',
+      'unified_deploy_local_kind_evidence',
+      'local-kind-rollout-fixture.json',
+    );
+    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
+    createFile(join(dirname(path), fileName), content);
+    writeCampaignEvidencePointer(campaignRoot, step);
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain(fileName);
+    expect(terminalResult.summary).toContain('too large to scan safely');
+  });
+
+  it.each([
+    ['.env.local', Buffer.alloc(1024 * 1024 + 1, 'a')],
+    ['kubeconfig', Buffer.alloc(1024 * 1024 + 1, 'a')],
+    ['config', Buffer.alloc(1024 * 1024 + 1, 'a')],
+  ])('fails when release-kit text evidence filename variant %s is too large to scan safely', (fileName, content) => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-large-text-variant-'));
     seedPassedCampaign(campaignRoot);
 
     const { step, path } = getUnifiedDeployFixturePath(

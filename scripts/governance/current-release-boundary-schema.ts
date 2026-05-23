@@ -539,7 +539,7 @@ const DOCKER_DEFAULT_HOSTS = new Set([
 ]);
 const SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/iu,
-  /\b(?:api_key|access_token|refresh_token|oauth_token|client_secret|password|token)"?\s*[:=]\s*"?[^",\s]+/iu,
+  /\b(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|access[_-]?key|password|token|secret)["']?\s*[:=]\s*["']?[^"',\s]+/iu,
   /(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+/u,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:postgres(?:ql)?|mongodb|redis):\/\/[^:\s/]+:[^@\s]+@/iu,
@@ -752,8 +752,15 @@ export function validateReleaseKitEvidence(
     'target must be one release summary section string.',
     failures,
   ) as CurrentReleaseKitEvidenceTarget | undefined;
-  validateEnum(value.status, new Set(['passed', 'failed']), 'status', 'status must be passed or failed.', failures);
-  validateRequiredString(value.failure_class, 'failure_class', failures);
+  const status = validateEnum(
+    value.status,
+    new Set(['passed', 'failed']),
+    'status',
+    'status must be passed or failed.',
+    failures,
+  ) as CurrentReleaseKitEvidence['status'] | undefined;
+  const failureClass = validateRequiredString(value.failure_class, 'failure_class', failures);
+  validateReleaseKitStatusFailureClass(status, failureClass, failures);
   validateRequiredString(value.evidence_root, 'evidence_root', failures);
 
   if (targetCluster && substrateSource && distribution && !MODE_KEY_SET.has(modeKey(targetCluster, substrateSource, distribution))) {
@@ -794,6 +801,29 @@ export function validateReleaseKitEvidence(
   }
 
   return finish(value as CurrentReleaseKitEvidence, failures);
+}
+
+function validateReleaseKitStatusFailureClass(
+  status: CurrentReleaseKitEvidence['status'] | undefined,
+  failureClass: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!status || !failureClass) {
+    return;
+  }
+
+  if (status === 'passed' && failureClass !== 'none') {
+    failures.push({
+      path: 'failure_class',
+      reason: 'passed release kit evidence must use failure_class none.',
+    });
+  }
+  if (status === 'failed' && failureClass === 'none') {
+    failures.push({
+      path: 'failure_class',
+      reason: 'failed release kit evidence must use a non-none failure_class.',
+    });
+  }
 }
 
 export function diagnoseReleaseKitEvidenceForAggregate(

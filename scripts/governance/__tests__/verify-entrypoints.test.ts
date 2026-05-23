@@ -2425,16 +2425,23 @@ describe('verify human entrypoints', () => {
 
       expect(exitCode).toBe(0);
       expect(sentinelProfiles).toEqual(['verify-real']);
-      expect(aliases).toEqual(expect.arrayContaining([
+      expect(aliases).toEqual([
         'verify:quick',
         'verify:default',
-        'verify:real',
+        'verify:visual',
         'test:agent-task:runner:fast',
         'test:agent-task:runner:backend-real',
-      ]));
+        'verify:real',
+      ]);
       expect(aliases).not.toContain('test:e2e:integration:agent-task');
       expect(stdout.join('')).not.toMatch(bareAgentTaskIntegration);
-      expect(report.recommended_commands).toContain('npm run test:agent-task:runner:backend-real');
+      expect(report.recommended_commands).toEqual([
+        'npm run verify -- --goal=pr --run',
+        'npm run verify -- --goal=visual --run',
+        'npm run test:agent-task:runner:fast',
+        'npm run test:agent-task:runner:backend-real',
+        'npm run verify -- --goal=real --run',
+      ]);
       expect(report.recommended_commands).not.toContain('npm run test:e2e:integration:agent-task');
       expect(JSON.stringify(report)).not.toMatch(bareAgentTaskIntegration);
       expect(stderr.join('')).toBe('');

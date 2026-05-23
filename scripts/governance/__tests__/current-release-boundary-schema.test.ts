@@ -292,6 +292,31 @@ describe('current release boundary schema', () => {
     expectInvalid(validateReleaseKitEvidence(secretLeak), 'secret-looking value');
   });
 
+  it('rejects prefixed env token and secret key leaks in release-kit evidence', () => {
+    const prefixedToken = cloneFixture('release-kit-evidence.valid.json');
+    prefixedToken.debug_log = 'release operator exported GITHUB_TOKEN=ghp_plainreleaseleak1234567890';
+    expectInvalid(validateReleaseKitEvidence(prefixedToken), 'secret-looking value');
+
+    const prefixedSecretKey = cloneFixture('release-kit-evidence.valid.json');
+    prefixedSecretKey.debug_log = 'AWS_SECRET_ACCESS_KEY=plainreleaseawssecret1234567890';
+    expectInvalid(validateReleaseKitEvidence(prefixedSecretKey), 'secret-looking value');
+  });
+
+  it('rejects release-kit evidence passed status with a non-none failure_class before aggregate mapping', () => {
+    const contradictory = cloneFixture('release-kit-evidence.valid.json');
+    contradictory.status = 'passed';
+    contradictory.failure_class = 'contract_drift';
+
+    expectInvalid(
+      validateReleaseKitEvidence(contradictory),
+      'passed release kit evidence must use failure_class none',
+    );
+    expectInvalid(
+      validateReleaseKitEvidenceForAggregate(contradictory),
+      'passed release kit evidence must use failure_class none',
+    );
+  });
+
   it('rejects camelCase secret-looking release kit evidence fields in nested records and arrays', () => {
     const secretFields = cloneFixture('release-kit-evidence.valid.json');
     secretFields.provider = {

@@ -448,6 +448,7 @@ function isReleaseDeployPath(filePath: string): boolean {
     /^scripts\/release-full-aggregate-gate\.sh$/,
     /^scripts\/run-integration-release-user-story(?:\.test)?\.(?:sh|ts)$/,
     /^scripts\/release-local-precheck-afscp\.test\.ts$/,
+    /^scripts\/governance\/deploy-template-package\.ts$/,
     /^scripts\/governance\/release/,
     /^scripts\/governance\/run-release/,
     /^scripts\/governance\/release-campaign/,
@@ -741,11 +742,17 @@ const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<strin
   'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
 };
 const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
-  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
   'release:contract': 'tsx scripts/governance/release-contract.ts',
 };
-const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, string>>> = {
-  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+const SAFE_EXACT_RELEASE_ARTIFACT_PRODUCER_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',
+};
+const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, readonly string[]>>> = {
+  'test:release:contract': [
+    'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+    'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+  ],
 };
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
 const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
@@ -854,14 +861,28 @@ function isSafeReleaseContractPackageScriptChange(
   currentCommand: string,
 ): boolean {
   const exactReleaseContractCommand = SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS[scriptName];
-  const legacySafePreviousCommand = LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS[scriptName];
+  const legacySafePreviousCommands = LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS[scriptName] ?? [];
   return exactReleaseContractCommand !== undefined
     && currentCommand === exactReleaseContractCommand
     && (
       previousCommand === undefined
       || previousCommand === exactReleaseContractCommand
-      || (legacySafePreviousCommand !== undefined && previousCommand === legacySafePreviousCommand)
+      || (
+        typeof previousCommand === 'string'
+        && legacySafePreviousCommands.includes(previousCommand)
+      )
     );
+}
+
+function isReleaseArtifactProducerPackageScriptChange(
+  scriptName: string,
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  const exactProducerCommand = SAFE_EXACT_RELEASE_ARTIFACT_PRODUCER_PACKAGE_SCRIPT_COMMANDS[scriptName];
+  return exactProducerCommand !== undefined
+    && currentCommand === exactProducerCommand
+    && (previousCommand === undefined || previousCommand === exactProducerCommand);
 }
 
 function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {
@@ -890,6 +911,59 @@ function isSafeGovernanceOrMockLanePackageScriptChange(
   }
   return typeof previousCommand === 'string'
     && isSafeGovernanceOrMockLanePackageScript(scriptName, previousCommand);
+}
+
+function isPackageJsonReleaseArtifactProducerChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== 'package.json') {
+    return false;
+  }
+
+  const comparison = packageJsonComparisonForChangedFile(baseRefs);
+  if (!comparison) {
+    return false;
+  }
+
+  const packageChangedKeys = changedJsonKeys(comparison.basePackageJson, comparison.currentPackageJson);
+  if (packageChangedKeys.length !== 1 || packageChangedKeys[0] !== 'scripts') {
+    return false;
+  }
+
+  const baseScripts = comparison.basePackageJson.scripts;
+  const currentScripts = comparison.currentPackageJson.scripts;
+  if (!isJsonObject(baseScripts) || !isJsonObject(currentScripts)) {
+    return false;
+  }
+
+  const changedScriptNames = changedJsonKeys(baseScripts, currentScripts);
+  if (changedScriptNames.length === 0) {
+    return false;
+  }
+
+  let producerChanged = false;
+  for (const scriptName of changedScriptNames) {
+    const currentCommand = currentScripts[scriptName];
+    const previousCommand = baseScripts[scriptName];
+    if (typeof currentCommand !== 'string') {
+      return false;
+    }
+
+    if (isReleaseArtifactProducerPackageScriptChange(scriptName, previousCommand, currentCommand)) {
+      producerChanged = true;
+      continue;
+    }
+
+    if (
+      isSafeGovernanceOrMockLanePackageScriptChange(scriptName, previousCommand, currentCommand)
+      || isSafeContractPackageScriptChange(scriptName, previousCommand, currentCommand)
+      || isSafeReleaseContractPackageScriptChange(scriptName, previousCommand, currentCommand)
+    ) {
+      continue;
+    }
+
+    return false;
+  }
+
+  return producerChanged;
 }
 
 function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: readonly string[]): boolean {
@@ -1740,6 +1814,27 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         nextAction: action,
         manualReviewReasons: [MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift],
         impactSource,
+      });
+    }
+
+    if (isPackageJsonReleaseArtifactProducerChange(changedFile, packageJsonBaseRefs)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Manual release/repo-split boundary guard owner review required for the internal release artifact producer script; run npm run verify -- --goal=pr --run and focused release-boundary contract tests before accepting the package.json impact.';
+      const surface = 'release-boundary-guard';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} adds or updates an internal release artifact producer npm script; V0/V1 focused contract verification plus release/repo-split owner review is selected.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'release_boundary_guard',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
       });
     }
 

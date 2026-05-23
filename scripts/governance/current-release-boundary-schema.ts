@@ -2084,7 +2084,8 @@ function validateAttestation(
     return;
   }
 
-  validateRequiredString(value.attestation_uri, `${path}.attestation_uri`, failures);
+  const attestationUri = validateRequiredString(value.attestation_uri, `${path}.attestation_uri`, failures);
+  validateRemoteCiArtifactUri(attestationUri, `${path}.attestation_uri`, failures);
   validateDigest(value.attestation_sha256, `${path}.attestation_sha256`, failures);
 }
 
@@ -2123,6 +2124,7 @@ function validateArtifactSubjectUri(
   const normalized = normalizeArtifactPointer(value);
   if (
     normalized.startsWith('file://')
+    || isLocalArtifactUri(normalized)
     || isLocalOrTraversalPath(normalized)
     || normalized.startsWith('@/')
     || isAgentSmithProductSourcePointer(normalized)
@@ -2197,6 +2199,12 @@ function isAgentSmithProductSourcePointer(value: string): boolean {
     || isAgentSmithGitHubSourceUri(value);
 }
 
+const RELEASE_BOUNDARY_GITHUB_SOURCE_REPO_PATHS = [
+  '/agentsmith-project/agentsmith',
+  '/agentsmith-project/agentsmith-release-kit',
+  '/agentsmith-project/agentsmith-runner',
+] as const;
+
 function isAgentSmithGitHubSourceUri(value: string): boolean {
   let url: URL;
   try {
@@ -2212,29 +2220,43 @@ function isAgentSmithGitHubSourceUri(value: string): boolean {
   }
 
   if (hostname === 'github.com') {
-    return pathname === '/agentsmith-project/agentsmith'
-      || pathname === '/agentsmith-project/agentsmith.git'
-      || pathname.startsWith('/agentsmith-project/agentsmith/archive/')
-      || pathname.startsWith('/agentsmith-project/agentsmith/tree/')
-      || pathname.startsWith('/agentsmith-project/agentsmith/blob/')
-      || pathname.startsWith('/agentsmith-project/agentsmith/raw/');
+    return RELEASE_BOUNDARY_GITHUB_SOURCE_REPO_PATHS.some((repoPath) => (
+      pathname === repoPath
+      || pathname === `${repoPath}.git`
+      || pathname.startsWith(`${repoPath}/archive/`)
+      || pathname.startsWith(`${repoPath}/tree/`)
+      || pathname.startsWith(`${repoPath}/blob/`)
+      || pathname.startsWith(`${repoPath}/raw/`)
+      || pathname.startsWith(`${repoPath}/commit/`)
+      || pathname === `${repoPath}/commits`
+      || pathname.startsWith(`${repoPath}/commits/`)
+    ));
   }
 
   if (hostname === 'raw.githubusercontent.com' || hostname === 'codeload.github.com') {
-    return pathname === '/agentsmith-project/agentsmith'
-      || pathname.startsWith('/agentsmith-project/agentsmith/');
+    return RELEASE_BOUNDARY_GITHUB_SOURCE_REPO_PATHS.some((repoPath) => (
+      pathname === repoPath || pathname.startsWith(`${repoPath}/`)
+    ));
   }
 
   if (hostname === 'api.github.com') {
-    const repoPath = '/repos/agentsmith-project/agentsmith';
-    return pathname === `${repoPath}/tarball`
-      || pathname.startsWith(`${repoPath}/tarball/`)
-      || pathname === `${repoPath}/zipball`
-      || pathname.startsWith(`${repoPath}/zipball/`)
-      || pathname === `${repoPath}/contents`
-      || pathname.startsWith(`${repoPath}/contents/`)
-      || pathname === `${repoPath}/git`
-      || pathname.startsWith(`${repoPath}/git/`);
+    return RELEASE_BOUNDARY_GITHUB_SOURCE_REPO_PATHS.some((sourceRepoPath) => {
+      const repoPath = `/repos${sourceRepoPath}`;
+      return pathname === `${repoPath}/tarball`
+        || pathname.startsWith(`${repoPath}/tarball/`)
+        || pathname === `${repoPath}/zipball`
+        || pathname.startsWith(`${repoPath}/zipball/`)
+        || pathname === `${repoPath}/contents`
+        || pathname.startsWith(`${repoPath}/contents/`)
+        || pathname === `${repoPath}/git`
+        || pathname.startsWith(`${repoPath}/git/`)
+        || pathname === `${repoPath}/commits`
+        || pathname.startsWith(`${repoPath}/commits/`)
+        || pathname === `${repoPath}/branches`
+        || pathname.startsWith(`${repoPath}/branches/`)
+        || pathname === `${repoPath}/tags`
+        || pathname.startsWith(`${repoPath}/tags/`);
+    });
   }
 
   return false;

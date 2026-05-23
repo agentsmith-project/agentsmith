@@ -61,6 +61,8 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
   'npm run release:ready',
   'npm run release:status',
 ] as const;
+const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
+  'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -69,6 +71,7 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run lane:[a-z0-9:_-]+/,
   /\bmake lane-[a-z0-9_-]+/,
   /\bnpm run release:aggregate\b/,
+  /\bnpm run release:deploy-template-package\b/,
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT\b/,
@@ -83,6 +86,7 @@ const HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
   /\bnpm run lane:[a-z0-9:_-]+/,
   /\bmake lane-[a-z0-9_-]+/,
   /\bnpm run release:aggregate\b/,
+  /\bnpm run release:deploy-template-package\b/,
   /\bnpm run release:campaign:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
@@ -377,7 +381,7 @@ describe('current workflow governance', () => {
     }
 
     for (const command of commands) {
-      if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|verify:)/.test(command.npmScript ?? '')) {
+      if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|release:deploy-template-package|verify:)/.test(command.npmScript ?? '')) {
         expect(command.recommended, `${command.command} must stay an internal adapter, not a human recommendation`).not.toBe(true);
         expect(command.quickHuman, `${command.command} must stay out of the quick human surface`).not.toBe(true);
         expect(command.makeTarget, `${command.command} must not keep a Make compatibility target`).toBeUndefined();
@@ -537,6 +541,9 @@ describe('current workflow governance', () => {
     const releaseReady = commands.find((command) => command.npmScript === 'release:ready');
     const releaseStatus = commands.find((command) => command.npmScript === 'release:status');
     const releaseAggregate = commands.find((command) => command.npmScript === 'release:aggregate');
+    const releaseDeployTemplatePackage = commands.find(
+      (command) => command.npmScript === 'release:deploy-template-package',
+    );
     const releaseCampaign = commands.find((command) => command.npmScript === 'release:campaign:full');
     const fullReleaseGate = commands.find((command) => command.npmScript === 'gate:release:full');
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
@@ -558,6 +565,7 @@ describe('current workflow governance', () => {
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
     expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
+    expect(releaseEntry?.startCommands).not.toContain(DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND);
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
@@ -568,6 +576,12 @@ describe('current workflow governance', () => {
     expect(releaseStatus?.description).not.toMatch(/verdict|re-aggregat|aggregate/i);
     expect(releaseAggregate?.workflowRole).toBe('release_operation');
     expect(releaseAggregate?.gateId).toBeUndefined();
+    expect(releaseDeployTemplatePackage?.workflowRole).toBe('release_operation');
+    expect(releaseDeployTemplatePackage?.recommended).not.toBe(true);
+    expect(releaseDeployTemplatePackage?.quickHuman).not.toBe(true);
+    expect(releaseDeployTemplatePackage?.gateId).toBeUndefined();
+    expect(releaseDeployTemplatePackage?.command).toBe(DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND);
+    expect(releaseDeployTemplatePackage?.description).toMatch(/internal artifact producer/i);
     expect(releaseCampaign?.workflowRole).toBe('release_operation');
     expect(releaseCampaign?.recommended).not.toBe(true);
     expect(fullReleaseGate?.workflowRole).toBe('terminal_gate_verdict');
@@ -1084,6 +1098,7 @@ describe('current workflow governance', () => {
       expect.arrayContaining([
         'gate:release',
         'gate:release:full',
+        'release:deploy-template-package',
         'lane:visual',
         'lane:backend-real:core',
         'lane:unified-deploy:local-kind',

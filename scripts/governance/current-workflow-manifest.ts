@@ -1137,6 +1137,12 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         npmScript: 'release:aggregate',
       },
       {
+        command: 'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none',
+        description: 'internal artifact producer: package deploy templates for release contract handoff; do not use as the human release entrypoint',
+        canonical: 'npm',
+        npmScript: 'release:deploy-template-package',
+      },
+      {
         command: 'npm run test:unified-deploy:local-kind:images',
         description: 'owner diagnostic: prepare local-kind deploy images and immutable registry handoff',
         canonical: 'npm',

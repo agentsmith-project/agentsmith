@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   AGENTSMITH_CANONICAL_REPO,
@@ -99,6 +100,61 @@ export interface DeployTemplatePackageGenerationResult {
   descriptor: CurrentDeployTemplatePackage;
   manifest: DeployTemplatePackageManifest;
 }
+
+interface DeployTemplatePackageCliOptions {
+  argv?: readonly string[];
+  stdout?: (message: string) => void;
+  stderr?: (message: string) => void;
+}
+
+interface DeployTemplatePackageCliConfig {
+  packageUri: string;
+  gitSha: string;
+  sourceGitSha: string;
+  outputDir: string;
+  workflowName: string;
+  runId: string;
+  runAttempt: string;
+  job: string;
+  generatedAt: string;
+  generatorCommand: string;
+  generatorVersion: string;
+  attestation: CurrentArtifactProvenance['attestation'];
+  subjectUri?: string;
+}
+
+type DeployTemplatePackageCliField =
+  | 'packageUri'
+  | 'gitSha'
+  | 'sourceGitSha'
+  | 'outputDir'
+  | 'workflowName'
+  | 'runId'
+  | 'runAttempt'
+  | 'job'
+  | 'generatedAt'
+  | 'generatorCommand'
+  | 'generatorVersion'
+  | 'attestation'
+  | 'subjectUri';
+
+const DEPLOY_TEMPLATE_PACKAGE_CLI_FLAGS = {
+  '--package-uri': 'packageUri',
+  '--git-sha': 'gitSha',
+  '--source-git-sha': 'sourceGitSha',
+  '--output-dir': 'outputDir',
+  '--ci-workflow-name': 'workflowName',
+  '--ci-run-id': 'runId',
+  '--ci-run-attempt': 'runAttempt',
+  '--ci-job': 'job',
+  '--generated-at': 'generatedAt',
+  '--generator-command': 'generatorCommand',
+  '--generator-version': 'generatorVersion',
+  '--attestation': 'attestation',
+  '--subject-uri': 'subjectUri',
+} as const satisfies Record<string, DeployTemplatePackageCliField>;
+
+type DeployTemplatePackageCliFlag = keyof typeof DEPLOY_TEMPLATE_PACKAGE_CLI_FLAGS;
 
 interface PackageFileSource {
   packagePath: string;
@@ -187,6 +243,128 @@ export function generateDeployTemplatePackage(
   } finally {
     rmSync(stagingRoot, { force: true, recursive: true });
   }
+}
+
+export function runDeployTemplatePackageCli(options: DeployTemplatePackageCliOptions = {}): number {
+  const argv = options.argv ?? process.argv.slice(2);
+  const stdout = options.stdout ?? ((message: string) => console.log(message));
+  const stderr = options.stderr ?? ((message: string) => console.error(message));
+
+  try {
+    const config = parseDeployTemplatePackageCliArgs(argv);
+    const result = generateDeployTemplatePackage(
+      {
+        package_uri: config.packageUri,
+        git_sha: config.gitSha,
+        ci_provenance: {
+          workflow_name: config.workflowName,
+          run_id: config.runId,
+          run_attempt: config.runAttempt,
+          job: config.job,
+          generated_at: config.generatedAt,
+          generator_command: config.generatorCommand,
+          generator_version: config.generatorVersion,
+          subject_uri: config.subjectUri,
+          attestation: config.attestation,
+        },
+      },
+      {
+        outputDir: config.outputDir,
+        sourceGitSha: config.sourceGitSha,
+      },
+    );
+
+    stdout(`deploy template package archive: ${result.archivePath}`);
+    stdout(`deploy template package descriptor: ${result.descriptorPath}`);
+    return 0;
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+}
+
+function parseDeployTemplatePackageCliArgs(argv: readonly string[]): DeployTemplatePackageCliConfig {
+  const values: Partial<Record<DeployTemplatePackageCliField, string>> = {};
+  const seenFlags = new Set<DeployTemplatePackageCliFlag>();
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!isDeployTemplatePackageCliFlag(arg)) {
+      throw new Error(`unsupported deploy template package argument: ${arg}`);
+    }
+    if (seenFlags.has(arg)) {
+      throw new Error(`duplicate deploy template package argument: ${arg}`);
+    }
+
+    seenFlags.add(arg);
+    values[DEPLOY_TEMPLATE_PACKAGE_CLI_FLAGS[arg]] = requireArgValue(argv, index);
+    index += 1;
+  }
+
+  const subjectUri = values.subjectUri?.trim();
+  return {
+    packageUri: requireCliArg(values.packageUri, '--package-uri'),
+    gitSha: requireCliArg(values.gitSha, '--git-sha'),
+    sourceGitSha: requireCliArg(values.sourceGitSha, '--source-git-sha'),
+    outputDir: requireCliArg(values.outputDir, '--output-dir'),
+    workflowName: requireCliArg(values.workflowName, '--ci-workflow-name'),
+    runId: requireCliArg(values.runId, '--ci-run-id'),
+    runAttempt: requireCliArg(values.runAttempt, '--ci-run-attempt'),
+    job: requireCliArg(values.job, '--ci-job'),
+    generatedAt: requireCliArg(values.generatedAt, '--generated-at'),
+    generatorCommand: requireCliArg(values.generatorCommand, '--generator-command'),
+    generatorVersion: requireCliArg(values.generatorVersion, '--generator-version'),
+    attestation: parseCliAttestation(requireCliArg(values.attestation, '--attestation')),
+    subjectUri: subjectUri && subjectUri.length > 0 ? subjectUri : undefined,
+  };
+}
+
+function isDeployTemplatePackageCliFlag(value: string): value is DeployTemplatePackageCliFlag {
+  return Object.hasOwn(DEPLOY_TEMPLATE_PACKAGE_CLI_FLAGS, value);
+}
+
+function requireArgValue(argv: readonly string[], index: number): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--') || value.trim().length === 0) {
+    throw new Error(`missing value for ${argv[index]}.`);
+  }
+  return value;
+}
+
+function requireCliArg(value: string | undefined, flag: string): string {
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`${flag} is required.`);
+  }
+  return value.trim();
+}
+
+function parseCliAttestation(value: string): CurrentArtifactProvenance['attestation'] {
+  if (value === 'none') {
+    return 'none';
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`--attestation must be "none" or a JSON object: ${reason}`);
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error('--attestation must be "none" or a JSON object.');
+  }
+  if (typeof parsed.attestation_uri !== 'string' || parsed.attestation_uri.trim().length === 0) {
+    throw new Error('--attestation JSON must include attestation_uri.');
+  }
+  if (typeof parsed.attestation_sha256 !== 'string' || parsed.attestation_sha256.trim().length === 0) {
+    throw new Error('--attestation JSON must include attestation_sha256.');
+  }
+
+  return {
+    attestation_uri: parsed.attestation_uri.trim(),
+    attestation_sha256: parsed.attestation_sha256.trim(),
+  };
 }
 
 function normalizeGeneratorInput(
@@ -549,4 +727,8 @@ function formatFailures(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(runDeployTemplatePackageCli());
 }

@@ -81,7 +81,22 @@ const GITHUB_API_SOURCE_ROOT_ENDPOINTS = [
   'https://api.github.com/repos/agentsmith-project/agentsmith/contents?ref=main',
   'https://api.github.com/repos/agentsmith-project/agentsmith/tarball',
   'https://api.github.com/repos/agentsmith-project/agentsmith/zipball',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/commits',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/branches',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/tags',
 ];
+const GITHUB_SOURCE_IDENTITY_ENDPOINTS = [
+  'https://github.com/agentsmith-project/agentsmith/commit/0123456789abcdef0123456789abcdef01234567',
+  'https://github.com/agentsmith-project/agentsmith-release-kit/commit/0123456789abcdef0123456789abcdef01234567',
+  'https://github.com/agentsmith-project/agentsmith-runner/commit/0123456789abcdef0123456789abcdef01234567',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/commits/0123456789abcdef0123456789abcdef01234567',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/branches/main',
+  'https://api.github.com/repos/agentsmith-project/agentsmith/tags/v2026.05.23',
+];
+const VALID_REMOTE_ATTESTATION = {
+  attestation_uri: 'gh-artifact://agentsmith/deploy-template-package/10001/attestation.intoto.jsonl',
+  attestation_sha256: `sha256:${'9'.repeat(64)}`,
+} as const;
 
 describe('current release boundary schema', () => {
   it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, and runner manifest', () => {
@@ -241,6 +256,21 @@ describe('current release boundary schema', () => {
     expectInvalid(result, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
   });
 
+  it.each(GITHUB_SOURCE_IDENTITY_ENDPOINTS)(
+    'rejects deploy template package GitHub source identity package_uri and artifact_uri %s',
+    (packageUri) => {
+      const packageRecord = cloneFixture('deploy-template-package.valid.json');
+      packageRecord.package_uri = packageUri;
+      artifactProvenanceOf(packageRecord).artifact_uri = packageUri;
+      rehashArtifactProvenanceContainer(packageRecord);
+
+      const result = validateDeployTemplatePackage(packageRecord);
+
+      expectInvalid(result, 'package_uri must be a remote/CI artifact URI');
+      expectInvalid(result, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
+    },
+  );
+
   it.each([
     'https://api.github.com/repos/agentsmith-project/agentsmith/%67it/blobs/0123456789abcdef0123456789abcdef01234567',
     'https://api.github.com/repos/agentsmith-project/agentsmith/cont%65nts/packages/application/deploy-template-package.json?ref=main',
@@ -329,9 +359,89 @@ describe('current release boundary schema', () => {
     },
   );
 
+  it.each([
+    'local://deploy-template-package/subject.json',
+    'http://localhost/subject.json',
+    'http://127.0.0.1/subject.json',
+  ])('rejects deploy template package local subject_uri %s', (subjectUri) => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    artifactProvenanceOf(packageRecord).subject_uri = subjectUri;
+
+    expectInvalid(
+      validateDeployTemplatePackage(packageRecord),
+      'artifact_provenance.subject_uri must not point at local AgentSmith product source',
+    );
+  });
+
+  it('allows deploy template package remote attestation_uri', () => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    artifactProvenanceOf(packageRecord).attestation = VALID_REMOTE_ATTESTATION;
+
+    expect(validateDeployTemplatePackage(packageRecord).ok).toBe(true);
+  });
+
+  it.each([
+    'file:///home/percy/works/mbos-v1/agentsmith/attestation.intoto.jsonl',
+    './attestation.intoto.jsonl',
+    'local://deploy-template-package/attestation.intoto.jsonl',
+    'https://github.com/agentsmith-project/agentsmith/blob/main/attestation.intoto.jsonl',
+    'https://raw.githubusercontent.com/agentsmith-project/agentsmith/main/attestation.intoto.jsonl',
+    'https://api.github.com/repos/agentsmith-project/agentsmith/contents/attestation.intoto.jsonl?ref=main',
+  ])('rejects deploy template package local/source attestation_uri %s', (attestationUri) => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    artifactProvenanceOf(packageRecord).attestation = {
+      ...VALID_REMOTE_ATTESTATION,
+      attestation_uri: attestationUri,
+    };
+
+    expectInvalid(
+      validateDeployTemplatePackage(packageRecord),
+      'artifact_provenance.attestation.attestation_uri must be a remote/CI artifact URI',
+    );
+  });
+
+  it.each([
+    {
+      name: 'release-kit evidence',
+      fixture: 'release-kit-evidence.valid.json',
+      validate: validateReleaseKitEvidence,
+      attestationUri:
+        'https://github.com/agentsmith-project/agentsmith-release-kit/blob/main/attestation.intoto.jsonl',
+    },
+    {
+      name: 'runner release manifest',
+      fixture: 'runner-release-manifest.valid.json',
+      validate: validateRunnerReleaseManifest,
+      attestationUri:
+        'https://github.com/agentsmith-project/agentsmith-runner/blob/main/attestation.intoto.jsonl',
+    },
+  ])('rejects local/source attestation_uri on $name artifact provenance', ({ fixture, validate, attestationUri }) => {
+    const record = cloneFixture(fixture);
+    artifactProvenanceOf(record).attestation = {
+      ...VALID_REMOTE_ATTESTATION,
+      attestation_uri: attestationUri,
+    };
+
+    expectInvalid(
+      validate(record),
+      'artifact_provenance.attestation.attestation_uri must be a remote/CI artifact URI',
+    );
+  });
+
   it('allows deploy template package GitHub Actions artifact API package_uri', () => {
     const packageRecord = cloneFixture('deploy-template-package.valid.json');
     const artifactUri = 'https://api.github.com/repos/agentsmith-project/agentsmith/actions/artifacts/123456789/zip';
+    packageRecord.package_uri = artifactUri;
+    artifactProvenanceOf(packageRecord).artifact_uri = artifactUri;
+    rehashArtifactProvenanceContainer(packageRecord);
+
+    expect(validateDeployTemplatePackage(packageRecord).ok).toBe(true);
+  });
+
+  it('allows deploy template package GitHub Releases download package_uri', () => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    const artifactUri =
+      'https://github.com/agentsmith-project/agentsmith/releases/download/v2026.05.23/agentsmith-deploy-template-package.tgz';
     packageRecord.package_uri = artifactUri;
     artifactProvenanceOf(packageRecord).artifact_uri = artifactUri;
     rehashArtifactProvenanceContainer(packageRecord);

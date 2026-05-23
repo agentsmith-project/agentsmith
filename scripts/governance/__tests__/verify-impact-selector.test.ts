@@ -1298,7 +1298,7 @@ describe('verify impact selector', () => {
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
       },
     };
@@ -1341,7 +1341,7 @@ describe('verify impact selector', () => {
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
       },
     };
@@ -1376,6 +1376,52 @@ describe('verify impact selector', () => {
     });
   });
 
+  it('maps package.json release artifact producer addition to release boundary owner review', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+        'release:contract': 'tsx scripts/governance/release-contract.ts',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
+        'release:contract': 'tsx scripts/governance/release-contract.ts',
+        'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.affectedSurfaces).toEqual(['release-boundary-guard']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(true);
+      expect(plan.nextAction).toContain('release/repo-split boundary guard owner review');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['release_boundary_guard'],
+          affectedSurfaces: ['release-boundary-guard'],
+          storyIds: [],
+          broadImpact: false,
+          manualReviewRequired: true,
+        }),
+      ]);
+    });
+  });
+
   it('keeps package.json fail-closed for non-exact release contract script commands', () => {
     const basePackageJson = {
       scripts: {
@@ -1385,11 +1431,15 @@ describe('verify impact selector', () => {
     const unsafeScriptSets = [
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts && echo unsafe',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts && echo unsafe',
       },
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
         'release:contract': 'tsx scripts/governance/not-release-contract.ts',
+      },
+      {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'release:deploy-template-package': 'tsx scripts/governance/not-deploy-template-package.ts',
       },
     ];
 
@@ -1628,6 +1678,7 @@ describe('verify impact selector', () => {
   });
 
   it.each([
+    'scripts/governance/deploy-template-package.ts',
     'scripts/governance/release-ready.ts',
     'scripts/governance/release-contract.ts',
     'scripts/governance/run-release-aggregate.ts',

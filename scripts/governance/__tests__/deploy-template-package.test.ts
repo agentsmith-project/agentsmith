@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -47,6 +47,10 @@ const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
+const VALID_REMOTE_ATTESTATION = {
+  attestation_uri: 'gh-artifact://agentsmith/deploy-template-package/10001/attestation.intoto.jsonl',
+  attestation_sha256: `sha256:${'9'.repeat(64)}`,
+} as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'c'.repeat(64)}`;
 const MANAGED_RUNNER_DIGEST = `sha256:${'b'.repeat(64)}`;
@@ -56,6 +60,8 @@ const BUILD_PRODUCER = {
   command: 'npm run build-artifact-broker',
   runtime: 'vitest',
 };
+const DEPLOY_TEMPLATE_PACKAGE_SCRIPT = join(REPO_ROOT, 'scripts/governance/deploy-template-package.ts');
+const TSX_LOADER = join(REPO_ROOT, 'node_modules/tsx/dist/loader.mjs');
 
 function buildGenerationInput(
   overrides: Partial<DeployTemplatePackageGenerationInput> = {},
@@ -138,6 +144,60 @@ function sha256BufferDigest(value: Buffer): string {
 
 function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+}
+
+function runDeployTemplatePackageCli(
+  repoRoot: string,
+  args: readonly string[],
+): ReturnType<typeof spawnSync> {
+  return spawnSync(
+    process.execPath,
+    ['--import', TSX_LOADER, DEPLOY_TEMPLATE_PACKAGE_SCRIPT, ...args],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    },
+  );
+}
+
+function deployTemplatePackageCliArgs(
+  outputDir: string,
+  overrides: Partial<Record<string, string>> = {},
+): string[] {
+  const values: Record<string, string> = {
+    '--package-uri': PACKAGE_URI,
+    '--git-sha': GIT_SHA,
+    '--source-git-sha': GIT_SHA,
+    '--output-dir': outputDir,
+    '--ci-workflow-name': 'release-contract',
+    '--ci-run-id': '10001',
+    '--ci-run-attempt': '1',
+    '--ci-job': 'package-deploy-template',
+    '--generated-at': GENERATED_AT,
+    '--generator-command': 'npm run release:deploy-template-package',
+    '--generator-version': 'p1',
+    '--attestation': 'none',
+    ...overrides,
+  };
+
+  return Object.entries(values).flatMap(([key, value]) => [key, value]);
+}
+
+function withoutCliArg(args: readonly string[], flag: string): string[] {
+  const next: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === flag) {
+      index += 1;
+      continue;
+    }
+    next.push(args[index]);
+  }
+  return next;
+}
+
+function expectNoPackageOutputs(outputDir: string): void {
+  expect(existsSync(join(outputDir, DEPLOY_TEMPLATE_PACKAGE_ARCHIVE_NAME))).toBe(false);
+  expect(existsSync(join(outputDir, DEPLOY_TEMPLATE_PACKAGE_DESCRIPTOR_NAME))).toBe(false);
 }
 
 function descriptorSubject(descriptor: CurrentDeployTemplatePackage): Omit<
@@ -318,6 +378,215 @@ function buildReleaseContractAssemblyInput(
 }
 
 describe('deploy template package generator', () => {
+  it('runs as a CLI and writes a validated archive and descriptor', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir),
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(join(outputDir, DEPLOY_TEMPLATE_PACKAGE_DESCRIPTOR_NAME));
+
+    const archivePath = join(outputDir, DEPLOY_TEMPLATE_PACKAGE_ARCHIVE_NAME);
+    const descriptorPath = join(outputDir, DEPLOY_TEMPLATE_PACKAGE_DESCRIPTOR_NAME);
+    expect(existsSync(archivePath)).toBe(true);
+    expect(existsSync(descriptorPath)).toBe(true);
+
+    const descriptor = readJson(descriptorPath) as unknown as CurrentDeployTemplatePackage;
+    expect(validateDeployTemplatePackage(descriptor).ok).toBe(true);
+    expect(descriptor.package_uri).toBe(PACKAGE_URI);
+    expect(descriptor.package_sha256).toBe(sha256FileDigest(archivePath));
+    expect(descriptor.artifact_provenance.artifact_uri).toBe(descriptor.package_uri);
+    expect(descriptor.artifact_provenance.artifact_sha256).toBe(descriptor.package_sha256);
+  });
+
+  it('accepts legal remote attestation JSON through the CLI', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--attestation': JSON.stringify(VALID_REMOTE_ATTESTATION),
+      }),
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    const descriptor = readJson(
+      join(outputDir, DEPLOY_TEMPLATE_PACKAGE_DESCRIPTOR_NAME),
+    ) as unknown as CurrentDeployTemplatePackage;
+
+    expect(validateDeployTemplatePackage(descriptor).ok).toBe(true);
+    expect(descriptor.artifact_provenance.attestation).toEqual(VALID_REMOTE_ATTESTATION);
+  });
+
+  it.each([
+    ['unknown argument', ['--unknown', 'value'], 'unsupported deploy template package argument: --unknown'],
+    [
+      'missing argument value',
+      ['--package-uri'],
+      'missing value for --package-uri',
+    ],
+  ])('fails fast for CLI %s', (_name, extraArgs, expected) => {
+    const repoRoot = makeTempRoot();
+    const result = runDeployTemplatePackageCli(repoRoot, extraArgs);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(expected);
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+  });
+
+  it.each([
+    '--package-uri',
+    '--git-sha',
+    '--source-git-sha',
+    '--output-dir',
+    '--ci-workflow-name',
+    '--ci-run-id',
+    '--ci-run-attempt',
+    '--ci-job',
+    '--generated-at',
+    '--generator-command',
+    '--generator-version',
+    '--attestation',
+    '--subject-uri',
+  ])('fails fast when CLI flag %s is duplicated', (flag) => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const baseArgs = deployTemplatePackageCliArgs(outputDir, {
+      '--subject-uri': 'deploy-template-package.json',
+    });
+    const value = flag === '--attestation' ? JSON.stringify(VALID_REMOTE_ATTESTATION) : 'duplicate-value';
+    const result = runDeployTemplatePackageCli(repoRoot, [...baseArgs, flag, value]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`duplicate deploy template package argument: ${flag}`);
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it('fails fast when a required CLI argument is missing', () => {
+    const repoRoot = makeTempRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      withoutCliArg(deployTemplatePackageCliArgs(outputRoot()), '--git-sha'),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--git-sha is required');
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+  });
+
+  it('fails fast when the CLI package_uri is local or relative', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--package-uri': './agentsmith-deploy-template-package.tgz',
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('package_uri must be a remote/CI artifact URI');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it('fails fast when the CLI git_sha differs from sourceGitSha', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--source-git-sha': 'ffffffffffffffffffffffffffffffffffffffff',
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('git_sha must match sourceGitSha');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it('fails fast when CLI attestation_uri is local or source-backed', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--attestation': JSON.stringify({
+          ...VALID_REMOTE_ATTESTATION,
+          attestation_uri: 'file:///home/percy/works/mbos-v1/agentsmith/attestation.intoto.jsonl',
+        }),
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'artifact_provenance.attestation.attestation_uri must be a remote/CI artifact URI',
+    );
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it('fails fast when CLI attestation digest is invalid', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--attestation': JSON.stringify({
+          ...VALID_REMOTE_ATTESTATION,
+          attestation_sha256: 'sha256:not-a-digest',
+        }),
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('artifact_provenance.attestation.attestation_sha256');
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it.each([
+    'file:///home/percy/works/mbos-v1/agentsmith/src/deploy-template-package.json',
+    'local://deploy-template-package/subject.json',
+    'http://localhost/subject.json',
+    'http://127.0.0.1/subject.json',
+  ])('fails fast when CLI subject_uri is local or source-backed: %s', (subjectUri) => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--subject-uri': subjectUri,
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'artifact_provenance.subject_uri must not point at local AgentSmith product source',
+    );
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+    expectNoPackageOutputs(outputDir);
+  });
+
+  it('fails fast when CLI subject_uri equals package_uri', () => {
+    const repoRoot = makeTempRoot();
+    const outputDir = outputRoot();
+    const result = runDeployTemplatePackageCli(
+      repoRoot,
+      deployTemplatePackageCliArgs(outputDir, {
+        '--subject-uri': PACKAGE_URI,
+      }),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('subject_sha256 must hash the subject without artifact_provenance');
+    expect(result.stderr).not.toContain('deployment.manifest.json');
+    expectNoPackageOutputs(outputDir);
+  });
+
   it('generates a validated descriptor and deterministic archive with non-self-referential provenance', () => {
     const outputDir = outputRoot();
     const result = generateDeployTemplatePackage(buildGenerationInput(), {

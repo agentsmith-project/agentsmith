@@ -741,8 +741,11 @@ const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<strin
   'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
 };
 const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
-  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
   'release:contract': 'tsx scripts/governance/release-contract.ts',
+};
+const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
 };
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
 const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
@@ -851,9 +854,14 @@ function isSafeReleaseContractPackageScriptChange(
   currentCommand: string,
 ): boolean {
   const exactReleaseContractCommand = SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS[scriptName];
+  const legacySafePreviousCommand = LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS[scriptName];
   return exactReleaseContractCommand !== undefined
     && currentCommand === exactReleaseContractCommand
-    && (previousCommand === undefined || previousCommand === exactReleaseContractCommand);
+    && (
+      previousCommand === undefined
+      || previousCommand === exactReleaseContractCommand
+      || (legacySafePreviousCommand !== undefined && previousCommand === legacySafePreviousCommand)
+    );
 }
 
 function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {

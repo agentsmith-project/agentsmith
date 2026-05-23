@@ -1298,7 +1298,7 @@ describe('verify impact selector', () => {
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
       },
     };
@@ -1330,6 +1330,52 @@ describe('verify impact selector', () => {
     });
   });
 
+  it('maps package.json release contract test script legacy-safe upgrade to governance tooling only', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
+        'release:contract': 'tsx scripts/governance/release-contract.ts',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+        'release:contract': 'tsx scripts/governance/release-contract.ts',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+      expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
   it('keeps package.json fail-closed for non-exact release contract script commands', () => {
     const basePackageJson = {
       scripts: {
@@ -1339,7 +1385,7 @@ describe('verify impact selector', () => {
     const unsafeScriptSets = [
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts && echo unsafe',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts && echo unsafe',
       },
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',

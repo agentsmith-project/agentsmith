@@ -13,6 +13,7 @@ import type {
   AgentSmithReleaseContractGeneratorInput,
 } from './release-contract';
 
+const MANAGED_RUNNER_PRODUCT_IMAGE_ID = 'managed_runner';
 const PRODUCT_IMAGE_IDS = ['web', 'api', 'product_schema_bootstrap'] as const;
 const FORBIDDEN_ASSEMBLY_INPUT_FIELDS = [
   'deploy_template_digest',
@@ -42,6 +43,7 @@ export interface AgentSmithReleaseContractGeneratorInputAssemblyInput {
   git_sha: string;
   sourceGitSha: string;
   buildManifestAggregate: unknown;
+  managed_runner_image: CurrentReleaseImage;
   deployTemplatePackage: CurrentDeployTemplatePackage;
   openapi_subject: unknown;
   openapi_digest?: string;
@@ -71,6 +73,8 @@ export function assembleReleaseContractGeneratorInput(
   const appTarget = resolveBuildManifestAppTarget(input.buildManifestAggregate, {
     expectedReleaseId: releaseId,
   });
+  const appProductImages = buildProductImagesFromAppTarget(appTarget);
+  const managedRunnerImage = requireManagedRunnerImage(input.managed_runner_image);
 
   const deployTemplatePackage = input.deployTemplatePackage;
   const deployTemplateDigest = requireNonEmptyString(
@@ -90,7 +94,7 @@ export function assembleReleaseContractGeneratorInput(
   return {
     release_id: releaseId,
     git_sha: gitSha,
-    product_images: buildProductImagesFromAppTarget(appTarget),
+    product_images: [...appProductImages, managedRunnerImage],
     adopted_provider_images: input.adopted_provider_images,
     release_kit_prerequisite_images: input.release_kit_prerequisite_images,
     deploy_template_digest: deployTemplateDigest,
@@ -111,6 +115,17 @@ export function buildProductImagesFromBuildManifest(
   options: BuildProductImagesFromBuildManifestOptions,
 ): CurrentReleaseImage[] {
   return buildProductImagesFromAppTarget(resolveBuildManifestAppTarget(buildManifestAggregate, options));
+}
+
+function requireManagedRunnerImage(value: unknown): CurrentReleaseImage {
+  if (!isRecord(value)) {
+    throw new Error('managed_runner_image must be an object.');
+  }
+  if (value.id !== MANAGED_RUNNER_PRODUCT_IMAGE_ID) {
+    throw new Error('managed_runner_image.id must be "managed_runner".');
+  }
+
+  return value as CurrentReleaseImage;
 }
 
 function resolveBuildManifestAppTarget(

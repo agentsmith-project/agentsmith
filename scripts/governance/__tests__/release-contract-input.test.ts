@@ -29,6 +29,7 @@ const GENERATED_AT = '2026-05-23T12:00:00.000Z';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
+const MANAGED_RUNNER_DIGEST = `sha256:${'c'.repeat(64)}`;
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
   version: 'test',
@@ -128,6 +129,14 @@ function buildAsyncApiSubject() {
   };
 }
 
+function buildManagedRunnerImage() {
+  return {
+    id: 'managed_runner',
+    image: `ghcr.io/agentsmith-project/agentsmith-managed-runner:${RELEASE_ID}@${MANAGED_RUNNER_DIGEST}`,
+    digest: MANAGED_RUNNER_DIGEST,
+  };
+}
+
 function buildReleaseContractInput(
   productImages: AgentSmithReleaseContractGeneratorInput['product_images'],
 ): AgentSmithReleaseContractGeneratorInput {
@@ -214,6 +223,7 @@ function buildAssemblyInput(): AgentSmithReleaseContractGeneratorInputAssemblyIn
     git_sha: GIT_SHA,
     sourceGitSha: GIT_SHA,
     buildManifestAggregate: buildManifestAggregate(),
+    managed_runner_image: buildManagedRunnerImage(),
     deployTemplatePackage: buildDeployTemplatePackage(),
     openapi_subject: buildOpenApiSubject(),
     asyncapi_subject: buildAsyncApiSubject(),
@@ -297,10 +307,11 @@ describe('release contract input adapter', () => {
     const input = buildAssemblyInput();
     const generatorInput = assembleReleaseContractGeneratorInput(input);
     const contract = generateAgentSmithReleaseContract(generatorInput, SOURCE_OPTIONS);
+    const appProductImages = buildProductImagesFromBuildManifest(input.buildManifestAggregate, {
+      expectedReleaseId: RELEASE_ID,
+    });
 
-    expect(generatorInput.product_images).toEqual(
-      buildProductImagesFromBuildManifest(input.buildManifestAggregate, { expectedReleaseId: RELEASE_ID }),
-    );
+    expect(generatorInput.product_images).toEqual([...appProductImages, buildManagedRunnerImage()]);
     expect(generatorInput.deploy_template_package).toBe(input.deployTemplatePackage);
     expect(generatorInput.deploy_template_digest).toBe(input.deployTemplatePackage.manifest_sha256);
     expect(generatorInput.openapi_subject).toBe(input.openapi_subject);
@@ -308,6 +319,69 @@ describe('release contract input adapter', () => {
     expect('deploy_image_inventory' in (generatorInput as unknown as Record<string, unknown>)).toBe(false);
     expect('artifact_provenance' in (generatorInput as unknown as Record<string, unknown>)).toBe(false);
     expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
+    expect(contract.deploy_image_inventory).toContainEqual({
+      ...buildManagedRunnerImage(),
+      source: 'product_images',
+    });
+  });
+
+  it('fails fast when the explicit managed runner image is missing or not an object', () => {
+    const missing = buildAssemblyInput() as Partial<AgentSmithReleaseContractGeneratorInputAssemblyInput>;
+    delete missing.managed_runner_image;
+    expectAssemblyToThrow(
+      missing as AgentSmithReleaseContractGeneratorInputAssemblyInput,
+      'managed_runner_image must be an object',
+    );
+
+    const notObject = {
+      ...buildAssemblyInput(),
+      managed_runner_image: 'ghcr.io/agentsmith-project/agentsmith-managed-runner:tag',
+    } as unknown as AgentSmithReleaseContractGeneratorInputAssemblyInput;
+    expectAssemblyToThrow(notObject, 'managed_runner_image must be an object');
+  });
+
+  it('fails fast when the explicit managed runner image id is not managed_runner', () => {
+    const input = buildAssemblyInput();
+    input.managed_runner_image = {
+      ...buildManagedRunnerImage(),
+      id: 'agent_task_runner',
+    };
+
+    expectAssemblyToThrow(input, 'managed_runner_image.id must be "managed_runner"');
+  });
+
+  it('leaves managed runner required image and digest validation to the release contract boundary', () => {
+    const missingImage = buildAssemblyInput();
+    delete (missingImage.managed_runner_image as Partial<ReturnType<typeof buildManagedRunnerImage>>).image;
+    expect(() => {
+      generateAgentSmithReleaseContract(assembleReleaseContractGeneratorInput(missingImage), SOURCE_OPTIONS);
+    }).toThrow('product_images[3].image must be a non-empty string');
+
+    const missingDigest = buildAssemblyInput();
+    delete (missingDigest.managed_runner_image as Partial<ReturnType<typeof buildManagedRunnerImage>>).digest;
+    expect(() => {
+      generateAgentSmithReleaseContract(assembleReleaseContractGeneratorInput(missingDigest), SOURCE_OPTIONS);
+    }).toThrow('image digest is required');
+  });
+
+  it('leaves managed runner digest pinning and digest mismatch validation to the release contract boundary', () => {
+    const tagOnly = buildAssemblyInput();
+    tagOnly.managed_runner_image = {
+      ...buildManagedRunnerImage(),
+      image: `ghcr.io/agentsmith-project/agentsmith-managed-runner:${RELEASE_ID}`,
+    };
+    expect(() => {
+      generateAgentSmithReleaseContract(assembleReleaseContractGeneratorInput(tagOnly), SOURCE_OPTIONS);
+    }).toThrow('image must be pinned by digest');
+
+    const digestMismatch = buildAssemblyInput();
+    digestMismatch.managed_runner_image = {
+      ...buildManagedRunnerImage(),
+      image: `ghcr.io/agentsmith-project/agentsmith-managed-runner:${RELEASE_ID}@sha256:${'d'.repeat(64)}`,
+    };
+    expect(() => {
+      generateAgentSmithReleaseContract(assembleReleaseContractGeneratorInput(digestMismatch), SOURCE_OPTIONS);
+    }).toThrow('image digest must match the image ref digest');
   });
 
   it('fails fast when release id, git sha, or deploy template provenance drift from the explicit source binding', () => {

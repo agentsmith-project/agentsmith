@@ -16,6 +16,10 @@ Current guidance and implementation plans:
 - [Governance Release Flow Simplification Plan v3](./governance-release-flow-simplification-plan-v3.md) - `team_reviewed_handoff_ready`; low-mind follow-up plan for reducing repeated release/bootstrap work while preserving release evidence authority
 - [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)
 
+Approved split plans:
+
+- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `team_reviewed_handoff_ready`; KISS-first plan for splitting release kit and runner repos while keeping AgentSmith product evidence authority
+
 Decision-required analyses:
 
 - [Internal Agent Terminal Pod Lifecycle Analysis v1](./internal-agent-terminal-pod-lifecycle-analysis-v1.md) - `decision_required_analysis`; current implementation review and options, not a current implementation plan

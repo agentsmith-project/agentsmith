@@ -10,6 +10,7 @@ import {
 } from '../run-verify';
 import {
   defaultGateProfileForVerificationPlan,
+  verificationRunContractFailure,
 } from '../verify-impact-selector';
 import {
   CURRENT_STORY_RISK_POLICY_SCHEMA,
@@ -638,11 +639,12 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toContain('V3');
     expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
     expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
-    expect(plan.recommendedCommands).toContain('npm run test:e2e:integration:agent-task');
+    expect(plan.recommendedCommands).not.toContain('npm run test:e2e:integration:agent-task');
     expect(plan.recommendedCommands).toContain('npm run verify:real');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.finalVerdict).toContain('not_evaluated');
     expect(plan.nextAction).toContain('npm run verify -- --goal=real --run');
+    expect(plan.nextAction).not.toMatch(/npm run test:e2e:integration:agent-task(?:[\s,]|$)/);
     expect(plan.nextAction).not.toContain('npm run verify:real');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.riskSummary.broadImpact).toBe(true);
@@ -662,6 +664,7 @@ describe('verify impact selector', () => {
 
     expect(plan.requiredLevels).toContain('V3');
     expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.recommendedCommands).not.toContain('npm run test:e2e:integration:agent-task');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.nextAction).toContain('npm run verify -- --goal=real --run');
@@ -691,6 +694,7 @@ describe('verify impact selector', () => {
 
     expect(plan.requiredLevels).toContain('V3');
     expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.recommendedCommands).not.toContain('npm run test:e2e:integration:agent-task');
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
@@ -771,6 +775,21 @@ describe('verify impact selector', () => {
     expect(plan.releaseVerdict).toBe(false);
   });
 
+  it('blocks bare agent-task Playwright integration aliases from governed run contracts', () => {
+    const failure = verificationRunContractFailure({
+      goal: 'real',
+      goalExplicit: true,
+      run: true,
+      recommendedCommands: ['npm run test:e2e:integration:agent-task'],
+    });
+
+    expect(failure).toContain('cannot execute npm run test:e2e:integration:agent-task');
+    expect(failure).toContain('governed verify uses npm run test:agent-task:runner:backend-real');
+    expect(failure).toContain('AGENTSMITH_ENABLE_TEST_ROUTES');
+    expect(failure).toContain('npm run test:e2e:integration:agent-task:with-api');
+    expect(failure).toContain('only after preparing Web/test routes');
+  });
+
   it.each(['debug', 'pr', 'visual'] as const)(
     'blocks implicit verify:real execution for %s run goal while preserving required evidence',
     (goal) => {
@@ -800,6 +819,7 @@ describe('verify impact selector', () => {
     });
 
     expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.recommendedCommands).not.toContain('npm run test:e2e:integration:agent-task');
     expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
     expect(plan.riskSummary.warnings.join('\n')).not.toContain('cannot execute npm run verify:real');
     expect(plan.releaseVerdict).toBe(false);

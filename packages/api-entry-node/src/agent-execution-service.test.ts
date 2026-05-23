@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import type { CachePort } from '@mbos/ports';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
@@ -102,6 +103,27 @@ async function setupExecutionService(options?: {
     wsBase,
     helloFramePromise,
   };
+}
+
+function taskExecutionContext(overrides: Partial<TaskExecutionContext> = {}): TaskExecutionContext {
+  const taskHomeSegment = overrides.task_home_segment ?? 'task_1';
+  const taskHomePath = overrides.task_home_path ?? `/home/${taskHomeSegment}`;
+  const workspacePath = overrides.workspace_path ?? `${taskHomePath}/workspace`;
+  const context: TaskExecutionContext = {
+    ...overrides,
+    workspace_id: overrides.workspace_id ?? 'ws_default',
+    project_id: overrides.project_id ?? 'proj_1',
+    task_id: overrides.task_id ?? 'task_1',
+    workspace_file_library_id: overrides.workspace_file_library_id ?? 'flib_1',
+    workspace_binding_mode: overrides.workspace_binding_mode ?? 'file_library',
+    runtime_profile: overrides.runtime_profile ?? 'managed',
+    task_home_segment: taskHomeSegment,
+    task_home_path: taskHomePath,
+    workspace_path: workspacePath,
+    artifacts_path: overrides.artifacts_path ?? `${workspacePath}/.artifacts`,
+    library_root_path: overrides.library_root_path ?? '.',
+  };
+  return assertTaskExecutionContext(context);
 }
 
 async function startExecutionServer(executionService: AgentExecutionService): Promise<string> {
@@ -1314,9 +1336,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-      },
+      executionContext: taskExecutionContext(),
     })).rejects.toThrow('agent_offline');
 
     expect(staleFrames).toEqual([]);
@@ -1377,9 +1397,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-      },
+      executionContext: taskExecutionContext(),
     })).rejects.toThrow('agent_offline');
 
     expect(lookupCount).toBeGreaterThanOrEqual(2);
@@ -1445,9 +1463,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'owner wins immediately' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-      },
+      executionContext: taskExecutionContext(),
     });
 
     expect(dispatched.requestId).toEqual(expect.any(String));
@@ -1483,9 +1499,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'task strict authority' }],
-      executionContext: {
-        runner_session_scope: 'task_execution',
-      },
+      executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
     })).rejects.toThrow('agent_offline');
 
     expect(requestFrames).toEqual([]);
@@ -1509,10 +1523,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'compose-managed notebook may use agent presence' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-        runner_session_scope: 'agent_presence',
-      },
+      executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
     });
 
     expect(dispatched.requestId).toEqual(expect.any(String));
@@ -1536,7 +1547,7 @@ describe('AgentExecutionService', () => {
       });
     });
 
-    const executionContext = {
+    const executionContext = taskExecutionContext({
       task_id: 'task_request_scoped_proxy',
       runner_session_scope: 'agent_presence',
       endpoint_id: 'ep_fresh',
@@ -1552,7 +1563,7 @@ describe('AgentExecutionService', () => {
       resource_proxy: {
         base_url: 'http://trusted.example/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_fresh/proxy/openai',
       },
-    };
+    });
 
     const dispatched = await executionService.dispatchStreamingRequest({
       workspaceId: 'ws_default',
@@ -1565,13 +1576,75 @@ describe('AgentExecutionService', () => {
     });
 
     expect(dispatched.requestId).toEqual(expect.any(String));
-    await expect(startFrame).resolves.toMatchObject({
+    const frame = await startFrame;
+    expect(frame).toMatchObject({
       type: 'server.request.start',
       runner_session_id: 'task_request_scoped_proxy',
       payload: {
         execution_context: executionContext,
       },
     });
+    const payload = frame.payload as { execution_context?: unknown };
+    expect(assertTaskExecutionContext(payload.execution_context)).toEqual(executionContext);
+  });
+
+  it('fails fast before dispatching a server request start with legacy execution context', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'chat' });
+    const requestFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        requestFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'chat_legacy_execution_context',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'must fail fast' }],
+      executionContext: { interaction_kind: 'chat' },
+    } as unknown as Parameters<AgentExecutionService['dispatchStreamingRequest']>[0])).rejects.toThrow(
+      'task_execution_context_invalid',
+    );
+
+    expect(requestFrames).toEqual([]);
+  });
+
+  it('fails fast before dispatching a server request start without execution context', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'chat' });
+    const requestFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        requestFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'chat_missing_execution_context',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'must fail fast' }],
+    } as unknown as Parameters<AgentExecutionService['dispatchStreamingRequest']>[0])).rejects.toThrow(
+      'agent_execution_context_required',
+    );
+
+    expect(requestFrames).toEqual([]);
+  });
+
+  it('types streaming dispatch input with required execution context', () => {
+    type StreamingDispatchInput = Parameters<AgentExecutionService['dispatchStreamingRequest']>[0];
+    type RequiresExecutionContext =
+      StreamingDispatchInput extends { executionContext: Record<string, unknown> } ? true : false;
+
+    const requiresExecutionContext = true satisfies RequiresExecutionContext;
+
+    expect(requiresExecutionContext).toBe(true);
   });
 
   it('rejects active terminal recovery ready frames without top-level runner identity and epoch', async () => {
@@ -1634,10 +1707,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
-        executionContext: {
-          interaction_kind: 'notebook',
-          runner_session_scope: 'agent_presence',
-        },
+        executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
       },
     });
 
@@ -1648,6 +1718,78 @@ describe('AgentExecutionService', () => {
       terminal_session_id: 'term_dev_direct_presence',
     });
     expect(startFrame).not.toHaveProperty('session_id');
+    const payload = startFrame.payload as { execution_context?: unknown };
+    expect(assertTaskExecutionContext(payload.execution_context)).toEqual(
+      taskExecutionContext({ runner_session_scope: 'agent_presence' }),
+    );
+  });
+
+  it('fails fast before dispatching terminal start without execution context', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminalFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.terminal.start') {
+        terminalFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_missing_terminal_context',
+      agentId: agent.id,
+      terminalSessionId: 'term_missing_terminal_context',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    } as unknown as Parameters<AgentExecutionService['dispatchTerminalSession']>[0])).rejects.toThrow(
+      'agent_execution_context_required',
+    );
+
+    expect(terminalFrames).toEqual([]);
+  });
+
+  it('fails fast before dispatching terminal start with legacy execution context', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const terminalFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.terminal.start') {
+        terminalFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_legacy_terminal_context',
+      agentId: agent.id,
+      terminalSessionId: 'term_legacy_terminal_context',
+      payload: {
+        cols: 80,
+        rows: 24,
+        executionContext: {
+          interaction_kind: 'notebook',
+          runner_session_scope: 'agent_presence',
+        },
+      },
+    } as unknown as Parameters<AgentExecutionService['dispatchTerminalSession']>[0])).rejects.toThrow(
+      'task_execution_context_invalid',
+    );
+
+    expect(terminalFrames).toEqual([]);
+  });
+
+  it('keeps terminal dispatch input caller-compatible while producer validation is runtime enforced', () => {
+    type TerminalDispatchInput = Parameters<AgentExecutionService['dispatchTerminalSession']>[0];
+    type AcceptsCallerContext =
+      TerminalDispatchInput extends { payload: { executionContext?: Record<string, unknown> } } ? true : false;
+
+    const acceptsCallerContext = true satisfies AcceptsCallerContext;
+
+    expect(acceptsCallerContext).toBe(true);
   });
 
   it('keeps notebook terminal control frames on the agent presence dispatch scope', async () => {
@@ -1678,10 +1820,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
-        executionContext: {
-          interaction_kind: 'notebook',
-          runner_session_scope: 'agent_presence',
-        },
+        executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
       },
     });
     const terminalEvents = terminal.stream[Symbol.asyncIterator]();
@@ -1761,10 +1900,7 @@ describe('AgentExecutionService', () => {
 
   it('emits detached for terminal streams but keeps task run streams fatal during runner transport recovery', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
-    const executionContext = {
-      interaction_kind: 'notebook',
-      runner_session_scope: 'agent_presence',
-    };
+    const executionContext = taskExecutionContext({ runner_session_scope: 'agent_presence' });
 
     const run = await executionService.dispatchStreamingRequest({
       workspaceId: 'ws_default',
@@ -1834,6 +1970,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
 
@@ -2096,10 +2233,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
-        executionContext: {
-          interaction_kind: 'notebook',
-          runner_session_scope: 'agent_presence',
-        },
+        executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
       },
     });
     const terminalEvents = terminal.stream[Symbol.asyncIterator]();
@@ -2148,10 +2282,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
-        executionContext: {
-          interaction_kind: 'notebook',
-          runner_session_scope: 'agent_presence',
-        },
+        executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
       },
     });
     const terminalEvents = terminal.stream[Symbol.asyncIterator]();
@@ -2202,10 +2333,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
-        executionContext: {
-          interaction_kind: 'notebook',
-          runner_session_scope: 'agent_presence',
-        },
+        executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
       },
     });
 
@@ -2265,7 +2393,7 @@ describe('AgentExecutionService', () => {
     ]);
   });
 
-  it('keeps terminal dispatch session-strict when no notebook execution context is declared', async () => {
+  it('requires terminal execution context before resolving dispatch authority', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const terminalFrames: Array<Record<string, unknown>> = [];
     ws.on('message', (raw) => {
@@ -2285,7 +2413,9 @@ describe('AgentExecutionService', () => {
         cols: 80,
         rows: 24,
       },
-    })).rejects.toThrow('agent_offline');
+    } as unknown as Parameters<AgentExecutionService['dispatchTerminalSession']>[0])).rejects.toThrow(
+      'agent_execution_context_required',
+    );
 
     expect(terminalFrames).toEqual([]);
   });
@@ -2325,10 +2455,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'compose-managed notebook still respects task authority' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-        runner_session_scope: 'agent_presence',
-      },
+      executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
     })).rejects.toThrow('agent_offline');
 
     expect(requestFrames).toEqual([]);
@@ -2353,9 +2480,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'chat may fallback' }],
-      executionContext: {
-        interaction_kind: 'chat',
-      },
+      executionContext: taskExecutionContext(),
     });
 
     expect(dispatched.requestId).toEqual(expect.any(String));
@@ -2647,9 +2772,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'must not dispatch' }],
-      executionContext: {
-        interaction_kind: 'chat',
-      },
+      executionContext: taskExecutionContext(),
     })).rejects.toThrow('agent_offline');
 
     expect(requestFrames).toEqual([]);
@@ -2812,9 +2935,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'still there?' }],
-      executionContext: {
-        interaction_kind: 'chat',
-      },
+      executionContext: taskExecutionContext(),
     });
     expect(dispatched.requestId).toEqual(expect.any(String));
     await expect(firstRequestFrame).resolves.toMatchObject({
@@ -3054,6 +3175,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
     await expect(startFrame).resolves.toMatchObject({
@@ -3133,6 +3255,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
     const socketState = (executionService as unknown as {
@@ -3379,6 +3502,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
 
@@ -3421,10 +3545,7 @@ describe('AgentExecutionService', () => {
       closeAttemptId: 'close_presence_1',
       generation: 6,
       connectionEpoch: 12,
-      executionContext: {
-        interaction_kind: 'notebook',
-        runner_session_scope: 'agent_presence',
-      },
+      executionContext: taskExecutionContext({ runner_session_scope: 'agent_presence' }),
     })).resolves.toBe('signaled');
 
     const frame = await closeFrame;
@@ -3534,6 +3655,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
     await expect(terminalStart).resolves.toMatchObject({
@@ -3603,9 +3725,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      executionContext: {
-        interaction_kind: 'notebook',
-      },
+      executionContext: taskExecutionContext(),
     })).rejects.toThrow('agent_offline');
 
     expect(socketState!.pendingByRequestId.size).toBe(0);
@@ -3643,6 +3763,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     })).rejects.toThrow('agent_offline');
 
@@ -3670,6 +3791,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -3906,6 +4028,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     await expect(startFrame).resolves.toMatchObject({
@@ -3969,9 +4092,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      executionContext: {
-        interaction_kind: 'chat',
-      },
+      executionContext: taskExecutionContext(),
     });
 
     await expect(startFrame).resolves.toMatchObject({
@@ -4046,9 +4167,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      executionContext: {
-        runner_session_scope: 'task_execution',
-      },
+      executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
     });
 
     await expect(startFrame).resolves.toMatchObject({
@@ -4111,6 +4230,7 @@ describe('AgentExecutionService', () => {
       payload: {
         cols: 80,
         rows: 24,
+        executionContext: taskExecutionContext({ runner_session_scope: 'task_execution' }),
       },
     });
 
@@ -4157,6 +4277,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     await executionService.shutdown();
@@ -4276,6 +4397,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -4307,6 +4429,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -4352,6 +4475,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -4409,6 +4533,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -4463,6 +4588,7 @@ describe('AgentExecutionService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
+      executionContext: taskExecutionContext(),
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();

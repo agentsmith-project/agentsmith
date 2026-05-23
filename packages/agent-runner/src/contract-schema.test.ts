@@ -8,6 +8,12 @@ import {
   TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS,
   getTaskExecutionContextFixture,
 } from './contract-schema.js';
+import {
+  RUNNER_CONTRACT_TERMINAL_FIXTURES as PUBLIC_RUNNER_CONTRACT_TERMINAL_FIXTURES,
+  TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS as PUBLIC_TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
+  TASK_EXECUTION_CONTEXT_JSON_SCHEMA as PUBLIC_TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
+  TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS as PUBLIC_TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
+} from './index.js';
 import { assertTaskExecutionContext } from './protocol.js';
 
 describe('agent-runner contract schema', () => {
@@ -70,6 +76,55 @@ describe('agent-runner contract schema', () => {
     }
     expect(TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS).toEqual(
       expect.arrayContaining(['user_bearer_token', 'credential_files']),
+    );
+  });
+
+  it('projects runtime guard string and path constraints into the JSON schema', () => {
+    const properties = TASK_EXECUTION_CONTEXT_JSON_SCHEMA.properties;
+    const agentTaskModel = properties.agent_task_model.properties;
+    const resourceProxy = properties.resource_proxy.properties;
+    const nonEmptyStringSchema = {
+      type: 'string',
+      minLength: 1,
+      pattern: '\\S',
+    };
+    const absoluteTaskPathSchema = {
+      type: 'string',
+      minLength: 1,
+      pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/',
+    };
+
+    expect(properties.task_id).toMatchObject(nonEmptyStringSchema);
+    expect(properties.workspace_file_library_id).toMatchObject(nonEmptyStringSchema);
+    expect(properties.task_home_segment).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 128,
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$',
+    });
+    expect(properties.task_home_path).toMatchObject(absoluteTaskPathSchema);
+    expect(properties.workspace_path).toMatchObject(absoluteTaskPathSchema);
+    expect(properties.artifacts_path).toMatchObject(absoluteTaskPathSchema);
+    expect(agentTaskModel.endpoint_id).toMatchObject(nonEmptyStringSchema);
+    expect(agentTaskModel.resolved_model).toMatchObject(nonEmptyStringSchema);
+    expect(agentTaskModel.setting_revision).toMatchObject(nonEmptyStringSchema);
+    expect(agentTaskModel.resolved_at).toMatchObject({
+      ...nonEmptyStringSchema,
+      format: 'date-time',
+    });
+    expect(resourceProxy.base_url).toMatchObject(nonEmptyStringSchema);
+  });
+
+  it('exports runner contract schema through the public package entrypoint', () => {
+    expect(PUBLIC_TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS).toBe(
+      TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
+    );
+    expect(PUBLIC_TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS).toBe(
+      TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
+    );
+    expect(PUBLIC_TASK_EXECUTION_CONTEXT_JSON_SCHEMA).toBe(TASK_EXECUTION_CONTEXT_JSON_SCHEMA);
+    expect(PUBLIC_RUNNER_CONTRACT_TERMINAL_FIXTURES).toBe(
+      RUNNER_CONTRACT_TERMINAL_FIXTURES,
     );
   });
 

@@ -11,6 +11,9 @@ export type JsonSchema = {
   readonly enum?: readonly (string | number | boolean | null)[];
   readonly format?: string;
   readonly minimum?: number;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
   readonly additionalProperties?: boolean | JsonSchema;
   readonly required?: readonly string[];
   readonly properties?: Readonly<Record<string, JsonSchema>>;
@@ -106,6 +109,25 @@ const supportedRuntimeProfiles = [
   'developer',
 ] as const satisfies readonly TaskRuntimeProfile[];
 
+const nonEmptyStringJsonSchema = {
+  type: 'string',
+  minLength: 1,
+  pattern: '\\S',
+} as const satisfies JsonSchema;
+
+const taskHomeSegmentJsonSchema = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 128,
+  pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$',
+} as const satisfies JsonSchema;
+
+const absoluteTaskPathJsonSchema = {
+  type: 'string',
+  minLength: 1,
+  pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/',
+} as const satisfies JsonSchema;
+
 export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -114,7 +136,7 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
     api_base: { type: 'string' },
     workspace_id: { type: 'string' },
     project_id: { type: 'string' },
-    task_id: { type: 'string' },
+    task_id: nonEmptyStringJsonSchema,
     run_id: { type: 'string' },
     runner_id: { type: 'string' },
     runner_session_scope: {
@@ -128,16 +150,16 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
       additionalProperties: false,
       required: ['endpoint_id', 'resolved_model', 'setting_revision', 'resolved_at'],
       properties: {
-        endpoint_id: { type: 'string' },
+        endpoint_id: nonEmptyStringJsonSchema,
         endpoint_display_name: { type: 'string' },
-        resolved_model: { type: 'string' },
+        resolved_model: nonEmptyStringJsonSchema,
         upstream_protocol: {
           type: 'string',
           enum: supportedAgentWireApis,
         },
-        setting_revision: { type: 'string' },
+        setting_revision: nonEmptyStringJsonSchema,
         policy_decision_id: { type: 'string' },
-        resolved_at: { type: 'string', format: 'date-time' },
+        resolved_at: { ...nonEmptyStringJsonSchema, format: 'date-time' },
       },
     },
     resource_proxy: {
@@ -145,7 +167,7 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
       additionalProperties: false,
       required: ['base_url'],
       properties: {
-        base_url: { type: 'string' },
+        base_url: nonEmptyStringJsonSchema,
       },
     },
     wire_api: {
@@ -154,7 +176,7 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
     },
     model: { type: 'string' },
     username: { type: 'string' },
-    workspace_file_library_id: { type: 'string' },
+    workspace_file_library_id: nonEmptyStringJsonSchema,
     workspace_binding_mode: {
       type: 'string',
       enum: supportedWorkspaceBindingModes,
@@ -163,10 +185,10 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
       type: 'string',
       enum: supportedRuntimeProfiles,
     },
-    task_home_segment: { type: 'string' },
-    task_home_path: { type: 'string' },
-    workspace_path: { type: 'string' },
-    artifacts_path: { type: 'string' },
+    task_home_segment: taskHomeSegmentJsonSchema,
+    task_home_path: absoluteTaskPathJsonSchema,
+    workspace_path: absoluteTaskPathJsonSchema,
+    artifacts_path: absoluteTaskPathJsonSchema,
     library_root_path: { const: '.' },
     workspace_file_library_name: {
       oneOf: [{ type: 'string' }, { type: 'null' }],

@@ -222,7 +222,8 @@ const REAL_VERIFY_COMMAND = 'npm run verify:real';
 const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
-const AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
+const BARE_AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
+const AGENT_TASK_INTEGRATION_WITH_API_COMMAND = 'npm run test:e2e:integration:agent-task:with-api';
 const UNIFIED_DEPLOY_UNIT_COMMAND = 'npm run test:unified-deploy:unit';
 export const PUBLIC_RELEASE_READY_COMMAND = 'npm run release:ready';
 const GOVERNED_PR_VERIFY_COMMAND = 'npm run verify -- --goal=pr --run';
@@ -371,6 +372,11 @@ export function verificationRunContractFailure(input: {
     return '--run requires an explicit public --goal=<pr|visual|real>; no internal verification steps were executed.';
   }
 
+  const publicGoal = input.goal === 'debug' ? 'pr' : input.goal;
+  if (input.recommendedCommands.includes(BARE_AGENT_TASK_INTEGRATION_COMMAND)) {
+    return `--goal=${publicGoal} --run cannot execute ${BARE_AGENT_TASK_INTEGRATION_COMMAND}; governed verify uses ${AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND} for runner/context backend-real coverage. Run Playwright integration, including ${AGENT_TASK_INTEGRATION_WITH_API_COMMAND}, only after preparing Web/test routes with AGENTSMITH_ENABLE_TEST_ROUTES via the runbook or corresponding adapter.`;
+  }
+
   const blockedCommands = input.recommendedCommands.filter((command) => (
     (command === REAL_VERIFY_COMMAND && input.goal !== 'real')
     || (command === RELEASE_REAL_VERIFY_COMMAND && input.goal !== 'release-real')
@@ -379,7 +385,6 @@ export function verificationRunContractFailure(input: {
     return null;
   }
 
-  const publicGoal = input.goal === 'debug' ? 'pr' : input.goal;
   if (blockedCommands.includes(RELEASE_REAL_VERIFY_COMMAND)) {
     return `--goal=${publicGoal} --run cannot cover release-owned backend-real changes; use ${PUBLIC_RELEASE_READY_COMMAND}. This verify report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
   }
@@ -1747,7 +1752,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
-      const action = `Run ${AGENT_TASK_RUNNER_FAST_COMMAND}, ${AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND}, ${AGENT_TASK_INTEGRATION_COMMAND}, then ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
+      const action = `Run ${AGENT_TASK_RUNNER_FAST_COMMAND}, ${AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND}, then ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
       const surface = 'runner/context-store/credentials';
       const impactedStories = stories.filter((story) => story.lane === 'backend-real');
       const impactSource: VerificationStoryImpactSource = {
@@ -1763,7 +1768,6 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.manualReviewRequired = true;
       accumulator.commands.add(AGENT_TASK_RUNNER_FAST_COMMAND);
       accumulator.commands.add(AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND);
-      accumulator.commands.add(AGENT_TASK_INTEGRATION_COMMAND);
       accumulator.reasons.push(`${changedFile} touches runner, Context Store, or credential behavior.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {

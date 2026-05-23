@@ -6,16 +6,18 @@ import {
   TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
   TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
   TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
-} from '../../packages/agent-runner/src/contract-schema.js';
+} from '../../packages/agent-runner/src/index.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '../..');
 const DEFAULT_ASYNCAPI_PATH = 'docs/contracts/specs/asyncapi.json';
+const SERVER_REQUEST_START_MESSAGE_TYPE = 'server.request.start';
 
 export type RunnerContractSyncErrorCode =
   | 'invalid_asyncapi'
   | 'missing_message'
   | 'missing_execution_context_schema'
+  | 'execution_context_not_required'
   | 'execution_context_allows_additional_properties'
   | 'execution_context_extra_fields'
   | 'execution_context_missing_required_fields'
@@ -369,6 +371,45 @@ function readFramePayloadSchemaForMessage(
   };
 }
 
+function validateServerRequestStartExecutionContext(
+  messages: Record<string, unknown>,
+  errors: RunnerContractSyncError[],
+): void {
+  const serverRequestStart = findMessageByType(messages, SERVER_REQUEST_START_MESSAGE_TYPE);
+  if (!serverRequestStart) return;
+  const framePayload = readFramePayloadSchemaForMessage(
+    messages,
+    SERVER_REQUEST_START_MESSAGE_TYPE,
+  );
+  if (!framePayload) {
+    errors.push({
+      code: 'missing_execution_context_schema',
+      message: 'server.request.start payload must expose execution_context',
+      path: `components.messages.${serverRequestStart.key}.payload.properties.payload`,
+    });
+    return;
+  }
+
+  const properties = readRecord(framePayload.schema, 'properties');
+  const executionContext = properties ? readRecord(properties, 'execution_context') : null;
+  if (!executionContext) {
+    errors.push({
+      code: 'missing_execution_context_schema',
+      message: 'server.request.start payload must expose execution_context',
+      path: `${framePayload.path}.properties.execution_context`,
+    });
+    return;
+  }
+
+  if (!readStringArray(framePayload.schema.required).includes('execution_context')) {
+    errors.push({
+      code: 'execution_context_not_required',
+      message: 'server.request.start payload.required must include execution_context',
+      path: `${framePayload.path}.required`,
+    });
+  }
+}
+
 function validateTerminalPayloadRequiredKeys(
   messages: Record<string, unknown>,
   errors: RunnerContractSyncError[],
@@ -440,12 +481,13 @@ export function checkRunnerContractSync(asyncApi: unknown): RunnerContractSyncRe
     };
   }
 
-  const requiredTerminalMessages = [
+  const requiredRunnerMessages = [
+    SERVER_REQUEST_START_MESSAGE_TYPE,
     RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalStart.type,
     RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalAdopt.type,
     RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalClose.type,
   ];
-  for (const messageType of requiredTerminalMessages) {
+  for (const messageType of requiredRunnerMessages) {
     if (!findMessageByType(messages, messageType)) {
       errors.push({
         code: 'missing_message',
@@ -454,6 +496,7 @@ export function checkRunnerContractSync(asyncApi: unknown): RunnerContractSyncRe
       });
     }
   }
+  validateServerRequestStartExecutionContext(messages, errors);
   validateTerminalPayloadRequiredKeys(messages, errors);
   validateTerminalRecoveryRequiredKeys(asyncApi, messages, errors);
 

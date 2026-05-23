@@ -1,5 +1,5 @@
 import { isAbsolute, join, normalize } from 'node:path';
-import { TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS } from './contract-schema.js';
+import { TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS } from './contract-schema.js';
 
 export const SUPPORTED_AGENT_WIRE_APIS = [
   'openai_chat_completions',
@@ -8,6 +8,11 @@ export const SUPPORTED_AGENT_WIRE_APIS = [
 ] as const;
 export type AgentWireApi = (typeof SUPPORTED_AGENT_WIRE_APIS)[number];
 export type AgentExecutionApplyPatchToolType = 'freeform' | 'function';
+
+const SUPPORTED_APPLY_PATCH_TOOL_TYPES = [
+  'freeform',
+  'function',
+] as const satisfies readonly AgentExecutionApplyPatchToolType[];
 
 const SUPPORTED_RUNNER_SESSION_SCOPES = [
   'agent_presence',
@@ -105,10 +110,10 @@ export type TaskRunner = {
 };
 
 export type AgentServerStartPayload = {
-  model?: string;
-  stream?: boolean;
-  messages?: Array<{ role?: string; content?: unknown }>;
-  execution_context?: TaskExecutionContext;
+  model: string;
+  stream: true;
+  messages: Array<Record<string, unknown>>;
+  execution_context: TaskExecutionContext;
 };
 
 export type AgentServerHelloPayload = {
@@ -125,20 +130,56 @@ export type AgentEnvelope = {
   payload?: unknown;
 };
 
-const TASK_EXECUTION_UNSUPPORTED_FIELDS = new Set(
-  TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS,
+const TASK_EXECUTION_CONTEXT_FIELD_NAMES = new Set<string>(
+  TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
 );
+const RESOURCE_PROXY_FIELD_NAMES = new Set(['base_url']);
+const AGENT_TASK_MODEL_FIELD_NAMES = new Set([
+  'endpoint_id',
+  'endpoint_display_name',
+  'resolved_model',
+  'upstream_protocol',
+  'setting_revision',
+  'policy_decision_id',
+  'resolved_at',
+]);
+const MODEL_LIMIT_FIELD_NAMES = new Set(['context_window', 'max_output_tokens']);
+const MODEL_CATALOG_FIELD_NAMES = new Set([
+  'input_modalities',
+  'supports_search_tool',
+  'supports_parallel_tool_calls',
+  'apply_patch_tool_type',
+]);
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
 
-function hasOwnField(input: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(input, key);
+function hasOnlyFields(input: Record<string, unknown>, fields: ReadonlySet<string>): boolean {
+  for (const key of Object.keys(input)) {
+    if (!fields.has(key)) return false;
+  }
+  return true;
 }
 
 function hasTrimmedStringField(input: Record<string, unknown>, key: string): boolean {
   return typeof input[key] === 'string' && input[key].trim().length > 0;
+}
+
+function hasOptionalStringField(input: Record<string, unknown>, key: string): boolean {
+  return input[key] === undefined || typeof input[key] === 'string';
+}
+
+function hasOptionalBooleanField(input: Record<string, unknown>, key: string): boolean {
+  return input[key] === undefined || typeof input[key] === 'boolean';
+}
+
+function isPositiveInteger(input: unknown): input is number {
+  return typeof input === 'number' && Number.isSafeInteger(input) && input >= 1;
+}
+
+function hasOptionalPositiveIntegerField(input: Record<string, unknown>, key: string): boolean {
+  return input[key] === undefined || isPositiveInteger(input[key]);
 }
 
 function hasValidWireApi(input: Record<string, unknown>): boolean {
@@ -159,6 +200,7 @@ function hasValidResourceProxy(input: Record<string, unknown>): boolean {
   const resourceProxy = input.resource_proxy;
   if (resourceProxy === undefined) return true;
   if (!isPlainObject(resourceProxy)) return false;
+  if (!hasOnlyFields(resourceProxy, RESOURCE_PROXY_FIELD_NAMES)) return false;
   return hasTrimmedStringField(resourceProxy, 'base_url');
 }
 
@@ -166,14 +208,61 @@ function hasValidAgentTaskModelSnapshot(input: Record<string, unknown>): boolean
   const snapshot = input.agent_task_model;
   if (snapshot === undefined) return true;
   if (!isPlainObject(snapshot)) return false;
+  if (!hasOnlyFields(snapshot, AGENT_TASK_MODEL_FIELD_NAMES)) return false;
   if (!hasTrimmedStringField(snapshot, 'endpoint_id')) return false;
   if (!hasTrimmedStringField(snapshot, 'resolved_model')) return false;
   if (!hasTrimmedStringField(snapshot, 'setting_revision')) return false;
   if (!hasTrimmedStringField(snapshot, 'resolved_at')) return false;
+  if (!hasOptionalStringField(snapshot, 'endpoint_display_name')) return false;
+  if (!hasOptionalStringField(snapshot, 'policy_decision_id')) return false;
   const upstreamProtocol = snapshot.upstream_protocol;
   return upstreamProtocol === undefined
     || (typeof upstreamProtocol === 'string'
       && SUPPORTED_AGENT_WIRE_APIS.includes(upstreamProtocol as AgentWireApi));
+}
+
+function hasValidModelLimits(input: Record<string, unknown>): boolean {
+  const modelLimits = input.model_limits;
+  if (modelLimits === undefined) return true;
+  if (!isPlainObject(modelLimits)) return false;
+  return hasOnlyFields(modelLimits, MODEL_LIMIT_FIELD_NAMES)
+    && hasOptionalPositiveIntegerField(modelLimits, 'context_window')
+    && hasOptionalPositiveIntegerField(modelLimits, 'max_output_tokens');
+}
+
+function hasValidModelCatalog(input: Record<string, unknown>): boolean {
+  const modelCatalog = input.model_catalog;
+  if (modelCatalog === undefined) return true;
+  if (!isPlainObject(modelCatalog)) return false;
+  if (!hasOnlyFields(modelCatalog, MODEL_CATALOG_FIELD_NAMES)) return false;
+  const inputModalities = modelCatalog.input_modalities;
+  if (
+    inputModalities !== undefined
+    && (!Array.isArray(inputModalities)
+      || inputModalities.some((modality) => typeof modality !== 'string'))
+  ) {
+    return false;
+  }
+  if (!hasOptionalBooleanField(modelCatalog, 'supports_search_tool')) return false;
+  if (!hasOptionalBooleanField(modelCatalog, 'supports_parallel_tool_calls')) return false;
+  const applyPatchToolType = modelCatalog.apply_patch_tool_type;
+  return applyPatchToolType === undefined
+    || (typeof applyPatchToolType === 'string'
+      && SUPPORTED_APPLY_PATCH_TOOL_TYPES.includes(
+        applyPatchToolType as AgentExecutionApplyPatchToolType,
+      ));
+}
+
+function hasValidModelTokenLimits(input: Record<string, unknown>): boolean {
+  return hasOptionalPositiveIntegerField(input, 'model_context_window')
+    && hasOptionalPositiveIntegerField(input, 'model_auto_compact_token_limit')
+    && hasValidModelLimits(input);
+}
+
+function hasValidTaskInputs(input: Record<string, unknown>): boolean {
+  const taskInputs = input.task_inputs;
+  return taskInputs === undefined
+    || (Array.isArray(taskInputs) && taskInputs.every((item) => isPlainObject(item)));
 }
 
 function normalizeAbsolutePathForGuard(value: string): string {
@@ -249,8 +338,8 @@ function hasValidTaskPathFields(input: Record<string, unknown>): boolean {
 }
 
 function hasUnsupportedTaskExecutionField(input: Record<string, unknown>): boolean {
-  for (const key of TASK_EXECUTION_UNSUPPORTED_FIELDS) {
-    if (hasOwnField(input, key)) return true;
+  for (const key of Object.keys(input)) {
+    if (!TASK_EXECUTION_CONTEXT_FIELD_NAMES.has(key)) return true;
   }
   return false;
 }
@@ -265,7 +354,9 @@ export function isTaskExecutionContext(input: unknown): input is TaskExecutionCo
   if (!hasValidRunnerSessionScope(input)) return false;
   if (!hasValidResourceProxy(input)) return false;
   if (!hasValidAgentTaskModelSnapshot(input)) return false;
-  if (input.task_inputs !== undefined && !Array.isArray(input.task_inputs)) return false;
+  if (!hasValidModelTokenLimits(input)) return false;
+  if (!hasValidModelCatalog(input)) return false;
+  if (!hasValidTaskInputs(input)) return false;
   return true;
 }
 

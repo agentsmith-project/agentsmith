@@ -228,6 +228,8 @@ components:
           type: string
         task_id:
           type: string
+          minLength: 1
+          pattern: '\S'
         run_id:
           type: string
         runner_id:
@@ -252,10 +254,14 @@ components:
           properties:
             endpoint_id:
               type: string
+              minLength: 1
+              pattern: '\S'
             endpoint_display_name:
               type: string
             resolved_model:
               type: string
+              minLength: 1
+              pattern: '\S'
             upstream_protocol:
               type: string
               enum:
@@ -264,10 +270,14 @@ components:
               - anthropic_messages
             setting_revision:
               type: string
+              minLength: 1
+              pattern: '\S'
             policy_decision_id:
               type: string
             resolved_at:
               type: string
+              minLength: 1
+              pattern: '\S'
               format: date-time
         resource_proxy:
           type: object
@@ -277,6 +287,8 @@ components:
           properties:
             base_url:
               type: string
+              minLength: 1
+              pattern: '\S'
         wire_api:
           type: string
           enum:
@@ -289,6 +301,8 @@ components:
           type: string
         workspace_file_library_id:
           type: string
+          minLength: 1
+          pattern: '\S'
         workspace_binding_mode:
           type: string
           enum:
@@ -301,12 +315,21 @@ components:
           - developer
         task_home_segment:
           type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
         task_home_path:
           type: string
+          minLength: 1
+          pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/'
         workspace_path:
           type: string
+          minLength: 1
+          pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/'
         artifacts_path:
           type: string
+          minLength: 1
+          pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/'
         library_root_path:
           const: '.'
         workspace_file_library_name:
@@ -401,6 +424,7 @@ components:
             - model
             - stream
             - messages
+            - execution_context
             properties:
               model:
                 type: string

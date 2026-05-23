@@ -78,4 +78,61 @@ describe('check-release-boundary-contract', () => {
       ]),
     );
   });
+
+  it('reports runner release manifest protocol drift from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    writeFileSync(
+      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'runner-release-manifest.valid.json'),
+      JSON.stringify({
+        schema_version: 'agentsmith.runner-release-manifest/v1',
+        runner: 'agentsmith-runner',
+        release_id: 'runner-2026.05.23-p0',
+        git_sha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        runner_contract_version: 'whatever',
+        supported_protocol_versions: ['1'],
+        image: {
+          id: 'agent-task-runner',
+          image: `ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@sha256:${'f'.repeat(64)}`,
+          digest: `sha256:${'f'.repeat(64)}`,
+        },
+        artifact_provenance: {
+          schema_version: 'agentsmith.artifact-provenance/v1',
+          provenance_kind: 'ci_artifact',
+          producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+          normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
+          commit_sha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+          subject_name: 'runner-release-manifest',
+          subject_sha256: `sha256:${'0'.repeat(64)}`,
+          subject_uri: 'runner-release-manifest.json',
+          workflow_name: 'runner-release',
+          run_id: '20001',
+          run_attempt: '1',
+          job: 'generate-runner-manifest',
+          artifact_uri: 'gh-artifact://agentsmith-runner/release/20001/runner-release-manifest.json',
+          artifact_sha256: `sha256:${'d'.repeat(64)}`,
+          generated_at: '2026-05-23T12:10:00.000Z',
+          generator_command: 'npm run release:manifest',
+          generator_version: 'p0',
+          attestation: 'none',
+        },
+      }, null, 2),
+      'utf8',
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+          message: expect.stringContaining('supported_protocol_versions must exactly equal ["1.0"]'),
+        }),
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+          message: expect.stringContaining('runner_contract_version must be a semver string'),
+        }),
+      ]),
+    );
+  });
 });

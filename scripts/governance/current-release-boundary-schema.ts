@@ -1,15 +1,19 @@
 import { createHash } from 'node:crypto';
 
+import { AGENT_TASK_RUNNER_SPEC } from '../../packages/agent-runner/src';
 import { findCurrentGateDefinitionById } from './current-gate-manifest';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
 export const CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;
 export const CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION = 'agentsmith.substrate-connection.truth/v1' as const;
 export const CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION = 'agentsmith.release-kit-evidence/v1' as const;
+export const CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION =
+  'agentsmith.release-kit-evidence-subject/v1' as const;
 export const CURRENT_RELEASE_KIT_EVIDENCE_AGGREGATE_CANONICAL_SCHEMA_VERSION =
   'agentsmith.release-kit-evidence.aggregate-canonical/v1' as const;
 export const CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION = 'agentsmith.artifact-provenance/v1' as const;
 export const CURRENT_RUNNER_RELEASE_MANIFEST_SCHEMA_VERSION = 'agentsmith.runner-release-manifest/v1' as const;
+export const CURRENT_RUNNER_PROTOCOL_VERSION = AGENT_TASK_RUNNER_SPEC.protocol_version;
 
 export const AGENTSMITH_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith' as const;
 export const RELEASE_KIT_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-release-kit' as const;
@@ -490,6 +494,8 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+const SEMVER_PATTERN =
+  /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const IMAGE_DIGEST_SUFFIX_PATTERN = /@(sha256:[0-9a-f]{64})$/u;
 const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeKey(
   entry.target_cluster,
@@ -533,7 +539,7 @@ const DOCKER_DEFAULT_HOSTS = new Set([
 ]);
 const SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/iu,
-  /\b(?:api_key|access_token|refresh_token|oauth_token|client_secret|password|token)\s*[:=]\s*[^,\s]+/iu,
+  /\b(?:api_key|access_token|refresh_token|oauth_token|client_secret|password|token)"?\s*[:=]\s*"?[^",\s]+/iu,
   /(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+/u,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:postgres(?:ql)?|mongodb|redis):\/\/[^:\s/]+:[^@\s]+@/iu,
@@ -543,7 +549,14 @@ const SECRET_VALUE_PATTERNS = [
 const SECRET_FIELD_NAME_PATTERN =
   /(?:^|_)(?:client_secret|secret|password|token|credential|kubeconfig|private_key|access_key|api_key|database_url|mongodb_uri|redis_url)(?:_|$)/iu;
 const SECRET_REFERENCE_FIELD_PATTERN = /(?:_ref|_refs|secret_ref|secret_refs)$/iu;
+const SAFE_SECRET_REFERENCE_SENTINELS = new Set([
+  'not_required',
+  'operator_secret_ref',
+]);
+const SECRET_REF_PREFIX = 'secretRef:';
 const GITHUB_REMOTE_PATTERN = /^github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
+const RELEASE_KIT_EVIDENCE_SUBJECT_ALLOWED_KEYS = new Set(['schema_version', 'files']);
+const RELEASE_KIT_EVIDENCE_SUBJECT_FILE_ALLOWED_KEYS = new Set(['path', 'sha256']);
 
 type ImageRegistry = Map<string, CurrentReleaseImage & { source: CurrentReleaseInventoryImage['source'] }>;
 
@@ -688,7 +701,9 @@ export function validateSubstrateConnectionTruth(
   validateRedisTruth(value.redis, 'redis', source, failures);
   validateObjectStorageTruth(value.object_storage, 'object_storage', source, failures);
   validateOidcTruth(value.oidc, 'oidc', source, failures);
-  validateProductFlowProbeRefs(value.product_flow_probe_secret_refs, failures);
+  if (hasOwn(value, 'product_flow_probe_secret_refs')) {
+    validateProductFlowProbeRefs(value.product_flow_probe_secret_refs, failures);
+  }
   validateDigest(value.redacted_fingerprint, 'redacted_fingerprint', failures);
 
   return finish(value, failures);
@@ -750,17 +765,15 @@ export function validateReleaseKitEvidence(
 
   validateCanonicalWriter(value.canonical_writer, 'canonical_writer', failures);
   validateEvidenceMappingCompatibility(value, target, targetCluster, failures);
+  validateReleaseKitSubstrateConnectionTruth(value, substrateSource, failures);
 
   const evidenceSubject = value.evidence_subject;
-  if (!isRecord(evidenceSubject)) {
+  const evidenceSubjectRecord = validateReleaseKitEvidenceSubject(evidenceSubject, 'evidence_subject', failures);
+
+  if (target === 'product_flows') {
     failures.push({
-      path: 'evidence_subject',
-      reason: 'evidence_subject must be an object.',
-    });
-  } else if (hasOwn(evidenceSubject, 'artifact_provenance')) {
-    failures.push({
-      path: 'evidence_subject.artifact_provenance',
-      reason: 'evidence subject must not contain artifact_provenance.',
+      path: 'target',
+      reason: 'product_flows release-kit evidence is not accepted in P0; use AgentSmith native product-flow evidence.',
     });
   }
 
@@ -769,12 +782,12 @@ export function validateReleaseKitEvidence(
       path: 'artifact_provenance',
       reason: 'artifact_provenance is required.',
     });
-  } else if (isRecord(evidenceSubject)) {
+  } else if (evidenceSubjectRecord) {
     validateArtifactProvenanceInto(value.artifact_provenance, {
       path: 'artifact_provenance',
       expectedRepo: target === 'product_flows' ? AGENTSMITH_CANONICAL_REPO : RELEASE_KIT_CANONICAL_REPO,
       expectedSubjectName: target === 'product_flows' ? 'agentsmith-product-flow-evidence' : 'release-kit-evidence-subject',
-      subject: evidenceSubject,
+      subject: evidenceSubjectRecord,
       fullSubjectContainer: value,
       allowedKinds: target === 'product_flows' ? ['ci_artifact'] : ['ci_artifact', 'signed_operator_run'],
     }, failures);
@@ -847,8 +860,24 @@ export function validateRunnerReleaseManifest(
   validateLiteral(value.runner, 'agentsmith-runner', 'runner', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
   validateGitSha(value.git_sha, 'git_sha', failures);
-  validateRequiredString(value.runner_contract_version, 'runner_contract_version', failures);
-  validateStringArray(value.supported_protocol_versions, 'supported_protocol_versions', failures);
+  validateRunnerContractVersion(value.runner_contract_version, failures);
+  const supportedProtocolVersions = validateStringArray(
+    value.supported_protocol_versions,
+    'supported_protocol_versions',
+    failures,
+  );
+  if (
+    supportedProtocolVersions
+    && (
+      supportedProtocolVersions.length !== 1
+      || supportedProtocolVersions[0] !== CURRENT_RUNNER_PROTOCOL_VERSION
+    )
+  ) {
+    failures.push({
+      path: 'supported_protocol_versions',
+      reason: `supported_protocol_versions must exactly equal ${JSON.stringify([CURRENT_RUNNER_PROTOCOL_VERSION])}.`,
+    });
+  }
   validateImageRecord(value.image, 'image', failures);
 
   if (!hasOwn(value, 'artifact_provenance')) {
@@ -890,6 +919,12 @@ export function validateTruthMatrix(
 
     const truth = validateRequiredString(entry.truth, `${path}.truth`, failures);
     if (truth) {
+      if (seenTruthIds.has(truth)) {
+        failures.push({
+          path: `${path}.truth`,
+          reason: `truth matrix truth "${truth}" is declared more than once.`,
+        });
+      }
       seenTruthIds.add(truth);
     }
     validateRequiredString(entry.owner, `${path}.owner`, failures);
@@ -929,6 +964,7 @@ export function validateReleaseKitEvidenceMapping(
   }
 
   const seenTargets = new Set<string>();
+  const seenCanonicalWriters = new Set<string>();
   value.forEach((entry, index) => {
     const path = `release_kit_evidence_mapping[${index}]`;
     if (!isRecord(entry)) {
@@ -945,9 +981,30 @@ export function validateReleaseKitEvidenceMapping(
       failures,
     );
     if (target) {
+      if (seenTargets.has(target)) {
+        failures.push({
+          path: `${path}.target`,
+          reason: `release kit evidence target "${target}" is declared more than once.`,
+        });
+      }
       seenTargets.add(target);
     }
     validateCanonicalWriter(entry.canonical_writer, `${path}.canonical_writer`, failures);
+
+    if (
+      isRecord(entry.canonical_writer)
+      && typeof entry.canonical_writer.gate_id === 'string'
+      && typeof entry.canonical_writer.line_kind === 'string'
+    ) {
+      const canonicalWriterKey = `${entry.canonical_writer.gate_id}|${entry.canonical_writer.line_kind}`;
+      if (seenCanonicalWriters.has(canonicalWriterKey)) {
+        failures.push({
+          path: `${path}.canonical_writer`,
+          reason: `canonical writer "${canonicalWriterKey}" is declared more than once.`,
+        });
+      }
+      seenCanonicalWriters.add(canonicalWriterKey);
+    }
 
     const writer = isRecord(entry.canonical_writer) && typeof entry.canonical_writer.gate_id === 'string'
       ? findCurrentGateDefinitionById(entry.canonical_writer.gate_id)
@@ -1003,6 +1060,148 @@ export function validateReleaseKitEvidenceMapping(
   }
 
   return finish(value as readonly CurrentReleaseKitEvidenceMappingEntry[], failures);
+}
+
+function validateReleaseKitSubstrateConnectionTruth(
+  value: Record<string, unknown>,
+  substrateSource: CurrentDeploymentSubstrateSource | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (substrateSource !== 'external_declared') {
+    return;
+  }
+
+  if (!hasOwn(value, 'substrate_connection_truth')) {
+    failures.push({
+      path: 'substrate_connection_truth',
+      reason: 'external_declared release kit evidence must include substrate_connection_truth.',
+    });
+    return;
+  }
+
+  const validation = validateSubstrateConnectionTruth(value.substrate_connection_truth);
+  if (!validation.ok) {
+    for (const failure of validation.failures) {
+      failures.push({
+        path: failure.path === 'substrate_connection_truth'
+          ? failure.path
+          : `substrate_connection_truth.${failure.path}`,
+        reason: failure.reason,
+      });
+    }
+    return;
+  }
+
+  if (validation.value.substrate_source !== 'external_declared') {
+    failures.push({
+      path: 'substrate_connection_truth.substrate_source',
+      reason: 'substrate_connection_truth.substrate_source must be external_declared.',
+    });
+  }
+}
+
+function validateReleaseKitEvidenceSubject(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    failures.push({
+      path,
+      reason: 'evidence_subject must be an object.',
+    });
+    return null;
+  }
+
+  validateReleaseKitEvidenceSubjectAllowedKeys(value, path, failures);
+  validateLiteral(
+    value.schema_version,
+    CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
+    `${path}.schema_version`,
+    failures,
+  );
+  if (hasOwn(value, 'artifact_provenance')) {
+    failures.push({
+      path: `${path}.artifact_provenance`,
+      reason: 'evidence subject must not contain artifact_provenance.',
+    });
+  }
+
+  if (!Array.isArray(value.files) || value.files.length === 0) {
+    failures.push({
+      path: `${path}.files`,
+      reason: 'evidence_subject.files must be a non-empty array.',
+    });
+    return value;
+  }
+
+  value.files.forEach((entry, index) => {
+    const filePath = `${path}.files[${index}]`;
+    if (!isRecord(entry)) {
+      failures.push({
+        path: filePath,
+        reason: 'evidence_subject file entry must be an object.',
+      });
+      return;
+    }
+
+    validateReleaseKitEvidenceSubjectFileAllowedKeys(entry, filePath, failures);
+    const relativePath = validateRequiredString(entry.path, `${filePath}.path`, failures);
+    if (relativePath && !isSafeRelativeEvidenceSubjectPath(relativePath)) {
+      failures.push({
+        path: `${filePath}.path`,
+        reason: `${filePath}.path must be a safe relative path.`,
+      });
+    }
+    validateDigest(entry.sha256, `${filePath}.sha256`, failures);
+  });
+
+  return value;
+}
+
+function validateReleaseKitEvidenceSubjectAllowedKeys(
+  value: Record<string, unknown>,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!RELEASE_KIT_EVIDENCE_SUBJECT_ALLOWED_KEYS.has(key)) {
+      failures.push({
+        path: `${path}.${key}`,
+        reason: `${path}.${key} is not allowed; evidence_subject only allows schema_version and files.`,
+      });
+    }
+  }
+}
+
+function validateReleaseKitEvidenceSubjectFileAllowedKeys(
+  value: Record<string, unknown>,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!RELEASE_KIT_EVIDENCE_SUBJECT_FILE_ALLOWED_KEYS.has(key)) {
+      failures.push({
+        path: `${path}.${key}`,
+        reason: `${path}.${key} is not allowed; evidence_subject file entries only allow path and sha256.`,
+      });
+    }
+  }
+}
+
+function isSafeRelativeEvidenceSubjectPath(value: string): boolean {
+  const normalized = value.trim();
+  if (
+    normalized.length === 0
+    || normalized.startsWith('/')
+    || normalized.startsWith('\\')
+    || normalized.includes('\\')
+  ) {
+    return false;
+  }
+
+  const segments = normalized.split('/');
+  return !segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..');
 }
 
 export function validateArtifactProvenance(
@@ -1575,14 +1774,32 @@ function validateSecretRef(
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): string | undefined {
   const ref = validateRequiredString(value, path, failures);
-  if (ref && !ref.startsWith('secretRef:')) {
+  if (ref && !isSafeSecretRefValue(ref)) {
     failures.push({
       path,
-      reason: 'credential values must be persisted as secret refs only.',
+      reason: ref.startsWith(SECRET_REF_PREFIX)
+        ? 'credential values must be persisted as secret refs only; secretRef path/id must be non-empty and single-line.'
+        : 'credential values must be persisted as secret refs only.',
     });
   }
 
   return ref;
+}
+
+function validateRunnerContractVersion(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const version = validateRequiredString(value, 'runner_contract_version', failures);
+  if (version && !SEMVER_PATTERN.test(version)) {
+    failures.push({
+      path: 'runner_contract_version',
+      reason: 'runner_contract_version must be a semver string.',
+    });
+    return undefined;
+  }
+
+  return version;
 }
 
 function validatePort(
@@ -1717,13 +1934,17 @@ function validateDigest(
   return text;
 }
 
+export function containsReleaseBoundarySecretLookingText(value: string): boolean {
+  return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
 function validateNoSecretLeak(
   value: unknown,
   path: string,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (typeof value === 'string') {
-    if (SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+    if (containsReleaseBoundarySecretLookingText(value)) {
       failures.push({
         path,
         reason: 'secret-looking value must not be persisted in release boundary truth.',
@@ -1742,11 +1963,15 @@ function validateNoSecretLeak(
   }
 
   for (const [key, nestedValue] of Object.entries(value)) {
+    const normalizedKey = normalizeFieldNameForSecretCheck(key);
     if (isForbiddenSecretValueField(key)) {
       failures.push({
         path: `${path}.${key}`,
         reason: `secret-bearing field "${key}" must use a reference field, not persist a value.`,
       });
+    }
+    if (isSecretReferenceFieldName(normalizedKey)) {
+      validateSecretReferenceFieldValue(nestedValue, `${path}.${key}`, key, failures);
     }
     validateNoSecretLeak(nestedValue, `${path}.${key}`, failures);
   }
@@ -1819,6 +2044,59 @@ function isForbiddenSecretValueField(key: string): boolean {
   }
 
   return normalizedKey !== 'redacted_fingerprint';
+}
+
+function isSecretReferenceFieldName(normalizedKey: string): boolean {
+  return SECRET_FIELD_NAME_PATTERN.test(normalizedKey) && SECRET_REFERENCE_FIELD_PATTERN.test(normalizedKey);
+}
+
+function validateSecretReferenceFieldValue(
+  value: unknown,
+  path: string,
+  fieldName: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (typeof value === 'string') {
+    if (!isAllowedSecretReferenceValue(value)) {
+      failures.push({
+        path,
+        reason: value.startsWith(SECRET_REF_PREFIX)
+          ? `secret reference field "${fieldName}" must use secretRef: values or a safe sentinel; secretRef path/id must be non-empty and single-line.`
+          : `secret reference field "${fieldName}" must use secretRef: values or a safe sentinel.`,
+      });
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateSecretReferenceFieldValue(entry, `${path}[${index}]`, fieldName, failures));
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      validateSecretReferenceFieldValue(nestedValue, `${path}.${nestedKey}`, fieldName, failures);
+    }
+    return;
+  }
+
+  failures.push({
+    path,
+    reason: `secret reference field "${fieldName}" must use secretRef: values or a safe sentinel.`,
+  });
+}
+
+function isAllowedSecretReferenceValue(value: string): boolean {
+  return isSafeSecretRefValue(value) || SAFE_SECRET_REFERENCE_SENTINELS.has(value);
+}
+
+function isSafeSecretRefValue(value: string): boolean {
+  if (!value.startsWith(SECRET_REF_PREFIX) || /[\r\n]/u.test(value)) {
+    return false;
+  }
+
+  const refPath = value.slice(SECRET_REF_PREFIX.length).trim();
+  return refPath.length > 0 && !/^:+$/u.test(refPath);
 }
 
 function normalizeFieldNameForSecretCheck(key: string): string {

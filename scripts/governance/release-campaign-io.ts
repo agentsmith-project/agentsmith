@@ -18,9 +18,11 @@ import {
 } from './current-gate-result-schema';
 import {
   CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION,
+  containsReleaseBoundarySecretLookingText,
   validateReleaseKitEvidence,
   validateSubstrateConnectionTruth,
   type CurrentReleaseBoundaryValidationFailure,
+  type CurrentReleaseKitEvidence,
   type CurrentReleaseKitEvidenceTarget,
 } from './current-release-boundary-schema';
 import type {
@@ -1842,6 +1844,9 @@ const RELEASE_KIT_FALLBACK_MARKER_FIELDS = [
   'release_kit_version',
   'artifact_provenance',
 ] as const;
+const RELEASE_KIT_TEXT_EVIDENCE_FILE_PATTERN =
+  /(?:^\.env$|^env$|\.(?:log|txt|md|markdown|json|yaml|yml|env|ini|conf|cfg|properties))$/iu;
+const RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES = 1024 * 1024;
 const RELEASE_KIT_TARGET_BY_CHECK_ID: Partial<Record<string, CurrentReleaseKitEvidenceTarget>> = {
   unified_deploy_substrate_evidence: 'dependencies',
   unified_deploy_local_kind_images_evidence: 'images',
@@ -1876,8 +1881,157 @@ function isReleaseKitEvidencePayload(payload: Record<string, unknown>): boolean 
   return RELEASE_KIT_FALLBACK_MARKER_FIELDS.every((field) => hasOwnField(payload, field));
 }
 
+function isReleaseKitTextEvidenceFile(file: string): boolean {
+  return RELEASE_KIT_TEXT_EVIDENCE_FILE_PATTERN.test(basename(file));
+}
+
+function releaseKitTextSecretDiagnostics(files: readonly string[]): readonly UnifiedDeployEvidenceDiagnostic[] {
+  const diagnostics: UnifiedDeployEvidenceDiagnostic[] = [];
+  for (const file of files) {
+    if (!isReleaseKitTextEvidenceFile(file)) {
+      continue;
+    }
+
+    let content: string;
+    try {
+      const stats = statSync(file);
+      if (!stats.isFile()) {
+        continue;
+      }
+      if (stats.size > RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES) {
+        diagnostics.push(unifiedDeployDiagnostic(
+          `${file} release-kit text evidence is too large to scan safely (${stats.size} bytes > ${RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES} bytes).`,
+          'contract_drift',
+        ));
+        continue;
+      }
+      content = readFileSync(file, 'utf8');
+    } catch (error) {
+      diagnostics.push(unifiedDeployDiagnostic(
+        `${file} release-kit text evidence could not be read: ${error instanceof Error ? error.message : String(error)}.`,
+        'contract_drift',
+      ));
+      continue;
+    }
+
+    if (containsReleaseBoundarySecretLookingText(content)) {
+      diagnostics.push(unifiedDeployDiagnostic(
+        `${file} contains secret-looking value in release-kit text evidence.`,
+        'contract_drift',
+      ));
+    }
+  }
+  return diagnostics;
+}
+
 function releaseBoundaryFailuresSummary(failures: readonly CurrentReleaseBoundaryValidationFailure[]): string {
   return failures.map((failure) => `${failure.path}: ${failure.reason}`).join(' ');
+}
+
+function validateReleaseKitEvidenceSubjectFiles(
+  evidence: CurrentReleaseKitEvidence,
+  path: string,
+): UnifiedDeployEvidenceDiagnostic | null {
+  let realEvidenceDir: string;
+  let realEvidenceRoot: string;
+  const evidenceDir = dirname(path);
+  const declaredEvidenceRoot = resolve(evidenceDir, evidence.evidence_root);
+
+  try {
+    realEvidenceDir = realpathSync(evidenceDir);
+  } catch (error) {
+    return unifiedDeployDiagnostic(
+      `${path} release-kit evidence directory could not be resolved: ${error instanceof Error ? error.message : String(error)}.`,
+      'evidence_missing',
+    );
+  }
+
+  try {
+    if (!statSync(declaredEvidenceRoot).isDirectory()) {
+      return unifiedDeployDiagnostic(
+        `${path} release-kit evidence_root must be a directory: ${declaredEvidenceRoot}.`,
+        'evidence_missing',
+      );
+    }
+    realEvidenceRoot = realpathSync(declaredEvidenceRoot);
+  } catch (error) {
+    return unifiedDeployDiagnostic(
+      `${path} release-kit evidence_root is missing or unreadable: ${declaredEvidenceRoot}: ${error instanceof Error ? error.message : String(error)}.`,
+      'evidence_missing',
+    );
+  }
+
+  if (!isPathAtOrUnderRoot(realEvidenceDir, realEvidenceRoot)) {
+    return unifiedDeployDiagnostic(
+      `${path} release-kit evidence_root must stay under release-kit evidence directory: ${declaredEvidenceRoot}.`,
+      'contract_drift',
+    );
+  }
+
+  const files = evidence.evidence_subject.files;
+  if (!Array.isArray(files)) {
+    return unifiedDeployDiagnostic(`${path} evidence_subject.files must be an array.`, 'contract_drift');
+  }
+
+  for (const [index, file] of files.entries()) {
+    const subjectPath = `evidence_subject.files[${index}]`;
+    if (!isRecord(file) || typeof file.path !== 'string' || typeof file.sha256 !== 'string') {
+      return unifiedDeployDiagnostic(`${path} ${subjectPath} must include path and sha256.`, 'contract_drift');
+    }
+
+    const materializedPath = resolve(realEvidenceRoot, file.path);
+    if (!isPathAtOrUnderRoot(realEvidenceRoot, materializedPath)) {
+      return unifiedDeployDiagnostic(
+        `${path} ${subjectPath}.path must stay under release-kit evidence_root: ${file.path}.`,
+        'contract_drift',
+      );
+    }
+
+    let materializedStats: ReturnType<typeof statSync>;
+    let realMaterializedPath: string;
+    try {
+      materializedStats = statSync(materializedPath);
+      if (!materializedStats.isFile()) {
+        return unifiedDeployDiagnostic(
+          `${path} ${subjectPath}.path is not a file: ${file.path}.`,
+          'evidence_missing',
+        );
+      }
+      realMaterializedPath = realpathSync(materializedPath);
+    } catch (error) {
+      return unifiedDeployDiagnostic(
+        `${path} ${subjectPath}.path is missing: ${file.path}: ${error instanceof Error ? error.message : String(error)}.`,
+        'evidence_missing',
+      );
+    }
+
+    if (
+      !isPathAtOrUnderRoot(realEvidenceRoot, realMaterializedPath)
+      || !isPathAtOrUnderRoot(realEvidenceDir, realMaterializedPath)
+    ) {
+      return unifiedDeployDiagnostic(
+        `${path} ${subjectPath}.path must stay under release-kit evidence directory and evidence_root: ${file.path}.`,
+        'contract_drift',
+      );
+    }
+
+    if (isReleaseKitTextEvidenceFile(file.path) && materializedStats.size > RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES) {
+      return unifiedDeployDiagnostic(
+        `${path} ${subjectPath}.path ${file.path} is too large to scan safely (${materializedStats.size} bytes > ${RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES} bytes).`,
+        'contract_drift',
+      );
+    }
+
+    const actualSha256 = `sha256:${sha256Hex(readFileSync(realMaterializedPath))}`;
+    if (actualSha256 !== file.sha256) {
+      return unifiedDeployDiagnostic(
+        `${path} ${subjectPath}.sha256 mismatch for ${file.path}: expected ${file.sha256}, actual ${actualSha256}.`,
+        'contract_drift',
+      );
+    }
+  }
+
+  return null;
 }
 
 function validateReleaseKitEvidenceBoundary(
@@ -1891,6 +2045,11 @@ function validateReleaseKitEvidenceBoundary(
       `${path} release kit evidence is invalid: ${releaseBoundaryFailuresSummary(validation.failures)}`,
       'contract_drift',
     );
+  }
+
+  const subjectFilesDiagnostic = validateReleaseKitEvidenceSubjectFiles(validation.value, path);
+  if (subjectFilesDiagnostic) {
+    return subjectFilesDiagnostic;
   }
 
   const expectedTarget = RELEASE_KIT_TARGET_BY_CHECK_ID[check.id];
@@ -2107,10 +2266,12 @@ function evaluateUnifiedDeployEvidence(
   const path = materializeCampaignPath(campaignRoot, check.path);
   const minCount = check.minCount ?? 1;
   const fileName = check.fileName ?? '.json';
-  const matches = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, fileName));
+  const files = listRecursiveFiles(path);
+  const matches = files.filter((candidate) => matchesFileName(candidate, fileName));
   const matchingSchemaPaths: string[] = [];
   const validPaths: string[] = [];
   const diagnostics: UnifiedDeployEvidenceDiagnostic[] = [];
+  let hasReleaseKitEvidencePayload = false;
 
   if (matches.length < minCount) {
     diagnostics.push(unifiedDeployDiagnostic(`Expected at least ${minCount} JSON evidence file(s), found ${matches.length}.`, 'evidence_missing'));
@@ -2131,6 +2292,7 @@ function evaluateUnifiedDeployEvidence(
     }
 
     const releaseKitEvidencePayload = isReleaseKitEvidencePayload(payload);
+    hasReleaseKitEvidencePayload ||= releaseKitEvidencePayload;
     if (check.expectedSchemaVersion && payload.schema_version !== check.expectedSchemaVersion && !releaseKitEvidencePayload) {
       continue;
     }
@@ -2143,6 +2305,10 @@ function evaluateUnifiedDeployEvidence(
     }
 
     validPaths.push(match);
+  }
+
+  if (hasReleaseKitEvidencePayload) {
+    diagnostics.push(...releaseKitTextSecretDiagnostics(files));
   }
 
   if (check.expectedSchemaVersion && matchingSchemaPaths.length === 0) {

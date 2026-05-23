@@ -7,6 +7,7 @@ import {
   CURRENT_DEPLOYMENT_MODE_MATRIX,
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
+  CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
   CURRENT_REQUIRED_PRODUCT_FLOWS,
   AGENTSMITH_CANONICAL_REPO,
   canonicalReleaseBoundaryJson,
@@ -55,6 +56,10 @@ function artifactProvenanceOf(record: Record<string, unknown>): Record<string, u
   }
 
   return provenance as Record<string, unknown>;
+}
+
+function rehashArtifactProvenanceSubject(record: Record<string, unknown>, subjectKey: string): void {
+  artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(record[subjectKey]));
 }
 
 describe('current release boundary schema', () => {
@@ -197,6 +202,41 @@ describe('current release boundary schema', () => {
     expectInvalid(validateSubstrateConnectionTruth(truth), 'external_declared must not use docker-substrate truth');
   });
 
+  it('allows external_declared substrate truth without product-flow probe secret refs but validates them when present', () => {
+    const withoutProbeRefs = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete withoutProbeRefs.product_flow_probe_secret_refs;
+    expect(validateSubstrateConnectionTruth(withoutProbeRefs).ok).toBe(true);
+
+    const invalidProbeRefs = cloneFixture('substrate-connection.external-declared.valid.json');
+    (invalidProbeRefs.product_flow_probe_secret_refs as Record<string, unknown>).files = 'plain-probe-secret';
+    expectInvalid(
+      validateSubstrateConnectionTruth(invalidProbeRefs),
+      'credential values must be persisted as secret refs only',
+    );
+  });
+
+  it('requires external_declared release-kit evidence to bind an external substrate connection truth', () => {
+    const missingTruth = cloneFixture('release-kit-evidence.valid.json');
+    missingTruth.substrate_source = 'external_declared';
+    expectInvalid(
+      validateReleaseKitEvidence(missingTruth),
+      'external_declared release kit evidence must include substrate_connection_truth',
+    );
+
+    const dockerTruth = cloneFixture('release-kit-evidence.valid.json');
+    dockerTruth.substrate_source = 'external_declared';
+    dockerTruth.substrate_connection_truth = cloneFixture('substrate-connection.kit-installed.valid.json');
+    expectInvalid(
+      validateReleaseKitEvidence(dockerTruth),
+      'substrate_connection_truth.substrate_source must be external_declared',
+    );
+
+    const externalTruth = cloneFixture('release-kit-evidence.valid.json');
+    externalTruth.substrate_source = 'external_declared';
+    externalTruth.substrate_connection_truth = cloneFixture('substrate-connection.external-declared.valid.json');
+    expect(validateReleaseKitEvidence(externalTruth).ok).toBe(true);
+  });
+
   it('rejects secret-looking field names unless the field stores a reference', () => {
     const truth = cloneFixture('substrate-connection.external-declared.valid.json');
     (truth.oidc as Record<string, unknown>).client_secret = 'plain-secret';
@@ -204,6 +244,41 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateSubstrateConnectionTruth(truth),
       'secret-bearing field "client_secret" must use a reference field',
+    );
+  });
+
+  it('rejects secret-looking reference fields unless their values are secret refs or safe sentinels', () => {
+    const secretFields = cloneFixture('release-kit-evidence.valid.json');
+    secretFields.provider = {
+      clientSecretRef: 'plain-release-secret',
+      AccessTokenRefs: ['plain-release-token'],
+    };
+
+    const result = validateReleaseKitEvidence(secretFields);
+
+    expectInvalid(result, 'secret reference field "clientSecretRef" must use secretRef: values');
+    expectInvalid(result, 'secret reference field "AccessTokenRefs" must use secretRef: values');
+  });
+
+  it('rejects empty or multi-line secret refs in substrate truth and generic release-kit reference fields', () => {
+    const substrateTruth = cloneFixture('substrate-connection.external-declared.valid.json');
+    (substrateTruth.postgres as Record<string, unknown>).user_secret_ref = 'secretRef:';
+    (substrateTruth.oidc as Record<string, unknown>).client_secret_ref = 'secretRef:   :   ';
+
+    expectInvalid(
+      validateSubstrateConnectionTruth(substrateTruth),
+      'secretRef path/id must be non-empty and single-line',
+    );
+
+    const releaseKitEvidence = cloneFixture('release-kit-evidence.valid.json');
+    releaseKitEvidence.provider = {
+      clientSecretRef: 'secretRef:',
+      api_key_ref: 'secretRef:release/api-key\nleaked',
+    };
+
+    expectInvalid(
+      validateReleaseKitEvidence(releaseKitEvidence),
+      'secretRef path/id must be non-empty and single-line',
     );
   });
 
@@ -252,7 +327,65 @@ describe('current release boundary schema', () => {
     expect(validateReleaseKitEvidence(referenceFields).ok).toBe(true);
   });
 
-  it('rejects mappings to nonexistent writers and release-kit-forged product-flow canonical evidence', () => {
+  it('rejects arbitrary release-kit evidence subjects even when the provenance hash is recomputed', () => {
+    const arbitrarySubject = cloneFixture('release-kit-evidence.valid.json');
+    arbitrarySubject.evidence_subject = {
+      schema_version: CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
+      note: 'this object does not bind evidence files',
+    };
+    rehashArtifactProvenanceSubject(arbitrarySubject, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(arbitrarySubject),
+      'evidence_subject.files must be a non-empty array',
+    );
+
+    const absolutePath = cloneFixture('release-kit-evidence.valid.json');
+    ((absolutePath.evidence_subject as Record<string, unknown>).files as Record<string, unknown>[])[0].path =
+      '/tmp/render-report.json';
+    rehashArtifactProvenanceSubject(absolutePath, 'evidence_subject');
+    expectInvalid(validateReleaseKitEvidence(absolutePath), 'evidence_subject.files[0].path must be a safe relative path');
+
+    const parentTraversal = cloneFixture('release-kit-evidence.valid.json');
+    ((parentTraversal.evidence_subject as Record<string, unknown>).files as Record<string, unknown>[])[0].path =
+      '../render-report.json';
+    rehashArtifactProvenanceSubject(parentTraversal, 'evidence_subject');
+    expectInvalid(validateReleaseKitEvidence(parentTraversal), 'evidence_subject.files[0].path must be a safe relative path');
+  });
+
+  it('rejects release-kit evidence subjects with schema drift even when the provenance hash is recomputed', () => {
+    const evilSubjectSchema = cloneFixture('release-kit-evidence.valid.json');
+    (evilSubjectSchema.evidence_subject as Record<string, unknown>).schema_version = 'evil.release-kit-subject/v0';
+    rehashArtifactProvenanceSubject(evilSubjectSchema, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(evilSubjectSchema),
+      `evidence_subject.schema_version must be "${CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION}"`,
+    );
+  });
+
+  it('rejects release-kit evidence subject ownership drift even when the provenance hash is recomputed', () => {
+    const extraSubjectClaim = cloneFixture('release-kit-evidence.valid.json');
+    (extraSubjectClaim.evidence_subject as Record<string, unknown>).extra_unowned_claim = 'release-kit owns more';
+    rehashArtifactProvenanceSubject(extraSubjectClaim, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(extraSubjectClaim),
+      'evidence_subject.extra_unowned_claim is not allowed',
+    );
+
+    const extraFileClaim = cloneFixture('release-kit-evidence.valid.json');
+    const files = (extraFileClaim.evidence_subject as Record<string, unknown>).files as Record<string, unknown>[];
+    files[0].extra_unowned_claim = 'release-kit owns file metadata';
+    rehashArtifactProvenanceSubject(extraFileClaim, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(extraFileClaim),
+      'evidence_subject.files[0].extra_unowned_claim is not allowed',
+    );
+  });
+
+  it('rejects mappings to nonexistent writers, duplicate ownership, and release-kit-forged product-flow evidence', () => {
     const mapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
     mapping[0] = {
       ...mapping[0],
@@ -262,6 +395,12 @@ describe('current release boundary schema', () => {
       },
     };
     expectInvalid(validateReleaseKitEvidenceMapping(mapping), 'canonical writer gate_id does not exist');
+
+    const duplicateMapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
+    duplicateMapping.push({ ...duplicateMapping[0] });
+    const duplicateResult = validateReleaseKitEvidenceMapping(duplicateMapping);
+    expectInvalid(duplicateResult, 'release kit evidence target "dependencies" is declared more than once');
+    expectInvalid(duplicateResult, 'canonical writer "lane-unified-deploy-substrate|unified_deploy_substrate" is declared more than once');
 
     const forgedProductFlows = cloneFixture('release-kit-evidence.valid.json');
     forgedProductFlows.target = 'product_flows';
@@ -274,11 +413,72 @@ describe('current release boundary schema', () => {
     };
     expectInvalid(validateReleaseKitEvidence(forgedProductFlows), 'product flow canonical evidence must be produced by AgentSmith');
 
+    const releaseKitProductFlows = cloneFixture('release-kit-evidence.valid.json');
+    releaseKitProductFlows.target = 'product_flows';
+    releaseKitProductFlows.canonical_writer = {
+      gate_id: 'lane-unified-deploy-product-flows',
+      line_kind: 'unified_deploy_product_flows',
+    };
+    releaseKitProductFlows.product_flow_canonical_evidence = {
+      producer: 'unified-deploy-product-flows',
+    };
+    artifactProvenanceOf(releaseKitProductFlows).producer_repo = AGENTSMITH_CANONICAL_REPO;
+    artifactProvenanceOf(releaseKitProductFlows).normalized_remote = AGENTSMITH_CANONICAL_REPO;
+    artifactProvenanceOf(releaseKitProductFlows).subject_name = 'agentsmith-product-flow-evidence';
+    rehashArtifactProvenanceSubject(releaseKitProductFlows, 'evidence_subject');
+    expectInvalid(
+      validateReleaseKitEvidence(releaseKitProductFlows),
+      'product_flows release-kit evidence is not accepted in P0',
+    );
+
     const splitTarget = cloneFixture('release-kit-evidence.valid.json');
     splitTarget.target = {
       section: 'rollout',
     };
     expectInvalid(validateReleaseKitEvidence(splitTarget), 'target must be one release summary section string');
+  });
+
+  it('rejects duplicate truth ids in the release boundary truth matrix', () => {
+    const matrix = structuredClone(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);
+    matrix.push({ ...matrix[0] });
+
+    expectInvalid(
+      validateTruthMatrix(matrix),
+      'truth matrix truth "release_contract" is declared more than once',
+    );
+  });
+
+  it('binds runner release manifests to the current runner protocol and a versioned contract string', () => {
+    const manifest = cloneFixture('runner-release-manifest.valid.json');
+    expect(manifest.supported_protocol_versions).toEqual(['1.0']);
+
+    const missingProtocol = cloneFixture('runner-release-manifest.valid.json');
+    missingProtocol.supported_protocol_versions = [];
+    expectInvalid(
+      validateRunnerReleaseManifest(missingProtocol),
+      'supported_protocol_versions must exactly equal ["1.0"]',
+    );
+
+    const unknownProtocol = cloneFixture('runner-release-manifest.valid.json');
+    unknownProtocol.supported_protocol_versions = ['1.0', '0.9'];
+    expectInvalid(
+      validateRunnerReleaseManifest(unknownProtocol),
+      'supported_protocol_versions must exactly equal ["1.0"]',
+    );
+
+    const arbitraryContractVersion = cloneFixture('runner-release-manifest.valid.json');
+    arbitraryContractVersion.runner_contract_version = 'whatever';
+    expectInvalid(
+      validateRunnerReleaseManifest(arbitraryContractVersion),
+      'runner_contract_version must be a semver string',
+    );
+
+    const leadingZeroContractVersion = cloneFixture('runner-release-manifest.valid.json');
+    leadingZeroContractVersion.runner_contract_version = '01.02.03';
+    expectInvalid(
+      validateRunnerReleaseManifest(leadingZeroContractVersion),
+      'runner_contract_version must be a semver string',
+    );
   });
 
   it('rejects target profiles that mark kind as a required deployment target', () => {

@@ -2391,6 +2391,58 @@ describe('verify human entrypoints', () => {
     }
   });
 
+  it('does not execute the bare agent-task integration alias for runner context real runs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-runner-context-real-'));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const sentinelProfiles: string[] = [];
+    const aliases: string[] = [];
+    const bareAgentTaskIntegration = /npm run test:e2e:integration:agent-task(?:[\s,]|$)/;
+    try {
+      const exitCode = runVerificationCli([
+        '--goal=real',
+        '--run',
+        '--report-root',
+        root,
+        '--changed-file',
+        'packages/api-entry-node/src/managed-credential-resolver.ts',
+      ], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        stderr: { write: (chunk: string) => stderr.push(chunk) },
+        ownerPreflight: passingOwnerPreflight,
+        sentinelRunner: (profile) => {
+          sentinelProfiles.push(profile);
+          return passingSentinelResult();
+        },
+        runNpmScript: (script) => {
+          aliases.push(script);
+          return { status: 0 };
+        },
+        pureCheckShadowRepoRoot: root,
+        pureCheckShadowGitSha: 'current-git-sha',
+      });
+      const report = readVerifyReport(root);
+
+      expect(exitCode).toBe(0);
+      expect(sentinelProfiles).toEqual(['verify-real']);
+      expect(aliases).toEqual(expect.arrayContaining([
+        'verify:quick',
+        'verify:default',
+        'verify:real',
+        'test:agent-task:runner:fast',
+        'test:agent-task:runner:backend-real',
+      ]));
+      expect(aliases).not.toContain('test:e2e:integration:agent-task');
+      expect(stdout.join('')).not.toMatch(bareAgentTaskIntegration);
+      expect(report.recommended_commands).toContain('npm run test:agent-task:runner:backend-real');
+      expect(report.recommended_commands).not.toContain('npm run test:e2e:integration:agent-task');
+      expect(JSON.stringify(report)).not.toMatch(bareAgentTaskIntegration);
+      expect(stderr.join('')).toBe('');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('finalizes verify-real cleanup after successful aliases so later real preflight is not blocked by its own resources', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-run-real-cleanup-success-'));
     const shadowRoot = join(root, 'claim-store-shadow');

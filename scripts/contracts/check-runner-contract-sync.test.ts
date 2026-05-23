@@ -8,134 +8,38 @@ import {
 import {
   RUNNER_CONTRACT_TERMINAL_FIXTURES,
   TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
-} from '../../packages/agent-runner/src/contract-schema.js';
+} from '../../packages/agent-runner/src/index.js';
 
 function createExecutionContextSchema(options: {
   required?: string[];
   extraProperties?: Record<string, unknown>;
 } = {}): Record<string, unknown> {
-  const required = options.required ?? [
-    'task_id',
-    'workspace_file_library_id',
-    'workspace_binding_mode',
-    'runtime_profile',
-    'task_home_segment',
-    'task_home_path',
-    'workspace_path',
-    'artifacts_path',
-    'library_root_path',
-  ];
-  return {
-    type: 'object',
-    additionalProperties: false,
-    required,
-    properties: {
-      api_base: { type: 'string' },
-      workspace_id: { type: 'string' },
-      project_id: { type: 'string' },
-      task_id: { type: 'string' },
-      run_id: { type: 'string' },
-      runner_id: { type: 'string' },
-      runner_session_scope: {
-        type: 'string',
-        enum: ['agent_presence', 'task_execution'],
-      },
-      execution_ticket: { type: 'string' },
-      endpoint_id: { type: 'string' },
-      agent_task_model: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['endpoint_id', 'resolved_model', 'setting_revision', 'resolved_at'],
-        properties: {
-          endpoint_id: { type: 'string' },
-          endpoint_display_name: { type: 'string' },
-          resolved_model: { type: 'string' },
-          upstream_protocol: {
-            type: 'string',
-            enum: ['openai_chat_completions', 'openai_responses', 'anthropic_messages'],
-          },
-          setting_revision: { type: 'string' },
-          policy_decision_id: { type: 'string' },
-          resolved_at: { type: 'string', format: 'date-time' },
-        },
-      },
-      resource_proxy: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['base_url'],
-        properties: {
-          base_url: { type: 'string' },
-        },
-      },
-      wire_api: {
-        type: 'string',
-        enum: ['openai_chat_completions', 'openai_responses', 'anthropic_messages'],
-      },
-      model: { type: 'string' },
-      username: { type: 'string' },
-      workspace_file_library_id: { type: 'string' },
-      workspace_binding_mode: {
-        type: 'string',
-        enum: ['file_library', 'pre_mounted'],
-      },
-      runtime_profile: {
-        type: 'string',
-        enum: ['managed', 'developer'],
-      },
-      task_home_segment: { type: 'string' },
-      task_home_path: { type: 'string' },
-      workspace_path: { type: 'string' },
-      artifacts_path: { type: 'string' },
-      library_root_path: { const: '.' },
-      workspace_file_library_name: {
-        oneOf: [{ type: 'string' }, { type: 'null' }],
-      },
-      task_inputs: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: true,
-        },
-      },
-      model_context_window: { type: 'integer', minimum: 1 },
-      model_auto_compact_token_limit: { type: 'integer', minimum: 1 },
-      model_limits: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          context_window: { type: 'integer', minimum: 1 },
-          max_output_tokens: { type: 'integer', minimum: 1 },
-        },
-      },
-      model_catalog: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          input_modalities: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-          supports_search_tool: { type: 'boolean' },
-          supports_parallel_tool_calls: { type: 'boolean' },
-          apply_patch_tool_type: {
-            type: 'string',
-            enum: ['freeform', 'function'],
-          },
-        },
-      },
-      ...(options.extraProperties ?? {}),
-    },
-  };
+  const schema = JSON.parse(
+    JSON.stringify(TASK_EXECUTION_CONTEXT_JSON_SCHEMA),
+  ) as Record<string, unknown>;
+  if (options.required) {
+    schema.required = options.required;
+  }
+  if (options.extraProperties) {
+    Object.assign(schema.properties as Record<string, unknown>, options.extraProperties);
+  }
+  return schema;
 }
 
 function createAsyncApiFixture(options: {
   executionContextSchema?: Record<string, unknown>;
+  requestStartExecutionContextSchema?: Record<string, unknown>;
+  includeServerRequestStart?: boolean;
+  includeServerRequestExecutionContext?: boolean;
+  requireServerRequestExecutionContext?: boolean;
   includeTerminalStart?: boolean;
   includeTerminalAdopt?: boolean;
   includeTerminalClose?: boolean;
   includeRecovery?: boolean;
 } = {}): Record<string, unknown> {
   const executionContextSchema = options.executionContextSchema ?? createExecutionContextSchema();
+  const requestStartExecutionContextSchema =
+    options.requestStartExecutionContextSchema ?? createExecutionContextSchema();
   return {
     asyncapi: '3.0.0',
     components: {
@@ -161,6 +65,55 @@ function createAsyncApiFixture(options: {
         },
       },
       messages: {
+        ...(options.includeServerRequestStart !== false
+          ? {
+            serverRequestStart: {
+              name: 'server.request.start',
+              payload: {
+                type: 'object',
+                required: [
+                  'type',
+                  'timestamp',
+                  'request_id',
+                  'payload',
+                ],
+                properties: {
+                  type: { const: 'server.request.start' },
+                  request_id: { type: 'string' },
+                  runner_session_id: { type: 'string' },
+                  timestamp: { type: 'string', format: 'date-time' },
+                  payload: {
+                    type: 'object',
+                    required: [
+                      'model',
+                      'stream',
+                      'messages',
+                      ...(options.requireServerRequestExecutionContext === false
+                        ? []
+                        : ['execution_context']),
+                    ],
+                    properties: {
+                      model: { type: 'string' },
+                      stream: { const: true },
+                      messages: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          additionalProperties: true,
+                        },
+                      },
+                      ...(options.includeServerRequestExecutionContext === false
+                        ? {}
+                        : {
+                          execution_context: requestStartExecutionContextSchema,
+                        }),
+                    },
+                  },
+                },
+              },
+            },
+          }
+          : {}),
         ...(options.includeTerminalStart !== false
           ? {
             serverTerminalStart: {
@@ -311,6 +264,64 @@ describe('check-runner-contract-sync', () => {
     expect(checkRunnerContractSync(createAsyncApiFixture()).errors).toEqual([]);
   });
 
+  it('requires server.request.start as the main task run frame', () => {
+    const result = checkRunnerContractSync(createAsyncApiFixture({
+      includeServerRequestStart: false,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'missing_message',
+        message: 'AsyncAPI is missing required runner message: server.request.start',
+        path: 'components.messages',
+      },
+    ]);
+  });
+
+  it('requires server.request.start payload to expose execution_context', () => {
+    const result = checkRunnerContractSync(createAsyncApiFixture({
+      includeServerRequestExecutionContext: false,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'missing_execution_context_schema',
+        message: 'server.request.start payload must expose execution_context',
+        path: 'components.messages.serverRequestStart.payload.properties.payload.properties.execution_context',
+      },
+    ]);
+  });
+
+  it('requires server.request.start payload to require execution_context', () => {
+    const result = checkRunnerContractSync(createAsyncApiFixture({
+      requireServerRequestExecutionContext: false,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'execution_context_not_required',
+        message: 'server.request.start payload.required must include execution_context',
+        path: 'components.messages.serverRequestStart.payload.properties.payload.required',
+      },
+    ]);
+  });
+
+  it('rejects server.request.start execution_context schema drift', () => {
+    const downgradedExecutionContextSchema = createExecutionContextSchema({
+      required: ['task_id'],
+    });
+
+    expect(checkRunnerContractSync(createAsyncApiFixture({
+      requestStartExecutionContextSchema: downgradedExecutionContextSchema,
+    })).errors).toEqual([
+      {
+        code: 'execution_context_missing_required_fields',
+        message: 'server.request.start payload.execution_context is missing required runner contract fields: artifacts_path, library_root_path, runtime_profile, task_home_path, task_home_segment, workspace_binding_mode, workspace_file_library_id, workspace_path',
+        path: 'components.messages.serverRequestStart.payload.properties.payload.properties.execution_context.required',
+      },
+    ]);
+  });
+
   it('rejects AsyncAPI execution_context fields not exported by the runner contract', () => {
     const result = checkRunnerContractSync(createAsyncApiFixture({
       executionContextSchema: createExecutionContextSchema({
@@ -354,7 +365,11 @@ describe('check-runner-contract-sync', () => {
     const resourceProxy = properties.resource_proxy as Record<string, unknown>;
     const resourceProxyProperties = resourceProxy.properties as Record<string, unknown>;
 
-    resourceProxyProperties.base_url = { type: 'integer' };
+    resourceProxyProperties.base_url = {
+      type: 'integer',
+      minLength: 1,
+      pattern: '\\S',
+    };
 
     expect(checkRunnerContractSync(createAsyncApiFixture({
       executionContextSchema,

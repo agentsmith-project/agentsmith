@@ -37,7 +37,7 @@ All frames are JSON objects:
     - `model: string`
     - `stream: true`
     - `messages: OpenAI-compatible message array` (supports multimodal content parts and data URLs)
-    - `execution_context?: object` (optional agent task execution metadata)
+    - `execution_context: TaskExecutionContext` (required agent task execution metadata validated by the public runner guard)
       - `workspace_id: string`
       - `project_id: string`
       - `task_id: string`
@@ -185,7 +185,7 @@ This section covers the browser-facing terminal websocket issued by Agent task t
 - Replay source is an API-entry in-memory bounded ring. If `after_seq` is older than the ring, replay is `partial` with `gap: true`; if the ring is unavailable or `after_seq` is ahead of the latest known seq, replay is `unavailable`, and future cursors use `error_code: "future_after_seq"` plus `next_seq`.
 - Reconnect must not synthesize a `started` frame. Browser UI should treat replay status as terminal recovery metadata, not terminal bytes.
 - Routes that issue an interactive terminal `ws_url` or ticket require `project:agent_task:terminal` in addition to task access. Reconnect handshakes and each `terminal.stdin` / `terminal.resize` frame re-check current backend permission truth; revoked permission rejects the frame and closes the websocket instead of trusting a cached ticket or open socket.
-- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.request.start.payload.execution_context` canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`.
+- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.terminal.start.payload.execution_context` is required; its canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`.
 
 ## 8. Terminal Recovery And Adopt
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import {
   SUPPORTED_AGENT_WIRE_APIS,
   assertTaskExecutionContext,
   isTaskExecutionContext,
   type AgentEnvelope,
+  type AgentServerHelloPayload,
+  type AgentServerStartPayload,
   type TaskExecutionContext,
 } from './protocol.js';
 
@@ -95,6 +95,111 @@ describe('agent-runner task execution context guards', () => {
           resolved_model: 'gpt-1',
           upstream_protocol: 'legacy_chat',
           setting_revision: 'set_1',
+        },
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
+  it('rejects nested execution context fields not present in the closed schema', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        resource_proxy: {
+          base_url: 'http://api.local/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_1/proxy/openai',
+          user_bearer_token: 'bearer_should_never_enter_context',
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        agent_task_model: {
+          endpoint_id: 'ep_1',
+          resolved_model: 'gpt-1',
+          setting_revision: 'set_1',
+          resolved_at: '2026-05-07T00:00:00.000Z',
+          credential_files: [
+            {
+              relative_path: '.config/legacy-secret',
+              content: 'secret',
+            },
+          ],
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_limits: {
+          context_window: 200000,
+          max_output_tokens: 32000,
+          extra_limit: 1,
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_catalog: {
+          input_modalities: ['text'],
+          supports_search_tool: false,
+          extra_capability: true,
+        },
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
+  it('rejects execution context model metadata with schema-invalid types and integer bounds', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_context_window: 0,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_auto_compact_token_limit: 1.5,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_limits: {
+          context_window: 0,
+          max_output_tokens: 32000,
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_limits: {
+          context_window: 200000,
+          max_output_tokens: 1.5,
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_catalog: {
+          input_modalities: ['text', 42],
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_catalog: {
+          supports_search_tool: 'false',
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        model_catalog: {
+          apply_patch_tool_type: 'json',
         },
       },
     ]) {
@@ -401,6 +506,17 @@ describe('agent-runner task execution context guards', () => {
     }
   });
 
+  it('rejects unknown execution context fields to match the closed contract schema', () => {
+    const value = {
+      task_id: 'task_1',
+      ...requiredTaskPaths,
+      unexpected_secret: 'secret',
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(false);
+    expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+  });
+
   it('rejects unsupported runner session scopes', () => {
     const value = {
       task_id: 'task_1',
@@ -461,28 +577,52 @@ describe('agent-runner task execution context guards', () => {
     }
   });
 
-  it('does not publish legacy public execution context aliases', () => {
-    const protocolSource = readFileSync(
-      path.join(process.cwd(), 'packages/agent-runner/src/protocol.ts'),
-      'utf8',
-    );
+  it('keeps legacy public protocol fields out of typed runner payloads', () => {
+    type EnvelopeHasRunnerSessionId = 'runner_session_id' extends keyof AgentEnvelope
+      ? true
+      : false;
+    type EnvelopeHasSessionId = 'session_id' extends keyof AgentEnvelope ? true : false;
+    type StartPayloadHasExecutionContext =
+      'execution_context' extends keyof AgentServerStartPayload ? true : false;
+    type StartPayloadRequiresExecutionContext =
+      AgentServerStartPayload extends { execution_context: TaskExecutionContext } ? true : false;
+    type StartPayloadRequiresModel =
+      AgentServerStartPayload extends { model: string } ? true : false;
+    type StartPayloadRequiresStream =
+      AgentServerStartPayload extends { stream: true } ? true : false;
+    type StartPayloadRequiresMessages =
+      AgentServerStartPayload extends { messages: Array<Record<string, unknown>> } ? true : false;
+    type HelloPayloadHasResourceProxy =
+      'resource_proxy' extends keyof AgentServerHelloPayload ? true : false;
+    type ContextHasUserBearerToken =
+      'user_bearer_token' extends keyof TaskExecutionContext ? true : false;
+    type ContextHasCredentialFiles =
+      'credential_files' extends keyof TaskExecutionContext ? true : false;
+    type ContextHasInteractionKind =
+      'interaction_kind' extends keyof TaskExecutionContext ? true : false;
 
-    expect(protocolSource).not.toMatch(/\bAgentExecutionContext\b/);
-    expect(protocolSource).not.toMatch(/\bChatExecutionContext\b/);
-    expect(protocolSource).not.toMatch(/\bNotebookExecutionContext\b/);
-    expect(protocolSource).toContain('runner_session_id?: string');
-    expect(protocolSource).not.toMatch(/\bsession_id\?:/);
-  });
+    const envelopeHasRunnerSessionId = true satisfies EnvelopeHasRunnerSessionId;
+    const envelopeHasSessionId = false satisfies EnvelopeHasSessionId;
+    const startPayloadHasExecutionContext = true satisfies StartPayloadHasExecutionContext;
+    const startPayloadRequiresExecutionContext = true satisfies StartPayloadRequiresExecutionContext;
+    const startPayloadRequiresModel = true satisfies StartPayloadRequiresModel;
+    const startPayloadRequiresStream = true satisfies StartPayloadRequiresStream;
+    const startPayloadRequiresMessages = true satisfies StartPayloadRequiresMessages;
+    const helloPayloadHasResourceProxy = false satisfies HelloPayloadHasResourceProxy;
+    const contextHasUserBearerToken = false satisfies ContextHasUserBearerToken;
+    const contextHasCredentialFiles = false satisfies ContextHasCredentialFiles;
+    const contextHasInteractionKind = false satisfies ContextHasInteractionKind;
 
-  it('does not publish resource_proxy on server.hello payloads', () => {
-    const protocolSource = readFileSync(
-      path.join(process.cwd(), 'packages/agent-runner/src/protocol.ts'),
-      'utf8',
-    );
-    const helloPayloadStart = protocolSource.indexOf('export type AgentServerHelloPayload');
-    const nextTypeStart = protocolSource.indexOf('export type AgentEnvelope', helloPayloadStart);
-    const helloPayloadSource = protocolSource.slice(helloPayloadStart, nextTypeStart);
-
-    expect(helloPayloadSource).not.toContain('resource_proxy');
+    expect(envelopeHasRunnerSessionId).toBe(true);
+    expect(envelopeHasSessionId).toBe(false);
+    expect(startPayloadHasExecutionContext).toBe(true);
+    expect(startPayloadRequiresExecutionContext).toBe(true);
+    expect(startPayloadRequiresModel).toBe(true);
+    expect(startPayloadRequiresStream).toBe(true);
+    expect(startPayloadRequiresMessages).toBe(true);
+    expect(helloPayloadHasResourceProxy).toBe(false);
+    expect(contextHasUserBearerToken).toBe(false);
+    expect(contextHasCredentialFiles).toBe(false);
+    expect(contextHasInteractionKind).toBe(false);
   });
 });

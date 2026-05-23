@@ -3,6 +3,7 @@ import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import { assertTaskExecutionContext } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { AGENT_CONNECTION_TTL_MS, type AgentConnectionAuthKind } from './agent-presence-store.js';
 
@@ -1565,12 +1566,16 @@ export class AgentExecutionService {
     agentId: string;
     model: string;
     messages: Array<Record<string, unknown>>;
-    executionContext?: Record<string, unknown>;
+    executionContext: Record<string, unknown>;
   }): Promise<{ requestId: string; stream: AsyncIterable<AgentStreamEvent>; cancel: () => void }> {
     if (this.shuttingDown) {
       throw new Error('agent_execution_service_shutdown');
     }
-    const dispatchScope = resolveStreamingDispatchScope(input.executionContext);
+    if (input.executionContext === undefined) {
+      throw new Error('agent_execution_context_required');
+    }
+    const executionContext = assertTaskExecutionContext(input.executionContext);
+    const dispatchScope = resolveStreamingDispatchScope(executionContext);
     const socket = await this.resolveDispatchSocket({
       agentId: input.agentId,
       sessionId: input.sessionId,
@@ -1590,8 +1595,8 @@ export class AgentExecutionService {
       close: queue.close,
       fail: queue.fail,
       lifecycleTraceEventsAreMeaningful:
-        input.executionContext?.runner_session_scope === 'task_execution'
-        || input.executionContext?.runner_session_scope === 'agent_presence',
+        executionContext.runner_session_scope === 'task_execution'
+        || executionContext.runner_session_scope === 'agent_presence',
     };
     socket.pendingByRequestId.set(requestId, pending);
     this.armStreamTimeouts(socket, requestId, pending);
@@ -1609,7 +1614,7 @@ export class AgentExecutionService {
           model: input.model,
           stream: true,
           messages: input.messages,
-          ...(input.executionContext ? { execution_context: input.executionContext } : {}),
+          execution_context: executionContext,
         },
       },
     });
@@ -1680,9 +1685,11 @@ export class AgentExecutionService {
     debugExecution(
       `dispatch_terminal_start agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
-    const dispatchScope = input.payload.executionContext
-      ? resolveStreamingDispatchScope(input.payload.executionContext)
-      : 'session_strict';
+    if (input.payload.executionContext === undefined) {
+      throw new Error('agent_execution_context_required');
+    }
+    const executionContext = assertTaskExecutionContext(input.payload.executionContext);
+    const dispatchScope = resolveStreamingDispatchScope(executionContext);
     const socket = await this.resolveDispatchSocket({
       agentId: input.agentId,
       sessionId: input.sessionId,
@@ -1737,7 +1744,7 @@ export class AgentExecutionService {
           ...(typeof input.payload.cwd === 'string' && input.payload.cwd.trim()
             ? { cwd: input.payload.cwd.trim() }
             : {}),
-          ...(input.payload.executionContext ? { execution_context: input.payload.executionContext } : {}),
+          execution_context: executionContext,
         },
       },
     });

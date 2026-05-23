@@ -1,0 +1,52 @@
+{
+  "schema_version": "agentsmith.release-kit-evidence/v1",
+  "release_contract_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "release_id": "2026.05.23-p0",
+  "git_sha": "0123456789abcdef0123456789abcdef01234567",
+  "release_kit_version": "0.1.0",
+  "target_cluster": "kind_rehearsal",
+  "substrate_source": "kit_installed",
+  "distribution": "online",
+  "target": "rollout",
+  "status": "passed",
+  "failure_class": "none",
+  "evidence_root": "artifacts/release-runs/release-ready-20260523T120000Z/unified-deploy/local-kind",
+  "canonical_writer": {
+    "gate_id": "lane-unified-deploy-local-kind",
+    "line_kind": "unified_deploy_local_kind"
+  },
+  "evidence_subject": {
+    "schema_version": "agentsmith.release-kit-evidence-subject/v1",
+    "release_id": "2026.05.23-p0",
+    "files": [
+      {
+        "path": "render-report.json",
+        "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "path": "rollout-report.json",
+        "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ]
+  },
+  "artifact_provenance": {
+    "schema_version": "agentsmith.artifact-provenance/v1",
+    "provenance_kind": "signed_operator_run",
+    "producer_repo": "github.com/agentsmith-project/agentsmith-release-kit",
+    "normalized_remote": "github.com/agentsmith-project/agentsmith-release-kit",
+    "commit_sha": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    "subject_name": "release-kit-evidence-subject",
+    "subject_sha256": "sha256:96ca4f27e388e42d1a6903bc9112fb37e3b6ac2a80df22b42e04ba7658287824",
+    "subject_uri": "evidence-subject.json",
+    "operator_run_id": "operator-run-20260523-001",
+    "operator_identity": "release-operator@example.com",
+    "signature_uri": "sigstore://agentsmith-release-kit/operator-run-20260523-001",
+    "signature_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "artifact_uri": "file://release-kit-evidence/operator-run-20260523-001/evidence-subject.json",
+    "artifact_sha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "generated_at": "2026-05-23T12:05:00.000Z",
+    "generator_command": "agentsmith-release-kit verify rollout",
+    "generator_version": "0.1.0",
+    "attestation": "none"
+  }
+}

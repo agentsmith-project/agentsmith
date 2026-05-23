@@ -1,0 +1,35 @@
+{
+  "schema_version": "agentsmith.runner-release-manifest/v1",
+  "runner": "agentsmith-runner",
+  "release_id": "runner-2026.05.23-p0",
+  "git_sha": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+  "runner_contract_version": "1.0.0",
+  "supported_protocol_versions": [
+    "1"
+  ],
+  "image": {
+    "id": "agent-task-runner",
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "artifact_provenance": {
+    "schema_version": "agentsmith.artifact-provenance/v1",
+    "provenance_kind": "ci_artifact",
+    "producer_repo": "github.com/agentsmith-project/agentsmith-runner",
+    "normalized_remote": "github.com/agentsmith-project/agentsmith-runner",
+    "commit_sha": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    "subject_name": "runner-release-manifest",
+    "subject_sha256": "sha256:e026b3082a74b2b7ced327a05d35b51adfd042a55d43a66141984d002bc3d1a6",
+    "subject_uri": "runner-release-manifest.json",
+    "workflow_name": "runner-release",
+    "run_id": "20001",
+    "run_attempt": "1",
+    "job": "generate-runner-manifest",
+    "artifact_uri": "gh-artifact://agentsmith-runner/release/20001/runner-release-manifest.json",
+    "artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "generated_at": "2026-05-23T12:10:00.000Z",
+    "generator_command": "npm run release:manifest",
+    "generator_version": "p0",
+    "attestation": "none"
+  }
+}

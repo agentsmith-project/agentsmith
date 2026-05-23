@@ -1,4 +1,5 @@
 import { isAbsolute, join, normalize } from 'node:path';
+import { TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS } from './contract-schema.js';
 
 export const SUPPORTED_AGENT_WIRE_APIS = [
   'openai_chat_completions',
@@ -124,21 +125,9 @@ export type AgentEnvelope = {
   payload?: unknown;
 };
 
-const TASK_EXECUTION_UNSUPPORTED_FIELDS = new Set([
-  'external_agent_id',
-  'externalAgentId',
-  'transport',
-  'internalAgent',
-  'interaction_kind',
-  'workload',
-  'session_id',
-  'chat',
-  'notebook',
-  'chat_runner',
-  'notebook_runner',
-  'container_workspace_path',
-  'workspace_dir_name',
-]);
+const TASK_EXECUTION_UNSUPPORTED_FIELDS = new Set(
+  TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS,
+);
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);

@@ -378,6 +378,29 @@ describe('agent-runner task execution context guards', () => {
     }
   });
 
+  it('rejects retired secret delivery fields even when canonical task fields are present', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        user_bearer_token: 'bearer_should_never_enter_context',
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        credential_files: [
+          {
+            relative_path: '.config/legacy-secret',
+            content: 'secret',
+          },
+        ],
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
   it('rejects unsupported runner session scopes', () => {
     const value = {
       task_id: 'task_1',

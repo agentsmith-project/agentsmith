@@ -16,6 +16,13 @@ import {
   type CurrentGateResultFailureClass,
   type CurrentGateResultStatus,
 } from './current-gate-result-schema';
+import {
+  CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION,
+  validateReleaseKitEvidence,
+  validateSubstrateConnectionTruth,
+  type CurrentReleaseBoundaryValidationFailure,
+  type CurrentReleaseKitEvidenceTarget,
+} from './current-release-boundary-schema';
 import type {
   CurrentVerificationCampaignEvidenceCheck,
   CurrentVerificationCampaignStep,
@@ -1830,6 +1837,17 @@ type UnifiedDeployEvidenceDiagnostic = {
 };
 
 const FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION = 'agentsmith.focused-product-flow.evidence/v1';
+const RELEASE_KIT_FALLBACK_MARKER_FIELDS = [
+  'release_contract_digest',
+  'release_kit_version',
+  'artifact_provenance',
+] as const;
+const RELEASE_KIT_TARGET_BY_CHECK_ID: Partial<Record<string, CurrentReleaseKitEvidenceTarget>> = {
+  unified_deploy_substrate_evidence: 'dependencies',
+  unified_deploy_local_kind_images_evidence: 'images',
+  unified_deploy_local_kind_evidence: 'rollout',
+  unified_deploy_product_flow_evidence: 'product_flows',
+};
 
 function isCurrentGateResultFailureClass(value: unknown): value is CurrentGateResultFailureClass {
   return value === 'none'
@@ -1845,6 +1863,62 @@ function unifiedDeployDiagnostic(
   failureClass: CurrentGateResultFailureClass,
 ): UnifiedDeployEvidenceDiagnostic {
   return { message, failureClass };
+}
+
+function hasOwnField(value: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function isReleaseKitEvidencePayload(payload: Record<string, unknown>): boolean {
+  if (payload.schema_version === CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION) {
+    return true;
+  }
+  return RELEASE_KIT_FALLBACK_MARKER_FIELDS.every((field) => hasOwnField(payload, field));
+}
+
+function releaseBoundaryFailuresSummary(failures: readonly CurrentReleaseBoundaryValidationFailure[]): string {
+  return failures.map((failure) => `${failure.path}: ${failure.reason}`).join(' ');
+}
+
+function validateReleaseKitEvidenceBoundary(
+  payload: Record<string, unknown>,
+  check: CurrentVerificationCampaignEvidenceCheck,
+  path: string,
+): UnifiedDeployEvidenceDiagnostic | null {
+  const validation = validateReleaseKitEvidence(payload);
+  if (!validation.ok) {
+    return unifiedDeployDiagnostic(
+      `${path} release kit evidence is invalid: ${releaseBoundaryFailuresSummary(validation.failures)}`,
+      'contract_drift',
+    );
+  }
+
+  const expectedTarget = RELEASE_KIT_TARGET_BY_CHECK_ID[check.id];
+  if (expectedTarget && validation.value.target !== expectedTarget) {
+    return unifiedDeployDiagnostic(
+      `${path} release kit evidence target ${validation.value.target} does not match current campaign check ${check.id}.`,
+      'contract_drift',
+    );
+  }
+
+  if (check.expectedStatus && validation.value.status !== check.expectedStatus) {
+    return unifiedDeployDiagnostic(
+      `${path} status must be ${check.expectedStatus}.`,
+      validation.value.status === 'failed' ? failedPayloadFailureClass(payload, check) : 'contract_drift',
+    );
+  }
+
+  if (validation.value.substrate_source === 'external_declared' && hasOwnField(payload, 'substrate_connection_truth')) {
+    const truthValidation = validateSubstrateConnectionTruth(payload.substrate_connection_truth);
+    if (!truthValidation.ok) {
+      return unifiedDeployDiagnostic(
+        `${path} substrate_connection_truth is invalid: ${releaseBoundaryFailuresSummary(truthValidation.failures)}`,
+        'contract_drift',
+      );
+    }
+  }
+
+  return null;
 }
 
 function inferredUnifiedDeployFailureClass(
@@ -1986,6 +2060,10 @@ function validateUnifiedDeployPayload(
   check: CurrentVerificationCampaignEvidenceCheck,
   path: string,
 ): UnifiedDeployEvidenceDiagnostic | null {
+  if (isReleaseKitEvidencePayload(payload)) {
+    return validateReleaseKitEvidenceBoundary(payload, check, path);
+  }
+
   if (check.expectedStatus && payload.status !== check.expectedStatus) {
     return unifiedDeployDiagnostic(
       `${path} status must be ${check.expectedStatus}.`,
@@ -2052,7 +2130,8 @@ function evaluateUnifiedDeployEvidence(
       continue;
     }
 
-    if (check.expectedSchemaVersion && payload.schema_version !== check.expectedSchemaVersion) {
+    const releaseKitEvidencePayload = isReleaseKitEvidencePayload(payload);
+    if (check.expectedSchemaVersion && payload.schema_version !== check.expectedSchemaVersion && !releaseKitEvidencePayload) {
       continue;
     }
 

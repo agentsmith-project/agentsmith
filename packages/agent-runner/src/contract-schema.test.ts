@@ -1,0 +1,137 @@
+import { describe, expect, it } from 'vitest';
+import {
+  RUNNER_CONTRACT_TERMINAL_FIXTURES,
+  TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
+  TASK_EXECUTION_CONTEXT_FIXTURES,
+  TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
+  TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
+  TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS,
+  getTaskExecutionContextFixture,
+} from './contract-schema.js';
+import { assertTaskExecutionContext } from './protocol.js';
+
+describe('agent-runner contract schema', () => {
+  it('exports the canonical TaskExecutionContext required and allowed field sets', () => {
+    expect(TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS).toEqual([
+      'task_id',
+      'workspace_file_library_id',
+      'workspace_binding_mode',
+      'runtime_profile',
+      'task_home_segment',
+      'task_home_path',
+      'workspace_path',
+      'artifacts_path',
+      'library_root_path',
+    ]);
+
+    expect(TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS).toEqual([
+      'api_base',
+      'workspace_id',
+      'project_id',
+      'task_id',
+      'run_id',
+      'runner_id',
+      'runner_session_scope',
+      'execution_ticket',
+      'endpoint_id',
+      'agent_task_model',
+      'resource_proxy',
+      'wire_api',
+      'model',
+      'username',
+      'workspace_file_library_id',
+      'workspace_binding_mode',
+      'runtime_profile',
+      'task_home_segment',
+      'task_home_path',
+      'workspace_path',
+      'artifacts_path',
+      'library_root_path',
+      'workspace_file_library_name',
+      'task_inputs',
+      'model_context_window',
+      'model_auto_compact_token_limit',
+      'model_limits',
+      'model_catalog',
+    ]);
+  });
+
+  it('publishes a closed JSON schema that rejects retired execution context fields', () => {
+    expect(TASK_EXECUTION_CONTEXT_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(TASK_EXECUTION_CONTEXT_JSON_SCHEMA.required).toEqual([
+      ...TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
+    ]);
+
+    for (const field of TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS) {
+      expect(TASK_EXECUTION_CONTEXT_JSON_SCHEMA.properties).toHaveProperty(field);
+    }
+    for (const legacyField of TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS) {
+      expect(TASK_EXECUTION_CONTEXT_JSON_SCHEMA.properties).not.toHaveProperty(legacyField);
+    }
+    expect(TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS).toEqual(
+      expect.arrayContaining(['user_bearer_token', 'credential_files']),
+    );
+  });
+
+  it('ships canonical task run, terminal start, and recovery contexts accepted by protocol guards', () => {
+    for (const fixture of Object.values(TASK_EXECUTION_CONTEXT_FIXTURES)) {
+      expect(assertTaskExecutionContext(fixture)).toEqual(fixture);
+    }
+
+    expect(getTaskExecutionContextFixture('managedTaskRun')).toEqual(
+      TASK_EXECUTION_CONTEXT_FIXTURES.managedTaskRun,
+    );
+    expect(getTaskExecutionContextFixture('terminalStart')).toEqual(
+      TASK_EXECUTION_CONTEXT_FIXTURES.terminalStart,
+    );
+  });
+
+  it('publishes terminal start, adopt, close, and recovery fixtures for downstream contract checks', () => {
+    expect(RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalStart).toMatchObject({
+      type: 'server.terminal.start',
+      runner_session_id: 'task_1',
+      terminal_session_id: 'term_1',
+      payload: {
+        cols: 120,
+        rows: 30,
+        execution_context: TASK_EXECUTION_CONTEXT_FIXTURES.terminalStart,
+      },
+    });
+    expect(RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalAdopt).toMatchObject({
+      type: 'server.terminal.adopt',
+      runner_session_id: 'task_1',
+      terminal_session_id: 'term_1',
+      payload: {
+        adopt_attempt_id: 'adopt_1',
+        connection_epoch: 7,
+        generation: 1,
+        cols: 120,
+        rows: 30,
+      },
+    });
+    expect(RUNNER_CONTRACT_TERMINAL_FIXTURES.serverTerminalClose).toMatchObject({
+      type: 'server.terminal.close',
+      runner_session_id: 'task_1',
+      terminal_session_id: 'term_1',
+      payload: {
+        close_attempt_id: 'close_1',
+        generation: 1,
+        connection_epoch: 7,
+        reason: 'user_requested',
+      },
+    });
+    expect(RUNNER_CONTRACT_TERMINAL_FIXTURES.terminalRecoveryReady).toMatchObject({
+      type: 'agent.ready',
+      payload: {
+        connection_epoch: 7,
+        active_terminals: [
+          {
+            terminal_session_id: 'term_1',
+            runner_session_id: 'task_1',
+            generation: 1,
+          },
+        ],
+      },
+    });
+  });
+});

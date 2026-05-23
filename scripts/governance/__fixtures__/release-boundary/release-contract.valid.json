@@ -1,0 +1,146 @@
+{
+  "schema_version": "agentsmith.release-contract/v1",
+  "product": "agentsmith",
+  "release_id": "2026.05.23-p0",
+  "git_sha": "0123456789abcdef0123456789abcdef01234567",
+  "product_images": [
+    {
+      "id": "web",
+      "image": "ghcr.io/agentsmith-project/agentsmith-web:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "id": "api",
+      "image": "ghcr.io/agentsmith-project/agentsmith-api:2026.05.23-p0@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "id": "product_schema_bootstrap",
+      "image": "ghcr.io/agentsmith-project/agentsmith-product-schema-bootstrap:2026.05.23-p0@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "adopted_provider_images": [
+    {
+      "id": "llmup",
+      "image": "ghcr.io/agentsmith-project/llmup:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  ],
+  "release_kit_prerequisite_images": [
+    {
+      "id": "ingress_nginx_controller",
+      "image": "registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "deploy_image_inventory": [
+    {
+      "id": "web",
+      "image": "ghcr.io/agentsmith-project/agentsmith-web:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "source": "product_images"
+    },
+    {
+      "id": "api",
+      "image": "ghcr.io/agentsmith-project/agentsmith-api:2026.05.23-p0@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "source": "product_images"
+    },
+    {
+      "id": "product_schema_bootstrap",
+      "image": "ghcr.io/agentsmith-project/agentsmith-product-schema-bootstrap:2026.05.23-p0@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "source": "product_images"
+    },
+    {
+      "id": "llmup",
+      "image": "ghcr.io/agentsmith-project/llmup:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "source": "adopted_provider_images"
+    },
+    {
+      "id": "ingress_nginx_controller",
+      "image": "registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "source": "release_kit_prerequisite_images"
+    }
+  ],
+  "deploy_template_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "openapi_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "asyncapi_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "required_product_flows": [
+    "workspace_project",
+    "files",
+    "agent_task_managed_runner"
+  ],
+  "target_profiles": [
+    {
+      "target_cluster": "existing_kubernetes",
+      "substrate_source": "external_declared",
+      "distribution": "online",
+      "required": true,
+      "prerequisites": {
+        "namespace": "agentsmith",
+        "rbac": "namespace_admin",
+        "ingress": "operator_provided",
+        "tls": "required",
+        "storage_class": "operator_provided",
+        "registry": "ghcr_or_operator_mirror",
+        "pull_secret_ref": "operator_secret_ref"
+      }
+    },
+    {
+      "target_cluster": "existing_kubernetes",
+      "substrate_source": "external_declared",
+      "distribution": "airgap",
+      "required": true,
+      "prerequisites": {
+        "namespace": "agentsmith",
+        "rbac": "namespace_admin",
+        "ingress": "operator_provided",
+        "tls": "required",
+        "storage_class": "operator_provided",
+        "registry": "operator_mirror",
+        "pull_secret_ref": "operator_secret_ref"
+      }
+    },
+    {
+      "target_cluster": "kind_rehearsal",
+      "substrate_source": "kit_installed",
+      "distribution": "online",
+      "required": false,
+      "prerequisites": {
+        "namespace": "agentsmith",
+        "rbac": "local_admin",
+        "ingress": "local",
+        "tls": "optional",
+        "storage_class": "standard",
+        "registry": "local_kind_import",
+        "pull_secret_ref": "not_required"
+      }
+    }
+  ],
+  "substrate_connection_schema": "agentsmith.substrate-connection.truth/v1",
+  "min_release_kit_version": "0.1.0",
+  "artifact_provenance": {
+    "schema_version": "agentsmith.artifact-provenance/v1",
+    "provenance_kind": "ci_artifact",
+    "producer_repo": "github.com/agentsmith-project/agentsmith",
+    "normalized_remote": "github.com/agentsmith-project/agentsmith",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "subject_name": "agentsmith-release-contract",
+    "subject_sha256": "sha256:1b5f21fc00c6a7ba224298151683611087745e3ad524a5a4708099fca3971358",
+    "subject_uri": "release-contract.json",
+    "workflow_name": "release-contract",
+    "run_id": "10001",
+    "run_attempt": "1",
+    "job": "generate-release-contract",
+    "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
+    "artifact_sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "generated_at": "2026-05-23T12:00:00.000Z",
+    "generator_command": "npm run contracts:check-release-boundary",
+    "generator_version": "p0",
+    "attestation": "none"
+  }
+}

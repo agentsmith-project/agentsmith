@@ -25,6 +25,8 @@ channels:
         $ref: '#/components/messages/serverRequestCancel'
       serverPing:
         $ref: '#/components/messages/serverPing'
+      serverTerminalStart:
+        $ref: '#/components/messages/serverTerminalStart'
       agentReady:
         $ref: '#/components/messages/agentReady'
       agentPong:
@@ -59,6 +61,7 @@ operations:
     - $ref: '#/channels/agentRuntime/messages/serverRequestStart'
     - $ref: '#/channels/agentRuntime/messages/serverRequestCancel'
     - $ref: '#/channels/agentRuntime/messages/serverPing'
+    - $ref: '#/channels/agentRuntime/messages/serverTerminalStart'
     - $ref: '#/channels/agentRuntime/messages/serverTerminalAdopt'
     - $ref: '#/channels/agentRuntime/messages/serverTerminalClose'
   sendToServer:
@@ -202,6 +205,152 @@ components:
           minimum: 5
         cwd:
           type: string
+    TaskExecutionContext: &TaskExecutionContext
+      type: object
+      description: Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, or credential_files.
+      additionalProperties: false
+      required:
+      - task_id
+      - workspace_file_library_id
+      - workspace_binding_mode
+      - runtime_profile
+      - task_home_segment
+      - task_home_path
+      - workspace_path
+      - artifacts_path
+      - library_root_path
+      properties:
+        api_base:
+          type: string
+        workspace_id:
+          type: string
+        project_id:
+          type: string
+        task_id:
+          type: string
+        run_id:
+          type: string
+        runner_id:
+          type: string
+        runner_session_scope:
+          type: string
+          enum:
+          - agent_presence
+          - task_execution
+        execution_ticket:
+          type: string
+        endpoint_id:
+          type: string
+        agent_task_model:
+          type: object
+          additionalProperties: false
+          required:
+          - endpoint_id
+          - resolved_model
+          - setting_revision
+          - resolved_at
+          properties:
+            endpoint_id:
+              type: string
+            endpoint_display_name:
+              type: string
+            resolved_model:
+              type: string
+            upstream_protocol:
+              type: string
+              enum:
+              - openai_chat_completions
+              - openai_responses
+              - anthropic_messages
+            setting_revision:
+              type: string
+            policy_decision_id:
+              type: string
+            resolved_at:
+              type: string
+              format: date-time
+        resource_proxy:
+          type: object
+          additionalProperties: false
+          required:
+          - base_url
+          properties:
+            base_url:
+              type: string
+        wire_api:
+          type: string
+          enum:
+          - openai_chat_completions
+          - openai_responses
+          - anthropic_messages
+        model:
+          type: string
+        username:
+          type: string
+        workspace_file_library_id:
+          type: string
+        workspace_binding_mode:
+          type: string
+          enum:
+          - file_library
+          - pre_mounted
+        runtime_profile:
+          type: string
+          enum:
+          - managed
+          - developer
+        task_home_segment:
+          type: string
+        task_home_path:
+          type: string
+        workspace_path:
+          type: string
+        artifacts_path:
+          type: string
+        library_root_path:
+          const: '.'
+        workspace_file_library_name:
+          oneOf:
+          - type: string
+          - type: 'null'
+        task_inputs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        model_context_window:
+          type: integer
+          minimum: 1
+        model_auto_compact_token_limit:
+          type: integer
+          minimum: 1
+        model_limits:
+          type: object
+          additionalProperties: false
+          properties:
+            context_window:
+              type: integer
+              minimum: 1
+            max_output_tokens:
+              type: integer
+              minimum: 1
+        model_catalog:
+          type: object
+          additionalProperties: false
+          properties:
+            input_modalities:
+              type: array
+              items:
+                type: string
+            supports_search_tool:
+              type: boolean
+            supports_parallel_tool_calls:
+              type: boolean
+            apply_patch_tool_type:
+              type: string
+              enum:
+              - freeform
+              - function
   messages:
     serverHello:
       name: server.hello
@@ -262,155 +411,7 @@ components:
                 items:
                   type: object
                   additionalProperties: true
-              execution_context:
-                type: object
-                description: Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, or interaction_kind.
-                additionalProperties: false
-                properties:
-                  workspace_id:
-                    type: string
-                  project_id:
-                    type: string
-                  task_id:
-                    type: string
-                  run_id:
-                    type: string
-                  runner_id:
-                    type: string
-                  username:
-                    type: string
-                  endpoint_id:
-                    type: string
-                  agent_task_model:
-                    type: object
-                    additionalProperties: false
-                    required:
-                    - endpoint_id
-                    - resolved_model
-                    - setting_revision
-                    - resolved_at
-                    properties:
-                      endpoint_id:
-                        type: string
-                      endpoint_display_name:
-                        type: string
-                      resolved_model:
-                        type: string
-                      upstream_protocol:
-                        type: string
-                        enum:
-                        - openai_chat_completions
-                        - openai_responses
-                        - anthropic_messages
-                      setting_revision:
-                        type: string
-                      policy_decision_id:
-                        type: string
-                      resolved_at:
-                        type: string
-                        format: date-time
-                  resource_proxy:
-                    type: object
-                    additionalProperties: false
-                    required:
-                    - base_url
-                    properties:
-                      base_url:
-                        type: string
-                  api_base:
-                    type: string
-                  user_bearer_token:
-                    type: string
-                  wire_api:
-                    type: string
-                    enum:
-                    - openai_chat_completions
-                    - openai_responses
-                    - anthropic_messages
-                  model:
-                    type: string
-                  model_context_window:
-                    type: integer
-                    minimum: 1
-                  model_auto_compact_token_limit:
-                    type: integer
-                    minimum: 1
-                  model_limits:
-                    type: object
-                    additionalProperties: false
-                    properties:
-                      context_window:
-                        type: integer
-                        minimum: 1
-                      max_output_tokens:
-                        type: integer
-                        minimum: 1
-                  model_catalog:
-                    type: object
-                    additionalProperties: false
-                    properties:
-                      input_modalities:
-                        type: array
-                        items:
-                          type: string
-                      supports_search_tool:
-                        type: boolean
-                      supports_parallel_tool_calls:
-                        type: boolean
-                      apply_patch_tool_type:
-                        type: string
-                        enum:
-                        - freeform
-                        - function
-                  runner_session_scope:
-                    type: string
-                    enum:
-                      - agent_presence
-                      - task_execution
-                  task_inputs:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      properties:
-                        kind:
-                          type: string
-                          enum:
-                          - library_object
-                          - artifact
-                          - url
-                        library_id:
-                          type: string
-                        key:
-                          type: string
-                        task_id:
-                          type: string
-                        artifact_id:
-                          type: string
-                        url:
-                          type: string
-                        filename:
-                          type: string
-                        file_type:
-                          type: string
-                        file_size:
-                          type: integer
-                          minimum: 0
-                  credential_files:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - relative_path
-                      - content
-                      properties:
-                        relative_path:
-                          type: string
-                        content:
-                          type: string
-                        description:
-                          type: string
+              execution_context: *TaskExecutionContext
     serverRequestCancel:
       name: server.request.cancel
       payload:
@@ -453,6 +454,44 @@ components:
             format: date-time
           payload:
             type: object
+    serverTerminalStart:
+      name: server.terminal.start
+      payload:
+        type: object
+        required:
+        - type
+        - runner_session_id
+        - terminal_session_id
+        - timestamp
+        - payload
+        properties:
+          type:
+            const: server.terminal.start
+          runner_session_id:
+            type: string
+          terminal_session_id:
+            type: string
+          timestamp:
+            type: string
+            format: date-time
+          payload:
+            type: object
+            required:
+            - cols
+            - rows
+            - execution_context
+            properties:
+              cols:
+                type: integer
+                minimum: 20
+              rows:
+                type: integer
+                minimum: 5
+              shell:
+                type: string
+              cwd:
+                type: string
+              execution_context: *TaskExecutionContext
     serverTerminalAdopt:
       name: server.terminal.adopt
       payload:

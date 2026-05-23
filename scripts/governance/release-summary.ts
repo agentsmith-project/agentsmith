@@ -4,6 +4,13 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileS
 import { basename, dirname, join, resolve } from 'node:path';
 
 import {
+  AGENTSMITH_CANONICAL_REPO,
+  CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION,
+  validateAgentSmithReleaseContract,
+  type CurrentAgentSmithReleaseContract,
+  type CurrentArtifactProvenance,
+} from './current-release-boundary-schema';
+import {
   CURRENT_GATE_RESULT_FAILURE_CLASSES,
   CURRENT_GATE_RESULT_SCHEMA_VERSION,
   CURRENT_GATE_RESULT_STATUSES,
@@ -30,6 +37,27 @@ import { redactSensitiveText } from './redaction';
 
 export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
 
+export const AGENTSMITH_RELEASE_CONTRACT_PATH_ENV = 'AGENTSMITH_RELEASE_CONTRACT_PATH';
+
+export interface ReleaseContractProvenanceSummary {
+  producer_repo: string;
+  normalized_remote: string;
+  commit_sha: string;
+  artifact_uri: string;
+  generated_at: string;
+  generator_version: string;
+}
+
+export interface ReleaseContractSummary {
+  schema: typeof CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION;
+  path: string;
+  digest: string;
+  subject_digest: string;
+  release_id: string;
+  git_sha: string;
+  provenance: ReleaseContractProvenanceSummary;
+}
+
 export interface ReleaseSummary {
   schema: 'agentsmith_release_summary/v1';
   campaign_id: 'release-full';
@@ -47,6 +75,7 @@ export interface ReleaseSummary {
   summary_md_path: string;
   evidence_package: string;
   manual_operator_signoff: 'not_covered';
+  release_contract?: ReleaseContractSummary;
   deploy_check_snapshot?: ReleaseDeployCheckSnapshot;
   run_observability?: ReleaseRunObservability;
   generated_at: string;
@@ -127,6 +156,7 @@ const RELEASE_LATEST_POINTER_KEYS = new Set([
 ]);
 
 const GIT_COMMIT_HASH_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const SHA256_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 interface ParsedTerminalResult {
@@ -146,6 +176,7 @@ export interface WriteReleaseSummaryOptions {
   campaignRoot: string;
   latestPath?: string;
   writeLatest?: boolean;
+  releaseContractPath?: string;
   resolveGitSha?: () => string;
   observability?: ReleaseSummaryObservabilityInput;
 }
@@ -355,6 +386,14 @@ function renderReleaseObservabilityLines(observability?: ReleaseRunObservability
   ];
 }
 
+function renderReleaseContractReference(contract?: ReleaseContractSummary): string | null {
+  if (!contract) {
+    return null;
+  }
+  const shortDigest = contract.digest.length > 22 ? `${contract.digest.slice(0, 19)}...` : contract.digest;
+  return `${contract.release_id} ${shortDigest} (${basename(contract.path.replaceAll('\\', '/'))})`;
+}
+
 export function resolveCurrentGitSha(cwd = process.cwd()): string {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], {
     cwd,
@@ -394,6 +433,14 @@ function requireGitCommitHash(record: Record<string, unknown>, field: string, la
   const value = requireNonEmptyStringField(record, field, label);
   if (!GIT_COMMIT_HASH_PATTERN.test(value)) {
     throw new Error(`${label} ${field} must be a 40 or 64 character hex git commit hash.`);
+  }
+  return value;
+}
+
+function requireSha256Digest(record: Record<string, unknown>, field: string, label: string): string {
+  const value = requireNonEmptyStringField(record, field, label);
+  if (!SHA256_DIGEST_PATTERN.test(value)) {
+    throw new Error(`${label} ${field} must be sha256:<64 lowercase hex>.`);
   }
   return value;
 }
@@ -491,6 +538,62 @@ function buildDeployCheckSnapshot(campaignRoot: string, generatedAt: string): Re
   };
 }
 
+function resolveSummaryGitSha(resolveGitSha: (() => string) | undefined): string {
+  const gitSha = (resolveGitSha ?? resolveCurrentGitSha)().trim();
+  if (!GIT_COMMIT_HASH_PATTERN.test(gitSha)) {
+    throw new Error('release summary git sha must be a 40 or 64 character hex git commit hash.');
+  }
+  return gitSha;
+}
+
+function releaseContractValidationError(contractPath: string, failures: readonly { path: string; reason: string }[]): Error {
+  return new Error(
+    [
+      `release contract is invalid: ${contractPath}`,
+      ...failures.map((failure) => `${failure.path}: ${failure.reason}`),
+    ].join('; '),
+  );
+}
+
+function buildReleaseContractSummary(input: {
+  releaseContractPath: string;
+  resolveGitSha?: () => string;
+}): ReleaseContractSummary {
+  const contractPath = resolve(input.releaseContractPath);
+  const parsed = readJson(contractPath);
+  const validation = validateAgentSmithReleaseContract(parsed);
+  if (!validation.ok) {
+    throw releaseContractValidationError(contractPath, validation.failures);
+  }
+
+  const contract: CurrentAgentSmithReleaseContract = validation.value;
+  const provenance: CurrentArtifactProvenance = contract.artifact_provenance;
+  const gitSha = resolveSummaryGitSha(input.resolveGitSha);
+  if (contract.git_sha !== gitSha) {
+    throw new Error('release contract git_sha must match current release summary git sha.');
+  }
+  if (provenance.commit_sha !== gitSha) {
+    throw new Error('release contract artifact_provenance.commit_sha must match current release summary git sha.');
+  }
+
+  return {
+    schema: contract.schema_version,
+    path: contractPath,
+    digest: provenance.artifact_sha256,
+    subject_digest: provenance.subject_sha256,
+    release_id: contract.release_id,
+    git_sha: contract.git_sha,
+    provenance: {
+      producer_repo: provenance.producer_repo,
+      normalized_remote: provenance.normalized_remote,
+      commit_sha: provenance.commit_sha,
+      artifact_uri: provenance.artifact_uri,
+      generated_at: provenance.generated_at,
+      generator_version: provenance.generator_version,
+    },
+  };
+}
+
 function inferBlockedStep(status: CurrentGateResultStatus, summary: string): string | null {
   if (status === 'passed') {
     return null;
@@ -541,6 +644,7 @@ function nextActionForFailure(
 function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
   const deployCheckLines = renderDeployCheckLines(summary.deploy_check_snapshot)
     .map((line) => (line.startsWith('- ') ? `  ${line}` : `- ${line}`));
+  const releaseContractReference = renderReleaseContractReference(summary.release_contract);
   return [
     '# AgentSmith Release Readiness Summary',
     '',
@@ -549,6 +653,7 @@ function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
     `- summary: ${summary.summary_md_path}`,
     `- evidence: ${summary.evidence_package}`,
     `- manual_operator_signoff: ${summary.manual_operator_signoff}`,
+    ...(releaseContractReference ? [`- release_contract: ${releaseContractReference}`] : []),
     ...renderReleaseObservabilityLines(summary.run_observability).map((line) => `- ${line}`),
     ...deployCheckLines,
     '',
@@ -579,6 +684,12 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     campaignRoot,
     observability: options.observability,
   });
+  const releaseContractSummary = options.releaseContractPath
+    ? buildReleaseContractSummary({
+      releaseContractPath: options.releaseContractPath,
+      resolveGitSha: options.resolveGitSha,
+    })
+    : undefined;
 
   const summary: ReleaseSummary = {
     schema: 'agentsmith_release_summary/v1',
@@ -597,6 +708,7 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     summary_md_path: summaryMdPath,
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
+    ...(releaseContractSummary ? { release_contract: releaseContractSummary } : {}),
     deploy_check_snapshot: deployCheckSnapshot,
     run_observability: initialObservability,
     generated_at: generatedAt,
@@ -627,10 +739,7 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
 
   if (options.writeLatest !== false) {
     const latestPath = resolve(options.latestPath ?? defaultLatestPath());
-    const gitSha = (options.resolveGitSha ?? resolveCurrentGitSha)().trim();
-    if (!GIT_COMMIT_HASH_PATTERN.test(gitSha)) {
-      throw new Error('release latest pointer git_sha must be a 40 or 64 character hex git commit hash.');
-    }
+    const gitSha = releaseContractSummary?.git_sha ?? resolveSummaryGitSha(options.resolveGitSha);
     const latest: ReleaseLatestPointer = {
       schema: 'agentsmith_release_latest/v1',
       campaign_id: 'release-full',
@@ -671,6 +780,163 @@ function parseLatestPointer(path: string): ReleaseLatestPointer {
     throw new Error('release latest pointer campaign_run_id must match the campaign root basename.');
   }
   return latest as unknown as ReleaseLatestPointer;
+}
+
+function normalizeArtifactPointer(value: string): string {
+  return value.trim().replaceAll('\\', '/');
+}
+
+function decodeArtifactPointer(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function hasUriScheme(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value);
+}
+
+function hasLocalOrTraversalPath(value: string): boolean {
+  const decoded = decodeArtifactPointer(value);
+  return value.startsWith('/')
+    || /^[a-z]:\//iu.test(value)
+    || value === '.'
+    || value === '..'
+    || value.startsWith('./')
+    || value.startsWith('../')
+    || /(?:^|\/)\.{1,2}(?:\/|$)/u.test(decoded);
+}
+
+function isLocalArtifactUri(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const protocol = url.protocol.toLowerCase();
+  const hostname = url.hostname.toLowerCase();
+  return protocol === 'file:'
+    || protocol === 'local:'
+    || hostname === 'localhost'
+    || hostname === '127.0.0.1';
+}
+
+function isAgentSmithGitHubSourceUri(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const pathname = decodeArtifactPointer(url.pathname).toLowerCase();
+  if (hostname === 'github.com') {
+    return pathname === '/agentsmith-project/agentsmith'
+      || pathname === '/agentsmith-project/agentsmith.git'
+      || pathname.startsWith('/agentsmith-project/agentsmith/archive/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/blob/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/raw/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/tree/');
+  }
+  if (hostname === 'raw.githubusercontent.com' || hostname === 'codeload.github.com') {
+    return pathname === '/agentsmith-project/agentsmith'
+      || pathname.startsWith('/agentsmith-project/agentsmith/');
+  }
+  if (hostname === 'api.github.com') {
+    const repoPath = '/repos/agentsmith-project/agentsmith';
+    return pathname === `${repoPath}/tarball`
+      || pathname.startsWith(`${repoPath}/tarball/`)
+      || pathname === `${repoPath}/zipball`
+      || pathname.startsWith(`${repoPath}/zipball/`)
+      || pathname === `${repoPath}/contents`
+      || pathname.startsWith(`${repoPath}/contents/`)
+      || pathname === `${repoPath}/git`
+      || pathname.startsWith(`${repoPath}/git/`);
+  }
+  return false;
+}
+
+function isAgentSmithProductSourcePointer(value: string): boolean {
+  const decoded = decodeArtifactPointer(value).toLowerCase();
+  if (!hasUriScheme(decoded)) {
+    return /^(?:scripts|src|packages|docs)(?:\/|$)/u.test(decoded)
+      || decoded === 'package.json';
+  }
+  if (isAgentSmithGitHubSourceUri(value)) {
+    return true;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const agentSmithPath = `${url.hostname}${decodeArtifactPointer(url.pathname)}`.toLowerCase();
+  return /(?:^|\/)agentsmith\/(?:scripts|src|packages|docs)(?:\/|$)/u.test(agentSmithPath)
+    || /(?:^|\/)agentsmith\/package\.json$/u.test(agentSmithPath);
+}
+
+function requireRemoteCiArtifactUri(record: Record<string, unknown>, field: string, label: string): string {
+  const value = requireNonEmptyStringField(record, field, label);
+  const normalized = normalizeArtifactPointer(value);
+  if (
+    !hasUriScheme(normalized)
+    || isLocalArtifactUri(normalized)
+    || hasLocalOrTraversalPath(normalized)
+    || isAgentSmithProductSourcePointer(normalized)
+  ) {
+    throw new Error(`${label} ${field} must be a remote/CI artifact URI, not a local/relative AgentSmith source path.`);
+  }
+  return value;
+}
+
+function validateReleaseContractSummary(value: unknown): void {
+  const contract = requireRecord(value, 'release summary release_contract');
+  assertAllowedFields(contract, new Set([
+    'schema',
+    'path',
+    'digest',
+    'subject_digest',
+    'release_id',
+    'git_sha',
+    'provenance',
+  ]), 'release summary release_contract');
+
+  if (contract.schema !== CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION) {
+    throw new Error(`release summary release_contract schema must be ${CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION}.`);
+  }
+  requireNonEmptyStringField(contract, 'path', 'release summary release_contract');
+  requireSha256Digest(contract, 'digest', 'release summary release_contract');
+  requireSha256Digest(contract, 'subject_digest', 'release summary release_contract');
+  requireNonEmptyStringField(contract, 'release_id', 'release summary release_contract');
+  const gitSha = requireGitCommitHash(contract, 'git_sha', 'release summary release_contract');
+
+  const provenance = requireRecord(contract.provenance, 'release summary release_contract provenance');
+  assertAllowedFields(provenance, new Set([
+    'producer_repo',
+    'normalized_remote',
+    'commit_sha',
+    'artifact_uri',
+    'generated_at',
+    'generator_version',
+  ]), 'release summary release_contract provenance');
+  const producerRepo = requireNonEmptyStringField(provenance, 'producer_repo', 'release summary release_contract provenance');
+  const normalizedRemote = requireNonEmptyStringField(provenance, 'normalized_remote', 'release summary release_contract provenance');
+  const provenanceCommitSha = requireGitCommitHash(provenance, 'commit_sha', 'release summary release_contract provenance');
+  requireRemoteCiArtifactUri(provenance, 'artifact_uri', 'release summary release_contract provenance');
+  requireIsoTimestamp(provenance, 'generated_at', 'release summary release_contract provenance');
+  requireNonEmptyStringField(provenance, 'generator_version', 'release summary release_contract provenance');
+
+  if (producerRepo !== AGENTSMITH_CANONICAL_REPO || normalizedRemote !== AGENTSMITH_CANONICAL_REPO) {
+    throw new Error(`release summary release_contract provenance repo identity must be ${AGENTSMITH_CANONICAL_REPO}.`);
+  }
+  if (provenanceCommitSha !== gitSha) {
+    throw new Error('release summary release_contract provenance commit_sha must match release_contract.git_sha.');
+  }
 }
 
 function parseSummary(path: string): ReleaseSummary {
@@ -718,6 +984,9 @@ function parseSummary(path: string): ReleaseSummary {
   }
   if (summary.run_observability !== undefined) {
     validateReleaseRunObservability(summary.run_observability);
+  }
+  if (summary.release_contract !== undefined) {
+    validateReleaseContractSummary(summary.release_contract);
   }
   if (summary.deploy_check_snapshot !== undefined) {
     validateReleaseDeployCheckSnapshot(summary.deploy_check_snapshot);
@@ -873,6 +1142,13 @@ function readStatusFromCampaignRoot(args: {
         error: 'release latest pointer campaign_run_id must match release summary campaign_run_id.',
       };
     }
+    if (args.latest && summary.release_contract && summary.release_contract.git_sha !== args.latest.git_sha) {
+      return {
+        kind: 'malformed',
+        latestPath: args.latestPath,
+        error: 'release latest pointer git_sha must match release summary release_contract.git_sha.',
+      };
+    }
     const mismatch = summaryMatchesTerminal({
       campaignRoot,
       summaryPath,
@@ -989,6 +1265,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
   }
 
   const summary = status.summary;
+  const releaseContractReference = renderReleaseContractReference(summary.release_contract);
   if (summary.status !== 'passed') {
     return [
       'AgentSmith Release Status',
@@ -1005,6 +1282,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
         evidencePath: summary.evidence_package,
       }).trimEnd(),
       `Summary: ${summary.summary_md_path}`,
+      ...(releaseContractReference ? [`Release contract: ${releaseContractReference}`] : []),
       ...renderReleaseObservabilityLines(summary.run_observability),
       ...renderDeployCheckLines(summary.deploy_check_snapshot),
       `Next: ${renderHumanReleaseText(summary.next_action)}`,
@@ -1021,6 +1299,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     `Why: ${renderHumanReleaseText(summary.why)}`,
     `Summary: ${summary.summary_md_path}`,
     `Evidence: ${summary.evidence_package}`,
+    ...(releaseContractReference ? [`Release contract: ${releaseContractReference}`] : []),
     ...renderReleaseObservabilityLines(summary.run_observability),
     ...renderDeployCheckLines(summary.deploy_check_snapshot),
     `Next: ${renderHumanReleaseText(summary.next_action)}`,
@@ -1044,6 +1323,11 @@ function parseSummaryCliArgs(argv: readonly string[]): WriteReleaseSummaryOption
       index += 1;
     } else if (arg.startsWith('--latest-path=')) {
       options.latestPath = arg.slice('--latest-path='.length);
+    } else if (arg === '--release-contract' && next) {
+      options.releaseContractPath = next;
+      index += 1;
+    } else if (arg.startsWith('--release-contract=')) {
+      options.releaseContractPath = arg.slice('--release-contract='.length);
     } else if (arg === '--no-latest') {
       options.writeLatest = false;
     } else {
@@ -1055,11 +1339,13 @@ function parseSummaryCliArgs(argv: readonly string[]): WriteReleaseSummaryOption
   if (!campaignRoot?.trim()) {
     throw new Error('release summary requires --campaign-root or RELEASE_CAMPAIGN_ROOT.');
   }
+  const releaseContractPath = options.releaseContractPath ?? process.env[AGENTSMITH_RELEASE_CONTRACT_PATH_ENV];
 
   return {
     campaignRoot,
     latestPath: options.latestPath,
     writeLatest: options.writeLatest,
+    releaseContractPath: releaseContractPath?.trim() ? releaseContractPath : undefined,
   };
 }
 

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
+import type { CurrentAgentSmithReleaseContract } from '../current-release-boundary-schema';
 import {
   readReleaseStatus,
   renderReleaseStatus,
@@ -39,6 +40,7 @@ const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
 
 const VALID_TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const VALID_RELEASE_READY_GIT_SHA = 'abcdef0123456789abcdef0123456789abcdef01';
+const VALID_RELEASE_CONTRACT_FIXTURE = 'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json';
 const SENTINEL_PASS_ENV = {
   NEXT_PUBLIC_API_BASE: 'http://localhost:20000/api/v1',
   INTERNAL_EXECUTION_WS_BASE_URL: 'ws://localhost:20000/api/v1/execution/ws',
@@ -53,6 +55,20 @@ const SENTINEL_PASS_ENV = {
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function readValidReleaseContractFixture(): CurrentAgentSmithReleaseContract {
+  return JSON.parse(readFileSync(VALID_RELEASE_CONTRACT_FIXTURE, 'utf8')) as CurrentAgentSmithReleaseContract;
+}
+
+function writeReleaseContractFixture(
+  path: string,
+  mutate?: (contract: Record<string, unknown>) => void,
+): CurrentAgentSmithReleaseContract {
+  const contract = structuredClone(readValidReleaseContractFixture()) as unknown as Record<string, unknown>;
+  mutate?.(contract);
+  writeJson(path, contract);
+  return contract as unknown as CurrentAgentSmithReleaseContract;
 }
 
 function sha256(value: string): string {
@@ -470,6 +486,183 @@ describe('release readiness human entrypoints', () => {
       });
       expect(latest.automated_release_verdict).toBeUndefined();
       expect(latest.status).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('records an explicitly provided release contract as a short validated summary', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-contract-'));
+    const latestPath = join(root, 'latest.json');
+    const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');
+    try {
+      writeTerminalResult(root);
+      const contract = writeReleaseContractFixture(contractPath);
+
+      const summary = writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        releaseContractPath: contractPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      expect(summary.release_contract).toEqual({
+        schema: contract.schema_version,
+        path: contractPath,
+        digest: contract.artifact_provenance.artifact_sha256,
+        subject_digest: contract.artifact_provenance.subject_sha256,
+        release_id: contract.release_id,
+        git_sha: VALID_TEST_GIT_SHA,
+        provenance: {
+          producer_repo: contract.artifact_provenance.producer_repo,
+          normalized_remote: contract.artifact_provenance.normalized_remote,
+          commit_sha: VALID_TEST_GIT_SHA,
+          artifact_uri: contract.artifact_provenance.artifact_uri,
+          generated_at: contract.artifact_provenance.generated_at,
+          generator_version: contract.artifact_provenance.generator_version,
+        },
+      });
+      expect(JSON.stringify(summary)).not.toContain('workflow_name');
+      expect(JSON.stringify(summary)).not.toContain('run_attempt');
+      expect(JSON.stringify(summary)).not.toContain('generate-release-contract');
+      const shortContractReference = `${contract.release_id} ${contract.artifact_provenance.artifact_sha256.slice(0, 19)}... (${basename(contractPath)})`;
+      const summaryMarkdown = readFileSync(join(root, 'summary.md'), 'utf8');
+      expect(summaryMarkdown).toContain(`release_contract: ${shortContractReference}`);
+      expect(summaryMarkdown).not.toContain(contract.artifact_provenance.artifact_sha256);
+      expect(summaryMarkdown).not.toContain(contractPath);
+      expect(summaryMarkdown).not.toContain('workflow_name');
+
+      const status = readReleaseStatus({ latestPath });
+      expect(status.kind).toBe('ready');
+      const output = renderReleaseStatus(status);
+      expect(output).toContain(`Release contract: ${shortContractReference}`);
+      expect(output).not.toContain(contract.artifact_provenance.artifact_sha256);
+      expect(output).not.toContain(contractPath);
+      expect(output).not.toContain('workflow_name');
+      expect(output).not.toContain('run_attempt');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast for invalid explicit release contracts before writing summary output', () => {
+    const cases: Array<{
+      label: string;
+      mutate: (contract: Record<string, unknown>) => void;
+      expectedError: string;
+    }> = [
+      {
+        label: 'local artifact uri',
+        mutate: (contract) => {
+          const provenance = contract.artifact_provenance as Record<string, unknown>;
+          provenance.artifact_uri = 'file:///tmp/agentsmith-release-contract.json';
+        },
+        expectedError: 'artifact_provenance.artifact_uri must be a remote/CI artifact URI',
+      },
+      {
+        label: 'missing provenance',
+        mutate: (contract) => {
+          delete contract.artifact_provenance;
+        },
+        expectedError: 'artifact_provenance is required',
+      },
+      {
+        label: 'stale git sha',
+        mutate: () => undefined,
+        expectedError: 'release contract git_sha must match current release summary git sha',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const root = mkdtempSync(join(tmpdir(), `agentsmith-release-summary-contract-${testCase.label.replaceAll(' ', '-')}-`));
+      const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');
+      try {
+        writeTerminalResult(root);
+        writeReleaseContractFixture(contractPath, testCase.mutate);
+
+        expect(() => writeReleaseSummaryForCampaign({
+          campaignRoot: root,
+          latestPath: join(root, 'latest.json'),
+          releaseContractPath: contractPath,
+          resolveGitSha: () => testCase.label === 'stale git sha'
+            ? 'abcdef0123456789abcdef0123456789abcdef01'
+            : VALID_TEST_GIT_SHA,
+        }), testCase.label).toThrow(testCase.expectedError);
+        expect(existsSync(join(root, 'summary.json')), testCase.label).toBe(false);
+        expect(existsSync(join(root, 'summary.md')), testCase.label).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('fails closed when a cached release contract summary is malformed or stale against latest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-contract-cache-'));
+    const latestPath = join(root, 'latest.json');
+    const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');
+    try {
+      writeTerminalResult(root);
+      writeReleaseContractFixture(contractPath);
+      writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath,
+        releaseContractPath: contractPath,
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      const summaryPath = join(root, 'summary.json');
+      const validSummary = JSON.parse(readFileSync(summaryPath, 'utf8')) as Record<string, unknown>;
+      writeJson(summaryPath, {
+        ...validSummary,
+        release_contract: {
+          ...(validSummary.release_contract as Record<string, unknown>),
+          digest: 'sha256:not-a-digest',
+        },
+      });
+      const malformedStatus = readReleaseStatus({ latestPath });
+      expect(malformedStatus.kind).toBe('malformed');
+      if (malformedStatus.kind !== 'malformed') {
+        throw new Error('Expected malformed release contract summary cache to fail closed.');
+      }
+      expect(malformedStatus.error).toContain('release summary release_contract digest');
+
+      for (const artifactUri of [
+        '../agentsmith-release-contract.json',
+        'scripts/governance/release-summary.ts',
+        'https://api.github.com/repos/agentsmith-project/agentsmith/tarball/main',
+        'https://api.github.com/repos/agentsmith-project/agentsmith/git/trees/main',
+      ]) {
+        writeJson(summaryPath, {
+          ...validSummary,
+          release_contract: {
+            ...(validSummary.release_contract as Record<string, unknown>),
+            provenance: {
+              ...((validSummary.release_contract as Record<string, unknown>).provenance as Record<string, unknown>),
+              artifact_uri: artifactUri,
+            },
+          },
+        });
+        const sourcePointerStatus = readReleaseStatus({ latestPath });
+        expect(sourcePointerStatus.kind, artifactUri).toBe('malformed');
+        if (sourcePointerStatus.kind !== 'malformed') {
+          throw new Error(`Expected cached artifact_uri source pointer ${artifactUri} to fail closed.`);
+        }
+        expect(sourcePointerStatus.error).toContain('release summary release_contract provenance artifact_uri');
+        expect(sourcePointerStatus.error).toContain('remote/CI artifact URI');
+      }
+
+      writeJson(summaryPath, validSummary);
+      const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
+      writeJson(latestPath, {
+        ...latest,
+        git_sha: 'abcdef0123456789abcdef0123456789abcdef01',
+      });
+      const staleStatus = readReleaseStatus({ latestPath });
+      expect(staleStatus.kind).toBe('malformed');
+      if (staleStatus.kind !== 'malformed') {
+        throw new Error('Expected stale release contract summary cache to fail closed.');
+      }
+      expect(staleStatus.error).toContain('release_contract.git_sha');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

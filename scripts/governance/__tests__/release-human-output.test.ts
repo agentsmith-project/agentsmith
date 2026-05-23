@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { renderReleaseStatus, type ReleaseSummary } from '../release-summary';
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
+import { CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION } from '../current-release-boundary-schema';
 
 function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary {
   const campaignRoot = overrides.campaign_root ?? 'artifacts/release-runs/release-ready-test';
@@ -163,6 +164,44 @@ describe('release human output', () => {
       expect(output).not.toContain('Evidence package:');
       expect(output).not.toContain('Terminal result:');
       expectCleanDefaultHumanOutput(output);
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('renders release contract references without full digests or absolute paths', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-human-contract-'));
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const contractPath = join(campaignRoot, 'inputs', 'agentsmith-release-contract.json');
+    try {
+      const output = renderReleaseStatus({
+        kind: 'ready',
+        latestPath: 'artifacts/release-runs/latest.json',
+        summary: releaseSummary({
+          campaign_root: campaignRoot,
+          evidence_package: campaignRoot,
+          release_contract: {
+            schema: CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION,
+            path: contractPath,
+            digest,
+            subject_digest: `sha256:${'b'.repeat(64)}`,
+            release_id: 'release-2026.05.23',
+            git_sha: '0123456789abcdef0123456789abcdef01234567',
+            provenance: {
+              producer_repo: 'github.com/agentsmith-project/agentsmith',
+              normalized_remote: 'github.com/agentsmith-project/agentsmith',
+              commit_sha: '0123456789abcdef0123456789abcdef01234567',
+              artifact_uri: 'gh-artifact://agentsmith/release-contract/10001/release-contract.json',
+              generated_at: '2026-04-25T12:00:00.000Z',
+              generator_version: 'agentsmith-release-contract/1.0.0',
+            },
+          },
+        }),
+      });
+
+      expect(output).toContain(`Release contract: release-2026.05.23 ${digest.slice(0, 19)}... (${basename(contractPath)})`);
+      expect(output).not.toContain(digest);
+      expect(output).not.toContain(contractPath);
     } finally {
       rmSync(campaignRoot, { recursive: true, force: true });
     }

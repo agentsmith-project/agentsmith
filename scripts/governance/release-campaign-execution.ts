@@ -42,6 +42,7 @@ import {
   writeCampaignGateResult,
 } from './release-campaign-io';
 import {
+  AGENTSMITH_RELEASE_CONTRACT_PATH_ENV,
   isDefaultReleaseRunsCampaignRoot,
   type ReleaseSummaryObservabilityInput,
   writeReleaseSummaryForCampaign,
@@ -977,6 +978,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
       writeReleaseSummaryForCampaign({
         campaignRoot,
         writeLatest: shouldWriteLatest,
+        releaseContractPath: env[AGENTSMITH_RELEASE_CONTRACT_PATH_ENV]?.trim() || undefined,
         observability: campaignObservability({
           startedMs: campaignStartedMs,
           stages: stageObservations,

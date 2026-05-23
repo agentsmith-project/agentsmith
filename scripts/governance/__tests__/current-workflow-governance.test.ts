@@ -288,7 +288,7 @@ function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId:
 
   for (const step of steps) {
     const stepRecord = asRecord(step);
-    if (stepRecord.uses !== 'actions/upload-artifact@v4') {
+    if (stepRecord.uses !== 'actions/upload-artifact@v7') {
       continue;
     }
 

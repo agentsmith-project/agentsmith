@@ -30,10 +30,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24.14.1
           cache: npm
@@ -49,7 +49,7 @@ jobs:
 
       - name: Upload fast gate artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gate-fast-artifacts
           if-no-files-found: ignore
@@ -66,10 +66,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24.14.1
           cache: npm
@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload default gate artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gate-default-artifacts
           if-no-files-found: ignore
@@ -103,10 +103,10 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24.14.1
           cache: npm
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload visual artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lane-visual-artifacts
           if-no-files-found: ignore
@@ -144,10 +144,10 @@ jobs:
       BACKEND_REAL_API_KEY: ${{ secrets.BACKEND_REAL_API_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24.14.1
           cache: npm
@@ -179,7 +179,7 @@ jobs:
 
       - name: Upload backend-real core artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lane-backend-real-core-artifacts
           if-no-files-found: ignore

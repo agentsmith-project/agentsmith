@@ -19,6 +19,7 @@ import {
 
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
+const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
 
 const PRODUCT_IMAGES = [
   {
@@ -152,6 +153,7 @@ function buildInput(): AgentSmithReleaseContractGeneratorInput {
     ci_provenance: {
       producer_repo: 'github.com/agentsmith-project/agentsmith',
       normalized_remote: 'github.com/agentsmith-project/agentsmith',
+      commit_sha: GIT_SHA,
       workflow_name: 'release-contract',
       run_id: '10001',
       run_attempt: '1',
@@ -166,7 +168,7 @@ function buildInput(): AgentSmithReleaseContractGeneratorInput {
 }
 
 function expectThrowsWithMessage(input: AgentSmithReleaseContractGeneratorInput, expected: string): void {
-  expect(() => generateAgentSmithReleaseContract(input)).toThrow(expected);
+  expect(() => generateAgentSmithReleaseContract(input, SOURCE_OPTIONS)).toThrow(expected);
 }
 
 function cloneAsRecord<T>(value: T): Record<string, unknown> {
@@ -182,7 +184,7 @@ function releaseContractOmitArtifactShaProjectionSubject(contract: CurrentAgentS
 
 describe('release contract generator', () => {
   it('generates a validated contract with mechanical image inventory and deterministic provenance hashes', () => {
-    const contract = generateAgentSmithReleaseContract(buildInput());
+    const contract = generateAgentSmithReleaseContract(buildInput(), SOURCE_OPTIONS);
 
     expect(contract.deploy_image_inventory).toEqual([
       { ...PRODUCT_IMAGES[0], source: 'product_images' },
@@ -203,7 +205,7 @@ describe('release contract generator', () => {
   });
 
   it('records artifact_sha256 as the omit-artifact-sha projection digest', () => {
-    const contract = generateAgentSmithReleaseContract(buildInput());
+    const contract = generateAgentSmithReleaseContract(buildInput(), SOURCE_OPTIONS);
     const projectionDigest = sha256Digest(
       canonicalReleaseBoundaryJson(releaseContractOmitArtifactShaProjectionSubject(contract)),
     );
@@ -259,6 +261,30 @@ describe('release contract generator', () => {
     expectThrowsWithMessage(input, 'ci_provenance.commit_sha must match git_sha');
   });
 
+  it('rejects missing ci provenance commit sha', () => {
+    const input = buildInput();
+    delete (input.ci_provenance as Partial<AgentSmithReleaseContractGeneratorInput['ci_provenance']>).commit_sha;
+
+    expectThrowsWithMessage(input, 'ci_provenance.commit_sha must be a non-empty string');
+  });
+
+  it('rejects release git sha drift from the bound source git sha', () => {
+    const input = buildInput();
+
+    expect(() => generateAgentSmithReleaseContract(input, {
+      sourceGitSha: 'ffffffffffffffffffffffffffffffffffffffff',
+    })).toThrow('git_sha must match source git sha');
+  });
+
+  it('requires an explicit source git sha binding', () => {
+    const input = buildInput();
+
+    expect(() => generateAgentSmithReleaseContract(
+      input,
+      undefined as unknown as typeof SOURCE_OPTIONS,
+    )).toThrow('sourceGitSha is required');
+  });
+
   it('rejects local artifact URIs and provenance repo mismatch through the shared validator', () => {
     const localUriInput = buildInput();
     localUriInput.ci_provenance.artifact_uri =
@@ -275,6 +301,16 @@ describe('release contract generator', () => {
     input.openapi_digest = `sha256:${'9'.repeat(64)}`;
 
     expectThrowsWithMessage(input, 'openapi_digest must match openapi_subject canonical digest');
+  });
+
+  it('rejects digest-only OpenAPI and AsyncAPI generator input', () => {
+    const openapiDigestOnly = buildInput();
+    delete openapiDigestOnly.openapi_subject;
+    expectThrowsWithMessage(openapiDigestOnly, 'openapi_subject is required');
+
+    const asyncapiDigestOnly = buildInput();
+    delete asyncapiDigestOnly.asyncapi_subject;
+    expectThrowsWithMessage(asyncapiDigestOnly, 'asyncapi_subject is required');
   });
 
   it('does not accept caller-provided inventory or artifact provenance', () => {
@@ -295,9 +331,10 @@ describe('release contract generator', () => {
     const input = buildInput() as Partial<AgentSmithReleaseContractGeneratorInput>;
     delete input.product_images;
 
-    expect(() => generateAgentSmithReleaseContract(input as AgentSmithReleaseContractGeneratorInput)).toThrow(
-      'product_images must be an array',
-    );
+    expect(() => generateAgentSmithReleaseContract(
+      input as AgentSmithReleaseContractGeneratorInput,
+      SOURCE_OPTIONS,
+    )).toThrow('product_images must be an array');
   });
 });
 
@@ -311,6 +348,9 @@ describe('release contract CLI', () => {
     const stderr: string[] = [];
     const exitCode = runReleaseContractCli({
       argv: ['--input', inputPath, '--output', outputPath],
+      env: {
+        AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA: GIT_SHA,
+      },
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
@@ -337,12 +377,36 @@ describe('release contract CLI', () => {
     const stderr: string[] = [];
     const exitCode = runReleaseContractCli({
       argv: ['--input', inputPath, '--output', outputPath],
+      env: {
+        AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA: GIT_SHA,
+      },
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
 
     expect(exitCode).toBe(1);
     expect(stderr.join('\n')).toContain('image must be pinned by digest');
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it('uses the env source git sha and does not write output when it mismatches input git_sha', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-'));
+    const inputPath = join(root, 'input.json');
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+    writeFileSync(inputPath, `${JSON.stringify(buildInput(), null, 2)}\n`);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractCli({
+      argv: ['--input', inputPath, '--output', outputPath],
+      env: {
+        AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA: 'ffffffffffffffffffffffffffffffffffffffff',
+      },
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('git_sha must match source git sha');
     expect(existsSync(outputPath)).toBe(false);
   });
 });

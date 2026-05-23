@@ -1583,6 +1583,7 @@ describe('verify impact selector', () => {
 
   it.each([
     'scripts/governance/release-ready.ts',
+    'scripts/governance/release-contract.ts',
     'scripts/governance/run-release-aggregate.ts',
     'scripts/governance/release-campaign-runner.ts',
     'scripts/governance/release-campaign-execution.ts',

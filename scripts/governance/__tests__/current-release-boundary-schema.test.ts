@@ -69,6 +69,13 @@ function rehashArtifactProvenanceContainer(record: Record<string, unknown>): voi
   artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
 }
 
+function rehashReleaseContractProjection(record: Record<string, unknown>): void {
+  const projection = structuredClone(record);
+  const projectionProvenance = artifactProvenanceOf(projection);
+  delete projectionProvenance.artifact_sha256;
+  artifactProvenanceOf(record).artifact_sha256 = sha256Digest(canonicalReleaseBoundaryJson(projection));
+}
+
 const GITHUB_API_SOURCE_ROOT_ENDPOINTS = [
   'https://api.github.com/repos/agentsmith-project/agentsmith/cont%65nts?ref=main',
   'https://api.github.com/repos/agentsmith-project/agentsmith/contents?ref=main',
@@ -361,6 +368,41 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateAgentSmithReleaseContract(mutuallyExclusiveRemote),
       'normalized_remote must already be canonical github.com/agentsmith-project/agentsmith',
+    );
+  });
+
+  it('rejects release contract artifact projection digest drift', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    artifactProvenanceOf(contract).artifact_sha256 = `sha256:${'9'.repeat(64)}`;
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'artifact projection mismatch',
+    );
+  });
+
+  it('rejects release contracts whose provenance commit differs from git_sha after projection rehash', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    artifactProvenanceOf(contract).commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+    rehashReleaseContractProjection(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'artifact_provenance.commit_sha must match git_sha',
+    );
+  });
+
+  it('rejects release contracts whose deploy template package provenance commit differs from git_sha after rehash', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const deployTemplatePackage = contract.deploy_template_package as Record<string, unknown>;
+    artifactProvenanceOf(deployTemplatePackage).commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+    rehashArtifactProvenanceContainer(deployTemplatePackage);
+    rehashArtifactProvenanceContainer(contract);
+    rehashReleaseContractProjection(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'deploy_template_package.artifact_provenance.commit_sha must match git_sha',
     );
   });
 

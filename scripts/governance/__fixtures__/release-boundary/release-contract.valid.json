@@ -163,7 +163,7 @@
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "artifact_sha256": "sha256:eac0a31f91299b11b63c05deb483df45d9ef3650667e077a5bf0722a1c4f7489",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

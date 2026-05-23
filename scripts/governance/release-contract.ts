@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -30,7 +31,7 @@ const REQUIRED_GENERATOR_ARRAY_FIELDS = [
 export interface AgentSmithReleaseContractCiProvenanceInput {
   producer_repo: string;
   normalized_remote: string;
-  commit_sha?: string;
+  commit_sha: string;
   subject_uri?: string;
   workflow_name: string;
   run_id: string;
@@ -61,8 +62,13 @@ export interface AgentSmithReleaseContractGeneratorInput {
   ci_provenance: AgentSmithReleaseContractCiProvenanceInput;
 }
 
+export interface AgentSmithReleaseContractGenerationOptions {
+  sourceGitSha: string;
+}
+
 interface ReleaseContractCliOptions {
   argv?: readonly string[];
+  env?: Readonly<Record<string, string | undefined>>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
 }
@@ -81,8 +87,10 @@ class ReleaseContractGenerationError extends Error {
 
 export function generateAgentSmithReleaseContract(
   input: AgentSmithReleaseContractGeneratorInput,
+  options: AgentSmithReleaseContractGenerationOptions,
 ): CurrentAgentSmithReleaseContract {
-  const earlyFailures = validateGeneratorInput(input);
+  const sourceGitSha = resolveRequiredSourceGitSha(options);
+  const earlyFailures = validateGeneratorInput(input, sourceGitSha);
   if (earlyFailures.length > 0) {
     throw new ReleaseContractGenerationError(earlyFailures);
   }
@@ -111,13 +119,16 @@ export function generateAgentSmithReleaseContract(
 
 export function runReleaseContractCli(options: ReleaseContractCliOptions = {}): number {
   const argv = options.argv ?? process.argv.slice(2);
+  const env = options.env ?? process.env;
   const stdout = options.stdout ?? ((message: string) => console.log(message));
   const stderr = options.stderr ?? ((message: string) => console.error(message));
 
   try {
     const config = parseCliArgs(argv);
     const input = readInput(config.inputPath);
-    const contract = generateAgentSmithReleaseContract(input);
+    const contract = generateAgentSmithReleaseContract(input, {
+      sourceGitSha: resolveCliSourceGitSha(env),
+    });
     writeJsonAtomically(config.outputPath, contract);
     stdout(`release contract: ${config.outputPath}`);
     return 0;
@@ -178,7 +189,7 @@ function buildArtifactProvenance(
     provenance_kind: 'ci_artifact',
     producer_repo: input.ci_provenance.producer_repo,
     normalized_remote: input.ci_provenance.normalized_remote,
-    commit_sha: input.git_sha,
+    commit_sha: input.ci_provenance.commit_sha,
     subject_name: 'agentsmith-release-contract',
     subject_sha256: subjectSha256,
     subject_uri: input.ci_provenance.subject_uri ?? 'release-contract.json',
@@ -206,32 +217,32 @@ function resolveSubjectDigest(
   const digest = input[digestKey];
   const subject = input[subjectKey];
 
-  if (subject !== undefined) {
-    const subjectDigest = sha256Digest(canonicalReleaseBoundaryJson(subject));
-    if (digest !== undefined && digest !== subjectDigest) {
-      throw new ReleaseContractGenerationError([
-        {
-          path: digestKey,
-          reason: `${digestKey} must match ${subjectKey} canonical digest ${subjectDigest}.`,
-        },
-      ]);
-    }
-    return subjectDigest;
-  }
-
-  if (digest === undefined) {
+  if (subject === undefined) {
     throw new ReleaseContractGenerationError([
       {
-        path: digestKey,
-        reason: `${digestKey} or ${subjectKey} is required.`,
+        path: subjectKey,
+        reason: `${subjectKey} is required.`,
       },
     ]);
   }
 
-  return digest;
+  const subjectDigest = sha256Digest(canonicalReleaseBoundaryJson(subject));
+  if (digest !== undefined && digest !== subjectDigest) {
+    throw new ReleaseContractGenerationError([
+      {
+        path: digestKey,
+        reason: `${digestKey} must match ${subjectKey} canonical digest ${subjectDigest}.`,
+      },
+    ]);
+  }
+
+  return subjectDigest;
 }
 
-function validateGeneratorInput(input: AgentSmithReleaseContractGeneratorInput): CurrentReleaseBoundaryValidationFailure[] {
+function validateGeneratorInput(
+  input: AgentSmithReleaseContractGeneratorInput,
+  sourceGitSha: string,
+): CurrentReleaseBoundaryValidationFailure[] {
   const failures: CurrentReleaseBoundaryValidationFailure[] = [];
   const record = isRecord(input) ? input : null;
   if (!record) {
@@ -273,8 +284,19 @@ function validateGeneratorInput(input: AgentSmithReleaseContractGeneratorInput):
     return failures;
   }
   const gitSha = typeof record.git_sha === 'string' ? record.git_sha : undefined;
+  if (gitSha && gitSha !== sourceGitSha) {
+    failures.push({
+      path: 'git_sha',
+      reason: 'git_sha must match source git sha.',
+    });
+  }
   const ciCommitSha = input.ci_provenance.commit_sha;
-  if (typeof ciCommitSha === 'string' && gitSha && ciCommitSha !== gitSha) {
+  if (typeof ciCommitSha !== 'string' || ciCommitSha.trim().length === 0) {
+    failures.push({
+      path: 'ci_provenance.commit_sha',
+      reason: 'ci_provenance.commit_sha must be a non-empty string.',
+    });
+  } else if (gitSha && ciCommitSha !== gitSha) {
     failures.push({
       path: 'ci_provenance.commit_sha',
       reason: 'ci_provenance.commit_sha must match git_sha.',
@@ -303,6 +325,47 @@ function validateGeneratorInput(input: AgentSmithReleaseContractGeneratorInput):
   }
 
   return failures;
+}
+
+function resolveRequiredSourceGitSha(options: AgentSmithReleaseContractGenerationOptions): string {
+  if (!isRecord(options) || typeof options.sourceGitSha !== 'string' || options.sourceGitSha.trim().length === 0) {
+    throw new ReleaseContractGenerationError([
+      {
+        path: 'sourceGitSha',
+        reason: 'sourceGitSha is required.',
+      },
+    ]);
+  }
+
+  return options.sourceGitSha.trim();
+}
+
+function resolveCliSourceGitSha(env: Readonly<Record<string, string | undefined>>): string {
+  const envSourceGitSha = firstNonEmptyString(
+    env.AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA,
+    env.GITHUB_SHA,
+  );
+  if (envSourceGitSha) {
+    return envSourceGitSha;
+  }
+
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    throw new Error('sourceGitSha is required; set AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA or GITHUB_SHA.');
+  }
+}
+
+function firstNonEmptyString(...values: readonly (string | undefined)[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
 }
 
 function digestOmitArtifactShaProjection(value: CurrentAgentSmithReleaseContract): string {

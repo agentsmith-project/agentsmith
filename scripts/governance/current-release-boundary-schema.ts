@@ -631,7 +631,7 @@ export function validateAgentSmithReleaseContract(
   validateLiteral(value.schema_version, CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION, 'schema_version', failures);
   validateLiteral(value.product, 'agentsmith', 'product', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
-  validateGitSha(value.git_sha, 'git_sha', failures);
+  const gitSha = validateGitSha(value.git_sha, 'git_sha', failures);
   const deployTemplateDigest = validateDigest(value.deploy_template_digest, 'deploy_template_digest', failures);
   validateDigest(value.openapi_digest, 'openapi_digest', failures);
   validateDigest(value.asyncapi_digest, 'asyncapi_digest', failures);
@@ -660,7 +660,7 @@ export function validateAgentSmithReleaseContract(
     failures,
   );
   validateDeployImageInventory(value.deploy_image_inventory, imageRegistry, failures);
-  validateReleaseContractDeployTemplatePackage(value, deployTemplateDigest, failures);
+  validateReleaseContractDeployTemplatePackage(value, deployTemplateDigest, gitSha, failures);
   validateRequiredProductFlows(value.required_product_flows, 'required_product_flows', failures);
   validateTargetProfiles(value.target_profiles, failures);
 
@@ -678,9 +678,64 @@ export function validateAgentSmithReleaseContract(
       fullSubjectContainer: value,
       allowedKinds: ['ci_artifact'],
     }, failures);
+    validateReleaseContractProvenanceCommitSha(value, gitSha, failures);
+    validateReleaseContractArtifactProjectionDigest(value, failures);
   }
 
   return finish(value as CurrentAgentSmithReleaseContract, failures);
+}
+
+function validateReleaseContractProvenanceCommitSha(
+  value: Record<string, unknown>,
+  gitSha: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!gitSha || !isRecord(value.artifact_provenance)) {
+    return;
+  }
+
+  const commitSha = value.artifact_provenance.commit_sha;
+  if (typeof commitSha === 'string' && GIT_SHA_PATTERN.test(commitSha) && commitSha !== gitSha) {
+    failures.push({
+      path: 'artifact_provenance.commit_sha',
+      reason: 'artifact_provenance.commit_sha must match git_sha.',
+    });
+  }
+}
+
+function validateReleaseContractArtifactProjectionDigest(
+  value: Record<string, unknown>,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const provenance = value.artifact_provenance;
+  if (!isRecord(provenance)) {
+    return;
+  }
+
+  const artifactSha256 = provenance.artifact_sha256;
+  if (typeof artifactSha256 !== 'string' || !DIGEST_PATTERN.test(artifactSha256)) {
+    return;
+  }
+
+  const expectedArtifactSha256 = sha256Digest(
+    canonicalReleaseBoundaryJson(omitReleaseContractArtifactSha256ForProjection(value)),
+  );
+  if (artifactSha256 !== expectedArtifactSha256) {
+    failures.push({
+      path: 'artifact_provenance.artifact_sha256',
+      reason: `artifact projection mismatch: artifact_provenance.artifact_sha256 must match ${expectedArtifactSha256}.`,
+    });
+  }
+}
+
+function omitReleaseContractArtifactSha256ForProjection(value: Record<string, unknown>): unknown {
+  const clone = structuredClone(value);
+  const provenance = clone.artifact_provenance;
+  if (isRecord(provenance)) {
+    delete provenance.artifact_sha256;
+  }
+
+  return clone;
 }
 
 export function validateDeployTemplatePackage(
@@ -1603,6 +1658,7 @@ function validateDeployImageInventory(
 function validateReleaseContractDeployTemplatePackage(
   contract: Record<string, unknown>,
   deployTemplateDigest: string | undefined,
+  gitSha: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (!hasOwn(contract, 'deploy_template_package')) {
@@ -1636,6 +1692,18 @@ function validateReleaseContractDeployTemplatePackage(
     failures.push({
       path: 'deploy_template_package.manifest_sha256',
       reason: 'deploy_template_digest must match deploy_template_package.manifest_sha256.',
+    });
+  }
+
+  if (!gitSha || !isRecord(value) || !isRecord(value.artifact_provenance)) {
+    return;
+  }
+
+  const commitSha = value.artifact_provenance.commit_sha;
+  if (typeof commitSha === 'string' && GIT_SHA_PATTERN.test(commitSha) && commitSha !== gitSha) {
+    failures.push({
+      path: 'deploy_template_package.artifact_provenance.commit_sha',
+      reason: 'deploy_template_package.artifact_provenance.commit_sha must match git_sha.',
     });
   }
 }

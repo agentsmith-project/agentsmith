@@ -7,7 +7,10 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
-import type { CurrentAgentSmithReleaseContract } from '../current-release-boundary-schema';
+import {
+  canonicalReleaseBoundaryJson,
+  type CurrentAgentSmithReleaseContract,
+} from '../current-release-boundary-schema';
 import {
   readReleaseStatus,
   renderReleaseStatus,
@@ -73,6 +76,14 @@ function writeReleaseContractFixture(
 
 function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function rehashReleaseContractProjection(contract: Record<string, unknown>): void {
+  const projection = structuredClone(contract);
+  const projectionProvenance = projection.artifact_provenance as Record<string, unknown>;
+  delete projectionProvenance.artifact_sha256;
+  (contract.artifact_provenance as Record<string, unknown>).artifact_sha256 =
+    sha256(canonicalReleaseBoundaryJson(projection));
 }
 
 type PrecheckOperationStatus = 'reused' | 'started';
@@ -556,6 +567,25 @@ describe('release readiness human entrypoints', () => {
         mutate: (contract) => {
           const provenance = contract.artifact_provenance as Record<string, unknown>;
           provenance.artifact_uri = 'file:///tmp/agentsmith-release-contract.json';
+          rehashReleaseContractProjection(contract);
+        },
+        expectedError: 'artifact_provenance.artifact_uri must be a remote/CI artifact URI',
+      },
+      {
+        label: 'localhost artifact uri',
+        mutate: (contract) => {
+          const provenance = contract.artifact_provenance as Record<string, unknown>;
+          provenance.artifact_uri = 'http://localhost/artifacts/agentsmith-release-contract.json';
+          rehashReleaseContractProjection(contract);
+        },
+        expectedError: 'artifact_provenance.artifact_uri must be a remote/CI artifact URI',
+      },
+      {
+        label: 'local scheme artifact uri',
+        mutate: (contract) => {
+          const provenance = contract.artifact_provenance as Record<string, unknown>;
+          provenance.artifact_uri = 'local://release-contract/agentsmith-release-contract.json';
+          rehashReleaseContractProjection(contract);
         },
         expectedError: 'artifact_provenance.artifact_uri must be a remote/CI artifact URI',
       },

@@ -2100,7 +2100,7 @@ function validateRemoteCiArtifactUri(
   const normalized = normalizeArtifactPointer(value);
   if (
     !hasUriScheme(normalized)
-    || normalized.startsWith('file://')
+    || isLocalArtifactUri(normalized)
     || isLocalOrTraversalPath(normalized)
     || isAgentSmithProductSourcePointer(normalized)
   ) {
@@ -2140,6 +2140,22 @@ function normalizeArtifactPointer(value: string): string {
 
 function hasUriScheme(value: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value);
+}
+
+function isLocalArtifactUri(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const protocol = url.protocol.toLowerCase();
+  const hostname = url.hostname.toLowerCase();
+  return protocol === 'file:'
+    || protocol === 'local:'
+    || hostname === 'localhost'
+    || hostname === '127.0.0.1';
 }
 
 function isLocalOrTraversalPath(value: string): boolean {

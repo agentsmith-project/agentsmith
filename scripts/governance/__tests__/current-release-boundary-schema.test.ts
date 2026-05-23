@@ -272,6 +272,22 @@ describe('current release boundary schema', () => {
   );
 
   it.each([
+    'http://localhost/artifacts/agentsmith-deploy-template-package.tgz',
+    'http://127.0.0.1/artifacts/agentsmith-deploy-template-package.tgz',
+    'local://deploy-template-package/agentsmith-deploy-template-package.tgz',
+  ])('rejects deploy template package local package_uri and artifact_uri %s', (packageUri) => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    packageRecord.package_uri = packageUri;
+    artifactProvenanceOf(packageRecord).artifact_uri = packageUri;
+    rehashArtifactProvenanceContainer(packageRecord);
+
+    const result = validateDeployTemplatePackage(packageRecord);
+
+    expectInvalid(result, 'package_uri must be a remote/CI artifact URI');
+    expectInvalid(result, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
+  });
+
+  it.each([
     'https://api.github.com/repos/agentsmith-project/agentsmith/git/blobs/0123456789abcdef0123456789abcdef01234567',
     'https://api.github.com/repos/agentsmith-project/agentsmith/git/trees/0123456789abcdef0123456789abcdef01234567',
     'https://api.github.com/repos/agentsmith-project/agentsmith/git/refs/heads/main',
@@ -408,10 +424,14 @@ describe('current release boundary schema', () => {
 
   it.each([
     'file:///home/percy/works/mbos-v1/agentsmith/release-contract.json',
+    'http://localhost/artifacts/agentsmith-release-contract.json',
+    'http://127.0.0.1/artifacts/agentsmith-release-contract.json',
+    'local://release-contract/agentsmith-release-contract.json',
     'https://github.com/agentsmith-project/agentsmith/archive/0123456789abcdef0123456789abcdef01234567.tar.gz',
   ])('rejects release contract source artifact_uri %s', (artifactUri) => {
     const contract = cloneFixture('release-contract.valid.json');
     artifactProvenanceOf(contract).artifact_uri = artifactUri;
+    rehashReleaseContractProjection(contract);
 
     expectInvalid(
       validateAgentSmithReleaseContract(contract),

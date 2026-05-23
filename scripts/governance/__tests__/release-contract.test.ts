@@ -296,6 +296,17 @@ describe('release contract generator', () => {
     expectThrowsWithMessage(repoMismatchInput, 'canonical repo identity must be github.com/agentsmith-project/agentsmith');
   });
 
+  it.each([
+    'http://localhost/artifacts/agentsmith-release-contract.json',
+    'http://127.0.0.1/artifacts/agentsmith-release-contract.json',
+    'local://release-contract/agentsmith-release-contract.json',
+  ])('rejects local ci_provenance artifact_uri %s through the shared validator', (artifactUri) => {
+    const input = buildInput();
+    input.ci_provenance.artifact_uri = artifactUri;
+
+    expectThrowsWithMessage(input, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI');
+  });
+
   it('rejects OpenAPI and AsyncAPI subject hash mismatch', () => {
     const input = buildInput();
     input.openapi_digest = `sha256:${'9'.repeat(64)}`;

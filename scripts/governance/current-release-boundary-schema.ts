@@ -5,6 +5,7 @@ import { findCurrentGateDefinitionById } from './current-gate-manifest';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
 export const CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;
+export const CURRENT_DEPLOY_TEMPLATE_PACKAGE_SCHEMA_VERSION = 'agentsmith.deploy-template-package/v1' as const;
 export const CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION = 'agentsmith.substrate-connection.truth/v1' as const;
 export const CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION = 'agentsmith.release-kit-evidence/v1' as const;
 export const CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION =
@@ -130,6 +131,14 @@ export interface CurrentArtifactProvenance {
   };
 }
 
+export interface CurrentDeployTemplatePackage {
+  schema_version: typeof CURRENT_DEPLOY_TEMPLATE_PACKAGE_SCHEMA_VERSION;
+  package_uri: string;
+  package_sha256: string;
+  manifest_sha256: string;
+  artifact_provenance: CurrentArtifactProvenance;
+}
+
 export interface CurrentAgentSmithReleaseContract {
   schema_version: typeof CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION;
   product: 'agentsmith';
@@ -140,6 +149,7 @@ export interface CurrentAgentSmithReleaseContract {
   release_kit_prerequisite_images: readonly CurrentReleaseImage[];
   deploy_image_inventory: readonly CurrentReleaseInventoryImage[];
   deploy_template_digest: string;
+  deploy_template_package: CurrentDeployTemplatePackage;
   openapi_digest: string;
   asyncapi_digest: string;
   required_product_flows: readonly string[];
@@ -323,6 +333,21 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
       'repo_identity_mismatch',
       'tag_only_image',
       'openapi_asyncapi_template_digest_drift',
+    ],
+  },
+  {
+    truth: 'deploy_template_package',
+    owner: 'agentsmith',
+    physical_source: 'AgentSmith CI artifact',
+    generator: 'AgentSmith deploy template package generator',
+    validators: ['AgentSmith release contract validator', 'agentsmith-release-kit source boundary guard'],
+    consumers: ['agentsmith-release-kit render/check'],
+    fail_fast: [
+      'missing_package_uri',
+      'missing_digest',
+      'missing_provenance',
+      'manifest_digest_mismatch',
+      'release_kit_guesses_agentsmith_repo_path',
     ],
   },
   {
@@ -518,6 +543,7 @@ const INVENTORY_SOURCE_SET = new Set<string>([
 ] satisfies CurrentReleaseInventoryImage['source'][]);
 const REQUIRED_TRUTH_IDS = [
   'release_contract',
+  'deploy_template_package',
   'deploy_image_inventory',
   'substrate_connection_truth',
   'release_kit_evidence',
@@ -606,7 +632,7 @@ export function validateAgentSmithReleaseContract(
   validateLiteral(value.product, 'agentsmith', 'product', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
   validateGitSha(value.git_sha, 'git_sha', failures);
-  validateDigest(value.deploy_template_digest, 'deploy_template_digest', failures);
+  const deployTemplateDigest = validateDigest(value.deploy_template_digest, 'deploy_template_digest', failures);
   validateDigest(value.openapi_digest, 'openapi_digest', failures);
   validateDigest(value.asyncapi_digest, 'asyncapi_digest', failures);
   validateLiteral(
@@ -634,6 +660,7 @@ export function validateAgentSmithReleaseContract(
     failures,
   );
   validateDeployImageInventory(value.deploy_image_inventory, imageRegistry, failures);
+  validateReleaseContractDeployTemplatePackage(value, deployTemplateDigest, failures);
   validateRequiredProductFlows(value.required_product_flows, 'required_product_flows', failures);
   validateTargetProfiles(value.target_profiles, failures);
 
@@ -654,6 +681,56 @@ export function validateAgentSmithReleaseContract(
   }
 
   return finish(value as CurrentAgentSmithReleaseContract, failures);
+}
+
+export function validateDeployTemplatePackage(
+  value: unknown,
+): CurrentReleaseBoundaryValidationResult<CurrentDeployTemplatePackage> {
+  const failures: CurrentReleaseBoundaryValidationFailure[] = [];
+  validateNoSecretLeak(value, 'deploy_template_package', failures);
+
+  if (!isRecord(value)) {
+    return invalid('deploy_template_package', 'deploy template package must be an object.', failures);
+  }
+
+  validateLiteral(value.schema_version, CURRENT_DEPLOY_TEMPLATE_PACKAGE_SCHEMA_VERSION, 'schema_version', failures);
+  const packageUri = validateRequiredString(value.package_uri, 'package_uri', failures);
+  validateRemoteCiArtifactUri(packageUri, 'package_uri', failures);
+  const packageSha256 = validateDigest(value.package_sha256, 'package_sha256', failures);
+  validateDigest(value.manifest_sha256, 'manifest_sha256', failures);
+
+  if (!hasOwn(value, 'artifact_provenance')) {
+    failures.push({
+      path: 'artifact_provenance',
+      reason: 'artifact_provenance is required.',
+    });
+  } else {
+    validateArtifactProvenanceInto(value.artifact_provenance, {
+      path: 'artifact_provenance',
+      expectedRepo: AGENTSMITH_CANONICAL_REPO,
+      expectedSubjectName: 'agentsmith-deploy-template-package',
+      subject: omitRecordKey(value, 'artifact_provenance'),
+      fullSubjectContainer: value,
+      allowedKinds: ['ci_artifact'],
+    }, failures);
+  }
+
+  if (isRecord(value.artifact_provenance)) {
+    if (packageUri && value.artifact_provenance.artifact_uri !== packageUri) {
+      failures.push({
+        path: 'artifact_provenance.artifact_uri',
+        reason: 'artifact_provenance.artifact_uri must match package_uri.',
+      });
+    }
+    if (packageSha256 && value.artifact_provenance.artifact_sha256 !== packageSha256) {
+      failures.push({
+        path: 'artifact_provenance.artifact_sha256',
+        reason: 'artifact_provenance.artifact_sha256 must match package_sha256.',
+      });
+    }
+  }
+
+  return finish(value as CurrentDeployTemplatePackage, failures);
 }
 
 export function validateSubstrateConnectionTruth(
@@ -1302,8 +1379,10 @@ function validateArtifactProvenanceInto(
   validateGitSha(value.commit_sha, `${options.path}.commit_sha`, failures);
   validateLiteral(value.subject_name, options.expectedSubjectName, `${options.path}.subject_name`, failures);
   validateDigest(value.subject_sha256, `${options.path}.subject_sha256`, failures);
-  validateRequiredString(value.subject_uri, `${options.path}.subject_uri`, failures);
-  validateRequiredString(value.artifact_uri, `${options.path}.artifact_uri`, failures);
+  const subjectUri = validateRequiredString(value.subject_uri, `${options.path}.subject_uri`, failures);
+  validateArtifactSubjectUri(subjectUri, `${options.path}.subject_uri`, failures);
+  const artifactUri = validateRequiredString(value.artifact_uri, `${options.path}.artifact_uri`, failures);
+  validateRemoteCiArtifactUri(artifactUri, `${options.path}.artifact_uri`, failures);
   if (
     typeof value.subject_uri === 'string'
     && typeof value.artifact_uri === 'string'
@@ -1486,6 +1565,46 @@ function validateDeployImageInventory(
         reason: `deploy image inventory is missing "${imageId}".`,
       });
     }
+  }
+}
+
+function validateReleaseContractDeployTemplatePackage(
+  contract: Record<string, unknown>,
+  deployTemplateDigest: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!hasOwn(contract, 'deploy_template_package')) {
+    failures.push({
+      path: 'deploy_template_package',
+      reason: 'deploy_template_package is required.',
+    });
+    return;
+  }
+
+  const value = contract.deploy_template_package;
+  const packageValidation = validateDeployTemplatePackage(value);
+  if (!packageValidation.ok) {
+    for (const failure of packageValidation.failures) {
+      failures.push({
+        path: failure.path === 'deploy_template_package'
+          ? failure.path
+          : `deploy_template_package.${failure.path}`,
+        reason: failure.reason,
+      });
+    }
+  }
+
+  if (
+    deployTemplateDigest
+    && isRecord(value)
+    && typeof value.manifest_sha256 === 'string'
+    && DIGEST_PATTERN.test(value.manifest_sha256)
+    && value.manifest_sha256 !== deployTemplateDigest
+  ) {
+    failures.push({
+      path: 'deploy_template_package.manifest_sha256',
+      reason: 'deploy_template_digest must match deploy_template_package.manifest_sha256.',
+    });
   }
 }
 
@@ -1867,6 +1986,107 @@ function validateAttestation(
 
   validateRequiredString(value.attestation_uri, `${path}.attestation_uri`, failures);
   validateDigest(value.attestation_sha256, `${path}.attestation_sha256`, failures);
+}
+
+function validateRemoteCiArtifactUri(
+  value: string | undefined,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!value) {
+    return;
+  }
+
+  const normalized = normalizeArtifactPointer(value);
+  if (
+    !hasUriScheme(normalized)
+    || normalized.startsWith('file://')
+    || isLocalOrTraversalPath(normalized)
+    || isAgentSmithProductSourcePointer(normalized)
+  ) {
+    failures.push({
+      path,
+      reason: `${path} must be a remote/CI artifact URI, not a local/relative AgentSmith source path.`,
+    });
+  }
+}
+
+function validateArtifactSubjectUri(
+  value: string | undefined,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!value) {
+    return;
+  }
+
+  const normalized = normalizeArtifactPointer(value);
+  if (
+    normalized.startsWith('file://')
+    || isLocalOrTraversalPath(normalized)
+    || normalized.startsWith('@/')
+    || isAgentSmithProductSourcePointer(normalized)
+  ) {
+    failures.push({
+      path,
+      reason: `${path} must not point at local AgentSmith product source.`,
+    });
+  }
+}
+
+function normalizeArtifactPointer(value: string): string {
+  return value.trim().replaceAll('\\', '/');
+}
+
+function hasUriScheme(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value);
+}
+
+function isLocalOrTraversalPath(value: string): boolean {
+  return value.startsWith('/')
+    || value.startsWith('./')
+    || value.startsWith('../')
+    || value === '.'
+    || value === '..';
+}
+
+function isAgentSmithProductSourcePointer(value: string): boolean {
+  return /(?:^|\/)agentsmith\/(?:src(?:\/|$)|package\.json$|packages(?:\/|$))/u.test(value)
+    || isAgentSmithGitHubSourceUri(value);
+}
+
+function isAgentSmithGitHubSourceUri(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const pathname = url.pathname.replace(/\/+$/u, '').toLowerCase();
+
+  if (hostname === 'github.com') {
+    return pathname === '/agentsmith-project/agentsmith'
+      || pathname === '/agentsmith-project/agentsmith.git'
+      || pathname.startsWith('/agentsmith-project/agentsmith/archive/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/tree/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/blob/')
+      || pathname.startsWith('/agentsmith-project/agentsmith/raw/');
+  }
+
+  if (hostname === 'raw.githubusercontent.com' || hostname === 'codeload.github.com') {
+    return pathname === '/agentsmith-project/agentsmith'
+      || pathname.startsWith('/agentsmith-project/agentsmith/');
+  }
+
+  if (hostname === 'api.github.com') {
+    return pathname.startsWith('/repos/agentsmith-project/agentsmith/tarball/')
+      || pathname.startsWith('/repos/agentsmith-project/agentsmith/zipball/')
+      || pathname.startsWith('/repos/agentsmith-project/agentsmith/contents/');
+  }
+
+  return false;
 }
 
 function validateStringArray(

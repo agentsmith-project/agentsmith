@@ -15,6 +15,7 @@ import {
   normalizeReleaseBoundaryRemote,
   sha256Digest,
   validateAgentSmithReleaseContract,
+  validateDeployTemplatePackage,
   validateReleaseKitEvidence,
   validateReleaseKitEvidenceForAggregate,
   validateReleaseKitEvidenceMapping,
@@ -62,8 +63,15 @@ function rehashArtifactProvenanceSubject(record: Record<string, unknown>, subjec
   artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(record[subjectKey]));
 }
 
+function rehashArtifactProvenanceContainer(record: Record<string, unknown>): void {
+  const subject = structuredClone(record);
+  delete subject.artifact_provenance;
+  artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
+}
+
 describe('current release boundary schema', () => {
   it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, and runner manifest', () => {
+    expect(validateDeployTemplatePackage(readFixture('deploy-template-package.valid.json')).ok).toBe(true);
     expect(validateAgentSmithReleaseContract(readFixture('release-contract.valid.json')).ok).toBe(true);
     expect(validateSubstrateConnectionTruth(readFixture('substrate-connection.external-declared.valid.json')).ok)
       .toBe(true);
@@ -155,6 +163,66 @@ describe('current release boundary schema', () => {
     expectInvalid(validateAgentSmithReleaseContract(missingFlow), 'required product flow "files" is missing');
   });
 
+  it('rejects deploy template package provenance gaps, local provenance, and self-referential subjects', () => {
+    const missingProvenance = cloneFixture('deploy-template-package.valid.json');
+    delete missingProvenance.artifact_provenance;
+    expectInvalid(validateDeployTemplatePackage(missingProvenance), 'artifact_provenance is required');
+
+    const relativePackageUri = cloneFixture('deploy-template-package.valid.json');
+    relativePackageUri.package_uri = '../agentsmith/packages/application/deploy-template-package.tgz';
+    artifactProvenanceOf(relativePackageUri).artifact_uri = relativePackageUri.package_uri;
+    rehashArtifactProvenanceContainer(relativePackageUri);
+    expectInvalid(validateDeployTemplatePackage(relativePackageUri), 'package_uri must be a remote/CI artifact URI');
+
+    const sourceSubjectUri = cloneFixture('deploy-template-package.valid.json');
+    artifactProvenanceOf(sourceSubjectUri).subject_uri = 'file:///home/percy/works/mbos-v1/agentsmith/src/deploy-template-package.json';
+    expectInvalid(
+      validateDeployTemplatePackage(sourceSubjectUri),
+      'artifact_provenance.subject_uri must not point at local AgentSmith product source',
+    );
+
+    const localRepo = cloneFixture('deploy-template-package.valid.json');
+    artifactProvenanceOf(localRepo).normalized_remote = '/home/percy/works/mbos-v1/agentsmith';
+    expectInvalid(validateDeployTemplatePackage(localRepo), 'canonical repo identity must be github.com/agentsmith-project/agentsmith');
+
+    const selfReferential = cloneFixture('deploy-template-package.valid.json');
+    const selfReferentialProvenance = artifactProvenanceOf(selfReferential);
+    selfReferentialProvenance.subject_uri = selfReferentialProvenance.artifact_uri;
+    selfReferentialProvenance.subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(selfReferential));
+    expectInvalid(
+      validateDeployTemplatePackage(selfReferential),
+      'subject_sha256 must hash the subject without artifact_provenance',
+    );
+  });
+
+  it.each([
+    'git+https://github.com/agentsmith-project/agentsmith.git',
+    'https://github.com/agentsmith-project/agentsmith/archive/0123456789abcdef0123456789abcdef01234567.tar.gz',
+    'https://github.com/agentsmith-project/agentsmith/tree/main/packages/application',
+    'https://github.com/agentsmith-project/agentsmith/blob/main/packages/application/deploy-template-package.json',
+    'https://github.com/agentsmith-project/agentsmith/raw/main/packages/application/deploy-template-package.json',
+    'https://raw.githubusercontent.com/agentsmith-project/agentsmith/main/packages/application/deploy-template-package.json',
+  ])('rejects deploy template package source package_uri %s', (packageUri) => {
+    const packageRecord = cloneFixture('deploy-template-package.valid.json');
+    packageRecord.package_uri = packageUri;
+    artifactProvenanceOf(packageRecord).artifact_uri = packageUri;
+    rehashArtifactProvenanceContainer(packageRecord);
+
+    expectInvalid(validateDeployTemplatePackage(packageRecord), 'package_uri must be a remote/CI artifact URI');
+  });
+
+  it('rejects release contracts whose deploy template digest drifts from the package manifest digest', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const deployTemplatePackage = contract.deploy_template_package as Record<string, unknown>;
+    deployTemplatePackage.manifest_sha256 = `sha256:${'a'.repeat(64)}`;
+    rehashArtifactProvenanceContainer(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'deploy_template_digest must match deploy_template_package.manifest_sha256',
+    );
+  });
+
   it('rejects missing provenance, self-referential provenance subjects, and wrong or local repo identity', () => {
     expect(normalizeReleaseBoundaryRemote('https://github.com/agentsmith-project/agentsmith.git'))
       .toBe(AGENTSMITH_CANONICAL_REPO);
@@ -183,6 +251,19 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateAgentSmithReleaseContract(mutuallyExclusiveRemote),
       'normalized_remote must already be canonical github.com/agentsmith-project/agentsmith',
+    );
+  });
+
+  it.each([
+    'file:///home/percy/works/mbos-v1/agentsmith/release-contract.json',
+    'https://github.com/agentsmith-project/agentsmith/archive/0123456789abcdef0123456789abcdef01234567.tar.gz',
+  ])('rejects release contract source artifact_uri %s', (artifactUri) => {
+    const contract = cloneFixture('release-contract.valid.json');
+    artifactProvenanceOf(contract).artifact_uri = artifactUri;
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'artifact_provenance.artifact_uri must be a remote/CI artifact URI',
     );
   });
 

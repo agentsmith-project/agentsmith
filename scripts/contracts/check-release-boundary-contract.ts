@@ -8,6 +8,7 @@ import {
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   validateAgentSmithReleaseContract,
+  validateDeployTemplatePackage,
   validateReleaseKitEvidenceForAggregate,
   validateReleaseKitEvidenceMapping,
   validateRunnerReleaseManifest,
@@ -136,6 +137,7 @@ export function checkReleaseBoundaryContract(
   }
 
   validateFixture(rootDir, 'release-contract.valid.json', validateAgentSmithReleaseContract, failures);
+  validateFixture(rootDir, 'deploy-template-package.valid.json', validateDeployTemplatePackage, failures);
   validateFixture(rootDir, 'substrate-connection.external-declared.valid.json', validateSubstrateConnectionTruth, failures);
   validateFixture(rootDir, 'substrate-connection.kit-installed.valid.json', validateSubstrateConnectionTruth, failures);
   validateFixture(rootDir, 'release-kit-evidence.valid.json', validateReleaseKitEvidenceForAggregate, failures);

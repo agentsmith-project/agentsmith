@@ -483,6 +483,11 @@ function isGovernanceToolingPath(filePath: string): boolean {
     /^scripts\/run-mock-lane-playwright\.test\.ts$/,
     /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-repo-split-bootstrap(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
+    /^scripts\/governance\/__fixtures__\/release-boundary\/[^/]+\.json$/,
   ].some((pattern) => pattern.test(filePath));
 }
 
@@ -716,6 +721,111 @@ function isSafeMockLaneDiagnosticCommand(command: string): boolean {
   });
 }
 
+const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts',
+  'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+};
+const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
+const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
+  'npm run contracts:check-limit-naming',
+  'npm run contracts:check-current-workflows',
+  'npm run contracts:check-current-gates',
+  'npm run contracts:check-current-gate-results',
+  'npm run contracts:check-current-verification-campaigns',
+  'npm run contracts:check-current-runtime-lines',
+  'npm run contracts:check-current-governance-observability',
+  'npm run contracts:check-current-build-artifact-broker',
+  'npm run contracts:check-current-real-session-coverage',
+  'npm run contracts:check-asbcp-image-only',
+  'npm run contracts:check-release-boundary',
+  SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
+  'npm run contracts:check-product-terminology',
+  'npm run contracts:check-unified-deploy-vocabulary',
+  'npm run contracts:check-doc-governance',
+  'npm run contracts:check-asyncapi-sync',
+  'npm run contracts:check-runner-contract-sync',
+  'npm run story-generated-spec:check',
+  'npm run contracts:check-engineering-governance',
+  'tsx scripts/contracts/check-next-dist-types.ts',
+  'tsx scripts/contracts/check-runner-naming.ts',
+  'tsx scripts/contracts/check-permission-gates.ts',
+]);
+
+function safeContractsCheckSegments(command: string): string[] | null {
+  const trimmed = command.trim();
+  if (!trimmed || /[;|`$<>]/.test(trimmed) || /(^|[^&])&($|[^&])/.test(trimmed)) {
+    return null;
+  }
+
+  const segments = trimmed.split(/\s+&&\s+/).map((segment) => segment.trim());
+  if (segments.length === 0 || segments.some((segment) => !SAFE_CONTRACTS_CHECK_SEGMENTS.has(segment))) {
+    return null;
+  }
+
+  return segments;
+}
+
+function removeSingleSegment(segments: readonly string[], segment: string): string[] | null {
+  let removed = false;
+  const output: string[] = [];
+  for (const candidate of segments) {
+    if (candidate === segment && !removed) {
+      removed = true;
+      continue;
+    }
+    output.push(candidate);
+  }
+  return removed ? output : null;
+}
+
+function sameStringSequence(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isSafeContractsCheckSourceBoundaryInsertion(
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  if (typeof previousCommand !== 'string') {
+    return false;
+  }
+
+  const previousSegments = safeContractsCheckSegments(previousCommand);
+  const currentSegments = safeContractsCheckSegments(currentCommand);
+  if (!previousSegments || !currentSegments) {
+    return false;
+  }
+
+  const sourceBoundaryCount = currentSegments.filter(
+    (segment) => segment === SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
+  ).length;
+  if (sourceBoundaryCount !== 1) {
+    return false;
+  }
+
+  const currentWithoutSourceBoundary = removeSingleSegment(
+    currentSegments,
+    SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
+  );
+  return currentWithoutSourceBoundary !== null
+    && sameStringSequence(previousSegments, currentWithoutSourceBoundary);
+}
+
+function isSafeContractPackageScriptChange(
+  scriptName: string,
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  const exactContractCommand = SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS[scriptName];
+  if (exactContractCommand) {
+    return currentCommand === exactContractCommand
+      && (previousCommand === undefined || previousCommand === exactContractCommand);
+  }
+
+  return scriptName === 'contracts:check'
+    && isSafeContractsCheckSourceBoundaryInsertion(previousCommand, currentCommand);
+}
+
 function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {
   if (scriptName === 'test:governance') {
     return command === 'bash scripts/governance-default-gate.sh';
@@ -727,6 +837,21 @@ function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: st
     return isSafeMockLaneDiagnosticCommand(command);
   }
   return false;
+}
+
+function isSafeGovernanceOrMockLanePackageScriptChange(
+  scriptName: string,
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  if (!isSafeGovernanceOrMockLanePackageScript(scriptName, currentCommand)) {
+    return false;
+  }
+  if (previousCommand === undefined) {
+    return true;
+  }
+  return typeof previousCommand === 'string'
+    && isSafeGovernanceOrMockLanePackageScript(scriptName, previousCommand);
 }
 
 function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: readonly string[]): boolean {
@@ -758,17 +883,11 @@ function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: re
   return changedScriptNames.every((scriptName) => {
     const currentCommand = currentScripts[scriptName];
     const previousCommand = baseScripts[scriptName];
-    if (
-      typeof currentCommand !== 'string'
-      || !isSafeGovernanceOrMockLanePackageScript(scriptName, currentCommand)
-    ) {
+    if (typeof currentCommand !== 'string') {
       return false;
     }
-    if (previousCommand === undefined) {
-      return true;
-    }
-    return typeof previousCommand === 'string'
-      && isSafeGovernanceOrMockLanePackageScript(scriptName, previousCommand);
+    return isSafeGovernanceOrMockLanePackageScriptChange(scriptName, previousCommand, currentCommand)
+      || isSafeContractPackageScriptChange(scriptName, previousCommand, currentCommand);
   });
 }
 

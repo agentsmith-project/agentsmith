@@ -1014,6 +1014,47 @@ describe('verify impact selector', () => {
     ));
   });
 
+  it('maps release boundary and repo-split contract guard files and fixtures to governance tooling', () => {
+    const changedFiles = [
+      'scripts/contracts/check-release-boundary-contract.ts',
+      'scripts/contracts/check-release-boundary-contract.test.ts',
+      'scripts/contracts/check-release-kit-source-boundary.ts',
+      'scripts/contracts/check-release-kit-source-boundary.test.ts',
+      'scripts/contracts/check-repo-split-bootstrap.ts',
+      'scripts/contracts/check-repo-split-bootstrap.test.ts',
+      'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
+      'scripts/governance/__fixtures__/release-boundary/deploy-template-package.valid.json',
+      'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      })),
+    ));
+    expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+  });
+
   it('maps package.json to governance tooling only when git diff is limited to safe governance and mock-lane npm scripts', () => {
     const basePackageJson = {
       scripts: {
@@ -1059,6 +1100,86 @@ describe('verify impact selector', () => {
           affectedSurfaces: ['engineering-governance-tooling'],
           storyIds: [],
           broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('maps package.json contract guard script additions to governance tooling only for exact safe commands', () => {
+    const basePackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+        'contracts:check-product-terminology': 'tsx scripts/contracts/check-product-terminology.ts',
+        'contracts:check': 'npm run contracts:check-release-boundary && npm run contracts:check-product-terminology',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+        'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts',
+        'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+        'contracts:check-product-terminology': 'tsx scripts/contracts/check-product-terminology.ts',
+        'contracts:check': 'npm run contracts:check-release-boundary && npm run contracts:check-release-kit-source-boundary && npm run contracts:check-product-terminology',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+      expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('keeps package.json fail-closed for non-exact contract guard script commands', () => {
+    const basePackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+        'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts && echo unsafe',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
+          manualReviewRequired: true,
         }),
       ]);
     });

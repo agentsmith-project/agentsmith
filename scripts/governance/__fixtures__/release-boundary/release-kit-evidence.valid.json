@@ -41,7 +41,7 @@
     "operator_identity": "release-operator@example.com",
     "signature_uri": "sigstore://agentsmith-release-kit/operator-run-20260523-001",
     "signature_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "artifact_uri": "file://release-kit-evidence/operator-run-20260523-001/evidence-subject.json",
+    "artifact_uri": "gh-artifact://agentsmith-release-kit/release-kit-evidence/operator-run-20260523-001/evidence-subject.json",
     "artifact_sha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "generated_at": "2026-05-23T12:05:00.000Z",
     "generator_command": "agentsmith-release-kit verify rollout",

@@ -107,6 +107,33 @@ describe('check-release-boundary-contract', () => {
     );
   });
 
+  it('reports deploy template package fixture validation failures from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    const fixturePath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      'deploy-template-package.valid.json',
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>;
+    delete fixture.artifact_provenance;
+    writeFileSync(fixturePath, JSON.stringify(fixture, null, 2), 'utf8');
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/deploy-template-package.valid.json',
+          message: expect.stringContaining('artifact_provenance is required'),
+        }),
+      ]),
+    );
+  });
+
   it('reports runner release manifest protocol drift from copied fixtures', () => {
     const root = writeFixtureRoot();
     writeFileSync(

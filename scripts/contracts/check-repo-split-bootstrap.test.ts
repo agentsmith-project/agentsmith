@@ -171,6 +171,24 @@ describe('repo split bootstrap contract', () => {
     );
   });
 
+  it('does not let --remote-url spoof CI identity when GitHub Actions exposes the checked out repo', () => {
+    expect(() =>
+      execFileSync(tsxCli, [
+        CHECK_SCRIPT,
+        '--mode=ci',
+        '--repo=runner',
+        '--remote-url=https://github.com/agentsmith-project/agentsmith-runner.git',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          GITHUB_REPOSITORY: 'someone-else/agentsmith-runner',
+        },
+        stdio: 'pipe',
+      }),
+    ).toThrow(/GITHUB_REPOSITORY must match github\.com\/agentsmith-project\/agentsmith-runner/u);
+  });
+
   it('reports missing local repos and missing origin remotes clearly in the CLI without network access', () => {
     const workspaceRoot = mkTempWorkspace();
     const missingRepoPath = path.join(workspaceRoot, 'agentsmith-runner');

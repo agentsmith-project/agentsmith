@@ -45,6 +45,8 @@ type ReferenceCandidate = {
   source: 'string' | 'path.join';
 };
 
+type SimpleStringReference = ReferenceCandidate;
+
 export type ReleaseKitSourceBoundaryFailure = {
   path: string;
   message: string;
@@ -195,9 +197,15 @@ function scanFile(rootDir: string, absolutePath: string): ReleaseKitSourceBounda
     failures.push(...scanPackageJsonDependencies(relativePath, lines.join('\n')));
   }
 
+  const simpleStringAliases = new Map<string, SimpleStringReference>();
   lines.forEach((line, index) => {
     const seenMessages = new Set<string>();
-    for (const candidate of extractReferenceCandidates(line)) {
+    const constAlias = extractSimpleConstStringAlias(line, simpleStringAliases);
+    if (constAlias !== null) {
+      simpleStringAliases.set(constAlias.name, constAlias.reference);
+    }
+
+    for (const candidate of extractReferenceCandidates(line, simpleStringAliases)) {
       if (scansPackageSpecifiers) {
         const forbiddenPackage = matchForbiddenAgentSmithPackageSpecifier(candidate.value);
         if (forbiddenPackage) {
@@ -313,17 +321,19 @@ function scanPackageJsonDependencies(
   return failures;
 }
 
-function extractReferenceCandidates(line: string): ReferenceCandidate[] {
+function extractReferenceCandidates(
+  line: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): ReferenceCandidate[] {
   const stringCandidates = extractQuotedStrings(line).map((value) => ({
     value,
     source: 'string' as const,
   }));
-  const joinedCandidates = extractJoinedPathReferences(line).map((value) => ({
-    value,
-    source: 'path.join' as const,
-  }));
+  const joinedCandidates = extractJoinedPathReferences(line, simpleStringAliases);
+  const constAlias = extractSimpleConstStringAlias(line, simpleStringAliases);
+  const constAliasCandidates = constAlias === null ? [] : [constAlias.reference];
 
-  return [...stringCandidates, ...joinedCandidates];
+  return [...stringCandidates, ...joinedCandidates, ...constAliasCandidates];
 }
 
 function extractQuotedStrings(value: string): string[] {
@@ -338,19 +348,264 @@ function extractQuotedStrings(value: string): string[] {
   return matches;
 }
 
-function extractJoinedPathReferences(line: string): string[] {
-  const references: string[] = [];
+function extractJoinedPathReferences(
+  line: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): ReferenceCandidate[] {
+  const references: ReferenceCandidate[] = [];
   const pattern = /\b(?:path\.)?(?:join|resolve)\s*\(([^)]*)\)/gu;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(line)) !== null) {
-    const parts = extractQuotedStrings(match[1] ?? '');
-    if (parts.length > 1) {
-      references.push(parts.join('/'));
+    const reference = evaluatePathJoinExpression(match[0] ?? '', simpleStringAliases);
+    if (reference !== null) {
+      references.push(reference);
     }
   }
 
   return references;
+}
+
+function extractSimpleConstStringAlias(
+  line: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): { name: string; reference: SimpleStringReference } | null {
+  const match = /\b(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*([^;]+)/u.exec(line);
+  if (!match) {
+    return null;
+  }
+
+  const name = match[1];
+  const expression = match[2];
+  if (name === undefined || expression === undefined) {
+    return null;
+  }
+
+  const reference = evaluateSimpleStringExpression(expression, simpleStringAliases);
+  return reference === null ? null : { name, reference };
+}
+
+function evaluateSimpleStringExpression(
+  expression: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): SimpleStringReference | null {
+  const trimmed = stripOuterParentheses(expression.trim());
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const pathJoin = evaluatePathJoinExpression(trimmed, simpleStringAliases);
+  if (pathJoin !== null) {
+    return pathJoin;
+  }
+
+  const literal = parseSimpleStringLiteral(trimmed);
+  if (literal !== null) {
+    return { value: literal, source: 'string' };
+  }
+
+  const alias = simpleStringAliases.get(trimmed);
+  if (alias !== undefined) {
+    return alias;
+  }
+
+  const concatenated = evaluateStringConcatenation(trimmed, simpleStringAliases);
+  if (concatenated !== null) {
+    return concatenated;
+  }
+
+  return null;
+}
+
+function evaluatePathJoinExpression(
+  expression: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): SimpleStringReference | null {
+  const match = /^(?:path\.)?(?:join|resolve)\s*\(([\s\S]*)\)$/u.exec(expression.trim());
+  if (!match) {
+    return null;
+  }
+
+  const parts = splitTopLevel(match[1] ?? '', ',');
+  if (parts.length <= 1) {
+    return null;
+  }
+
+  const values: string[] = [];
+  for (const part of parts) {
+    const evaluated = evaluateSimpleStringExpression(part, simpleStringAliases);
+    if (evaluated === null) {
+      return null;
+    }
+    values.push(evaluated.value);
+  }
+
+  return {
+    value: joinPathLikeSegments(values),
+    source: 'path.join',
+  };
+}
+
+function evaluateStringConcatenation(
+  expression: string,
+  simpleStringAliases: ReadonlyMap<string, SimpleStringReference>,
+): SimpleStringReference | null {
+  const parts = splitTopLevel(expression, '+');
+  if (parts.length <= 1) {
+    return null;
+  }
+
+  const values: string[] = [];
+  let source: SimpleStringReference['source'] = 'string';
+  for (const part of parts) {
+    const evaluated = evaluateSimpleStringExpression(part, simpleStringAliases);
+    if (evaluated === null) {
+      return null;
+    }
+    values.push(evaluated.value);
+    if (evaluated.source === 'path.join') {
+      source = 'path.join';
+    }
+  }
+
+  return {
+    value: values.join(''),
+    source,
+  };
+}
+
+function parseSimpleStringLiteral(expression: string): string | null {
+  const match = /^(["'`])((?:\\.|(?!\1)[\s\S])*)\1$/u.exec(expression);
+  if (!match) {
+    return null;
+  }
+
+  const quote = match[1];
+  const value = match[2] ?? '';
+  if (quote === '`' && value.includes('${')) {
+    return null;
+  }
+
+  return value.replace(/\\(["'`\\])/gu, '$1');
+}
+
+function splitTopLevel(expression: string, delimiter: ',' | '+'): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | '`' | null = null;
+  let escaped = false;
+  let parenDepth = 0;
+
+  for (const char of expression) {
+    if (quote !== null) {
+      current += char;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'' || char === '`') {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === '(') {
+      parenDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === delimiter && parenDepth === 0) {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  parts.push(current.trim());
+  return parts;
+}
+
+function stripOuterParentheses(expression: string): string {
+  let current = expression;
+
+  while (current.startsWith('(') && current.endsWith(')') && enclosesWholeExpression(current)) {
+    current = current.slice(1, -1).trim();
+  }
+
+  return current;
+}
+
+function enclosesWholeExpression(expression: string): boolean {
+  let quote: '"' | '\'' | '`' | null = null;
+  let escaped = false;
+  let depth = 0;
+
+  for (let index = 0; index < expression.length; index += 1) {
+    const char = expression[index];
+
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') {
+      depth += 1;
+      continue;
+    }
+    if (char === ')') {
+      depth -= 1;
+      if (depth === 0 && index < expression.length - 1) {
+        return false;
+      }
+    }
+  }
+
+  return depth === 0;
+}
+
+function joinPathLikeSegments(parts: string[]): string {
+  return parts
+    .map((part, index) => {
+      if (index === 0) {
+        return part.replace(/\/+$/u, '');
+      }
+
+      return part.replace(/^\/+|\/+$/gu, '');
+    })
+    .join('/');
 }
 
 function matchForbiddenAgentSmithPackageSpecifier(value: string): string | null {

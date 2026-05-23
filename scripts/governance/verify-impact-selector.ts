@@ -32,6 +32,7 @@ export type ChangedFileImpactRule =
   | 'backend_real_diagnostic_tooling'
   | 'release_real_owner_diagnostic'
   | 'release_deploy_operations'
+  | 'release_boundary_guard'
   | 'governance_tooling'
   | 'unmapped_source';
 
@@ -208,6 +209,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'backend_real_diagnostic_tooling',
   'release_real_owner_diagnostic',
   'release_deploy_operations',
+  'release_boundary_guard',
   'governance_tooling',
   'unmapped_source',
 ];
@@ -472,8 +474,23 @@ function isUnifiedDeployPath(filePath: string): boolean {
   ].some((pattern) => pattern.test(filePath));
 }
 
+function isReleaseBoundaryGuardPath(filePath: string): boolean {
+  return [
+    /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-repo-split-bootstrap(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
+    /^scripts\/governance\/current-release-boundary-schema\.ts$/,
+    /^scripts\/governance\/__tests__\/current-release-boundary-schema\.test\.ts$/,
+    /^scripts\/governance\/__fixtures__\/release-boundary\/[^/]+\.json$/,
+  ].some((pattern) => pattern.test(filePath));
+}
+
 function isGovernanceToolingPath(filePath: string): boolean {
   if (isReleaseDeployPath(filePath)) {
+    return false;
+  }
+  if (isReleaseBoundaryGuardPath(filePath)) {
     return false;
   }
   return [
@@ -483,11 +500,6 @@ function isGovernanceToolingPath(filePath: string): boolean {
     /^scripts\/run-mock-lane-playwright\.test\.ts$/,
     /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
-    /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
-    /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
-    /^scripts\/contracts\/check-repo-split-bootstrap(?:\.test)?\.ts$/,
-    /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
-    /^scripts\/governance\/__fixtures__\/release-boundary\/[^/]+\.json$/,
   ].some((pattern) => pattern.test(filePath));
 }
 
@@ -1987,6 +1999,27 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         evidenceStatus: 'missing',
         manualReviewReasons: [MANUAL_REVIEW_REASONS.releaseDeployOperatorReview],
         impactSource,
+      });
+    }
+
+    if (isReleaseBoundaryGuardPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = 'Manual release/repo-split boundary guard owner review required; run npm run verify -- --goal=pr --run and focused release-boundary contract tests before accepting the boundary guard impact.';
+      const surface = 'release-boundary-guard';
+      addLevels(accumulator, levels);
+      accumulator.surfaces.add(surface);
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} touches release/repo-split boundary guard, schema, or fixture; V0/V1 focused contract verification plus owner review is selected without visual or backend-real expansion.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'release_boundary_guard',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
       });
     }
 

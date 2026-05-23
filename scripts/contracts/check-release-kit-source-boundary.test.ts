@@ -558,6 +558,29 @@ void joinedPackage;
     expect(explicitResult.stderr).toContain('../agentsmith/src');
   });
 
+  it('rejects simple computed AgentSmith source paths during explicit CLI scans', () => {
+    const root = writeWorkspaceRootWithCommittedFixture({});
+    writeText(
+      join(root, '..', 'agentsmith-release-kit'),
+      'src/computed-boundary-break.ts',
+      `
+const repo = 'agent' + 'smith';
+const joinedSource = path.join('..', repo, 'src', 'lib');
+const sourceRoot = '..' + '/agentsmith' + '/src';
+const aliasedSourceRoot = sourceRoot;
+const aliasedJoinedSource = path.join(aliasedSourceRoot, 'lib');
+void joinedSource;
+void aliasedJoinedSource;
+`,
+    );
+
+    const explicitResult = runBoundaryCli(root, ['--scan-root', '../agentsmith-release-kit']);
+
+    expect(explicitResult.status).toBe(1);
+    expect(explicitResult.stderr).toContain('../agentsmith-release-kit/src/computed-boundary-break.ts');
+    expect(explicitResult.stderr).toContain('../agentsmith/src');
+  });
+
   it('allows ordinary JSON metadata to mention the product name without treating it as a package import', () => {
     const root = writeFixtureRoot({
       'release-kit/metadata.json': JSON.stringify({

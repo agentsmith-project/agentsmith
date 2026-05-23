@@ -65,6 +65,7 @@ type RepoSpec = {
 
 const DEFAULT_WORKSPACE_PARENT = '/home/percy/works/mbos-v1';
 const AGENTSMITH_REPO_NAME = 'agentsmith';
+const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 
 const REPO_SPECS: Record<RepoSplitBootstrapRepo, RepoSpec> = {
   'release-kit': {
@@ -121,6 +122,15 @@ function normalizeMode(mode: string): RepoSplitBootstrapMode | null {
   }
 
   return null;
+}
+
+function normalizeGitHubRepositoryIdentity(githubRepository: string): string | null {
+  const trimmed = githubRepository.trim();
+  if (!GITHUB_REPOSITORY_PATTERN.test(trimmed)) {
+    return null;
+  }
+
+  return `github.com/${trimmed}`;
 }
 
 function validateLocalPath(
@@ -303,6 +313,39 @@ function readGitTopLevel(repoPath: string): string | null {
   }
 }
 
+function validateCiGitHubRepositoryIdentity(input: CliInput): RepoSplitBootstrapFailResult | null {
+  const githubRepository = process.env.GITHUB_REPOSITORY;
+  if (githubRepository === undefined) {
+    return null;
+  }
+
+  const spec = getRepoSpec(input.repo);
+  if (spec === null) {
+    return null;
+  }
+
+  const normalizedGitHubRepository = normalizeGitHubRepositoryIdentity(githubRepository);
+  if (normalizedGitHubRepository === null) {
+    return failed([
+      failure(
+        'GITHUB_REPOSITORY',
+        'GITHUB_REPOSITORY must use owner/repo format for CI repo split bootstrap validation.',
+      ),
+    ]);
+  }
+
+  if (normalizedGitHubRepository !== spec.expectedRemote) {
+    return failed([
+      failure(
+        'GITHUB_REPOSITORY',
+        `GITHUB_REPOSITORY must match ${spec.expectedRemote} for repo=${spec.repo} and cannot be overridden by --remote-url.`,
+      ),
+    ]);
+  }
+
+  return null;
+}
+
 export function checkRepoSplitBootstrapCli(input: CliInput): RepoSplitBootstrapResult {
   const mode = normalizeMode(input.mode);
 
@@ -358,6 +401,13 @@ export function checkRepoSplitBootstrapCli(input: CliInput): RepoSplitBootstrapR
       repoPath,
       remoteUrl,
     });
+  }
+
+  if (mode === 'ci') {
+    const githubRepositoryResult = validateCiGitHubRepositoryIdentity(input);
+    if (githubRepositoryResult !== null) {
+      return githubRepositoryResult;
+    }
   }
 
   return validateRepoSplitBootstrap(input);

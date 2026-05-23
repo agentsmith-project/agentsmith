@@ -1014,7 +1014,7 @@ describe('verify impact selector', () => {
     ));
   });
 
-  it('maps release boundary and repo-split contract guard files and fixtures to governance tooling', () => {
+  it('maps release/repo-split boundary guard, schema, and fixture files to targeted owner review', () => {
     const changedFiles = [
       'scripts/contracts/check-release-boundary-contract.ts',
       'scripts/contracts/check-release-boundary-contract.test.ts',
@@ -1023,8 +1023,12 @@ describe('verify impact selector', () => {
       'scripts/contracts/check-repo-split-bootstrap.ts',
       'scripts/contracts/check-repo-split-bootstrap.test.ts',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
+      'scripts/governance/current-release-boundary-schema.ts',
+      'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
       'scripts/governance/__fixtures__/release-boundary/deploy-template-package.valid.json',
       'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+      'scripts/governance/__fixtures__/release-boundary/release-kit-evidence.valid.json',
+      'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
     ];
     const plan = buildVerificationPlan({ changedFiles });
 
@@ -1035,24 +1039,43 @@ describe('verify impact selector', () => {
     ]);
     expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
     expect(plan.recommendedCommands).not.toContain('npm run verify:real');
-    expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
+    expect(plan.affectedSurfaces).toEqual(['release-boundary-guard']);
+    expect(plan.affectedSurfaces).not.toContain('engineering-governance-tooling');
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.storyCards).toEqual([]);
-    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-boundary-guard');
+    expect(plan.nextAction).toContain('release/repo-split boundary guard owner review');
+    expect(plan.riskSummary.reasons.join('\n')).toContain('release/repo-split boundary guard');
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.riskSummary.broadImpact).toBe(false);
     expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
     expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
     expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
       changedFiles.map((changedFile) => expect.objectContaining({
         changedFile,
-        matchedRules: ['governance_tooling'],
-        affectedSurfaces: ['engineering-governance-tooling'],
+        matchedRules: ['release_boundary_guard'],
+        affectedSurfaces: ['release-boundary-guard'],
         storyIds: [],
-        manualReviewRequired: false,
+        manualReviewRequired: true,
         broadImpact: false,
       })),
     ));
-    expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+    expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
+
+    const report = buildStoryAcceptanceReport(plan, 'artifacts/test-release-boundary-guard');
+    expect(report.risk_summary.manual_review_required).toBe(true);
+    expect(report.risk_summary.reasons.join('\n')).toContain('release/repo-split boundary guard');
+    expect(report.next_action).toContain('release/repo-split boundary guard owner review');
+    expect(report.changed_file_impacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changed_file: changedFile,
+        matched_rules: ['release_boundary_guard'],
+        affected_surfaces: ['release-boundary-guard'],
+        manual_review_required: true,
+        broad_impact: false,
+      })),
+    ));
   });
 
   it('maps package.json to governance tooling only when git diff is limited to safe governance and mock-lane npm scripts', () => {

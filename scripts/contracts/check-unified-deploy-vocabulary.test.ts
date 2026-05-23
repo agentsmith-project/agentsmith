@@ -401,6 +401,54 @@ This intentionally omits the concrete deployment decisions.
     expect(text).toContain('contracts:check-repo-split-bootstrap');
   });
 
+  it('rejects repo split bootstrap wording that says it is not optional while wired into total contracts:check', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
+          .replace('`contracts:check-repo-split-bootstrap` is not wired into total `contracts:check`;', '`contracts:check-repo-split-bootstrap` is not optional and wired into total `contracts:check`;'),
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('contracts:check-repo-split-bootstrap');
+  });
+
+  it('requires AFSCP/ASBCP family reference to be ASBCP-lite or non-normative and not a source dependency', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
+          .replace(
+            'AFSCP/ASBCP family reference is ASBCP-lite and non-normative reference only.\nIt is not a source dependency, contract dependency, or gate dependency.',
+            'AFSCP/ASBCP family reference is reference only.\nIt is not a contract dependency or gate dependency.',
+          ),
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('AFSCP/ASBCP family reference');
+  });
+
+  it('requires the complete P0 handoff boundary in one markdown block', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        'docs/user-guides/runtime-lines-matrix.md': `# Active Doc
+
+Current Docker-only local-kind unified deploy remains the current mainline.
+
+\`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
+
+P2/P3 real Kubernetes, cloud, or airgap handoff is not complete.
+`,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('P0/vNext handoff boundary');
+  });
+
   it('requires the split plan to document new repo docs/governance-first bootstrap discipline', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {

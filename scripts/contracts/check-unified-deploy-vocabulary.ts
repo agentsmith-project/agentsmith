@@ -442,42 +442,44 @@ function validateDeployContract(
   }
 }
 
-function hasAllPatterns(content: string, patterns: readonly RegExp[]): boolean {
-  return patterns.every((pattern) => pattern.test(content));
-}
-
 function hasBlockWithPatterns(blocks: readonly MarkdownBlock[], patterns: readonly RegExp[]): boolean {
   return blocks.some((block) => patterns.every((pattern) => pattern.test(block.text)));
 }
+
+const TOTAL_OR_BASE_CONTRACTS_CHECK_PATTERN = /(?:\b(?:total|base)\b|总|基础)[\s\S]{0,40}(?:npm\s+run\s+)?contracts:check(?![-:\w])|(?:npm\s+run\s+)?contracts:check(?![-:\w])[\s\S]{0,40}(?:\b(?:total|base)\b|总|基础)/iu;
+const NOT_WIRED_INTO_CONTRACTS_CHECK_PATTERN = /\bnot\s+(?:wired\s+into|included\s+in|part\s+of)\b|暂不接入|不接入|不纳入|不属于/iu;
+const SOURCE_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bsource dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}源码依赖|源码依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
+const CONTRACT_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bcontract dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}合同依赖|合同依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
+const GATE_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bgate dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}(?:gate|门禁)\s*依赖|(?:gate|门禁)\s*依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
 
 function validateP0HandoffBoundary(
   path: string,
   content: string,
   failures: UnifiedDeployVocabularyFailure[],
 ): void {
-  const currentMainline = hasAllPatterns(content, [
+  const blocks = parseMarkdownBlocks(parseMarkdownLines(content));
+  const hasCompleteBoundaryBlock = hasBlockWithPatterns(blocks, [
     /\bcurrent\b/iu,
     /\bDocker[- ]only\b/iu,
     /\blocal-kind\b/iu,
     /\bunified deploy\b/iu,
     /\bmainline\b|主线/u,
-  ]);
-  const externalDeclaredBoundary = hasAllPatterns(content, [
-    /\bexternal_declared\b/u,
+    /\bexternal[-_ ]declared\b/iu,
     /\bP0\b/u,
     /\bschema\b/iu,
     /\bfixtures?\b/iu,
     /\bvalidator\b/iu,
     /\bevidence\s+boundary\b/iu,
-  ]);
-  const futureSupportBoundary = hasAllPatterns(content, [
     /\bP2\b/u,
     /\bP3\b/u,
     /\bdoes not mean\b|\bnot\b[\s\S]{0,80}\bcomplete\b|不能|不得|不等于|未[\s\S]{0,40}支持/u,
-    /\breal Kubernetes\b|真实\s*(?:K8s|Kubernetes)|\bcloud\b|云端|\bairgap\b|离线|\bhandoff\b/iu,
+    /\breal Kubernetes\b|真实\s*(?:K8s|Kubernetes)/iu,
+    /\bcloud\b|云端/iu,
+    /\bairgap\b|离线/iu,
+    /\bhandoff\b|交接|交付/u,
   ]);
 
-  if (!currentMainline || !externalDeclaredBoundary || !futureSupportBoundary) {
+  if (!hasCompleteBoundaryBlock) {
     addFailure(
       failures,
       path,
@@ -520,8 +522,8 @@ function validateReleaseKitSplitPlan(
   if (
     !hasBlockWithPatterns(blocks, [
       /\bcontracts:check-repo-split-bootstrap\b/u,
-      /(?:^|[\s"'(（:：])(?:npm\s+run\s+)?contracts:check(?![-:\w])/iu,
-      /\bnot\b|\bnot\s+wired\b|暂不接入|不接入/u,
+      TOTAL_OR_BASE_CONTRACTS_CHECK_PATTERN,
+      NOT_WIRED_INTO_CONTRACTS_CHECK_PATTERN,
     ])
   ) {
     addFailure(
@@ -531,18 +533,19 @@ function validateReleaseKitSplitPlan(
     );
   }
 
-  const familyReference = hasAllPatterns(content, [
+  const familyReference = hasBlockWithPatterns(blocks, [
     /\bAFSCP\b/u,
     /\bASBCP\b/u,
-    /\bfamily reference\b|\bASBCP[- ]lite\b|\bnon[- ]normative reference\b|家族参考|非规范性参考/u,
+    /\bASBCP[- ]lite\b|\bnon[- ]normative(?:\s+reference)?\b|非规范性参考/u,
+    SOURCE_DEPENDENCY_EXCLUSION_PATTERN,
+    CONTRACT_DEPENDENCY_EXCLUSION_PATTERN,
+    GATE_DEPENDENCY_EXCLUSION_PATTERN,
   ]);
-  const noContractDependency = /\bnot\b[\s\S]{0,160}\bcontract dependenc(?:y|ies)\b|(?:不能|不得|不作为|不变成)[\s\S]{0,120}合同依赖|合同依赖[\s\S]{0,120}(?:不能|不得|不作为|不变成)/iu.test(content);
-  const noGateDependency = /\bnot\b[\s\S]{0,160}\bgate dependenc(?:y|ies)\b|(?:不能|不得|不作为|不变成)[\s\S]{0,120}(?:gate|门禁)\s*依赖|(?:gate|门禁)\s*依赖[\s\S]{0,120}(?:不能|不得|不作为|不变成)/iu.test(content);
-  if (!familyReference || !noContractDependency || !noGateDependency) {
+  if (!familyReference) {
     addFailure(
       failures,
       RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must state AFSCP/ASBCP family reference is ASBCP-lite/non-normative only and not a contract dependency or gate dependency.',
+      'release kit split plan must state AFSCP/ASBCP family reference is ASBCP-lite/non-normative only and not a source dependency, contract dependency, or gate dependency.',
     );
   }
 

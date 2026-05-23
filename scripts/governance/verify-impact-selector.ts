@@ -477,6 +477,7 @@ function isUnifiedDeployPath(filePath: string): boolean {
 
 function isReleaseBoundaryGuardPath(filePath: string): boolean {
   return [
+    /^docs\/engineering\/release-kit-and-runner-repo-split-kiss-plan-v1\.md$/,
     /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-repo-split-bootstrap(?:\.test)?\.ts$/,
@@ -967,6 +968,7 @@ function isDocsOnlyPath(filePath: string): boolean {
     isDesignSystemPath(filePath)
     || isReleaseDeployPath(filePath)
     || isUnifiedDeployPath(filePath)
+    || isReleaseBoundaryGuardPath(filePath)
   ) {
     return false;
   }

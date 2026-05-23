@@ -1047,6 +1047,7 @@ describe('verify impact selector', () => {
       'scripts/contracts/check-repo-split-bootstrap.test.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+      'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
       'scripts/governance/current-release-boundary-schema.ts',
       'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
@@ -1139,6 +1140,7 @@ describe('verify impact selector', () => {
       'docs/contracts/README.md',
       'docs/contracts/product-terminology.md',
       'docs/contracts/unified-deploy-contract.md',
+      'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/check-unified-deploy-vocabulary.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
     ];
@@ -1173,6 +1175,10 @@ describe('verify impact selector', () => {
       expect.objectContaining({
         changedFile: 'docs/contracts/unified-deploy-contract.md',
         matchedRules: ['release_deploy_operations'],
+      }),
+      expect.objectContaining({
+        changedFile: 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
+        matchedRules: ['release_boundary_guard'],
       }),
       expect.objectContaining({
         changedFile: 'scripts/contracts/check-unified-deploy-vocabulary.ts',

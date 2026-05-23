@@ -2344,6 +2344,7 @@ describe('verify human entrypoints', () => {
       'docs/contracts/README.md',
       'docs/contracts/product-terminology.md',
       'docs/contracts/unified-deploy-contract.md',
+      'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/check-unified-deploy-vocabulary.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
     ];
@@ -2413,6 +2414,10 @@ describe('verify human entrypoints', () => {
         expect.objectContaining({
           changed_file: 'docs/contracts/unified-deploy-contract.md',
           matched_rules: ['release_deploy_operations'],
+        }),
+        expect.objectContaining({
+          changed_file: 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
+          matched_rules: ['release_boundary_guard'],
         }),
         expect.objectContaining({
           changed_file: 'scripts/contracts/check-unified-deploy-vocabulary.ts',

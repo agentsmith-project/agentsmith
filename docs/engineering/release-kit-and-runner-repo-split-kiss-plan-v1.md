@@ -129,11 +129,10 @@ Release kit 对云端的支持只表示“部署到 operator 已提供的 Kubern
 过渡期规则：
 
 1. 当前权威实现仍是 Docker-only substrate truth；当前主线仍是 current
-   Docker-only local-kind unified deploy。
-2. `external_declared` 在 P0 是 schema、fixtures、validator 和 evidence
-   boundary，不等于 P2/P3 已完整支持真实 Kubernetes、cloud 或 airgap
-   handoff。
-3. local-kind evidence 不能代替 `existing_kubernetes` evidence；反过来也不能把 operator smoke 自动算成默认 `release:ready` 结论。
+   Docker-only local-kind unified deploy；`external_declared` 在 P0 是
+   schema、fixtures、validator 和 evidence boundary，不等于 P2/P3 已完整
+   支持真实 Kubernetes、cloud 或 airgap handoff。
+2. local-kind evidence 不能代替 `existing_kubernetes` evidence；反过来也不能把 operator smoke 自动算成默认 `release:ready` 结论。
 
 ## 7. 最小合同
 

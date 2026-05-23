@@ -12,9 +12,14 @@ import {
   validateAgentSmithReleaseContract,
   type CurrentDeployTemplatePackage,
 } from '../current-release-boundary-schema';
-import { buildProductImagesFromBuildManifest } from '../release-contract-input';
+import {
+  assembleReleaseContractGeneratorInput,
+  buildProductImagesFromBuildManifest,
+  type AgentSmithReleaseContractGeneratorInputAssemblyInput,
+} from '../release-contract-input';
 import {
   generateAgentSmithReleaseContract,
+  type AgentSmithReleaseContractCiProvenanceInput,
   type AgentSmithReleaseContractGeneratorInput,
 } from '../release-contract';
 
@@ -101,10 +106,8 @@ function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
   };
 }
 
-function buildReleaseContractInput(
-  productImages: AgentSmithReleaseContractGeneratorInput['product_images'],
-): AgentSmithReleaseContractGeneratorInput {
-  const openapiSubject = {
+function buildOpenApiSubject() {
+  return {
     openapi: '3.1.0',
     info: {
       title: 'AgentSmith API',
@@ -112,7 +115,10 @@ function buildReleaseContractInput(
     },
     paths: {},
   };
-  const asyncapiSubject = {
+}
+
+function buildAsyncApiSubject() {
+  return {
     asyncapi: '3.0.0',
     info: {
       title: 'AgentSmith AsyncAPI',
@@ -120,6 +126,13 @@ function buildReleaseContractInput(
     },
     channels: {},
   };
+}
+
+function buildReleaseContractInput(
+  productImages: AgentSmithReleaseContractGeneratorInput['product_images'],
+): AgentSmithReleaseContractGeneratorInput {
+  const openapiSubject = buildOpenApiSubject();
+  const asyncapiSubject = buildAsyncApiSubject();
 
   return {
     release_id: RELEASE_ID,
@@ -195,13 +208,306 @@ function buildReleaseContractInput(
   };
 }
 
+function buildAssemblyInput(): AgentSmithReleaseContractGeneratorInputAssemblyInput {
+  return {
+    release_id: RELEASE_ID,
+    git_sha: GIT_SHA,
+    sourceGitSha: GIT_SHA,
+    buildManifestAggregate: buildManifestAggregate(),
+    deployTemplatePackage: buildDeployTemplatePackage(),
+    openapi_subject: buildOpenApiSubject(),
+    asyncapi_subject: buildAsyncApiSubject(),
+    adopted_provider_images: [
+      {
+        id: 'llmup',
+        image: `ghcr.io/agentsmith-project/llmup:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
+        digest: `sha256:${'3'.repeat(64)}`,
+      },
+    ],
+    release_kit_prerequisite_images: [
+      {
+        id: 'ingress_nginx_controller',
+        image: `registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:${'4'.repeat(64)}`,
+        digest: `sha256:${'4'.repeat(64)}`,
+      },
+    ],
+    target_profiles: [
+      {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'online',
+        required: true,
+        prerequisites: {
+          namespace: 'agentsmith',
+          rbac: 'namespace_admin',
+          ingress: 'operator_provided',
+          tls: 'required',
+          storage_class: 'operator_provided',
+          registry: 'ghcr_or_operator_mirror',
+          pull_secret_ref: 'operator_secret_ref',
+        },
+      },
+      {
+        target_cluster: 'kind_rehearsal',
+        substrate_source: 'kit_installed',
+        distribution: 'online',
+        required: false,
+        prerequisites: {
+          namespace: 'agentsmith',
+          rbac: 'local_admin',
+          ingress: 'local',
+          tls: 'optional',
+          storage_class: 'standard',
+          registry: 'local_kind_import',
+          pull_secret_ref: 'not_required',
+        },
+      },
+    ],
+    min_release_kit_version: '0.1.0',
+    ci_provenance: {
+      producer_repo: 'github.com/agentsmith-project/agentsmith',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith',
+      commit_sha: GIT_SHA,
+      workflow_name: 'release-contract',
+      run_id: '10001',
+      run_attempt: '1',
+      job: 'generate-release-contract',
+      artifact_uri: 'gh-artifact://agentsmith/release-contract/10001/agentsmith-release-contract.json',
+      generated_at: GENERATED_AT,
+      generator_command: 'npm run release:contract',
+      generator_version: 'p1',
+      attestation: 'none',
+    },
+  };
+}
+
 function expectBuildProductImagesToThrow(value: unknown, expected: string): void {
-  expect(() => buildProductImagesFromBuildManifest(value)).toThrow(expected);
+  expect(() => buildProductImagesFromBuildManifest(value, { expectedReleaseId: RELEASE_ID })).toThrow(expected);
+}
+
+function expectAssemblyToThrow(
+  input: AgentSmithReleaseContractGeneratorInputAssemblyInput,
+  expected: string,
+): void {
+  expect(() => assembleReleaseContractGeneratorInput(input)).toThrow(expected);
 }
 
 describe('release contract input adapter', () => {
+  it('assembles generator input from explicit build, template, contract subject, image and CI inputs', () => {
+    const input = buildAssemblyInput();
+    const generatorInput = assembleReleaseContractGeneratorInput(input);
+    const contract = generateAgentSmithReleaseContract(generatorInput, SOURCE_OPTIONS);
+
+    expect(generatorInput.product_images).toEqual(
+      buildProductImagesFromBuildManifest(input.buildManifestAggregate, { expectedReleaseId: RELEASE_ID }),
+    );
+    expect(generatorInput.deploy_template_package).toBe(input.deployTemplatePackage);
+    expect(generatorInput.deploy_template_digest).toBe(input.deployTemplatePackage.manifest_sha256);
+    expect(generatorInput.openapi_subject).toBe(input.openapi_subject);
+    expect(generatorInput.asyncapi_subject).toBe(input.asyncapi_subject);
+    expect('deploy_image_inventory' in (generatorInput as unknown as Record<string, unknown>)).toBe(false);
+    expect('artifact_provenance' in (generatorInput as unknown as Record<string, unknown>)).toBe(false);
+    expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
+  });
+
+  it('fails fast when release id, git sha, or deploy template provenance drift from the explicit source binding', () => {
+    const buildManifestDrift = buildAssemblyInput();
+    const aggregate = buildManifestAggregate();
+    buildManifestDrift.buildManifestAggregate = {
+      ...aggregate,
+      release_id: '2026.05.23-other',
+      targets: [{ ...aggregate.targets[0], release_id: '2026.05.23-other' }],
+    };
+    expectAssemblyToThrow(
+      buildManifestDrift,
+      'build manifest app target release_id must match expected release_id',
+    );
+
+    const sourceGitShaDrift = buildAssemblyInput();
+    sourceGitShaDrift.sourceGitSha = 'ffffffffffffffffffffffffffffffffffffffff';
+    expectAssemblyToThrow(sourceGitShaDrift, 'git_sha must match sourceGitSha');
+
+    const deployTemplateCommitDrift = buildAssemblyInput();
+    deployTemplateCommitDrift.deployTemplatePackage.artifact_provenance.commit_sha =
+      'ffffffffffffffffffffffffffffffffffffffff';
+    expectAssemblyToThrow(
+      deployTemplateCommitDrift,
+      'deployTemplatePackage.artifact_provenance.commit_sha must match git_sha',
+    );
+  });
+
+  it('uses deploy template manifest_sha256 as the only deploy_template_digest source', () => {
+    const input = buildAssemblyInput();
+    const generatorInput = assembleReleaseContractGeneratorInput(input);
+
+    expect(generatorInput.deploy_template_digest).toBe(input.deployTemplatePackage.manifest_sha256);
+
+    const driftInput = {
+      ...buildAssemblyInput(),
+      deploy_template_digest: `sha256:${'9'.repeat(64)}`,
+    } as AgentSmithReleaseContractGeneratorInputAssemblyInput & { deploy_template_digest: string };
+
+    expect(() => assembleReleaseContractGeneratorInput(driftInput)).toThrow(
+      'deploy_template_digest must be assembled from deployTemplatePackage.manifest_sha256',
+    );
+  });
+
+  it.each([
+    'file:///home/percy/works/mbos-v1/agentsmith/agentsmith-deploy-template-package.tgz',
+    './agentsmith-deploy-template-package.tgz',
+  ])('leaves deploy template package artifact URI validation to the generator boundary for %s', (packageUri) => {
+    const input = buildAssemblyInput();
+    input.deployTemplatePackage.package_uri = packageUri;
+    input.deployTemplatePackage.artifact_provenance.artifact_uri = input.deployTemplatePackage.package_uri;
+
+    const generatorInput = assembleReleaseContractGeneratorInput(input);
+
+    expect(() => generateAgentSmithReleaseContract(generatorInput, SOURCE_OPTIONS)).toThrow(
+      'package_uri must be a remote/CI artifact URI',
+    );
+  });
+
+  it('fails fast when CI provenance commit, workflow, run, job, artifact, or source fields are missing or drift', () => {
+    const commitDrift = buildAssemblyInput();
+    commitDrift.ci_provenance.commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+    expectAssemblyToThrow(commitDrift, 'ci_provenance.commit_sha must match git_sha');
+
+    const requiredCases: readonly [
+      keyof AgentSmithReleaseContractCiProvenanceInput,
+      string,
+    ][] = [
+      ['commit_sha', 'ci_provenance.commit_sha must be a non-empty string'],
+      ['workflow_name', 'ci_provenance.workflow_name must be a non-empty string'],
+      ['run_id', 'ci_provenance.run_id must be a non-empty string'],
+      ['run_attempt', 'ci_provenance.run_attempt must be a non-empty string'],
+      ['job', 'ci_provenance.job must be a non-empty string'],
+      ['artifact_uri', 'ci_provenance.artifact_uri must be a non-empty string'],
+      ['producer_repo', 'ci_provenance.producer_repo must be a non-empty string'],
+      ['normalized_remote', 'ci_provenance.normalized_remote must be a non-empty string'],
+      ['generated_at', 'ci_provenance.generated_at must be a non-empty string'],
+      ['generator_command', 'ci_provenance.generator_command must be a non-empty string'],
+      ['generator_version', 'ci_provenance.generator_version must be a non-empty string'],
+    ];
+
+    for (const [field, expected] of requiredCases) {
+      const missing = buildAssemblyInput();
+      delete (missing.ci_provenance as Partial<AgentSmithReleaseContractCiProvenanceInput>)[field];
+      expectAssemblyToThrow(missing, expected);
+    }
+  });
+
+  it('fails fast when a required CI provenance field exists only on the prototype', () => {
+    const input = buildAssemblyInput();
+    const ciProvenance = { ...input.ci_provenance };
+    delete (ciProvenance as Partial<AgentSmithReleaseContractCiProvenanceInput>).run_id;
+    Object.setPrototypeOf(ciProvenance, { run_id: input.ci_provenance.run_id });
+    input.ci_provenance = ciProvenance;
+
+    expectAssemblyToThrow(input, 'ci_provenance.run_id must be a non-empty string');
+  });
+
+  it('fails fast when CI provenance attestation is missing or undefined', () => {
+    const missing = buildAssemblyInput();
+    delete (missing.ci_provenance as Partial<AgentSmithReleaseContractCiProvenanceInput>).attestation;
+    expectAssemblyToThrow(missing, 'ci_provenance.attestation is required');
+
+    const undefinedAttestation = buildAssemblyInput();
+    (undefinedAttestation.ci_provenance as Partial<AgentSmithReleaseContractCiProvenanceInput>).attestation =
+      undefined;
+    expectAssemblyToThrow(undefinedAttestation, 'ci_provenance.attestation is required');
+  });
+
+  it('rejects caller-provided generator-owned inventory and artifact provenance fields', () => {
+    const inventoryInput = {
+      ...buildAssemblyInput(),
+      deploy_image_inventory: [],
+    } as AgentSmithReleaseContractGeneratorInputAssemblyInput & { deploy_image_inventory: unknown[] };
+
+    expect(() => assembleReleaseContractGeneratorInput(inventoryInput)).toThrow(
+      'deploy_image_inventory must be generated by release contract generator',
+    );
+
+    const provenanceInput = {
+      ...buildAssemblyInput(),
+      artifact_provenance: {},
+    } as AgentSmithReleaseContractGeneratorInputAssemblyInput & { artifact_provenance: Record<string, never> };
+
+    expect(() => assembleReleaseContractGeneratorInput(provenanceInput)).toThrow(
+      'artifact_provenance must be generated by release contract generator',
+    );
+  });
+
+  it('requires an explicit expected release_id binding for build manifest product images', () => {
+    const aggregate = buildManifestAggregate();
+
+    expect(() => {
+      // @ts-expect-error build manifest product images require an expected release_id binding.
+      buildProductImagesFromBuildManifest(aggregate);
+    }).toThrow('expected release_id');
+  });
+
+  it('fails fast when the build manifest app target release_id drifts from the expected release_id', () => {
+    const aggregate = buildManifestAggregate();
+
+    expect(() => {
+      buildProductImagesFromBuildManifest(
+        {
+          ...aggregate,
+          release_id: '2026.05.23-other',
+          targets: [{ ...aggregate.targets[0], release_id: '2026.05.23-other' }],
+        },
+        { expectedReleaseId: RELEASE_ID },
+      );
+    }).toThrow('build manifest app target release_id must match expected release_id');
+  });
+
+  it('fails fast when the build manifest app target release_alias_ref points at another release alias', () => {
+    const aggregate = buildManifestAggregate();
+
+    expect(() => {
+      buildProductImagesFromBuildManifest(
+        {
+          ...aggregate,
+          targets: [
+            {
+              ...aggregate.targets[0],
+              release_alias_ref: 'ghcr.io/agentsmith-project/agentsmith-app:release-2026.05.22-p1',
+            },
+          ],
+        },
+        { expectedReleaseId: RELEASE_ID },
+      );
+    }).toThrow('build manifest app target release_alias_ref must match expected release_id');
+  });
+
+  it('accepts a release_id that already includes the release alias prefix', () => {
+    const aggregate = buildManifestAggregate();
+    const prefixedReleaseId = 'release-2026.05.23-p1';
+
+    const productImages = buildProductImagesFromBuildManifest(
+      {
+        ...aggregate,
+        release_id: prefixedReleaseId,
+        targets: [
+          {
+            ...aggregate.targets[0],
+            release_id: prefixedReleaseId,
+            release_alias_ref: 'ghcr.io/agentsmith-project/agentsmith-app:release-2026.05.23-p1',
+          },
+        ],
+      },
+      { expectedReleaseId: prefixedReleaseId },
+    );
+
+    expect(productImages[0]?.image).toBe(
+      `ghcr.io/agentsmith-project/agentsmith-app:release-2026.05.23-p1@${APP_DIGEST}`,
+    );
+  });
+
   it('maps the single app build manifest target into release contract product images', () => {
-    const productImages = buildProductImagesFromBuildManifest(buildManifestAggregate());
+    const productImages = buildProductImagesFromBuildManifest(buildManifestAggregate(), {
+      expectedReleaseId: RELEASE_ID,
+    });
 
     expect(productImages).toEqual([
       {

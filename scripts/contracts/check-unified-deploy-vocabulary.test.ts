@@ -46,6 +46,13 @@ Current Docker-only local-kind unified deploy remains the current mainline.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 `;
 
+const validReleaseHandoffBoundaryDoc = `# Active Release Doc
+
+## Release Kit Handoff Boundary
+
+Current AgentSmith release readiness is transitional product readiness and local-kind evidence. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+`;
+
 const releaseKitSplitPlanWithoutNewRepoBootstrapDoc = `# Release Kit Split Plan
 
 Status: team_reviewed_p0_start_ready
@@ -75,6 +82,10 @@ It is not a source dependency, contract dependency, or gate dependency.
 New repos must start with a bootstrap-only/docs-governance-first PR, then repo-local team/owners start specialty work.
 Minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints.
 Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.
+
+## P2 / P5 Start Handoff
+
+Before P2/P5 start, the new repo must have a bootstrap-only/docs-governance-first PR with the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints. Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.
 `;
 
 type FixtureOptions = {
@@ -139,9 +150,17 @@ function defaultActiveDoc(path: string): string {
     || path === 'docs/contracts/README.md'
     || path === 'docs/contracts/product-terminology.md'
     || path === 'docs/user-guides/runtime-lines-matrix.md'
-    || path === 'docs/user-guides/unified-deploy-operations.md'
   ) {
     return validP0BoundaryDoc;
+  }
+
+  if (path === 'docs/user-guides/unified-deploy-operations.md') {
+    return `${validP0BoundaryDoc}
+${validReleaseHandoffBoundaryDoc}`;
+  }
+
+  if (path === 'docs/user-guides/release-readiness-checklist.md') {
+    return validReleaseHandoffBoundaryDoc;
   }
 
   if (path === RELEASE_KIT_SPLIT_PLAN_PATH) {
@@ -360,6 +379,27 @@ This intentionally omits the concrete deployment decisions.
     expect(text).toContain('external_declared');
   });
 
+  it.each([
+    'docs/user-guides/release-readiness-checklist.md',
+    'docs/user-guides/unified-deploy-operations.md',
+  ])('requires %s to state the transition release-kit handoff boundary', (path) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [path]: `${path === 'docs/user-guides/unified-deploy-operations.md' ? validP0BoundaryDoc : '# Active Release Doc'}
+
+\`npm run release:ready\` is the long-term final AgentSmith deployment package release verdict owner.
+`,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain(`${path}:`);
+    expect(text).toContain('release-kit handoff boundary');
+    expect(text).toContain('transitional product readiness');
+    expect(text).toContain('future deploy/package/operator verdict');
+  });
+
   it('requires the split plan to document release-kit handoff-only checks', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
@@ -485,6 +525,22 @@ contracts, runbooks, and ADR notes may be expanded later.
 
     const text = failureText(root);
 
+    expect(text).toContain('minimum bootstrap pack');
+  });
+
+  it('requires the split plan P2/P5 start handoff to explicitly check the minimum bootstrap pack', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc.replace(
+          '## P2 / P5 Start Handoff\n\nBefore P2/P5 start, the new repo must have a bootstrap-only/docs-governance-first PR with the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints. Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.',
+          '## Implementation Start Handoff\n\nBefore implementation start, the new repo can begin implementation after team review.',
+        ),
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('P2/P5 start');
     expect(text).toContain('minimum bootstrap pack');
   });
 

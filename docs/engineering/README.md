@@ -25,7 +25,7 @@ Current guidance and implementation plans:
 
 Approved split plans:
 
-- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `team_reviewed_p0_start_ready`; KISS-first plan for splitting release kit and runner repos while keeping AgentSmith product evidence authority
+- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `team_reviewed_p0_machine_guards_docs_boundary_ready`; KISS-first plan for splitting release kit and runner repos while keeping AgentSmith product evidence authority
 
 Decision-required analyses:
 

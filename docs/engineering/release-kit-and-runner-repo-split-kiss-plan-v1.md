@@ -19,7 +19,7 @@ provenance checks, and redaction checks in this plan.
 1. AgentSmith repo 负责产品代码、产品合同、产品验证、前后端 image 和本地完整测试。
 2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只是本机演练目标。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
-4. `npm run release:ready` 仍是 AgentSmith 唯一普通发布前自动化结论；release summary 可以分区展示 AgentSmith 产品证据和 release kit 分发/部署证据，但不新增命令、gate 或发布状态。
+4. 过渡期 `npm run release:ready` 仍是 AgentSmith product readiness / local-kind evidence 入口；release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 release verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 这不是新增 DevOps 发布平台，也不是新增 runner 产品面。
 
@@ -31,7 +31,7 @@ AgentSmith 仍保留：
 
 - 产品对象和用户入口；
 - API、权限、审计、用量、Context Store、Files、Agent tasks、Agent Runners 管理面；
-- `npm run verify`、`npm run release:ready`、product flows、visual、backend-real 等产品验收真相。
+- `npm run verify`、过渡期 `npm run release:ready`、product flows、visual、backend-real 等产品验收真相。
 
 外部 repo 只通过 versioned contract、image digest、release manifest 和 focused evidence 与 AgentSmith 对接。
 
@@ -205,7 +205,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 
 ### 7.3 Release Kit Evidence v1
 
-Release kit 产出部署证据，AgentSmith adapter 再映射回当前 release summary。这个 adapter 是唯一允许 release kit evidence 进入 AgentSmith release summary 的入口；release kit 自己不能写 `release:ready` verdict。
+Release kit 产出部署证据，AgentSmith adapter 在过渡期再映射回当前 release summary。这个 adapter 是唯一允许 release kit evidence 进入 AgentSmith release summary 的入口；release-kit functional repo ready 后，deployment/package/operator release verdict 属于 release-kit repo-local gate/evidence，而不是由 AgentSmith `release:ready` 长期拥有。
 
 所有 evidence 都必须绑定本次输入制品，至少包含 `release_contract_digest`、`release_id`、`git_sha`、`release_kit_version`、`target_cluster`、`substrate_source`、`distribution`、`target`、`status`、`failure_class`、`artifact_provenance` 和 evidence root。缺这些字段时 AgentSmith adapter 必须拒绝映射，避免 stale evidence 混入当前 release summary。
 
@@ -402,14 +402,14 @@ npm run contracts:check-current-verification-campaigns
 3. 生成 `agentsmith-release-contract.json`，包含 `product_images`、`adopted_provider_images`、`release_kit_prerequisite_images`、`deploy_image_inventory` 和 `artifact_provenance`。
 4. release summary 记录 release contract 路径、digest 和 provenance。
 5. AgentSmith adapter 拒绝 local/stale/缺 provenance 的 release contract。
-6. 保持 `npm run release:ready` 不变，避免同时改验收和部署工具。
+6. 保持过渡期 `npm run release:ready` product readiness 入口不变，避免同时改产品验收和部署工具归属。
 
 验收：
 
 - contract 中每个 image 都有 digest。
 - contract 与当前 OpenAPI/AsyncAPI 和 deploy template digest 对齐。
 - deploy image inventory 是唯一 image inventory 输入。
-- `release:ready` 仍使用当前产品证据闭环。
+- 过渡期 `release:ready` 仍使用当前产品证据闭环。
 
 ### P2. Release Kit Online MVP
 
@@ -428,7 +428,7 @@ npm run contracts:check-current-verification-campaigns
 9. 支持 `existing_kubernetes + external_declared + online` 作为在线部署主路径。
 10. 支持 `kind_rehearsal + kit_installed + online` 作为本机/CI 证明工具。
 11. `existing_kubernetes + kit_installed` 只在 pod-routability preflight 存在后进入 advanced runbook；P2 MVP 不把它作为默认路径。
-12. AgentSmith 保留 thin adapter，把 release kit evidence 映射回当前 release campaign；adapter 必须使用 P0 映射表，不得新增第二套 verdict。
+12. AgentSmith 保留 thin adapter，把 release kit evidence 映射回当前 release campaign；adapter 必须使用 P0 映射表，不得新增第二套 AgentSmith verdict。
 
 不迁：
 
@@ -445,7 +445,7 @@ npm run contracts:check-current-verification-campaigns
 - `kit_installed` 模式的 substrate lifecycle/truth evidence 在 release-ready deploy snapshot 中可见；如果 P2 早期暂留 AgentSmith，不能宣称 release kit 已完整拥有 online deploy。
 - kind rehearsal 产出 images、rollout、route probe evidence，但不能作为用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
-- AgentSmith `release:ready` deploy snapshot 仍有 dependencies/images/rollout/product flows 四段，其中 product flows 仍来自 AgentSmith。
+- 过渡期 AgentSmith `release:ready` deploy snapshot 仍有 dependencies/images/rollout/product flows 四段，其中 product flows 仍来自 AgentSmith；release-kit ready 后，部署/发布包 verdict 回到 release-kit repo-local gate/evidence。
 - release kit CI 至少覆盖 contract schema、render/dry-run、digest-only、no source import；真实 Kubernetes/cloud smoke 可以是手动或 scheduled，需要 secrets/kubeconfig 时必须产出同一 evidence schema。
 - current campaign 还是 local-kind 时，真实 Kubernetes/cloud evidence 只能作为 operator deploy evidence；除非当前 manifest 显式新增/调整 writer，否则不能写入 local-kind gate id。
 
@@ -542,7 +542,7 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 
 - `npm run verify -- --goal=pr --run` 通过。
 - runner/skills 相关改动按范围跑 `npm run test:skills:fast` 或 `npm run test:agent-task:runner:fast`。
-- 发布收口跑 `npm run release:ready`。
+- AgentSmith product readiness 收口跑 `npm run release:ready`。
 
 ## 9. 发布模式
 
@@ -640,7 +640,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 4. 有没有让 release kit import AgentSmith 产品源码？
 5. 有没有让 runner repo 解释 Context Store、Files 或 managed credentials 权限？
 6. 有没有把本地开发 override 当成 release proof？
-7. 有没有把 release kit 产物当成新的 release verdict？
+7. 有没有把 release kit 产物当成新的 AgentSmith `release:ready` verdict？
 8. 有没有把 kind 当成部署必需条件？
 9. 有没有把云端支持写成云资源管理产品？
 10. 有没有新增 substrate provider abstraction？

@@ -1,14 +1,15 @@
 # 发布前检查清单
 
-这份清单用于当前版本的最终发布验收。
+这份清单用于当前 AgentSmith product readiness / transition release readiness。当前 `npm run release:ready` 是过渡期 AgentSmith product readiness 与 local-kind evidence 入口，不是长期 deployment/package/operator release verdict owner；release-kit functional repo ready 后，未来 deployment、package 和 operator runbook release verdict 归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 术语边界：
 - 这里的 `release` 仅表示工程验收与上线准备流程。
 - 不代表 AgentSmith 提供对外 DevOps 发布管理能力。
+- 不代表 AgentSmith 长期拥有在线/airgap 部署执行、发布包验收或 operator runbook verdict；这些在 release-kit functional repo ready 后归 release-kit repo-local gate/evidence。
 
-## 通过标准
+## 当前过渡期通过标准
 
-只有下面 4 类检查都通过，当前版本才可视为 `ready for release`：
+只有下面 4 类检查都通过，当前 AgentSmith transition release readiness 才可视为通过：
 1. 合约与类型检查通过。
 2. 默认业务链与治理门禁通过。
 3. release-grade backend-real 验证通过。
@@ -18,7 +19,7 @@
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
 2. `npm run release:status` 是只读入口，只读取 latest summary 及其中冻结的 status/deploy snapshot，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
 3. 默认 release campaign 使用 `local-kind` 和 focused product-flow producers 证明统一部署；`existing-cluster` 是需要目标集群时显式执行的 operator smoke。
-4. 机器可读报告语境：`gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或最终 release verdict。
+4. 机器可读报告语境：`gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或当前 AgentSmith transition release readiness verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. 维护者排障语境：`gate:release:full` is aggregate-only terminal verdict verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
 7. `release:ready` / `release:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
@@ -67,7 +68,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 
 | Role | Surface | 必须证明什么 |
 | --- | --- | --- |
-| human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
+| human transition readiness entry | `npm run release:ready` | precheck 通过后进入当前 AgentSmith product readiness campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
 | deploy evidence owner | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
 | deploy smoke owner | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
@@ -83,7 +84,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 1. `gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 release-grade `ux_trace_bundle` 证据所有权。
-4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；默认 release campaign 用 local-kind 做本机发布证明，目标集群验收再显式补 existing-cluster smoke。route smoke 不能替代 focused product-flow 证据。
+4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；默认 release campaign 用 local-kind 做本机 readiness evidence，目标集群验收再显式补 existing-cluster smoke。route smoke 不能替代 focused product-flow 证据，也不是未来 release-kit 职责归属证明。
 5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
 
 ### 4. CI Green 的含义（机器可读报告）
@@ -93,7 +94,7 @@ CI green 不是完整 release sign-off：
 1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 对应的内部 CI surfaces 通过。
 2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
-4. release-grade sign-off 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real release、unified deploy evidence、terminal aggregate verdict 与 `summary.md`。
+4. 当前 AgentSmith transition sign-off 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real release、unified deploy evidence、terminal aggregate verdict 与 `summary.md`。
 
 ### 5. 手工 Feishu 联调步骤
 
@@ -121,7 +122,7 @@ make manual-feishu-check
 artifacts/release-runs/<campaign-run-id>
 ```
 
-在下面示例里用 `<campaign-root>` 表示这个目录。最终 release 结论必须优先看 campaign-scoped evidence，而不是看 standalone lane 上一次留下的默认 artifacts。
+在下面示例里用 `<campaign-root>` 表示这个目录。当前 AgentSmith readiness 结论必须优先看 campaign-scoped evidence，而不是看 standalone lane 上一次留下的默认 artifacts。
 
 - terminal aggregate verdict：
   - `<campaign-root>/gate-release-full/result.json`
@@ -186,11 +187,11 @@ artifacts/release-runs/<campaign-run-id>
 3. 如果是 visual 差异，先确认是否为真实 UX/UI 变更。
 4. 只有在页面行为正确且变更合理时才更新基线。
 5. 先判断这是 automated verdict 失败、evidence 缺失，还是手工联调失败；不要把不同层次的问题混成同一条结论。
-6. focused 诊断命令只用于缩小范围；最终仍要回到 automated release-grade campaign 重新给出 verdict。
+6. focused 诊断命令只用于缩小范围；当前仍要回到 automated release-grade campaign 重新给出 verdict。
 
-## 最终结论模板
+## 当前结论模板
 
-发布结论只允许两种：
+当前 AgentSmith readiness 结论只允许两种：
 - `ready for release`
 - `not ready for release`
 

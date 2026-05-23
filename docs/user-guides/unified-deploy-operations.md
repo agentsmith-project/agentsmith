@@ -2,7 +2,7 @@
 
 Status: `current`
 
-This guide is the current deployment operations entrypoint for AgentSmith.
+This guide is the current AgentSmith transitional deploy diagnostics and evidence entrypoint. Current AgentSmith release readiness is transitional product readiness and local-kind evidence; after the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 AgentSmith now has one deployment model with two profiles:
 
@@ -16,10 +16,11 @@ Current Docker-only local-kind unified deploy remains the current mainline.
 only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
 
-For this guide, `existing-cluster` smoke proves deployment wiring and routing
-for an operator-owned cluster. Product flows still come from AgentSmith focused
-evidence, and real release-kit repo checks require the explicit source-boundary
-handoff described in the split plan.
+For this guide, `existing-cluster` smoke proves current deployment wiring,
+routing smoke, and handoff evidence for an operator-owned cluster. It is not a
+long-term release-kit ownership statement. Product flows still come from
+AgentSmith focused evidence, and real release-kit repo checks require the
+explicit source-boundary handoff described in the split plan.
 
 ## Runtime Shape
 
@@ -111,7 +112,7 @@ It does not run chat, audit, usage, or full release verification.
 
 ### Existing Cluster Smoke
 
-`existing-cluster` smoke proves the app deploy, rollout, and routing ownership for the real-cluster profile. It does not replace focused product-flow evidence.
+`existing-cluster` smoke proves the current app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is handoff evidence only: future online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke does not replace focused product-flow evidence.
 
 ```bash
 npm run test:unified-deploy:existing-cluster-smoke -- \

@@ -67,6 +67,11 @@ const P0_HANDOFF_BOUNDARY_FILES = new Set<string>([
   'docs/user-guides/unified-deploy-operations.md',
 ]);
 
+const RELEASE_KIT_HANDOFF_BOUNDARY_FILES = new Set<string>([
+  'docs/user-guides/release-readiness-checklist.md',
+  'docs/user-guides/unified-deploy-operations.md',
+]);
+
 const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
   {
     label: 'split deploy contract path',
@@ -446,6 +451,20 @@ function hasBlockWithPatterns(blocks: readonly MarkdownBlock[], patterns: readon
   return blocks.some((block) => patterns.every((pattern) => pattern.test(block.text)));
 }
 
+function hasNearbyTextWithPatterns(
+  blocks: readonly MarkdownBlock[],
+  patterns: readonly RegExp[],
+  radius = 3,
+): boolean {
+  return blocks.some((_block, index) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(blocks.length, index + radius + 1);
+    const nearbyText = blocks.slice(start, end).map((block) => block.text).join(' ');
+
+    return patterns.every((pattern) => pattern.test(nearbyText));
+  });
+}
+
 const TOTAL_OR_BASE_CONTRACTS_CHECK_PATTERN = /(?:\b(?:total|base)\b|总|基础)[\s\S]{0,40}(?:npm\s+run\s+)?contracts:check(?![-:\w])|(?:npm\s+run\s+)?contracts:check(?![-:\w])[\s\S]{0,40}(?:\b(?:total|base)\b|总|基础)/iu;
 const NOT_WIRED_INTO_CONTRACTS_CHECK_PATTERN = /\bnot\s+(?:wired\s+into|included\s+in|part\s+of)\b|暂不接入|不接入|不纳入|不属于/iu;
 const SOURCE_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bsource dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}源码依赖|源码依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
@@ -484,6 +503,41 @@ function validateP0HandoffBoundary(
       failures,
       path,
       `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy remains the current mainline; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
+    );
+  }
+}
+
+function validateReleaseKitHandoffBoundary(
+  path: string,
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  const blocks = parseMarkdownBlocks(parseMarkdownLines(content));
+  const hasBoundary = hasNearbyTextWithPatterns(blocks, [
+    /\bAgentSmith\b/u,
+    /\bcurrent\b|当前/iu,
+    /\btransition(?:al)?\b|过渡/u,
+    /\bproduct readiness\b|产品验收|产品 readiness/iu,
+    /\blocal-kind\b/iu,
+    /\bevidence\b|证据/u,
+    /\brelease[- ]kit\b|\bagentsmith-release-kit\b/iu,
+    /\bfuture\b|\bready\s+后\b|完成后|未来|长期/u,
+    /\bdeploy(?:ment)?\b|部署/iu,
+    /\bpackage\b|发布包/iu,
+    /\boperator\b|\brunbooks?\b|运维|操作手册/iu,
+    /\bverdict\b|\bgate\b|\bevidence\b|结论|验收/iu,
+    /\bown(?:s|er|ership)?\b|负责|归/u,
+    /\bimages?\b|镜像/iu,
+    /\brelease contract\b|\bimage contract\b|发布合同/iu,
+    /\blocal full test\b|本地完整测试/iu,
+    /\bthin adapter\b|薄\s*adapter/iu,
+  ]);
+
+  if (!hasBoundary) {
+    addFailure(
+      failures,
+      path,
+      `${path} must state the release-kit handoff boundary: current AgentSmith release readiness is transitional product readiness/local-kind evidence, not the long-term final deploy owner; release-kit owns the future deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
     );
   }
 }
@@ -574,6 +628,31 @@ function validateReleaseKitSplitPlan(
       failures,
       RELEASE_KIT_SPLIT_PLAN_PATH,
       'release kit split plan must list the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT/DEVELOPER guide, RELEASE_GATES/verify-release, and contracts/runbooks/ADR entrypoints.',
+    );
+  }
+
+  const p2P5StartBootstrapBoundary = hasNearbyTextWithPatterns(blocks, [
+    /\bP2\b/u,
+    /\bP5\b/u,
+    /\bstart\b|前/u,
+    /\bbootstrap[-/]only\b|\bdocs[-/]governance[- ]first\b/iu,
+    /\bminimum bootstrap pack\b|最小(?:bootstrap\s*)?(?:治理)?骨架|最小\s*bootstrap\s*pack/iu,
+    /\bREADME\.md\b/u,
+    /\bAGENTS\.md\b/u,
+    /\bDEVELOPMENT(?:\.md)?\b|\bDEVELOPER(?:\.md)?\b|\bDEVELOPMENT\/DEVELOPER\b|developer guide/iu,
+    /\bRELEASE[_ ]GATES?\b|\bverify[- ]release\b/iu,
+    /\bcontracts?\b/iu,
+    /\brunbooks?\b/iu,
+    /\bADR\b/u,
+    /\bquick gate\b/iu,
+    /\bnot\b[\s\S]{0,80}\brelease readiness\b|不是[\s\S]{0,80}\brelease readiness\b/iu,
+    /\brepo[- ]local\b[\s\S]{0,120}\brelease gate\b/iu,
+  ]);
+  if (!p2P5StartBootstrapBoundary) {
+    addFailure(
+      failures,
+      RELEASE_KIT_SPLIT_PLAN_PATH,
+      'release kit split plan must state the P2/P5 start explicit check: new repos need bootstrap-only/docs-governance-first PR with the minimum bootstrap pack before implementation, quick gate is not release readiness, and formal readiness is repo-local.',
     );
   }
 
@@ -707,6 +786,9 @@ export function checkUnifiedDeployVocabulary(
     validateNoSplitDeployVocabulary(path, content, failures);
     if (P0_HANDOFF_BOUNDARY_FILES.has(path)) {
       validateP0HandoffBoundary(path, content, failures);
+    }
+    if (RELEASE_KIT_HANDOFF_BOUNDARY_FILES.has(path)) {
+      validateReleaseKitHandoffBoundary(path, content, failures);
     }
     if (path === RELEASE_KIT_SPLIT_PLAN_PATH) {
       validateReleaseKitSplitPlan(content, failures);

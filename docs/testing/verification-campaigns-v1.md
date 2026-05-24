@@ -113,7 +113,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset`
 - `npm run release:ready`
 - `npm run release:status`
-unified deploy 的 producer 命令只保留为 legacy/focused diagnostics；
+unified deploy 的 producer 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断；
 当前 AgentSmith release campaign 不再编排 unified deploy，也不把
 local-kind / product-flow deploy evidence 作为 release verdict 必需证据。
 这些命令仅在 owner 排障时显式执行，不作为普通人类 verdict 入口。
@@ -196,7 +196,7 @@ local-kind / product-flow deploy evidence 作为 release verdict 必需证据。
 | human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
 | read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
-| deploy diagnostic | unified deploy producers | legacy/focused diagnostics for local-kind image handoff、K8s rollout、ingress route smoke；不属于当前 AgentSmith release verdict |
+| deploy diagnostic | unified deploy producers | transition-only focused diagnostics / 过渡期专项诊断 for local-kind image handoff、K8s rollout、ingress route smoke；不属于当前 AgentSmith release verdict |
 | deploy smoke diagnostic | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
 | product diagnostic | focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 project、files、managed runner task 最小诊断；不属于当前 AgentSmith release verdict |
 | campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |

@@ -85,7 +85,7 @@ Still-binding runtime contracts:
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
-standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.
+standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required release evidence.
 <!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms

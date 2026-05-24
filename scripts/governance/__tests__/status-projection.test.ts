@@ -385,7 +385,7 @@ describe('current status projection', () => {
       expect(rendered).toContain('Why: Backend-real check did not pass.');
       expect(rendered).toContain(`Evidence: ${campaignRoot}`);
       expect(rendered).toContain('Rerun: npm run release:ready');
-      expect(rendered).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
       expect(rendered).toContain('- dependencies: passed');
       expect(rendered).toContain('- images: passed');
       expect(rendered).toContain('- rollout: passed');
@@ -433,9 +433,9 @@ describe('current status projection', () => {
       ]);
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
       expect(rendered).toContain('Total duration: 1h 30m 32s');
-      expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Legacy deploy diagnostic product flows 2m 45s');
+      expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Transition-only deploy diagnostic product flows 2m 45s');
       expect(rendered).not.toContain('Slowest stages: gate-release');
-      expect(rendered).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
       expect(rendered).toContain('- dependencies: passed');
       expect(rendered).toContain('- images: passed');
       expect(rendered).toContain('- rollout: passed');
@@ -467,7 +467,7 @@ describe('current status projection', () => {
       });
       const rendered = renderStatusProjectionSummary(projection);
 
-      expect(rendered).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
       expect(rendered).toContain('- product flows: passed');
       expect(rendered).not.toContain('- product flows: failed');
     });

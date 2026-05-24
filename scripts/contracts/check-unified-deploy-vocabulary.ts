@@ -522,7 +522,9 @@ function validateReleaseKitHandoffBoundary(
     /\bterminal aggregate\b/iu,
     /\bunified deploy\b/iu,
     /\blocal-kind\b/iu,
-    /\b(?:legacy|focused)\b|诊断/u,
+    /\btransition-only\b/iu,
+    /\bfocused diagnostics?\b/iu,
+    /过渡期专项诊断/u,
     /\bnot\b[\s\S]{0,80}\bAgentSmith release verdict\b|不属于[\s\S]{0,80}AgentSmith release verdict/iu,
     /\brelease[- ]kit\b|\bagentsmith-release-kit\b/iu,
     /\bfuture\b|\bready\s+后\b|完成后|未来|长期/u,
@@ -541,7 +543,15 @@ function validateReleaseKitHandoffBoundary(
     addFailure(
       failures,
       path,
-      `${path} must state the release-kit handoff boundary: current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate; unified deploy/local-kind deploy commands are legacy/focused diagnostics and not part of the AgentSmith release verdict; release-kit owns the future deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
+      `${path} must state the release-kit handoff boundary: current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断 and not part of the AgentSmith release verdict; release-kit owns the future deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
+    );
+  }
+
+  if (/legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/iu.test(content)) {
+    addFailure(
+      failures,
+      path,
+      `${path} must not describe current unified deploy diagnostics as legacy; use transition-only focused diagnostics / 过渡期专项诊断.`,
     );
   }
 }

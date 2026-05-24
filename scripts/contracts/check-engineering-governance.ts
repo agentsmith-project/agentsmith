@@ -414,9 +414,11 @@ requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'releas
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics');
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow deploy diagnostics');
 forbidMatch(releaseChecklist, /current AgentSmith release readiness is transitional product readiness and local-kind evidence/i, 'release checklist must not make local-kind evidence part of current AgentSmith release readiness');
-requireMatch(verificationCampaigns, /legacy\/focused diagnostics/, 'verification campaign guide must describe unified deploy producers as legacy/focused diagnostics');
+requireMatch(verificationCampaigns, /transition-only focused diagnostics[\s\S]{0,80}过渡期专项诊断/i, 'verification campaign guide must describe unified deploy producers as transition-only focused diagnostics / 过渡期专项诊断');
+forbidMatch(verificationCampaigns, /legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/i, 'verification campaign guide must not describe current unified deploy diagnostics as legacy');
 forbidMatch(verificationCampaigns, /由 release campaign 编排/i, 'verification campaign guide must not say release campaign orchestrates unified deploy producers');
 forbidMatch(verificationCampaigns, /current release[\s\S]{0,80}(?:must|必须)[\s\S]{0,80}unified deploy evidence/i, 'verification campaign guide must not require unified deploy evidence for current release');
+requireMatch(releaseKitSplitPlan, /P2\/P3\/P6[\s\S]{0,120}(?:remove or hide|移除或隐藏)[\s\S]{0,160}AgentSmith active status\/workflow/i, 'release-kit split plan must state the transition-only diagnostics exit condition');
 
 const currentReleaseBoundaryDocs = [
   readme,
@@ -433,6 +435,11 @@ forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,100}local-kind ev
 forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,120}default deploy evidence line/i, 'active docs must not make local-kind the default release:ready deploy evidence line');
 forbidMatch(currentReleaseBoundaryDocs, /orchestrate[s]?[\s\S]{0,120}unified deploy evidence lanes/i, 'active docs must not say release:ready orchestrates unified deploy evidence lanes');
 forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,120}unified deploy evidence lanes/i, 'active docs must not tie release:ready to unified deploy evidence lanes');
+requireMatch(currentReleaseBoundaryDocs, /transition-only focused diagnostics[\s\S]{0,80}过渡期专项诊断/i, 'active docs must describe current unified deploy diagnostics as transition-only focused diagnostics / 过渡期专项诊断');
+forbidMatch(currentReleaseBoundaryDocs, /legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/i, 'active docs must not describe current unified deploy diagnostics as legacy');
+forbidMatch(currentReleaseBoundaryDocs, /release kit evidence[\s\S]{0,80}映射回当前 release campaign/i, 'active docs must not map release-kit evidence back into the current AgentSmith release campaign');
+forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,80}(?:已消费|consume|consumes|consumed)[\s\S]{0,80}(?:new )?deploy evidence/i, 'active docs must not say release:ready consumes new deploy evidence');
+forbidMatch(currentReleaseBoundaryDocs, /future campaign[\s\S]{0,80}consume/i, 'active docs must not imply a future AgentSmith campaign will consume unified deploy diagnostics');
 requireMatch(releaseChecklist, /internal adapter/i, 'release checklist must label old gate/lane/backend-real commands as internal adapters');
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults');
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default');

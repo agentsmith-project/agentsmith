@@ -19,7 +19,7 @@ provenance checks, and redaction checks in this plan.
 1. AgentSmith repo 负责产品代码、产品合同、产品验证、前后端 image 和本地完整测试。
 2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只是本机演练目标。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
-4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 legacy/focused diagnostics，不属于 AgentSmith release verdict。release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 release verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
+4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith release verdict。release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 release verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 这不是新增 DevOps 发布平台，也不是新增 runner 产品面。
 
@@ -41,7 +41,7 @@ AgentSmith 仍保留：
 
 - AgentSmith 不提供对外 DevOps 发布编排或发布管理平台能力，见 [项目宪法](../项目宪法.md)。
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
-- 当前 release campaign 只绑定 AgentSmith product readiness、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 legacy/focused diagnostics，不属于当前 release verdict，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
+- 当前 release campaign 只绑定 AgentSmith product readiness、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 transition-only focused diagnostics / 过渡期专项诊断，不属于当前 release verdict，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
 - Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。
 - Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。旧 `@mbos/agent-runner` 只保留 runtime-env 与 compatibility shim。
 - 当前 runner 执行进程在 [packages/agent-task-runner](../../packages/agent-task-runner)，AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)。
@@ -314,20 +314,20 @@ Airgap 输出：
 8. AgentSmith adapter 必须对 evidence JSON 和日志做 redaction check；发现明文 secret 时 fail fast，不能把 evidence 映射进 release summary。
 9. contract intake / `--inputs` 产物如果只完成输入解析、digest 计划或模板依赖检查，只能进入 diagnostic evidence root；`intake-report` / `image-digest-plan` 不能写入 deploy/package/release verdict，且必须保留 `readiness=false`。
 
-当前 release campaign 映射规则：
+Pre-GA transition-only diagnostic mapping（不属于 AgentSmith release verdict）：
 
-| Release kit output | AgentSmith canonical writer | campaign path | summary section | reject 条件 |
+| Release-kit-style diagnostic output | AgentSmith diagnostic writer | diagnostic path | diagnostic section | reject 条件 |
 | --- | --- | --- | --- | --- |
-| `deploy-result.json` 中的 substrate/preflight 部分 | `lane-unified-deploy-substrate` / `unified_deploy_substrate` | `<campaign-root>/lane-unified-deploy-substrate/native/result.json` 与 `<campaign-root>/unified-deploy/substrate/` | dependencies | 缺 native `result.json`、缺 `release_contract_digest`、profile 与 current campaign 不匹配、`external_declared` 冒充 Docker truth |
-| `image-map.json` / mirror report | `lane-unified-deploy-local-kind-images` / `unified_deploy_local_kind_images`，仅限当前 local-kind campaign | `<campaign-root>/lane-unified-deploy-local-kind-images/native/result.json` 与 `<campaign-root>/unified-deploy/local-kind-images/` | images | tag-only image、digest mismatch、local-kind evidence 被用于 `existing_kubernetes` |
-| `render-report.json` + `rollout-report.json` | `lane-unified-deploy-local-kind` / `unified_deploy_local_kind`，仅限当前 local-kind campaign | `<campaign-root>/lane-unified-deploy-local-kind/native/result.json` 与 `<campaign-root>/unified-deploy/local-kind/` | rollout | rendered image inventory 与 release contract 不一致、live imageID 缺失、不匹配 target digest |
-| AgentSmith product flow aggregate | `lane-unified-deploy-product-flows` / `unified_deploy_product_flows` | `<campaign-root>/lane-unified-deploy-product-flows/native/result.json` 与 `<campaign-root>/unified-deploy/product-flows/` | product flows | 由 release kit 伪造、缺 required flows、仍从 Docker defaults 猜外部 substrate |
+| `deploy-result.json` 中的 substrate/preflight 部分 | `lane-unified-deploy-substrate` / `unified_deploy_substrate` | `<diagnostic-root>/lane-unified-deploy-substrate/native/result.json` 与 `<diagnostic-root>/unified-deploy/substrate/` | dependencies | 缺 native `result.json`、缺 `release_contract_digest`、profile 与 transition diagnostic profile 不匹配、`external_declared` 冒充 Docker truth |
+| `image-map.json` / mirror report | `lane-unified-deploy-local-kind-images` / `unified_deploy_local_kind_images`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind-images/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind-images/` | images | tag-only image、digest mismatch、local-kind evidence 被用于 `existing_kubernetes` |
+| `render-report.json` + `rollout-report.json` | `lane-unified-deploy-local-kind` / `unified_deploy_local_kind`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind/` | rollout | rendered image inventory 与 release contract 不一致、live imageID 缺失、不匹配 target digest |
+| AgentSmith product flow aggregate | `lane-unified-deploy-product-flows` / `unified_deploy_product_flows` | `<diagnostic-root>/lane-unified-deploy-product-flows/native/result.json` 与 `<diagnostic-root>/unified-deploy/product-flows/` | product flows | 由 release kit 伪造、缺 required flows、仍从 Docker defaults 猜外部 substrate |
 
 说明：
 
-1. writer truth 仍是 `gate_id + line_kind`，campaign 不是 writer。
-2. P0 可以新增/调整 manifest 来支持真实 Kubernetes deploy evidence，但必须先更新 `current-gate-manifest.ts`、`current-verification-campaign-manifest.ts` 和 result schema；在此之前，`existing_kubernetes` evidence 只能作为 operator deploy evidence，不得塞进 local-kind writer id。
-3. `gate:release:full` 仍只聚合当前 manifest 声明的 required evidence，不执行、不重写 release kit evidence。
+1. writer truth 仍是 `gate_id + line_kind`，campaign 和 release summary 都不是 writer。
+2. P0 可以新增/调整 manifest 来支持真实 Kubernetes deploy diagnostics，但 deploy/package/operator verdict 归 release-kit repo-local gate/evidence；AgentSmith active release campaign 不消费这些诊断作为 release verdict。在此之前，`existing_kubernetes` evidence 只能作为 operator deploy evidence，不得塞进 local-kind writer id。
+3. `gate:release:full` 仍只聚合当前 manifest 声明的 required evidence，不执行、不重写 release kit diagnostic evidence。
 
 ### 7.4 Runner Contract v1
 
@@ -499,7 +499,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 release readiness 或 deploy rea
 11. 支持 `existing_kubernetes + external_declared + online` 作为在线部署主路径。
 12. 支持 `kind_rehearsal + kit_installed + online` 作为本机/CI 证明工具。
 13. `existing_kubernetes + kit_installed` 只在 pod-routability preflight 存在后进入 advanced runbook；P2 MVP 不把它作为默认路径。
-14. AgentSmith 保留 thin adapter，把 release kit evidence 映射回当前 release campaign；adapter 必须使用 P0 映射表，不得新增第二套 AgentSmith verdict。
+14. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
 
 不迁：
 
@@ -516,9 +516,9 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 release readiness 或 deploy rea
 - `kit_installed` 模式的 substrate lifecycle/truth evidence 在 release-ready deploy snapshot 中可见；如果 P2 早期暂留 AgentSmith，不能宣称 release kit 已完整拥有 online deploy。
 - kind rehearsal 产出 images、rollout、route probe evidence，但不能作为用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
-- Historical P2 transition note superseded by the current boundary: AgentSmith `release:ready` no longer requires dependencies/images/rollout/product-flow deploy evidence for its release verdict; those unified deploy outputs remain legacy/focused diagnostics until a future campaign explicitly consumes them.
+- Historical P2 transition note superseded by the current boundary: AgentSmith `release:ready` no longer requires dependencies/images/rollout/product-flow deploy evidence for its release verdict; those unified deploy outputs remain transition-only focused diagnostics / 过渡期专项诊断 until P2/P3/P6 exits remove or hide them from AgentSmith active status/workflow. No future AgentSmith release campaign consumption is implied.
 - release kit CI 至少覆盖 contract schema、render/dry-run、digest-only、no source import；真实 Kubernetes/cloud smoke 可以是手动或 scheduled，需要 secrets/kubeconfig 时必须产出同一 evidence schema。
-- current campaign 还是 local-kind 时，真实 Kubernetes/cloud evidence 只能作为 operator deploy evidence；除非当前 manifest 显式新增/调整 writer，否则不能写入 local-kind gate id。
+- AgentSmith transition diagnostic profile 还是 local-kind 时，真实 Kubernetes/cloud evidence 只能作为 operator deploy evidence；除非当前 manifest 显式新增/调整 writer，否则不能写入 local-kind gate id。
 
 ### P3. Release Kit Airgap MVP
 
@@ -609,7 +609,7 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 工作：
 
 1. 在 release-kit / runner 集成面上，AgentSmith 只保留 thin adapters、contract checker、docs 指向和产品集成测试；AgentSmith 的产品合同、OpenAPI/AsyncAPI、验证入口和产品代码继续保留。
-2. 只有 release kit adapter 完成 parity、`release:ready` 已消费新 evidence、回滚路径明确后，才删除或降级旧 unified deploy standalone 实现；不得删除当前 unified deploy contract/model。
+2. 只有 release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确后，才从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast negative tests；不得删除当前 unified deploy contract/model。
 3. 删除 runner runtime 源码，保留必要 shim 或迁移说明。
 4. 增加 static guard，防止正式路径重新 import 外部 repo 源码、tag-only image、旧 runner 字段、release kit import 产品源码。
 
@@ -618,6 +618,7 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 - `npm run verify -- --goal=pr --run` 通过。
 - runner/skills 相关改动按范围跑 `npm run test:skills:fast` 或 `npm run test:agent-task:runner:fast`。
 - AgentSmith product readiness 收口跑 `npm run release:ready`。
+- P2/P3/P6 完成后，AgentSmith active status/workflow 不再展示 unified deploy transition-only diagnostics；deploy/package/operator verdict 只由 release-kit repo-local gate/evidence 给出。
 
 ## 9. 发布模式
 

@@ -145,7 +145,7 @@ Still-binding runtime contracts:
 Current local developer flow:
 - `local-manual` — Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint.
 
-Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for legacy/focused `local-kind` and `existing-cluster` deploy diagnostics under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.
+Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for transition-only focused `local-kind` and `existing-cluster` deploy diagnostics / 过渡期专项诊断 under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.
 <!-- current-runtime-lines:readme:end -->
 
 ### No-Sandbox Deployment Baseline
@@ -164,7 +164,7 @@ For daily verification, use the generated workflow entry above: `npm run verify`
 
 Low-level `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
-When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of release owner identities are `gate:default`, `lane:visual`, `gate:release`, and the aggregate-only `gate:release:full`; unified deploy producers are legacy/focused diagnostics, not current release owners.
+When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of release owner identities are `gate:default`, `lane:visual`, `gate:release`, and the aggregate-only `gate:release:full`; unified deploy producers are transition-only focused diagnostics / 过渡期专项诊断, not current release owners.
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:
 

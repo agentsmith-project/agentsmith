@@ -657,7 +657,7 @@ describe('current workflow governance', () => {
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
     expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'diagnostic_lane')).toBe(true);
-    expect(unifiedDeployLanes.every((lane) => lane?.description.includes('legacy unified deploy'))).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => lane?.description.includes('transition-only unified deploy'))).toBe(true);
     expect(unifiedDeployLanes.every((lane) => lane?.description.includes('focused diagnostic'))).toBe(true);
     expect(unifiedDeployLanes.every((lane) => !/release evidence|evidence channel/i.test(lane?.description ?? ''))).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.recommended !== true)).toBe(true);
@@ -1387,7 +1387,7 @@ describe('current workflow governance', () => {
       'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.',
     );
     expect(governanceModel).toContain(
-      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.',
+      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required release evidence.',
     );
     expect(governanceModel).not.toContain(
       'standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles',
@@ -1416,14 +1416,19 @@ describe('current workflow governance', () => {
     expect(unifiedDeployWorkflowCommands).toHaveLength(4);
     for (const command of unifiedDeployWorkflowCommands) {
       expect(command.workflowRole).toBe('diagnostic_lane');
-      expect(command.description).toMatch(/legacy unified deploy[\s\S]*focused diagnostic/i);
+      expect(command.description).toMatch(/transition-only unified deploy[\s\S]*focused diagnostic/i);
+      expect(command.description).not.toMatch(/legacy unified deploy|legacy focused diagnostic/i);
       expect(command.description).not.toMatch(/release evidence|evidence channel/i);
       expect(command.storyEvidenceRequiredFor).not.toContain('release');
     }
 
     expect(workflowSource).not.toMatch(/unified deploy [^\n'"]*release evidence channel/i);
     expect(workflowSource).not.toMatch(/unified deploy [^\n'"]*evidence owner/i);
+    expect(workflowSource).toMatch(/transition-only focused diagnostics[\s\S]*过渡期专项诊断/i);
+    expect(workflowSource).not.toMatch(/legacy\/focused diagnostics|legacy focused diagnostic|legacy unified deploy/i);
+    expect(docs).toMatch(/transition-only focused diagnostics[\s\S]*过渡期专项诊断/i);
     expect(docs).toMatch(/not part of (?:the )?AgentSmith release verdict/i);
+    expect(docs).not.toMatch(/legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|Legacy deploy diagnostics|旧部署诊断/i);
     expect(docs).not.toMatch(/current AgentSmith release readiness is transitional product readiness and local-kind evidence/i);
     expect(docs).not.toMatch(/must[\s\S]{0,80}(?:unified deploy|local-kind|product-flow)[\s\S]{0,80}(?:evidence|passed)/i);
     expect(docs).not.toMatch(/release campaign evidence uses unified deploy lanes/i);
@@ -1433,5 +1438,8 @@ describe('current workflow governance', () => {
     expect(docs).not.toMatch(/release:ready[\s\S]{0,120}default deploy evidence line/i);
     expect(docs).not.toMatch(/orchestrate[s]?[\s\S]{0,120}unified deploy evidence lanes/i);
     expect(docs).not.toMatch(/release:ready[\s\S]{0,120}unified deploy evidence lanes/i);
+    expect(docs).not.toMatch(/release kit evidence[\s\S]{0,80}映射回当前 release campaign/i);
+    expect(docs).not.toMatch(/release:ready[\s\S]{0,80}(?:已消费|consume|consumes|consumed)[\s\S]{0,80}(?:new )?deploy evidence/i);
+    expect(docs).not.toMatch(/future campaign[\s\S]{0,80}consume/i);
   });
 });

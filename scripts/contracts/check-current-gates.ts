@@ -272,8 +272,11 @@ for (const lane of [
   if (lane.requiredFor.includes('release')) {
     failures.push(`${lane.id} must remain a focused diagnostic and must not be requiredFor release`);
   }
-  if (!/legacy focused diagnostic/i.test(lane.description)) {
-    failures.push(`${lane.id} description must describe legacy focused diagnostic scope`);
+  if (!/transition-only focused diagnostic/i.test(lane.description)) {
+    failures.push(`${lane.id} description must describe transition-only focused diagnostic scope`);
+  }
+  if (/legacy focused diagnostic/i.test(lane.description)) {
+    failures.push(`${lane.id} description must not describe current unified deploy diagnostics as legacy`);
   }
 }
 if (gateReleaseFull?.campaignEvidenceArtifacts.some((path) => path.includes('/unified-deploy/') || path.includes('/lane-unified-deploy-'))) {
@@ -395,7 +398,8 @@ requireMatch(gateContract, /e2e\/visual-baseline-support\.ts/, 'current gate man
 requireMatch(gateContract, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'current gate manifest contract must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current gate manifest contract must identify backend-real ux trace bundle roots', failures);
 requireMatch(gateContract, /unified deploy/, 'current gate manifest contract must describe unified deploy diagnostics', failures);
-requireMatch(gateContract, /legacy\/focused diagnostics|legacy focused diagnostics/i, 'current gate manifest contract must describe unified deploy as legacy/focused diagnostics', failures);
+requireMatch(gateContract, /transition-only focused diagnostics[\s\S]{0,80}过渡期专项诊断/i, 'current gate manifest contract must describe unified deploy as transition-only focused diagnostics / 过渡期专项诊断', failures);
+forbidMatch(gateContract, /legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/i, 'current gate manifest contract must not describe unified deploy diagnostics as legacy', failures);
 requireMatch(gateContract, /local-kind/, 'current gate manifest contract must describe local-kind deploy diagnostics', failures);
 requireMatch(gateContract, /focused product-flow/, 'current gate manifest contract must describe focused product-flow diagnostics', failures);
 requireMatch(gateContract, /artifacts\/unified-deploy/, 'current gate manifest contract must identify unified deploy evidence roots', failures);

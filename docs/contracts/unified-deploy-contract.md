@@ -28,10 +28,10 @@ only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
 
 The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
-chain is legacy/focused diagnostic evidence only. AgentSmith `release:ready`
-does not execute or require it for the AgentSmith release verdict; future
-deployment/package/operator verdict ownership belongs to release-kit repo-local
-gates and evidence.
+chain is transition-only focused diagnostic evidence / 过渡期专项诊断 only.
+AgentSmith `release:ready` does not execute or require it for the AgentSmith
+release verdict; future deployment/package/operator verdict ownership belongs
+to release-kit repo-local gates and evidence.
 
 ## Runtime Topology
 

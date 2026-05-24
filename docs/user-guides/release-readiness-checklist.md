@@ -1,6 +1,6 @@
 # 发布前检查清单
 
-这份清单用于当前 AgentSmith product readiness / transition release readiness。当前 `npm run release:ready` 表示 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 legacy/focused diagnostics，不属于 AgentSmith release verdict。release-kit functional repo ready 后，未来 deployment、package 和 operator runbook release verdict 归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
+这份清单用于当前 AgentSmith product readiness / transition release readiness。当前 `npm run release:ready` 表示 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith release verdict。release-kit functional repo ready 后，未来 deployment、package 和 operator runbook release verdict 归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 术语边界：
 - 这里的 `release` 仅表示工程验收与上线准备流程。
@@ -53,7 +53,7 @@ npm run release:status
 
 ### 2. 维护者排障 / Owner Producer Diagnostics
 
-下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向 legacy deploy diagnostic 时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
+下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向 transition-only deploy diagnostic / 过渡期专项诊断时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -70,9 +70,9 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | --- | --- | --- |
 | human transition readiness entry | `npm run release:ready` | precheck 通过后进入当前 AgentSmith product readiness campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
-| legacy deploy diagnostic | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith release verdict |
-| legacy deploy smoke diagnostic | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith release verdict |
-| legacy product-flow deploy diagnostic | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的最小产品链诊断：project、files、managed runner task；不属于 AgentSmith release verdict |
+| transition-only deploy diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith release verdict |
+| transition-only deploy smoke diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith release verdict |
+| transition-only product-flow deploy diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的最小产品链诊断：project、files、managed runner task；不属于 AgentSmith release verdict |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
@@ -83,7 +83,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 1. `gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 release-grade `ux_trace_bundle` 证据所有权。
-4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；这些命令保留为 legacy/focused diagnostics，不属于默认 release campaign。route smoke 不能替代 focused product-flow 诊断，也不是未来 release-kit 职责归属证明。
+4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；这些命令保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于默认 release campaign。route smoke 不能替代 focused product-flow 诊断，也不是未来 release-kit 职责归属证明。
 5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
 
 ### 4. CI Green 的含义（机器可读报告）
@@ -157,8 +157,8 @@ artifacts/release-runs/<campaign-run-id>
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
 - standalone unified deploy evidence：
   - `artifacts/unified-deploy/`
-  - legacy/focused diagnostics can start from `substrate-lifecycle.ts reset` when deploy state must be narrowed
-  - existing-cluster smoke remains standalone/operator-scoped unless a future campaign explicitly targets an existing cluster
+  - transition-only focused diagnostics / 过渡期专项诊断 can start from `substrate-lifecycle.ts reset` when deploy state must be narrowed
+  - existing-cluster smoke remains standalone/operator-scoped; future deployment/package/operator verdict belongs to release-kit repo-local gate/evidence
 
 ## 当前 Story Evidence 真相（机器可读报告）
 

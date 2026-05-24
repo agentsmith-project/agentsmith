@@ -147,7 +147,7 @@ describe('release human output', () => {
       expect(output).toContain(`Evidence: ${campaignRoot}`);
       expect(output).toContain('Total duration: 1h 2m 0s');
       expect(output).toContain('Slowest steps: Backend real release check 40m 0s; Full visual check 16m 30s');
-      expect(output).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
+      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
       expect(output).toContain('- dependencies: passed');
       expect(output).toContain('- images: passed');
       expect(output).toContain('- rollout: passed');
@@ -266,7 +266,7 @@ describe('release human output', () => {
         }),
       });
 
-      expect(output).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
+      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
       expect(output).toContain('- product flows: failed');
       expect(output).not.toContain('- product flows: passed');
     } finally {

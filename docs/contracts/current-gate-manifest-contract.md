@@ -87,7 +87,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `scenario_id = integration-release-user-story`
 - aggregate verification must consume those producer snapshots and must not rebuild trace truth from current repo story files
 
-6. unified deploy legacy/focused diagnostics
+6. unified deploy transition-only focused diagnostics / 过渡期专项诊断
 - stable gate ids:
   - `lane-unified-deploy-substrate` (`lane:unified-deploy:substrate`)
   - `lane-unified-deploy-local-kind-images` (`lane:unified-deploy:local-kind:images`)
@@ -95,7 +95,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `lane-unified-deploy-product-flows` (`lane:unified-deploy:product-flows`)
 - these lanes are not `requiredFor: release`
 - start from a clean substrate reset via `substrate-lifecycle.ts reset`
-- legacy lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run
+- transition-only lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke

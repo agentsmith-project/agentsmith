@@ -110,7 +110,8 @@ describe('current gate governance', () => {
     expect(unifiedDeployLanes.every((lane) => lane?.requiredFor.includes('release'))).toBe(false);
     for (const lane of unifiedDeployLanes) {
       expect(lane?.requiredFor).not.toContain('release');
-      expect(lane?.description).toMatch(/legacy focused diagnostic/i);
+      expect(lane?.description).toMatch(/transition-only focused diagnostic/i);
+      expect(lane?.description).not.toMatch(/legacy focused diagnostic/i);
     }
   });
 

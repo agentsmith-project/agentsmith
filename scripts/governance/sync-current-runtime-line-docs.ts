@@ -81,7 +81,7 @@ function renderReadmeRuntimeBlock(): string {
     'Current local developer flow:',
     ...renderLocalFlowList(listCurrentLocalRuntimeLines()),
     '',
-    'Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for legacy/focused `local-kind` and `existing-cluster` deploy diagnostics under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.',
+    'Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for transition-only focused `local-kind` and `existing-cluster` deploy diagnostics / 过渡期专项诊断 under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.',
   ].join('\n');
 }
 
@@ -118,7 +118,7 @@ function renderGovernanceRuntimeBlock(): string {
     'Still-binding runtime contracts:',
     ...renderRuleList('contract'),
     '',
-    'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.',
+    'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required release evidence.',
   ].join('\n');
 }
 

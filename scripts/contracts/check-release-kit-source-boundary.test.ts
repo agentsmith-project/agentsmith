@@ -600,6 +600,29 @@ void sourceRoot;
     expect(explicitResult.stderr).toContain('computed sibling agentsmith product source path');
   });
 
+  it('rejects computed sibling AgentSmith source subpaths during explicit CLI scans', () => {
+    const root = writeWorkspaceRootWithCommittedFixture({});
+    writeText(
+      join(root, '..', 'agentsmith-release-kit'),
+      'src/computed-sibling-subpath-boundary-break.ts',
+      `
+const RELEASE_KIT_ROOT = process.cwd();
+const sourceSubpath = path.join(path.dirname(RELEASE_KIT_ROOT), 'agent' + 'smith', 'src/lib');
+const packageSubpath = path.join(path.dirname(RELEASE_KIT_ROOT), 'agent' + 'smith', 'packages/application');
+void sourceSubpath;
+void packageSubpath;
+`,
+    );
+
+    const explicitResult = runBoundaryCli(root, ['--scan-root', '../agentsmith-release-kit']);
+
+    expect(explicitResult.status).toBe(1);
+    expect(explicitResult.stderr).toContain('../agentsmith-release-kit/src/computed-sibling-subpath-boundary-break.ts');
+    expect(explicitResult.stderr).toContain('src/lib');
+    expect(explicitResult.stderr).toContain('packages/application');
+    expect(explicitResult.stderr).toContain('computed sibling agentsmith product source path');
+  });
+
   it('allows ordinary JSON metadata to mention the product name without treating it as a package import', () => {
     const root = writeFixtureRoot({
       'release-kit/metadata.json': JSON.stringify({

@@ -707,9 +707,7 @@ function matchComputedSiblingAgentSmithSourcePath(line: string): string | null {
 }
 
 function hasQuotedAgentSmithProductSourceSegment(value: string): boolean {
-  return /(["'`])src\1/u.test(value)
-    || /(["'`])packages\1/u.test(value)
-    || /(["'`])package\.json\1/u.test(value);
+  return /(["'`])(?:src(?:\/[^"'`]*)?|packages(?:\/[^"'`]*)?|package\.json)\1/u.test(value);
 }
 
 function isAgentSmithProductSourceReference(value: string): boolean {

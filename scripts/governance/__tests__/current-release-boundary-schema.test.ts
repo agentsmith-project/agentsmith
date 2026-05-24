@@ -1218,5 +1218,16 @@ describe('current release boundary schema', () => {
       validateAgentSmithReleaseContract(supportLevelOnlyContract),
       'target profile required must be a boolean',
     );
+
+    const supportLevelWithRequiredContract = cloneFixture('release-contract.valid.json');
+    const supportLevelWithRequiredProfiles = supportLevelWithRequiredContract.target_profiles as Record<string, unknown>[];
+    supportLevelWithRequiredProfiles[0].support_level = 'primary';
+    rehashArtifactProvenanceContainer(supportLevelWithRequiredContract);
+    rehashReleaseContractProjection(supportLevelWithRequiredContract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(supportLevelWithRequiredContract),
+      'target profile support_level is not allowed and cannot replace required',
+    );
   });
 });

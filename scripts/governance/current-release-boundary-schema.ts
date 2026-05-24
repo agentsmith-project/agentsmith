@@ -2041,12 +2041,17 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
       }
     }
 
+    if (hasOwn(entry, 'support_level')) {
+      failures.push({
+        path: `${path}.support_level`,
+        reason: 'target profile support_level is not allowed and cannot replace required.',
+      });
+    }
+
     if (typeof entry.required !== 'boolean') {
       failures.push({
         path: `${path}.required`,
-        reason: hasOwn(entry, 'support_level')
-          ? 'target profile required must be a boolean; support_level cannot replace required.'
-          : 'target profile required must be a boolean.',
+        reason: 'target profile required must be a boolean.',
       });
     }
     if (targetCluster === 'kind_rehearsal' && entry.required === true) {

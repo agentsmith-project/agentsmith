@@ -1,4 +1,4 @@
-import type { AgentWireApi, TaskExecutionContext } from './protocol.js';
+import type { AgentWireApi, TaskExecutionContext } from '@mbos/agent-runner-contract';
 
 export type AgentRuntimeEnvContext = Partial<Pick<
   TaskExecutionContext,

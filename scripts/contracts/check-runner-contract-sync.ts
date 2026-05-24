@@ -6,7 +6,7 @@ import {
   TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
   TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
   TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS,
-} from '../../packages/agent-runner/src/index.js';
+} from '@mbos/agent-runner-contract';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '../..');

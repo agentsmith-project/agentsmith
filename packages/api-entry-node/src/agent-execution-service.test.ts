@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import type { CachePort } from '@mbos/ports';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner';
+import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner-contract';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';

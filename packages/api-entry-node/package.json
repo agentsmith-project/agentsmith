@@ -15,7 +15,7 @@
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
     "@mbos/adapters-private": "0.1.0",
-    "@mbos/agent-runner": "0.1.0",
+    "@mbos/agent-runner-contract": "0.1.0",
     "@mbos/application": "0.1.0",
     "@mbos/contracts": "0.1.0",
     "@scalar/api-reference": "^1.44.18",

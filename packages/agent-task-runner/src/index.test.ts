@@ -246,7 +246,7 @@ vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
 }));
 
-vi.mock('@mbos/agent-runner', () => ({
+vi.mock('@mbos/agent-runner-contract', () => ({
   assertTaskExecutionContext: assertTaskExecutionContextMock,
   AGENT_TASK_RUNNER_SPEC: {
     app_family: 'agent_task_runner',

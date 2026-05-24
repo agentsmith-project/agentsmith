@@ -28,7 +28,11 @@ run_cmd "npm run test:run -- \
   packages/agent-task-runner/src/package-metadata.test.ts \
   packages/agent-task-runner/src/terminal-runtime.test.ts \
   packages/agent-task-runner/src/task-assets.test.ts \
-  packages/agent-runner/src/runner-spec.test.ts \
+  packages/agent-runner-contract/src/runner-spec.test.ts \
+  packages/agent-runner-contract/src/protocol.test.ts \
+  packages/agent-runner-contract/src/contract-schema.test.ts \
+  packages/agent-runner-contract/src/package-metadata.test.ts \
+  packages/agent-runner/src/compat-shim.test.ts \
   packages/agent-runner/src/runtime-env.test.ts \
   packages/api-entry-node/src/context-store.test.ts \
   packages/api-entry-node/src/context-route-handler.test.ts \

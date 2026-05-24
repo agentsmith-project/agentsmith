@@ -1,5 +1,5 @@
 {
-  "name": "@mbos/agent-runner",
+  "name": "@mbos/agent-runner-contract",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,5 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@mbos/agent-runner-contract": "0.1.0"
   }
 }

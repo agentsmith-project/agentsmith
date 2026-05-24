@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
@@ -63,6 +63,40 @@ function withPackageJsonGitFixture<T>(
       'base package',
     ]);
     writeFileSync(join(root, 'package.json'), `${JSON.stringify(currentPackageJson, null, 2)}\n`);
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      return run({ root, catalog });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+}
+
+function withPackageFileGitFixture<T>(
+  relativePath: string,
+  basePackageJson: unknown,
+  currentPackageJson: unknown,
+  run: (args: { root: string; catalog: ReturnType<typeof buildVerificationCatalog> }) => T,
+): T {
+  const catalog = buildVerificationCatalog();
+  return withTempDir('agentsmith-package-file-impact-', (root) => {
+    const fullPath = join(root, relativePath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, `${JSON.stringify(basePackageJson, null, 2)}\n`);
+    runGitInFixture(root, ['init']);
+    runGitInFixture(root, ['add', relativePath]);
+    runGitInFixture(root, [
+      '-c',
+      'user.email=agentsmith@example.test',
+      '-c',
+      'user.name=AgentSmith Test',
+      'commit',
+      '-m',
+      'base package file',
+    ]);
+    writeFileSync(fullPath, `${JSON.stringify(currentPackageJson, null, 2)}\n`);
 
     const originalCwd = process.cwd();
     process.chdir(root);
@@ -661,6 +695,7 @@ describe('verify impact selector', () => {
 
   it('maps runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
     const changedFiles = [
+      'packages/agent-runner-contract/src/index.ts',
       'packages/agent-runner/src/index.ts',
       'packages/agent-task-runner/src/runner.ts',
       'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
@@ -684,6 +719,178 @@ describe('verify impact selector', () => {
       })),
     ));
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('maps P4 runner contract package extraction files to focused owner review without unmapped expansion', () => {
+    const changedFiles = [
+      'package-lock.json',
+      'packages/agent-runner-contract/package.json',
+      'packages/agent-runner-contract/tsconfig.json',
+      'packages/agent-runner-contract/src/contract-schema.test.ts',
+      'packages/agent-runner-contract/src/contract-schema.ts',
+      'packages/agent-runner-contract/src/index.ts',
+      'packages/agent-runner-contract/src/package-metadata.test.ts',
+      'packages/agent-runner-contract/src/protocol.test.ts',
+      'packages/agent-runner-contract/src/protocol.ts',
+      'packages/agent-runner-contract/src/runner-spec.test.ts',
+      'packages/agent-runner-contract/src/runner-spec.ts',
+      'packages/agent-runner/package.json',
+      'packages/agent-task-runner/package.json',
+      'packages/api-entry-node/package.json',
+      'infra/runner/Dockerfile.agent-task-runner',
+      'infra/runner/Dockerfile.agent-task-runner-base',
+      'scripts/skills-runtime-fast-gate.sh',
+      'scripts/contracts/check-runner-contract-sync.ts',
+      'scripts/contracts/check-runner-contract-sync.test.ts',
+      'scripts/contracts/check-runner-naming.ts',
+      'scripts/contracts/check-runner-naming.test.ts',
+      'scripts/governance/current-release-boundary-schema.ts',
+      'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
+      'packages/api-entry-node/src/agent-execution-service.ts',
+      'packages/api-entry-node/src/agent-execution-service.test.ts',
+      'packages/api-entry-node/src/task-route-handler.ts',
+      'packages/api-entry-node/src/task-route-handler.test.ts',
+      'packages/api-entry-node/src/index.test.ts',
+      'packages/api-entry-node/src/__integration__/notebook-task-artifacts.integration.test.ts',
+      'packages/api-entry-node/src/__integration__/notebook-task-events.integration.test.ts',
+      'packages/api-entry-node/src/__integration__/notebook-tasks.integration.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run ws:typecheck',
+      'npm run verify:visual',
+      'npm run test:agent-task:runner:fast',
+      'npm run test:agent-task:runner:backend-real',
+      'npm run verify:real',
+    ]);
+    expect(plan.affectedSurfaces).toEqual(expect.arrayContaining([
+      'engineering-governance-tooling',
+      'package/topology',
+      'release-boundary-guard',
+      'runner/context-store/credentials',
+    ]));
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.affectedSurfaces).not.toContain('visual');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.nextAction).not.toContain('Manual impact owner triage');
+    expect(plan.nextActions.join('\n')).toContain('runner, Context Store, and credential owner review');
+    expect(plan.nextActions.join('\n')).toContain('release/repo-split boundary guard owner review');
+    expect(plan.nextActions.join('\n')).toContain('package graph/topology owner review');
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'package-lock.json',
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['package/topology'],
+        broadImpact: false,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'packages/agent-runner-contract/package.json',
+        matchedRules: ['runner_context_credential', 'governance_tooling'],
+        affectedSurfaces: ['package/topology', 'runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'infra/runner/Dockerfile.agent-task-runner',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+      }),
+      expect.objectContaining({
+        changedFile: 'packages/api-entry-node/src/task-route-handler.test.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+      }),
+      expect.objectContaining({
+        changedFile: 'packages/api-entry-node/src/agent-execution-service.test.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-runner-naming.ts',
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/governance/current-release-boundary-schema.ts',
+        matchedRules: ['release_boundary_guard'],
+        affectedSurfaces: ['release-boundary-guard'],
+      }),
+    ]));
+  });
+
+  it('adds runner owner review for api-entry package metadata only when runner contract dependencies change', () => {
+    const basePackageJson = {
+      name: '@mbos/api-entry-node',
+      dependencies: {
+        '@mbos/agent-runner': '0.1.0',
+        pg: '^8.16.3',
+      },
+    };
+    const runnerContractPackageJson = {
+      name: '@mbos/api-entry-node',
+      dependencies: {
+        '@mbos/agent-runner-contract': '0.1.0',
+        pg: '^8.16.3',
+      },
+    };
+    const unrelatedPackageJson = {
+      name: '@mbos/api-entry-node',
+      dependencies: {
+        '@mbos/agent-runner': '0.1.0',
+        pg: '^8.17.0',
+      },
+    };
+
+    withPackageFileGitFixture(
+      'packages/api-entry-node/package.json',
+      basePackageJson,
+      runnerContractPackageJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/api-entry-node/package.json'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+        expect(plan.affectedSurfaces).toContain('package/topology');
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/api-entry-node/package.json',
+            matchedRules: ['runner_context_credential', 'governance_tooling'],
+            affectedSurfaces: ['package/topology', 'runner/context-store/credentials'],
+          }),
+        ]);
+      },
+    );
+
+    withPackageFileGitFixture(
+      'packages/api-entry-node/package.json',
+      basePackageJson,
+      unrelatedPackageJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/api-entry-node/package.json'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toEqual(['package/topology']);
+        expect(plan.affectedSurfaces).not.toContain('runner/context-store/credentials');
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/api-entry-node/package.json',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['package/topology'],
+          }),
+        ]);
+      },
+    );
   });
 
   it('maps api-entry runner context credential backend sources to runner owner review', () => {

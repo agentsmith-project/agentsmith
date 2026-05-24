@@ -1022,25 +1022,25 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('keeps runner_contract current physical source on @mbos/agent-runner until P4 extraction', () => {
+  it('keeps runner_contract current physical source on @mbos/agent-runner-contract after P4 extraction', () => {
     const runnerContractEntry = CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX.find((entry) => entry.truth === 'runner_contract');
 
     expect(runnerContractEntry).toMatchObject({
-      physical_source: expect.stringContaining('@mbos/agent-runner'),
+      physical_source: expect.stringContaining('@mbos/agent-runner-contract'),
     });
-    expect(runnerContractEntry?.physical_source).not.toContain('@mbos/agent-runner-contract');
-    expect(runnerContractEntry?.generator).toContain('P4');
+    expect(runnerContractEntry?.physical_source).not.toContain('packages/agent-runner/src');
+    expect(runnerContractEntry?.generator).not.toContain('P4 extracts');
 
-    const futurePhysicalSource = structuredClone(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);
-    const index = futurePhysicalSource.findIndex((entry) => entry.truth === 'runner_contract');
-    futurePhysicalSource[index] = {
-      ...futurePhysicalSource[index],
-      physical_source: '@mbos/agent-runner-contract schema/types/fixtures',
+    const stalePhysicalSource = structuredClone(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);
+    const index = stalePhysicalSource.findIndex((entry) => entry.truth === 'runner_contract');
+    stalePhysicalSource[index] = {
+      ...stalePhysicalSource[index],
+      physical_source: '@mbos/agent-runner package (packages/agent-runner/src) schema/types/fixtures',
     };
 
     expectInvalid(
-      validateTruthMatrix(futurePhysicalSource),
-      'runner_contract current physical_source must point to @mbos/agent-runner until P4',
+      validateTruthMatrix(stalePhysicalSource),
+      'runner_contract physical_source must point to @mbos/agent-runner-contract',
     );
   });
 

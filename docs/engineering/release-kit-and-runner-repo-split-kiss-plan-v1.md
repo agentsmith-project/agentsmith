@@ -43,7 +43,7 @@ AgentSmith 仍保留：
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
 - 当前 release campaign 直接绑定 visual、backend-real、unified deploy 和 product flows，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
 - Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。
-- Runner 协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner/src/protocol.ts)。
+- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。旧 `@mbos/agent-runner` 只保留 runtime-env 与 compatibility shim。
 - 当前 runner 执行进程在 [packages/agent-task-runner](../../packages/agent-task-runner)，AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)。
 - AFSCP/ASBCP 只作为新 repo bootstrap 治理做法上的 family reference；本计划采用 ASBCP-lite / non-normative reference，只借鉴启动纪律：repo identity、scope boundary、docs/contracts/runbooks/ADR 入口、quick governance guard、单一 release gate 入口。不复制 AFSCP/ASBCP 的领域模型、风险台账规模、证据分类体系或 gate 实现。
 
@@ -367,7 +367,7 @@ v1 冻结：
 | Deploy image inventory | AgentSmith | release contract 内 `deploy_image_inventory` | AgentSmith contract generator | release kit render/check、mirror、smoke | rendered workload image 不在 inventory、target registry digest 不匹配、live imageID 不匹配 |
 | Substrate connection truth | release kit 生成/校验，AgentSmith 定义 schema | neutral truth JSON | `kit_installed` installer 或 `external_declared` validator | render/apply/smoke、AgentSmith product flow producer | Docker truth 用于 external、缺 endpoint/secret ref/TLS/extension、明文 secret |
 | Release kit evidence | release kit | release kit evidence root | release kit commands | AgentSmith thin adapter、operator runbook | 缺 input digest/provenance、stale evidence、writer id 不匹配、secret 泄露 |
-| Runner contract | AgentSmith shared-contract flow | current `@mbos/agent-runner` package (`packages/agent-runner/src`) schema/types/fixtures；P4 目标才是 `@mbos/agent-runner-contract` | current contract sync；P4 contract package generator | AgentSmith API、runner repo、AsyncAPI/doc checks | AsyncAPI 漂移、旧字段、unsupported protocol version、手工复制类型 |
+| Runner contract | AgentSmith shared-contract flow | `@mbos/agent-runner-contract` package (`packages/agent-runner-contract/src`) schema/types/fixtures；旧 `@mbos/agent-runner` 只保留 runtime-env 与 compatibility shim | AgentSmith runner contract sync from `@mbos/agent-runner-contract` | AgentSmith API、runner repo、AsyncAPI/doc checks | AsyncAPI 漂移、旧字段、unsupported protocol version、手工复制类型 |
 | Runner release manifest | `agentsmith-runner` | runner repo CI artifact | runner repo release workflow | AgentSmith runner lock checker | 缺 image digest/provenance、缺 contract artifact digest/provenance、contract version 不兼容、producer repo 不是 `agentsmith-runner` |
 | Runner image lock | AgentSmith | `agent-task-runner-image.lock` | AgentSmith adoption PR | AgentSmith release contract generator、backend-real | lock 与 runner manifest/release contract digest 不一致 |
 

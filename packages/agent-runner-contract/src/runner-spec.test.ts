@@ -33,7 +33,7 @@ describe('agent task runner spec', () => {
 
   it('does not publish legacy runner spec matching aliases', () => {
     const runnerSpecSource = readFileSync(
-      path.join(process.cwd(), 'packages/agent-runner/src/runner-spec.ts'),
+      path.join(process.cwd(), 'packages/agent-runner-contract/src/runner-spec.ts'),
       'utf8',
     );
 

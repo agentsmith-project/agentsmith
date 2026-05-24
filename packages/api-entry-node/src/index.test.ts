@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner-contract";
 import { createDefaultNodeApiDeps } from "./index.js";
 import { AgentTaskModelSettingService } from "./agent-task-model-setting-service.js";
 import { sanitizeWorkloadId } from "./internal-agent-pod-manager.js";
@@ -708,7 +708,7 @@ async function openNotebookRunnerSocket(input: {
           JSON.stringify({
             type: "agent.ready",
             payload: {
-              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              runner_spec: AGENT_TASK_RUNNER_SPEC,
               capabilities: { wire_api: "responses" },
             },
           }),

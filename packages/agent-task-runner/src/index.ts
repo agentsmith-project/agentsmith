@@ -50,7 +50,7 @@ import {
   AGENT_TASK_RUNNER_SPEC,
   type AgentServerStartPayload,
   type AgentWireApi,
-} from '@mbos/agent-runner';
+} from '@mbos/agent-runner-contract';
 
 type ServerStartPayload = AgentServerStartPayload;
 

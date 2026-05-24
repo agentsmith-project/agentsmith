@@ -18,6 +18,7 @@ describe('agent-task-runner package metadata', () => {
 
     expect(packageJson.name).toBe('@mbos/agent-task-runner');
     expect(packageJson.dependencies?.['@mbos/agent-runner']).toBe('0.1.0');
+    expect(packageJson.dependencies?.['@mbos/agent-runner-contract']).toBe('0.1.0');
   });
 
   it('keeps the managed runner image on the built single-process Node entrypoint', () => {

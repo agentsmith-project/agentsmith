@@ -8,7 +8,7 @@ import {
 import {
   RUNNER_CONTRACT_TERMINAL_FIXTURES,
   TASK_EXECUTION_CONTEXT_JSON_SCHEMA,
-} from '../../packages/agent-runner/src/index.js';
+} from '@mbos/agent-runner-contract';
 
 function createExecutionContextSchema(options: {
   required?: string[];

@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
-import { assertTaskExecutionContext } from '@mbos/agent-runner';
+import { assertTaskExecutionContext } from '@mbos/agent-runner-contract';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { AGENT_CONNECTION_TTL_MS, type AgentConnectionAuthKind } from './agent-presence-store.js';
 

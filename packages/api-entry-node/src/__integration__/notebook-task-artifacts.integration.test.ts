@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner-contract";
 import { apiFetch, startServer } from "./test-support.js";
 import { AgentTaskModelSettingService } from "../agent-task-model-setting-service.js";
 import {

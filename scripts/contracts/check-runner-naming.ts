@@ -215,7 +215,10 @@ function isAllowedLegacyProductLine(filePath: string, line: string): boolean {
       line,
     );
   }
-  if (filePath.startsWith("packages/agent-runner/src/")) {
+  if (
+    filePath.startsWith("packages/agent-runner/src/") ||
+    filePath.startsWith("packages/agent-runner-contract/src/")
+  ) {
     return /unsupported|reject|not\.toHaveProperty|interaction_kind|chat|notebook|external_agent_id|chat_runner|notebook_runner/.test(
       line,
     );
@@ -450,6 +453,7 @@ const activeRunnerWireFiles = [
   "packages/api-entry-node/src/agent-runner-profile.ts",
   "packages/api-entry-node/src/internal-agent-pod-manager.ts",
   "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
+  "packages/agent-runner-contract/src/protocol.ts",
   "packages/agent-runner/src/protocol.ts",
   "scripts/local-manual/start-api.sh",
   "scripts/run-integration-e2e-full.sh",
@@ -627,6 +631,9 @@ const activeProductSurfaceFiles = [
   "docs/contracts/specs/asyncapi.json",
   "docs/contracts/specs/openapi-route-kind-map.json",
   "src/lib/api/types.generated.ts",
+  "packages/agent-runner-contract/src/index.ts",
+  "packages/agent-runner-contract/src/protocol.ts",
+  "packages/agent-runner-contract/src/runner-spec.ts",
   "packages/agent-runner/src/index.ts",
   "packages/agent-runner/src/protocol.ts",
   "packages/agent-runner/src/runner-spec.ts",
@@ -1415,11 +1422,12 @@ forbidPath(
   "MSW must not keep the retired notebook handler surface",
 );
 
-const agentRunnerPublicSdk = readText("packages/agent-runner/src/index.ts");
+const agentRunnerContractPublicSdk = readText("packages/agent-runner-contract/src/index.ts");
+const agentRunnerCompatSdk = readText("packages/agent-runner/src/index.ts");
 forbidMatch(
-  agentRunnerPublicSdk,
+  `${agentRunnerContractPublicSdk}\n${agentRunnerCompatSdk}`,
   /ChatExecutionContext|NotebookExecutionContext|CHAT_RUNNER_SPEC|NOTEBOOK_RUNNER_SPEC|AgentInteractionKind/,
-  "Agent Runner public SDK must not export retired chat/notebook concepts",
+  "Agent Runner contract and compatibility SDKs must not export retired chat/notebook concepts",
 );
 
 if (failures.length > 0) {

@@ -6,7 +6,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { assertTaskExecutionContext } from '@mbos/agent-runner';
+import { assertTaskExecutionContext } from '@mbos/agent-runner-contract';
 import {
   AgentTaskDeleteBlockedErrorSchema,
   AgentTaskFileLibraryInUseErrorSchema,

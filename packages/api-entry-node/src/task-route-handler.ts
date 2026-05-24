@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import { assertTaskExecutionContext } from '@mbos/agent-runner';
+import { assertTaskExecutionContext } from '@mbos/agent-runner-contract';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';

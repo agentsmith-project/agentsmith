@@ -1,4 +1,2 @@
-export * from './protocol.js';
-export * from './contract-schema.js';
+export * from '@mbos/agent-runner-contract';
 export * from './runtime-env.js';
-export * from './runner-spec.js';

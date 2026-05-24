@@ -217,9 +217,11 @@ const REAL_VERIFY_COMMAND = 'npm run verify:real';
 const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
+const PACKAGE_TOPOLOGY_TYPECHECK_COMMAND = 'npm run ws:typecheck';
 const COMMAND_ORDER = [
   'npm run verify:quick',
   'npm run verify:default',
+  PACKAGE_TOPOLOGY_TYPECHECK_COMMAND,
   'npm run verify:visual',
   AGENT_TASK_RUNNER_FAST_COMMAND,
   AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND,
@@ -413,9 +415,18 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^scripts\/workspace-shared-context/,
   /^scripts\/.*credential/i,
   /^e2e\/integration-agent-task-terminal/,
+  /^packages\/agent-runner-contract\/src\//,
+  /^packages\/agent-runner-contract\/(?:package\.json|tsconfig\.json)$/,
+  /^packages\/agent-runner\/package\.json$/,
   /^packages\/agent-runner\/src\//,
+  /^packages\/agent-task-runner\/package\.json$/,
   /^packages\/agent-task-runner\/src\//,
   /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
+  /^packages\/api-entry-node\/src\/task-route-handler(?:\.test)?\.ts$/,
+  /^packages\/api-entry-node\/src\/index\.test\.ts$/,
+  /^packages\/api-entry-node\/src\/__integration__\/notebook-task-(?:artifacts|events)\.integration\.test\.ts$/,
+  /^packages\/api-entry-node\/src\/__integration__\/notebook-tasks\.integration\.test\.ts$/,
+  /^infra\/runner\/Dockerfile\.agent-task-runner(?:-base)?$/,
   /^src\/components\/context\//,
   /^src\/components\/credentials\//,
   /^src\/components\/notebook\//,
@@ -428,8 +439,9 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^infra\/runtime\/backend-real\.env$/,
 ];
 
-function isRunnerContextOrCredentialPath(filePath: string): boolean {
-  return RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS.some((pattern) => pattern.test(filePath));
+function isRunnerContextOrCredentialPath(filePath: string, baseRefs: readonly string[] = []): boolean {
+  return RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS.some((pattern) => pattern.test(filePath))
+    || isApiEntryRunnerContractPackageJsonChange(filePath, baseRefs);
 }
 
 function isReleaseRealOwnerDiagnosticPath(filePath: string): boolean {
@@ -504,7 +516,14 @@ function isGovernanceToolingPath(filePath: string): boolean {
     /^scripts\/run-mock-lane-playwright\.test\.ts$/,
     /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-runner-(?:contract-sync|naming)(?:\.test)?\.ts$/,
   ].some((pattern) => pattern.test(filePath));
+}
+
+function isPackageTopologyPath(filePath: string): boolean {
+  return filePath === 'package-lock.json'
+    || /^packages\/(?:agent-runner-contract|agent-runner|agent-task-runner|api-entry-node)\/package\.json$/.test(filePath)
+    || /^packages\/agent-runner-contract\/tsconfig\.json$/.test(filePath);
 }
 
 type JsonObject = Record<string, unknown>;
@@ -557,71 +576,71 @@ function readGitText(args: readonly string[]): string | null {
   return result.stdout;
 }
 
-function packageJsonHasDiffAgainstHead(): boolean {
-  const diff = readGitText(['diff', '--name-only', 'HEAD', '--', 'package.json']);
+function packageJsonHasDiffAgainstHead(filePath = 'package.json'): boolean {
+  const diff = readGitText(['diff', '--name-only', 'HEAD', '--', filePath]);
   if (diff === null) {
     return false;
   }
   return diff
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .includes('package.json');
+    .includes(filePath);
 }
 
-function packageJsonHasUnstagedDiff(): boolean {
-  const diff = readGitText(['diff', '--name-only', '--', 'package.json']);
+function packageJsonHasUnstagedDiff(filePath = 'package.json'): boolean {
+  const diff = readGitText(['diff', '--name-only', '--', filePath]);
   if (diff === null) {
     return false;
   }
   return diff
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .includes('package.json');
+    .includes(filePath);
 }
 
-function packageJsonHasCachedDiff(): boolean {
-  const diff = readGitText(['diff', '--name-only', '--cached', '--', 'package.json']);
+function packageJsonHasCachedDiff(filePath = 'package.json'): boolean {
+  const diff = readGitText(['diff', '--name-only', '--cached', '--', filePath]);
   if (diff === null) {
     return false;
   }
   return diff
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .includes('package.json');
+    .includes(filePath);
 }
 
-function readPackageJsonFromHead(): JsonObject | null {
-  const content = readGitText(['show', 'HEAD:package.json']);
+function readPackageJsonFromHead(filePath = 'package.json'): JsonObject | null {
+  const content = readGitText(['show', `HEAD:${filePath}`]);
   return content === null ? null : parseJsonObject(content);
 }
 
-function readPackageJsonFromGitRef(ref: string): JsonObject | null {
-  const content = readGitText(['show', `${ref}:package.json`]);
+function readPackageJsonFromGitRef(ref: string, filePath = 'package.json'): JsonObject | null {
+  const content = readGitText(['show', `${ref}:${filePath}`]);
   return content === null ? null : parseJsonObject(content);
 }
 
-function readPackageJsonFromIndex(): JsonObject | null {
-  const content = readGitText(['show', ':package.json']);
+function readPackageJsonFromIndex(filePath = 'package.json'): JsonObject | null {
+  const content = readGitText(['show', `:${filePath}`]);
   return content === null ? null : parseJsonObject(content);
 }
 
-function readPackageJsonFromWorktree(): JsonObject | null {
+function readPackageJsonFromWorktree(filePath = 'package.json'): JsonObject | null {
   try {
-    return parseJsonObject(readFileSync('package.json', 'utf8'));
+    return parseJsonObject(readFileSync(filePath, 'utf8'));
   } catch {
     return null;
   }
 }
 
-function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string): boolean {
-  const diff = readGitText(['diff', '--name-only', `${baseRef}..${currentRef}`, '--', 'package.json']);
+function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string, filePath = 'package.json'): boolean {
+  const diff = readGitText(['diff', '--name-only', `${baseRef}..${currentRef}`, '--', filePath]);
   if (diff === null) {
     return false;
   }
   return diff
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .includes('package.json');
+    .includes(filePath);
 }
 
 function packageJsonBaseRefCandidates(
@@ -645,7 +664,10 @@ function packageJsonBaseRefCandidates(
   return [...new Set(candidates)];
 }
 
-function packageJsonComparisonFromBranchBase(baseRefs: readonly string[]): PackageJsonComparison | null {
+function packageJsonComparisonFromBranchBase(
+  baseRefs: readonly string[],
+  filePath = 'package.json',
+): PackageJsonComparison | null {
   for (const baseRef of packageJsonBaseRefCandidates(baseRefs)) {
     const verifyBaseResult = readGitText(['rev-parse', '--verify', baseRef]);
     if (verifyBaseResult === null) {
@@ -653,12 +675,12 @@ function packageJsonComparisonFromBranchBase(baseRefs: readonly string[]): Packa
     }
 
     const mergeBase = readGitText(['merge-base', 'HEAD', baseRef])?.trim().split(/\r?\n/)[0]?.trim();
-    if (!mergeBase || !hasPackageJsonDiffBetweenRefs(mergeBase, 'HEAD')) {
+    if (!mergeBase || !hasPackageJsonDiffBetweenRefs(mergeBase, 'HEAD', filePath)) {
       continue;
     }
 
-    const basePackageJson = readPackageJsonFromGitRef(mergeBase);
-    const currentPackageJson = readPackageJsonFromHead();
+    const basePackageJson = readPackageJsonFromGitRef(mergeBase, filePath);
+    const currentPackageJson = readPackageJsonFromHead(filePath);
     if (basePackageJson && currentPackageJson) {
       return {
         basePackageJson,
@@ -670,19 +692,19 @@ function packageJsonComparisonFromBranchBase(baseRefs: readonly string[]): Packa
   return null;
 }
 
-function packageJsonComparisonFromWorktree(): PackageJsonComparison | null {
-  if (!packageJsonHasDiffAgainstHead()) {
+function packageJsonComparisonFromWorktree(filePath = 'package.json'): PackageJsonComparison | null {
+  if (!packageJsonHasDiffAgainstHead(filePath)) {
     return null;
   }
 
-  const hasCachedDiff = packageJsonHasCachedDiff();
-  const hasUnstagedDiff = packageJsonHasUnstagedDiff();
+  const hasCachedDiff = packageJsonHasCachedDiff(filePath);
+  const hasUnstagedDiff = packageJsonHasUnstagedDiff(filePath);
   if (hasCachedDiff && hasUnstagedDiff) {
     return null;
   }
 
-  const basePackageJson = readPackageJsonFromHead();
-  const currentPackageJson = hasCachedDiff ? readPackageJsonFromIndex() : readPackageJsonFromWorktree();
+  const basePackageJson = readPackageJsonFromHead(filePath);
+  const currentPackageJson = hasCachedDiff ? readPackageJsonFromIndex(filePath) : readPackageJsonFromWorktree(filePath);
   if (!basePackageJson || !currentPackageJson) {
     return null;
   }
@@ -693,11 +715,60 @@ function packageJsonComparisonFromWorktree(): PackageJsonComparison | null {
   };
 }
 
-function packageJsonComparisonForChangedFile(baseRefs: readonly string[]): PackageJsonComparison | null {
-  if (packageJsonHasDiffAgainstHead()) {
-    return packageJsonComparisonFromWorktree();
+function packageJsonComparisonForChangedFile(
+  baseRefs: readonly string[],
+  filePath = 'package.json',
+): PackageJsonComparison | null {
+  if (packageJsonHasDiffAgainstHead(filePath)) {
+    return packageJsonComparisonFromWorktree(filePath);
   }
-  return packageJsonComparisonFromBranchBase(baseRefs);
+  return packageJsonComparisonFromBranchBase(baseRefs, filePath);
+}
+
+const RUNNER_CONTRACT_PACKAGE_DEPENDENCY_NAMES = new Set([
+  '@mbos/agent-runner',
+  '@mbos/agent-runner-contract',
+]);
+
+function changedPackageDependencyNames(comparison: PackageJsonComparison): string[] {
+  const dependencySectionNames = [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ];
+  const dependencyNames = new Set<string>();
+
+  for (const sectionName of dependencySectionNames) {
+    const baseSection = comparison.basePackageJson[sectionName];
+    const currentSection = comparison.currentPackageJson[sectionName];
+    if (!isJsonObject(baseSection) && !isJsonObject(currentSection)) {
+      continue;
+    }
+    const changedNames = changedJsonKeys(
+      isJsonObject(baseSection) ? baseSection : {},
+      isJsonObject(currentSection) ? currentSection : {},
+    );
+    for (const dependencyName of changedNames) {
+      dependencyNames.add(dependencyName);
+    }
+  }
+
+  return [...dependencyNames].sort((left, right) => left.localeCompare(right));
+}
+
+function isApiEntryRunnerContractPackageJsonChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== 'packages/api-entry-node/package.json') {
+    return false;
+  }
+
+  const comparison = packageJsonComparisonForChangedFile(baseRefs, filePath);
+  if (!comparison) {
+    return false;
+  }
+
+  return changedPackageDependencyNames(comparison)
+    .some((dependencyName) => RUNNER_CONTRACT_PACKAGE_DEPENDENCY_NAMES.has(dependencyName));
 }
 
 function isSafeGovernanceToolingTestPath(value: string): boolean {
@@ -2009,7 +2080,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       }
     }
 
-    if (isRunnerContextOrCredentialPath(changedFile)) {
+    if (isRunnerContextOrCredentialPath(changedFile, packageJsonBaseRefs)) {
       mapped = true;
       const action = `Run ${AGENT_TASK_RUNNER_FAST_COMMAND}, ${AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND}, then ${GOVERNED_REAL_VERIFY_COMMAND} with runner, Context Store, and credential owner review (runner_context_credential).`;
       const surface = 'runner/context-store/credentials';
@@ -2042,6 +2113,28 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         nextAction: action,
         manualReviewReasons: [MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview],
         impactSource,
+      });
+    }
+
+    if (isPackageTopologyPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = `Manual package graph/topology owner review required; run ${GOVERNED_PR_VERIFY_COMMAND} and ${PACKAGE_TOPOLOGY_TYPECHECK_COMMAND} before accepting the package topology impact.`;
+      const surface = 'package/topology';
+      addLevels(accumulator, levels);
+      accumulator.commands.add(PACKAGE_TOPOLOGY_TYPECHECK_COMMAND);
+      accumulator.surfaces.add(surface);
+      accumulator.manualReviewRequired = true;
+      accumulator.reasons.push(`${changedFile} touches workspace package graph or package build topology.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'governance_tooling',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
       });
     }
 

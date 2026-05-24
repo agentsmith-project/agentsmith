@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { AGENT_TASK_RUNNER_SPEC } from '../../packages/agent-runner/src';
+import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner-contract';
 import { findCurrentGateDefinitionById } from './current-gate-manifest';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
@@ -396,8 +396,8 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
   {
     truth: 'runner_contract',
     owner: 'agentsmith shared-contract flow',
-    physical_source: '@mbos/agent-runner package (packages/agent-runner/src) schema/types/fixtures',
-    generator: 'current AgentSmith runner contract sync; P4 extracts @mbos/agent-runner-contract',
+    physical_source: '@mbos/agent-runner-contract package (packages/agent-runner-contract/src) schema/types/fixtures',
+    generator: 'AgentSmith runner contract sync from @mbos/agent-runner-contract',
     validators: ['AgentSmith API', 'agentsmith-runner', 'AsyncAPI checks'],
     consumers: ['AgentSmith API', 'agentsmith-runner'],
     fail_fast: [
@@ -1169,24 +1169,24 @@ function validateCurrentRunnerContractTruthMatrixEntry(
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (physicalSource) {
-    if (/@mbos\/agent-runner-contract/u.test(physicalSource)) {
+    if (/(?:@mbos\/agent-runner(?!-contract)(?:\b|$)|packages\/agent-runner(?!-contract)(?:\/src)?\b)/u.test(physicalSource)) {
       failures.push({
         path: `${path}.physical_source`,
-        reason: 'runner_contract current physical_source must point to @mbos/agent-runner until P4, not @mbos/agent-runner-contract.',
+        reason: 'runner_contract physical_source must point to @mbos/agent-runner-contract, not @mbos/agent-runner.',
       });
     }
-    if (!/(?:@mbos\/agent-runner\b|packages\/agent-runner(?:\/src)?\b)/u.test(physicalSource)) {
+    if (!/(?:@mbos\/agent-runner-contract\b|packages\/agent-runner-contract(?:\/src)?\b)/u.test(physicalSource)) {
       failures.push({
         path: `${path}.physical_source`,
-        reason: 'runner_contract current physical_source must point to @mbos/agent-runner until P4.',
+        reason: 'runner_contract physical_source must point to @mbos/agent-runner-contract.',
       });
     }
   }
 
-  if (generator && !/\bP4\b/u.test(generator)) {
+  if (generator && !/@mbos\/agent-runner-contract/u.test(generator)) {
     failures.push({
       path: `${path}.generator`,
-      reason: 'runner_contract generator must state the P4 extraction boundary.',
+      reason: 'runner_contract generator must use @mbos/agent-runner-contract as the contract source.',
     });
   }
 }

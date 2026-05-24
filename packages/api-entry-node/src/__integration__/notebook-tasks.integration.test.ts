@@ -1,7 +1,7 @@
 import http, { type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner';
+import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner-contract';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { AgentTaskModelSettingService } from '../agent-task-model-setting-service.js';
 import {

@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AgentWireApi } from '@mbos/agent-runner';
+import type { AgentWireApi } from '@mbos/agent-runner-contract';
 
 const SESSION_FINGERPRINT_FILE = '.codex-session-fingerprint.json';
 const RESUME_STATE_FILE = '.agentsmith-codex-resume-state.json';

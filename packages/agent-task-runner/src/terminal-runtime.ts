@@ -15,7 +15,7 @@ import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
-import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner';
+import { assertTaskExecutionContext, type TaskExecutionContext } from '@mbos/agent-runner-contract';
 import {
   inspectTerminalPidMetadata,
   type TerminalPidMetadata,

@@ -1180,6 +1180,7 @@ describe('current workflow governance', () => {
     const steps = Array.isArray(releaseContractJob.steps) ? releaseContractJob.steps.map(asRecord) : [];
     const downloadStep = steps.find((step) => step.uses === 'actions/download-artifact@v7');
     const downloadWith = asRecord(downloadStep?.with);
+    const receiptObjectSource = runCommands.match(/const receipt = \{[\s\S]*?\n\s*\};/)?.[0] ?? '';
 
     expect(workflow?.workflowName).toBe('Release Contract Artifact');
     expect(workflow?.role).toBe('release_artifact_producer');
@@ -1208,6 +1209,15 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('release-contract-input-source.json');
     expect(runCommands).toContain('input_sha256');
+    expect(receiptObjectSource).toContain('input_sha256');
+    for (const releaseContractField of [
+      'schema_version',
+      'product_images',
+      'deploy_image_inventory',
+      'artifact_provenance',
+    ]) {
+      expect(receiptObjectSource).not.toMatch(new RegExp(`['"]?${releaseContractField}['"]?\\s*:`));
+    }
     expect(runCommands).not.toContain('${{ inputs.release_contract_input_path }}');
     expect(runCommands).not.toContain('npm run release:ready');
     expect(runCommands).not.toContain('npm run gate:release');

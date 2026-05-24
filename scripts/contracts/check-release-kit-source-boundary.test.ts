@@ -160,7 +160,9 @@ void productPackage;
   it('rejects package-name imports, require calls, and dynamic imports of AgentSmith product packages', () => {
     const root = writeFixtureRoot({
       'release-kit/src/package-specifiers.ts': `
+import '@mbos/api-entry-node/register';
 import { createApi } from '@mbos/api-entry-node';
+import type { Application } from '@mbos/application';
 const runner = require('@mbos/agent-task-runner');
 const sharedRunner = await import('@mbos/agent-runner');
 const runnerSubpath = await import('@mbos/agent-runner/protocol');
@@ -189,7 +191,62 @@ void runnerSubpath;
         }),
         expect.objectContaining({
           path: 'release-kit/src/package-specifiers.ts',
+          message: expect.stringContaining('@mbos/application'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/package-specifiers.ts',
           message: expect.stringContaining('@mbos/agent-runner'),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects multi-line package-name imports, exports, requires, and dynamic imports', () => {
+    const root = writeFixtureRoot({
+      'release-kit/src/multiline-package-specifiers.ts': `
+import {
+  createApi,
+} from '@mbos/api-entry-node';
+export {
+  createRunner,
+} from '@mbos/agent-task-runner';
+const runner = require(
+  '@mbos/agent-runner',
+);
+const runnerWithOptions = require('@mbos/agent-runner', someOption);
+const dynamicContracts = await import(
+  '@mbos/contracts',
+);
+void createApi;
+void runner;
+void runnerWithOptions;
+void dynamicContracts;
+`,
+    });
+
+    const result = checkReleaseKitSourceBoundary({
+      rootDir: root,
+      scanRoots: ['release-kit'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'release-kit/src/multiline-package-specifiers.ts',
+          message: expect.stringContaining('@mbos/api-entry-node'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/multiline-package-specifiers.ts',
+          message: expect.stringContaining('@mbos/agent-task-runner'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/multiline-package-specifiers.ts',
+          message: expect.stringContaining('@mbos/agent-runner'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/multiline-package-specifiers.ts',
+          message: expect.stringContaining('@mbos/contracts'),
         }),
       ]),
     );
@@ -198,7 +255,10 @@ void runnerSubpath;
   it('rejects direct imports, requires, dynamic imports, and exports of the AgentSmith root package', () => {
     const root = writeFixtureRoot({
       'release-kit/src/root-package-specifiers.ts': `
+import 'agentsmith/setup';
 import app from 'agentsmith';
+import type { AgentSmithApp } from 'agentsmith/types';
+export * from 'agentsmith/shared';
 export { createApp } from 'agentsmith/server';
 const requiredApp = require('agentsmith');
 const dynamicApp = await import('agentsmith/entry');
@@ -224,6 +284,57 @@ void dynamicApp;
     );
   });
 
+  it('rejects package-root path specifiers while allowing ordinary repository-root strings elsewhere', () => {
+    const root = writeFixtureRoot({
+      'release-kit/src/root-path-specifiers.ts': `
+const allowedSentinel = path.resolve(ROOT_DIR, '..', 'agentsmith');
+const allowedString = '../agentsmith';
+import localApp from '../agentsmith';
+export * from '../agentsmith';
+const requiredApp = require('../agentsmith');
+const requiredAppWithOptions = require('../agentsmith', someOption);
+const fileRequiredApp = require('file:../agentsmith');
+const dynamicApp = await import('../agentsmith');
+const dynamicTrailingApp = await import(
+  '../agentsmith',
+);
+const absoluteApp = await import('/home/percy/works/mbos-v1/agentsmith');
+void allowedSentinel;
+void allowedString;
+void localApp;
+void requiredApp;
+void requiredAppWithOptions;
+void fileRequiredApp;
+void dynamicApp;
+void dynamicTrailingApp;
+void absoluteApp;
+`,
+    });
+
+    const result = checkReleaseKitSourceBoundary({
+      rootDir: root,
+      scanRoots: ['release-kit'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'release-kit/src/root-path-specifiers.ts',
+          message: expect.stringContaining('../agentsmith'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/root-path-specifiers.ts',
+          message: expect.stringContaining('file:../agentsmith'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/src/root-path-specifiers.ts',
+          message: expect.stringContaining('absolute agentsmith repository root path'),
+        }),
+      ]),
+    );
+  });
+
   it('rejects package.json dependencies on AgentSmith product packages', () => {
     const root = writeFixtureRoot({
       'release-kit/package.json': JSON.stringify({
@@ -234,6 +345,8 @@ void dynamicApp;
         devDependencies: {
           '@mbos/agent-task-runner': 'workspace:*',
           '@mbos/application': 'file:../agentsmith/packages/application',
+          'safe-file-link-name': 'file:../agentsmith',
+          'safe-absolute-file-link-name': 'file:/home/percy/works/mbos-v1/agentsmith',
         },
       }, null, 2),
     });
@@ -261,6 +374,14 @@ void dynamicApp;
         expect.objectContaining({
           path: 'release-kit/package.json',
           message: expect.stringContaining('devDependencies.@mbos/application'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/package.json',
+          message: expect.stringContaining('devDependencies.safe-file-link-name'),
+        }),
+        expect.objectContaining({
+          path: 'release-kit/package.json',
+          message: expect.stringContaining('devDependencies.safe-absolute-file-link-name'),
         }),
       ]),
     );
@@ -405,13 +526,22 @@ void runnerContract;
     );
   });
 
-  it('rejects AgentSmith repository root references through relative, file, and joined paths', () => {
+  it('allows ordinary product metadata and forbidden-source-root repository sentinels', () => {
     const root = writeFixtureRoot({
-      'release-kit/src/root-path-breaks.ts': `
+      'release-kit/src/source-root-sentinels.ts': `
+const DEFAULT_FORBIDDEN_SOURCE_ROOTS = [path.resolve(ROOT_DIR, '..', 'agentsmith')];
+const product = 'agentsmith';
+const namespace = process.env.NAMESPACE ?? 'agentsmith';
+if (namespace !== 'agentsmith') {
+  throw new Error('unexpected namespace');
+}
 const relativeRepoRoot = '../agentsmith';
 const fileRepoRoot = 'file:../agentsmith';
 const joinedRepoRoot = path.join('..', 'agentsmith');
 const resolvedRepoRoot = path.resolve('..', 'agentsmith');
+void DEFAULT_FORBIDDEN_SOURCE_ROOTS;
+void product;
+void namespace;
 void relativeRepoRoot;
 void fileRepoRoot;
 void joinedRepoRoot;
@@ -424,23 +554,10 @@ void resolvedRepoRoot;
       scanRoots: ['release-kit'],
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.failures).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: 'release-kit/src/root-path-breaks.ts',
-          message: expect.stringContaining('../agentsmith'),
-        }),
-        expect.objectContaining({
-          path: 'release-kit/src/root-path-breaks.ts',
-          message: expect.stringContaining('file:../agentsmith'),
-        }),
-        expect.objectContaining({
-          path: 'release-kit/src/root-path-breaks.ts',
-          message: expect.stringContaining('path.join agentsmith product source path'),
-        }),
-      ]),
-    );
+    expect(result).toEqual({
+      ok: true,
+      failures: [],
+    });
   });
 
   it('rejects absolute, file URI, path.join, and complete @/ alias source references', () => {
@@ -609,8 +726,12 @@ void sourceRoot;
 const RELEASE_KIT_ROOT = process.cwd();
 const sourceSubpath = path.join(path.dirname(RELEASE_KIT_ROOT), 'agent' + 'smith', 'src/lib');
 const packageSubpath = path.join(path.dirname(RELEASE_KIT_ROOT), 'agent' + 'smith', 'packages/application');
+const sourceRoot = path.resolve(REPO_ROOT, '..', 'agentsmith', 'src');
+const productPackage = path.resolve(REPO_ROOT, '..', 'agentsmith', 'package.json');
 void sourceSubpath;
 void packageSubpath;
+void sourceRoot;
+void productPackage;
 `,
     );
 
@@ -620,7 +741,40 @@ void packageSubpath;
     expect(explicitResult.stderr).toContain('../agentsmith-release-kit/src/computed-sibling-subpath-boundary-break.ts');
     expect(explicitResult.stderr).toContain('src/lib');
     expect(explicitResult.stderr).toContain('packages/application');
+    expect(explicitResult.stderr).toContain('package.json');
     expect(explicitResult.stderr).toContain('computed sibling agentsmith product source path');
+  });
+
+  it('allows explicit sibling release-kit scans when they only contain boundary sentinels', () => {
+    const root = writeWorkspaceRootWithCommittedFixture({});
+    writeText(
+      join(root, '..', 'agentsmith-release-kit'),
+      'scripts/verify-render.mjs',
+      `
+const RELEASE_CONTRACT_SCHEMA = 'agentsmith.release-contract/v1';
+const DEFAULT_FORBIDDEN_SOURCE_ROOTS = [path.resolve(REPO_ROOT, '..', 'agentsmith')];
+const namespace = process.env.NAMESPACE ?? 'agentsmith';
+if (namespace !== 'agentsmith') {
+  throw new Error('unexpected namespace');
+}
+void RELEASE_CONTRACT_SCHEMA;
+void DEFAULT_FORBIDDEN_SOURCE_ROOTS;
+void namespace;
+`,
+    );
+    writeText(
+      join(root, '..', 'agentsmith-release-kit'),
+      'scripts/test-render.sh',
+      `
+DEFAULT_SIBLING_AGENTSMITH="$ROOT_DIR/../agentsmith"
+test_namespace="agentsmith"
+`,
+    );
+
+    const explicitResult = runBoundaryCli(root, ['--scan-root', '../agentsmith-release-kit']);
+
+    expect(explicitResult.status).toBe(0);
+    expect(explicitResult.stdout).toContain('release kit source boundary check passed');
   });
 
   it('allows ordinary JSON metadata to mention the product name without treating it as a package import', () => {

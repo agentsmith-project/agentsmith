@@ -47,6 +47,12 @@ type ReferenceCandidate = {
 
 type SimpleStringReference = ReferenceCandidate;
 
+type PackageSpecifierCandidate = {
+  value: string;
+  line: number;
+  excerpt: string;
+};
+
 export type ReleaseKitSourceBoundaryFailure = {
   path: string;
   message: string;
@@ -190,11 +196,26 @@ function scanFile(rootDir: string, absolutePath: string): ReleaseKitSourceBounda
   const failures: ReleaseKitSourceBoundaryFailure[] = [];
   const relativePath = toRelativePath(rootDir, absolutePath);
   const isPackageJson = relativePath.endsWith('/package.json') || relativePath === 'package.json';
-  const scansPackageSpecifiers = !relativePath.endsWith('.json') || isPackageJson;
-  const lines = readFileSync(absolutePath, 'utf8').split('\n');
+  const content = readFileSync(absolutePath, 'utf8');
+  const lines = content.split('\n');
 
   if (isPackageJson) {
-    failures.push(...scanPackageJsonDependencies(relativePath, lines.join('\n')));
+    failures.push(...scanPackageJsonDependencies(relativePath, content));
+  }
+
+  const packageSpecifierMessages = new Set<string>();
+  for (const specifier of extractPackageSpecifierCandidates(content, lines)) {
+    const message = forbiddenPackageSpecifierMessage(specifier.value);
+    if (message !== null) {
+      addLineFailureOnce(
+        failures,
+        packageSpecifierMessages,
+        relativePath,
+        specifier.line,
+        specifier.excerpt,
+        message,
+      );
+    }
   }
 
   const simpleStringAliases = new Map<string, SimpleStringReference>();
@@ -218,32 +239,6 @@ function scanFile(rootDir: string, absolutePath: string): ReleaseKitSourceBounda
     }
 
     for (const candidate of extractReferenceCandidates(line, simpleStringAliases)) {
-      if (scansPackageSpecifiers) {
-        const forbiddenPackage = matchForbiddenAgentSmithPackageSpecifier(candidate.value);
-        if (forbiddenPackage) {
-          addLineFailureOnce(
-            failures,
-            seenMessages,
-            relativePath,
-            index + 1,
-            line,
-            `release kit must not import or depend on AgentSmith product package ${forbiddenPackage}; only release contract JSON, deploy template package manifests, generated artifacts, or independently released non-AgentSmith contract artifacts are allowed.`,
-          );
-        }
-      }
-
-      const forbiddenNpmAliasTarget = matchForbiddenNpmAliasTargetPackage(candidate.value);
-      if (forbiddenNpmAliasTarget) {
-        addLineFailureOnce(
-          failures,
-          seenMessages,
-          relativePath,
-          index + 1,
-          line,
-          `release kit must not alias AgentSmith product package ${forbiddenNpmAliasTarget}; only release contract JSON, deploy template package manifests, generated artifacts, or independently released non-AgentSmith contract artifacts are allowed.`,
-        );
-      }
-
       for (const label of forbiddenPathReferenceLabels(candidate)) {
         addLineFailureOnce(
           failures,
@@ -319,11 +314,11 @@ function scanPackageJsonDependencies(
           );
         }
 
-        for (const label of forbiddenPathReferenceLabels({ value: version, source: 'string' })) {
+        for (const label of forbiddenPackageDependencyPathReferenceLabels(version)) {
           addFailure(
             failures,
             relativePath,
-            `${sectionName}.${packageName} must not point at AgentSmith product source via ${label}.`,
+            `${sectionName}.${packageName} must not point at AgentSmith product source or package root via ${label}.`,
           );
         }
       }
@@ -331,6 +326,121 @@ function scanPackageJsonDependencies(
   }
 
   return failures;
+}
+
+function forbiddenPackageSpecifierMessage(value: string): string | null {
+  const forbiddenPackage = matchForbiddenAgentSmithPackageSpecifier(value);
+  if (forbiddenPackage) {
+    return `release kit must not import or depend on AgentSmith product package ${forbiddenPackage}; only release contract JSON, deploy template package manifests, generated artifacts, or independently released non-AgentSmith contract artifacts are allowed.`;
+  }
+
+  const forbiddenRoot = matchForbiddenAgentSmithPackageRootSpecifier(value);
+  if (forbiddenRoot !== null) {
+    return `release kit must not import or depend on AgentSmith product package root via ${forbiddenRoot}; only release contract JSON, deploy template package manifests, generated artifacts, or independently released non-AgentSmith contract artifacts are allowed.`;
+  }
+
+  return null;
+}
+
+function extractPackageSpecifierCandidates(
+  content: string,
+  lines: readonly string[],
+): PackageSpecifierCandidate[] {
+  const candidates: PackageSpecifierCandidate[] = [];
+  const seen = new Set<string>();
+
+  collectStaticImportSpecifiers(content, lines, candidates, seen);
+  collectStaticExportSpecifiers(content, lines, candidates, seen);
+  collectCallSpecifiers(
+    content,
+    lines,
+    /\brequire\s*\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*)\1(?=\s*(?:[,)]))/gu,
+    candidates,
+    seen,
+  );
+  collectCallSpecifiers(
+    content,
+    lines,
+    /\bimport\s*\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*)\1(?=\s*(?:[,)]))/gu,
+    candidates,
+    seen,
+  );
+
+  return candidates;
+}
+
+function collectStaticImportSpecifiers(
+  content: string,
+  lines: readonly string[],
+  candidates: PackageSpecifierCandidate[],
+  seen: Set<string>,
+): void {
+  const pattern = /\bimport(?!\s*\()\s+(?:type\s+)?(?:(["'`])((?:\\.|(?!\1)[\s\S])*)\1|[^;]*?\bfrom\s*(["'`])((?:\\.|(?!\3)[\s\S])*)\3)/gu;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    pushPackageSpecifierCandidate(content, lines, candidates, seen, match, match[2] ?? match[4]);
+  }
+}
+
+function collectStaticExportSpecifiers(
+  content: string,
+  lines: readonly string[],
+  candidates: PackageSpecifierCandidate[],
+  seen: Set<string>,
+): void {
+  const pattern = /\bexport\s+(?:type\s+)?[^;]*?\bfrom\s*(["'`])((?:\\.|(?!\1)[\s\S])*)\1/gu;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    pushPackageSpecifierCandidate(content, lines, candidates, seen, match, match[2]);
+  }
+}
+
+function collectCallSpecifiers(
+  content: string,
+  lines: readonly string[],
+  pattern: RegExp,
+  candidates: PackageSpecifierCandidate[],
+  seen: Set<string>,
+): void {
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    pushPackageSpecifierCandidate(content, lines, candidates, seen, match, match[2]);
+  }
+}
+
+function pushPackageSpecifierCandidate(
+  content: string,
+  lines: readonly string[],
+  candidates: PackageSpecifierCandidate[],
+  seen: Set<string>,
+  match: RegExpExecArray,
+  specifier: string | undefined,
+): void {
+  if (specifier === undefined) {
+    return;
+  }
+
+  const specifierOffset = match[0].lastIndexOf(specifier);
+  const specifierIndex = match.index + (specifierOffset < 0 ? 0 : specifierOffset);
+  const key = `${specifierIndex}:${specifier}`;
+  if (seen.has(key)) {
+    return;
+  }
+  seen.add(key);
+
+  const line = lineNumberAtIndex(content, specifierIndex);
+  candidates.push({
+    value: specifier,
+    line,
+    excerpt: lines[line - 1] ?? '',
+  });
+}
+
+function lineNumberAtIndex(content: string, index: number): number {
+  return content.slice(0, Math.max(0, index)).split('\n').length;
 }
 
 function extractReferenceCandidates(
@@ -688,22 +798,70 @@ function forbiddenPathReferenceLabels(candidate: ReferenceCandidate): string[] {
   return [...new Set(labels)];
 }
 
+function forbiddenPackageDependencyPathReferenceLabels(value: string): string[] {
+  const normalized = value.trim().replaceAll('\\', '/');
+  const labels = forbiddenPathReferenceLabels({ value, source: 'string' });
+  const pathValue = stripFilePathPrefix(normalized);
+
+  if (isAgentSmithRepositoryRootReference(pathValue)) {
+    if (normalized.startsWith('file://') || (normalized.startsWith('file:') && pathValue.startsWith('/'))) {
+      labels.push('file URI agentsmith repository root path');
+    } else if (normalized.startsWith('/')) {
+      labels.push('absolute agentsmith repository root path');
+    }
+    labels.push(...relativeAgentSmithPathLabels(normalized));
+  }
+
+  return [...new Set(labels)];
+}
+
+function matchForbiddenAgentSmithPackageRootSpecifier(value: string): string | null {
+  const normalized = value.trim().replaceAll('\\', '/');
+  const pathValue = stripFilePathPrefix(normalized);
+  if (!isAgentSmithRepositoryRootReference(pathValue)) {
+    return null;
+  }
+
+  if (normalized.startsWith('file://')) {
+    return 'file URI agentsmith repository root path';
+  }
+  if (normalized.startsWith('file:')) {
+    return relativeAgentSmithPathLabels(normalized)[0] ?? 'file URI agentsmith repository root path';
+  }
+  if (/^(?:[A-Za-z]:)?\//u.test(normalized)) {
+    return 'absolute agentsmith repository root path';
+  }
+
+  return relativeAgentSmithPathLabels(normalized)[0] ?? '../agentsmith';
+}
+
 function matchComputedSiblingAgentSmithSourcePath(line: string): string | null {
   const normalized = line.replace(/\s+/gu, ' ');
   if (!/\b(?:path\.)?(?:join|resolve)\s*\(/u.test(normalized)) {
     return null;
   }
-  if (!/\bpath\.dirname\s*\(\s*RELEASE_KIT_ROOT\s*\)/u.test(normalized)) {
-    return null;
-  }
-  if (!/(["'`])agent\1\s*\+\s*(["'`])smith\2/u.test(normalized)) {
-    return null;
-  }
   if (!hasQuotedAgentSmithProductSourceSegment(normalized)) {
     return null;
   }
+  if (
+    /\bpath\.dirname\s*\(\s*RELEASE_KIT_ROOT\s*\)/u.test(normalized)
+    && hasQuotedOrComputedAgentSmithSegment(normalized)
+  ) {
+    return 'computed sibling agentsmith product source path';
+  }
+  if (
+    /(["'`])\.\.\1/u.test(normalized)
+    && hasQuotedOrComputedAgentSmithSegment(normalized)
+  ) {
+    return 'computed sibling agentsmith product source path';
+  }
 
-  return 'computed sibling agentsmith product source path';
+  return null;
+}
+
+function hasQuotedOrComputedAgentSmithSegment(value: string): boolean {
+  return /(["'`])agentsmith\1/u.test(value)
+    || /(["'`])agent\1\s*\+\s*(["'`])smith\2/u.test(value);
 }
 
 function hasQuotedAgentSmithProductSourceSegment(value: string): boolean {
@@ -712,8 +870,7 @@ function hasQuotedAgentSmithProductSourceSegment(value: string): boolean {
 
 function isAgentSmithProductSourceReference(value: string): boolean {
   const pathValue = stripFilePathPrefix(value);
-  return /(?:^|\/)agentsmith\/(?:src(?:\/|$)|package\.json$|packages(?:\/|$))/u.test(pathValue)
-    || isAgentSmithRepositoryRootReference(pathValue);
+  return /(?:^|\/)agentsmith\/(?:src(?:\/|$)|package\.json$|packages(?:\/|$))/u.test(pathValue);
 }
 
 function isAgentSmithRepositoryRootReference(value: string): boolean {

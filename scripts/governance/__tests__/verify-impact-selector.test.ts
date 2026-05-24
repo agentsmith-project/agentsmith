@@ -1300,6 +1300,7 @@ describe('verify impact selector', () => {
         'test:governance': 'bash scripts/governance-default-gate.sh',
         'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
+        'release:contract:assemble': 'tsx scripts/governance/release-contract-assemble.ts',
       },
     };
 
@@ -1436,6 +1437,10 @@ describe('verify impact selector', () => {
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
         'release:contract': 'tsx scripts/governance/not-release-contract.ts',
+      },
+      {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'release:contract:assemble': 'tsx scripts/governance/not-release-contract-assemble.ts',
       },
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
@@ -1681,6 +1686,7 @@ describe('verify impact selector', () => {
     'scripts/governance/deploy-template-package.ts',
     'scripts/governance/release-ready.ts',
     'scripts/governance/release-contract.ts',
+    'scripts/governance/release-contract-assemble.ts',
     'scripts/governance/run-release-aggregate.ts',
     'scripts/governance/release-campaign-runner.ts',
     'scripts/governance/release-campaign-execution.ts',

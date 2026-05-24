@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -22,11 +26,13 @@ import {
   type AgentSmithReleaseContractCiProvenanceInput,
   type AgentSmithReleaseContractGeneratorInput,
 } from '../release-contract';
+import { runReleaseContractAssembleCli } from '../release-contract-assemble';
 
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
+const CLI_SOURCE_ARGV = ['--source-git-sha', GIT_SHA] as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
 const MANAGED_RUNNER_DIGEST = `sha256:${'c'.repeat(64)}`;
@@ -300,6 +306,20 @@ function expectAssemblyToThrow(
   expected: string,
 ): void {
   expect(() => assembleReleaseContractGeneratorInput(input)).toThrow(expected);
+}
+
+function writeAssemblyInput(root: string, input: AgentSmithReleaseContractGeneratorInputAssemblyInput): string {
+  const inputPath = join(root, 'assembly-input.json');
+  writeFileSync(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  return inputPath;
+}
+
+function assemblyCliArgv(inputPath: string, outputPath?: string): string[] {
+  const argv = [...CLI_SOURCE_ARGV, '--input', inputPath];
+  if (outputPath) {
+    argv.push('--output', outputPath);
+  }
+  return argv;
 }
 
 describe('release contract input adapter', () => {
@@ -688,5 +708,249 @@ describe('release contract input adapter', () => {
       },
       'release_alias_ref must not include a digest',
     );
+  });
+});
+
+describe('release contract assembly CLI', () => {
+  it('assembles a validated release contract from assembly inputs and writes the default output', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const input = buildAssemblyInput();
+    input.ci_provenance.generator_command = 'npm run release:contract:assemble';
+    const inputPath = writeAssemblyInput(root, input);
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractAssembleCli({
+      argv: assemblyCliArgv(inputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(stderr).toEqual([]);
+    expect(exitCode).toBe(0);
+    expect(existsSync(outputPath)).toBe(true);
+
+    const contract = JSON.parse(readFileSync(outputPath, 'utf8')) as unknown;
+    const validation = validateAgentSmithReleaseContract(contract);
+    expect(validation.ok).toBe(true);
+    if (!validation.ok) {
+      throw new Error('expected valid release contract');
+    }
+
+    const expectedProductImages = [
+      ...buildProductImagesFromBuildManifest(input.buildManifestAggregate, {
+        expectedReleaseId: RELEASE_ID,
+      }),
+      buildManagedRunnerImage(),
+    ];
+    expect(validation.value.product_images).toEqual(expectedProductImages);
+    expect(validation.value.deploy_template_digest).toBe(input.deployTemplatePackage.manifest_sha256);
+    expect(validation.value.openapi_digest).toBe(sha256Digest(canonicalReleaseBoundaryJson(input.openapi_subject)));
+    expect(validation.value.asyncapi_digest).toBe(sha256Digest(canonicalReleaseBoundaryJson(input.asyncapi_subject)));
+    expect(validation.value.target_profiles).toEqual(input.target_profiles);
+    expect(validation.value.deploy_image_inventory).toEqual([
+      ...expectedProductImages.map((image) => ({ ...image, source: 'product_images' as const })),
+      ...input.adopted_provider_images.map((image) => ({
+        ...image,
+        source: 'adopted_provider_images' as const,
+      })),
+      ...input.release_kit_prerequisite_images.map((image) => ({
+        ...image,
+        source: 'release_kit_prerequisite_images' as const,
+      })),
+    ]);
+    expect(validation.value.artifact_provenance.generator_command).toBe('npm run release:contract:assemble');
+  });
+
+  it('writes to an explicit output path', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const inputPath = writeAssemblyInput(root, buildAssemblyInput());
+    const outputPath = join(root, 'nested', 'contract.json');
+
+    const exitCode = runReleaseContractAssembleCli({
+      argv: assemblyCliArgv(inputPath, outputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(validateAgentSmithReleaseContract(JSON.parse(readFileSync(outputPath, 'utf8')) as unknown).ok).toBe(true);
+  });
+
+  it.each([
+    [
+      'deploy_template_digest',
+      `sha256:${'9'.repeat(64)}`,
+      'deploy_template_digest must be assembled from deployTemplatePackage.manifest_sha256',
+    ],
+    [
+      'deploy_image_inventory',
+      [],
+      'deploy_image_inventory must be generated by release contract generator',
+    ],
+    [
+      'artifact_provenance',
+      {},
+      'artifact_provenance must be generated by release contract generator',
+    ],
+  ])('fails fast when assembly input provides generator-owned %s', (field, value, expected) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const input = {
+      ...buildAssemblyInput(),
+      [field]: value,
+    } as AgentSmithReleaseContractGeneratorInputAssemblyInput;
+    const inputPath = writeAssemblyInput(root, input);
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractAssembleCli({
+      argv: assemblyCliArgv(inputPath, outputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it.each([
+    ['missing managed runner image', (input: AgentSmithReleaseContractGeneratorInputAssemblyInput) => {
+      delete (input as Partial<AgentSmithReleaseContractGeneratorInputAssemblyInput>).managed_runner_image;
+    }, 'managed_runner_image must be an object'],
+    ['template package commit drift', (input: AgentSmithReleaseContractGeneratorInputAssemblyInput) => {
+      input.deployTemplatePackage.artifact_provenance.commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+    }, 'deployTemplatePackage.artifact_provenance.commit_sha must match git_sha'],
+    ['CI provenance commit drift', (input: AgentSmithReleaseContractGeneratorInputAssemblyInput) => {
+      input.ci_provenance.commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+    }, 'ci_provenance.commit_sha must match git_sha'],
+    ['local artifact URI', (input: AgentSmithReleaseContractGeneratorInputAssemblyInput) => {
+      input.ci_provenance.artifact_uri =
+        'file:///home/percy/works/mbos-v1/agentsmith/agentsmith-release-contract.json';
+    }, 'artifact_provenance.artifact_uri must be a remote/CI artifact URI'],
+    ['local source URI', (input: AgentSmithReleaseContractGeneratorInputAssemblyInput) => {
+      input.ci_provenance.subject_uri = 'file:///home/percy/works/mbos-v1/agentsmith/src/app/page.tsx';
+    }, 'artifact_provenance.subject_uri must not point at local AgentSmith product source'],
+  ])('fails without output for %s', (_name, mutate, expected) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const input = buildAssemblyInput();
+    mutate(input);
+    const inputPath = writeAssemblyInput(root, input);
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractAssembleCli({
+      argv: assemblyCliArgv(inputPath, outputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'env source sha',
+      argvFor: (inputPath: string, outputPath: string) => ['--input', inputPath, '--output', outputPath],
+      env: {
+        AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA: 'ffffffffffffffffffffffffffffffffffffffff',
+      },
+    },
+    {
+      name: 'explicit source sha',
+      argvFor: (inputPath: string, outputPath: string) => [
+        '--source-git-sha',
+        'ffffffffffffffffffffffffffffffffffffffff',
+        '--input',
+        inputPath,
+        '--output',
+        outputPath,
+      ],
+      env: {},
+    },
+  ])('uses runtime $name instead of payload sourceGitSha and fails stale self-certified payloads', ({ argvFor, env }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const inputPath = writeAssemblyInput(root, buildAssemblyInput());
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractAssembleCli({
+      argv: argvFor(inputPath, outputPath),
+      cwd: root,
+      env,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('git_sha must match');
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it('lets explicit --source-git-sha take precedence over source sha env vars', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const inputPath = writeAssemblyInput(root, buildAssemblyInput());
+    const outputPath = join(root, 'agentsmith-release-contract.json');
+
+    const exitCode = runReleaseContractAssembleCli({
+      argv: assemblyCliArgv(inputPath, outputPath),
+      cwd: root,
+      env: {
+        AGENTSMITH_RELEASE_CONTRACT_SOURCE_GIT_SHA: 'ffffffffffffffffffffffffffffffffffffffff',
+        GITHUB_SHA: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      },
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(validateAgentSmithReleaseContract(JSON.parse(readFileSync(outputPath, 'utf8')) as unknown).ok).toBe(true);
+  });
+
+  it.each([
+    {
+      name: 'default output',
+      outputPathFor: (root: string) => join(root, 'agentsmith-release-contract.json'),
+      argvFor: (inputPath: string) => assemblyCliArgv(inputPath),
+    },
+    {
+      name: 'explicit output',
+      outputPathFor: (root: string) => join(root, 'nested', 'contract.json'),
+      argvFor: (inputPath: string, outputPath: string) => assemblyCliArgv(inputPath, outputPath),
+    },
+  ])('removes stale $name when assembly fails', ({ outputPathFor, argvFor }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-assembly-'));
+    const outputPath = outputPathFor(root);
+    const validInputPath = writeAssemblyInput(root, buildAssemblyInput());
+
+    expect(runReleaseContractAssembleCli({
+      argv: argvFor(validInputPath, outputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    })).toBe(0);
+    expect(validateAgentSmithReleaseContract(JSON.parse(readFileSync(outputPath, 'utf8')) as unknown).ok).toBe(true);
+
+    const invalidInput = buildAssemblyInput();
+    delete (invalidInput as Partial<AgentSmithReleaseContractGeneratorInputAssemblyInput>).managed_runner_image;
+    const invalidInputPath = writeAssemblyInput(root, invalidInput);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractAssembleCli({
+      argv: argvFor(invalidInputPath, outputPath),
+      cwd: root,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('managed_runner_image must be an object');
+    expect(existsSync(outputPath)).toBe(false);
   });
 });

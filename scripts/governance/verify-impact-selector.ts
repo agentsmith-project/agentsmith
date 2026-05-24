@@ -744,6 +744,7 @@ const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<strin
 const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
   'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
   'release:contract': 'tsx scripts/governance/release-contract.ts',
+  'release:contract:assemble': 'tsx scripts/governance/release-contract-assemble.ts',
 };
 const SAFE_EXACT_RELEASE_ARTIFACT_PRODUCER_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
   'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',

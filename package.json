@@ -120,6 +120,7 @@
     "lane:unified-deploy:local-kind": "bash scripts/run-current-gate-result-wrapped.sh lane-unified-deploy-local-kind unified_deploy_local_kind lane:unified-deploy:local-kind -- bash scripts/unified-deploy/release-local-kind.sh",
     "lane:unified-deploy:product-flows": "bash scripts/run-current-gate-result-wrapped.sh lane-unified-deploy-product-flows unified_deploy_product_flows lane:unified-deploy:product-flows -- bash scripts/unified-deploy/release-product-flows.sh",
     "release:contract": "tsx scripts/governance/release-contract.ts",
+    "release:contract:assemble": "tsx scripts/governance/release-contract-assemble.ts",
     "release:deploy-template-package": "tsx scripts/governance/deploy-template-package.ts",
     "release:ready": "tsx scripts/governance/release-ready.ts",
     "release:status": "tsx scripts/governance/release-status.ts",

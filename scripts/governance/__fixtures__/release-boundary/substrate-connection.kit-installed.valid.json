@@ -8,6 +8,7 @@
   "installed_by": "agentsmith-release-kit",
   "release_kit_version": "0.1.0",
   "installation_id": "kit-install-10001",
+  "redacted_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "services": {
     "postgresql": {
       "host": "postgresql.agentsmith-substrate.svc",

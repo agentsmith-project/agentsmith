@@ -1645,12 +1645,13 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
     const evidence = releaseKitEvidenceFields(path, 'dependencies', {
       substrate_source: 'external_declared',
       substrate_connection_truth: {
-        schema_version: 'docker-substrate.truth/v1',
+        schema_version: 'agentsmith.docker-substrate.truth/v1',
         target_cluster: 'kind_rehearsal',
         substrate_source: 'external_declared',
         distribution: 'online',
         declared_at: '2026-05-23T12:00:00.000Z',
         declared_by: 'release-operator@example.com',
+        redacted_fingerprint: `sha256:${'5'.repeat(64)}`,
         services: {
           postgresql: {
             host: 'postgresql.release.example.internal',

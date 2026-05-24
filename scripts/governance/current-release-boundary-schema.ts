@@ -551,13 +551,22 @@ const REQUIRED_TRUTH_IDS = [
   'runner_release_manifest',
   'runner_image_lock',
 ] as const;
-const DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'docker-substrate.truth/v1';
+const DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'agentsmith.docker-substrate.truth/v1';
+const LEGACY_DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'docker-substrate.truth/v1';
+const DOCKER_SUBSTRATE_TRUTH_SCHEMAS = new Set<string>([
+  DOCKER_SUBSTRATE_TRUTH_SCHEMA,
+  LEGACY_DOCKER_SUBSTRATE_TRUTH_SCHEMA,
+]);
 const SUBSTRATE_CONNECTION_REQUIRED_SERVICES = [
   'postgresql',
   'mongodb',
   'redis',
   'object_storage',
   'oidc',
+] as const;
+const LEGACY_TOP_LEVEL_SUBSTRATE_SERVICE_KEYS = [
+  'postgres',
+  ...SUBSTRATE_CONNECTION_REQUIRED_SERVICES,
 ] as const;
 const SUBSTRATE_REACHABILITY_STATUS_SET = new Set<string>([
   'declared_reachable',
@@ -846,24 +855,9 @@ export function validateSubstrateConnectionTruth(
     });
   }
 
-  if (source === 'external_declared' && value.schema_version === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
-    failures.push({
-      path: 'schema_version',
-      reason: 'external_declared must not use docker-substrate truth.',
-    });
-  }
-  if (source === 'external_declared' && value.source_truth_schema === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
-    failures.push({
-      path: 'source_truth_schema',
-      reason: 'external_declared must not use docker-substrate truth.',
-    });
-  }
-  if (source === 'external_declared' && value.kit_truth_source === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
-    failures.push({
-      path: 'kit_truth_source',
-      reason: 'external_declared must not use docker-substrate truth.',
-    });
-  }
+  validateNoExternalDeclaredDockerTruth(value.schema_version, 'schema_version', source, failures);
+  validateNoExternalDeclaredDockerTruth(value.source_truth_schema, 'source_truth_schema', source, failures);
+  validateNoExternalDeclaredDockerTruth(value.kit_truth_source, 'kit_truth_source', source, failures);
 
   if (source === 'external_declared') {
     validateRequiredString(value.declared_by, 'declared_by', failures);
@@ -872,6 +866,8 @@ export function validateSubstrateConnectionTruth(
     validateLiteral(value.installed_by, 'agentsmith-release-kit', 'installed_by', failures);
     validateRequiredString(value.release_kit_version, 'release_kit_version', failures);
   }
+
+  validateNoLegacyTopLevelSubstrateServiceKeys(value, failures);
 
   const services = validateSubstrateServicesObject(value.services, failures);
   if (services) {
@@ -884,9 +880,7 @@ export function validateSubstrateConnectionTruth(
   if (hasOwn(value, 'product_flow_probe_secret_refs')) {
     validateProductFlowProbeRefs(value.product_flow_probe_secret_refs, failures);
   }
-  if (hasOwn(value, 'redacted_fingerprint')) {
-    validateRedactedFingerprint(value.redacted_fingerprint, 'redacted_fingerprint', failures);
-  }
+  validateRedactedFingerprint(value.redacted_fingerprint, 'redacted_fingerprint', failures);
 
   return finish(value, failures);
 }
@@ -1275,7 +1269,20 @@ export function validateReleaseKitEvidenceMapping(
       'canonical evidence owner must be agentsmith or agentsmith-release-kit.',
       failures,
     );
-    validateStringArray(entry.current_campaign_target_clusters, `${path}.current_campaign_target_clusters`, failures);
+    const targetClusters = validateStringArray(
+      entry.current_campaign_target_clusters,
+      `${path}.current_campaign_target_clusters`,
+      failures,
+    );
+    targetClusters?.forEach((targetCluster, clusterIndex) => {
+      validateEnum(
+        targetCluster,
+        TARGET_CLUSTER_SET,
+        `${path}.current_campaign_target_clusters[${clusterIndex}]`,
+        'target_cluster is not in the release boundary matrix.',
+        failures,
+      );
+    });
     validateStringArray(entry.reject_conditions, `${path}.reject_conditions`, failures);
 
     if (entry.target === 'product_flows') {
@@ -2046,6 +2053,38 @@ function validateSubstrateServicesObject(
   }
 
   return value;
+}
+
+function validateNoExternalDeclaredDockerTruth(
+  value: unknown,
+  path: string,
+  source: CurrentDeploymentSubstrateSource | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (source !== 'external_declared' || typeof value !== 'string' || !DOCKER_SUBSTRATE_TRUTH_SCHEMAS.has(value)) {
+    return;
+  }
+
+  failures.push({
+    path,
+    reason: 'external_declared must not use docker-substrate truth.',
+  });
+}
+
+function validateNoLegacyTopLevelSubstrateServiceKeys(
+  value: Record<string, unknown>,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  for (const key of LEGACY_TOP_LEVEL_SUBSTRATE_SERVICE_KEYS) {
+    if (!hasOwn(value, key)) {
+      continue;
+    }
+
+    failures.push({
+      path: key,
+      reason: `legacy top-level substrate service key "${key}" is not allowed; use services.${key === 'postgres' ? 'postgresql' : key}.`,
+    });
+  }
 }
 
 function validateBaseSubstrateService(

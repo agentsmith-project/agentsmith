@@ -216,7 +216,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
     不能猜 AgentSmith repo path 或直接 import 产品源码。
 11. `required_product_flows` 当前最小集合是 `workspace_project`、`files`、`agent_task_managed_runner`。其他流程只有在 release scope 明确要求时才加入。
 12. `target_profiles` 声明支持的 `target_cluster`、`substrate_source`、`distribution` 组合，以及每个组合的 namespace/RBAC/ingress/TLS/storage class/registry/pull secret prerequisites；`target_profiles.required` 表示 release-kit adoption/release readiness 前必须有正式 evidence 的组合。
-13. `substrate_connection_schema` 使用中性连接真相命名，例如 `agentsmith.substrate-connection.truth/v1`；旧 `docker-substrate.truth/v1` 只能作为 `kit_installed` 的内部 installer truth，不得用于 `external_declared`。
+13. `substrate_connection_schema` 使用中性连接真相命名，例如 `agentsmith.substrate-connection.truth/v1`；`agentsmith.docker-substrate.truth/v1` 是真实 Docker substrate truth，只能作为 `kit_installed` 的内部 installer truth；旧 unqualified alias `docker-substrate.truth/v1` 是 legacy bad input，两者都不得用于 `external_declared`。
 14. `artifact_provenance` 至少包含 producer repo identity、commit SHA、workflow/run/job、artifact URI、artifact digest、generated_at 和 generator version。正式 release adapter 必须拒绝缺 provenance、local provenance 或 repo identity 不匹配的 contract。
 15. bootstrap 阶段 `--inputs` / contract intake 只允许作为 focused diagnostic：
     它可以输出 `intake-report` 和 `image-digest-plan`，但不代表 deploy readiness、

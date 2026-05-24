@@ -616,11 +616,35 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('rejects external_declared substrate truth that reuses Docker truth', () => {
+  it.each([
+    ['schema_version', 'agentsmith.docker-substrate.truth/v1'],
+    ['source_truth_schema', 'agentsmith.docker-substrate.truth/v1'],
+    ['kit_truth_source', 'agentsmith.docker-substrate.truth/v1'],
+    ['source_truth_schema', 'docker-substrate.truth/v1'],
+  ])('rejects external_declared substrate truth that reuses Docker truth via %s', (field, schemaVersion) => {
     const truth = cloneFixture('substrate-connection.external-declared.valid.json');
-    truth.schema_version = 'docker-substrate.truth/v1';
+    truth[field] = schemaVersion;
 
     expectInvalid(validateSubstrateConnectionTruth(truth), 'external_declared must not use docker-substrate truth');
+  });
+
+  it.each([
+    'postgres',
+    'postgresql',
+    'mongodb',
+    'redis',
+    'object_storage',
+    'oidc',
+  ])('rejects legacy top-level substrate service key %s even when canonical services are present', (legacyKey) => {
+    const truth = cloneFixture('substrate-connection.external-declared.valid.json');
+    truth[legacyKey] = {
+      note: 'legacy top-level service binding',
+    };
+
+    expectInvalid(
+      validateSubstrateConnectionTruth(truth),
+      `legacy top-level substrate service key "${legacyKey}" is not allowed`,
+    );
   });
 
   it('rejects external_declared substrate truth with Docker default host including a port', () => {
@@ -678,6 +702,13 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateSubstrateConnectionTruth(missingVectorExtension),
       'postgresql truth must include pgvector extension check',
+    );
+
+    const missingRedactedFingerprint = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete missingRedactedFingerprint.redacted_fingerprint;
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingRedactedFingerprint),
+      'redacted_fingerprint must be a non-empty string',
     );
   });
 
@@ -966,6 +997,19 @@ describe('current release boundary schema', () => {
       section: 'rollout',
     };
     expectInvalid(validateReleaseKitEvidence(splitTarget), 'target must be one release summary section string');
+  });
+
+  it('rejects non-current target cluster axes in release kit evidence mapping', () => {
+    const mapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING) as Record<string, unknown>[];
+    mapping[0] = {
+      ...mapping[0],
+      current_campaign_target_clusters: ['local-kind'],
+    };
+
+    expectInvalid(
+      validateReleaseKitEvidenceMapping(mapping),
+      'target_cluster is not in the release boundary matrix',
+    );
   });
 
   it('rejects duplicate truth ids in the release boundary truth matrix', () => {

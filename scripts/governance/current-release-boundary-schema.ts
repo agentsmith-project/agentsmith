@@ -1538,6 +1538,7 @@ function validateReleaseKitEvidenceSubject(
     return value;
   }
 
+  const seenFilePaths = new Set<string>();
   value.files.forEach((entry, index) => {
     const filePath = `${path}.files[${index}]`;
     if (!isRecord(entry)) {
@@ -1555,6 +1556,15 @@ function validateReleaseKitEvidenceSubject(
         path: `${filePath}.path`,
         reason: `${filePath}.path must be a safe relative path.`,
       });
+    }
+    if (relativePath) {
+      if (seenFilePaths.has(relativePath)) {
+        failures.push({
+          path: `${path}.files`,
+          reason: `${path}.files contains duplicate path: ${relativePath}.`,
+        });
+      }
+      seenFilePaths.add(relativePath);
     }
     validateDigest(entry.sha256, `${filePath}.sha256`, failures);
   });

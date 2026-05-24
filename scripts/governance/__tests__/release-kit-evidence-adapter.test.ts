@@ -282,6 +282,33 @@ describe('release kit raw evidence adapter', () => {
     );
   });
 
+  it('fails fast when evidence_subject contains duplicate paths even when subject_sha256 is recomputed', () => {
+    const duplicateEvidenceJsonSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'render-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'rollout-report.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+    ]);
+    const raw = validRawEnvelope(duplicateEvidenceJsonSubject);
+
+    expectInvalid(
+      adapt(raw, duplicateEvidenceJsonSubject),
+      'evidence_subject.files contains duplicate path: evidence.json',
+    );
+  });
+
   it('fails fast when image-map evidence subject includes unrelated output files', () => {
     const imageSubject = evidenceSubjectForFiles([
       {

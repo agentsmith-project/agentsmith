@@ -931,6 +931,19 @@ describe('current release boundary schema', () => {
       '../render-report.json';
     rehashArtifactProvenanceSubject(parentTraversal, 'evidence_subject');
     expectInvalid(validateReleaseKitEvidence(parentTraversal), 'evidence_subject.files[0].path must be a safe relative path');
+
+    const duplicatePath = cloneFixture('release-kit-evidence.valid.json');
+    const duplicateFiles = (duplicatePath.evidence_subject as Record<string, unknown>).files as Record<string, unknown>[];
+    duplicateFiles.push({
+      path: 'evidence.json',
+      sha256: `sha256:${'8'.repeat(64)}`,
+    });
+    rehashArtifactProvenanceSubject(duplicatePath, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(duplicatePath),
+      'evidence_subject.files contains duplicate path: evidence.json',
+    );
   });
 
   it('rejects release-kit evidence subjects with schema drift even when the provenance hash is recomputed', () => {

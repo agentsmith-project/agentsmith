@@ -181,6 +181,15 @@ describe('visual baseline support', () => {
     const retryCaptureIndex = captureHelperSource.indexOf('failedActual = await capturePageScreenshot();');
     const retryComparisonIndex = captureHelperSource.indexOf('comparison = await compareScreenshots(failedActual);');
     const comparisonGuardIndex = captureHelperSource.indexOf('if (comparison) {');
+    const failedActualFileNameIndex = captureHelperSource.indexOf(
+      'const failedActualFileName = `custom-full-page-actual-${path.basename(args.entry.screenshot)}`;',
+    );
+    const failedActualPathIndex = captureHelperSource.indexOf(
+      'const failedActualPath = testInfo.outputPath(failedActualFileName);',
+    );
+    const writeFailedActualIndex = captureHelperSource.indexOf('writeFileSync(failedActualPath, failedActual);');
+    const attachFailedActualIndex = captureHelperSource.indexOf('await testInfo.attach(failedActualFileName, {');
+    const throwComparisonIndex = captureHelperSource.indexOf('throw new Error(comparison.errorMessage);');
     const returnCaptureIndex = captureHelperSource.indexOf('return failedActual;');
 
     expect(semanticIndex).toBeGreaterThan(-1);
@@ -193,6 +202,11 @@ describe('visual baseline support', () => {
     expect(retryCaptureIndex).toBeGreaterThan(-1);
     expect(retryComparisonIndex).toBeGreaterThan(-1);
     expect(comparisonGuardIndex).toBeGreaterThan(-1);
+    expect(failedActualFileNameIndex).toBeGreaterThan(-1);
+    expect(failedActualPathIndex).toBeGreaterThan(-1);
+    expect(writeFailedActualIndex).toBeGreaterThan(-1);
+    expect(attachFailedActualIndex).toBeGreaterThan(-1);
+    expect(throwComparisonIndex).toBeGreaterThan(-1);
     expect(returnCaptureIndex).toBeGreaterThan(-1);
     expect(semanticIndex).toBeLessThan(captureCallIndex);
     expect(captureCallIndex).toBeLessThan(writeCaptureIndex);
@@ -201,9 +215,15 @@ describe('visual baseline support', () => {
     expect(compareFactoryIndex).toBeLessThan(initialComparisonIndex);
     expect(retryCaptureIndex).toBeLessThan(retryComparisonIndex);
     expect(initialComparisonIndex).toBeLessThan(comparisonGuardIndex);
-    expect(comparisonGuardIndex).toBeLessThan(returnCaptureIndex);
+    expect(comparisonGuardIndex).toBeLessThan(failedActualFileNameIndex);
+    expect(failedActualFileNameIndex).toBeLessThan(failedActualPathIndex);
+    expect(failedActualPathIndex).toBeLessThan(writeFailedActualIndex);
+    expect(writeFailedActualIndex).toBeLessThan(attachFailedActualIndex);
+    expect(attachFailedActualIndex).toBeLessThan(throwComparisonIndex);
+    expect(throwComparisonIndex).toBeLessThan(returnCaptureIndex);
     expect(visualSpec).not.toContain('toHaveScreenshot(entry.screenshot');
     expect(visualSpec).not.toContain('._expectScreenshot({');
+    expect(captureHelperSource).not.toContain('system-info');
     expect(workspaceOverviewSetupSource).toContain('screenshotOptions:');
     expect(workspaceOverviewSetupSource).toContain('maxDiffPixelRatio: 0.0005');
     expect(workspaceOverviewSetupSource).not.toContain('maxDiffPixelRatio: 0,');

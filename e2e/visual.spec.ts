@@ -2584,6 +2584,8 @@ async function captureSnapshotBoundActualScreenshot(args: {
       updateSnapshots: 'all' | 'changed' | 'missing' | 'none';
     };
     snapshotPath: (name: string, options: { kind: 'screenshot' }) => string;
+    outputPath: (...pathSegments: string[]) => string;
+    attach: (name: string, options: { path: string; contentType: string }) => Promise<void>;
     _projectInternal?: {
       expect?: {
         toHaveScreenshot?: {
@@ -2660,6 +2662,14 @@ async function captureSnapshotBoundActualScreenshot(args: {
     comparison = await compareScreenshots(failedActual);
   }
   if (comparison) {
+    const failedActualFileName = `custom-full-page-actual-${path.basename(args.entry.screenshot)}`;
+    const failedActualPath = testInfo.outputPath(failedActualFileName);
+    mkdirSync(path.dirname(failedActualPath), { recursive: true });
+    writeFileSync(failedActualPath, failedActual);
+    await testInfo.attach(failedActualFileName, {
+      path: failedActualPath,
+      contentType: 'image/png',
+    });
     throw new Error(comparison.errorMessage);
   }
 

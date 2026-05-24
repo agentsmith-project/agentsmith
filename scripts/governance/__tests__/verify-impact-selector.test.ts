@@ -721,6 +721,150 @@ describe('verify impact selector', () => {
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
   });
 
+  it('maps backend-real runner config defaults without leaving source paths unmapped', () => {
+    const changedFiles = [
+      'infra/runtime/presets.env',
+      'scripts/lib/backend-real-env.sh',
+      'scripts/lib/bootstrap-common.sh',
+      'scripts/integration-keycloak-init.ts',
+      'scripts/integration-keycloak-init.test.ts',
+      'secrets/e2e-openai-compatible.demo.json',
+      'e2e/integration-real-helpers.ts',
+      'e2e/integration-agent-task-isolation.spec.ts',
+      'e2e/integration-context-store-isolation.spec.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('backend-real-diagnostic-tooling');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        broadImpact: true,
+      })),
+    ));
+  });
+
+  it('maps endpoint provider and model catalog paths to focused catalog verification without unmapped impact', () => {
+    const changedFiles = [
+      'src/lib/endpoints/provider-catalog.ts',
+      'src/lib/endpoints/model-catalog-provider-options.ts',
+      'src/lib/endpoints/__tests__/provider-catalog.test.ts',
+      'src/lib/endpoints/__tests__/model-catalog-provider-options.test.ts',
+    ];
+    const focusedCommand = 'npm run test:endpoint-model-catalog';
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      focusedCommand,
+    ]);
+    expect(plan.affectedSurfaces).toEqual(['endpoints/model-config-catalog']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: endpoints/model-config-catalog');
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+    expect(plan.changedFileImpacts).toHaveLength(changedFiles.length);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining(
+      changedFiles.map((changedFile) => expect.objectContaining({
+        changedFile,
+        matchedRules: ['endpoint_model_catalog'],
+        affectedSurfaces: ['endpoints/model-config-catalog'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      })),
+    ));
+    expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
+  });
+
+  it('maps the exact package.json endpoint model catalog test alias without unmapped impact', () => {
+    const scriptCommand = 'npm run test:run -- src/lib/endpoints/__tests__/provider-catalog.test.ts src/lib/endpoints/__tests__/model-catalog-provider-options.test.ts';
+    const basePackageJson = {
+      scripts: {
+        'test:run': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        ...basePackageJson.scripts,
+        'test:endpoint-model-catalog': scriptCommand,
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+        'npm run test:endpoint-model-catalog',
+      ]);
+      expect(plan.affectedSurfaces).toEqual(['endpoints/model-config-catalog']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['endpoint_model_catalog'],
+          affectedSurfaces: ['endpoints/model-config-catalog'],
+          storyIds: [],
+          manualReviewRequired: false,
+          broadImpact: false,
+        }),
+      ]);
+      expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
+    });
+  });
+
+  it('keeps the package.json endpoint model catalog test alias fail-closed when the command body is not exact', () => {
+    const basePackageJson = {
+      scripts: {
+        'test:run': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        ...basePackageJson.scripts,
+        'test:endpoint-model-catalog': 'npm run test:run -- src/lib/endpoints/__tests__/provider-catalog.test.ts',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toContain('unmapped-source');
+      expect(plan.riskSummary.warnings.join('\n')).toContain('package.json did not match canonical story markdown');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          manualReviewRequired: true,
+          broadImpact: true,
+        }),
+      ]);
+    });
+  });
+
   it('maps P4 runner contract package extraction files to focused owner review without unmapped expansion', () => {
     const changedFiles = [
       'package-lock.json',

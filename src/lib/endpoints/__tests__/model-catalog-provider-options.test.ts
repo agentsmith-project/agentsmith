@@ -75,4 +75,13 @@ describe('model-catalog-provider-options', () => {
 
     expect(options[0]?.default_base_url).toBe('https://api.openai.com/v1');
   });
+
+  it('falls back to the official DeepSeek OpenAI-compatible base URL without v1 suffix', () => {
+    const options = buildModelCatalogProviderOptions([
+      provider('deepseek', 'DeepSeek', ''),
+    ]);
+
+    expect(options[0]?.default_base_url).toBe('https://api.deepseek.com');
+    expect(options[0]?.upstream_protocol).toBe('openai_chat_completions');
+  });
 });

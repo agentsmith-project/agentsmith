@@ -693,6 +693,7 @@ export async function runKeycloakInitOnce(): Promise<void> {
 
 export async function runKeycloakRedirectsOnlyOnce(): Promise<void> {
   const token = await getAdminToken();
+  await ensureRealmTokenLifespans(token);
   await ensureClientRedirects(token);
   process.stdout.write('[integration-keycloak-init] redirects-only done\n');
 }

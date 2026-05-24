@@ -80,14 +80,16 @@ function getUpsertDeploymentDefaultManagedRunner(): ManagedRunnerSeedFn {
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? "en-US";
 export const API_BASE =
   process.env.INTEGRATION_API_BASE ?? "http://localhost:20000";
-export const BACKEND_REAL_ANTHROPIC_BASE_URL =
-  process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ??
-  "https://anthropic-compatible.provider.example/v1";
+const DEFAULT_DEEPSEEK_OPENAI_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic";
 export const BACKEND_REAL_MODEL =
-  process.env.BACKEND_REAL_MODEL ?? "placeholder-model";
+  process.env.BACKEND_REAL_MODEL ?? "deepseek-v4-flash";
 export const BACKEND_REAL_OPENAI_BASE_URL =
   process.env.BACKEND_REAL_OPENAI_BASE_URL ??
-  "https://openai-compatible.provider.example/v1";
+  DEFAULT_DEEPSEEK_OPENAI_BASE_URL;
+export const BACKEND_REAL_ANTHROPIC_BASE_URL =
+  process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ??
+  DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL;
 export const BACKEND_REAL_OPENAI_MODEL =
   process.env.BACKEND_REAL_OPENAI_MODEL ?? BACKEND_REAL_MODEL;
 const DEFAULT_REAL_MODEL_PROFILE = {

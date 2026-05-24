@@ -33,6 +33,12 @@ describe('provider-catalog', () => {
     expect(models.length).toBeGreaterThan(0);
   });
 
+  it('uses the official DeepSeek OpenAI-compatible base URL without v1 suffix', () => {
+    const deepseek = getProviderOption('deepseek');
+    expect(deepseek.default_base_url).toBe('https://api.deepseek.com');
+    expect(deepseek.upstream_protocol).toBe('openai_chat_completions');
+  });
+
   describe('custom provider option', () => {
     it('should return custom provider option', () => {
       const custom = getProviderOption('custom');

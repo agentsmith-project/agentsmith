@@ -66,7 +66,7 @@ const PROVIDER_CONFIG: Record<
   deepseek: {
     family: 'deepseek',
     upstream_protocol: 'openai_chat_completions',
-    default_base_url: 'https://api.deepseek.com/v1',
+    default_base_url: 'https://api.deepseek.com',
   },
   minimax: {
     family: 'minimax',

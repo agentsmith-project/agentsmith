@@ -28,6 +28,7 @@ export type ChangedFileImpactRule =
   | 'env_only_configuration'
   | 'docs_only'
   | 'design_system'
+  | 'endpoint_model_catalog'
   | 'runner_context_credential'
   | 'backend_real_diagnostic_tooling'
   | 'release_real_owner_diagnostic'
@@ -205,6 +206,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'env_only_configuration',
   'docs_only',
   'design_system',
+  'endpoint_model_catalog',
   'runner_context_credential',
   'backend_real_diagnostic_tooling',
   'release_real_owner_diagnostic',
@@ -218,9 +220,13 @@ const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
 const PACKAGE_TOPOLOGY_TYPECHECK_COMMAND = 'npm run ws:typecheck';
+const ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_NAME = 'test:endpoint-model-catalog';
+const ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_COMMAND = 'npm run test:run -- src/lib/endpoints/__tests__/provider-catalog.test.ts src/lib/endpoints/__tests__/model-catalog-provider-options.test.ts';
+const ENDPOINT_MODEL_CATALOG_TEST_COMMAND = `npm run ${ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_NAME}`;
 const COMMAND_ORDER = [
   'npm run verify:quick',
   'npm run verify:default',
+  ENDPOINT_MODEL_CATALOG_TEST_COMMAND,
   PACKAGE_TOPOLOGY_TYPECHECK_COMMAND,
   'npm run verify:visual',
   AGENT_TASK_RUNNER_FAST_COMMAND,
@@ -415,6 +421,8 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^scripts\/workspace-shared-context/,
   /^scripts\/.*credential/i,
   /^e2e\/integration-agent-task-terminal/,
+  /^e2e\/integration-(?:agent-task-isolation|agent-member-permissions|context-store-isolation|governance-member-workflow-continuity|internal-sandbox-reclaim|internal-task-isolation|invite-first-effective-work|membership-chat-isolation|resource-policy-observable-effect)\.spec\.ts$/,
+  /^e2e\/integration-real-helpers\.ts$/,
   /^packages\/agent-runner-contract\/src\//,
   /^packages\/agent-runner-contract\/(?:package\.json|tsconfig\.json)$/,
   /^packages\/agent-runner\/package\.json$/,
@@ -523,6 +531,13 @@ function isGovernanceToolingPath(filePath: string): boolean {
     /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-runner-(?:contract-sync|naming)(?:\.test)?\.ts$/,
+  ].some((pattern) => pattern.test(filePath));
+}
+
+function isEndpointModelCatalogPath(filePath: string): boolean {
+  return [
+    /^src\/lib\/endpoints\/(?:provider-catalog|model-catalog-provider-options)\.ts$/,
+    /^src\/lib\/endpoints\/__tests__\/(?:provider-catalog|model-catalog-provider-options)\.test\.ts$/,
   ].some((pattern) => pattern.test(filePath));
 }
 
@@ -964,6 +979,16 @@ function isReleaseArtifactProducerPackageScriptChange(
     && (previousCommand === undefined || previousCommand === exactProducerCommand);
 }
 
+function isEndpointModelCatalogPackageScriptChange(
+  scriptName: string,
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  return scriptName === ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_NAME
+    && currentCommand === ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_COMMAND
+    && (previousCommand === undefined || previousCommand === ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_COMMAND);
+}
+
 function isSafeGovernanceOrMockLanePackageScript(scriptName: string, command: string): boolean {
   if (scriptName === 'test:governance') {
     return command === 'bash scripts/governance-default-gate.sh';
@@ -1045,6 +1070,37 @@ function isPackageJsonReleaseArtifactProducerChange(filePath: string, baseRefs: 
   return producerChanged;
 }
 
+function isPackageJsonEndpointModelCatalogScriptChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== 'package.json') {
+    return false;
+  }
+
+  const comparison = packageJsonComparisonForChangedFile(baseRefs);
+  if (!comparison) {
+    return false;
+  }
+
+  const packageChangedKeys = changedJsonKeys(comparison.basePackageJson, comparison.currentPackageJson);
+  if (packageChangedKeys.length !== 1 || packageChangedKeys[0] !== 'scripts') {
+    return false;
+  }
+
+  const baseScripts = comparison.basePackageJson.scripts;
+  const currentScripts = comparison.currentPackageJson.scripts;
+  if (!isJsonObject(baseScripts) || !isJsonObject(currentScripts)) {
+    return false;
+  }
+
+  const changedScriptNames = changedJsonKeys(baseScripts, currentScripts);
+  return changedScriptNames.length === 1
+    && changedScriptNames.every((scriptName) => {
+      const currentCommand = currentScripts[scriptName];
+      const previousCommand = baseScripts[scriptName];
+      return typeof currentCommand === 'string'
+        && isEndpointModelCatalogPackageScriptChange(scriptName, previousCommand, currentCommand);
+    });
+}
+
 function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: readonly string[]): boolean {
   if (filePath !== 'package.json') {
     return false;
@@ -1085,11 +1141,16 @@ function isPackageJsonSafeGovernanceToolingChange(filePath: string, baseRefs: re
 
 function isBackendRealDiagnosticToolingPath(filePath: string): boolean {
   return [
+    /^infra\/runtime\/presets\.env$/,
     /^scripts\/backend-real-bootstrap\.sh$/,
     /^scripts\/backend-real-run(?:\.test)?\.(?:sh|ts)$/,
+    /^scripts\/integration-keycloak-init(?:\.test)?\.ts$/,
     /^scripts\/agent-task-real-smoke-gate\.sh$/,
     /^scripts\/run-internal-agent-task-real-gate\.sh$/,
     /^scripts\/internal-backend-real-gate-runtime\.test\.ts$/,
+    /^scripts\/lib\/backend-real-env\.sh$/,
+    /^scripts\/lib\/bootstrap-common\.sh$/,
+    /^secrets\/e2e-openai-compatible\.demo\.json$/,
   ].some((pattern) => pattern.test(filePath));
 }
 
@@ -1937,6 +1998,27 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
+    if (isPackageJsonEndpointModelCatalogScriptChange(changedFile, packageJsonBaseRefs)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = `Run ${GOVERNED_PR_VERIFY_COMMAND} and ${ENDPOINT_MODEL_CATALOG_TEST_COMMAND} for the package.json endpoint/model catalog test alias.`;
+      const surface = 'endpoints/model-config-catalog';
+      addLevels(accumulator, levels);
+      accumulator.commands.add(ENDPOINT_MODEL_CATALOG_TEST_COMMAND);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} adds or updates the exact endpoint/model catalog focused test alias.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'endpoint_model_catalog',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
+        broadImpact: false,
+      });
+    }
+
     if (isEnvOnlyConfigurationPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
@@ -2141,6 +2223,27 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         storyIds: [],
         action,
         manualReviewRequired: true,
+        broadImpact: false,
+      });
+    }
+
+    if (isEndpointModelCatalogPath(changedFile)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = `Run ${GOVERNED_PR_VERIFY_COMMAND} and ${ENDPOINT_MODEL_CATALOG_TEST_COMMAND} for endpoint/model config catalog changes.`;
+      const surface = 'endpoints/model-config-catalog';
+      addLevels(accumulator, levels);
+      accumulator.commands.add(ENDPOINT_MODEL_CATALOG_TEST_COMMAND);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} touches endpoint provider or model catalog configuration.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'endpoint_model_catalog',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
         broadImpact: false,
       });
     }

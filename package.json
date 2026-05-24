@@ -15,6 +15,7 @@
     "test": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs",
     "test:ui": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs --ui",
     "test:run": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run",
+    "test:endpoint-model-catalog": "npm run test:run -- src/lib/endpoints/__tests__/provider-catalog.test.ts src/lib/endpoints/__tests__/model-catalog-provider-options.test.ts",
     "test:coverage": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run --coverage",
     "test:integration": "bash scripts/integration-test.sh",
     "test:e2e": "bash scripts/run-mock-lane-session.sh --preset=default",

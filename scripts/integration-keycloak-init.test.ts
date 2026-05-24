@@ -7,6 +7,53 @@ import {
   runKeycloakInitWithRetry,
 } from './integration-keycloak-init';
 
+const dynamicImportEnvKeys = [
+  'INTERNAL_KEYCLOAK_BASE_URL',
+  'PUBLIC_KEYCLOAK_BASE_URL',
+  'KEYCLOAK_REALM',
+] as const;
+
+function restoreEnvSnapshot(snapshot: Map<(typeof dynamicImportEnvKeys)[number], string | undefined>): void {
+  for (const key of dynamicImportEnvKeys) {
+    const value = snapshot.get(key);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function jsonResponse(payload: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/json');
+  return new Response(JSON.stringify(payload), {
+    status: init.status ?? 200,
+    headers,
+  });
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
+}
+
+function parseJsonBody(body: RequestInit['body']): Record<string, unknown> {
+  if (typeof body !== 'string') {
+    throw new Error('expected string JSON request body');
+  }
+  const parsed: unknown = JSON.parse(body);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('expected object JSON request body');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 describe('integration-keycloak-init', () => {
   it('exports a zero-argument single-run entrypoint', () => {
     expect(runKeycloakInitOnce).toHaveLength(0);
@@ -40,6 +87,93 @@ describe('integration-keycloak-init', () => {
     expect(bases).toContain('http://localhost:39091');
     expect(bases).toContain('https://agentsmith.example.test');
     expect(bases).toContain('http://localhost:4101');
+  });
+
+  it('updates realm frontendUrl during redirects-only sync so tokens follow the current runtime issuer', async () => {
+    const envSnapshot = new Map(dynamicImportEnvKeys.map((key) => [key, process.env[key]]));
+    const realmUpdates: Record<string, unknown>[] = [];
+    const clientUpdates: Record<string, unknown>[] = [];
+    const runtimeKeycloakBaseUrl = 'http://127.0.0.1:28081';
+
+    vi.resetModules();
+    delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
+    process.env.PUBLIC_KEYCLOAK_BASE_URL = runtimeKeycloakBaseUrl;
+    process.env.KEYCLOAK_REALM = 'mbos';
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      const method = init?.method ?? 'GET';
+
+      if (method === 'POST' && url === `${runtimeKeycloakBaseUrl}/realms/master/protocol/openid-connect/token`) {
+        return jsonResponse({ access_token: 'admin-token' });
+      }
+
+      if (url === `${runtimeKeycloakBaseUrl}/admin/realms/mbos`) {
+        if (method === 'GET') {
+          return jsonResponse({
+            realm: 'mbos',
+            attributes: {
+              frontendUrl: 'http://localhost:18080',
+              retained: 'yes',
+            },
+          });
+        }
+        if (method === 'PUT') {
+          realmUpdates.push(parseJsonBody(init?.body));
+          return new Response(null, { status: 204 });
+        }
+      }
+
+      if (method === 'GET' && url === `${runtimeKeycloakBaseUrl}/admin/realms/mbos/clients?clientId=agentsmith`) {
+        return jsonResponse([{ id: 'agentsmith-client-uuid', clientId: 'agentsmith' }]);
+      }
+
+      if (url === `${runtimeKeycloakBaseUrl}/admin/realms/mbos/clients/agentsmith-client-uuid`) {
+        if (method === 'GET') {
+          return jsonResponse({
+            id: 'agentsmith-client-uuid',
+            clientId: 'agentsmith',
+            redirectUris: [],
+            webOrigins: [],
+          });
+        }
+        if (method === 'PUT') {
+          clientUpdates.push(parseJsonBody(init?.body));
+          return new Response(null, { status: 204 });
+        }
+      }
+
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const module = await import('./integration-keycloak-init');
+      await module.runKeycloakRedirectsOnlyOnce();
+    } finally {
+      vi.unstubAllGlobals();
+      restoreEnvSnapshot(envSnapshot);
+      vi.resetModules();
+    }
+
+    expect(fetchMock.mock.calls.map(([input, init]) => `${init?.method ?? 'GET'} ${requestUrl(input)}`)).toEqual([
+      `POST ${runtimeKeycloakBaseUrl}/realms/master/protocol/openid-connect/token`,
+      `GET ${runtimeKeycloakBaseUrl}/admin/realms/mbos`,
+      `PUT ${runtimeKeycloakBaseUrl}/admin/realms/mbos`,
+      `GET ${runtimeKeycloakBaseUrl}/admin/realms/mbos/clients?clientId=agentsmith`,
+      `GET ${runtimeKeycloakBaseUrl}/admin/realms/mbos/clients/agentsmith-client-uuid`,
+      `PUT ${runtimeKeycloakBaseUrl}/admin/realms/mbos/clients/agentsmith-client-uuid`,
+    ]);
+    expect(realmUpdates).toHaveLength(1);
+    expect(realmUpdates[0]).toMatchObject({
+      attributes: {
+        frontendUrl: runtimeKeycloakBaseUrl,
+        retained: 'yes',
+      },
+      accessTokenLifespan: 28800,
+      sslRequired: 'NONE',
+    });
+    expect(clientUpdates).toHaveLength(1);
   });
 
   it('retries a transient realm update failure once and then succeeds', async () => {

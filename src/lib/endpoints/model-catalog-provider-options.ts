@@ -45,7 +45,7 @@ function fallbackProviderBaseUrl(providerKey: string, displayName: string): stri
   const name = normalizeKey(displayName);
   if (key === 'openai' || name.includes('openai')) return 'https://api.openai.com/v1';
   if (key === 'anthropic' || name.includes('anthropic')) return 'https://api.anthropic.com/v1';
-  if (key.includes('deepseek') || name.includes('deepseek')) return 'https://api.deepseek.com/v1';
+  if (key.includes('deepseek') || name.includes('deepseek')) return 'https://api.deepseek.com';
   if (key.includes('moonshot') || key === 'kimi' || name.includes('moonshot') || name.includes('kimi')) {
     return 'https://api.moonshot.cn/v1';
   }

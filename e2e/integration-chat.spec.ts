@@ -3375,7 +3375,7 @@ test.describe("@lane-real integration chat flow", () => {
   });
 
   if (RUN_REAL_COMPLETION) {
-    test("chat works with real placeholder-model completion endpoint imported from integration resource", async ({
+    test("chat works with real deepseek completion endpoint imported from integration resource", async ({
       page,
     }) => {
       test.setTimeout(300_000);

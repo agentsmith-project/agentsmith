@@ -53,6 +53,9 @@ AgentSmith 仍保留：
 2. Runner 进程适合拆，Agent task / Files / Context Store / 调度真相不适合拆。
 3. Airgap 必须做成真实离线包；当前只有部分 archive/load helper，不是完整离线发布能力。
 4. 新 repo 创建必须遵守 [New repo bootstrap invariant](#41-new-repo-bootstrap-invariant)：P0 只冻结边界、命名和 quick guard，不迁源码、不迁工具、不发布；quick gate 只解锁 repo-local 专项工作，不表示 release readiness。
+5. “参考同家族 repo 先建治理和文档，再让独立 team members 进入专项工作”
+   是合理要求；它降低空 repo 直接堆实现的风险。KISS 做法是只借鉴
+   AFSCP/ASBCP 的启动检查清单形态，不继承它们的领域模型、gate 脚本或事实源。
 
 ## 4. Repo 职责
 
@@ -83,18 +86,25 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
    创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。
 2. AFSCP / ASBCP 只能作为 non-normative family reference，借鉴启动纪律；
    不能成为源码依赖、合同依赖、gate 依赖或新 repo 事实源。
-3. 第一条 PR 必须是 bootstrap-only/docs-governance-first；minimum bootstrap pack
-   只包含 README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES 或
+3. 新 repo bootstrap 顺序固定为：先建立最小治理与文档边界，再开放
+   repo-local 专项任务，最后才迁入实现。第一条 PR 必须是
+   bootstrap-only/docs-governance-first；minimum bootstrap pack 只包含
+   README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES 或
    verify-release、contracts/runbooks/ADR entrypoints，以及 CODEOWNERS/OWNERS
    或 README owner 元数据和 repo-local handoff checklist；不迁源码、不迁工具、不发布。
-4. quick governance guard 只检查 canonical repo identity、required bootstrap files、
+4. AFSCP/ASBCP 可以提供非规范检查清单灵感，例如“是否有 owner、
+   scope/non-goals、合同入口、runbook 入口、quick guard、单一 gate 入口”；
+   这些条目必须被改写成当前 repo-local 事实，不能复制为权威规范或硬依赖。
+5. quick governance guard 只检查 canonical repo identity、required bootstrap files、
    scope/non-goals、owner/team 元数据、gate 入口存在且不声称 release readiness、
    无 raw secret、无 mutable image 或 tag-only release claim、无 AFSCP/ASBCP
    源码/合同/gate 依赖、无 sibling repo status gate。
-5. quick gate 通过只表示 repo-local team members 可以领取互不重叠的 docs、
+6. quick gate 通过只表示 repo-local team members 可以领取互不重叠的 docs、
    contracts、runbooks、CI gate 或 implementation workstream；它不是 team
    signoff，也不是 release readiness。
-6. 新 repo 的事实源只能是 repo-local 文档、合同、runbook、ADR、gate，以及
+   implementation workstream 仍必须按 P2/P5 对应范围推进，不解锁
+   release/adoption，也不允许跳过合同或证据边界。
+7. 新 repo 的事实源只能是 repo-local 文档、合同、runbook、ADR、gate，以及
    AgentSmith 发布出来的 versioned contract / image digest / release manifest；
    不能回读 `agentsmith` 工作树或 sibling repo 状态当作事实源。
 

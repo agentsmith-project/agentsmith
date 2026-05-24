@@ -205,6 +205,18 @@ function scanFile(rootDir: string, absolutePath: string): ReleaseKitSourceBounda
       simpleStringAliases.set(constAlias.name, constAlias.reference);
     }
 
+    const computedSiblingLabel = matchComputedSiblingAgentSmithSourcePath(line);
+    if (computedSiblingLabel !== null) {
+      addLineFailureOnce(
+        failures,
+        seenMessages,
+        relativePath,
+        index + 1,
+        line,
+        `release kit must read release contracts, deploy template packages, and generated artifacts; it must not import/read AgentSmith product source via ${computedSiblingLabel}.`,
+      );
+    }
+
     for (const candidate of extractReferenceCandidates(line, simpleStringAliases)) {
       if (scansPackageSpecifiers) {
         const forbiddenPackage = matchForbiddenAgentSmithPackageSpecifier(candidate.value);
@@ -674,6 +686,30 @@ function forbiddenPathReferenceLabels(candidate: ReferenceCandidate): string[] {
   }
 
   return [...new Set(labels)];
+}
+
+function matchComputedSiblingAgentSmithSourcePath(line: string): string | null {
+  const normalized = line.replace(/\s+/gu, ' ');
+  if (!/\b(?:path\.)?(?:join|resolve)\s*\(/u.test(normalized)) {
+    return null;
+  }
+  if (!/\bpath\.dirname\s*\(\s*RELEASE_KIT_ROOT\s*\)/u.test(normalized)) {
+    return null;
+  }
+  if (!/(["'`])agent\1\s*\+\s*(["'`])smith\2/u.test(normalized)) {
+    return null;
+  }
+  if (!hasQuotedAgentSmithProductSourceSegment(normalized)) {
+    return null;
+  }
+
+  return 'computed sibling agentsmith product source path';
+}
+
+function hasQuotedAgentSmithProductSourceSegment(value: string): boolean {
+  return /(["'`])src\1/u.test(value)
+    || /(["'`])packages\1/u.test(value)
+    || /(["'`])package\.json\1/u.test(value);
 }
 
 function isAgentSmithProductSourceReference(value: string): boolean {

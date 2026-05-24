@@ -2886,7 +2886,7 @@ export function containsReleaseBoundarySecretLookingText(value: string): boolean
   return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
 }
 
-function validateNoSecretLeak(
+export function validateNoSecretLeak(
   value: unknown,
   path: string,
   failures: CurrentReleaseBoundaryValidationFailure[],

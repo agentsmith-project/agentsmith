@@ -115,6 +115,13 @@ describe('current release boundary schema', () => {
 
     const releaseKitEvidence = readFixture('release-kit-evidence.valid.json');
     expect(releaseKitEvidence.target).toBe('rollout');
+    const releaseKitEvidenceSubject = releaseKitEvidence.evidence_subject as Record<string, unknown>;
+    const releaseKitEvidenceSubjectFiles = releaseKitEvidenceSubject.files as Record<string, unknown>[];
+    expect(releaseKitEvidenceSubjectFiles.map((file) => file.path)).toEqual([
+      'evidence.json',
+      'render-report.json',
+      'rollout-report.json',
+    ]);
     expect(validateReleaseKitEvidence(releaseKitEvidence).ok).toBe(true);
     expect(validateReleaseKitEvidenceForAggregate(releaseKitEvidence)).toMatchObject({
       ok: true,

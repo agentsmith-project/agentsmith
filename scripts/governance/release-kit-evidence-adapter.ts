@@ -18,9 +18,9 @@ const RAW_RELEASE_KIT_EVIDENCE_ENVELOPE_SCHEMA_VERSION =
 const RELEASE_KIT_EVIDENCE_SUBJECT_NAME = 'release-kit-evidence-subject';
 
 const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[]> = {
-  'deploy-result.json#substrate': ['deploy-result.json'],
-  'image-map.json': ['image-map.json'],
-  'render-report.json+rollout-report.json': ['render-report.json', 'rollout-report.json'],
+  'deploy-result.json#substrate': ['evidence.json', 'deploy-result.json'],
+  'image-map.json': ['evidence.json', 'image-map.json'],
+  'render-report.json+rollout-report.json': ['evidence.json', 'render-report.json', 'rollout-report.json'],
 };
 
 export interface ReleaseKitEvidenceAdapterTargetProfile {
@@ -152,13 +152,21 @@ function validateEvidenceSubjectOutputBinding(
   }
 
   const missingFiles = requiredFiles.filter((requiredFile) => !subjectFilePaths.has(requiredFile));
-  if (missingFiles.length === 0) {
+  const extraFiles = [...subjectFilePaths].filter((subjectFile) => !requiredFiles.includes(subjectFile));
+  if (missingFiles.length === 0 && extraFiles.length === 0) {
     return null;
+  }
+
+  if (missingFiles.length > 0) {
+    return invalid(
+      'evidence_subject.files',
+      `release_kit_output ${releaseKitOutput} requires evidence_subject.files to include ${missingFiles.join(', ')}.`,
+    );
   }
 
   return invalid(
     'evidence_subject.files',
-    `release_kit_output ${releaseKitOutput} requires evidence_subject.files to include ${missingFiles.join(', ')}.`,
+    `release_kit_output ${releaseKitOutput} requires evidence_subject.files to contain only ${requiredFiles.join(', ')}.`,
   );
 }
 

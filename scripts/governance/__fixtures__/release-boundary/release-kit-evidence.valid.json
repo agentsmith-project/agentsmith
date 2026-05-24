@@ -19,6 +19,10 @@
     "schema_version": "agentsmith.release-kit-evidence-subject/v1",
     "files": [
       {
+        "path": "evidence.json",
+        "sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      {
         "path": "render-report.json",
         "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
@@ -35,7 +39,7 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith-release-kit",
     "commit_sha": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
     "subject_name": "release-kit-evidence-subject",
-    "subject_sha256": "sha256:aca5a9f6c827c8e059e2f3bc07479d74a22c83be928630caf0b3d493a3b98e1d",
+    "subject_sha256": "sha256:7cf14e9c427a724301f22273764bc20817cda41788048562fa260ccadc374479",
     "subject_uri": "evidence-subject.json",
     "operator_run_id": "operator-run-20260523-001",
     "operator_identity": "release-operator@example.com",

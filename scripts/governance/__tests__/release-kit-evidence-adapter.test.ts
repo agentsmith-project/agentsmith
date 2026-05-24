@@ -13,6 +13,7 @@ import { adaptReleaseKitRawEvidenceEnvelope } from '../release-kit-evidence-adap
 const FIXTURE_ROOT = resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary');
 const EXPECTED_RELEASE_CONTRACT_DIGEST = `sha256:${'a'.repeat(64)}`;
 const ARTIFACT_SHA256 = `sha256:${'e'.repeat(64)}`;
+const EVIDENCE_JSON_SHA256 = `sha256:${'8'.repeat(64)}`;
 
 type AdapterResult = ReturnType<typeof adaptReleaseKitRawEvidenceEnvelope>;
 
@@ -34,6 +35,10 @@ function expectInvalid(result: AdapterResult, expectedReason: string): void {
 
 function validEvidenceSubject(): Record<string, unknown> {
   return evidenceSubjectForFiles([
+    {
+      path: 'evidence.json',
+      sha256: EVIDENCE_JSON_SHA256,
+    },
     {
       path: 'render-report.json',
       sha256: `sha256:${'b'.repeat(64)}`,
@@ -140,10 +145,20 @@ describe('release kit raw evidence adapter', () => {
         summary_section: 'rollout',
       },
     });
+    const files = result.value.evidence_subject.files as Record<string, unknown>[];
+    expect(files.map((file) => file.path)).toEqual([
+      'evidence.json',
+      'render-report.json',
+      'rollout-report.json',
+    ]);
   });
 
   it('maps deploy-result and image-map raw outputs when their subject files match', () => {
     const substrateSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
       {
         path: 'deploy-result.json',
         sha256: `sha256:${'d'.repeat(64)}`,
@@ -173,6 +188,10 @@ describe('release kit raw evidence adapter', () => {
     }
 
     const imageSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
       {
         path: 'image-map.json',
         sha256: `sha256:${'f'.repeat(64)}`,
@@ -228,6 +247,10 @@ describe('release kit raw evidence adapter', () => {
 
     const partialRolloutSubject = evidenceSubjectForFiles([
       {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
         path: 'render-report.json',
         sha256: `sha256:${'b'.repeat(64)}`,
       },
@@ -237,6 +260,76 @@ describe('release kit raw evidence adapter', () => {
     expectInvalid(
       adapt(partialRolloutRaw, partialRolloutSubject),
       'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to include rollout-report.json',
+    );
+  });
+
+  it('fails fast when evidence_subject omits evidence.json', () => {
+    const subjectWithoutEvidenceJson = evidenceSubjectForFiles([
+      {
+        path: 'render-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'rollout-report.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+    ]);
+    const raw = validRawEnvelope(subjectWithoutEvidenceJson);
+
+    expectInvalid(
+      adapt(raw, subjectWithoutEvidenceJson),
+      'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to include evidence.json',
+    );
+  });
+
+  it('fails fast when image-map evidence subject includes unrelated output files', () => {
+    const imageSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'image-map.json',
+        sha256: `sha256:${'f'.repeat(64)}`,
+      },
+      {
+        path: 'rollout-report.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+    ]);
+    const imageRaw = validRawEnvelope(imageSubject);
+    imageRaw.release_kit_output = 'image-map.json';
+
+    expectInvalid(
+      adapt(imageRaw, imageSubject),
+      'release_kit_output image-map.json requires evidence_subject.files to contain only evidence.json, image-map.json',
+    );
+  });
+
+  it('fails fast when render/rollout evidence subject includes unrelated output files', () => {
+    const rolloutSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'render-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'rollout-report.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+      {
+        path: 'image-map.json',
+        sha256: `sha256:${'f'.repeat(64)}`,
+      },
+    ]);
+    const rolloutRaw = validRawEnvelope(rolloutSubject);
+
+    expectInvalid(
+      adapt(rolloutRaw, rolloutSubject),
+      'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to contain only evidence.json, render-report.json, rollout-report.json',
     );
   });
 
@@ -283,10 +376,7 @@ describe('release kit raw evidence adapter', () => {
   it('fails fast on subject hash mismatch, old subject name, and secret leaks', () => {
     const raw = validRawEnvelope();
     const mismatchedSubject = validEvidenceSubject();
-    (mismatchedSubject.files as Record<string, unknown>[]).push({
-      path: 'extra.json',
-      sha256: `sha256:${'d'.repeat(64)}`,
-    });
+    ((mismatchedSubject.files as Record<string, unknown>[])[0]).sha256 = `sha256:${'d'.repeat(64)}`;
     expectInvalid(adapt(raw, mismatchedSubject), 'subject_sha256 must match evidence subject');
 
     const oldSubjectName = validRawEnvelope();

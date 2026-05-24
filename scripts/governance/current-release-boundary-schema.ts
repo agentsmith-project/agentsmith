@@ -552,6 +552,24 @@ const REQUIRED_TRUTH_IDS = [
   'runner_image_lock',
 ] as const;
 const DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'docker-substrate.truth/v1';
+const SUBSTRATE_CONNECTION_REQUIRED_SERVICES = [
+  'postgresql',
+  'mongodb',
+  'redis',
+  'object_storage',
+  'oidc',
+] as const;
+const SUBSTRATE_REACHABILITY_STATUS_SET = new Set<string>([
+  'declared_reachable',
+  'verified_by_operator',
+  'reachable',
+  'passed',
+]);
+const POSTGRES_VECTOR_STATUS_SET = new Set<string>([
+  'installed',
+  'enabled',
+  'available',
+]);
 const DOCKER_DEFAULT_HOSTS = new Set([
   'localhost',
   '127.0.0.1',
@@ -799,28 +817,47 @@ export function validateSubstrateConnectionTruth(
   }
 
   validateLiteral(value.schema_version, CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION, 'schema_version', failures);
+  const targetCluster = validateEnum(
+    value.target_cluster,
+    TARGET_CLUSTER_SET,
+    'target_cluster',
+    'target_cluster is not in the release boundary matrix.',
+    failures,
+  ) as CurrentDeploymentTargetCluster | undefined;
   const source = validateEnum(
     value.substrate_source,
     SUBSTRATE_SOURCE_SET,
     'substrate_source',
     'substrate_source is not in the release boundary matrix.',
     failures,
-  );
+  ) as CurrentDeploymentSubstrateSource | undefined;
+  const distribution = validateEnum(
+    value.distribution,
+    DISTRIBUTION_SET,
+    'distribution',
+    'distribution is not in the release boundary matrix.',
+    failures,
+  ) as CurrentDeploymentDistribution | undefined;
 
-  if (typeof value.source_truth_schema === 'string') {
-    if (source === 'external_declared' && value.source_truth_schema === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
-      failures.push({
-        path: 'source_truth_schema',
-        reason: 'external_declared must not use docker-substrate truth.',
-      });
-    }
-  } else {
+  if (targetCluster && source && distribution && !MODE_KEY_SET.has(modeKey(targetCluster, source, distribution))) {
     failures.push({
-      path: 'source_truth_schema',
-      reason: 'source_truth_schema must be a non-empty string.',
+      path: 'target_cluster',
+      reason: 'deployment mode is not allowed by the release boundary matrix.',
     });
   }
 
+  if (source === 'external_declared' && value.schema_version === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
+    failures.push({
+      path: 'schema_version',
+      reason: 'external_declared must not use docker-substrate truth.',
+    });
+  }
+  if (source === 'external_declared' && value.source_truth_schema === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
+    failures.push({
+      path: 'source_truth_schema',
+      reason: 'external_declared must not use docker-substrate truth.',
+    });
+  }
   if (source === 'external_declared' && value.kit_truth_source === DOCKER_SUBSTRATE_TRUTH_SCHEMA) {
     failures.push({
       path: 'kit_truth_source',
@@ -828,15 +865,28 @@ export function validateSubstrateConnectionTruth(
     });
   }
 
-  validatePostgresTruth(value.postgres, 'postgres', source, failures);
-  validateMongoTruth(value.mongodb, 'mongodb', source, failures);
-  validateRedisTruth(value.redis, 'redis', source, failures);
-  validateObjectStorageTruth(value.object_storage, 'object_storage', source, failures);
-  validateOidcTruth(value.oidc, 'oidc', source, failures);
+  if (source === 'external_declared') {
+    validateRequiredString(value.declared_by, 'declared_by', failures);
+  }
+  if (source === 'kit_installed') {
+    validateLiteral(value.installed_by, 'agentsmith-release-kit', 'installed_by', failures);
+    validateRequiredString(value.release_kit_version, 'release_kit_version', failures);
+  }
+
+  const services = validateSubstrateServicesObject(value.services, failures);
+  if (services) {
+    validatePostgresTruth(services.postgresql, 'services.postgresql', source, failures);
+    validateMongoTruth(services.mongodb, 'services.mongodb', source, failures);
+    validateRedisTruth(services.redis, 'services.redis', source, failures);
+    validateObjectStorageTruth(services.object_storage, 'services.object_storage', source, failures);
+    validateOidcTruth(services.oidc, 'services.oidc', source, failures);
+  }
   if (hasOwn(value, 'product_flow_probe_secret_refs')) {
     validateProductFlowProbeRefs(value.product_flow_probe_secret_refs, failures);
   }
-  validateDigest(value.redacted_fingerprint, 'redacted_fingerprint', failures);
+  if (hasOwn(value, 'redacted_fingerprint')) {
+    validateRedactedFingerprint(value.redacted_fingerprint, 'redacted_fingerprint', failures);
+  }
 
   return finish(value, failures);
 }
@@ -904,7 +954,7 @@ export function validateReleaseKitEvidence(
 
   validateCanonicalWriter(value.canonical_writer, 'canonical_writer', failures);
   validateEvidenceMappingCompatibility(value, target, targetCluster, failures);
-  validateReleaseKitSubstrateConnectionTruth(value, substrateSource, failures);
+  validateReleaseKitSubstrateConnectionTruth(value, targetCluster, substrateSource, distribution, failures);
 
   const evidenceSubject = value.evidence_subject;
   const evidenceSubjectRecord = validateReleaseKitEvidenceSubject(evidenceSubject, 'evidence_subject', failures);
@@ -1258,7 +1308,9 @@ export function validateReleaseKitEvidenceMapping(
 
 function validateReleaseKitSubstrateConnectionTruth(
   value: Record<string, unknown>,
+  targetCluster: CurrentDeploymentTargetCluster | undefined,
   substrateSource: CurrentDeploymentSubstrateSource | undefined,
+  distribution: CurrentDeploymentDistribution | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (substrateSource !== 'external_declared') {
@@ -1290,6 +1342,20 @@ function validateReleaseKitSubstrateConnectionTruth(
     failures.push({
       path: 'substrate_connection_truth.substrate_source',
       reason: 'substrate_connection_truth.substrate_source must be external_declared.',
+    });
+  }
+  if (
+    targetCluster
+    && distribution
+    && (
+      validation.value.target_cluster !== targetCluster
+      || validation.value.substrate_source !== substrateSource
+      || validation.value.distribution !== distribution
+    )
+  ) {
+    failures.push({
+      path: 'substrate_connection_truth',
+      reason: 'substrate_connection_truth target axes must match release kit evidence target axes.',
     });
   }
 }
@@ -1814,25 +1880,55 @@ function validatePostgresTruth(
   source: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
-  if (!isRecord(value)) {
-    failures.push({ path, reason: 'postgres truth must be an object.' });
+  const service = validateBaseSubstrateService(
+    value,
+    path,
+    source,
+    ['credential_secret_ref', 'admin_secret_ref'],
+    ['host', 'endpoint', 'url'],
+    failures,
+  );
+  if (!service) {
     return;
   }
 
-  const host = validateRequiredString(value.host, `${path}.host`, failures);
-  validatePort(value.port, `${path}.port`, failures);
-  validateRequiredString(value.database, `${path}.database`, failures);
-  validateSecretRef(value.user_secret_ref, `${path}.user_secret_ref`, failures);
-  validateRequiredString(value.sslmode, `${path}.sslmode`, failures);
-  validateStringArray(value.required_extensions, `${path}.required_extensions`, failures);
-  validateLiteral(value.reachability, 'validated', `${path}.reachability`, failures);
-  if (Array.isArray(value.required_extensions) && !value.required_extensions.includes('vector')) {
+  validatePort(service.port, `${path}.port`, failures);
+  validateRequiredString(service.database, `${path}.database`, failures);
+  validatePostgresVectorExtension(service.extensions, `${path}.extensions`, failures);
+}
+
+function validatePostgresVectorExtension(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
     failures.push({
-      path: `${path}.required_extensions`,
-      reason: 'postgres truth must include pgvector extension check.',
+      path,
+      reason: 'postgresql truth must include pgvector extension check.',
     });
+    return;
   }
-  validateNoDockerDefaultHost(host, path, source, failures);
+
+  const vector = value.pgvector ?? value.vector;
+  if (!isRecord(vector)) {
+    failures.push({
+      path,
+      reason: 'postgresql truth must include pgvector extension check.',
+    });
+    return;
+  }
+
+  validateEnum(
+    vector.status,
+    POSTGRES_VECTOR_STATUS_SET,
+    `${path}.pgvector.status`,
+    'postgresql truth must include pgvector extension check.',
+    failures,
+  );
+  if (hasOwn(vector, 'version')) {
+    validateRequiredString(vector.version, `${path}.pgvector.version`, failures);
+  }
 }
 
 function validateMongoTruth(
@@ -1841,18 +1937,22 @@ function validateMongoTruth(
   source: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
-  if (!isRecord(value)) {
-    failures.push({ path, reason: 'mongodb truth must be an object.' });
+  const service = validateBaseSubstrateService(
+    value,
+    path,
+    source,
+    ['credential_secret_ref'],
+    ['host', 'endpoint', 'url'],
+    failures,
+  );
+  if (!service) {
     return;
   }
 
-  const host = validateRequiredString(value.host, `${path}.host`, failures);
-  validatePort(value.port, `${path}.port`, failures);
-  validateRequiredString(value.database, `${path}.database`, failures);
-  validateSecretRef(value.user_secret_ref, `${path}.user_secret_ref`, failures);
-  validateRequiredString(value.tls, `${path}.tls`, failures);
-  validateLiteral(value.reachability, 'validated', `${path}.reachability`, failures);
-  validateNoDockerDefaultHost(host, path, source, failures);
+  validatePort(service.port, `${path}.port`, failures);
+  if (hasOwn(service, 'database')) {
+    validateRequiredString(service.database, `${path}.database`, failures);
+  }
 }
 
 function validateRedisTruth(
@@ -1861,17 +1961,19 @@ function validateRedisTruth(
   source: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
-  if (!isRecord(value)) {
-    failures.push({ path, reason: 'redis truth must be an object.' });
+  const service = validateBaseSubstrateService(
+    value,
+    path,
+    source,
+    ['credential_secret_ref'],
+    ['host', 'endpoint', 'url'],
+    failures,
+  );
+  if (!service) {
     return;
   }
 
-  const host = validateRequiredString(value.host, `${path}.host`, failures);
-  validatePort(value.port, `${path}.port`, failures);
-  validateSecretRef(value.password_secret_ref, `${path}.password_secret_ref`, failures);
-  validateRequiredString(value.tls, `${path}.tls`, failures);
-  validateLiteral(value.reachability, 'validated', `${path}.reachability`, failures);
-  validateNoDockerDefaultHost(host, path, source, failures);
+  validatePort(service.port, `${path}.port`, failures);
 }
 
 function validateObjectStorageTruth(
@@ -1880,19 +1982,25 @@ function validateObjectStorageTruth(
   source: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
-  if (!isRecord(value)) {
-    failures.push({ path, reason: 'object storage truth must be an object.' });
+  const service = validateBaseSubstrateService(
+    value,
+    path,
+    source,
+    ['credential_secret_ref'],
+    ['endpoint', 'url', 'host'],
+    failures,
+  );
+  if (!service) {
     return;
   }
 
-  const endpoint = validateRequiredString(value.endpoint, `${path}.endpoint`, failures);
-  validateRequiredString(value.bucket, `${path}.bucket`, failures);
-  validateSecretRef(value.access_key_secret_ref, `${path}.access_key_secret_ref`, failures);
-  validateLiteral(value.scheme, 'https', `${path}.scheme`, failures);
-  validateRequiredString(value.tls, `${path}.tls`, failures);
-  validateRequiredString(value.addressing_style, `${path}.addressing_style`, failures);
-  validateLiteral(value.reachability, 'validated', `${path}.reachability`, failures);
-  validateNoDockerDefaultHost(endpoint ? hostFromEndpoint(endpoint) : undefined, path, source, failures);
+  validateRequiredString(service.bucket, `${path}.bucket`, failures);
+  if (!hasOwn(service, 'region') && !hasOwn(service, 'endpoint') && !hasOwn(service, 'url')) {
+    failures.push({
+      path,
+      reason: 'services.object_storage must include region or endpoint.',
+    });
+  }
 }
 
 function validateOidcTruth(
@@ -1901,19 +2009,210 @@ function validateOidcTruth(
   source: string | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
-  if (!isRecord(value)) {
-    failures.push({ path, reason: 'oidc truth must be an object.' });
+  const service = validateBaseSubstrateService(
+    value,
+    path,
+    source,
+    ['client_secret_ref'],
+    ['issuer_url', 'issuer', 'endpoint', 'url', 'host'],
+    failures,
+  );
+  if (!service) {
     return;
   }
 
-  const issuer = validateRequiredString(value.public_issuer, `${path}.public_issuer`, failures);
-  validateRequiredString(value.realm, `${path}.realm`, failures);
-  validateRequiredString(value.client_id, `${path}.client_id`, failures);
-  validateSecretRef(value.client_secret_ref, `${path}.client_secret_ref`, failures);
-  validateLiteral(value.jwks_reachability, 'validated', `${path}.jwks_reachability`, failures);
-  validateLiteral(value.metadata_reachability, 'validated', `${path}.metadata_reachability`, failures);
-  validateLiteral(value.validation_mode, 'read_only', `${path}.validation_mode`, failures);
-  validateNoDockerDefaultHost(issuer ? hostFromEndpoint(issuer) : undefined, path, source, failures);
+  validateRequiredString(service.client_id, `${path}.client_id`, failures);
+}
+
+function validateSubstrateServicesObject(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'services',
+      reason: 'substrate_connection_truth.services must be an object.',
+    });
+    return null;
+  }
+
+  for (const service of SUBSTRATE_CONNECTION_REQUIRED_SERVICES) {
+    if (!hasOwn(value, service)) {
+      failures.push({
+        path: 'services',
+        reason: `substrate_connection_truth.services missing required service: ${service}.`,
+      });
+    }
+  }
+
+  return value;
+}
+
+function validateBaseSubstrateService(
+  value: unknown,
+  path: string,
+  source: string | undefined,
+  secretFields: readonly string[],
+  endpointFields: readonly string[],
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    failures.push({ path, reason: `${path} must be an object.` });
+    return null;
+  }
+
+  validateSubstrateEndpoint(value, path, source, endpointFields, failures);
+  for (const field of secretFields) {
+    validateSecretRef(value[field], `${path}.${field}`, failures);
+  }
+  validateTlsOrSslmode(value, path, failures);
+  validateReachability(value.reachability, `${path}.reachability`, failures);
+
+  return value;
+}
+
+function validateSubstrateEndpoint(
+  value: Record<string, unknown>,
+  path: string,
+  source: string | undefined,
+  endpointFields: readonly string[],
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  for (const field of endpointFields) {
+    if (!hasOwn(value, field)) {
+      continue;
+    }
+
+    const endpoint = validateRequiredString(value[field], `${path}.${field}`, failures);
+    validateNoDockerDefaultHost(endpoint ? hostFromEndpoint(endpoint) : undefined, path, source, failures);
+    return endpoint;
+  }
+
+  failures.push({
+    path,
+    reason: `${path} must include endpoint, host, or url.`,
+  });
+  return undefined;
+}
+
+function validateTlsOrSslmode(
+  value: Record<string, unknown>,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const hasSslmode = hasOwn(value, 'sslmode');
+  const hasTls = hasOwn(value, 'tls');
+  if (!hasSslmode && !hasTls) {
+    failures.push({
+      path,
+      reason: `${path} must include tls or sslmode.`,
+    });
+    return;
+  }
+
+  if (hasSslmode) {
+    const sslmode = validateRequiredString(value.sslmode, `${path}.sslmode`, failures);
+    if (sslmode && ['disable', 'disabled', 'none'].includes(sslmode.toLowerCase())) {
+      failures.push({
+        path: `${path}.sslmode`,
+        reason: `${path}.sslmode must not disable TLS.`,
+      });
+    }
+  }
+
+  if (!hasTls) {
+    return;
+  }
+
+  if (typeof value.tls === 'string') {
+    const tls = validateRequiredString(value.tls, `${path}.tls`, failures);
+    if (tls && ['disable', 'disabled', 'none'].includes(tls.toLowerCase())) {
+      failures.push({
+        path: `${path}.tls`,
+        reason: `${path}.tls must not disable TLS.`,
+      });
+    }
+    return;
+  }
+
+  if (!isRecord(value.tls)) {
+    failures.push({
+      path: `${path}.tls`,
+      reason: `${path}.tls must be an object.`,
+    });
+    return;
+  }
+
+  if (Object.keys(value.tls).length === 0) {
+    failures.push({
+      path: `${path}.tls`,
+      reason: `${path}.tls must not be empty.`,
+    });
+  }
+  if (value.tls.enabled === false) {
+    failures.push({
+      path: `${path}.tls.enabled`,
+      reason: `${path}.tls.enabled must not be false.`,
+    });
+  }
+  if (hasOwn(value.tls, 'mode')) {
+    const mode = validateRequiredString(value.tls.mode, `${path}.tls.mode`, failures);
+    if (mode && ['disable', 'disabled', 'none'].includes(mode.toLowerCase())) {
+      failures.push({
+        path: `${path}.tls.mode`,
+        reason: `${path}.tls.mode must not disable TLS.`,
+      });
+    }
+  }
+  for (const [key, nested] of Object.entries(value.tls)) {
+    if (SECRET_FIELD_NAME_PATTERN.test(normalizeFieldNameForSecretCheck(key)) && typeof nested === 'string') {
+      validateSecretRef(nested, `${path}.tls.${key}`, failures);
+    }
+  }
+}
+
+function validateReachability(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path,
+      reason: `${path} must be an object.`,
+    });
+    return;
+  }
+
+  validateEnum(
+    value.status,
+    SUBSTRATE_REACHABILITY_STATUS_SET,
+    `${path}.status`,
+    `${path}.status is not an accepted reachability status.`,
+    failures,
+  );
+  validateRequiredString(value.proof, `${path}.proof`, failures);
+}
+
+function validateRedactedFingerprint(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    failures.push({
+      path,
+      reason: `${path} must be a non-empty string.`,
+    });
+    return;
+  }
+
+  if (!DIGEST_PATTERN.test(value) && !/^(?:redacted|fingerprint):sha256:[0-9a-f]{64}$/u.test(value)) {
+    failures.push({
+      path,
+      reason: `${path} must be sha256:<64 lowercase hex> or a redacted sha256 fingerprint.`,
+    });
+  }
 }
 
 function validateProductFlowProbeRefs(
@@ -2555,11 +2854,29 @@ function imageDigestSuffix(image: string): string | null {
 }
 
 function hostFromEndpoint(endpoint: string): string {
-  try {
-    return new URL(endpoint).hostname;
-  } catch {
-    return endpoint.split('/')[0] ?? endpoint;
+  const normalized = endpoint.trim();
+  if (hasUriScheme(normalized)) {
+    try {
+      const hostname = new URL(normalized).hostname;
+      if (hostname) {
+        return hostname;
+      }
+    } catch {
+      // Fall through to host[:port]/path parsing below.
+    }
   }
+
+  const authority = normalized.startsWith('//')
+    ? normalized.slice(2).split(/[/?#]/u)[0] ?? normalized
+    : normalized.split(/[/?#]/u)[0] ?? normalized;
+  if (authority.startsWith('[')) {
+    const bracketEnd = authority.indexOf(']');
+    if (bracketEnd > 1) {
+      return authority.slice(1, bracketEnd);
+    }
+  }
+
+  return authority.split(':')[0] ?? authority;
 }
 
 function modeKey(

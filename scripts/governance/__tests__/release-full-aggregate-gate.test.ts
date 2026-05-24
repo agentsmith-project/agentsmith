@@ -21,7 +21,6 @@ import {
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION,
   CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
-  CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION,
   RELEASE_KIT_CANONICAL_REPO,
   canonicalReleaseBoundaryJson,
   sha256Digest as releaseBoundarySha256Digest,
@@ -1646,57 +1645,85 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
     const evidence = releaseKitEvidenceFields(path, 'dependencies', {
       substrate_source: 'external_declared',
       substrate_connection_truth: {
-        schema_version: CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION,
+        schema_version: 'docker-substrate.truth/v1',
+        target_cluster: 'kind_rehearsal',
         substrate_source: 'external_declared',
-        source_truth_schema: 'docker-substrate.truth/v1',
-        postgres: {
-          host: 'postgres.prod.internal',
-          port: 5432,
-          database: 'agentsmith',
-          user_secret_ref: 'secretRef:agentsmith/postgres-user',
-          sslmode: 'require',
-          required_extensions: ['vector'],
-          reachability: 'validated',
+        distribution: 'online',
+        declared_at: '2026-05-23T12:00:00.000Z',
+        declared_by: 'release-operator@example.com',
+        services: {
+          postgresql: {
+            host: 'postgresql.release.example.internal',
+            port: 5432,
+            database: 'agentsmith',
+            credential_secret_ref: 'secretRef:agentsmith/postgresql-credential',
+            admin_secret_ref: 'secretRef:agentsmith/postgresql-admin',
+            sslmode: 'verify-full',
+            extensions: {
+              pgvector: {
+                status: 'installed',
+                version: '0.7.4',
+              },
+            },
+            reachability: {
+              status: 'declared_reachable',
+              proof: 'operator postgresql tcp/tls check 2026-05-23T12:00:00Z',
+            },
+          },
+          mongodb: {
+            host: 'mongodb.release.example.internal',
+            port: 27017,
+            credential_secret_ref: 'secretRef:agentsmith/mongodb-credential',
+            tls: {
+              mode: 'verify-full',
+              ca_secret_ref: 'secretRef:agentsmith/mongodb-ca',
+            },
+            reachability: {
+              status: 'declared_reachable',
+              proof: 'operator mongodb tcp/tls check 2026-05-23T12:00:00Z',
+            },
+          },
+          redis: {
+            host: 'redis.release.example.internal',
+            port: 6379,
+            credential_secret_ref: 'secretRef:agentsmith/redis-credential',
+            tls: {
+              mode: 'verify-full',
+              ca_secret_ref: 'secretRef:agentsmith/redis-ca',
+            },
+            reachability: {
+              status: 'declared_reachable',
+              proof: 'operator redis tcp/tls check 2026-05-23T12:00:00Z',
+            },
+          },
+          object_storage: {
+            url: 'https://objects.release.example.internal',
+            bucket: 'agentsmith-files',
+            region: 'us-west-2',
+            credential_secret_ref: 'secretRef:agentsmith/object-storage-credential',
+            tls: {
+              mode: 'https',
+              ca_secret_ref: 'secretRef:agentsmith/object-storage-ca',
+            },
+            reachability: {
+              status: 'declared_reachable',
+              proof: 'operator bucket head-object check 2026-05-23T12:00:00Z',
+            },
+          },
+          oidc: {
+            issuer_url: 'https://id.release.example.com/realms/agentsmith',
+            client_id: 'agentsmith-web',
+            client_secret_ref: 'secretRef:agentsmith/oidc-client',
+            tls: {
+              mode: 'https',
+              ca_secret_ref: 'secretRef:agentsmith/oidc-ca',
+            },
+            reachability: {
+              status: 'declared_reachable',
+              proof: 'operator oidc discovery check 2026-05-23T12:00:00Z',
+            },
+          },
         },
-        mongodb: {
-          host: 'mongo.prod.internal',
-          port: 27017,
-          database: 'agentsmith',
-          user_secret_ref: 'secretRef:agentsmith/mongodb-user',
-          tls: 'required',
-          reachability: 'validated',
-        },
-        redis: {
-          host: 'redis.prod.internal',
-          port: 6379,
-          password_secret_ref: 'secretRef:agentsmith/redis-password',
-          tls: 'required',
-          reachability: 'validated',
-        },
-        object_storage: {
-          endpoint: 'https://s3.prod.internal',
-          bucket: 'agentsmith-files',
-          access_key_secret_ref: 'secretRef:agentsmith/s3-access-key',
-          scheme: 'https',
-          tls: 'required',
-          addressing_style: 'virtual_host',
-          reachability: 'validated',
-        },
-        oidc: {
-          public_issuer: 'https://id.prod.internal/realms/agentsmith',
-          realm: 'agentsmith',
-          client_id: 'agentsmith-web',
-          client_secret_ref: 'secretRef:agentsmith/oidc-client',
-          jwks_reachability: 'validated',
-          metadata_reachability: 'validated',
-          validation_mode: 'read_only',
-        },
-        product_flow_probe_secret_refs: {
-          workspace_project: 'secretRef:agentsmith/probe-workspace-project',
-          files: 'secretRef:agentsmith/probe-files',
-          agent_task_managed_runner: 'secretRef:agentsmith/probe-agent-task',
-        },
-        redacted_fingerprint: `sha256:${'5'.repeat(64)}`,
       },
     });
     writeJson(path, evidence);

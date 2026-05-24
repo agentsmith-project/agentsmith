@@ -560,11 +560,125 @@ describe('current release boundary schema', () => {
     expectInvalid(validateRunnerReleaseManifest(manifest), 'canonical repo identity must be github.com/agentsmith-project/agentsmith-runner');
   });
 
+  it('rejects legacy top-level substrate service truth as non-canonical', () => {
+    const legacyTruth = {
+      schema_version: 'agentsmith.substrate-connection.truth/v1',
+      target_cluster: 'existing_kubernetes',
+      substrate_source: 'external_declared',
+      distribution: 'online',
+      postgres: {
+        host: 'postgres.prod.internal',
+        port: 5432,
+        database: 'agentsmith',
+        user_secret_ref: 'secretRef:agentsmith/postgres-user',
+        sslmode: 'require',
+        required_extensions: ['vector'],
+        reachability: 'validated',
+      },
+      mongodb: {
+        host: 'mongo.prod.internal',
+        port: 27017,
+        database: 'agentsmith',
+        user_secret_ref: 'secretRef:agentsmith/mongodb-user',
+        tls: 'required',
+        reachability: 'validated',
+      },
+      redis: {
+        host: 'redis.prod.internal',
+        port: 6379,
+        password_secret_ref: 'secretRef:agentsmith/redis-password',
+        tls: 'required',
+        reachability: 'validated',
+      },
+      object_storage: {
+        endpoint: 'https://s3.prod.internal',
+        bucket: 'agentsmith-files',
+        access_key_secret_ref: 'secretRef:agentsmith/s3-access-key',
+        scheme: 'https',
+        tls: 'required',
+        addressing_style: 'virtual_host',
+        reachability: 'validated',
+      },
+      oidc: {
+        public_issuer: 'https://id.prod.internal/realms/agentsmith',
+        realm: 'agentsmith',
+        client_id: 'agentsmith-web',
+        client_secret_ref: 'secretRef:agentsmith/oidc-client',
+        jwks_reachability: 'validated',
+        metadata_reachability: 'validated',
+        validation_mode: 'read_only',
+      },
+    };
+
+    expectInvalid(
+      validateSubstrateConnectionTruth(legacyTruth),
+      'substrate_connection_truth.services must be an object',
+    );
+  });
+
   it('rejects external_declared substrate truth that reuses Docker truth', () => {
     const truth = cloneFixture('substrate-connection.external-declared.valid.json');
-    truth.source_truth_schema = 'docker-substrate.truth/v1';
+    truth.schema_version = 'docker-substrate.truth/v1';
 
     expectInvalid(validateSubstrateConnectionTruth(truth), 'external_declared must not use docker-substrate truth');
+  });
+
+  it('rejects external_declared substrate truth with Docker default host including a port', () => {
+    const truth = cloneFixture('substrate-connection.external-declared.valid.json');
+    ((truth.services as Record<string, unknown>).postgresql as Record<string, unknown>).host = 'localhost:5432';
+
+    expectInvalid(validateSubstrateConnectionTruth(truth), 'external_declared must not use Docker default endpoint');
+  });
+
+  it('rejects substrate truth missing target axes or canonical service requirements', () => {
+    const missingTargetCluster = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete missingTargetCluster.target_cluster;
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingTargetCluster),
+      'target_cluster is not in the release boundary matrix',
+    );
+
+    const missingDistribution = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete missingDistribution.distribution;
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingDistribution),
+      'distribution is not in the release boundary matrix',
+    );
+
+    const missingService = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete ((missingService.services as Record<string, unknown>).redis);
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingService),
+      'substrate_connection_truth.services missing required service: redis',
+    );
+
+    const missingSecret = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete (((missingSecret.services as Record<string, unknown>).redis as Record<string, unknown>).credential_secret_ref);
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingSecret),
+      'services.redis.credential_secret_ref must be a non-empty string',
+    );
+
+    const missingTls = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete (((missingTls.services as Record<string, unknown>).object_storage as Record<string, unknown>).tls);
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingTls),
+      'services.object_storage must include tls or sslmode',
+    );
+
+    const missingReachability = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete (((missingReachability.services as Record<string, unknown>).oidc as Record<string, unknown>).reachability);
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingReachability),
+      'services.oidc.reachability must be an object',
+    );
+
+    const missingVectorExtension = cloneFixture('substrate-connection.external-declared.valid.json');
+    delete (((missingVectorExtension.services as Record<string, unknown>).postgresql as Record<string, unknown>).extensions);
+    expectInvalid(
+      validateSubstrateConnectionTruth(missingVectorExtension),
+      'postgresql truth must include pgvector extension check',
+    );
   });
 
   it('allows external_declared substrate truth without product-flow probe secret refs but validates them when present', () => {
@@ -573,7 +687,11 @@ describe('current release boundary schema', () => {
     expect(validateSubstrateConnectionTruth(withoutProbeRefs).ok).toBe(true);
 
     const invalidProbeRefs = cloneFixture('substrate-connection.external-declared.valid.json');
-    (invalidProbeRefs.product_flow_probe_secret_refs as Record<string, unknown>).files = 'plain-probe-secret';
+    invalidProbeRefs.product_flow_probe_secret_refs = {
+      workspace_project: 'secretRef:agentsmith/probe-workspace-project',
+      files: 'plain-probe-secret',
+      agent_task_managed_runner: 'secretRef:agentsmith/probe-agent-task',
+    };
     expectInvalid(
       validateSubstrateConnectionTruth(invalidProbeRefs),
       'credential values must be persisted as secret refs only',
@@ -599,12 +717,22 @@ describe('current release boundary schema', () => {
     const externalTruth = cloneFixture('release-kit-evidence.valid.json');
     externalTruth.substrate_source = 'external_declared';
     externalTruth.substrate_connection_truth = cloneFixture('substrate-connection.external-declared.valid.json');
+    (externalTruth.substrate_connection_truth as Record<string, unknown>).target_cluster = 'kind_rehearsal';
     expect(validateReleaseKitEvidence(externalTruth).ok).toBe(true);
+
+    const mismatchedTruth = cloneFixture('release-kit-evidence.valid.json');
+    mismatchedTruth.substrate_source = 'external_declared';
+    mismatchedTruth.target_cluster = 'kind_rehearsal';
+    mismatchedTruth.substrate_connection_truth = cloneFixture('substrate-connection.external-declared.valid.json');
+    expectInvalid(
+      validateReleaseKitEvidence(mismatchedTruth),
+      'substrate_connection_truth target axes must match release kit evidence target axes',
+    );
   });
 
   it('rejects secret-looking field names unless the field stores a reference', () => {
     const truth = cloneFixture('substrate-connection.external-declared.valid.json');
-    (truth.oidc as Record<string, unknown>).client_secret = 'plain-secret';
+    ((truth.services as Record<string, unknown>).oidc as Record<string, unknown>).client_secret = 'plain-secret';
 
     expectInvalid(
       validateSubstrateConnectionTruth(truth),
@@ -627,8 +755,10 @@ describe('current release boundary schema', () => {
 
   it('rejects empty or multi-line secret refs in substrate truth and generic release-kit reference fields', () => {
     const substrateTruth = cloneFixture('substrate-connection.external-declared.valid.json');
-    (substrateTruth.postgres as Record<string, unknown>).user_secret_ref = 'secretRef:';
-    (substrateTruth.oidc as Record<string, unknown>).client_secret_ref = 'secretRef:   :   ';
+    ((substrateTruth.services as Record<string, unknown>).postgresql as Record<string, unknown>).credential_secret_ref =
+      'secretRef:';
+    ((substrateTruth.services as Record<string, unknown>).oidc as Record<string, unknown>).client_secret_ref =
+      'secretRef:   :   ';
 
     expectInvalid(
       validateSubstrateConnectionTruth(substrateTruth),
@@ -679,6 +809,16 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateReleaseKitEvidenceForAggregate(contradictory),
       'passed release kit evidence must use failure_class none',
+    );
+  });
+
+  it('rejects release-kit raw evidence envelopes as aggregate canonical evidence', () => {
+    const rawEnvelope = cloneFixture('release-kit-evidence.valid.json');
+    rawEnvelope.schema_version = 'agentsmith.release-kit-evidence-envelope/v1';
+
+    expectInvalid(
+      validateReleaseKitEvidenceForAggregate(rawEnvelope),
+      'schema_version must be "agentsmith.release-kit-evidence/v1"',
     );
   });
 

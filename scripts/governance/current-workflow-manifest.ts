@@ -730,6 +730,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         evidenceFamilies: ['release_contract_artifact'],
         artifactPaths: [
           'artifacts/release-contract/agentsmith-release-contract.json',
+          'artifacts/release-contract/release-contract-input-source.json',
         ],
         blockingFor: ['manual'],
         scheduled: false,

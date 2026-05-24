@@ -3,17 +3,22 @@ name: Release Contract Artifact
 on:
   workflow_dispatch:
     inputs:
-      release_contract_input_path:
-        description: "Path to release contract producer input JSON with digest-pinned image data"
+      release_contract_input_run_id:
+        description: "GitHub Actions run ID that uploaded the release contract input artifact"
         required: true
         type: string
-        default: "artifacts/release-contract/release-contract-input.json"
+      release_contract_input_artifact_name:
+        description: "GitHub Actions artifact name containing release-contract-input.json"
+        required: true
+        type: string
+        default: "agentsmith-release-contract-input"
 
 concurrency:
   group: release-contract-artifact-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -24,6 +29,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Download release contract input artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.release_contract_input_artifact_name }}
+          run-id: ${{ inputs.release_contract_input_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: artifacts/release-contract/input
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -36,19 +50,54 @@ jobs:
 
       - name: Generate release contract artifact
         env:
-          RELEASE_CONTRACT_INPUT_PATH: ${{ inputs.release_contract_input_path }}
+          RELEASE_CONTRACT_INPUT_ARTIFACT_NAME: ${{ inputs.release_contract_input_artifact_name }}
+          RELEASE_CONTRACT_INPUT_RUN_ID: ${{ inputs.release_contract_input_run_id }}
+          RELEASE_CONTRACT_REPO: ${{ github.repository }}
+          RELEASE_CONTRACT_CONSUMER_RUN_ID: ${{ github.run_id }}
+          RELEASE_CONTRACT_CONSUMER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_CONTRACT_CONSUMER_JOB: ${{ github.job }}
+          RELEASE_CONTRACT_CONSUMER_WORKFLOW: ${{ github.workflow }}
+          RELEASE_CONTRACT_CONSUMER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # This workflow only produces a release contract artifact.
-          mkdir -p artifacts/release-contract
-          rm -f artifacts/release-contract/agentsmith-release-contract.json
+          # This workflow only produces a release contract artifact from a GitHub Actions handoff artifact.
+          RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"
+          RELEASE_CONTRACT_OUTPUT_DIR="artifacts/release-contract"
+          export RELEASE_CONTRACT_INPUT_PATH RELEASE_CONTRACT_OUTPUT_DIR
+          mkdir -p "${RELEASE_CONTRACT_OUTPUT_DIR}"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
-          npm run release:contract:ci-artifact -- --input "${RELEASE_CONTRACT_INPUT_PATH}" --output-dir artifacts/release-contract
-          test -f artifacts/release-contract/agentsmith-release-contract.json
+          export RELEASE_CONTRACT_INPUT_SHA256="$(sha256sum "${RELEASE_CONTRACT_INPUT_PATH}" | awk '{print $1}')"
+          npm run release:contract:ci-artifact -- --input "${RELEASE_CONTRACT_INPUT_PATH}" --output-dir "${RELEASE_CONTRACT_OUTPUT_DIR}"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
+          node <<'NODE'
+          const { writeFileSync } = require('node:fs');
+
+          const receipt = {
+            input_run_id: process.env.RELEASE_CONTRACT_INPUT_RUN_ID,
+            input_artifact_name: process.env.RELEASE_CONTRACT_INPUT_ARTIFACT_NAME,
+            repo: process.env.RELEASE_CONTRACT_REPO,
+            input_sha256: process.env.RELEASE_CONTRACT_INPUT_SHA256,
+            consumer_run_id: process.env.RELEASE_CONTRACT_CONSUMER_RUN_ID,
+            consumer_run_attempt: process.env.RELEASE_CONTRACT_CONSUMER_RUN_ATTEMPT,
+            consumer_job: process.env.RELEASE_CONTRACT_CONSUMER_JOB,
+            consumer_workflow: process.env.RELEASE_CONTRACT_CONSUMER_WORKFLOW,
+            consumer_sha: process.env.RELEASE_CONTRACT_CONSUMER_SHA,
+          };
+
+          writeFileSync(
+            `${process.env.RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json`,
+            `${JSON.stringify(receipt, null, 2)}\n`,
+          );
+          NODE
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
 
       - name: Upload release contract artifact
         uses: actions/upload-artifact@v7
         with:
           name: agentsmith-release-contract
           if-no-files-found: error
-          path: artifacts/release-contract/agentsmith-release-contract.json
+          path: |
+            artifacts/release-contract/agentsmith-release-contract.json
+            artifacts/release-contract/release-contract-input-source.json

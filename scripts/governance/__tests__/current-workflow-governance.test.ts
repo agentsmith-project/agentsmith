@@ -1117,8 +1117,23 @@ describe('current workflow governance', () => {
       collectDirectWorkflowDispatchInputRunInterpolations(workflowPath, parseWorkflow(workflowPath))
     ));
     const releaseContractWorkflow = parseWorkflow('.github/workflows/release-contract-artifact.yml');
+    const rawOn = releaseContractWorkflow.on ?? releaseContractWorkflow.true;
+    const releaseContractInputs = asRecord(asRecord(asRecord(rawOn).workflow_dispatch).inputs);
 
-    expect(collectWorkflowDispatchStringInputNames(releaseContractWorkflow)).toContain('release_contract_input_path');
+    expect(collectWorkflowDispatchStringInputNames(releaseContractWorkflow)).toEqual([
+      'release_contract_input_artifact_name',
+      'release_contract_input_run_id',
+    ]);
+    expect(asRecord(releaseContractInputs.release_contract_input_run_id)).toMatchObject({
+      required: true,
+      type: 'string',
+    });
+    expect(asRecord(releaseContractInputs.release_contract_input_artifact_name)).toMatchObject({
+      required: true,
+      type: 'string',
+      default: 'agentsmith-release-contract-input',
+    });
+    expect(releaseContractInputs).not.toHaveProperty('release_contract_input_path');
     expect(failures).toEqual([]);
   });
 
@@ -1161,6 +1176,10 @@ describe('current workflow governance', () => {
       parsedWorkflow,
       'generate-release-contract',
     );
+    const releaseContractJob = asRecord(asRecord(parsedWorkflow.jobs)['generate-release-contract']);
+    const steps = Array.isArray(releaseContractJob.steps) ? releaseContractJob.steps.map(asRecord) : [];
+    const downloadStep = steps.find((step) => step.uses === 'actions/download-artifact@v7');
+    const downloadWith = asRecord(downloadStep?.with);
 
     expect(workflow?.workflowName).toBe('Release Contract Artifact');
     expect(workflow?.role).toBe('release_artifact_producer');
@@ -1170,16 +1189,32 @@ describe('current workflow governance', () => {
     expect(job?.requiresSecrets).toBe(false);
     expect(job?.evidenceRequired).toBe(true);
     expect(job?.evidenceFamilies).toEqual(['release_contract_artifact']);
-    expect(job?.artifactPaths).toEqual(['artifacts/release-contract/agentsmith-release-contract.json']);
+    expect(job?.artifactPaths).toEqual([
+      'artifacts/release-contract/agentsmith-release-contract.json',
+      'artifacts/release-contract/release-contract-input-source.json',
+    ]);
     expect(job?.commands).toEqual(['npm run release:contract:ci-artifact']);
-    expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read' });
+    expect(asRecord(parsedWorkflow.permissions)).toEqual({ actions: 'read', contents: 'read' });
+    expect(downloadStep).toBeDefined();
+    expect(downloadWith.name).toBe('${{ inputs.release_contract_input_artifact_name }}');
+    expect(downloadWith['run-id']).toBe('${{ inputs.release_contract_input_run_id }}');
+    expect(downloadWith.repository).toBe('${{ github.repository }}');
+    expect(downloadWith['github-token']).toBe('${{ github.token }}');
+    expect(downloadWith.path).toBe('artifacts/release-contract/input');
     expect(runCommands).toContain('npm run release:contract:ci-artifact');
-    expect(runCommands).toContain('rm -f artifacts/release-contract/agentsmith-release-contract.json');
+    expect(runCommands).toContain('RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runCommands).toContain('release-contract-input-source.json');
+    expect(runCommands).toContain('input_sha256');
     expect(runCommands).not.toContain('${{ inputs.release_contract_input_path }}');
     expect(runCommands).not.toContain('npm run release:ready');
     expect(runCommands).not.toContain('npm run gate:release');
-    expect(workflowSource).toContain('This workflow only produces a release contract artifact.');
+    expect(workflowSource).toContain(
+      'This workflow only produces a release contract artifact from a GitHub Actions handoff artifact.',
+    );
+    expect(workflowSource).not.toContain('release_contract_input_path');
     expect(workflowSource).not.toMatch(/deploy readiness|release readiness/i);
   });
 

@@ -455,6 +455,10 @@ function isReleaseRealDiagnosticStory(story: VerificationCatalogStory): boolean 
 }
 
 function isReleaseDeployPath(filePath: string): boolean {
+  if (isReleaseBoundaryGuardPath(filePath)) {
+    return false;
+  }
+
   return [
     /^scripts\/release-full-campaign\.sh$/,
     /^scripts\/release-full-aggregate-gate\.sh$/,
@@ -490,6 +494,7 @@ function isUnifiedDeployPath(filePath: string): boolean {
 
 function isReleaseBoundaryGuardPath(filePath: string): boolean {
   return [
+    /^\.github\/workflows\/release-contract-artifact\.yml$/,
     /^docs\/engineering\/release-kit-and-runner-repo-split-kiss-plan-v1\.md$/,
     /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
@@ -497,6 +502,7 @@ function isReleaseBoundaryGuardPath(filePath: string): boolean {
     /^scripts\/contracts\/check-unified-deploy-vocabulary(?:\.test)?\.ts$/,
     /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
     /^scripts\/governance\/current-release-boundary-schema\.ts$/,
+    /^scripts\/governance\/release-contract-artifact\.ts$/,
     /^scripts\/governance\/__tests__\/current-release-boundary-schema\.test\.ts$/,
     /^scripts\/governance\/__fixtures__\/release-boundary\/[^/]+\.json$/,
   ].some((pattern) => pattern.test(filePath));
@@ -818,6 +824,7 @@ const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Reco
   'release:contract:assemble': 'tsx scripts/governance/release-contract-assemble.ts',
 };
 const SAFE_EXACT_RELEASE_ARTIFACT_PRODUCER_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'release:contract:ci-artifact': 'tsx scripts/governance/release-contract-artifact.ts',
   'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',
 };
 const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, readonly string[]>>> = {

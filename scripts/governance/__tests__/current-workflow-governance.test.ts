@@ -63,6 +63,8 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
 ] as const;
 const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
+const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
+  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -71,6 +73,7 @@ const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run lane:[a-z0-9:_-]+/,
   /\bmake lane-[a-z0-9_-]+/,
   /\bnpm run release:aggregate\b/,
+  /\bnpm run release:contract:ci-artifact\b/,
   /\bnpm run release:deploy-template-package\b/,
   /\bnpm run release:campaign:full\b/,
   /\bnpm run gate:release:full\b/,
@@ -86,6 +89,7 @@ const HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
   /\bnpm run lane:[a-z0-9:_-]+/,
   /\bmake lane-[a-z0-9_-]+/,
   /\bnpm run release:aggregate\b/,
+  /\bnpm run release:contract:ci-artifact\b/,
   /\bnpm run release:deploy-template-package\b/,
   /\bnpm run release:campaign:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
@@ -95,6 +99,7 @@ const HUMAN_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
 
 const RELEASE_DOC_FORBIDDEN_COPYABLE_COMMAND_PATTERNS = [
   /\bnpm run release:campaign:full\b/,
+  /\bnpm run release:contract:ci-artifact\b/,
   /\bnpm run gate:[a-z0-9:_-]+\b/,
   /\bnpm run lane:[a-z0-9:_-]+\b/,
   /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
@@ -252,6 +257,10 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseWorkflow(relativePath: string): Record<string, unknown> {
   return asRecord(YAML.parse(readRepoFile(relativePath)) as unknown);
 }
@@ -269,6 +278,55 @@ function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): strin
 
 function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
   return Object.keys(asRecord(parsedWorkflow.jobs)).sort();
+}
+
+function collectWorkflowDispatchStringInputNames(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
+  const inputs = asRecord(workflowDispatch.inputs);
+
+  return Object.entries(inputs)
+    .filter(([, input]) => {
+      const inputRecord = asRecord(input);
+      const inputType = inputRecord.type;
+      return inputType === undefined || inputType === 'string';
+    })
+    .map(([name]) => name)
+    .sort();
+}
+
+function collectDirectWorkflowDispatchInputRunInterpolations(
+  relativePath: string,
+  parsedWorkflow: Record<string, unknown>,
+): string[] {
+  const inputNames = collectWorkflowDispatchStringInputNames(parsedWorkflow);
+  if (inputNames.length === 0) {
+    return [];
+  }
+
+  const failures: string[] = [];
+  for (const [jobId, rawJob] of Object.entries(asRecord(parsedWorkflow.jobs))) {
+    const job = asRecord(rawJob);
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+
+    for (const [stepIndex, rawStep] of steps.entries()) {
+      const run = asRecord(rawStep).run;
+      if (typeof run !== 'string') {
+        continue;
+      }
+
+      for (const inputName of inputNames) {
+        const inputExpression = new RegExp(
+          String.raw`\$\{\{[^}]*\b(?:inputs|github\.event\.inputs)\.${escapeRegExp(inputName)}\b[^}]*\}\}`,
+        );
+        if (inputExpression.test(run)) {
+          failures.push(`${relativePath}:${jobId}:steps[${stepIndex}] interpolates ${inputName} directly in run`);
+        }
+      }
+    }
+  }
+
+  return failures;
 }
 
 function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
@@ -381,7 +439,7 @@ describe('current workflow governance', () => {
     }
 
     for (const command of commands) {
-      if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|release:deploy-template-package|verify:)/.test(command.npmScript ?? '')) {
+      if (/^(?:gate:|lane:|backend-real:|release:campaign:full|release:aggregate|release:contract:ci-artifact|release:deploy-template-package|verify:)/.test(command.npmScript ?? '')) {
         expect(command.recommended, `${command.command} must stay an internal adapter, not a human recommendation`).not.toBe(true);
         expect(command.quickHuman, `${command.command} must stay out of the quick human surface`).not.toBe(true);
         expect(command.makeTarget, `${command.command} must not keep a Make compatibility target`).toBeUndefined();
@@ -544,6 +602,9 @@ describe('current workflow governance', () => {
     const releaseDeployTemplatePackage = commands.find(
       (command) => command.npmScript === 'release:deploy-template-package',
     );
+    const releaseContractCiArtifact = commands.find(
+      (command) => command.npmScript === 'release:contract:ci-artifact',
+    );
     const releaseCampaign = commands.find((command) => command.npmScript === 'release:campaign:full');
     const fullReleaseGate = commands.find((command) => command.npmScript === 'gate:release:full');
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
@@ -582,6 +643,13 @@ describe('current workflow governance', () => {
     expect(releaseDeployTemplatePackage?.gateId).toBeUndefined();
     expect(releaseDeployTemplatePackage?.command).toBe(DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND);
     expect(releaseDeployTemplatePackage?.description).toMatch(/internal artifact producer/i);
+    expect(releaseContractCiArtifact?.workflowRole).toBe('release_operation');
+    expect(releaseContractCiArtifact?.recommended).not.toBe(true);
+    expect(releaseContractCiArtifact?.quickHuman).not.toBe(true);
+    expect(releaseContractCiArtifact?.gateId).toBeUndefined();
+    expect(releaseContractCiArtifact?.command).toBe(RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND);
+    expect(releaseContractCiArtifact?.description).toMatch(/internal artifact producer/i);
+    expect(releaseContractCiArtifact?.description).not.toMatch(/readiness|deploy readiness/i);
     expect(releaseCampaign?.workflowRole).toBe('release_operation');
     expect(releaseCampaign?.recommended).not.toBe(true);
     expect(fullReleaseGate?.workflowRole).toBe('terminal_gate_verdict');
@@ -860,6 +928,7 @@ describe('current workflow governance', () => {
       'docs/contracts/current-gate-result-schema-contract.md',
       '.github/workflows/engineering-gate.yml',
       '.github/workflows/integration-e2e.yml',
+      '.github/workflows/release-contract-artifact.yml',
     ]),
     );
   });
@@ -993,6 +1062,7 @@ describe('current workflow governance', () => {
       '.github/workflows/engineering-gate.yml',
       '.github/workflows/integration-e2e.yml',
       '.github/workflows/quality-gates.yml',
+      '.github/workflows/release-contract-artifact.yml',
     ]);
   });
 
@@ -1042,6 +1112,16 @@ describe('current workflow governance', () => {
     );
   });
 
+  it('passes workflow_dispatch string inputs into shell run blocks through env variables', () => {
+    const failures = readTrackedWorkflowFiles().flatMap((workflowPath) => (
+      collectDirectWorkflowDispatchInputRunInterpolations(workflowPath, parseWorkflow(workflowPath))
+    ));
+    const releaseContractWorkflow = parseWorkflow('.github/workflows/release-contract-artifact.yml');
+
+    expect(collectWorkflowDispatchStringInputNames(releaseContractWorkflow)).toContain('release_contract_input_path');
+    expect(failures).toEqual([]);
+  });
+
   it('makes backend-real scheduled regression a real evidence-producing lane instead of a governance-only alias', () => {
     const engineeringWorkflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
       (workflow) => workflow.path === '.github/workflows/engineering-gate.yml',
@@ -1068,6 +1148,39 @@ describe('current workflow governance', () => {
     expect(workflowSource).toContain('Daily UTC off-peak run for backend-real engineering regression.');
     expect(runCommands).toContain('npm run lane:backend-real:core');
     expect(runCommands).not.toContain('make verify-governance');
+  });
+
+  it('models release contract artifact production as non-readiness CI output', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === '.github/workflows/release-contract-artifact.yml',
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === 'generate-release-contract');
+    const parsedWorkflow = parseWorkflow('.github/workflows/release-contract-artifact.yml');
+    const workflowSource = readRepoFile('.github/workflows/release-contract-artifact.yml');
+    const runCommands = collectJobRunCommands(
+      parsedWorkflow,
+      'generate-release-contract',
+    );
+
+    expect(workflow?.workflowName).toBe('Release Contract Artifact');
+    expect(workflow?.role).toBe('release_artifact_producer');
+    expect(workflow?.triggers).toEqual(['workflow_dispatch']);
+    expect(workflow?.releaseBlocking).toBe(false);
+    expect(job?.role).toBe('artifact_producer');
+    expect(job?.requiresSecrets).toBe(false);
+    expect(job?.evidenceRequired).toBe(true);
+    expect(job?.evidenceFamilies).toEqual(['release_contract_artifact']);
+    expect(job?.artifactPaths).toEqual(['artifacts/release-contract/agentsmith-release-contract.json']);
+    expect(job?.commands).toEqual(['npm run release:contract:ci-artifact']);
+    expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read' });
+    expect(runCommands).toContain('npm run release:contract:ci-artifact');
+    expect(runCommands).toContain('rm -f artifacts/release-contract/agentsmith-release-contract.json');
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runCommands).not.toContain('${{ inputs.release_contract_input_path }}');
+    expect(runCommands).not.toContain('npm run release:ready');
+    expect(runCommands).not.toContain('npm run gate:release');
+    expect(workflowSource).toContain('This workflow only produces a release contract artifact.');
+    expect(workflowSource).not.toMatch(/deploy readiness|release readiness/i);
   });
 
   it('publishes run-scoped mock-lane evidence from CI jobs that execute mock or visual lanes', () => {
@@ -1098,6 +1211,7 @@ describe('current workflow governance', () => {
       expect.arrayContaining([
         'gate:release',
         'gate:release:full',
+        'release:contract:ci-artifact',
         'release:deploy-template-package',
         'lane:visual',
         'lane:backend-real:core',

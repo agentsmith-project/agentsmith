@@ -37,6 +37,7 @@ const RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS = [
   /\bnpm run gate:[a-z0-9:_-]+/,
   /\bnpm run lane:[a-z0-9:_-]+/,
   /\bnpm run backend-real:[a-z0-9:_-]+/,
+  /\bnpm run release:contract:ci-artifact\b/,
   /\bnpm run release:deploy-template-package\b/,
   /\bnpm run release:campaign:full\b/,
   /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/,
@@ -438,12 +439,17 @@ describe('release readiness human entrypoints', () => {
     expect(scripts['lane:unified-deploy:product-flows']).toBeTruthy();
   });
 
-  it('keeps the deploy template package producer internal', () => {
+  it('keeps release artifact producers internal', () => {
     const scripts = readPackageScripts();
 
+    expect(scripts['release:contract:ci-artifact']).toContain(
+      'scripts/governance/release-contract-artifact.ts',
+    );
     expect(scripts['release:deploy-template-package']).toContain(
       'scripts/governance/deploy-template-package.ts',
     );
+    expect(scripts['release:ready']).not.toContain('release-contract-artifact');
+    expect(scripts['release:status']).not.toContain('release-contract-artifact');
     expect(scripts['release:ready']).not.toContain('deploy-template-package');
     expect(scripts['release:status']).not.toContain('deploy-template-package');
   });

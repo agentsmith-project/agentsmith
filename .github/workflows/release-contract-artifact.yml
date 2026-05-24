@@ -1,0 +1,54 @@
+name: Release Contract Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_contract_input_path:
+        description: "Path to release contract producer input JSON with digest-pinned image data"
+        required: true
+        type: string
+        default: "artifacts/release-contract/release-contract-input.json"
+
+concurrency:
+  group: release-contract-artifact-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  generate-release-contract:
+    name: generate-release-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate release contract artifact
+        env:
+          RELEASE_CONTRACT_INPUT_PATH: ${{ inputs.release_contract_input_path }}
+        run: |
+          set -euo pipefail
+          # This workflow only produces a release contract artifact.
+          mkdir -p artifacts/release-contract
+          rm -f artifacts/release-contract/agentsmith-release-contract.json
+          test -f "${RELEASE_CONTRACT_INPUT_PATH}"
+          npm run release:contract:ci-artifact -- --input "${RELEASE_CONTRACT_INPUT_PATH}" --output-dir artifacts/release-contract
+          test -f artifacts/release-contract/agentsmith-release-contract.json
+
+      - name: Upload release contract artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentsmith-release-contract
+          if-no-files-found: error
+          path: artifacts/release-contract/agentsmith-release-contract.json

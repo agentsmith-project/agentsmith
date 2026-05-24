@@ -172,6 +172,7 @@ export const CURRENT_CI_WORKFLOW_ROLES = [
   'contract_gate',
   'backend_real_regression',
   'integration_e2e',
+  'release_artifact_producer',
 ] as const;
 
 export type CurrentCIWorkflowRole = (typeof CURRENT_CI_WORKFLOW_ROLES)[number];
@@ -182,6 +183,7 @@ export const CURRENT_CI_WORKFLOW_JOB_ROLES = [
   'backend_real_lane',
   'visual_lane',
   'integration_lane',
+  'artifact_producer',
 ] as const;
 
 export type CurrentCIWorkflowJobRole = (typeof CURRENT_CI_WORKFLOW_JOB_ROLES)[number];
@@ -212,6 +214,7 @@ export const CURRENT_CI_WORKFLOW_EVIDENCE_FAMILIES = [
   'integration_log',
   'mock_lane_run',
   'playwright_report',
+  'release_contract_artifact',
   'test_results',
   'visual_baseline_review',
 ] as const;
@@ -269,6 +272,7 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   '.github/workflows/contracts-check.yml',
   '.github/workflows/engineering-gate.yml',
   '.github/workflows/integration-e2e.yml',
+  '.github/workflows/release-contract-artifact.yml',
   'scripts/contracts/check-current-workflows.ts',
   'scripts/contracts/check-current-gates.ts',
   'scripts/contracts/check-engineering-governance.ts',
@@ -704,6 +708,33 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         blockingFor: ['pull_request', 'manual'],
         scheduled: false,
         releaseBlocking: false,
+      },
+    ],
+  }),
+  defineCurrentCIWorkflow({
+    path: '.github/workflows/release-contract-artifact.yml',
+    workflowName: 'Release Contract Artifact',
+    role: 'release_artifact_producer',
+    triggers: ['workflow_dispatch'],
+    blockingFor: ['manual'],
+    scheduled: false,
+    releaseBlocking: false,
+    jobs: [
+      {
+        id: 'generate-release-contract',
+        role: 'artifact_producer',
+        commands: ['npm run release:contract:ci-artifact'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['release_contract_artifact'],
+        artifactPaths: [
+          'artifacts/release-contract/agentsmith-release-contract.json',
+        ],
+        blockingFor: ['manual'],
+        scheduled: false,
+        releaseBlocking: false,
+        notes: 'Produces the AgentSmith release contract handoff artifact only; it is not a release or deploy gate.',
       },
     ],
   }),
@@ -1149,6 +1180,12 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'internal artifact producer: package deploy templates for release contract handoff; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:deploy-template-package',
+      },
+      {
+        command: 'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>',
+        description: 'internal artifact producer: write the AgentSmith release contract handoff artifact; do not use as the human release entrypoint',
+        canonical: 'npm',
+        npmScript: 'release:contract:ci-artifact',
       },
       {
         command: 'npm run test:unified-deploy:local-kind:images',

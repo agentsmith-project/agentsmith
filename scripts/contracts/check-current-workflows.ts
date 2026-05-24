@@ -98,6 +98,10 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseWorkflow(relativePath: string): Record<string, unknown> {
   return asRecord(YAML.parse(readFileSync(path.join(rootDir, relativePath), 'utf8')) as unknown);
 }
@@ -115,6 +119,55 @@ function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): strin
 
 function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
   return Object.keys(asRecord(parsedWorkflow.jobs)).sort();
+}
+
+function collectWorkflowDispatchStringInputNames(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
+  const inputs = asRecord(workflowDispatch.inputs);
+
+  return Object.entries(inputs)
+    .filter(([, input]) => {
+      const inputRecord = asRecord(input);
+      const inputType = inputRecord.type;
+      return inputType === undefined || inputType === 'string';
+    })
+    .map(([name]) => name)
+    .sort();
+}
+
+function collectDirectWorkflowDispatchInputRunInterpolations(
+  relativePath: string,
+  parsedWorkflow: Record<string, unknown>,
+): string[] {
+  const inputNames = collectWorkflowDispatchStringInputNames(parsedWorkflow);
+  if (inputNames.length === 0) {
+    return [];
+  }
+
+  const findings: string[] = [];
+  for (const [jobId, rawJob] of Object.entries(asRecord(parsedWorkflow.jobs))) {
+    const job = asRecord(rawJob);
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+
+    for (const [stepIndex, rawStep] of steps.entries()) {
+      const run = asRecord(rawStep).run;
+      if (typeof run !== 'string') {
+        continue;
+      }
+
+      for (const inputName of inputNames) {
+        const inputExpression = new RegExp(
+          String.raw`\$\{\{[^}]*\b(?:inputs|github\.event\.inputs)\.${escapeRegExp(inputName)}\b[^}]*\}\}`,
+        );
+        if (inputExpression.test(run)) {
+          findings.push(`${relativePath}:${jobId}:steps[${stepIndex}] directly interpolates workflow_dispatch input ${inputName}`);
+        }
+      }
+    }
+  }
+
+  return findings;
 }
 
 function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
@@ -298,6 +351,10 @@ for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
     failures.push(`${workflow.path} workflow name must match CI workflow manifest: ${workflow.workflowName}`);
   }
 
+  for (const finding of collectDirectWorkflowDispatchInputRunInterpolations(workflow.path, parsedWorkflow)) {
+    failures.push(`${finding}; pass workflow_dispatch string inputs through env before shell use`);
+  }
+
   assertArrayEqual(
     workflow.triggers,
     collectWorkflowTriggers(parsedWorkflow),
@@ -326,7 +383,13 @@ for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
     if (job.evidenceRequired && job.artifactPaths.length === 0) {
       failures.push(`${workflow.path}:${job.id} requires evidence but publishes no artifacts`);
     }
-    if (!job.gateId && !job.laneId && job.role !== 'integration_lane' && job.role !== 'contract_gate') {
+    if (
+      !job.gateId
+      && !job.laneId
+      && job.role !== 'integration_lane'
+      && job.role !== 'contract_gate'
+      && job.role !== 'artifact_producer'
+    ) {
       failures.push(`${workflow.path}:${job.id} must declare a gateId or laneId for traceable CI truth`);
     }
   }

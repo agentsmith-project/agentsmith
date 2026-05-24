@@ -1254,9 +1254,11 @@ describe('verify impact selector', () => {
       'scripts/contracts/check-repo-split-bootstrap.test.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+      '.github/workflows/release-contract-artifact.yml',
       'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
       'scripts/governance/current-release-boundary-schema.ts',
+      'scripts/governance/release-contract-artifact.ts',
       'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
       'scripts/governance/__fixtures__/release-boundary/deploy-template-package.valid.json',
       'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
@@ -1597,6 +1599,7 @@ describe('verify impact selector', () => {
         'test:governance': 'bash scripts/governance-default-gate.sh',
         'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
+        'release:contract:ci-artifact': 'tsx scripts/governance/release-contract-artifact.ts',
         'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',
       },
     };
@@ -1648,6 +1651,10 @@ describe('verify impact selector', () => {
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
         'release:contract:assemble': 'tsx scripts/governance/not-release-contract-assemble.ts',
+      },
+      {
+        'test:governance': 'bash scripts/governance-default-gate.sh',
+        'release:contract:ci-artifact': 'tsx scripts/governance/not-release-contract-artifact.ts',
       },
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',

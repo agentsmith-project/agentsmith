@@ -21,6 +21,7 @@ import {
   buildProductImagesFromBuildManifest,
   type AgentSmithReleaseContractGeneratorInputAssemblyInput,
 } from '../release-contract-input';
+import { runReleaseContractArtifactCli } from '../release-contract-artifact';
 import {
   generateAgentSmithReleaseContract,
   type AgentSmithReleaseContractCiProvenanceInput,
@@ -312,6 +313,34 @@ function writeAssemblyInput(root: string, input: AgentSmithReleaseContractGenera
   const inputPath = join(root, 'assembly-input.json');
   writeFileSync(inputPath, `${JSON.stringify(input, null, 2)}\n`);
   return inputPath;
+}
+
+function buildArtifactProducerInput(): Record<string, unknown> {
+  const input = JSON.parse(JSON.stringify(buildAssemblyInput())) as Record<string, unknown>;
+  delete input.sourceGitSha;
+  delete input.ci_provenance;
+  return input;
+}
+
+function writeArtifactProducerInput(root: string, input: Record<string, unknown>): string {
+  const inputPath = join(root, 'release-contract-input.json');
+  writeFileSync(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  return inputPath;
+}
+
+function githubReleaseContractEnv(
+  overrides: Readonly<Record<string, string | undefined>> = {},
+): Readonly<Record<string, string | undefined>> {
+  return {
+    GITHUB_SHA: GIT_SHA,
+    GITHUB_REPOSITORY: 'agentsmith-project/agentsmith',
+    GITHUB_WORKFLOW: 'Release Contract Artifact',
+    GITHUB_RUN_ID: '10001',
+    GITHUB_RUN_ATTEMPT: '2',
+    GITHUB_JOB: 'generate-release-contract',
+    AGENTSMITH_RELEASE_CONTRACT_GENERATED_AT: GENERATED_AT,
+    ...overrides,
+  };
 }
 
 function assemblyCliArgv(inputPath: string, outputPath?: string): string[] {
@@ -951,6 +980,136 @@ describe('release contract assembly CLI', () => {
 
     expect(exitCode).toBe(1);
     expect(stderr.join('\n')).toContain('managed_runner_image must be an object');
+    expect(existsSync(outputPath)).toBe(false);
+  });
+});
+
+describe('release contract CI artifact producer', () => {
+  it('writes a consumable release contract artifact with GitHub CI provenance only', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(stderr).toEqual([]);
+    expect(exitCode).toBe(0);
+    expect(existsSync(outputPath)).toBe(true);
+
+    const contract = JSON.parse(readFileSync(outputPath, 'utf8')) as unknown;
+    const validation = validateAgentSmithReleaseContract(contract);
+    expect(validation.ok).toBe(true);
+    if (!validation.ok) {
+      throw new Error('expected valid release contract artifact');
+    }
+
+    expect(validation.value.artifact_provenance).toMatchObject({
+      provenance_kind: 'ci_artifact',
+      producer_repo: 'github.com/agentsmith-project/agentsmith',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith',
+      commit_sha: GIT_SHA,
+      subject_name: 'agentsmith-release-contract',
+      subject_uri: 'agentsmith-release-contract.json',
+      workflow_name: 'Release Contract Artifact',
+      run_id: '10001',
+      run_attempt: '2',
+      job: 'generate-release-contract',
+      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith/release-contract/10001/agentsmith-release-contract.json',
+      generated_at: GENERATED_AT,
+      generator_command: 'npm run release:contract:ci-artifact',
+      generator_version: 'p1.1-release-contract-artifact',
+      attestation: 'none',
+    });
+  });
+
+  it.each([
+    ['GITHUB_SHA', 'GITHUB_SHA is required.'],
+    ['GITHUB_RUN_ID', 'GITHUB_RUN_ID is required.'],
+    ['GITHUB_JOB', 'GITHUB_JOB is required.'],
+  ])('fails fast without %s and removes stale output', (envField, expected) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+
+    expect(runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: () => undefined,
+    })).toBe(0);
+    expect(existsSync(outputPath)).toBe(true);
+
+    const env = { ...githubReleaseContractEnv(), [envField]: undefined };
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env,
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it('rejects caller-provided provenance and source sha because CI env owns them', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    const input = buildArtifactProducerInput();
+    input.ci_provenance = buildAssemblyInput().ci_provenance;
+    input.sourceGitSha = GIT_SHA;
+    const inputPath = writeArtifactProducerInput(root, input);
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('ci_provenance must be provided by GitHub CI env');
+    expect(stderr.join('\n')).toContain('sourceGitSha must be provided by GitHub CI env');
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it('fails fast for tag-only image inputs before publishing an artifact', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    const input = buildArtifactProducerInput();
+    input.managed_runner_image = {
+      ...buildManagedRunnerImage(),
+      image: `ghcr.io/agentsmith-project/agentsmith-managed-runner:${RELEASE_ID}`,
+    };
+    const inputPath = writeArtifactProducerInput(root, input);
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('image must be pinned by digest');
     expect(existsSync(outputPath)).toBe(false);
   });
 });

@@ -466,6 +466,11 @@ release evidence adapter mapping 和 release contract intake 三项 guard 通过
 5. AgentSmith adapter 拒绝 local/stale/缺 provenance 的 release contract。
 6. 保持过渡期 `npm run release:ready` product readiness 入口不变，避免同时改产品验收和部署工具归属。
 
+P1.1 最小实现：新增手动触发的 AgentSmith CI artifact producer，只生成并上传
+`agentsmith-release-contract.json`。该 producer 的 provenance 只来自 GitHub CI 环境
+（commit、workflow、run、attempt、job），输入只负责提供 digest-pinned image、template、
+OpenAPI/AsyncAPI 和 profile 数据；它不是 release readiness 或 deploy readiness gate。
+
 验收：
 
 - contract 中每个 image 都有 digest。

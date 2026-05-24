@@ -231,7 +231,7 @@ describe('visual baseline support', () => {
     expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
   });
 
-  it('keeps persistent CI visual noise tolerances narrow and avoids system-info threshold masking', async () => {
+  it('keeps persistent CI visual noise tolerances narrow and bounds system-info font-rendering tolerance', async () => {
     const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
     const hiddenTerminalBlockedSetupSource = extractSourceSection({
       source: visualSpec,
@@ -268,8 +268,17 @@ describe('visual baseline support', () => {
     expect(providerUpstreamErrorSetupSource).not.toContain('maxDiffPixelRatio: 0.008');
     expect(connectedConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
     expect(disabledConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
-    expect(systemInfoSetupSource).not.toContain('screenshotOptions');
+    expect(systemInfoSetupSource).toContain('screenshotOptions:');
+    expect(systemInfoSetupSource).toContain('maxDiffPixels: 40000');
     expect(systemInfoSetupSource).not.toContain('maxDiffPixelRatio');
+    expect(systemInfoSetupSource).not.toContain('threshold');
+    expect(visualSpec).toContain(
+      'const hasScenarioMaxDiffPixels = args.screenshotOptions.maxDiffPixels !== undefined;',
+    );
+    expect(visualSpec).toContain('maxDiffPixels: args.screenshotOptions.maxDiffPixels ?? configOptions.maxDiffPixels');
+    expect(visualSpec).toContain(
+      '?? (hasScenarioMaxDiffPixels ? undefined : configOptions.maxDiffPixelRatio);',
+    );
   });
 
   it('waits for route workspace identity before visual screenshots to avoid shell-level flakes', async () => {

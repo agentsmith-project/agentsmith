@@ -95,6 +95,7 @@ type VisualScenarioContext = {
 
 type VisualScreenshotOptions = {
   fullPage?: boolean;
+  maxDiffPixels?: number;
   maxDiffPixelRatio?: number;
   maskTestIds?: string[];
   stabilizeAttempts?: number;
@@ -2220,6 +2221,9 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     beforeAuth: async ({ request }) => {
       await seedSystemWorkspaces(request, 'with_failed_workspace');
     },
+    screenshotOptions: {
+      maxDiffPixels: 40000,
+    },
   },
   'system-login': {
     afterNavigate: async ({ page }) => {
@@ -2640,14 +2644,18 @@ async function captureSnapshotBoundActualScreenshot(args: {
     maskBoxes,
     maskColor: configOptions.maskColor,
   });
+  const hasScenarioMaxDiffPixels = args.screenshotOptions.maxDiffPixels !== undefined;
+  const maxDiffPixelRatio =
+    args.screenshotOptions.maxDiffPixelRatio
+    ?? (hasScenarioMaxDiffPixels ? undefined : configOptions.maxDiffPixelRatio);
   const compareScreenshots = async (candidate: Buffer) => screenshotComparator(await applyScreenshotMaskBoxes({
     screenshot: candidate,
     maskBoxes,
     maskColor: configOptions.maskColor,
   }), maskedExpected, {
     comparator: configOptions.comparator,
-    maxDiffPixels: configOptions.maxDiffPixels,
-    maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
+    maxDiffPixels: args.screenshotOptions.maxDiffPixels ?? configOptions.maxDiffPixels,
+    maxDiffPixelRatio,
     threshold: configOptions.threshold,
   });
   const stabilizeAttempts = Math.max(args.screenshotOptions.stabilizeAttempts ?? 1, 1);

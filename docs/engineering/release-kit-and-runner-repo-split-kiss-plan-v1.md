@@ -83,10 +83,10 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
    创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。
 2. AFSCP / ASBCP 只能作为 non-normative family reference，借鉴启动纪律；
    不能成为源码依赖、合同依赖、gate 依赖或新 repo 事实源。
-3. 第一条 PR 必须是 bootstrap-only/docs-governance-first，只落 README、
-   AGENTS/CODEOWNERS/OWNERS 等约束或 owner 元数据、DEVELOPMENT/DEVELOPER guide、
-   contracts/runbooks/ADR 入口、RELEASE_GATES 或 verify-release 入口，以及
-   repo-local handoff checklist；不迁源码、不迁工具、不发布。
+3. 第一条 PR 必须是 bootstrap-only/docs-governance-first；minimum bootstrap pack
+   只包含 README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES 或
+   verify-release、contracts/runbooks/ADR entrypoints，以及 CODEOWNERS/OWNERS
+   或 README owner 元数据和 repo-local handoff checklist；不迁源码、不迁工具、不发布。
 4. quick governance guard 只检查 canonical repo identity、required bootstrap files、
    scope/non-goals、owner/team 元数据、gate 入口存在且不声称 release readiness、
    无 raw secret、无 mutable image 或 tag-only release claim、无 AFSCP/ASBCP
@@ -695,8 +695,12 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 
 必须确认：
 
-1. 对应新 repo 已满足第 4.1 节的 New repo bootstrap invariant；quick gate 和
-   handoff note 明确 `readiness=false`，不代表 release/adoption。
+1. P2 / P5 start 前，对应 new repos 必须先有 bootstrap-only/docs-governance-first
+   PR with the minimum bootstrap pack before implementation：README.md、AGENTS.md、
+   DEVELOPMENT/DEVELOPER guide、RELEASE_GATES 或 verify-release、
+   contracts/runbooks/ADR entrypoints；quick gate is not release readiness /
+   不是 release readiness，formal release readiness comes from the repo-local
+   release gate。
 2. repo-local team members 只在 quick gate 后进入互不重叠的专项 workstream；
    主协调 agent 只做分发、审查和收口。
 3. P2 release-kit 正式 adoption 前，`--inputs` 仍只是 focused diagnostic，且

@@ -48,6 +48,7 @@ const visualPolicy = read('docs/testing/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
 const gateManifestContract = read('docs/contracts/current-gate-manifest-contract.md');
 const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
+const unifiedDeployContract = read('docs/contracts/unified-deploy-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const releaseFlowSimplificationV3 = read('docs/engineering/governance-release-flow-simplification-plan-v3.md');
@@ -419,7 +420,9 @@ forbidMatch(verificationCampaigns, /current release[\s\S]{0,80}(?:must|必须)[\
 
 const currentReleaseBoundaryDocs = [
   readme,
+  development,
   verificationCampaigns,
+  unifiedDeployContract,
   releaseChecklist,
   unifiedDeployMilestonePlan,
   releaseKitSplitPlan,
@@ -427,6 +430,9 @@ const currentReleaseBoundaryDocs = [
 forbidMatch(currentReleaseBoundaryDocs, /release campaign evidence uses unified deploy lanes/i, 'active docs must not say release campaign evidence uses unified deploy lanes');
 forbidMatch(currentReleaseBoundaryDocs, /当前 release campaign 直接绑定[\s\S]{0,120}unified deploy/i, 'active docs must not say the current release campaign directly binds unified deploy');
 forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,100}local-kind evidence/i, 'active docs must not make release:ready a local-kind evidence entrypoint');
+forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,120}default deploy evidence line/i, 'active docs must not make local-kind the default release:ready deploy evidence line');
+forbidMatch(currentReleaseBoundaryDocs, /orchestrate[s]?[\s\S]{0,120}unified deploy evidence lanes/i, 'active docs must not say release:ready orchestrates unified deploy evidence lanes');
+forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,120}unified deploy evidence lanes/i, 'active docs must not tie release:ready to unified deploy evidence lanes');
 requireMatch(releaseChecklist, /internal adapter/i, 'release checklist must label old gate/lane/backend-real commands as internal adapters');
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults');
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default');

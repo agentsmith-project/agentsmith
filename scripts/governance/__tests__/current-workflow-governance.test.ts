@@ -1401,7 +1401,9 @@ describe('current workflow governance', () => {
     const workflowSource = readRepoFile('scripts/governance/current-workflow-manifest.ts');
     const docs = [
       'README.md',
+      'DEVELOPMENT.md',
       'docs/testing/verification-campaigns-v1.md',
+      'docs/contracts/unified-deploy-contract.md',
       'docs/user-guides/release-readiness-checklist.md',
       'docs/user-guides/unified-deploy-operations.md',
       'docs/current-engineering-governance-model.md',
@@ -1428,5 +1430,8 @@ describe('current workflow governance', () => {
     expect(docs).not.toMatch(/当前 release campaign 直接绑定[\s\S]{0,120}unified deploy/i);
     expect(docs).not.toMatch(/由 release campaign 编排/i);
     expect(docs).not.toMatch(/release:ready[\s\S]{0,100}local-kind evidence/i);
+    expect(docs).not.toMatch(/release:ready[\s\S]{0,120}default deploy evidence line/i);
+    expect(docs).not.toMatch(/orchestrate[s]?[\s\S]{0,120}unified deploy evidence lanes/i);
+    expect(docs).not.toMatch(/release:ready[\s\S]{0,120}unified deploy evidence lanes/i);
   });
 });

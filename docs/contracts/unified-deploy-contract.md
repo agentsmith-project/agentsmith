@@ -27,10 +27,11 @@ Current Docker-only local-kind unified deploy remains the current mainline.
 only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
 
-The current `local-kind` evidence chain remains the default deploy evidence
-line for `release:ready`. `existing-cluster` route smoke can prove deploy
-wiring for an operator-owned cluster, but it does not by itself prove product
-flows, and it must not be counted as local-kind evidence.
+The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
+chain is legacy/focused diagnostic evidence only. AgentSmith `release:ready`
+does not execute or require it for the AgentSmith release verdict; future
+deployment/package/operator verdict ownership belongs to release-kit repo-local
+gates and evidence.
 
 ## Runtime Topology
 
@@ -258,7 +259,7 @@ paths, import product packages, or create a second image inventory.
 
 ## Completion Evidence
 
-Release evidence separates these sections:
+Deploy diagnostic evidence separates these sections:
 
 - substrate status and redacted substrate truth fingerprint;
 - rendered app manifest fingerprint and resource summary;
@@ -272,7 +273,7 @@ Release evidence separates these sections:
 The `existing-cluster` smoke producer proves profile routing and rollout
 ownership only. It is not sufficient product verification.
 
-The current release deploy product proof is passed only when focused evidence
+The current deploy diagnostic product proof is passed only when focused evidence
 exists for these required flows:
 
 | Product flow | Required evidence input |
@@ -283,12 +284,12 @@ exists for these required flows:
 
 The product-flow aggregate must also bind each required flow to its focused
 evidence file through `flow_evidence_paths`; counting arbitrary JSON files is
-not release evidence.
+not deploy diagnostic evidence.
 
 `login/profile`, Chat via llmup, audit, and usage remain product diagnostics
 covered by their own verification surfaces. They are not part of the current
-minimal unified deploy release proof unless the release scope explicitly changes
-the required product-flow set.
+minimal unified deploy diagnostic proof unless the deployment diagnostic scope
+explicitly changes the required product-flow set.
 
 ## Out Of Scope
 

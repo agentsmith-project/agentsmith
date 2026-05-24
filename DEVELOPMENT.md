@@ -579,11 +579,11 @@ npm run release:status
 
 Machine-readable Reports / Maintainer Troubleshooting Notes:
 
-1. 机器可读报告语境：`npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters that orchestrate `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, unified deploy evidence lanes, and the terminal aggregate verdict.
+1. 机器可读报告语境：`npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the terminal aggregate verdict. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence for the AgentSmith release verdict.
 2. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
-5. Unified deploy evidence roots derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
+5. Unified deploy diagnostic roots are legacy/focused diagnostics; when run directly, they derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 6. The final human output is a short evidence summary. Keep raw logs for diagnosis, but do not treat common setup warnings such as NO_COLOR, Postgres already exists, or containerd deprecation as blockers unless the referenced evidence names them.
 
 ## Test & Evidence Directory Contract

@@ -18,11 +18,14 @@ const RELEASE_BOUNDARY_FIXTURE_ROOT = path.join(
 );
 const CHECK_SCRIPT = 'tsx scripts/contracts/check-release-boundary-contract.ts';
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
+const RUNNER_IMAGE_LOCK_SCRIPT = 'contracts:check-runner-image-lock';
+const RUNNER_IMAGE_LOCK_COMMAND = 'tsx scripts/contracts/check-runner-image-lock.ts';
 
 function writePackageJson(root: string): void {
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     scripts: {
       [CHECK_NPM_SCRIPT]: CHECK_SCRIPT,
+      [RUNNER_IMAGE_LOCK_SCRIPT]: RUNNER_IMAGE_LOCK_COMMAND,
       'contracts:check': `npm run ${CHECK_NPM_SCRIPT}`,
     },
   }, null, 2), 'utf8');
@@ -185,6 +188,61 @@ describe('check-release-boundary-contract', () => {
         }),
         expect.objectContaining({
           path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+          message: expect.stringContaining('runner_contract_version must be a semver string'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports missing runner image lock fixture from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    rmSync(
+      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agent-task-runner-image.lock'),
+      { force: true },
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock',
+          message: expect.stringContaining('must exist'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports malformed runner image lock fixture from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    writeFileSync(
+      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agent-task-runner-image.lock'),
+      [
+        'schema_version=agentsmith.runner-image-lock/v1',
+        'runner=agentsmith-runner',
+        'release_id=runner-2026.05.23-p0',
+        'git_sha=abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        'runner_contract_version=whatever',
+        'runner_protocol_version=1.0',
+        'image_id=agent-task-runner',
+        `image=ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@sha256:${'f'.repeat(64)}`,
+        `image_digest=sha256:${'f'.repeat(64)}`,
+        'manifest_producer_repo=github.com/agentsmith-project/agentsmith-runner',
+        `manifest_subject_sha256=sha256:${'b'.repeat(64)}`,
+        `manifest_artifact_sha256=sha256:${'d'.repeat(64)}`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock',
           message: expect.stringContaining('runner_contract_version must be a semver string'),
         }),
       ]),

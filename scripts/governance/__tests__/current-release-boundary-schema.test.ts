@@ -19,6 +19,8 @@ import {
   validateReleaseKitEvidence,
   validateReleaseKitEvidenceForAggregate,
   validateReleaseKitEvidenceMapping,
+  parseRunnerImageLockText,
+  validateRunnerImageLock,
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
   validateTruthMatrix,
@@ -36,6 +38,10 @@ type ValidationResult = {
 
 function readFixture(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(FIXTURE_ROOT, name), 'utf8')) as Record<string, unknown>;
+}
+
+function readTextFixture(name: string): string {
+  return readFileSync(join(FIXTURE_ROOT, name), 'utf8');
 }
 
 function expectInvalid(result: ValidationResult, expectedReason: string): void {
@@ -99,7 +105,7 @@ const VALID_REMOTE_ATTESTATION = {
 } as const;
 
 describe('current release boundary schema', () => {
-  it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, and runner manifest', () => {
+  it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, runner manifest, and runner image lock', () => {
     expect(validateDeployTemplatePackage(readFixture('deploy-template-package.valid.json')).ok).toBe(true);
     expect(validateAgentSmithReleaseContract(readFixture('release-contract.valid.json')).ok).toBe(true);
     expect(validateSubstrateConnectionTruth(readFixture('substrate-connection.external-declared.valid.json')).ok)
@@ -134,6 +140,12 @@ describe('current release boundary schema', () => {
       failures: [],
     });
     expect(validateRunnerReleaseManifest(readFixture('runner-release-manifest.valid.json')).ok).toBe(true);
+
+    const runnerImageLock = parseRunnerImageLockText(readTextFixture('agent-task-runner-image.lock'));
+    expect(runnerImageLock.ok).toBe(true);
+    if (runnerImageLock.ok) {
+      expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
+    }
   });
 
   it('freezes the deployment mode matrix without making kind a required target', () => {

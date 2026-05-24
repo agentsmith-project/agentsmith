@@ -14,6 +14,7 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_AGGREGATE_CANONICAL_SCHEMA_VERSION =
   'agentsmith.release-kit-evidence.aggregate-canonical/v1' as const;
 export const CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION = 'agentsmith.artifact-provenance/v1' as const;
 export const CURRENT_RUNNER_RELEASE_MANIFEST_SCHEMA_VERSION = 'agentsmith.runner-release-manifest/v1' as const;
+export const CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION = 'agentsmith.runner-image-lock/v1' as const;
 export const CURRENT_RUNNER_PROTOCOL_VERSION = AGENT_TASK_RUNNER_SPEC.protocol_version;
 
 export const AGENTSMITH_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith' as const;
@@ -248,6 +249,21 @@ export interface CurrentRunnerReleaseManifest {
   supported_protocol_versions: readonly string[];
   image: CurrentReleaseImage;
   artifact_provenance: CurrentArtifactProvenance;
+}
+
+export interface CurrentRunnerImageLock {
+  schema_version: typeof CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION;
+  runner: 'agentsmith-runner';
+  release_id: string;
+  git_sha: string;
+  runner_contract_version: string;
+  runner_protocol_version: string;
+  image: CurrentReleaseImage;
+  manifest: {
+    producer_repo: typeof RUNNER_CANONICAL_REPO;
+    subject_sha256: string;
+    artifact_sha256: string;
+  };
 }
 
 export interface CurrentTruthMatrixEntry {
@@ -610,6 +626,20 @@ const SECRET_REF_PREFIX = 'secretRef:';
 const GITHUB_REMOTE_PATTERN = /^github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const RELEASE_KIT_EVIDENCE_SUBJECT_ALLOWED_KEYS = new Set(['schema_version', 'files']);
 const RELEASE_KIT_EVIDENCE_SUBJECT_FILE_ALLOWED_KEYS = new Set(['path', 'sha256']);
+const RUNNER_IMAGE_LOCK_KEYS = new Set([
+  'schema_version',
+  'runner',
+  'release_id',
+  'git_sha',
+  'runner_contract_version',
+  'runner_protocol_version',
+  'image_id',
+  'image',
+  'image_digest',
+  'manifest_producer_repo',
+  'manifest_subject_sha256',
+  'manifest_artifact_sha256',
+]);
 
 type ImageRegistry = Map<string, CurrentReleaseImage & { source: CurrentReleaseInventoryImage['source'] }>;
 
@@ -643,6 +673,76 @@ export function normalizeReleaseBoundaryRemote(remote: string): string | null {
     .replace(/\.git$/iu, '');
 
   return GITHUB_REMOTE_PATTERN.test(normalized) ? normalized : null;
+}
+
+export function parseRunnerImageLockText(
+  source: string,
+  sourceName = 'agent-task-runner-image.lock',
+): CurrentReleaseBoundaryValidationResult<CurrentRunnerImageLock> {
+  const failures: CurrentReleaseBoundaryValidationFailure[] = [];
+  validateNoSecretLeak(source, 'runner_image_lock', failures);
+
+  const values: Record<string, string> = {};
+  source.split(/\r?\n/u).forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      return;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) {
+      failures.push({
+        path: `runner_image_lock:${index + 1}`,
+        reason: `${sourceName}:${index + 1} must be key=value.`,
+      });
+      return;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (!RUNNER_IMAGE_LOCK_KEYS.has(key)) {
+      failures.push({
+        path: `runner_image_lock.${key}`,
+        reason: `${sourceName}:${index + 1} contains unsupported key ${key}.`,
+      });
+      return;
+    }
+    if (values[key] !== undefined) {
+      failures.push({
+        path: `runner_image_lock.${key}`,
+        reason: `${sourceName}:${index + 1} must not duplicate ${key}.`,
+      });
+      return;
+    }
+
+    values[key] = value;
+  });
+
+  const lock = {
+    schema_version: values.schema_version,
+    runner: values.runner,
+    release_id: values.release_id,
+    git_sha: values.git_sha,
+    runner_contract_version: values.runner_contract_version,
+    runner_protocol_version: values.runner_protocol_version,
+    image: {
+      id: values.image_id,
+      image: values.image,
+      digest: values.image_digest,
+    },
+    manifest: {
+      producer_repo: values.manifest_producer_repo,
+      subject_sha256: values.manifest_subject_sha256,
+      artifact_sha256: values.manifest_artifact_sha256,
+    },
+  };
+
+  const validation = validateRunnerImageLock(lock);
+  if (!validation.ok) {
+    failures.push(...validation.failures);
+  }
+
+  return finish(lock as CurrentRunnerImageLock, failures);
 }
 
 export function validateAgentSmithReleaseContract(
@@ -1103,6 +1203,42 @@ export function validateRunnerReleaseManifest(
   }
 
   return finish(value as CurrentRunnerReleaseManifest, failures);
+}
+
+export function validateRunnerImageLock(
+  value: unknown,
+): CurrentReleaseBoundaryValidationResult<CurrentRunnerImageLock> {
+  const failures: CurrentReleaseBoundaryValidationFailure[] = [];
+  validateNoSecretLeak(value, 'runner_image_lock', failures);
+
+  if (!isRecord(value)) {
+    return invalid('runner_image_lock', 'runner image lock must be an object.', failures);
+  }
+
+  validateLiteral(value.schema_version, CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION, 'schema_version', failures);
+  validateLiteral(value.runner, 'agentsmith-runner', 'runner', failures);
+  validateRequiredString(value.release_id, 'release_id', failures);
+  validateGitSha(value.git_sha, 'git_sha', failures);
+  validateRunnerContractVersion(value.runner_contract_version, failures);
+  const protocolVersion = validateRequiredString(value.runner_protocol_version, 'runner_protocol_version', failures);
+  if (protocolVersion && protocolVersion !== CURRENT_RUNNER_PROTOCOL_VERSION) {
+    failures.push({
+      path: 'runner_protocol_version',
+      reason: `runner_protocol_version must exactly equal ${JSON.stringify(CURRENT_RUNNER_PROTOCOL_VERSION)}.`,
+    });
+  }
+  validateImageRecord(value.image, 'image', failures);
+
+  if (!hasOwn(value, 'manifest')) {
+    failures.push({
+      path: 'manifest',
+      reason: 'manifest is required.',
+    });
+  } else {
+    validateRunnerImageLockManifest(value.manifest, failures);
+  }
+
+  return finish(value as CurrentRunnerImageLock, failures);
 }
 
 export function validateTruthMatrix(
@@ -1583,6 +1719,39 @@ function validateArtifactProvenanceInto(
       });
     }
   }
+}
+
+function validateRunnerImageLockManifest(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'manifest',
+      reason: 'manifest must be an object.',
+    });
+    return;
+  }
+
+  const producerRepo = validateRequiredString(value.producer_repo, 'manifest.producer_repo', failures);
+  if (producerRepo && producerRepo !== RUNNER_CANONICAL_REPO) {
+    const normalizedProducerRepo = normalizeReleaseBoundaryRemote(producerRepo);
+    failures.push({
+      path: 'manifest.producer_repo',
+      reason: normalizedProducerRepo === RUNNER_CANONICAL_REPO
+        ? `manifest.producer_repo must already be canonical ${RUNNER_CANONICAL_REPO}.`
+        : `canonical repo identity must be ${RUNNER_CANONICAL_REPO}.`,
+    });
+  }
+  if (producerRepo && producerRepo.includes('agentsmith-codex-runner')) {
+    failures.push({
+      path: 'manifest.producer_repo',
+      reason: `canonical repo identity must be ${RUNNER_CANONICAL_REPO}.`,
+    });
+  }
+
+  validateDigest(value.subject_sha256, 'manifest.subject_sha256', failures);
+  validateDigest(value.artifact_sha256, 'manifest.artifact_sha256', failures);
 }
 
 function validateImageArray(

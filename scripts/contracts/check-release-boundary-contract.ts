@@ -7,6 +7,7 @@ import {
   CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION,
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
+  parseRunnerImageLockText,
   validateAgentSmithReleaseContract,
   validateDeployTemplatePackage,
   validateReleaseKitEvidenceForAggregate,
@@ -19,6 +20,8 @@ import {
 
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
 const CHECK_SCRIPT_COMMAND = 'tsx scripts/contracts/check-release-boundary-contract.ts';
+const RUNNER_IMAGE_LOCK_NPM_SCRIPT = 'contracts:check-runner-image-lock';
+const RUNNER_IMAGE_LOCK_SCRIPT_COMMAND = 'tsx scripts/contracts/check-runner-image-lock.ts';
 const FIXTURE_ROOT = 'scripts/governance/__fixtures__/release-boundary';
 
 type PackageJson = {
@@ -63,6 +66,22 @@ function readJson(rootDir: string, relativePath: string, failures: ReleaseBounda
   }
 }
 
+function readText(rootDir: string, relativePath: string, failures: ReleaseBoundaryContractFailure[]): string | null {
+  const absolutePath = join(rootDir, relativePath);
+  if (!existsSync(absolutePath)) {
+    addFailure(failures, relativePath, `${relativePath} must exist.`);
+    return null;
+  }
+
+  try {
+    return readFileSync(absolutePath, 'utf8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown read error';
+    addFailure(failures, relativePath, `Failed to read fixture: ${message}`);
+    return null;
+  }
+}
+
 function pushValidationFailures(
   failures: ReleaseBoundaryContractFailure[],
   relativePath: string,
@@ -82,6 +101,13 @@ function validatePackageScripts(rootDir: string, failures: ReleaseBoundaryContra
       failures,
       'package.json',
       `package.json must expose ${CHECK_NPM_SCRIPT} as ${CHECK_SCRIPT_COMMAND}.`,
+    );
+  }
+  if (scripts[RUNNER_IMAGE_LOCK_NPM_SCRIPT] !== RUNNER_IMAGE_LOCK_SCRIPT_COMMAND) {
+    addFailure(
+      failures,
+      'package.json',
+      `package.json must expose ${RUNNER_IMAGE_LOCK_NPM_SCRIPT} as ${RUNNER_IMAGE_LOCK_SCRIPT_COMMAND}.`,
     );
   }
   if (!scripts['contracts:check']?.includes(`npm run ${CHECK_NPM_SCRIPT}`)) {
@@ -108,6 +134,19 @@ function validateFixture(
   const result = validator(value);
   if (!result.ok) {
     pushValidationFailures(failures, relativePath, result.failures ?? []);
+  }
+}
+
+function validateRunnerImageLockFixture(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
+  const relativePath = join(FIXTURE_ROOT, 'agent-task-runner-image.lock');
+  const value = readText(rootDir, relativePath, failures);
+  if (value === null) {
+    return;
+  }
+
+  const result = parseRunnerImageLockText(value, relativePath);
+  if (!result.ok) {
+    pushValidationFailures(failures, relativePath, result.failures);
   }
 }
 
@@ -142,6 +181,7 @@ export function checkReleaseBoundaryContract(
   validateFixture(rootDir, 'substrate-connection.kit-installed.valid.json', validateSubstrateConnectionTruth, failures);
   validateFixture(rootDir, 'release-kit-evidence.valid.json', validateReleaseKitEvidenceForAggregate, failures);
   validateFixture(rootDir, 'runner-release-manifest.valid.json', validateRunnerReleaseManifest, failures);
+  validateRunnerImageLockFixture(rootDir, failures);
 
   return {
     ok: failures.length === 0,

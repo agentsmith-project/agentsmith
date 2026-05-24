@@ -81,7 +81,7 @@ function renderReadmeRuntimeBlock(): string {
     'Current local developer flow:',
     ...renderLocalFlowList(listCurrentLocalRuntimeLines()),
     '',
-    'Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for `local-kind` and `existing-cluster` deploy profile evidence under `artifacts/unified-deploy/`.',
+    'Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for legacy/focused `local-kind` and `existing-cluster` deploy diagnostics under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.',
   ].join('\n');
 }
 

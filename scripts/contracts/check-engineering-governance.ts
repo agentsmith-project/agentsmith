@@ -40,6 +40,7 @@ const docsIndex = read('docs/README.md');
 const userGuidesIndex = read('docs/user-guides/README.md');
 const releaseChecklist = read('docs/user-guides/release-readiness-checklist.md');
 const testingIndex = read('docs/testing/README.md');
+const verificationCampaigns = read('docs/testing/verification-campaigns-v1.md');
 const diagnosticCatalog = read('docs/testing/diagnostic-catalog-v1.md');
 const storyTruthGuide = read('docs/testing/story-source-of-truth-and-generated-specs.md');
 const agentsDoc = read('AGENTS.md');
@@ -50,6 +51,8 @@ const gateResultContract = read('docs/contracts/current-gate-result-schema-contr
 const productTerminology = read('docs/contracts/product-terminology.md');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const releaseFlowSimplificationV3 = read('docs/engineering/governance-release-flow-simplification-plan-v3.md');
+const unifiedDeployMilestonePlan = read('docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md');
+const releaseKitSplitPlan = read('docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 const internalAgentTaskRealGate = read('scripts/run-internal-agent-task-real-gate.sh');
 const playwrightConfig = read('playwright.config.ts');
@@ -410,6 +413,20 @@ requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'releas
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics');
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow deploy diagnostics');
 forbidMatch(releaseChecklist, /current AgentSmith release readiness is transitional product readiness and local-kind evidence/i, 'release checklist must not make local-kind evidence part of current AgentSmith release readiness');
+requireMatch(verificationCampaigns, /legacy\/focused diagnostics/, 'verification campaign guide must describe unified deploy producers as legacy/focused diagnostics');
+forbidMatch(verificationCampaigns, /由 release campaign 编排/i, 'verification campaign guide must not say release campaign orchestrates unified deploy producers');
+forbidMatch(verificationCampaigns, /current release[\s\S]{0,80}(?:must|必须)[\s\S]{0,80}unified deploy evidence/i, 'verification campaign guide must not require unified deploy evidence for current release');
+
+const currentReleaseBoundaryDocs = [
+  readme,
+  verificationCampaigns,
+  releaseChecklist,
+  unifiedDeployMilestonePlan,
+  releaseKitSplitPlan,
+].join('\n');
+forbidMatch(currentReleaseBoundaryDocs, /release campaign evidence uses unified deploy lanes/i, 'active docs must not say release campaign evidence uses unified deploy lanes');
+forbidMatch(currentReleaseBoundaryDocs, /当前 release campaign 直接绑定[\s\S]{0,120}unified deploy/i, 'active docs must not say the current release campaign directly binds unified deploy');
+forbidMatch(currentReleaseBoundaryDocs, /release:ready[\s\S]{0,100}local-kind evidence/i, 'active docs must not make release:ready a local-kind evidence entrypoint');
 requireMatch(releaseChecklist, /internal adapter/i, 'release checklist must label old gate/lane/backend-real commands as internal adapters');
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults');
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default');

@@ -1400,9 +1400,13 @@ describe('current workflow governance', () => {
   it('keeps unified deploy wording out of current release required evidence', () => {
     const workflowSource = readRepoFile('scripts/governance/current-workflow-manifest.ts');
     const docs = [
+      'README.md',
+      'docs/testing/verification-campaigns-v1.md',
       'docs/user-guides/release-readiness-checklist.md',
       'docs/user-guides/unified-deploy-operations.md',
       'docs/current-engineering-governance-model.md',
+      'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+      'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
     ].map(readRepoFile).join('\n');
     const unifiedDeployWorkflowCommands = listCurrentWorkflowCommands()
       .filter((command) => command.npmScript?.startsWith('lane:unified-deploy:'));
@@ -1420,5 +1424,9 @@ describe('current workflow governance', () => {
     expect(docs).toMatch(/not part of (?:the )?AgentSmith release verdict/i);
     expect(docs).not.toMatch(/current AgentSmith release readiness is transitional product readiness and local-kind evidence/i);
     expect(docs).not.toMatch(/must[\s\S]{0,80}(?:unified deploy|local-kind|product-flow)[\s\S]{0,80}(?:evidence|passed)/i);
+    expect(docs).not.toMatch(/release campaign evidence uses unified deploy lanes/i);
+    expect(docs).not.toMatch(/当前 release campaign 直接绑定[\s\S]{0,120}unified deploy/i);
+    expect(docs).not.toMatch(/由 release campaign 编排/i);
+    expect(docs).not.toMatch(/release:ready[\s\S]{0,100}local-kind evidence/i);
   });
 });

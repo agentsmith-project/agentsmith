@@ -19,7 +19,7 @@ provenance checks, and redaction checks in this plan.
 1. AgentSmith repo 负责产品代码、产品合同、产品验证、前后端 image 和本地完整测试。
 2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只是本机演练目标。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
-4. 过渡期 `npm run release:ready` 仍是 AgentSmith product readiness / local-kind evidence 入口；release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 release verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
+4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 legacy/focused diagnostics，不属于 AgentSmith release verdict。release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 release verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 这不是新增 DevOps 发布平台，也不是新增 runner 产品面。
 
@@ -41,7 +41,7 @@ AgentSmith 仍保留：
 
 - AgentSmith 不提供对外 DevOps 发布编排或发布管理平台能力，见 [项目宪法](../项目宪法.md)。
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
-- 当前 release campaign 直接绑定 visual、backend-real、unified deploy 和 product flows，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
+- 当前 release campaign 只绑定 AgentSmith product readiness、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 legacy/focused diagnostics，不属于当前 release verdict，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
 - Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。
 - Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。旧 `@mbos/agent-runner` 只保留 runtime-env 与 compatibility shim。
 - 当前 runner 执行进程在 [packages/agent-task-runner](../../packages/agent-task-runner)，AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)。
@@ -516,7 +516,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 release readiness 或 deploy rea
 - `kit_installed` 模式的 substrate lifecycle/truth evidence 在 release-ready deploy snapshot 中可见；如果 P2 早期暂留 AgentSmith，不能宣称 release kit 已完整拥有 online deploy。
 - kind rehearsal 产出 images、rollout、route probe evidence，但不能作为用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
-- 过渡期 AgentSmith `release:ready` deploy snapshot 仍有 dependencies/images/rollout/product flows 四段，其中 product flows 仍来自 AgentSmith；release-kit ready 后，部署/发布包 verdict 回到 release-kit repo-local gate/evidence。
+- Historical P2 transition note superseded by the current boundary: AgentSmith `release:ready` no longer requires dependencies/images/rollout/product-flow deploy evidence for its release verdict; those unified deploy outputs remain legacy/focused diagnostics until a future campaign explicitly consumes them.
 - release kit CI 至少覆盖 contract schema、render/dry-run、digest-only、no source import；真实 Kubernetes/cloud smoke 可以是手动或 scheduled，需要 secrets/kubeconfig 时必须产出同一 evidence schema。
 - current campaign 还是 local-kind 时，真实 Kubernetes/cloud evidence 只能作为 operator deploy evidence；除非当前 manifest 显式新增/调整 writer，否则不能写入 local-kind gate id。
 

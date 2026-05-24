@@ -114,7 +114,9 @@ npm run release:status
 
 - Current docs point to `docs/contracts/unified-deploy-contract.md`.
 - Public command surfaces expose one deploy model and unified deploy checks.
-- Release campaign evidence uses unified deploy lanes.
+- Historical transition wording superseded by the current boundary: unified
+  deploy lanes are legacy/focused diagnostics and are not used by the
+  AgentSmith release campaign verdict.
 - Substrate evidence validates Docker substrate lifecycle and truth shape.
 - App rollout evidence validates local kind images, app deployment, ingress, and
   API single-replica enforcement.

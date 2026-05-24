@@ -400,6 +400,16 @@ describe('release kit raw evidence adapter', () => {
     );
   });
 
+  it('fails fast when the raw release_kit_version is not plain semver', () => {
+    const raw = validRawEnvelope();
+    raw.release_kit_version = 'v0.1.0';
+
+    expectInvalid(
+      adapt(raw),
+      'release_kit_version must be a plain semver x.y.z string',
+    );
+  });
+
   it('fails fast on subject hash mismatch, old subject name, and secret leaks', () => {
     const raw = validRawEnvelope();
     const mismatchedSubject = validEvidenceSubject();

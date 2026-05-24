@@ -537,6 +537,7 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const SEMVER_PATTERN =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+const PLAIN_SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 const IMAGE_DIGEST_SUFFIX_PATTERN = /@(sha256:[0-9a-f]{64})$/u;
 const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeKey(
   entry.target_cluster,
@@ -768,7 +769,7 @@ export function validateAgentSmithReleaseContract(
     'substrate_connection_schema',
     failures,
   );
-  validateRequiredString(value.min_release_kit_version, 'min_release_kit_version', failures);
+  validatePlainSemver(value.min_release_kit_version, 'min_release_kit_version', failures);
 
   const imageRegistry: ImageRegistry = new Map();
   validateImageArray(value.product_images, 'product_images', 'product_images', imageRegistry, failures);
@@ -964,7 +965,7 @@ export function validateSubstrateConnectionTruth(
   }
   if (source === 'kit_installed') {
     validateLiteral(value.installed_by, 'agentsmith-release-kit', 'installed_by', failures);
-    validateRequiredString(value.release_kit_version, 'release_kit_version', failures);
+    validatePlainSemver(value.release_kit_version, 'release_kit_version', failures);
   }
 
   validateNoLegacyTopLevelSubstrateServiceKeys(value, failures);
@@ -999,7 +1000,7 @@ export function validateReleaseKitEvidence(
   validateDigest(value.release_contract_digest, 'release_contract_digest', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
   validateGitSha(value.git_sha, 'git_sha', failures);
-  validateRequiredString(value.release_kit_version, 'release_kit_version', failures);
+  validatePlainSemver(value.release_kit_version, 'release_kit_version', failures);
   const targetCluster = validateEnum(
     value.target_cluster,
     TARGET_CLUSTER_SET,
@@ -1989,6 +1990,7 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
     return;
   }
 
+  const seenProfileKeys = new Set<string>();
   value.forEach((entry, index) => {
     const path = `target_profiles[${index}]`;
     if (!isRecord(entry)) {
@@ -2021,17 +2023,30 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
       failures,
     ) as CurrentDeploymentDistribution | undefined;
 
-    if (targetCluster && substrateSource && distribution && !MODE_KEY_SET.has(modeKey(targetCluster, substrateSource, distribution))) {
-      failures.push({
-        path,
-        reason: 'target profile combination is not allowed by the release boundary matrix.',
-      });
+    if (targetCluster && substrateSource && distribution) {
+      const profileKey = modeKey(targetCluster, substrateSource, distribution);
+      if (seenProfileKeys.has(profileKey)) {
+        failures.push({
+          path,
+          reason: `target profile tuple ${profileKey} is declared more than once.`,
+        });
+      }
+      seenProfileKeys.add(profileKey);
+
+      if (!MODE_KEY_SET.has(profileKey)) {
+        failures.push({
+          path,
+          reason: 'target profile combination is not allowed by the release boundary matrix.',
+        });
+      }
     }
 
     if (typeof entry.required !== 'boolean') {
       failures.push({
         path: `${path}.required`,
-        reason: 'target profile required must be a boolean.',
+        reason: hasOwn(entry, 'support_level')
+          ? 'target profile required must be a boolean; support_level cannot replace required.'
+          : 'target profile required must be a boolean.',
       });
     }
     if (targetCluster === 'kind_rehearsal' && entry.required === true) {
@@ -2856,6 +2871,27 @@ function validateRequiredString(
   }
 
   return value;
+}
+
+function validatePlainSemver(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const version = validateRequiredString(value, path, failures);
+  if (!version) {
+    return undefined;
+  }
+
+  if (!PLAIN_SEMVER_PATTERN.test(version)) {
+    failures.push({
+      path,
+      reason: `${path} must be a plain semver x.y.z string.`,
+    });
+    return undefined;
+  }
+
+  return version;
 }
 
 function validateGitSha(

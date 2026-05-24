@@ -103,6 +103,12 @@ const VALID_REMOTE_ATTESTATION = {
   attestation_uri: 'gh-artifact://agentsmith/deploy-template-package/10001/attestation.intoto.jsonl',
   attestation_sha256: `sha256:${'9'.repeat(64)}`,
 } as const;
+const NON_PLAIN_RELEASE_KIT_VERSIONS = [
+  'v0.1.0',
+  '0.1',
+  '01.2.3',
+  '0.1.0-alpha.1',
+] as const;
 
 describe('current release boundary schema', () => {
   it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, runner manifest, and runner image lock', () => {
@@ -174,6 +180,26 @@ describe('current release boundary schema', () => {
     expect(CURRENT_DEPLOYMENT_MODE_MATRIX.filter((entry) => entry.required_target)).toEqual([]);
   });
 
+  it('keeps P2 target coverage required for online while only declaring airgap for P3', () => {
+    const contract = readFixture('release-contract.valid.json');
+    const profiles = contract.target_profiles as Record<string, unknown>[];
+
+    expect(profiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'online',
+        required: true,
+      }),
+      expect.objectContaining({
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'airgap',
+        required: false,
+      }),
+    ]));
+  });
+
   it('declares the release boundary truth matrix and release kit evidence mapping against current writers', () => {
     expect(validateTruthMatrix(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX)).toEqual({
       ok: true,
@@ -210,6 +236,19 @@ describe('current release boundary schema', () => {
     missingFlow.required_product_flows = CURRENT_REQUIRED_PRODUCT_FLOWS.filter((flow) => flow !== 'files');
     expectInvalid(validateAgentSmithReleaseContract(missingFlow), 'required product flow "files" is missing');
   });
+
+  it.each(NON_PLAIN_RELEASE_KIT_VERSIONS)(
+    'rejects release contracts whose min_release_kit_version is not plain semver: %s',
+    (version) => {
+      const contract = cloneFixture('release-contract.valid.json');
+      contract.min_release_kit_version = version;
+
+      expectInvalid(
+        validateAgentSmithReleaseContract(contract),
+        'min_release_kit_version must be a plain semver x.y.z string',
+      );
+    },
+  );
 
   it('rejects deploy template package provenance gaps, local provenance, and self-referential subjects', () => {
     const missingProvenance = cloneFixture('deploy-template-package.valid.json');
@@ -731,6 +770,19 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it.each(NON_PLAIN_RELEASE_KIT_VERSIONS)(
+    'rejects kit_installed substrate truth whose release_kit_version is not plain semver: %s',
+    (version) => {
+      const truth = cloneFixture('substrate-connection.kit-installed.valid.json');
+      truth.release_kit_version = version;
+
+      expectInvalid(
+        validateSubstrateConnectionTruth(truth),
+        'release_kit_version must be a plain semver x.y.z string',
+      );
+    },
+  );
+
   it('allows external_declared substrate truth without product-flow probe secret refs but validates them when present', () => {
     const withoutProbeRefs = cloneFixture('substrate-connection.external-declared.valid.json');
     delete withoutProbeRefs.product_flow_probe_secret_refs;
@@ -861,6 +913,19 @@ describe('current release boundary schema', () => {
       'passed release kit evidence must use failure_class none',
     );
   });
+
+  it.each(NON_PLAIN_RELEASE_KIT_VERSIONS)(
+    'rejects release-kit evidence whose release_kit_version is not plain semver: %s',
+    (version) => {
+      const evidence = cloneFixture('release-kit-evidence.valid.json');
+      evidence.release_kit_version = version;
+
+      expectInvalid(
+        validateReleaseKitEvidence(evidence),
+        'release_kit_version must be a plain semver x.y.z string',
+      );
+    },
+  );
 
   it('rejects release-kit raw evidence envelopes as aggregate canonical evidence', () => {
     const rawEnvelope = cloneFixture('release-kit-evidence.valid.json');
@@ -1129,5 +1194,29 @@ describe('current release boundary schema', () => {
     });
 
     expectInvalid(validateAgentSmithReleaseContract(contract), 'kind_rehearsal must not be marked as a required deployment target');
+  });
+
+  it('rejects duplicate target profile tuples and support_level-only required declarations', () => {
+    const duplicateContract = cloneFixture('release-contract.valid.json');
+    const duplicateProfiles = duplicateContract.target_profiles as Record<string, unknown>[];
+    duplicateProfiles.push({
+      ...duplicateProfiles[0],
+      required: false,
+    });
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(duplicateContract),
+      'target profile tuple existing_kubernetes|external_declared|online is declared more than once',
+    );
+
+    const supportLevelOnlyContract = cloneFixture('release-contract.valid.json');
+    const supportLevelOnlyProfiles = supportLevelOnlyContract.target_profiles as Record<string, unknown>[];
+    delete supportLevelOnlyProfiles[0].required;
+    supportLevelOnlyProfiles[0].support_level = 'primary';
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(supportLevelOnlyContract),
+      'target profile required must be a boolean',
+    );
   });
 });

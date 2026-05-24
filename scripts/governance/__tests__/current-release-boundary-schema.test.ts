@@ -8,6 +8,7 @@ import {
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
+  CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION,
   CURRENT_REQUIRED_PRODUCT_FLOWS,
   AGENTSMITH_CANONICAL_REPO,
   canonicalReleaseBoundaryJson,
@@ -20,6 +21,7 @@ import {
   validateReleaseKitEvidenceForAggregate,
   validateReleaseKitEvidenceMapping,
   parseRunnerImageLockText,
+  validateRunnerAdapterInventory,
   validateRunnerImageLock,
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
@@ -159,6 +161,110 @@ describe('current release boundary schema', () => {
     if (runnerImageLock.ok) {
       expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
     }
+
+    const runnerAdapterInventory = readFixture('runner-adapter-inventory.valid.json');
+    expect(runnerAdapterInventory.schema_version).toBe(CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION);
+    expect(validateRunnerAdapterInventory(runnerAdapterInventory, {
+      rootDir: process.cwd(),
+    }).ok).toBe(true);
+  });
+
+  it('rejects runner adapter inventory missing a required item', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    inventory.items = (inventory.items as Record<string, unknown>[])
+      .filter((entry) => entry.id !== 'skills_diagnostics');
+
+    expectInvalid(
+      validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() }),
+      'runner adapter inventory is missing "skills_diagnostics"',
+    );
+  });
+
+  it('rejects runner adapter inventory current paths that do not exist', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    const items = inventory.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      current_paths: ['scripts/does-not-exist/runner-adapter.ts'],
+    };
+
+    expectInvalid(
+      validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() }),
+      'current_paths[0] must exist: scripts/does-not-exist/runner-adapter.ts',
+    );
+  });
+
+  it('rejects runner adapter inventory entries marked as release proof', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    const items = inventory.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      release_proof_allowed: true,
+    };
+
+    expectInvalid(
+      validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() }),
+      'release_proof_allowed must be false.',
+    );
+  });
+
+  it('rejects non-canonical runner adapter target repos', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    const items = inventory.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      target_repo: 'agentsmith-codex-runner',
+    };
+
+    expectInvalid(
+      validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() }),
+      'agentsmith-codex-runner is not a canonical runner repo.',
+    );
+  });
+
+  it('rejects runner adapter inventory source-read or source-build requirements', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    const items = inventory.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      source_boundary: {
+        runner_repo_reads_agentsmith_source: true,
+        release_kit_builds_runner_from_agentsmith_source: false,
+        release_kit_builds_runner_from_runner_source: false,
+      },
+    };
+    items[1] = {
+      ...items[1],
+      source_boundary: {
+        runner_repo_reads_agentsmith_source: false,
+        release_kit_builds_runner_from_agentsmith_source: true,
+        release_kit_builds_runner_from_runner_source: true,
+      },
+    };
+
+    const result = validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() });
+
+    expectInvalid(result, 'runner repo must not read AgentSmith source for this adapter.');
+    expectInvalid(result, 'release kit must not build runner from AgentSmith source.');
+    expectInvalid(result, 'release kit must not build runner from runner source.');
+  });
+
+  it('rejects runner adapter inventory checks that imply digest adoption proof', () => {
+    const inventory = cloneFixture('runner-adapter-inventory.valid.json');
+    const items = inventory.items as Record<string, unknown>[];
+    const releaseContractRunnerDigest = items.find((entry) => entry.id === 'release_contract_runner_digest');
+    if (!releaseContractRunnerDigest) {
+      throw new Error('release_contract_runner_digest fixture item is required');
+    }
+    releaseContractRunnerDigest.fail_fast_checks = [
+      'current_paths_exist',
+      'runner_manifest_lock_contract_digest_match',
+    ];
+
+    expectInvalid(
+      validateRunnerAdapterInventory(inventory, { rootDir: process.cwd() }),
+      'runner adapter inventory must not claim runner manifest/lock/release contract digest match proof; use the runner image lock adoption gate.',
+    );
   });
 
   it('freezes the deployment mode matrix without making kind a required target', () => {

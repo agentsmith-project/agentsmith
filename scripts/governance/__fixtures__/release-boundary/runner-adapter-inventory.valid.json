@@ -1,0 +1,163 @@
+{
+  "schema_version": "agentsmith.runner-adapter-inventory/v1",
+  "items": [
+    {
+      "id": "local_kind_runner_image_build",
+      "current_paths": [
+        "scripts/lib/runner-image-common.sh",
+        "scripts/build-runner-image.sh",
+        "infra/runner/Dockerfile.agent-task-runner",
+        "infra/runner/Dockerfile.agent-task-runner-base"
+      ],
+      "current_role": "Monorepo transition-only local-kind and backend-real runner image build helper.",
+      "p5_target": "Runner repo owns runner image build and release manifest production.",
+      "migration_action": "Move image build ownership to agentsmith-runner; remove AgentSmith source-build use from release paths.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith-runner",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "Local-kind runner image builds are transition diagnostics and cannot prove a release runner image.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "no_release_kit_runner_source_build"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    },
+    {
+      "id": "api_default_managed_runner_image",
+      "current_paths": [
+        "packages/api-entry-node/src/agent-resource-service.ts",
+        "packages/api-entry-node/src/agent-runner-profile.ts"
+      ],
+      "current_role": "API resolves deployment default managed runner image/profile from AgentSmith-side deploy truth.",
+      "p5_target": "AgentSmith keeps API default managed runner resolution and consumes runner image lock/adoption truth.",
+      "migration_action": "Keep API ownership in AgentSmith; replace monorepo image defaults with locked runner release digest input.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "API defaults only select configured managed runner image and cannot prove the runner release artifact.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "no_runner_repo_agentsmith_source_read"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    },
+    {
+      "id": "internal_agent_pod_health_imageid_probe",
+      "current_paths": [
+        "packages/api-entry-node/src/internal-agent-pod-manager.ts",
+        "scripts/unified-deploy/check-local-kind-rollout.ts",
+        "scripts/unified-deploy/check-existing-cluster-smoke.ts"
+      ],
+      "current_role": "AgentSmith internal managed runner pod health and rollout imageID probe wiring.",
+      "p5_target": "AgentSmith keeps managed pod health and imageID verification against release contract runner digest.",
+      "migration_action": "Keep health/imageID verification in AgentSmith and bind it to runner lock/release contract digest.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "Backend-real health and live pod checks are diagnostics unless matched to runner manifest and release contract digest.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "backend_real_diagnostic_not_release_proof"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    },
+    {
+      "id": "agent_task_runner_dev_script",
+      "current_paths": [
+        "package.json",
+        "packages/agent-task-runner/package.json"
+      ],
+      "current_role": "Monorepo developer shim starts @mbos/agent-task-runner from AgentSmith workspace source.",
+      "p5_target": "Runner runtime package and dev command move to agentsmith-runner; AgentSmith may keep only a non-proof local shim during transition.",
+      "migration_action": "Move runtime dev ownership to agentsmith-runner and prevent AgentSmith dev shim from release evidence.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith-runner",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "Developer shim is not a formal deployment runtime and cannot be release proof.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "dev_shim_not_release_proof"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    },
+    {
+      "id": "skills_diagnostics",
+      "current_paths": [
+        "package.json",
+        "scripts/skills-runtime-fast-gate.sh",
+        "scripts/skills-runtime-backend-real-gate.sh",
+        "scripts/run-internal-agent-task-real-gate.sh"
+      ],
+      "current_role": "AgentSmith wrappers cover builtin skills, runner runtime, Context Store, and backend-real managed runner diagnostics.",
+      "p5_target": "Runner repo owns builtin skills runtime diagnostics; AgentSmith keeps product/backend-real contract consumption diagnostics.",
+      "migration_action": "Split runner-owned skill runtime tests into agentsmith-runner and keep AgentSmith backend-real diagnostics as non-proof consumers.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith-runner",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "Skills and backend-real diagnostics are focused checks and cannot prove runner release adoption.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "backend_real_diagnostic_not_release_proof"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    },
+    {
+      "id": "release_contract_runner_digest",
+      "current_paths": [
+        "scripts/governance/release-contract-input.ts",
+        "scripts/governance/release-contract.ts",
+        "scripts/contracts/check-runner-image-lock.ts",
+        "scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock",
+        "scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
+      ],
+      "current_role": "Release contract input and runner lock checker are source locations for managed runner image digest adoption wiring.",
+      "p5_target": "AgentSmith release contract consumes agentsmith-runner release manifest through the runner image lock adoption gate.",
+      "migration_action": "Keep digest adoption proof in the runner image lock/adoption gate; inventory only blocks source-build and release-proof misuse.",
+      "owner_repo": "agentsmith",
+      "target_repo": "agentsmith",
+      "release_proof_allowed": false,
+      "forbidden_release_proof_reason": "This inventory does not prove runner manifest, lock, and release contract digest match; release proof belongs to the runner image lock/adoption gate.",
+      "fail_fast_checks": [
+        "current_paths_exist",
+        "release_proof_allowed_false",
+        "canonical_repo_only",
+        "no_inventory_digest_adoption_proof_claim"
+      ],
+      "source_boundary": {
+        "runner_repo_reads_agentsmith_source": false,
+        "release_kit_builds_runner_from_agentsmith_source": false,
+        "release_kit_builds_runner_from_runner_source": false
+      }
+    }
+  ]
+}

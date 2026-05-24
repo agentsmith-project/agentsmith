@@ -12,6 +12,7 @@ import {
   validateDeployTemplatePackage,
   validateReleaseKitEvidenceForAggregate,
   validateReleaseKitEvidenceMapping,
+  validateRunnerAdapterInventory,
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
   validateTruthMatrix,
@@ -182,6 +183,12 @@ export function checkReleaseBoundaryContract(
   validateFixture(rootDir, 'release-kit-evidence.valid.json', validateReleaseKitEvidenceForAggregate, failures);
   validateFixture(rootDir, 'runner-release-manifest.valid.json', validateRunnerReleaseManifest, failures);
   validateRunnerImageLockFixture(rootDir, failures);
+  validateFixture(
+    rootDir,
+    'runner-adapter-inventory.valid.json',
+    (value) => validateRunnerAdapterInventory(value, { rootDir }),
+    failures,
+  );
 
   return {
     ok: failures.length === 0,

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -20,6 +20,7 @@ const CHECK_SCRIPT = 'tsx scripts/contracts/check-release-boundary-contract.ts';
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
 const RUNNER_IMAGE_LOCK_SCRIPT = 'contracts:check-runner-image-lock';
 const RUNNER_IMAGE_LOCK_COMMAND = 'tsx scripts/contracts/check-runner-image-lock.ts';
+const RUNNER_ADAPTER_INVENTORY_FIXTURE = 'runner-adapter-inventory.valid.json';
 
 function writePackageJson(root: string): void {
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({
@@ -31,6 +32,36 @@ function writePackageJson(root: string): void {
   }, null, 2), 'utf8');
 }
 
+function ensureRunnerAdapterInventoryCurrentPaths(root: string): void {
+  const fixturePath = path.join(
+    root,
+    'scripts',
+    'governance',
+    '__fixtures__',
+    'release-boundary',
+    RUNNER_ADAPTER_INVENTORY_FIXTURE,
+  );
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+    items?: Array<{ current_paths?: unknown }>;
+  };
+  for (const item of fixture.items ?? []) {
+    if (!Array.isArray(item.current_paths)) {
+      continue;
+    }
+    for (const relativePath of item.current_paths) {
+      if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
+        continue;
+      }
+      const targetPath = path.join(root, relativePath);
+      if (existsSync(targetPath)) {
+        continue;
+      }
+      mkdirSync(path.dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, '', 'utf8');
+    }
+  }
+}
+
 function writeFixtureRoot(): string {
   const root = mkdtempSync(path.join(tmpdir(), 'release-boundary-contract-'));
   fixtureRoots.push(root);
@@ -39,6 +70,7 @@ function writeFixtureRoot(): string {
   mkdirSync(path.dirname(targetFixtureRoot), { recursive: true });
   cpSync(RELEASE_BOUNDARY_FIXTURE_ROOT, targetFixtureRoot, { recursive: true });
   writePackageJson(root);
+  ensureRunnerAdapterInventoryCurrentPaths(root);
 
   return root;
 }
@@ -244,6 +276,70 @@ describe('check-release-boundary-contract', () => {
         expect.objectContaining({
           path: 'scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock',
           message: expect.stringContaining('runner_contract_version must be a semver string'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports missing runner adapter inventory fixture from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    rmSync(
+      path.join(
+        root,
+        'scripts',
+        'governance',
+        '__fixtures__',
+        'release-boundary',
+        RUNNER_ADAPTER_INVENTORY_FIXTURE,
+      ),
+      { force: true },
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: `scripts/governance/__fixtures__/release-boundary/${RUNNER_ADAPTER_INVENTORY_FIXTURE}`,
+          message: expect.stringContaining('must exist'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports runner adapter inventory fail-fast violations from copied fixtures', () => {
+    const root = writeFixtureRoot();
+    const fixturePath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      RUNNER_ADAPTER_INVENTORY_FIXTURE,
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+      items: Array<Record<string, unknown>>;
+    };
+    fixture.items[0] = {
+      ...fixture.items[0],
+      release_proof_allowed: true,
+      target_repo: 'agentsmith-codex-runner',
+    };
+    writeFileSync(fixturePath, JSON.stringify(fixture, null, 2), 'utf8');
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: `scripts/governance/__fixtures__/release-boundary/${RUNNER_ADAPTER_INVENTORY_FIXTURE}`,
+          message: expect.stringContaining('release_proof_allowed must be false'),
+        }),
+        expect.objectContaining({
+          path: `scripts/governance/__fixtures__/release-boundary/${RUNNER_ADAPTER_INVENTORY_FIXTURE}`,
+          message: expect.stringContaining('agentsmith-codex-runner is not a canonical runner repo'),
         }),
       ]),
     );

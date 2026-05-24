@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 
 import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner-contract';
 import { findCurrentGateDefinitionById } from './current-gate-manifest';
@@ -15,6 +17,8 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_AGGREGATE_CANONICAL_SCHEMA_VERSION =
 export const CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION = 'agentsmith.artifact-provenance/v1' as const;
 export const CURRENT_RUNNER_RELEASE_MANIFEST_SCHEMA_VERSION = 'agentsmith.runner-release-manifest/v1' as const;
 export const CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION = 'agentsmith.runner-image-lock/v1' as const;
+export const CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION =
+  'agentsmith.runner-adapter-inventory/v1' as const;
 export const CURRENT_RUNNER_PROTOCOL_VERSION = AGENT_TASK_RUNNER_SPEC.protocol_version;
 
 export const AGENTSMITH_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith' as const;
@@ -274,6 +278,50 @@ export interface CurrentTruthMatrixEntry {
   validators: readonly string[];
   consumers: readonly string[];
   fail_fast: readonly string[];
+}
+
+export const CURRENT_RUNNER_ADAPTER_INVENTORY_REQUIRED_ITEM_IDS = [
+  'local_kind_runner_image_build',
+  'api_default_managed_runner_image',
+  'internal_agent_pod_health_imageid_probe',
+  'agent_task_runner_dev_script',
+  'skills_diagnostics',
+  'release_contract_runner_digest',
+] as const;
+
+export type CurrentRunnerAdapterInventoryItemId =
+  (typeof CURRENT_RUNNER_ADAPTER_INVENTORY_REQUIRED_ITEM_IDS)[number];
+export type CurrentRunnerAdapterInventoryOwnerRepo = 'agentsmith';
+export type CurrentRunnerAdapterInventoryTargetRepo = 'agentsmith' | 'agentsmith-runner';
+
+export interface CurrentRunnerAdapterInventorySourceBoundary {
+  runner_repo_reads_agentsmith_source: false;
+  release_kit_builds_runner_from_agentsmith_source: false;
+  release_kit_builds_runner_from_runner_source: false;
+}
+
+export interface CurrentRunnerAdapterInventoryItem {
+  id: CurrentRunnerAdapterInventoryItemId;
+  current_paths: readonly string[];
+  current_role: string;
+  p5_target: string;
+  migration_action: string;
+  owner_repo: CurrentRunnerAdapterInventoryOwnerRepo;
+  target_repo: CurrentRunnerAdapterInventoryTargetRepo;
+  release_proof_allowed: false;
+  forbidden_release_proof_reason: string;
+  fail_fast_checks: readonly string[];
+  source_boundary: CurrentRunnerAdapterInventorySourceBoundary;
+}
+
+export interface CurrentRunnerAdapterInventory {
+  schema_version: typeof CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION;
+  items: readonly CurrentRunnerAdapterInventoryItem[];
+}
+
+export interface CurrentRunnerAdapterInventoryValidationOptions {
+  rootDir?: string;
+  validateCurrentPaths?: boolean;
 }
 
 export const CURRENT_DEPLOYMENT_MODE_MATRIX: readonly CurrentDeploymentModeMatrixEntry[] = [
@@ -568,6 +616,16 @@ const REQUIRED_TRUTH_IDS = [
   'runner_release_manifest',
   'runner_image_lock',
 ] as const;
+const RUNNER_ADAPTER_ITEM_ID_SET = new Set<string>(CURRENT_RUNNER_ADAPTER_INVENTORY_REQUIRED_ITEM_IDS);
+const RUNNER_ADAPTER_TARGET_REPO_SET = new Set<string>(['agentsmith', 'agentsmith-runner']);
+const RUNNER_ADAPTER_SOURCE_BOUNDARY_FIELDS = [
+  'runner_repo_reads_agentsmith_source',
+  'release_kit_builds_runner_from_agentsmith_source',
+  'release_kit_builds_runner_from_runner_source',
+] as const;
+const RUNNER_ADAPTER_FORBIDDEN_FAIL_FAST_CHECKS = new Set<string>([
+  'runner_manifest_lock_contract_digest_match',
+]);
 const DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'agentsmith.docker-substrate.truth/v1';
 const LEGACY_DOCKER_SUBSTRATE_TRUTH_SCHEMA = 'docker-substrate.truth/v1';
 const DOCKER_SUBSTRATE_TRUTH_SCHEMAS = new Set<string>([
@@ -1448,6 +1506,260 @@ export function validateReleaseKitEvidenceMapping(
   }
 
   return finish(value as readonly CurrentReleaseKitEvidenceMappingEntry[], failures);
+}
+
+export function validateRunnerAdapterInventory(
+  value: unknown,
+  options: CurrentRunnerAdapterInventoryValidationOptions = {},
+): CurrentReleaseBoundaryValidationResult<CurrentRunnerAdapterInventory> {
+  const failures: CurrentReleaseBoundaryValidationFailure[] = [];
+  validateNoSecretLeak(value, 'runner_adapter_inventory', failures);
+
+  if (!isRecord(value)) {
+    return invalid('runner_adapter_inventory', 'runner adapter inventory must be an object.', failures);
+  }
+
+  validateLiteral(
+    value.schema_version,
+    CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION,
+    'schema_version',
+    failures,
+  );
+
+  if (!Array.isArray(value.items)) {
+    failures.push({
+      path: 'items',
+      reason: 'runner adapter inventory items must be an array.',
+    });
+    return finish(value as CurrentRunnerAdapterInventory, failures);
+  }
+
+  const seenIds = new Set<string>();
+  value.items.forEach((entry, index) => {
+    const path = `runner_adapter_inventory.items[${index}]`;
+    if (!isRecord(entry)) {
+      failures.push({
+        path,
+        reason: 'runner adapter inventory item must be an object.',
+      });
+      return;
+    }
+
+    const id = validateEnum(
+      entry.id,
+      RUNNER_ADAPTER_ITEM_ID_SET,
+      `${path}.id`,
+      'runner adapter inventory item id is not supported.',
+      failures,
+    ) as CurrentRunnerAdapterInventoryItemId | undefined;
+    if (id) {
+      if (seenIds.has(id)) {
+        failures.push({
+          path: `${path}.id`,
+          reason: `runner adapter inventory item "${id}" is declared more than once.`,
+        });
+      }
+      seenIds.add(id);
+    }
+
+    validateRunnerAdapterCurrentPaths(entry.current_paths, `${path}.current_paths`, options, failures);
+    validateRequiredString(entry.current_role, `${path}.current_role`, failures);
+    validateRequiredString(entry.p5_target, `${path}.p5_target`, failures);
+    validateRequiredString(entry.migration_action, `${path}.migration_action`, failures);
+    validateRunnerAdapterOwnerRepo(entry.owner_repo, `${path}.owner_repo`, failures);
+    validateRunnerAdapterTargetRepo(entry.target_repo, `${path}.target_repo`, failures);
+    validateLiteral(entry.release_proof_allowed, false, `${path}.release_proof_allowed`, failures);
+    validateRequiredString(
+      entry.forbidden_release_proof_reason,
+      `${path}.forbidden_release_proof_reason`,
+      failures,
+    );
+    const failFastChecks = validateStringArray(entry.fail_fast_checks, `${path}.fail_fast_checks`, failures);
+    if (failFastChecks && failFastChecks.length === 0) {
+      failures.push({
+        path: `${path}.fail_fast_checks`,
+        reason: 'runner adapter inventory item must declare fail-fast checks.',
+      });
+    }
+    validateRunnerAdapterFailFastChecks(failFastChecks, `${path}.fail_fast_checks`, failures);
+    validateRunnerAdapterSourceBoundary(entry.source_boundary, `${path}.source_boundary`, failures);
+  });
+
+  for (const id of CURRENT_RUNNER_ADAPTER_INVENTORY_REQUIRED_ITEM_IDS) {
+    if (!seenIds.has(id)) {
+      failures.push({
+        path: 'runner_adapter_inventory.items',
+        reason: `runner adapter inventory is missing "${id}".`,
+      });
+    }
+  }
+
+  return finish(value as CurrentRunnerAdapterInventory, failures);
+}
+
+function validateRunnerAdapterFailFastChecks(
+  checks: readonly string[] | undefined,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  checks?.forEach((check, index) => {
+    if (!RUNNER_ADAPTER_FORBIDDEN_FAIL_FAST_CHECKS.has(check)) {
+      return;
+    }
+    failures.push({
+      path: `${path}[${index}]`,
+      reason: 'runner adapter inventory must not claim runner manifest/lock/release contract digest match proof; use the runner image lock adoption gate.',
+    });
+  });
+}
+
+function validateRunnerAdapterCurrentPaths(
+  value: unknown,
+  path: string,
+  options: CurrentRunnerAdapterInventoryValidationOptions,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const paths = validateStringArray(value, path, failures);
+  if (!paths) {
+    return;
+  }
+  if (paths.length === 0) {
+    failures.push({
+      path,
+      reason: 'runner adapter inventory current_paths must not be empty.',
+    });
+    return;
+  }
+
+  const seenPaths = new Set<string>();
+  paths.forEach((relativePath, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isSafeRunnerAdapterCurrentPath(relativePath)) {
+      failures.push({
+        path: itemPath,
+        reason: `${itemPath} must be a safe relative path.`,
+      });
+      return;
+    }
+    if (seenPaths.has(relativePath)) {
+      failures.push({
+        path,
+        reason: `current_paths contains duplicate path: ${relativePath}.`,
+      });
+    }
+    seenPaths.add(relativePath);
+
+    if (options.validateCurrentPaths === false) {
+      return;
+    }
+    const rootDir = resolve(options.rootDir ?? process.cwd());
+    if (!existsSync(resolve(rootDir, relativePath))) {
+      failures.push({
+        path: itemPath,
+        reason: `current_paths[${index}] must exist: ${relativePath}`,
+      });
+    }
+  });
+}
+
+function validateRunnerAdapterOwnerRepo(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const repo = validateRequiredString(value, path, failures);
+  if (!repo) {
+    return;
+  }
+  if (repo.includes('agentsmith-codex-runner')) {
+    failures.push({
+      path,
+      reason: 'agentsmith-codex-runner is not a canonical runner repo.',
+    });
+    return;
+  }
+  if (repo !== 'agentsmith') {
+    failures.push({
+      path,
+      reason: 'owner_repo must be agentsmith.',
+    });
+  }
+}
+
+function validateRunnerAdapterTargetRepo(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const repo = validateRequiredString(value, path, failures);
+  if (!repo) {
+    return;
+  }
+  if (repo.includes('agentsmith-codex-runner')) {
+    failures.push({
+      path,
+      reason: 'agentsmith-codex-runner is not a canonical runner repo.',
+    });
+    return;
+  }
+  if (!RUNNER_ADAPTER_TARGET_REPO_SET.has(repo)) {
+    failures.push({
+      path,
+      reason: 'target_repo must be agentsmith or agentsmith-runner.',
+    });
+  }
+}
+
+function validateRunnerAdapterSourceBoundary(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path,
+      reason: 'source_boundary is required.',
+    });
+    return;
+  }
+
+  for (const field of RUNNER_ADAPTER_SOURCE_BOUNDARY_FIELDS) {
+    validateLiteral(value[field], false, `${path}.${field}`, failures);
+  }
+  if (value.runner_repo_reads_agentsmith_source === true) {
+    failures.push({
+      path: `${path}.runner_repo_reads_agentsmith_source`,
+      reason: 'runner repo must not read AgentSmith source for this adapter.',
+    });
+  }
+  if (value.release_kit_builds_runner_from_agentsmith_source === true) {
+    failures.push({
+      path: `${path}.release_kit_builds_runner_from_agentsmith_source`,
+      reason: 'release kit must not build runner from AgentSmith source.',
+    });
+  }
+  if (value.release_kit_builds_runner_from_runner_source === true) {
+    failures.push({
+      path: `${path}.release_kit_builds_runner_from_runner_source`,
+      reason: 'release kit must not build runner from runner source.',
+    });
+  }
+}
+
+function isSafeRunnerAdapterCurrentPath(value: string): boolean {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0
+    || isAbsolute(trimmed)
+    || trimmed.startsWith('\\')
+    || trimmed.includes('\\')
+    || trimmed.includes('\0')
+  ) {
+    return false;
+  }
+
+  const segments = trimmed.split('/');
+  return !segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..');
 }
 
 function validateReleaseKitSubstrateConnectionTruth(

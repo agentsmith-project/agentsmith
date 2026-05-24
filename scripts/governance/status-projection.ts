@@ -123,10 +123,10 @@ const HUMAN_RELEASE_STEP_LABELS: Record<string, string> = {
   'gate-default': 'Default verification',
   'lane-visual': 'Visual check',
   'gate-release': 'Backend-real check',
-  'lane-unified-deploy-substrate': 'Deploy check / dependencies',
-  'lane-unified-deploy-local-kind-images': 'Deploy check / images',
-  'lane-unified-deploy-local-kind': 'Deploy check / rollout',
-  'lane-unified-deploy-product-flows': 'Deploy check / product flows',
+  'lane-unified-deploy-substrate': 'Legacy deploy diagnostic / dependencies',
+  'lane-unified-deploy-local-kind-images': 'Legacy deploy diagnostic / images',
+  'lane-unified-deploy-local-kind': 'Legacy deploy diagnostic / rollout',
+  'lane-unified-deploy-product-flows': 'Legacy deploy diagnostic / product flows',
   'gate-release-full': 'Release summary',
 };
 
@@ -200,6 +200,11 @@ function replaceInternalReleaseTerms(value: string): string {
     output = output.replaceAll(internalId, label);
   }
   return output
+    .replace(/\bDeploy check \/ dependencies\b/gi, 'Legacy deploy diagnostic / dependencies')
+    .replace(/\bDeploy check \/ images\b/gi, 'Legacy deploy diagnostic / images')
+    .replace(/\bDeploy check \/ rollout\b/gi, 'Legacy deploy diagnostic / rollout')
+    .replace(/\bDeploy check \/ product flows\b/gi, 'Legacy deploy diagnostic / product flows')
+    .replace(/\bDeploy product flows\b/gi, 'Legacy deploy diagnostic product flows')
     .replace(/\brelease-full campaign evidence passed aggregate verification\./gi, 'Release checks passed.')
     .replace(/\bCampaign step\b/g, 'Release check')
     .replace(/\bcampaign step\b/g, 'release check')
@@ -306,7 +311,7 @@ export function renderDeployCheckLines(
     return [];
   }
   return [
-    'Deploy check / 部署检查:',
+    'Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):',
     ...snapshot.items.map((item) => (
       `- ${item.label}: ${renderDeployStatus(item.status)} (evidence: ${redactProjectionPath(item.evidence_path)})`
     )),

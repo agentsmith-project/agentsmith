@@ -1,6 +1,6 @@
 # 发布前检查清单
 
-这份清单用于当前 AgentSmith product readiness / transition release readiness。当前 `npm run release:ready` 是过渡期 AgentSmith product readiness 与 local-kind evidence 入口，不是长期 deployment/package/operator release verdict owner；release-kit functional repo ready 后，未来 deployment、package 和 operator runbook release verdict 归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
+这份清单用于当前 AgentSmith product readiness / transition release readiness。当前 `npm run release:ready` 表示 AgentSmith product readiness + full visual + backend-real release + terminal aggregate；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 legacy/focused diagnostics，不属于 AgentSmith release verdict。release-kit functional repo ready 后，未来 deployment、package 和 operator runbook release verdict 归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 术语边界：
 - 这里的 `release` 仅表示工程验收与上线准备流程。
@@ -13,12 +13,12 @@
 1. 合约与类型检查通过。
 2. 默认业务链与治理门禁通过。
 3. release-grade backend-real 验证通过。
-4. full visual、machine-readable story evidence 与 unified deploy 证据通过。
+4. full visual、machine-readable story evidence 与 terminal aggregate 通过。
 
 补充判定规则：
 1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
 2. `npm run release:status` 是只读入口，只读取 latest summary 及其中冻结的 status/deploy snapshot，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
-3. 默认 release campaign 使用 `local-kind` 和 focused product-flow producers 证明统一部署；`existing-cluster` 是需要目标集群时显式执行的 operator smoke。
+3. 默认 release campaign 不执行 online/airgap deploy，也不要求 `local-kind`、`existing-cluster` 或 focused product-flow deploy diagnostics 作为 AgentSmith release verdict 证据。
 4. 机器可读报告语境：`gate:default` does not run the full visual lane，也不能代替 release-grade backend-real 或当前 AgentSmith transition release readiness verdict。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. 维护者排障语境：`gate:release:full` is aggregate-only terminal verdict verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
@@ -53,7 +53,7 @@ npm run release:status
 
 ### 2. 维护者排障 / Owner Producer Diagnostics
 
-下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向部署 evidence owner 时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
+下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向 legacy deploy diagnostic 时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -66,13 +66,13 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 
 下面的 role table 用于理解证据所有权、排障和复核，不是要求新人手工维护第二套命令顺序。
 
-| Role | Surface | 必须证明什么 |
+| Role | Surface | 当前用途 |
 | --- | --- | --- |
 | human transition readiness entry | `npm run release:ready` | precheck 通过后进入当前 AgentSmith product readiness campaign，并在结束后生成 summary |
 | status reader | `npm run release:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
-| deploy diagnostic | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke |
-| deploy smoke diagnostic | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke |
-| product diagnostic | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | 最小产品链：project、files、managed runner task |
+| legacy deploy diagnostic | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith release verdict |
+| legacy deploy smoke diagnostic | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith release verdict |
+| legacy product-flow deploy diagnostic | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的最小产品链诊断：project、files、managed runner task；不属于 AgentSmith release verdict |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |

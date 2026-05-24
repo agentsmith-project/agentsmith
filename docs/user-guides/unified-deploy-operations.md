@@ -2,7 +2,7 @@
 
 Status: `current`
 
-This guide is the current AgentSmith transitional deploy diagnostics and evidence entrypoint. Current AgentSmith release readiness is transitional product readiness and local-kind evidence; after the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+This guide is the current AgentSmith transitional deploy diagnostics entrypoint. Current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate evidence; unified deploy, local-kind, existing-cluster, and product-flow deploy commands are legacy/focused diagnostics and are not part of the AgentSmith release verdict. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 AgentSmith now has one deployment model with two profiles:
 
@@ -112,7 +112,7 @@ It does not run chat, audit, usage, or full release verification.
 
 ### Existing Cluster Smoke
 
-`existing-cluster` smoke proves the current app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is handoff evidence only: future online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke does not replace focused product-flow evidence.
+`existing-cluster` smoke proves the current app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is legacy/focused diagnostic evidence only: future online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith release verdict.
 
 ```bash
 npm run test:unified-deploy:existing-cluster-smoke -- \
@@ -142,4 +142,4 @@ Unified deploy producers write evidence under:
 artifacts/unified-deploy/
 ```
 
-Focused evidence is valid for its named scope only. It is not a release sign-off unless a release campaign explicitly consumes it.
+Focused evidence is valid for its named scope only. It is not part of the current AgentSmith release verdict unless a future release campaign explicitly consumes it.

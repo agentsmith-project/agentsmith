@@ -50,7 +50,7 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 
 ## Release Kit Handoff Boundary
 
-Current AgentSmith release readiness is transitional product readiness and local-kind evidence. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+Current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate evidence. Unified deploy and local-kind deploy commands are legacy/focused diagnostics and are not part of the AgentSmith release verdict. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
 const releaseKitSplitPlanWithoutNewRepoBootstrapDoc = `# Release Kit Split Plan
@@ -396,7 +396,8 @@ This intentionally omits the concrete deployment decisions.
 
     expect(text).toContain(`${path}:`);
     expect(text).toContain('release-kit handoff boundary');
-    expect(text).toContain('transitional product readiness');
+    expect(text).toContain('product readiness plus full visual');
+    expect(text).toContain('legacy/focused diagnostics');
     expect(text).toContain('future deploy/package/operator verdict');
   });
 

@@ -656,7 +656,10 @@ describe('current workflow governance', () => {
     expect(fullReleaseGate?.command).toBe('RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full');
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
-    expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'evidence_lane')).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'diagnostic_lane')).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => lane?.description.includes('legacy unified deploy'))).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => lane?.description.includes('focused diagnostic'))).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => !/release evidence|evidence channel/i.test(lane?.description ?? ''))).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.recommended !== true)).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.quickHuman !== true)).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.gateId === undefined)).toBe(true);
@@ -1392,5 +1395,30 @@ describe('current workflow governance', () => {
     expect(governanceModel).not.toContain(
       'Deploy evidence is produced by unified deploy checks under `artifacts/unified-deploy/`.',
     );
+  });
+
+  it('keeps unified deploy wording out of current release required evidence', () => {
+    const workflowSource = readRepoFile('scripts/governance/current-workflow-manifest.ts');
+    const docs = [
+      'docs/user-guides/release-readiness-checklist.md',
+      'docs/user-guides/unified-deploy-operations.md',
+      'docs/current-engineering-governance-model.md',
+    ].map(readRepoFile).join('\n');
+    const unifiedDeployWorkflowCommands = listCurrentWorkflowCommands()
+      .filter((command) => command.npmScript?.startsWith('lane:unified-deploy:'));
+
+    expect(unifiedDeployWorkflowCommands).toHaveLength(4);
+    for (const command of unifiedDeployWorkflowCommands) {
+      expect(command.workflowRole).toBe('diagnostic_lane');
+      expect(command.description).toMatch(/legacy unified deploy[\s\S]*focused diagnostic/i);
+      expect(command.description).not.toMatch(/release evidence|evidence channel/i);
+      expect(command.storyEvidenceRequiredFor).not.toContain('release');
+    }
+
+    expect(workflowSource).not.toMatch(/unified deploy [^\n'"]*release evidence channel/i);
+    expect(workflowSource).not.toMatch(/unified deploy [^\n'"]*evidence owner/i);
+    expect(docs).toMatch(/not part of (?:the )?AgentSmith release verdict/i);
+    expect(docs).not.toMatch(/current AgentSmith release readiness is transitional product readiness and local-kind evidence/i);
+    expect(docs).not.toMatch(/must[\s\S]{0,80}(?:unified deploy|local-kind|product-flow)[\s\S]{0,80}(?:evidence|passed)/i);
   });
 });

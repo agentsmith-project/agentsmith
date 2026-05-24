@@ -499,7 +499,7 @@ describe('release readiness human entrypoints', () => {
       expect(existsSync(join(root, 'summary.json'))).toBe(true);
       expect(existsSync(join(root, 'summary.md'))).toBe(true);
       const summaryMarkdown = readFileSync(join(root, 'summary.md'), 'utf8');
-      expect(summaryMarkdown).toContain('- Deploy check / 部署检查:');
+      expect(summaryMarkdown).toContain('- Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
       expect(summaryMarkdown).toContain('- dependencies: passed');
       expect(summaryMarkdown).not.toContain('- - dependencies');
       const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
@@ -774,13 +774,13 @@ describe('release readiness human entrypoints', () => {
       expect(summary.next_action).toContain('npm run release:ready');
       expect(summary.next_action).not.toContain('npm run lane:');
       expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
-      expect(rendered).toContain('Blocker: Deploy check / product flows');
+      expect(rendered).toContain('Blocker: Legacy deploy diagnostic / product flows');
       expect(rendered).toContain('Stage: release result');
-      expect(rendered).toContain('Why: Deploy check / product flows did not pass.');
+      expect(rendered).toContain('Why: Legacy deploy diagnostic / product flows did not pass.');
       expect(rendered).toContain('Inspect:');
       expect(rendered).toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${root}`);
-      expect(rendered).toContain('Deploy check / 部署检查:');
+      expect(rendered).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
       expect(rendered).not.toContain('lane-unified-deploy-product-flows');
       expect(rendered).not.toContain('npm run lane:');
     } finally {

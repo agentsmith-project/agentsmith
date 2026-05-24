@@ -285,7 +285,7 @@ describe('clean status entrypoints', () => {
       expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Status: passed');
       expect(output).toContain(`Evidence: ${campaignRoot}`);
-      expect(output).toContain('Deploy check / 部署检查:');
+      expect(output).toContain('Legacy deploy diagnostics / 旧部署诊断 (not part of AgentSmith release verdict):');
       expect(output).toContain('- dependencies: not available');
       expect(output).toContain('- images: not available');
       expect(output).toContain('- rollout: not available');

@@ -260,6 +260,25 @@ const laneMock = findCurrentGateDefinitionById('lane-mock');
 if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneUnifiedDeploySubstrate || !laneUnifiedDeployLocalKindImages || !laneUnifiedDeployLocalKind || !laneUnifiedDeployProductFlows || !gateReleaseFull || !laneMock) {
   failures.push('current gate manifest is missing required default/visual/backend-real/unified-deploy definitions');
 }
+for (const lane of [
+  laneUnifiedDeploySubstrate,
+  laneUnifiedDeployLocalKindImages,
+  laneUnifiedDeployLocalKind,
+  laneUnifiedDeployProductFlows,
+]) {
+  if (!lane) {
+    continue;
+  }
+  if (lane.requiredFor.includes('release')) {
+    failures.push(`${lane.id} must remain a focused diagnostic and must not be requiredFor release`);
+  }
+  if (!/legacy focused diagnostic/i.test(lane.description)) {
+    failures.push(`${lane.id} description must describe legacy focused diagnostic scope`);
+  }
+}
+if (gateReleaseFull?.campaignEvidenceArtifacts.some((path) => path.includes('/unified-deploy/') || path.includes('/lane-unified-deploy-'))) {
+  failures.push('gate-release-full campaign evidence artifacts must not require unified deploy evidence');
+}
 
 requireMatch(defaultGateScript, /npm run contracts:check[\s\S]*npm run contracts:check-openapi[\s\S]*npm run openapi:check-generated[\s\S]*npm run lint/, 'default gate must run shared repo preflight and lint before domain gates', failures);
 for (const [command, pattern] of [
@@ -375,9 +394,10 @@ requireMatch(gateContract, /lane:backend-real:core/, 'current gate manifest cont
 requireMatch(gateContract, /e2e\/visual-baseline-support\.ts/, 'current gate manifest contract must identify the visual scene catalog source', failures);
 requireMatch(gateContract, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'current gate manifest contract must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current gate manifest contract must identify backend-real ux trace bundle roots', failures);
-requireMatch(gateContract, /unified deploy/, 'current gate manifest contract must describe unified deploy release evidence ownership', failures);
-requireMatch(gateContract, /local-kind/, 'current gate manifest contract must describe local-kind deploy evidence ownership', failures);
-requireMatch(gateContract, /focused product-flow/, 'current gate manifest contract must describe focused product-flow evidence ownership', failures);
+requireMatch(gateContract, /unified deploy/, 'current gate manifest contract must describe unified deploy diagnostics', failures);
+requireMatch(gateContract, /legacy\/focused diagnostics|legacy focused diagnostics/i, 'current gate manifest contract must describe unified deploy as legacy/focused diagnostics', failures);
+requireMatch(gateContract, /local-kind/, 'current gate manifest contract must describe local-kind deploy diagnostics', failures);
+requireMatch(gateContract, /focused product-flow/, 'current gate manifest contract must describe focused product-flow diagnostics', failures);
 requireMatch(gateContract, /artifacts\/unified-deploy/, 'current gate manifest contract must identify unified deploy evidence roots', failures);
 
 requireMatch(workspaceDefaultChecklist, /npm run verify -- --goal=pr --run/, 'workspace/project checklist must point default execution to npm run verify -- --goal=pr --run', failures);
@@ -399,9 +419,9 @@ forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance chec
 
 requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);
 requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define npm run release:status as the read-only status entrypoint', failures);
-requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy evidence', failures);
-requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke evidence', failures);
-requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow evidence', failures);
+requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics', failures);
+requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics', failures);
+requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow diagnostics', failures);
 requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that release:ready delegates to internal adapters only after precheck passes', failures);
 requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
@@ -415,7 +435,7 @@ requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must i
 requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);
 requireMatch(releaseChecklist, /e2e\/visual-baseline-support\.ts/, 'release checklist must identify the visual scene catalog source', failures);
 requireMatch(releaseChecklist, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'release checklist must identify the backend-real ux trace bundle path', failures);
-requireMatch(releaseChecklist, /substrate-lifecycle\.ts reset|clean reset/, 'release checklist must explain that unified deploy evidence begins from a clean substrate reset', failures);
+requireMatch(releaseChecklist, /substrate-lifecycle\.ts reset|clean reset/, 'release checklist must explain that unified deploy diagnostics can begin from a clean substrate reset', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {
   requireMatch(read(relativePath), /(gate|visual|backend-real|manifest|current)/, `${relativePath} must remain populated with current gate truth content`, failures);

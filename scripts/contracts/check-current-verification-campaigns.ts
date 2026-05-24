@@ -53,13 +53,14 @@ function main(): void {
       'gate-default',
       'lane-visual',
       'gate-release',
-      'lane-unified-deploy-substrate',
-      'lane-unified-deploy-local-kind-images',
-      'lane-unified-deploy-local-kind',
-      'lane-unified-deploy-product-flows',
       'gate-release-full',
     ].join(','),
     'release-full campaign step order drifted.',
+  );
+  const unifiedDeploySteps = releaseFull.steps.filter((step) => step.id.startsWith('lane-unified-deploy-'));
+  assert(
+    unifiedDeploySteps.length === 0,
+    'release-full campaign must not execute unified deploy lanes; keep them as focused diagnostics only.',
   );
   const terminalStep = releaseFull.steps.at(-1);
   assert(terminalStep?.id === 'gate-release-full', 'release-full terminal step must be gate-release-full.');
@@ -69,6 +70,10 @@ function main(): void {
   assert(
     terminalStep.dependsOn.includes('lane-visual') && terminalStep.dependsOn.includes('gate-release'),
     'gate-release-full must aggregate both lane-visual and gate-release evidence.',
+  );
+  assert(
+    !terminalStep.dependsOn.some((stepId) => stepId.startsWith('lane-unified-deploy-')),
+    'gate-release-full must not depend on unified deploy lanes.',
   );
   for (const step of releaseFull.steps.filter((candidate) => candidate.workflowRole === 'evidence_owner')) {
     assert(step.nativeResult, `${step.id} must declare its native result contract.`);

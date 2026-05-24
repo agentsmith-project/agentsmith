@@ -524,6 +524,7 @@ function isGovernanceToolingPath(filePath: string): boolean {
     return false;
   }
   return [
+    /^docs\/contracts\/current-gate-manifest-contract\.md$/,
     /^scripts\/governance\/.*\.ts$/,
     /^scripts\/default-gate(?:\.test)?\.(?:sh|ts)$/,
     /^scripts\/governance-default-gate(?:\.test)?\.(?:sh|ts)$/,

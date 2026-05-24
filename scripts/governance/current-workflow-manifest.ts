@@ -544,7 +544,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'gate-release',
     workflowRole: 'diagnostic',
     whenToUse: 'release campaign 失败指向 backend-real release owner，或需要单独复核 `ux_trace_bundle` owner。',
-    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 unified deploy evidence。',
+    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 terminal aggregate verdict。',
   },
   {
     id: 'release-unified-deploy-substrate-owner',
@@ -553,8 +553,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'lane:unified-deploy:substrate',
     gateId: 'lane-unified-deploy-substrate',
     workflowRole: 'diagnostic_lane',
-    whenToUse: 'release campaign 失败指向 unified deploy substrate reset / readiness evidence owner。',
-    nextStep: '修复本机 substrate 后重跑该 lane，再回到 `npm run release:ready`。',
+    whenToUse: '需要定位 legacy unified deploy substrate reset / readiness 证据。',
+    nextStep: '修复本机 substrate 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-images-owner',
@@ -563,8 +563,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'lane:unified-deploy:local-kind:images',
     gateId: 'lane-unified-deploy-local-kind-images',
     workflowRole: 'diagnostic_lane',
-    whenToUse: 'release campaign 失败指向 local-kind image handoff evidence owner。',
-    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 lane，再回到 `npm run release:ready`。',
+    whenToUse: '需要定位 legacy local-kind image handoff evidence。',
+    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-owner',
@@ -573,8 +573,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'lane:unified-deploy:local-kind',
     gateId: 'lane-unified-deploy-local-kind',
     workflowRole: 'diagnostic_lane',
-    whenToUse: 'release campaign 失败指向 local-kind Kubernetes rollout / ingress smoke evidence owner。',
-    nextStep: '修复 deploy topology 或 ingress route 后重跑该 lane，再回到 `npm run release:ready`。',
+    whenToUse: '需要定位 legacy local-kind Kubernetes rollout / ingress smoke evidence。',
+    nextStep: '修复 deploy topology 或 ingress route 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-product-flows-owner',
@@ -583,8 +583,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'lane:unified-deploy:product-flows',
     gateId: 'lane-unified-deploy-product-flows',
     workflowRole: 'diagnostic_lane',
-    whenToUse: 'release campaign 失败指向 deployed project / files / managed runner product-flow evidence owner。',
-    nextStep: '修复产品链路后重跑该 lane，再回到 `npm run release:ready`。',
+    whenToUse: '需要定位 legacy deployed project / files / managed runner product-flow evidence。',
+    nextStep: '修复产品链路后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-terminal-aggregate',

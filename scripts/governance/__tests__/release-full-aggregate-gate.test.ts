@@ -16,17 +16,6 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
-  AGENTSMITH_CANONICAL_REPO,
-  CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION,
-  CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
-  CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION,
-  CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
-  RELEASE_KIT_CANONICAL_REPO,
-  canonicalReleaseBoundaryJson,
-  sha256Digest as releaseBoundarySha256Digest,
-  type CurrentReleaseKitEvidenceTarget,
-} from '../current-release-boundary-schema';
-import {
   CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP,
   CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
   type CurrentGateEvidenceArtifact,
@@ -87,17 +76,6 @@ type AggregateFixtureEvidenceKind =
   | 'visual_baseline_reviews'
   | 'visual_run_manifest';
 
-const UPSTREAM_STEP_IDS = [
-  'gate-fast',
-  'gate-default',
-  'lane-visual',
-  'gate-release',
-  'lane-unified-deploy-substrate',
-  'lane-unified-deploy-local-kind-images',
-  'lane-unified-deploy-local-kind',
-  'lane-unified-deploy-product-flows',
-] as const;
-
 const REQUIRED_RELEASE_PRODUCT_FLOWS = ['workspace_project', 'files', 'agent_task_managed_runner'] as const;
 
 function getReleaseFullCampaign() {
@@ -119,10 +97,6 @@ function getCampaignStep(stepId: string): CurrentVerificationCampaignStep {
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
-}
-
-function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function npmScriptForNativeResult(step: CurrentVerificationCampaignStep): string {
@@ -173,99 +147,6 @@ function createDirectory(path: string): void {
   mkdirSync(path, { recursive: true });
 }
 
-function writeUnifiedDeployEvidenceFixture(
-  campaignRoot: string,
-  check: CurrentVerificationCampaignEvidenceCheck,
-): void {
-  const root = materializeCampaignPath(campaignRoot, check.path);
-  const generatedAt = '2026-05-07T00:00:00.000Z';
-
-  if (check.id === 'unified_deploy_substrate_evidence') {
-    writeJson(join(root, 'substrate-lifecycle-reset-fixture.json'), {
-      schema_version: check.expectedSchemaVersion,
-      command: check.expectedCommand,
-      profile: check.expectedProfile,
-      status: check.expectedStatus,
-      generated_at: generatedAt,
-      services: ['postgresql', 'mongodb', 'redis', 'minio', 'keycloak'],
-      failures: [],
-      paths: {
-        report_path: join(root, 'substrate-lifecycle-reset-fixture.json'),
-        log_path: join(root, 'substrate-lifecycle-reset-fixture.log'),
-      },
-    });
-    return;
-  }
-
-  if (check.id === 'unified_deploy_local_kind_images_evidence') {
-    writeJson(join(root, 'local-kind-images-fixture.json'), {
-      schema_version: check.expectedSchemaVersion,
-      producer: check.expectedProducer,
-      status: check.expectedStatus,
-      generated_at: generatedAt,
-      generated_site_env_path: join(campaignRoot, 'unified-deploy', 'local-kind-site.env'),
-      failures: [],
-      paths: {
-        report_path: join(root, 'local-kind-images-fixture.json'),
-        log_path: join(root, 'local-kind-images-fixture.log'),
-      },
-    });
-    return;
-  }
-
-  if (check.id === 'unified_deploy_local_kind_evidence') {
-    writeJson(join(root, 'local-kind-rollout-fixture.json'), {
-      schema_version: check.expectedSchemaVersion,
-      producer: check.expectedProducer,
-      profile: check.expectedProfile,
-      status: check.expectedStatus,
-      generated_at: generatedAt,
-      failures: [],
-      paths: {
-        report_path: join(root, 'local-kind-rollout-fixture.json'),
-        log_path: join(root, 'local-kind-rollout-fixture.log'),
-      },
-    });
-    return;
-  }
-
-  if (check.id === 'unified_deploy_product_flow_evidence') {
-    const flows = check.expectedProductFlows ?? [];
-    const flowEvidence = flows.map((flow) => ({
-      schema_version: 'agentsmith.focused-product-flow.evidence/v1',
-      flow,
-      status: 'passed',
-      producer: check.expectedProducer,
-      command: 'npm run test:unified-deploy:product-flows',
-      generated_at: generatedAt,
-      duration_ms: 1,
-      checks: {},
-    }));
-    for (const flow of flowEvidence) {
-      writeJson(join(root, `product-flow-${flow.flow}-fixture.json`), flow);
-    }
-    writeJson(join(root, 'product-flows-fixture.json'), {
-      schema_version: check.expectedSchemaVersion,
-      producer: check.expectedProducer,
-      status: check.expectedStatus,
-      command: 'npm run test:unified-deploy:product-flows',
-      generated_at: generatedAt,
-      flows: flowEvidence,
-      flow_evidence_paths: Object.fromEntries(
-        flowEvidence.map((flow) => [flow.flow, join(root, `product-flow-${flow.flow}-fixture.json`)]),
-      ),
-      failures: [],
-      paths: {
-        report_path: join(root, 'product-flows-fixture.json'),
-        log_path: join(root, 'product-flows-fixture.log'),
-      },
-    });
-    return;
-  }
-
-  throw new Error(`Unhandled unified deploy evidence fixture: ${check.id}`);
-}
-
 function aggregateFixtureEvidenceKind(check: CurrentVerificationCampaignEvidenceCheck): AggregateFixtureEvidenceKind {
   return (check as { kind: AggregateFixtureEvidenceKind }).kind;
 }
@@ -311,8 +192,7 @@ function createManifestEvidenceForCheck(
     return;
   }
   if (check.semantic === 'unified_deploy_evidence') {
-    writeUnifiedDeployEvidenceFixture(campaignRoot, check);
-    return;
+    throw new Error(`release-full aggregate fixtures must not materialize unified deploy evidence: ${check.id}`);
   }
 
   const kind = aggregateFixtureEvidenceKind(check);
@@ -911,8 +791,8 @@ function seedPassedUpstreamStep(
 }
 
 function seedPassedCampaign(campaignRoot: string): void {
-  for (const stepId of UPSTREAM_STEP_IDS) {
-    seedPassedUpstreamStep(campaignRoot, stepId);
+  for (const step of getReleaseFullCampaign().steps.filter((candidate) => candidate.executionMode === 'execute')) {
+    seedPassedUpstreamStep(campaignRoot, step.id);
   }
 }
 
@@ -920,114 +800,6 @@ function readTerminalResult(campaignRoot: string): { status: string; failure_cla
   return JSON.parse(
     readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
   ) as { status: string; failure_class: string; summary: string };
-}
-
-function getUnifiedDeployFixturePath(
-  campaignRoot: string,
-  stepId: string,
-  checkId: string,
-  fileName: string,
-): { step: CurrentVerificationCampaignStep; path: string } {
-  const step = getCampaignStep(stepId);
-  const check = step.evidenceChecks.find((candidate) => candidate.id === checkId);
-  if (!check) {
-    throw new Error(`Missing evidence check ${checkId} for ${stepId}.`);
-  }
-  return {
-    step,
-    path: join(materializeCampaignPath(campaignRoot, check.path), fileName),
-  };
-}
-
-function releaseKitCanonicalWriter(target: CurrentReleaseKitEvidenceTarget) {
-  const mapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => entry.target === target);
-  if (!mapping) {
-    throw new Error(`Missing release-kit evidence mapping for ${target}.`);
-  }
-  return mapping.canonical_writer;
-}
-
-function releaseKitArtifactProvenanceForSubject(
-  evidenceSubject: Record<string, unknown>,
-  target: CurrentReleaseKitEvidenceTarget,
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  const productFlowTarget = target === 'product_flows';
-
-  return {
-    schema_version: CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION,
-    provenance_kind: 'ci_artifact',
-    producer_repo: productFlowTarget ? AGENTSMITH_CANONICAL_REPO : RELEASE_KIT_CANONICAL_REPO,
-    normalized_remote: productFlowTarget ? AGENTSMITH_CANONICAL_REPO : RELEASE_KIT_CANONICAL_REPO,
-    commit_sha: 'a'.repeat(40),
-    subject_name: productFlowTarget ? 'agentsmith-product-flow-evidence' : 'release-kit-evidence-subject',
-    subject_sha256: releaseBoundarySha256Digest(canonicalReleaseBoundaryJson(evidenceSubject)),
-    subject_uri: 'evidence-subject.json',
-    workflow_name: 'release-kit-ci',
-    run_id: '123456789',
-    run_attempt: '1',
-    job: 'deploy-evidence',
-    artifact_uri: 'https://github.com/agentsmith-project/agentsmith-release-kit/actions/runs/123456789/artifacts/42',
-    artifact_sha256: `sha256:${'4'.repeat(64)}`,
-    generated_at: '2026-05-07T00:00:00.000Z',
-    generator_command: 'agentsmith-release-kit verify',
-    generator_version: 'release-kit-test',
-    attestation: 'none',
-    ...overrides,
-  };
-}
-
-function releaseKitEvidenceFields(
-  evidencePath: string,
-  target: CurrentReleaseKitEvidenceTarget,
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  const materializedSubjectPath = `${target}-materialized-report.json`;
-  const materializedSubjectContent = `${JSON.stringify({
-    report: target,
-    status: 'passed',
-  }, null, 2)}\n`;
-  createFile(join(dirname(evidencePath), materializedSubjectPath), materializedSubjectContent);
-
-  const evidenceSubject = {
-    schema_version: CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
-    files: [
-      {
-        path: materializedSubjectPath,
-        sha256: sha256(materializedSubjectContent),
-      },
-    ],
-  };
-
-  return {
-    schema_version: CURRENT_RELEASE_KIT_EVIDENCE_SCHEMA_VERSION,
-    release_contract_digest: `sha256:${'1'.repeat(64)}`,
-    release_id: 'agentsmith-release-test',
-    git_sha: 'b'.repeat(40),
-    release_kit_version: '0.0.0-test',
-    target_cluster: 'kind_rehearsal',
-    substrate_source: 'kit_installed',
-    distribution: 'online',
-    target,
-    status: 'passed',
-    failure_class: 'none',
-    evidence_root: dirname(evidencePath),
-    canonical_writer: releaseKitCanonicalWriter(target),
-    evidence_subject: evidenceSubject,
-    artifact_provenance: releaseKitArtifactProvenanceForSubject(evidenceSubject, target),
-    ...overrides,
-  };
-}
-
-function rehashReleaseKitEvidenceSubject(
-  evidence: Record<string, unknown>,
-  target: CurrentReleaseKitEvidenceTarget,
-): void {
-  const evidenceSubject = evidence.evidence_subject as Record<string, unknown>;
-  (evidence.artifact_provenance as Record<string, unknown>).subject_sha256 =
-    releaseBoundarySha256Digest(canonicalReleaseBoundaryJson(evidenceSubject));
-  (evidence.artifact_provenance as Record<string, unknown>).subject_name =
-    target === 'product_flows' ? 'agentsmith-product-flow-evidence' : 'release-kit-evidence-subject';
 }
 
 function runAggregate(campaignRoot: string, options: RunAggregateOptions = {}): void {
@@ -1275,18 +1047,48 @@ describe('release-full aggregate gate', () => {
     }
   });
 
-  it('accepts canonical release-kit rollout evidence mapped to the current local-kind writer', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-rollout-pass-'));
+  it('ignores legacy unified deploy artifacts outside the current release-full campaign', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-legacy-unified-deploy-ignored-'));
     seedPassedCampaign(campaignRoot);
 
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    writeCampaignEvidencePointer(campaignRoot, step);
+    const legacyArtifacts = [
+      ['lane-unified-deploy-substrate', 'substrate'],
+      ['lane-unified-deploy-local-kind-images', 'local-kind-images'],
+      ['lane-unified-deploy-local-kind', 'local-kind'],
+      ['lane-unified-deploy-product-flows', 'product-flows'],
+    ] as const;
+
+    for (const [stepId, evidenceSegment] of legacyArtifacts) {
+      writeJson(join(campaignRoot, stepId, 'result.json'), {
+        schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+        gate_id: stepId,
+        gate_adapter: { npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'), ci_job: null },
+        status: 'failed',
+        failure_class: 'infra_setup_failure',
+        stage: 'legacy-diagnostic',
+        line_kind: 'legacy_unified_deploy_diagnostic',
+        evidence_dir: join(campaignRoot, stepId),
+        summary: 'Legacy unified deploy diagnostic failed and must not affect release-full.',
+        generated_at: '2026-05-24T12:00:00.000Z',
+      });
+      writeJson(join(campaignRoot, stepId, 'native', 'result.json'), {
+        schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
+        gate_id: stepId,
+        gate_adapter: { npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'), ci_job: null },
+        status: 'failed',
+        failure_class: 'infra_setup_failure',
+        stage: 'legacy-diagnostic',
+        line_kind: 'legacy_unified_deploy_diagnostic',
+        evidence_dir: join(campaignRoot, stepId, 'native'),
+        summary: 'Legacy unified deploy native diagnostic failed and must not affect release-full.',
+        generated_at: '2026-05-24T12:00:00.000Z',
+      });
+      writeJson(join(campaignRoot, 'unified-deploy', evidenceSegment, 'failed-legacy-diagnostic.json'), {
+        schema_version: 'agentsmith.unified-deploy.legacy-diagnostic/v1',
+        status: 'failed',
+        failure_class: 'infra_setup_failure',
+      });
+    }
 
     runAggregate(campaignRoot);
 
@@ -1294,950 +1096,26 @@ describe('release-full aggregate gate', () => {
       status: 'passed',
       failure_class: 'none',
     });
-  });
+    const terminalEvidence = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'evidence.json'), 'utf8'),
+    ) as { required_paths: Array<{ id: string; kind: string; path: string }> };
+    const campaignStepResultIds = terminalEvidence.required_paths
+      .filter((record) => record.kind === 'campaign_step_result')
+      .map((record) => record.id.replace('campaign_step_result:', ''))
+      .sort((left, right) => left.localeCompare(right));
+    const expectedAggregateStepIds = getReleaseFullCampaign()
+      .steps
+      .filter((step) => step.executionMode === 'execute' && step.id !== 'gate-release-full')
+      .map((step) => step.id)
+      .sort((left, right) => left.localeCompare(right));
 
-  it('fails when release-kit evidence reports passed with a non-none failure_class', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-status-failure-class-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout', {
-      status: 'passed',
-      failure_class: 'contract_drift',
-    }));
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('passed release kit evidence must use failure_class none');
-  });
-
-  it('fails when release-kit evidence subject declares a missing materialized file', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-missing-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'rollout');
-    (evidence.evidence_subject as Record<string, unknown>).files = [
-      {
-        path: 'missing-render-report.json',
-        sha256: sha256('missing render report\n'),
-      },
-    ];
-    rehashReleaseKitEvidenceSubject(evidence, 'rollout');
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'evidence_missing',
-    });
-    expect(terminalResult.summary).toContain('missing-render-report.json');
-  });
-
-  it('fails when release-kit evidence subject file hashes do not match materialized contents', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-hash-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'rollout');
-    createFile(join(dirname(path), 'render-report.json'), '{ "report": "actual" }\n');
-    (evidence.evidence_subject as Record<string, unknown>).files = [
-      {
-        path: 'render-report.json',
-        sha256: sha256('{ "report": "expected" }\n'),
-      },
-    ];
-    rehashReleaseKitEvidenceSubject(evidence, 'rollout');
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('render-report.json');
-    expect(terminalResult.summary).toContain('sha256 mismatch');
-  });
-
-  it('fails fast before hashing oversized release-kit evidence subject text files', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-large-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    const oversizedSubjectPath = 'oversized-subject.json';
-    const oversizedSubjectContent = Buffer.concat([
-      Buffer.from('{ "report": "rollout", "padding": "'),
-      Buffer.alloc(1024 * 1024 + 1, 'a'),
-      Buffer.from('" }\n'),
-    ]);
-    const evidence = releaseKitEvidenceFields(path, 'rollout');
-    createFile(join(dirname(path), oversizedSubjectPath), oversizedSubjectContent);
-    (evidence.evidence_subject as Record<string, unknown>).files = [
-      {
-        path: oversizedSubjectPath,
-        sha256: sha256(oversizedSubjectContent),
-      },
-    ];
-    rehashReleaseKitEvidenceSubject(evidence, 'rollout');
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    const readProbePath = join(campaignRoot, 'throw-on-oversized-subject-read.cjs');
-    writeFileSync(readProbePath, `
-const fs = require('node:fs');
-const originalReadFileSync = fs.readFileSync;
-fs.readFileSync = function patchedReadFileSync(path, ...args) {
-  const value = typeof path === 'string'
-    ? path
-    : path instanceof URL
-      ? path.pathname
-      : Buffer.isBuffer(path)
-        ? path.toString('utf8')
-        : '';
-  if (value.endsWith('/${oversizedSubjectPath}') || value.endsWith('\\\\${oversizedSubjectPath}')) {
-    throw new Error('test probe: oversized subject file was read instead of stat-guarded');
-  }
-  return originalReadFileSync.call(this, path, ...args);
-};
-`);
-
-    expect(() => runAggregate(campaignRoot, {
-      env: {
-        NODE_OPTIONS: `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ''}--require ${readProbePath}`,
-      },
-    })).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('evidence_subject.files[0]');
-    expect(terminalResult.summary).toContain(oversizedSubjectPath);
-    expect(terminalResult.summary).toContain('too large to scan safely');
-  });
-
-  it('fails when release-kit evidence subject declares a symlinked file', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-symlink-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    const targetContent = '{ "report": "rollout", "source": "symlink-target" }\n';
-    createFile(join(dirname(path), 'symlink-target-report.json'), targetContent);
-    symlinkSync('symlink-target-report.json', join(dirname(path), 'subject-report-symlink.json'), 'file');
-
-    const evidence = releaseKitEvidenceFields(path, 'rollout');
-    (evidence.evidence_subject as Record<string, unknown>).files = [
-      {
-        path: 'subject-report-symlink.json',
-        sha256: sha256(targetContent),
-      },
-    ];
-    rehashReleaseKitEvidenceSubject(evidence, 'rollout');
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('evidence_subject.files[0]');
-    expect(terminalResult.summary).toContain('subject-report-symlink.json');
-    expect(terminalResult.summary).toContain('symlink');
-  });
-
-  it('fails when release-kit evidence subject materializes through an escaped evidence root', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-escape-'));
-    const outsideRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-subject-outside-'));
-    try {
-      seedPassedCampaign(campaignRoot);
-
-      const { step, path } = getUnifiedDeployFixturePath(
-        campaignRoot,
-        'lane-unified-deploy-local-kind',
-        'unified_deploy_local_kind_evidence',
-        'local-kind-rollout-fixture.json',
-      );
-      const escapedContent = 'escaped render report\n';
-      createFile(join(outsideRoot, 'render-report.json'), escapedContent);
-      const evidence = releaseKitEvidenceFields(path, 'rollout', {
-        evidence_root: outsideRoot,
-      });
-      (evidence.evidence_subject as Record<string, unknown>).files = [
-        {
-          path: 'render-report.json',
-          sha256: sha256(escapedContent),
-        },
-      ];
-      rehashReleaseKitEvidenceSubject(evidence, 'rollout');
-      writeJson(path, evidence);
-      writeCampaignEvidencePointer(campaignRoot, step);
-
-      expect(() => runAggregate(campaignRoot)).toThrow();
-
-      const terminalResult = readTerminalResult(campaignRoot);
-      expect(terminalResult).toMatchObject({
-        status: 'failed',
-        failure_class: 'contract_drift',
-      });
-      expect(terminalResult.summary).toContain('evidence_root must stay under release-kit evidence directory');
-    } finally {
-      rmSync(outsideRoot, { recursive: true, force: true });
+    expect(campaignStepResultIds).toEqual(expectedAggregateStepIds);
+    for (const record of terminalEvidence.required_paths) {
+      expect(record.id).not.toContain('unified_deploy');
+      expect(record.id).not.toContain('lane-unified-deploy-');
+      expect(record.path).not.toContain('/unified-deploy/');
+      expect(record.path).not.toContain('/lane-unified-deploy-');
     }
-  });
-
-  it('fails when release-kit style evidence omits the release contract digest and provenance', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-missing-boundary-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind-images',
-      'unified_deploy_local_kind_images_evidence',
-      'local-kind-images-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'images');
-    delete evidence.release_contract_digest;
-    delete evidence.artifact_provenance;
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('release_contract_digest');
-    expect(terminalResult.summary).toContain('artifact_provenance');
-  });
-
-  it('fails when release-kit provenance hashes the evidence payload itself', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-self-hash-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind-images',
-      'unified_deploy_local_kind_images_evidence',
-      'local-kind-images-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'images');
-    const provenance = evidence.artifact_provenance as Record<string, unknown>;
-    provenance.artifact_uri = provenance.subject_uri;
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('subject_sha256 must hash the subject without artifact_provenance');
-  });
-
-  it('fails when release-kit style evidence leaks a secret-looking value', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-secret-leak-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind-images',
-      'unified_deploy_local_kind_images_evidence',
-      'local-kind-images-fixture.json',
-    );
-    const evidence = {
-      ...releaseKitEvidenceFields(path, 'images'),
-      diagnostics: ['operator ran with client_secret=plain-release-secret'],
-    };
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('secret-looking');
-  });
-
-  it('fails when existing Kubernetes evidence is mapped into the local-kind rollout writer', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-existing-kubernetes-local-kind-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'rollout', {
-      target_cluster: 'existing_kubernetes',
-    });
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('local-kind campaign writer cannot accept existing_kubernetes evidence');
-  });
-
-  it('fails when external_declared release-kit evidence reuses docker substrate truth', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-external-docker-truth-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-substrate',
-      'unified_deploy_substrate_evidence',
-      'substrate-lifecycle-reset-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'dependencies', {
-      substrate_source: 'external_declared',
-      substrate_connection_truth: {
-        schema_version: 'agentsmith.docker-substrate.truth/v1',
-        target_cluster: 'kind_rehearsal',
-        substrate_source: 'external_declared',
-        distribution: 'online',
-        declared_at: '2026-05-23T12:00:00.000Z',
-        declared_by: 'release-operator@example.com',
-        redacted_fingerprint: `sha256:${'5'.repeat(64)}`,
-        services: {
-          postgresql: {
-            host: 'postgresql.release.example.internal',
-            port: 5432,
-            database: 'agentsmith',
-            credential_secret_ref: 'secretRef:agentsmith/postgresql-credential',
-            admin_secret_ref: 'secretRef:agentsmith/postgresql-admin',
-            sslmode: 'verify-full',
-            extensions: {
-              pgvector: {
-                status: 'installed',
-                version: '0.7.4',
-              },
-            },
-            reachability: {
-              status: 'declared_reachable',
-              proof: 'operator postgresql tcp/tls check 2026-05-23T12:00:00Z',
-            },
-          },
-          mongodb: {
-            host: 'mongodb.release.example.internal',
-            port: 27017,
-            credential_secret_ref: 'secretRef:agentsmith/mongodb-credential',
-            tls: {
-              mode: 'verify-full',
-              ca_secret_ref: 'secretRef:agentsmith/mongodb-ca',
-            },
-            reachability: {
-              status: 'declared_reachable',
-              proof: 'operator mongodb tcp/tls check 2026-05-23T12:00:00Z',
-            },
-          },
-          redis: {
-            host: 'redis.release.example.internal',
-            port: 6379,
-            credential_secret_ref: 'secretRef:agentsmith/redis-credential',
-            tls: {
-              mode: 'verify-full',
-              ca_secret_ref: 'secretRef:agentsmith/redis-ca',
-            },
-            reachability: {
-              status: 'declared_reachable',
-              proof: 'operator redis tcp/tls check 2026-05-23T12:00:00Z',
-            },
-          },
-          object_storage: {
-            url: 'https://objects.release.example.internal',
-            bucket: 'agentsmith-files',
-            region: 'us-west-2',
-            credential_secret_ref: 'secretRef:agentsmith/object-storage-credential',
-            tls: {
-              mode: 'https',
-              ca_secret_ref: 'secretRef:agentsmith/object-storage-ca',
-            },
-            reachability: {
-              status: 'declared_reachable',
-              proof: 'operator bucket head-object check 2026-05-23T12:00:00Z',
-            },
-          },
-          oidc: {
-            issuer_url: 'https://id.release.example.com/realms/agentsmith',
-            client_id: 'agentsmith-web',
-            client_secret_ref: 'secretRef:agentsmith/oidc-client',
-            tls: {
-              mode: 'https',
-              ca_secret_ref: 'secretRef:agentsmith/oidc-ca',
-            },
-            reachability: {
-              status: 'declared_reachable',
-              proof: 'operator oidc discovery check 2026-05-23T12:00:00Z',
-            },
-          },
-        },
-      },
-    });
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('external_declared must not use docker-substrate truth');
-  });
-
-  it('fails when external_declared release-kit evidence omits substrate connection truth', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-external-missing-truth-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-substrate',
-      'unified_deploy_substrate_evidence',
-      'substrate-lifecycle-reset-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'dependencies', {
-      substrate_source: 'external_declared',
-    });
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('external_declared release kit evidence must include substrate_connection_truth');
-  });
-
-  it('fails when release-kit evidence fabricates product-flow aggregate proof', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-product-flow-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-product-flows',
-      'unified_deploy_product_flow_evidence',
-      'product-flows-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'product_flows', {
-      product_flow_canonical_evidence: {
-        producer: 'agentsmith-release-kit',
-      },
-    });
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('product flow canonical evidence must be produced by AgentSmith');
-  });
-
-  it('fails when product-flow evidence uses release-kit payload shape instead of AgentSmith native payload', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-product-flow-shape-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-product-flows',
-      'unified_deploy_product_flow_evidence',
-      'product-flows-fixture.json',
-    );
-    const evidence = releaseKitEvidenceFields(path, 'product_flows', {
-      product_flow_canonical_evidence: {
-        producer: 'unified-deploy-product-flows',
-      },
-    });
-    writeJson(path, evidence);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('product_flows release-kit evidence is not accepted in P0');
-  });
-
-  it('fails when release-kit evidence directories contain secret-looking text artifacts', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-text-secret-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), 'operator.log'), 'operator ran with client_secret=plain-release-secret\n');
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('operator.log');
-    expect(terminalResult.summary).toContain('secret-looking');
-  });
-
-  it.each([
-    ['.env.local', 'client_secret=plain-release-secret\n'],
-    ['kubeconfig', 'kind: Config\nclusters:\n- cluster: {}\n'],
-    ['config', 'client_secret=plain-release-secret\n'],
-  ])('fails when release-kit evidence directories contain secret-looking text file variant %s', (fileName, content) => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-text-variant-secret-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), fileName), content);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain(fileName);
-    expect(terminalResult.summary).toContain('secret-looking');
-  });
-
-  it.each([
-    ['operator.log', 'GITHUB_TOKEN=ghp_plainreleaseleak1234567890\n'],
-    ['operator.log', 'AWS_SECRET_ACCESS_KEY=plainreleaseawssecret1234567890\n'],
-  ])('fails when release-kit text evidence contains prefixed secret assignment in %s', (fileName, content) => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-prefixed-secret-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), fileName), content);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain(fileName);
-    expect(terminalResult.summary).toContain('secret-looking');
-  });
-
-  it.each([
-    ['render-report.json', '{ "client_secret": "plain-release-secret" }\n'],
-    ['values.yaml', 'kind: Config\nclusters:\n- cluster: {}\n'],
-  ])('fails when release-kit evidence directories contain secret-looking %s artifacts', (fileName, content) => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-structured-secret-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), fileName), content);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain(fileName);
-    expect(terminalResult.summary).toContain('secret-looking');
-  });
-
-  it.each([
-    ['operator.log', Buffer.alloc(1024 * 1024 + 1, 'a')],
-    ['values.yaml', Buffer.concat([
-      Buffer.from('client_secret=plain-release-secret\n'),
-      Buffer.alloc(1024 * 1024, 'a'),
-    ])],
-  ])('fails when release-kit text evidence %s is too large to scan safely', (fileName, content) => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-large-text-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), fileName), content);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain(fileName);
-    expect(terminalResult.summary).toContain('too large to scan safely');
-  });
-
-  it.each([
-    ['.env.local', Buffer.alloc(1024 * 1024 + 1, 'a')],
-    ['kubeconfig', Buffer.alloc(1024 * 1024 + 1, 'a')],
-    ['config', Buffer.alloc(1024 * 1024 + 1, 'a')],
-  ])('fails when release-kit text evidence filename variant %s is too large to scan safely', (fileName, content) => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-release-kit-large-text-variant-'));
-    seedPassedCampaign(campaignRoot);
-
-    const { step, path } = getUnifiedDeployFixturePath(
-      campaignRoot,
-      'lane-unified-deploy-local-kind',
-      'unified_deploy_local_kind_evidence',
-      'local-kind-rollout-fixture.json',
-    );
-    writeJson(path, releaseKitEvidenceFields(path, 'rollout'));
-    createFile(join(dirname(path), fileName), content);
-    writeCampaignEvidencePointer(campaignRoot, step);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = readTerminalResult(campaignRoot);
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain(fileName);
-    expect(terminalResult.summary).toContain('too large to scan safely');
-  });
-
-  it('fails when unified deploy evidence is only arbitrary JSON without the producer schema', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-unified-deploy-malformed-'));
-    seedPassedCampaign(campaignRoot);
-
-    const substrateStep = getCampaignStep('lane-unified-deploy-substrate');
-    const substrateCheck = substrateStep.evidenceChecks.find((check) => check.id === 'unified_deploy_substrate_evidence');
-    if (!substrateCheck) {
-      throw new Error('Missing unified deploy substrate evidence check.');
-    }
-    const evidenceRoot = materializeCampaignPath(campaignRoot, substrateCheck.path);
-    rmSync(evidenceRoot, { recursive: true, force: true });
-    writeJson(join(evidenceRoot, 'arbitrary.json'), { ok: true });
-    writeCampaignEvidencePointer(campaignRoot, substrateStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'evidence_missing',
-    });
-    expect(terminalResult.summary).toContain('No JSON evidence file declared schema_version');
-  });
-
-  it('fails with infra setup failure when unified deploy infrastructure evidence is failed', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-unified-deploy-infra-failed-'));
-    seedPassedCampaign(campaignRoot);
-
-    const substrateStep = getCampaignStep('lane-unified-deploy-substrate');
-    const substrateCheck = substrateStep.evidenceChecks.find((check) => check.id === 'unified_deploy_substrate_evidence');
-    if (!substrateCheck) {
-      throw new Error('Missing unified deploy substrate evidence check.');
-    }
-    const evidenceRoot = materializeCampaignPath(campaignRoot, substrateCheck.path);
-    const substratePath = join(evidenceRoot, 'substrate-lifecycle-reset-fixture.json');
-    const substrateEvidence = JSON.parse(readFileSync(substratePath, 'utf8')) as Record<string, unknown>;
-    substrateEvidence.status = 'failed';
-    substrateEvidence.failure_class = 'evidence_missing';
-    substrateEvidence.failures = [{ service: 'postgresql', message: 'reset failed' }];
-    writeJson(substratePath, substrateEvidence);
-    writeCampaignEvidencePointer(campaignRoot, substrateStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'infra_setup_failure',
-    });
-    expect(terminalResult.summary).toContain('status must be passed');
-  });
-
-  it('fails with product regression when unified deploy product-flow evidence is failed', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-regression-'));
-    seedPassedCampaign(campaignRoot);
-
-    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
-    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
-    if (!productCheck) {
-      throw new Error('Missing unified deploy product flow evidence check.');
-    }
-    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
-    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as Record<string, unknown>;
-    aggregate.status = 'failed';
-    aggregate.failure_class = 'product_regression';
-    aggregate.failures = [{ flow: 'workspace_project', message: 'workspace/project flow failed' }];
-    writeJson(aggregatePath, aggregate);
-    writeCampaignEvidencePointer(campaignRoot, productStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'product_regression',
-    });
-    expect(terminalResult.summary).toContain('status must be passed');
-  });
-
-  it('fails when product-flow aggregate is not bound to focused flow evidence files', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-unbound-'));
-    seedPassedCampaign(campaignRoot);
-
-    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
-    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
-    if (!productCheck) {
-      throw new Error('Missing unified deploy product flow evidence check.');
-    }
-    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
-    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
-      flow_evidence_paths?: Record<string, string>;
-    };
-    delete aggregate.flow_evidence_paths?.files;
-    writeJson(aggregatePath, aggregate);
-    writeCampaignEvidencePointer(campaignRoot, productStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'evidence_missing',
-    });
-    expect(terminalResult.summary).toContain('focused product flow evidence path for files');
-  });
-
-  it('fails when product-flow aggregate omits the managed runner required flow', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-missing-managed-runner-'));
-    seedPassedCampaign(campaignRoot);
-
-    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
-    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
-    if (!productCheck) {
-      throw new Error('Missing unified deploy product flow evidence check.');
-    }
-    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
-    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
-      flows?: Array<{ flow?: string }>;
-      flow_evidence_paths?: Record<string, string>;
-    };
-    aggregate.flows = aggregate.flows?.filter((flow) => flow.flow !== 'agent_task_managed_runner');
-    delete aggregate.flow_evidence_paths?.agent_task_managed_runner;
-    writeJson(aggregatePath, aggregate);
-    writeCampaignEvidencePointer(campaignRoot, productStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'evidence_missing',
-    });
-    expect(terminalResult.summary).toContain('agent_task_managed_runner');
-  });
-
-  it('fails when product-flow aggregate points to focused evidence outside the campaign root', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-off-root-'));
-    seedPassedCampaign(campaignRoot);
-
-    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
-    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
-    if (!productCheck) {
-      throw new Error('Missing unified deploy product flow evidence check.');
-    }
-    const aggregatePath = join(materializeCampaignPath(campaignRoot, productCheck.path), 'product-flows-fixture.json');
-    const aggregate = JSON.parse(readFileSync(aggregatePath, 'utf8')) as {
-      flow_evidence_paths?: Record<string, string>;
-    };
-    const staleEvidencePath = join(mkdtempSync(join(tmpdir(), 'stale-product-flow-evidence-')), 'files.json');
-    writeJson(staleEvidencePath, {
-      schema_version: 'agentsmith.focused-product-flow.evidence/v1',
-      flow: 'files',
-      status: 'passed',
-      producer: productCheck.expectedProducer,
-      command: 'npm run test:unified-deploy:product-flows',
-      generated_at: '2026-05-07T00:00:00.000Z',
-      duration_ms: 1,
-      checks: {},
-    });
-    aggregate.flow_evidence_paths = {
-      ...(aggregate.flow_evidence_paths ?? {}),
-      files: staleEvidencePath,
-    };
-    writeJson(aggregatePath, aggregate);
-    writeCampaignEvidencePointer(campaignRoot, productStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('must stay under');
-  });
-
-  it('does not follow symlinked product-flow evidence directories outside the campaign root', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-flow-symlink-'));
-    seedPassedCampaign(campaignRoot);
-
-    const productStep = getCampaignStep('lane-unified-deploy-product-flows');
-    const productCheck = productStep.evidenceChecks.find((check) => check.id === 'unified_deploy_product_flow_evidence');
-    if (!productCheck) {
-      throw new Error('Missing unified deploy product flow evidence check.');
-    }
-    const evidenceRoot = materializeCampaignPath(campaignRoot, productCheck.path);
-    const staleRoot = mkdtempSync(join(tmpdir(), 'stale-product-flow-root-'));
-    const flows = productCheck.expectedProductFlows ?? [];
-    for (const flow of flows) {
-      writeJson(join(staleRoot, `product-flow-${flow}.json`), {
-        schema_version: 'agentsmith.focused-product-flow.evidence/v1',
-        flow,
-        status: 'passed',
-        producer: productCheck.expectedProducer,
-        command: 'npm run test:unified-deploy:product-flows',
-        generated_at: '2026-05-07T00:00:00.000Z',
-        duration_ms: 1,
-        checks: {},
-      });
-    }
-    writeJson(join(staleRoot, 'product-flows-fixture.json'), {
-      schema_version: productCheck.expectedSchemaVersion,
-      producer: productCheck.expectedProducer,
-      status: productCheck.expectedStatus,
-      command: 'npm run test:unified-deploy:product-flows',
-      generated_at: '2026-05-07T00:00:00.000Z',
-      flows: flows.map((flow) => ({
-        schema_version: 'agentsmith.focused-product-flow.evidence/v1',
-        flow,
-        status: 'passed',
-        producer: productCheck.expectedProducer,
-        command: 'npm run test:unified-deploy:product-flows',
-      })),
-      flow_evidence_paths: Object.fromEntries(
-        flows.map((flow) => [flow, join(staleRoot, `product-flow-${flow}.json`)]),
-      ),
-      failures: [],
-    });
-
-    rmSync(evidenceRoot, { recursive: true, force: true });
-    mkdirSync(evidenceRoot, { recursive: true });
-    symlinkSync(staleRoot, join(evidenceRoot, 'stale-product-flow-root'), 'dir');
-    writeCampaignEvidencePointer(campaignRoot, productStep);
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'evidence_missing',
-    });
-    expect(terminalResult.summary).toContain('Expected at least 1 JSON evidence file');
   });
 
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
@@ -2894,10 +1772,10 @@ fs.readFileSync = function patchedReadFileSync(path, ...args) {
     expect(terminalResult.summary).toContain('missing current evidence check id');
   });
 
-  it('does not accept dummy required paths when manifest-required backend and unified deploy evidence is absent', () => {
+  it('does not accept dummy required paths when manifest-required backend evidence is absent', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-dummy-pointer-'));
-    for (const stepId of UPSTREAM_STEP_IDS) {
-      seedPassedUpstreamStep(campaignRoot, stepId, {
+    for (const step of getReleaseFullCampaign().steps.filter((candidate) => candidate.executionMode === 'execute')) {
+      seedPassedUpstreamStep(campaignRoot, step.id, {
         createRequiredEvidence: false,
         writeCurrentEvidencePointer: false,
       });

@@ -2177,6 +2177,35 @@ describe('verify impact selector', () => {
     ));
   });
 
+  it('maps the current gate manifest contract doc to governance tooling without unmapped or heavy impact', () => {
+    const changedFile = 'docs/contracts/current-gate-manifest-contract.md';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:visual');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:real');
+    expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
+    expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.manualReviewRequired).toBe(false);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+        storyIds: [],
+        manualReviewRequired: false,
+        broadImpact: false,
+      }),
+    ]);
+  });
+
   it.each([
     'infra/runtime/backend-real.env',
     'infra/substrate/local-dev.env',

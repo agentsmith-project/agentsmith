@@ -195,15 +195,14 @@ diagnostics / evidence producer，由 release campaign 编排或在 owner
 | human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
 | human release entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
 | read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
-| deploy evidence owner | unified deploy producers | local-kind image handoff、K8s rollout、ingress route smoke |
-| deploy smoke owner | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
-| product evidence owner | focused `npm run test:unified-deploy:product-flows` | project、files、managed runner task 最小产品链 |
+| deploy diagnostic | unified deploy producers | legacy/focused diagnostics for local-kind image handoff、K8s rollout、ingress route smoke |
+| deploy smoke diagnostic | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
+| product diagnostic | focused `npm run test:unified-deploy:product-flows` | project、files、managed runner task 最小产品链 |
 | campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 terminal aggregate verdict |
 | preflight | internal adapter `gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程层是否可接受 |
 | evidence owner | internal adapter `lane:visual` | full visual 和 `visual_scene_catalog` 证据 |
 | evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 证据 |
-| deploy evidence owner | unified deploy producers | default campaign uses substrate reset/local-kind images/local-kind rollout/focused product-flow evidence; existing-cluster smoke is explicit target-cluster evidence |
 | terminal aggregate verdict | internal verifier `gate:release:full` | aggregate-only 聚合已有 campaign evidence，不执行任何 suite |
 
 `npm run release:ready` 是 release-grade sign-off 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。

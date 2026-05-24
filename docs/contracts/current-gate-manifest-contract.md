@@ -87,24 +87,24 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `scenario_id = integration-release-user-story`
 - aggregate verification must consume those producer snapshots and must not rebuild trace truth from current repo story files
 
-6. unified deploy release evidence lanes
+6. unified deploy legacy/focused diagnostics
 - stable gate ids:
   - `lane-unified-deploy-substrate` (`lane:unified-deploy:substrate`)
   - `lane-unified-deploy-local-kind-images` (`lane:unified-deploy:local-kind:images`)
   - `lane-unified-deploy-local-kind` (`lane:unified-deploy:local-kind`)
   - `lane-unified-deploy-product-flows` (`lane:unified-deploy:product-flows`)
-- release-only unified deploy evidence owners
+- these lanes are not `requiredFor: release`
 - start from a clean substrate reset via `substrate-lifecycle.ts reset`
-- write release campaign deploy evidence under `<campaign-root>/unified-deploy/`
+- legacy lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke
 - focused product-flow evidence proves project, files, and managed runner task behavior after rollout
-- existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the default local release campaign
+- existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the release campaign
 
 7. `gate:release:full`
 - the terminal aggregate verifier for an existing release campaign
-- depends on the release evidence owned by `gate:release`, `lane:visual`, and the unified deploy release evidence lanes
+- depends on the release evidence owned by `gate:release` and `lane:visual`
 - requires both `visual_scene_catalog` and `ux_trace_bundle` evidence to be present in their canonical roots
 - does not execute suites, gates, or lanes itself; the human-facing release execution entrypoint is `npm run release:ready`, which delegates to internal adapter `release:campaign:full` after precheck passes
 - requires explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>` or an equivalent explicit run id context

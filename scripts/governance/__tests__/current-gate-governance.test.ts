@@ -96,7 +96,22 @@ describe('current gate governance', () => {
     expect(releaseFull?.command).toBe('bash scripts/release-full-aggregate-gate.sh');
     expect(releaseFull?.command).not.toContain('npm run gate:release');
     expect(releaseFull?.command).not.toContain('npm run lane:visual');
-    expect(unifiedDeployLanes.every((lane) => lane?.requiredFor.includes('release'))).toBe(true);
+    expect(unifiedDeployLanes.every((lane) => lane?.requiredFor.includes('release'))).toBe(false);
+  });
+
+  it('keeps unified deploy gates out of release requiredFor ownership', () => {
+    const unifiedDeployLanes = [
+      'lane-unified-deploy-substrate',
+      'lane-unified-deploy-local-kind-images',
+      'lane-unified-deploy-local-kind',
+      'lane-unified-deploy-product-flows',
+    ].map((id) => findCurrentGateDefinitionById(id));
+
+    expect(unifiedDeployLanes.every((lane) => lane?.requiredFor.includes('release'))).toBe(false);
+    for (const lane of unifiedDeployLanes) {
+      expect(lane?.requiredFor).not.toContain('release');
+      expect(lane?.description).toMatch(/legacy focused diagnostic/i);
+    }
   });
 
   it('models lane:mock as a canonical lane object with adapter alias support', () => {
@@ -198,6 +213,15 @@ describe('current gate governance', () => {
     expect(releaseFull?.campaignEvidenceArtifacts).toContain(
       '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
     );
+    expect(releaseFull?.campaignEvidenceArtifacts).not.toEqual(
+      expect.arrayContaining([
+        '<campaign-root>/lane-unified-deploy-substrate/native/result.json',
+        '<campaign-root>/lane-unified-deploy-local-kind-images/native/result.json',
+        '<campaign-root>/lane-unified-deploy-local-kind/native/result.json',
+        '<campaign-root>/lane-unified-deploy-product-flows/native/result.json',
+      ]),
+    );
+    expect(releaseFull?.campaignEvidenceArtifacts.some((path) => path.includes('/unified-deploy/'))).toBe(false);
     expect(releaseFull?.campaignEvidenceArtifacts).not.toContain(
       '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
     );

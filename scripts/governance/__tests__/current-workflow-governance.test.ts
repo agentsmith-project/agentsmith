@@ -1384,7 +1384,7 @@ describe('current workflow governance', () => {
       'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.',
     );
     expect(governanceModel).toContain(
-      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.',
+      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.',
     );
     expect(governanceModel).not.toContain(
       'standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles',

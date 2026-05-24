@@ -118,7 +118,7 @@ function renderGovernanceRuntimeBlock(): string {
     'Still-binding runtime contracts:',
     ...renderRuleList('contract'),
     '',
-    'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.',
+    'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.',
   ].join('\n');
 }
 

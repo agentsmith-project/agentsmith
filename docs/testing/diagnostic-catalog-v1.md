@@ -15,7 +15,7 @@ Use the entry path selector before choosing a command:
 | --- | --- | --- |
 | `ui_only` | You changed UI copy, layout, client state, or a mock-only interaction. | `npm run dev`, then `npm run verify` for the dry-run plan |
 | `local_manual` | You need the real local API, Agent tasks, Terminal, runner, files, or backend behavior. | `make local-real-up`, `make local-real-status` |
-| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; deploy-specific failures should be narrowed with unified deploy producers |
+| `release_grade` | You are preparing a release, closing a cross-domain refactor, or verifying an incident fix. | `npm run release:ready`, then `npm run release:status`; deploy-specific questions should be narrowed with unified deploy diagnostics |
 
 If you are unsure, start with `ui_only` for frontend-only work, `local_manual` for real runtime behavior, and `release_grade` only when you need a release-level answer.
 

@@ -144,20 +144,7 @@ describe('release campaign runner lifecycle contract', () => {
         ]),
       );
 
-      const localHostLocks = [
-        'shared-local-substrate',
-        'destructive-lifecycle',
-        'fixed-local-ports',
-      ];
-      for (const lockId of localHostLocks) {
-        const substrate = (requestsByStep.get('lane-unified-deploy-substrate') ?? []).find((request) => request.lockId === lockId);
-        const localKind = (requestsByStep.get('lane-unified-deploy-local-kind') ?? []).find((request) => request.lockId === lockId);
-        expect(substrate, `unified deploy substrate must project ${lockId}`).toBeDefined();
-        expect(localKind, `unified deploy local-kind must project ${lockId}`).toBeDefined();
-        expect(substrate?.scopeKind).toBe('local_host');
-        expect(localKind?.scopeKind).toBe('local_host');
-        expect(localKind?.scopeKey).toBe(substrate?.scopeKey);
-      }
+      expect([...requestsByStep.keys()].filter((stepId) => stepId.startsWith('lane-unified-deploy-'))).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -474,35 +461,7 @@ exit 0
       expect(release.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'gate-release', 'native'));
       expect(release[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
 
-      const unifiedDeploySubstrate = buildReleaseCampaignCommandEnv({
-        campaignRoot: root,
-        runId,
-        step: releaseFullStep('lane-unified-deploy-substrate'),
-        baseEnv: baseEnvWithParentOnlyWriter,
-      });
-      expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
-      expect(unifiedDeploySubstrate.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
-      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-unified-deploy-substrate');
-      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:unified-deploy:substrate');
-      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_LINE_KIND).toBe('unified_deploy_substrate');
-      expect(unifiedDeploySubstrate.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-substrate', 'native'));
-      expect(unifiedDeploySubstrate.SCENARIO_RUNTIME_ROOT).toBeUndefined();
-      expect(unifiedDeploySubstrate.REHEARSAL_MODE).toBeUndefined();
-      expect(unifiedDeploySubstrate[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
-
-      const unifiedDeployProductFlows = buildReleaseCampaignCommandEnv({
-        campaignRoot: root,
-        runId,
-        step: releaseFullStep('lane-unified-deploy-product-flows'),
-        baseEnv: baseEnvWithParentOnlyWriter,
-      });
-      expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_ROOT_DIR).toBe(join(root, 'unified-deploy'));
-      expect(unifiedDeployProductFlows.UNIFIED_DEPLOY_RELEASE_SITE_ENV).toBe(join(root, 'unified-deploy', 'local-kind-site.env'));
-      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_GATE_ID).toBe('lane-unified-deploy-product-flows');
-      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_NPM_SCRIPT).toBe('lane:unified-deploy:product-flows');
-      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_LINE_KIND).toBe('unified_deploy_product_flows');
-      expect(unifiedDeployProductFlows.CURRENT_GATE_RESULT_EVIDENCE_DIR).toBe(join(root, 'lane-unified-deploy-product-flows', 'native'));
-      expect(unifiedDeployProductFlows[RELEASE_CAMPAIGN_ORCHESTRATOR_READINESS_WRITER_TOKEN_ENV]).toBeUndefined();
+      expect(releaseFullExecutableSteps().map((step) => step.id).filter((id) => id.startsWith('lane-unified-deploy-'))).toEqual([]);
 
       const aggregate = buildReleaseCampaignAggregateEnv({
         campaignRoot: root,

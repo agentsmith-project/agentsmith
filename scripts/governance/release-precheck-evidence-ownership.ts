@@ -42,8 +42,7 @@ export interface ReleasePrecheckEvidenceOwnershipFailure {
 export type ReleasePrecheckEvidenceOwnerSourcePath =
   | 'scripts/backend-real-full-gate.sh'
   | 'scripts/backend-real-run.sh'
-  | 'scripts/run-backend-real-session-shards.sh'
-  | 'scripts/unified-deploy/release-product-flows.sh';
+  | 'scripts/run-backend-real-session-shards.sh';
 
 export interface ReleasePrecheckEvidenceOwnerSourceAssertion {
   sourcePath: ReleasePrecheckEvidenceOwnerSourcePath;
@@ -107,13 +106,6 @@ export const RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP = [
         requiredSpecFiles: CURRENT_RELEASE_PRECHECK_MOVED_BROWSER_SPECS.map((spec) => spec.specFile),
         requiredUxTraceMembership: RELEASE_PRECHECK_BROWSER_UX_TRACE_MEMBERSHIP,
       },
-      {
-        campaignId: 'release-full',
-        stepId: 'lane-unified-deploy-product-flows',
-        evidenceCheckIds: ['unified_deploy_product_flow_evidence'],
-        reportPaths: ['<campaign-root>/unified-deploy/product-flows'],
-        requiredProductFlows: ['workspace_project'],
-      },
     ],
     acceptanceTest: 'scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts',
   },
@@ -129,13 +121,6 @@ export const RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP = [
         reportPaths: ['<campaign-root>/gate-release/backend-real-visual/ux-traces'],
         requiredSourceAssertions: RELEASE_PRECHECK_AGENT_TASK_RELEASE_OWNER_SOURCE_ASSERTIONS,
       },
-      {
-        campaignId: 'release-full',
-        stepId: 'lane-unified-deploy-product-flows',
-        evidenceCheckIds: ['unified_deploy_product_flow_evidence'],
-        reportPaths: ['<campaign-root>/unified-deploy/product-flows'],
-        requiredProductFlows: ['agent_task_managed_runner'],
-      },
     ],
     acceptanceTest: 'scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts',
   },
@@ -149,13 +134,6 @@ export const RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP = [
         stepId: 'gate-release',
         evidenceCheckIds: ['backend_real_ux_trace_reviews'],
         reportPaths: ['<campaign-root>/gate-release/backend-real-visual/ux-traces'],
-      },
-      {
-        campaignId: 'release-full',
-        stepId: 'lane-unified-deploy-product-flows',
-        evidenceCheckIds: ['unified_deploy_product_flow_evidence'],
-        reportPaths: ['<campaign-root>/unified-deploy/product-flows'],
-        requiredProductFlows: ['files', 'agent_task_managed_runner'],
       },
     ],
     acceptanceTest: 'scripts/governance/__tests__/release-precheck-evidence-ownership.test.ts',

@@ -35,7 +35,7 @@ Workflow role model:
 - `scripts/governance/current-workflow-manifest.ts` classifies command surfaces as `environment_setup`, `diagnostic`, `diagnostic_lane`, `evidence_lane`, `gate_verdict`, `terminal_gate_verdict`, or `release_operation`.
 - `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not release evidence and does not replace `gate:default`.
 - `release:ready` is the human-friendly release readiness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
-- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, unified deploy evidence lanes, and the terminal aggregate verdict.
+- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, and the terminal aggregate verdict.
 - `gate:release:full` is aggregate-only. It should be used only with explicit campaign context, such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`, and must not be described as a suite launcher or daily release entrypoint.
 - `gate:release:full` recomputes required release evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
 
@@ -85,7 +85,7 @@ Still-binding runtime contracts:
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
-standalone `artifacts/unified-deploy/` is deploy diagnostic evidence; only campaign-linked `<campaign-root>/unified-deploy/` evidence is release authority.
+standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain legacy/focused diagnostics and are not required release evidence.
 <!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms

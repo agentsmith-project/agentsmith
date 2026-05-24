@@ -27,7 +27,6 @@ function releaseOwnerSources(): Record<ReleasePrecheckEvidenceOwnerSourcePath, s
     'scripts/backend-real-full-gate.sh': readFileSync('scripts/backend-real-full-gate.sh', 'utf8'),
     'scripts/backend-real-run.sh': readFileSync('scripts/backend-real-run.sh', 'utf8'),
     'scripts/run-backend-real-session-shards.sh': readFileSync('scripts/run-backend-real-session-shards.sh', 'utf8'),
-    'scripts/unified-deploy/release-product-flows.sh': readFileSync('scripts/unified-deploy/release-product-flows.sh', 'utf8'),
   };
 }
 
@@ -93,12 +92,6 @@ describe('release precheck evidence ownership', () => {
             '<campaign-root>/gate-release/backend-real-visual/ux-traces',
           ]),
         }),
-        expect.objectContaining({
-          stepId: 'lane-unified-deploy-product-flows',
-          reportPaths: expect.arrayContaining([
-            '<campaign-root>/unified-deploy/product-flows',
-          ]),
-        }),
       ]),
     );
 
@@ -111,12 +104,6 @@ describe('release precheck evidence ownership', () => {
           stepId: 'gate-release',
           reportPaths: expect.arrayContaining([
             '<campaign-root>/gate-release/backend-real-visual/ux-traces',
-          ]),
-        }),
-        expect.objectContaining({
-          stepId: 'lane-unified-deploy-product-flows',
-          reportPaths: expect.arrayContaining([
-            '<campaign-root>/unified-deploy/product-flows',
           ]),
         }),
       ]),
@@ -208,11 +195,11 @@ describe('release precheck evidence ownership', () => {
     const campaign = releaseFullCampaign();
     const brokenCampaign: CurrentVerificationCampaignDefinition = {
       ...campaign,
-      steps: campaign.steps.map((step) => step.id === 'lane-unified-deploy-product-flows'
+      steps: campaign.steps.map((step) => step.id === 'gate-release'
         ? {
           ...step,
           evidenceChecks: step.evidenceChecks.filter(
-            (check) => check.id !== 'unified_deploy_product_flow_evidence',
+            (check) => check.id !== 'backend_real_ux_trace_reviews',
           ),
         }
         : step),
@@ -222,13 +209,13 @@ describe('release precheck evidence ownership', () => {
       expect.arrayContaining([
         expect.objectContaining({
           movedCheckId: 'agent_task_release_checks',
-          ownerStepId: 'lane-unified-deploy-product-flows',
-          reason: expect.stringContaining('missing evidence check unified_deploy_product_flow_evidence'),
+          ownerStepId: 'gate-release',
+          reason: expect.stringContaining('missing evidence check backend_real_ux_trace_reviews'),
         }),
         expect.objectContaining({
           movedCheckId: 'files_runner_business_assertions',
-          ownerStepId: 'lane-unified-deploy-product-flows',
-          reason: expect.stringContaining('missing evidence check unified_deploy_product_flow_evidence'),
+          ownerStepId: 'gate-release',
+          reason: expect.stringContaining('missing evidence check backend_real_ux_trace_reviews'),
         }),
       ]),
     );

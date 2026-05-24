@@ -17,12 +17,26 @@ describe('current verification campaign manifest', () => {
       'gate-default',
       'lane-visual',
       'gate-release',
-      'lane-unified-deploy-substrate',
-      'lane-unified-deploy-local-kind-images',
-      'lane-unified-deploy-local-kind',
-      'lane-unified-deploy-product-flows',
       'gate-release-full',
     ]);
+  });
+
+  it('keeps unified deploy lanes out of the release-full campaign', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    const stepIds = releaseFull.steps.map((step) => step.id);
+    expect(stepIds.filter((id) => id.startsWith('lane-unified-deploy-'))).toEqual([]);
+    expect(releaseFull.steps.find((step) => step.id === 'gate-release-full')?.dependsOn).not.toEqual(
+      expect.arrayContaining([
+        'lane-unified-deploy-substrate',
+        'lane-unified-deploy-local-kind-images',
+        'lane-unified-deploy-local-kind',
+        'lane-unified-deploy-product-flows',
+      ]),
+    );
   });
 
   it('binds every campaign step to a current gate or lane definition', () => {
@@ -97,10 +111,6 @@ describe('current verification campaign manifest', () => {
     expect(evidenceOwners.map((step) => step.id)).toEqual([
       'lane-visual',
       'gate-release',
-      'lane-unified-deploy-substrate',
-      'lane-unified-deploy-local-kind-images',
-      'lane-unified-deploy-local-kind',
-      'lane-unified-deploy-product-flows',
     ]);
 
     for (const step of evidenceOwners) {

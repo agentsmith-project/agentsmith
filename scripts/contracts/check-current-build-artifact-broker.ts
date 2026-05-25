@@ -40,6 +40,7 @@ const BUILD_PRODUCER = {
   runtime: 'tsx',
 };
 const NEXT_BUILD_COMMAND = 'npx next build --no-lint';
+const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -170,6 +171,35 @@ function assertAgentsmithAppDockerfileBuildContextCopySources(dockerfileContent:
   }
 }
 
+function assertAgentsmithAppBaseDockerfileWorkspaceInstallInventory(dockerfileContent: string): void {
+  const copySources = parseDockerfileBuildContextCopySources(dockerfileContent).map(({ source }) => source);
+
+  assert(
+    copySources.includes('packages/agent-runner-contract/package.json')
+      || copySources.includes('./packages/agent-runner-contract/package.json'),
+    'Dockerfile.agentsmith-app-base must copy packages/agent-runner-contract/package.json so npm ci installs the workspace link.',
+  );
+}
+
+function assertAgentsmithAppDockerfileBuildsRunnerContractBeforeNextBuild(dockerfileContent: string): void {
+  const instructions = parseDockerfileInstructions(dockerfileContent);
+  const contractBuildIndex = instructions.findIndex(
+    (instruction) => instruction.startsWith('RUN ') && instruction.includes(RUNNER_CONTRACT_BUILD_COMMAND),
+  );
+  const nextBuildIndex = instructions.findIndex(
+    (instruction) => instruction.startsWith('RUN ') && instruction.includes(NEXT_BUILD_COMMAND),
+  );
+
+  assert(
+    contractBuildIndex >= 0,
+    `Dockerfile.agentsmith-app must run ${RUNNER_CONTRACT_BUILD_COMMAND} because @mbos/agent-runner-contract resolves to dist inside the image.`,
+  );
+  assert(
+    nextBuildIndex >= 0 && contractBuildIndex >= 0 && contractBuildIndex < nextBuildIndex,
+    `Dockerfile.agentsmith-app must run ${RUNNER_CONTRACT_BUILD_COMMAND} before ${NEXT_BUILD_COMMAND}.`,
+  );
+}
+
 function assertAgentsmithAppNextBuildCacheMount(dockerfileContent: string): void {
   const nextBuildRuns = parseDockerfileInstructions(dockerfileContent).filter(
     (instruction) => instruction.startsWith('RUN ') && instruction.includes(NEXT_BUILD_COMMAND),
@@ -234,6 +264,7 @@ function main(): void {
   const buildBaseImagesLock = readText('infra/deploy/shared/build-base-images.lock');
   const llmupImageLock = readText('infra/deploy/shared/llmup-image.lock');
   const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
+  const agentsmithAppBaseDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app-base');
   const deployContract = readText('docs/contracts/unified-deploy-contract.md');
 
   assert(
@@ -342,6 +373,8 @@ function main(): void {
   }
   assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
   assertAgentsmithAppDockerfileBuildContextCopySources(agentsmithAppDockerfile);
+  assertAgentsmithAppBaseDockerfileWorkspaceInstallInventory(agentsmithAppBaseDockerfile);
+  assertAgentsmithAppDockerfileBuildsRunnerContractBeforeNextBuild(agentsmithAppDockerfile);
 
   const appKey = computeAppImageContentKey({
     files: [

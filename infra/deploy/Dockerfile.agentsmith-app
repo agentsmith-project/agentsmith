@@ -23,6 +23,8 @@ COPY postcss.config.js ./
 COPY tailwind.config.js ./
 COPY tsconfig.json ./
 
+RUN npm run build -w @mbos/agent-runner-contract
+
 RUN --mount=type=cache,target=/app/.next/cache \
   npx next build --no-lint
 

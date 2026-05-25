@@ -37,6 +37,7 @@ const CLI_SOURCE_ARGV = ['--source-git-sha', GIT_SHA] as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
 const MANAGED_RUNNER_DIGEST = `sha256:${'c'.repeat(64)}`;
+const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
   version: 'test',
@@ -157,7 +158,7 @@ function buildReleaseContractInput(
     adopted_provider_images: [
       {
         id: 'llmup',
-        image: `ghcr.io/agentsmith-project/llmup:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
+        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
     ],
@@ -237,7 +238,7 @@ function buildAssemblyInput(): AgentSmithReleaseContractGeneratorInputAssemblyIn
     adopted_provider_images: [
       {
         id: 'llmup',
-        image: `ghcr.io/agentsmith-project/llmup:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
+        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
     ],

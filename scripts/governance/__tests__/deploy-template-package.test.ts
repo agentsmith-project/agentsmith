@@ -45,6 +45,7 @@ const REPO_ROOT = resolve(process.cwd());
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
+const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
 const VALID_REMOTE_ATTESTATION = {
@@ -316,7 +317,7 @@ function buildReleaseContractAssemblyInput(
     adopted_provider_images: [
       {
         id: 'llmup',
-        image: `ghcr.io/agentsmith-project/llmup:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
+        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
     ],

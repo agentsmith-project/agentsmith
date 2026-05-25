@@ -2,7 +2,7 @@
 
 Status: `current`
 
-This guide is the current AgentSmith transition-only focused deploy diagnostics / 过渡期专项诊断 entrypoint. Current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate evidence; unified deploy, local-kind, existing-cluster, and product-flow deploy commands are transition-only focused diagnostics / 过渡期专项诊断 and are not part of the AgentSmith release verdict. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run release:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are focused diagnostics only. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 AgentSmith now has one deployment model with two profiles:
 
@@ -11,16 +11,16 @@ AgentSmith now has one deployment model with two profiles:
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary
 only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
 
-For this guide, `existing-cluster` smoke proves current deployment wiring,
-routing smoke, and handoff evidence for an operator-owned cluster. It is not a
-long-term release-kit ownership statement. Product flows still come from
-AgentSmith focused evidence, and real release-kit repo checks require the
-explicit source-boundary handoff described in the split plan.
+For this guide, `existing-cluster` smoke proves pre-GA diagnostic deployment
+wiring, routing smoke, and handoff evidence for an operator-owned cluster. It is
+not part of the AgentSmith product gate. Product flows still come from
+AgentSmith focused evidence, and release-kit repo checks require the explicit
+source-boundary handoff described in the split plan.
 
 ## Runtime Shape
 
@@ -112,7 +112,7 @@ It does not run chat, audit, usage, or full release verification.
 
 ### Existing Cluster Smoke
 
-`existing-cluster` smoke proves the current app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: future online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith release verdict.
+`existing-cluster` smoke proves the current pre-GA diagnostic app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith product gate.
 
 ```bash
 npm run test:unified-deploy:existing-cluster-smoke -- \
@@ -142,4 +142,4 @@ Unified deploy producers write evidence under:
 artifacts/unified-deploy/
 ```
 
-Focused evidence is valid for its named scope only. It is not part of the current AgentSmith release verdict; future deploy/package/operator verdict ownership belongs to release-kit repo-local gate/evidence, with no AgentSmith release campaign consumption implied.
+Focused evidence is valid for its named scope only. It is not part of the current AgentSmith product gate; deploy/package/operator verdict ownership belongs to release-kit repo-local gate/evidence, with no AgentSmith release campaign consumption implied.

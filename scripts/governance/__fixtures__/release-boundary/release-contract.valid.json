@@ -23,7 +23,7 @@
   "adopted_provider_images": [
     {
       "id": "llmup",
-      "image": "ghcr.io/agentsmith-project/llmup:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "image": "ghcr.io/agentsmith-project/llm-universal-proxy:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
     }
   ],
@@ -55,7 +55,7 @@
     },
     {
       "id": "llmup",
-      "image": "ghcr.io/agentsmith-project/llmup:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "image": "ghcr.io/agentsmith-project/llm-universal-proxy:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "source": "adopted_provider_images"
     },
@@ -156,14 +156,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:35ab21e9017a3ebf75391c0cc491458a7e1c78834c1ce6ad5b1e618078615375",
+    "subject_sha256": "sha256:4df7763cc420e0477013a7a545a7857e35ecec9a5f0a0d3eb39908badc535d11",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:8b2acde4fa59b8cb7191764f754d019250b32bbded7fef723338ae0883909d1e",
+    "artifact_sha256": "sha256:bd0d4d4956cf8208b5c3f62d116823866d8d85f7f05b32880fb50808652825d8",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

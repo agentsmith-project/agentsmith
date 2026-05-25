@@ -20,6 +20,14 @@ import {
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
+const CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
+const NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = ['ghcr.io/agentsmith-project', 'llmup'].join('/');
+const RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES = [
+  'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+  'scripts/governance/__tests__/release-contract.test.ts',
+  'scripts/governance/__tests__/release-contract-input.test.ts',
+  'scripts/governance/__tests__/deploy-template-package.test.ts',
+] as const;
 
 const PRODUCT_IMAGES = [
   {
@@ -37,7 +45,7 @@ const PRODUCT_IMAGES = [
 const ADOPTED_PROVIDER_IMAGES = [
   {
     id: 'llmup',
-    image: `ghcr.io/agentsmith-project/llmup:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
+    image: `${CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
     digest: `sha256:${'3'.repeat(64)}`,
   },
 ] as const;
@@ -183,6 +191,16 @@ function releaseContractOmitArtifactShaProjectionSubject(contract: CurrentAgentS
 }
 
 describe('release contract generator', () => {
+  it('keeps release contract fixtures and tests off the non-canonical llmup image repository', () => {
+    for (const relativePath of RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES) {
+      const content = readFileSync(join(process.cwd(), relativePath), 'utf8');
+
+      expect(content, `${relativePath} must use ${CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY}`).not.toContain(
+        NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY,
+      );
+    }
+  });
+
   it('generates a validated contract with mechanical image inventory and deterministic provenance hashes', () => {
     const contract = generateAgentSmithReleaseContract(buildInput(), SOURCE_OPTIONS);
 

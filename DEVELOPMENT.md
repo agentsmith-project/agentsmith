@@ -68,6 +68,8 @@ npm run release:status
 ```
 <!-- current-workflow:development:end -->
 
+Release boundary note: `npm run release:ready` is the AgentSmith product readiness / local complete / current product gate, not a future deployment/package/operator verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are pre-GA focused diagnostics.
+
 先选入口，不要混用三条路径：
 
 | Entry path | 适用情况 | 先跑什么 |
@@ -89,7 +91,7 @@ Gate adapter fidelity notes:
 1. 先区分诊断命令和 authoritative verdict
 - `test` family commands、某个 focused Playwright spec、owner runbook 里的 targeted internal adapter，主要用于诊断、复现和缩小问题范围。
 - 普通开发者先用 `npm run verify` 生成计划，并用 `npm run verify -- --goal=... --run` 执行正式验证；不从 gate adapter 目录手工拼流程。
-- 诊断命令语境：`gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
+- 诊断命令语境：`gate:default` 不是 full visual，也不是 release-grade verdict。full visual 的内部 owner 是 `lane:visual`；面向人的 AgentSmith product readiness 入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 terminal aggregate verdict。
 - 维护者排障语境：`gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
@@ -132,7 +134,7 @@ Gate adapter fidelity notes:
 - `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。
 
 持续生效的 runtime contract：
-- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是两套产品。
+- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 pre-GA diagnostic profiles，不是两套产品，也不是 `release:ready` 的部署结论。
 - Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 - 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
@@ -570,7 +572,7 @@ This backend-real producer auto starts integration dependencies, API, and fronte
 
 ## Release Readiness Checklist
 
-For final release-oriented verification, use the human-friendly release readiness wrapper:
+For final AgentSmith product readiness verification, use the human-friendly readiness wrapper:
 
 ```bash
 npm run release:ready
@@ -579,7 +581,7 @@ npm run release:status
 
 Machine-readable Reports / Maintainer Troubleshooting Notes:
 
-1. 机器可读报告语境：`npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the terminal aggregate verdict. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence for the AgentSmith release verdict.
+1. 机器可读报告语境：`npm run release:ready` is the human-friendly AgentSmith product readiness / local complete / current product gate. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the terminal aggregate verdict. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence, and it is not a future deployment/package/operator verdict.
 2. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
 3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).

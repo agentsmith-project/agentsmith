@@ -38,12 +38,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright
-        run: npx playwright install --with-deps chromium
-
-      - name: Run gate-fast
-        run: npm run gate:fast
-
       - name: Run permission contract drift check
         run: npm run contracts:check
 
@@ -53,15 +47,3 @@ jobs:
           npm run contracts:check-current-workflows
           npm run contracts:check-current-gates
           npm run contracts:check-engineering-governance
-
-      - name: Upload contract gate artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: contracts-check-artifacts
-          if-no-files-found: ignore
-          path: |
-            artifacts/mock-lane/runs/**
-            !artifacts/mock-lane/runs/**/next-dist/**
-            test-results/**
-            playwright-report/**

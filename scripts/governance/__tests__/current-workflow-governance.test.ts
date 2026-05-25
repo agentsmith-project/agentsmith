@@ -1109,8 +1109,15 @@ describe('current workflow governance', () => {
     const contractsJob = listCurrentCIWorkflowJobs().find(
       (job) => job.workflowPath === '.github/workflows/contracts-check.yml' && job.id === 'contracts',
     );
-    expect(contractsJob?.commands).toContain('npm run gate:fast');
-    expect(collectJobRunCommands(parseWorkflow('.github/workflows/contracts-check.yml'), 'contracts')).toContain(
+    expect(contractsJob?.commands).toEqual([
+      'npm run contracts:check',
+      'npm run contracts:check-current-workflows',
+      'npm run contracts:check-current-gates',
+      'npm run contracts:check-engineering-governance',
+    ]);
+    expect(contractsJob?.evidenceRequired).toBe(false);
+    expect(contractsJob?.artifactPaths).toEqual([]);
+    expect(collectJobRunCommands(parseWorkflow('.github/workflows/contracts-check.yml'), 'contracts')).not.toContain(
       'npm run gate:fast',
     );
   });
@@ -1236,7 +1243,6 @@ describe('current workflow governance', () => {
     const mockEvidenceOwners = jobs.filter((job) => job.evidenceFamilies.includes('mock_lane_run'));
 
     expect(mockEvidenceOwners.map((job) => `${job.workflowPath}:${job.id}`).sort()).toEqual([
-      '.github/workflows/contracts-check.yml:contracts',
       '.github/workflows/engineering-gate.yml:engineering-gate',
       '.github/workflows/quality-gates.yml:gate-default',
       '.github/workflows/quality-gates.yml:gate-fast',

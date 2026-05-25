@@ -424,6 +424,14 @@ function isTerminateMode(body: unknown) {
   return record.mode === 'terminate';
 }
 
+function hasLegacyStopModeField(body: unknown): boolean {
+  return Boolean(
+    body
+    && typeof body === 'object'
+    && Object.prototype.hasOwnProperty.call(body, 'stop_mode'),
+  );
+}
+
 function resolveMockTaskStopEscalationReason(
   task: MockTaskStopRuntimeFields,
   fallback: MockTaskStopEscalationReason,
@@ -450,7 +458,7 @@ function mockTaskCancelUnavailableResponse(input: {
     run_id: `mock_run_${input.taskId}`,
     request_id: input.task.stop_mode ? `mock_${input.task.stop_mode}_${input.taskId}` : null,
     status,
-    stop_mode: stopMode,
+    mode: stopMode,
     can_escalate: false,
     escalation_reason: input.reason,
   };
@@ -1047,6 +1055,13 @@ export const taskHandlers = [
     }
 
     const body = await request.json().catch(() => ({}));
+    if (hasLegacyStopModeField(body)) {
+      return HttpResponse.json({
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: ['stop_mode'],
+      }, { status: 400 });
+    }
     const terminateRequested = isTerminateMode(body);
     const cancelEscalationMode = readMockTaskCancelEscalationMode(request);
     const mutableTask = task as MockTaskStopRuntimeFields;
@@ -1108,7 +1123,7 @@ export const taskHandlers = [
       request_id: `${requestIdPrefix}_${taskId}`,
       can_escalate: canEscalate,
       ...(escalationReason ? { escalation_reason: escalationReason } : {}),
-      stop_mode: stopMode,
+      mode: stopMode,
     }, { status: 202 });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs`, async ({ request, params }) => {

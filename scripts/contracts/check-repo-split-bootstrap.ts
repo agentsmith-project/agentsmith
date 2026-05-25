@@ -17,8 +17,8 @@ export {
 };
 
 export type RepoSplitBootstrapMode = 'local' | 'ci';
-export type RepoSplitBootstrapRepo = 'release-kit' | 'runner' | 'runner-migration';
-export type RepoSplitBootstrapStatus = 'canonical' | 'migration_input';
+export type RepoSplitBootstrapRepo = 'release-kit' | 'runner';
+export type RepoSplitBootstrapStatus = 'canonical';
 
 export type RepoSplitBootstrapFailure = {
   path: string;
@@ -40,8 +40,7 @@ export type RepoSplitBootstrapPassResult = {
   status: RepoSplitBootstrapStatus;
   repo_name: string;
   normalized_remote: string;
-  canonical_repo?: string;
-  migration_to?: string;
+  canonical_repo: string;
   repo_path?: string;
 };
 
@@ -60,7 +59,6 @@ type RepoSpec = {
   repoName: string;
   expectedRemote: string;
   status: RepoSplitBootstrapStatus;
-  migrationTo?: string;
 };
 
 const DEFAULT_WORKSPACE_PARENT = '/home/percy/works/mbos-v1';
@@ -79,13 +77,6 @@ const REPO_SPECS: Record<RepoSplitBootstrapRepo, RepoSpec> = {
     repoName: 'agentsmith-runner',
     expectedRemote: RUNNER_CANONICAL_REPO,
     status: 'canonical',
-  },
-  'runner-migration': {
-    repo: 'runner-migration',
-    repoName: 'agentsmith-codex-runner',
-    expectedRemote: FORBIDDEN_RUNNER_REPO,
-    status: 'migration_input',
-    migrationTo: RUNNER_CANONICAL_REPO,
   },
 };
 
@@ -109,7 +100,7 @@ function isPathInside(childPath: string, parentPath: string): boolean {
 }
 
 function getRepoSpec(repo: string): RepoSpec | null {
-  if (repo === 'release-kit' || repo === 'runner' || repo === 'runner-migration') {
+  if (repo === 'release-kit' || repo === 'runner') {
     return REPO_SPECS[repo];
   }
 
@@ -159,7 +150,7 @@ function validateLocalPath(
       return failed([
         failure(
           'repoPath',
-          'agentsmith-codex-runner is migration_input only and must not be used as canonical runner bootstrap.',
+          'agentsmith-codex-runner is not a canonical runner bootstrap repo.',
         ),
       ]);
     }
@@ -179,7 +170,7 @@ export function validateRepoSplitBootstrap(input: RepoSplitBootstrapInput): Repo
     failures.push(failure('mode', 'mode must be local or ci.'));
   }
   if (spec === null) {
-    failures.push(failure('repo', 'repo must be release-kit, runner, or runner-migration.'));
+    failures.push(failure('repo', 'repo must be release-kit or runner.'));
   }
   if (failures.length > 0 || mode === null || spec === null) {
     return failed(failures);
@@ -212,15 +203,12 @@ export function validateRepoSplitBootstrap(input: RepoSplitBootstrapInput): Repo
       return failed([
         failure(
           'remoteUrl',
-          'agentsmith-codex-runner is migration_input only and must not be used as canonical runner bootstrap.',
+          'agentsmith-codex-runner is not a canonical runner bootstrap repo.',
         ),
       ]);
     }
 
-    const reason = spec.repo === 'runner-migration'
-      ? `migration input must be ${FORBIDDEN_RUNNER_REPO} with status migration_input.`
-      : `normalized repo identity must be ${spec.expectedRemote}.`;
-    return failed([failure('remoteUrl', reason)]);
+    return failed([failure('remoteUrl', `normalized repo identity must be ${spec.expectedRemote}.`)]);
   }
 
   return {
@@ -230,8 +218,7 @@ export function validateRepoSplitBootstrap(input: RepoSplitBootstrapInput): Repo
     status: spec.status,
     repo_name: spec.repoName,
     normalized_remote: normalizedRemote,
-    canonical_repo: spec.status === 'canonical' ? spec.expectedRemote : undefined,
-    migration_to: spec.migrationTo,
+    canonical_repo: spec.expectedRemote,
     repo_path: repoPath,
   };
 }

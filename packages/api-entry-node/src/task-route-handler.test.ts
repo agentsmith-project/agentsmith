@@ -5023,6 +5023,46 @@ describe('task-route-handler workspace access', () => {
     expect(deps.agentResourceService.getAgent).not.toHaveBeenCalled();
   });
 
+  it('rejects legacy stop_mode on task cancel requests', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = '2026-03-18T10:30:00.000Z';
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_cancel_legacy_stop_mode', {
+      id: 'task_cancel_legacy_stop_mode',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Cancel legacy stop mode task',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_cancel_legacy_stop_mode',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ stop_mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 400, {
+      error_code: 'unsupported_field',
+      message: 'unsupported_field',
+      fields: ['stop_mode'],
+    });
+  });
+
   it('fails closed on archive when active run truth has no runner evidence', async () => {
     const deps = createDefaultNodeApiDeps();
     deps.agentResourceService.getAgent = vi.fn(async () => {
@@ -5145,7 +5185,7 @@ describe('task-route-handler workspace access', () => {
         status: 'terminating',
         task_id: 'task_stale_internal',
         run_id: 'run_stale_internal',
-        stop_mode: 'terminate',
+        mode: 'terminate',
         can_escalate: false,
         escalation_reason: 'already_terminating',
       }),
@@ -5237,7 +5277,7 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_internal_active_cancel',
         run_id: 'run_internal_active_cancel',
         request_id: 'req_internal_active_cancel',
-        stop_mode: 'cancel',
+        mode: 'cancel',
         can_escalate: true,
       }),
     );
@@ -5327,7 +5367,7 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_internal_active_cancel',
         run_id: 'run_internal_active_cancel',
         request_id: 'req_internal_active_cancel',
-        stop_mode: 'cancel',
+        mode: 'cancel',
         can_escalate: true,
       }),
     );
@@ -5422,7 +5462,7 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_internal_upgrade',
         run_id: 'run_internal_upgrade',
         request_id: 'req_internal_upgrade',
-        stop_mode: 'terminate',
+        mode: 'terminate',
         can_escalate: false,
         escalation_reason: 'already_terminating',
       }),
@@ -5526,7 +5566,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_retry',
       run_id: 'run_internal_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_retry')).resolves.toMatchObject({
@@ -5545,7 +5585,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_retry',
       run_id: 'run_internal_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(2);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_retry')).resolves.toBeNull();
@@ -5628,7 +5668,7 @@ describe('task-route-handler workspace access', () => {
       task_id: 'task_internal_pending_retry',
       run_id: 'run_internal_pending_retry',
       request_id: 'req_internal_pending_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry')).resolves.toMatchObject({
@@ -5653,7 +5693,7 @@ describe('task-route-handler workspace access', () => {
       task_id: 'task_internal_pending_retry',
       run_id: 'run_internal_pending_retry',
       request_id: 'req_internal_pending_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(2);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry')).resolves.toBeNull();
@@ -5733,7 +5773,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_real_retry',
       run_id: 'run_internal_real_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(releasePod).toHaveBeenCalledTimes(1);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_real_retry')).resolves.toMatchObject({
@@ -5761,7 +5801,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_real_retry',
       run_id: 'run_internal_real_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     expect(releasePod).toHaveBeenCalledTimes(2);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_real_retry')).resolves.toBeNull();
@@ -5838,7 +5878,7 @@ describe('task-route-handler workspace access', () => {
     expect(json).toHaveBeenCalledWith(expect.anything(), 202, expect.objectContaining({
       status: 'terminating',
       run_id: 'run_internal_late_holder',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     }));
     expect(releasePod).toHaveBeenCalledTimes(1);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_late_holder')).resolves.toBeNull();
@@ -5999,7 +6039,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_live_retry',
       run_id: 'run_internal_live_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     await vi.waitFor(() => {
       expect(holderReleaseErrors).toHaveLength(1);
@@ -6036,7 +6076,7 @@ describe('task-route-handler workspace access', () => {
       status: 'terminating',
       task_id: 'task_internal_live_retry',
       run_id: 'run_internal_live_retry',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_live_retry')).resolves.toBeNull();
     await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_live_retry')).resolves.toBeNull();
@@ -6126,7 +6166,7 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_internal_finalizing_debt',
         run_id: 'run_internal_finalizing_debt',
         request_id: 'req_internal_finalizing_debt',
-        stop_mode: 'terminate',
+        mode: 'terminate',
       }),
     );
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
@@ -6523,7 +6563,7 @@ describe('task-route-handler workspace access', () => {
           status: 'terminating',
           task_id: task.id,
           request_id: null,
-          stop_mode: 'terminate',
+          mode: 'terminate',
         }),
       );
 
@@ -7068,11 +7108,11 @@ describe('task-route-handler workspace access', () => {
     await expect(responsesPromise).resolves.toEqual([
       expect.objectContaining({
         status: 'terminating',
-        stop_mode: 'terminate',
+        mode: 'terminate',
       }),
       expect.objectContaining({
         status: 'terminating',
-        stop_mode: 'terminate',
+        mode: 'terminate',
       }),
     ]);
     await expect(getNotebookTaskRunState(deps.cache, 'task_internal_concurrent')).resolves.toBeNull();

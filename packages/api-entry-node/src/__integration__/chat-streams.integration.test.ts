@@ -132,13 +132,13 @@ describe('api-entry-node chat stream routes', () => {
     const stopBody = (await stopBySession.json()) as {
       state: string;
       status: string;
-      stop_mode: string;
+      mode: string;
       can_escalate: boolean;
       escalation_reason?: string;
     };
     expect(stopBody.state).toBe('stopping');
     expect(stopBody.status).toBe('stopping');
-    expect(stopBody.stop_mode).toBe('cancel');
+    expect(stopBody.mode).toBe('cancel');
     expect(stopBody.can_escalate).toBe(false);
     expect(stopBody.escalation_reason).toBe('STOP_ESCALATION_UNAVAILABLE');
 
@@ -188,7 +188,7 @@ describe('api-entry-node chat stream routes', () => {
       session_id: sessionId,
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });

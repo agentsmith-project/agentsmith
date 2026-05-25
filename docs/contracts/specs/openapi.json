@@ -5152,16 +5152,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Legacy stop accepted response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatStreamStopResponse"
-                }
-              }
-            }
-          },
           "202": {
             "description": "Stop accepted",
             "content": {
@@ -11571,6 +11561,7 @@
       },
       "ChatStopRequest": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "mode": {
             "allOf": [
@@ -11579,14 +11570,6 @@
               }
             ],
             "description": "Authoritative stop mode used by the backend."
-          },
-          "stop_mode": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/StopMode"
-              }
-            ],
-            "description": "Compatibility mirror sent by older clients; backend behavior is governed by `mode`."
           }
         }
       },
@@ -11689,7 +11672,7 @@
           "session_id",
           "state",
           "status",
-          "stop_mode",
+          "mode",
           "can_escalate"
         ],
         "properties": {
@@ -11708,7 +11691,7 @@
           "status": {
             "$ref": "#/components/schemas/ChatStopState"
           },
-          "stop_mode": {
+          "mode": {
             "$ref": "#/components/schemas/StopMode"
           },
           "can_escalate": {
@@ -11730,7 +11713,7 @@
           "stream_id",
           "state",
           "status",
-          "stop_mode",
+          "mode",
           "can_escalate"
         ],
         "properties": {
@@ -11749,7 +11732,7 @@
           "status": {
             "$ref": "#/components/schemas/ChatStopState"
           },
-          "stop_mode": {
+          "mode": {
             "$ref": "#/components/schemas/StopMode"
           },
           "can_escalate": {
@@ -11766,6 +11749,7 @@
       },
       "TaskCancelRunRequest": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "mode": {
             "allOf": [
@@ -11774,14 +11758,6 @@
               }
             ],
             "description": "Authoritative stop mode used by the backend."
-          },
-          "stop_mode": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/StopMode"
-              }
-            ],
-            "description": "Compatibility mirror sent by older clients; backend behavior is governed by `mode`."
           }
         }
       },
@@ -11807,7 +11783,7 @@
           "task_id",
           "run_id",
           "request_id",
-          "stop_mode",
+          "mode",
           "can_escalate"
         ],
         "properties": {
@@ -11824,7 +11800,7 @@
             "type": "string",
             "nullable": true
           },
-          "stop_mode": {
+          "mode": {
             "$ref": "#/components/schemas/StopMode"
           },
           "can_escalate": {
@@ -11878,7 +11854,7 @@
           "status": {
             "$ref": "#/components/schemas/TaskCancelRunStatus"
           },
-          "stop_mode": {
+          "mode": {
             "$ref": "#/components/schemas/StopMode"
           },
           "can_escalate": {
@@ -13235,6 +13211,37 @@
           }
         ]
       },
+      "FileLibraryLastRestore": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_save_point_id",
+          "source_save_point_label",
+          "source_save_point_created_at",
+          "restored_at",
+          "restore_operation_id"
+        ],
+        "properties": {
+          "source_save_point_id": {
+            "type": "string"
+          },
+          "source_save_point_label": {
+            "type": "string",
+            "description": "Public-safe display label snapshotted when the restore completes."
+          },
+          "source_save_point_created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restored_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restore_operation_id": {
+            "type": "string"
+          }
+        }
+      },
       "FileLibrary": {
         "type": "object",
         "additionalProperties": false,
@@ -13315,6 +13322,15 @@
           "status_reason": {
             "type": "string",
             "description": "Display-safe status reason. It must not contain raw backend identifiers or secrets."
+          },
+          "last_restore": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FileLibraryLastRestore"
+              }
+            ],
+            "description": "Last successful restore source recorded by the AgentSmith file library catalog."
           },
           "task_home_binding_status": {
             "type": "string",
@@ -13826,6 +13842,10 @@
           },
           "source_save_point_id": {
             "type": "string"
+          },
+          "result_save_point_id": {
+            "type": "string",
+            "description": "Public save point id produced by a terminal successful save-point create operation."
           },
           "message": {
             "type": "string"

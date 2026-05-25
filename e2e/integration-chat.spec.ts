@@ -59,7 +59,7 @@ type ChatSessionStopPayload = {
   stream_id?: string;
   state?: "stopping" | "terminating" | "not_found_or_finished";
   status?: "stopping" | "terminating" | "not_found_or_finished";
-  stop_mode?: "cancel" | "terminate";
+  mode?: "cancel" | "terminate";
   can_escalate?: boolean;
   escalation_reason?: string | null;
 };
@@ -1388,7 +1388,7 @@ function assertChatStopPayloadTruth(args: {
       : {}),
   });
   if (expectedStopModes.length > 0) {
-    expect(expectedStopModes).toContain(payload?.stop_mode ?? null);
+    expect(expectedStopModes).toContain(payload?.mode ?? null);
   }
   expect(allowedStates).toContain(payload?.state ?? payload?.status ?? null);
 
@@ -2077,7 +2077,7 @@ test.describe("@lane-real integration chat flow", () => {
           expect(terminateUnavailable.status).toBe(202);
           expect(terminateUnavailable.payload).toMatchObject({
             success: true,
-            stop_mode: "cancel",
+            mode: "cancel",
             can_escalate: false,
             escalation_reason: "STOP_ESCALATION_UNAVAILABLE",
           });
@@ -2208,7 +2208,7 @@ test.describe("@lane-real integration chat flow", () => {
             },
             response: {
               status: repeatedTerminate.status,
-              summary: `state=${repeatedTerminate.payload?.state ?? repeatedTerminate.payload?.status ?? "unknown"} stop_mode=${repeatedTerminate.payload?.stop_mode ?? "unknown"}`,
+              summary: `state=${repeatedTerminate.payload?.state ?? repeatedTerminate.payload?.status ?? "unknown"} mode=${repeatedTerminate.payload?.mode ?? "unknown"}`,
             },
             assertion:
               "A repeated terminate stays idempotent and does not reopen the settled stop loop.",

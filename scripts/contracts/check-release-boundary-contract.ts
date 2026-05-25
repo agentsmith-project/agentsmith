@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CURRENT_DEPLOYMENT_MODE_MATRIX,
+  CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
   CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION,
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
+  CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   parseRunnerImageLockText,
   validateAgentSmithReleaseContract,
@@ -16,6 +18,7 @@ import {
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
   validateTruthMatrix,
+  type CurrentDeploymentTargetProfile,
   type CurrentReleaseBoundaryValidationFailure,
 } from '../governance/current-release-boundary-schema';
 
@@ -93,6 +96,12 @@ function pushValidationFailures(
   }
 }
 
+function targetProfileKey(
+  profile: Pick<CurrentDeploymentTargetProfile, 'target_cluster' | 'substrate_source' | 'distribution'>,
+): string {
+  return `${profile.target_cluster}|${profile.substrate_source}|${profile.distribution}`;
+}
+
 function validatePackageScripts(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
   const packageJson = readJson(rootDir, 'package.json', failures) as PackageJson | null;
   const scripts = packageJson?.scripts ?? {};
@@ -167,6 +176,40 @@ export function checkReleaseBoundaryContract(
       failures,
       'scripts/governance/current-release-boundary-schema.ts',
       'AgentSmith pre-GA deployment target profiles must not be required targets.',
+    );
+  }
+  const canonicalDeclarableProfileKeys =
+    CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
+  if (JSON.stringify(CURRENT_DEPLOYMENT_MODE_MATRIX.map(targetProfileKey)) !== JSON.stringify(canonicalDeclarableProfileKeys)) {
+    addFailure(
+      failures,
+      'scripts/governance/current-release-boundary-schema.ts',
+      'deployment mode matrix must exactly match the release-kit canonical declarable target profile set.',
+    );
+  }
+  if (
+    JSON.stringify(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map(targetProfileKey))
+    !== JSON.stringify(canonicalDeclarableProfileKeys)
+  ) {
+    addFailure(
+      failures,
+      'scripts/governance/current-release-boundary-schema.ts',
+      'release contract handoff target profiles must exactly match the release-kit canonical declarable set.',
+    );
+  }
+  const handoffTargetProfilesJson = readJson(
+    rootDir,
+    'scripts/governance/release-contract-target-profiles.json',
+    failures,
+  );
+  if (
+    handoffTargetProfilesJson !== null
+    && JSON.stringify(handoffTargetProfilesJson) !== JSON.stringify(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES)
+  ) {
+    addFailure(
+      failures,
+      'scripts/governance/release-contract-target-profiles.json',
+      'CI handoff target profile JSON must match CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.',
     );
   }
 

@@ -788,7 +788,7 @@ describe('handleChatStreamRoute session state ordering', () => {
         session_id: 'session_external_stream',
         state: 'stopping',
         status: 'stopping',
-        stop_mode: 'cancel',
+        mode: 'cancel',
         can_escalate: false,
         escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
       });

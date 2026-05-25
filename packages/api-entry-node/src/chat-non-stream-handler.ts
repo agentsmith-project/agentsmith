@@ -63,6 +63,15 @@ function parseStopMode(raw: unknown): ChatStopMode | null {
   return mode === 'cancel' || mode === 'terminate' ? mode : null;
 }
 
+function hasLegacyStopModeField(raw: unknown): boolean {
+  return Boolean(
+    raw
+    && typeof raw === 'object'
+    && !Array.isArray(raw)
+    && Object.prototype.hasOwnProperty.call(raw, 'stop_mode'),
+  );
+}
+
 async function resolveStopCapability(input: {
   deps: NodeApiDeps;
   workspaceId: string;
@@ -104,7 +113,7 @@ function buildStopResponse(
     ...(ids.streamId ? { stream_id: ids.streamId } : {}),
     state: input.state,
     status: input.state,
-    stop_mode: input.stopMode,
+    mode: input.stopMode,
     can_escalate: canEscalate,
     ...(!canEscalate && input.capability.unavailableReason
       ? { escalation_reason: input.capability.unavailableReason }
@@ -406,7 +415,16 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessionStop' && method === 'POST') {
-    const requestedMode = parseStopMode(await readBody(req));
+    const body = await readBody(req);
+    if (hasLegacyStopModeField(body)) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: ['stop_mode'],
+      });
+      return true;
+    }
+    const requestedMode = parseStopMode(body);
     if (!requestedMode) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_stop_mode_invalid' });
       return true;
@@ -906,7 +924,16 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatMessagesStreamStop' && method === 'POST') {
-    const requestedMode = parseStopMode(await readBody(req));
+    const body = await readBody(req);
+    if (hasLegacyStopModeField(body)) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: ['stop_mode'],
+      });
+      return true;
+    }
+    const requestedMode = parseStopMode(body);
     if (!requestedMode) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_stop_mode_invalid' });
       return true;

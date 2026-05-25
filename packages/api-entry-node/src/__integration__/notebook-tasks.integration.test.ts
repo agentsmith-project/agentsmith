@@ -1840,7 +1840,7 @@ describe('api-entry-node notebook task routes', () => {
       status: 'cancelling',
       task_id: task.id,
       run_id: 'run_restart_shared',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: expect.any(Boolean),
     });
     await expect(getNotebookTaskRunStopRequestForRun(deps.cache, {
@@ -1889,7 +1889,7 @@ describe('api-entry-node notebook task routes', () => {
       status: 'terminating',
       task_id: task.id,
       run_id: 'run_internal_stale_owner',
-      stop_mode: 'terminate',
+      mode: 'terminate',
       can_escalate: false,
       escalation_reason: 'already_terminating',
     });
@@ -1980,7 +1980,7 @@ describe('api-entry-node notebook task routes', () => {
       task_id: taskId,
       run_id: 'run_external_terminate_unavailable',
       request_id: 'req_external_terminate_unavailable',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
     const runStateAfterTerminate = await getNotebookTaskRunState(deps.cache, taskId);
     expect(runStateAfterTerminate).toBeNull();
@@ -2031,7 +2031,7 @@ describe('api-entry-node notebook task routes', () => {
       status: 'terminating',
       task_id: taskId,
       run_id: 'run_external_stale_owner',
-      stop_mode: 'terminate',
+      mode: 'terminate',
     });
 
     const listRes = await apiFetchWithToken(
@@ -2467,7 +2467,7 @@ describe('api-entry-node notebook task routes', () => {
         status: 'terminating',
         task_id: task.id,
         request_id: null,
-        stop_mode: 'terminate',
+        mode: 'terminate',
       });
 
       await vi.waitFor(async () => {

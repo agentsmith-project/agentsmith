@@ -97,6 +97,22 @@ function isTerminateStopMode(body: unknown) {
   return record.mode === 'terminate';
 }
 
+function hasLegacyStopModeField(body: unknown): boolean {
+  return Boolean(
+    body
+    && typeof body === 'object'
+    && Object.prototype.hasOwnProperty.call(body, 'stop_mode'),
+  );
+}
+
+function legacyStopModeFieldResponse() {
+  return HttpResponse.json({
+    error_code: 'unsupported_field',
+    message: 'unsupported_field',
+    fields: ['stop_mode'],
+  }, { status: 400 });
+}
+
 function hasUnsupportedExternalAgentField(body: unknown): boolean {
   return (
     typeof body === 'object'
@@ -138,7 +154,7 @@ function buildMockChatStopResponse(
     ...(ids.streamId ? { stream_id: ids.streamId } : {}),
     state: input.state,
     status: input.state,
-    stop_mode: input.stopMode,
+    mode: input.stopMode,
     can_escalate: input.canEscalate,
     ...(input.escalationReason ? { escalation_reason: input.escalationReason } : {}),
   };
@@ -318,6 +334,7 @@ export const chatHandlers = [
     const mode = readMockChatStopEscalationMode(request);
     const runtime = mode ? ensureMockChatStopRuntime(sessionId, mode) : mockChatStopRuntimeBySession.get(sessionId);
     const body = await request.json().catch(() => ({}));
+    if (hasLegacyStopModeField(body)) return legacyStopModeFieldResponse();
     const terminateRequested = isTerminateStopMode(body);
     if (!runtime) {
       return HttpResponse.json(buildMockChatStopResponse({ sessionId }, {
@@ -344,6 +361,7 @@ export const chatHandlers = [
     const mode = readMockChatStopEscalationMode(request);
     const runtime = mode ? ensureMockChatStopRuntime(sessionId, mode) : mockChatStopRuntimeBySession.get(sessionId);
     const body = await request.json().catch(() => ({}));
+    if (hasLegacyStopModeField(body)) return legacyStopModeFieldResponse();
     const terminateRequested = isTerminateStopMode(body);
     if (!runtime || runtime.streamId !== streamId) {
       return HttpResponse.json(buildMockChatStopResponse({ streamId }, {

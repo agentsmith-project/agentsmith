@@ -973,7 +973,7 @@ export function TaskPage({
           ? {
               ...old,
               run_state: nextRunState,
-              stop_mode: response.stop_mode,
+              stop_mode: response.mode,
               can_escalate: response.can_escalate,
               escalation_reason:
                 response.escalation_reason !== undefined

@@ -1065,7 +1065,7 @@ describe("api-entry-node projects routes", () => {
     expect(stopRes.status).toBe(202);
     await expect(stopRes.json()).resolves.toMatchObject({
       state: "stopping",
-      stop_mode: "cancel",
+      mode: "cancel",
     });
     const streamText = await streamRes.text();
     expect(forwardRequest).toHaveBeenCalledTimes(1);

@@ -118,8 +118,8 @@ function resolveStopResponseStatus(
   if (response.state === 'not_found_or_finished' || response.status === 'not_found_or_finished') {
     return null;
   }
-  if (response.stop_mode === 'terminate') return 'terminating';
-  if (response.stop_mode === 'cancel') return 'stopping';
+  if (response.mode === 'terminate') return 'terminating';
+  if (response.mode === 'cancel') return 'stopping';
   const responseStatus = response.status ?? response.state;
   if (responseStatus === 'terminating') return 'terminating';
   if (responseStatus === 'stopping') return 'stopping';

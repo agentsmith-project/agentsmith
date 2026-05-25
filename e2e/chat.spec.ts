@@ -27,7 +27,7 @@ type ChatStopMode = 'cancel' | 'terminate';
 type ChatStopResponsePayload = {
   state?: string;
   status?: string;
-  stop_mode?: string;
+  mode?: string;
   can_escalate?: boolean;
   escalation_reason?: string | null;
 };
@@ -259,9 +259,7 @@ function parseRequestBodyJson(request: import('@playwright/test').Request): Reco
 function expectStopRequestMode(request: import('@playwright/test').Request, mode: ChatStopMode) {
   const payload = parseRequestBodyJson(request);
   expect(payload.mode).toBe(mode);
-  if ('stop_mode' in payload) {
-    expect(payload.stop_mode).toBe(mode);
-  }
+  expect(payload).not.toHaveProperty('stop_mode');
 }
 
 function isChatStopEscalationEndpointRequest(request: import('@playwright/test').Request) {
@@ -296,7 +294,7 @@ async function expectChatStopResponseState(
   const payload = await response.json() as ChatStopResponsePayload;
   expect(payload.state ?? payload.status).toBe(expected);
   expect(payload.status).toBe(expected);
-  expect(payload.stop_mode).toBe(options.stopMode);
+  expect(payload.mode).toBe(options.stopMode);
   expect(payload.can_escalate).toBe(options.canEscalate);
   if ('escalationReason' in options) {
     expect(payload.escalation_reason ?? null).toBe(options.escalationReason ?? null);
@@ -707,7 +705,7 @@ test.describe.serial('Chat Stop Escalation', () => {
     expect(cancel.payload).toMatchObject({
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });
@@ -721,7 +719,7 @@ test.describe.serial('Chat Stop Escalation', () => {
     expect(terminate.payload).toMatchObject({
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });

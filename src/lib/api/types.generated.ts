@@ -3254,18 +3254,16 @@ export interface components {
             can_escalate: boolean;
             /** @enum {string|null} */
             escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
+            mode: components["schemas"]["StopMode"];
             session_id: string;
             state: components["schemas"]["ChatStopState"];
             status: components["schemas"]["ChatStopState"];
-            stop_mode: components["schemas"]["StopMode"];
             /** @enum {boolean} */
             success: true;
         };
         ChatStopRequest: {
             /** @description Authoritative stop mode used by the backend. */
             mode?: components["schemas"]["StopMode"];
-            /** @description Compatibility mirror sent by older clients; backend behavior is governed by `mode`. */
-            stop_mode?: components["schemas"]["StopMode"];
         };
         /** @enum {string} */
         ChatStopState: "stopping" | "terminating" | "not_found_or_finished";
@@ -3287,9 +3285,9 @@ export interface components {
             can_escalate: boolean;
             /** @enum {string|null} */
             escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
+            mode: components["schemas"]["StopMode"];
             state: components["schemas"]["ChatStopState"];
             status: components["schemas"]["ChatStopState"];
-            stop_mode: components["schemas"]["StopMode"];
             stream_id: string;
             /** @enum {boolean} */
             success: true;
@@ -4098,16 +4096,14 @@ export interface components {
         TaskCancelRunRequest: {
             /** @description Authoritative stop mode used by the backend. */
             mode?: components["schemas"]["StopMode"];
-            /** @description Compatibility mirror sent by older clients; backend behavior is governed by `mode`. */
-            stop_mode?: components["schemas"]["StopMode"];
         };
         TaskCancelRunResponse: {
             can_escalate: boolean;
             escalation_reason?: components["schemas"]["TaskCancelRunEscalationReason"] | null;
+            mode: components["schemas"]["StopMode"];
             request_id: string | null;
             run_id: string;
             status: components["schemas"]["TaskCancelRunStatus"];
-            stop_mode: components["schemas"]["StopMode"];
             task_id: string;
         };
         /** @enum {string} */
@@ -4120,10 +4116,10 @@ export interface components {
             escalation_reason: components["schemas"]["TaskCancelRunEscalationReason"];
             /** @enum {string} */
             message: "stop_escalation_unavailable";
+            mode?: components["schemas"]["StopMode"];
             request_id: string | null;
             run_id: string | null;
             status?: components["schemas"]["TaskCancelRunStatus"];
-            stop_mode?: components["schemas"]["StopMode"];
             task_id: string;
         };
         TaskFileTemplate: {
@@ -6850,15 +6846,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Legacy stop accepted response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatStreamStopResponse"];
-                };
-            };
             /** @description Stop accepted */
             202: {
                 headers: {

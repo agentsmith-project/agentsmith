@@ -117,7 +117,7 @@ describe('msw stop/cancel contracts', () => {
       session_id: 'session_unit_not_running',
       state: 'not_found_or_finished',
       status: 'not_found_or_finished',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
     });
   });
@@ -525,20 +525,18 @@ describe('msw stop/cancel contracts', () => {
     );
   });
 
-  it('uses chat mode as the authoritative terminate field and returns schema reasons', async () => {
+  it('rejects chat stop_mode and uses mode as the authoritative terminate field', async () => {
     const sessionId = `session_unit_stop_${Date.now()}`;
-    const stopModeOnly = await postJson(
+    const legacyStopMode = await postJson(
       `/api/v1/workspaces/ws_001/projects/proj_001/chat/sessions/${sessionId}/stop?mock_chat_stop_escalation=unsupported`,
       { stop_mode: 'terminate' },
     );
 
-    expect(stopModeOnly.status).toBe(202);
-    await expect(stopModeOnly.json()).resolves.toMatchObject({
-      state: 'stopping',
-      status: 'stopping',
-      stop_mode: 'cancel',
-      can_escalate: false,
-      escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
+    expect(legacyStopMode.status).toBe(400);
+    await expect(legacyStopMode.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'unsupported_field',
+      fields: ['stop_mode'],
     });
 
     const terminate = await postJson(
@@ -550,7 +548,7 @@ describe('msw stop/cancel contracts', () => {
     await expect(terminate.json()).resolves.toMatchObject({
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });
@@ -569,13 +567,25 @@ describe('msw stop/cancel contracts', () => {
       task_id: taskId,
       run_id: `mock_run_${taskId}`,
       request_id: `mock_cancel_${taskId}`,
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: true,
     });
   });
 
-  it('returns task unsupported cancel and terminate authoritative contracts', async () => {
+  it('rejects task stop_mode and returns mode-only cancel/terminate contracts', async () => {
     const taskId = await createRunningTask(`MSW unsupported cancel ${Date.now()}`);
+    const legacyStopMode = await postJson(
+      `/api/v1/workspaces/ws_001/projects/proj_001/tasks/${taskId}/cancel?mock_task_cancel_escalation=unsupported`,
+      { stop_mode: 'terminate' },
+    );
+
+    expect(legacyStopMode.status).toBe(400);
+    await expect(legacyStopMode.json()).resolves.toMatchObject({
+      error_code: 'unsupported_field',
+      message: 'unsupported_field',
+      fields: ['stop_mode'],
+    });
+
     const cancel = await postJson(
       `/api/v1/workspaces/ws_001/projects/proj_001/tasks/${taskId}/cancel?mock_task_cancel_escalation=unsupported`,
       { mode: 'cancel' },
@@ -585,7 +595,7 @@ describe('msw stop/cancel contracts', () => {
     await expect(cancel.json()).resolves.toMatchObject({
       status: 'cancelling',
       task_id: taskId,
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'unsupported_runner',
     });
@@ -603,7 +613,7 @@ describe('msw stop/cancel contracts', () => {
       run_id: `mock_run_${taskId}`,
       request_id: `mock_cancel_${taskId}`,
       status: 'cancelling',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'unsupported_runner',
     });

@@ -133,6 +133,34 @@ describe('handleChatNonStreamRoute endpoint-only session contracts', () => {
 });
 
 describe('handleChatNonStreamRoute endpoint-only stop truth', () => {
+  it('rejects legacy stop_mode on stop requests', async () => {
+    const { deps } = createChatDeps();
+    const json = vi.fn();
+
+    await expect(handleChatNonStreamRoute({
+      route: {
+        kind: 'chatSessionStop',
+        workspaceId: 'ws_chat_stop_legacy',
+        projectId: 'proj_chat_stop_legacy',
+        sessionId: 'sess_chat_stop_legacy',
+      },
+      method: 'POST',
+      req: { headers: {} } as http.IncomingMessage,
+      res: {} as http.ServerResponse,
+      deps,
+      user: { id: 'user_chat_stop_legacy', name: 'Chat Stop Legacy', email: 'chat-stop-legacy@example.com' },
+      requestUrl: new URL('http://localhost/api/v1/workspaces/ws_chat_stop_legacy/projects/proj_chat_stop_legacy/chat/sessions/sess_chat_stop_legacy/stop'),
+      json,
+      readBody: async () => ({ stop_mode: 'terminate' }),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 400, {
+      error_code: 'unsupported_field',
+      message: 'unsupported_field',
+      fields: ['stop_mode'],
+    });
+  });
+
   it('stops a session and lists streams from the shared direct-provider execution record', async () => {
     const { cache, chatResourceService, deps } = createChatDeps();
     const session = await chatResourceService.createSession({
@@ -183,7 +211,7 @@ describe('handleChatNonStreamRoute endpoint-only stop truth', () => {
       session_id: session.id,
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });
@@ -268,7 +296,7 @@ describe('handleChatNonStreamRoute endpoint-only stop truth', () => {
       session_id: session.id,
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });
@@ -317,7 +345,7 @@ describe('handleChatNonStreamRoute endpoint-only stop truth', () => {
       stream_id: 'stream_chat_stream_direct_terminate',
       state: 'stopping',
       status: 'stopping',
-      stop_mode: 'cancel',
+      mode: 'cancel',
       can_escalate: false,
       escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
     });
@@ -370,7 +398,7 @@ describe('handleChatNonStreamRoute endpoint-only stop truth', () => {
         stream_id: `stream_chat_final_${finalStatus}`,
         state: 'not_found_or_finished',
         status: 'not_found_or_finished',
-        stop_mode: 'terminate',
+        mode: 'terminate',
         can_escalate: false,
         escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
       });

@@ -6,7 +6,6 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  FORBIDDEN_RUNNER_REPO,
   RELEASE_KIT_CANONICAL_REPO,
   RUNNER_CANONICAL_REPO,
   validateRepoSplitBootstrap,
@@ -125,7 +124,7 @@ describe('repo split bootstrap contract', () => {
     );
   });
 
-  it('rejects agentsmith-codex-runner for formal runner bootstrap but accepts it as explicit migration input', () => {
+  it('rejects non-canonical runner bootstrap inputs', () => {
     expectFailure(
       validateRepoSplitBootstrap({
         mode: 'local',
@@ -133,21 +132,18 @@ describe('repo split bootstrap contract', () => {
         repoPath: `${CANONICAL_PARENT}/agentsmith-runner`,
         remoteUrl: 'git@github.com:agentsmith-project/agentsmith-codex-runner.git',
       }),
-      'agentsmith-codex-runner is migration_input only and must not be used as canonical runner bootstrap',
+      'agentsmith-codex-runner is not a canonical runner bootstrap repo',
     );
 
-    expect(validateRepoSplitBootstrap({
-      mode: 'local',
-      repo: 'runner-migration',
-      repoPath: `${CANONICAL_PARENT}/agentsmith-codex-runner`,
-      remoteUrl: 'git@github.com:agentsmith-project/agentsmith-codex-runner.git',
-    })).toMatchObject({
-      ok: true,
-      status: 'migration_input',
-      repo_name: 'agentsmith-codex-runner',
-      normalized_remote: FORBIDDEN_RUNNER_REPO,
-      migration_to: RUNNER_CANONICAL_REPO,
-    });
+    expectFailure(
+      validateRepoSplitBootstrap({
+        mode: 'local',
+        repo: 'runner-migration',
+        repoPath: `${CANONICAL_PARENT}/agentsmith-codex-runner`,
+        remoteUrl: 'git@github.com:agentsmith-project/agentsmith-codex-runner.git',
+      }),
+      'repo must be release-kit or runner',
+    );
   });
 
   it('keeps CI mode independent from Percy local paths and validates only normalized identity', () => {
@@ -167,7 +163,7 @@ describe('repo split bootstrap contract', () => {
         repo: 'runner',
         remoteUrl: 'https://github.com/agentsmith-project/agentsmith-codex-runner.git',
       }),
-      'agentsmith-codex-runner is migration_input only and must not be used as canonical runner bootstrap',
+      'agentsmith-codex-runner is not a canonical runner bootstrap repo',
     );
   });
 

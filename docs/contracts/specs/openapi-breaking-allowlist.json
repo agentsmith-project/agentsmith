@@ -340,6 +340,7 @@
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 401",
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 403",
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 404",
+    "post /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop -> 200",
     "post /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop -> 202",
     "post /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop -> 401",
     "post /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop -> 403",

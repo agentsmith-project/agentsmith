@@ -29,7 +29,7 @@ export type TaskCancelRunResponse = {
   task_id: string;
   run_id: string;
   request_id: string | null;
-  stop_mode?: 'cancel' | 'terminate';
+  mode: 'cancel' | 'terminate';
   can_escalate?: boolean;
   escalation_reason?: string | null;
 };
@@ -40,7 +40,7 @@ export type TaskCancelRunOptions = {
 
 function buildTaskCancelRunRequest(options?: TaskCancelRunOptions) {
   const stopMode = options?.mode ?? 'cancel';
-  return { mode: stopMode, stop_mode: stopMode };
+  return { mode: stopMode };
 }
 
 export class TaskAPI {

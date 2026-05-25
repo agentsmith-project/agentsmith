@@ -5,10 +5,13 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
+  CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
   canonicalReleaseBoundaryJson,
   sha256Digest,
   validateAgentSmithReleaseContract,
   type CurrentAgentSmithReleaseContract,
+  type CurrentDeploymentTargetProfile,
   type CurrentDeployTemplatePackage,
 } from '../current-release-boundary-schema';
 import {
@@ -87,38 +90,7 @@ function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
 }
 
 function buildTargetProfiles(): AgentSmithReleaseContractGeneratorInput['target_profiles'] {
-  return [
-    {
-      target_cluster: 'existing_kubernetes',
-      substrate_source: 'external_declared',
-      distribution: 'online',
-      required: false,
-      prerequisites: {
-        namespace: 'agentsmith',
-        rbac: 'namespace_admin',
-        ingress: 'operator_provided',
-        tls: 'required',
-        storage_class: 'operator_provided',
-        registry: 'ghcr_or_operator_mirror',
-        pull_secret_ref: 'operator_secret_ref',
-      },
-    },
-    {
-      target_cluster: 'kind_rehearsal',
-      substrate_source: 'kit_installed',
-      distribution: 'online',
-      required: false,
-      prerequisites: {
-        namespace: 'agentsmith',
-        rbac: 'local_admin',
-        ingress: 'local',
-        tls: 'optional',
-        storage_class: 'standard',
-        registry: 'local_kind_import',
-        pull_secret_ref: 'not_required',
-      },
-    },
-  ];
+  return structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
 }
 
 function buildInput(): AgentSmithReleaseContractGeneratorInput {
@@ -185,6 +157,12 @@ function releaseContractOmitArtifactShaProjectionSubject(contract: CurrentAgentS
   return subject;
 }
 
+function targetProfileKey(
+  profile: Pick<CurrentDeploymentTargetProfile, 'target_cluster' | 'substrate_source' | 'distribution'>,
+): string {
+  return `${profile.target_cluster}|${profile.substrate_source}|${profile.distribution}`;
+}
+
 describe('release contract generator', () => {
   it('keeps release contract fixtures and tests off the non-canonical llmup image repository', () => {
     for (const relativePath of RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES) {
@@ -194,6 +172,21 @@ describe('release contract generator', () => {
         NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY,
       );
     }
+  });
+
+  it('keeps CI handoff target profiles equal to the release-kit canonical declarable set', () => {
+    const targetProfilesFixture = JSON.parse(
+      readFileSync(join(process.cwd(), 'scripts/governance/release-contract-target-profiles.json'), 'utf8'),
+    ) as readonly CurrentDeploymentTargetProfile[];
+    const workflowSource = readFileSync(join(process.cwd(), '.github/workflows/image-publish.yml'), 'utf8');
+    const expectedKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
+
+    expect(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map(targetProfileKey)).toEqual(expectedKeys);
+    expect(targetProfilesFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
+    expect(targetProfilesFixture.map(targetProfileKey)).toEqual(expectedKeys);
+    expect(targetProfilesFixture.every((profile) => profile.required === false)).toBe(true);
+    expect(workflowSource).toContain("readJson('scripts/governance/release-contract-target-profiles.json')");
+    expect(workflowSource).toContain('target_profiles: targetProfiles');
   });
 
   it('generates a validated contract with mechanical image inventory and deterministic provenance hashes', () => {

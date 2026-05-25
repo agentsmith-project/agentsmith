@@ -101,4 +101,26 @@ describe('TaskAPI public Agent Task activity/run surface', () => {
       expect.stringContaining('/agent-runners'),
     );
   });
+
+  it('cancels task runs with mode only', async () => {
+    const client = createMockClient();
+    vi.mocked(client.post).mockResolvedValue({
+      status: 'terminating',
+      task_id: 'task_1',
+      run_id: 'run_1',
+      request_id: 'req_1',
+      mode: 'terminate',
+      can_escalate: false,
+    });
+    const api = new TaskAPI(client);
+
+    await api.cancelRun('ws_default', 'proj_1', 'task_1', { mode: 'terminate' });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/workspaces/ws_default/projects/proj_1/tasks/task_1/cancel',
+      { mode: 'terminate' },
+    );
+    const postedBody = vi.mocked(client.post).mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(postedBody).not.toHaveProperty('stop_mode');
+  });
 });

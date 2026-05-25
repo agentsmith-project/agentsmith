@@ -239,8 +239,8 @@ describe('useChatStreaming attach recovery', () => {
       getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
       stopStream: vi.fn()
-        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true })
-        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'terminating', status: 'terminating', stop_mode: 'terminate', can_escalate: false }),
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', mode: 'cancel', can_escalate: true })
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'terminating', status: 'terminating', mode: 'terminate', can_escalate: false }),
     };
     const requests: ChatStreamEscalationConfirmationRequestDetail[] = [];
     const onRequest = (event: Event) => {
@@ -351,14 +351,14 @@ describe('useChatStreaming attach recovery', () => {
         session_id: 's_1',
         state: 'terminating',
         status: 'terminating',
-        stop_mode: 'terminate',
+        mode: 'terminate',
       }),
       stopStream: vi.fn().mockResolvedValue({
         success: true,
         stream_id: 'st_1',
         state: 'terminating',
         status: 'terminating',
-        stop_mode: 'terminate',
+        mode: 'terminate',
       }),
     };
     const requests: ChatStreamEscalationConfirmationRequestDetail[] = [];
@@ -471,10 +471,10 @@ describe('useChatStreaming attach recovery', () => {
         escalation_reason: 'agent did not acknowledge stop',
       }),
       getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping', mode: 'cancel', can_escalate: true }),
       stopStream: vi.fn()
-        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true })
-        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', status: 'stopping', stop_mode: 'cancel', can_escalate: false }),
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', mode: 'cancel', can_escalate: true })
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', status: 'stopping', mode: 'cancel', can_escalate: false }),
     };
     const onRequest = (event: Event) => {
       const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;

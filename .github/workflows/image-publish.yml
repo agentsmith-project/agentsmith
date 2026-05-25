@@ -223,6 +223,7 @@ jobs:
 
           const llmupLock = parseKeyValue('infra/deploy/shared/llmup-image.lock');
           const siteEnv = parseKeyValue('infra/deploy/unified/env/site.env.example');
+          const targetProfiles = readJson('scripts/governance/release-contract-target-profiles.json');
           const releaseId = process.env.RELEASE_ID;
           const gitSha = process.env.GITHUB_SHA;
           const appImage = `${process.env.APP_RELEASE_REF}@${process.env.APP_IMAGE_DIGEST}`;
@@ -240,38 +241,7 @@ jobs:
               pinnedImage('ingress_nginx_controller', siteEnv.get('INGRESS_NGINX_CONTROLLER_IMAGE')),
               pinnedImage('ingress_nginx_certgen', siteEnv.get('INGRESS_NGINX_CERTGEN_IMAGE')),
             ],
-            target_profiles: [
-              {
-                target_cluster: 'existing_kubernetes',
-                substrate_source: 'external_declared',
-                distribution: 'online',
-                required: false,
-                prerequisites: {
-                  namespace: 'agentsmith',
-                  rbac: 'namespace_admin',
-                  ingress: 'operator_provided',
-                  tls: 'required',
-                  storage_class: 'operator_provided',
-                  registry: 'ghcr_or_operator_mirror',
-                  pull_secret_ref: 'operator_secret_ref',
-                },
-              },
-              {
-                target_cluster: 'kind_rehearsal',
-                substrate_source: 'kit_installed',
-                distribution: 'online',
-                required: false,
-                prerequisites: {
-                  namespace: 'agentsmith',
-                  rbac: 'local_admin',
-                  ingress: 'local',
-                  tls: 'optional',
-                  storage_class: 'standard',
-                  registry: 'local_kind_import',
-                  pull_secret_ref: 'not_required',
-                },
-              },
-            ],
+            target_profiles: targetProfiles,
             min_release_kit_version: '0.1.0',
           };
           const summary = {

@@ -28,6 +28,7 @@ import {
   type AgentSmithReleaseContractGeneratorInput,
 } from '../release-contract';
 import {
+  CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
   canonicalReleaseBoundaryJson,
   sha256Digest,
   validateDeployTemplatePackage,
@@ -317,38 +318,7 @@ function buildReleaseContractAssemblyInput(
         digest: `sha256:${'4'.repeat(64)}`,
       },
     ],
-    target_profiles: [
-      {
-        target_cluster: 'existing_kubernetes',
-        substrate_source: 'external_declared',
-        distribution: 'online',
-        required: false,
-        prerequisites: {
-          namespace: 'agentsmith',
-          rbac: 'namespace_admin',
-          ingress: 'operator_provided',
-          tls: 'required',
-          storage_class: 'operator_provided',
-          registry: 'ghcr_or_operator_mirror',
-          pull_secret_ref: 'operator_secret_ref',
-        },
-      },
-      {
-        target_cluster: 'kind_rehearsal',
-        substrate_source: 'kit_installed',
-        distribution: 'online',
-        required: false,
-        prerequisites: {
-          namespace: 'agentsmith',
-          rbac: 'local_admin',
-          ingress: 'local',
-          tls: 'optional',
-          storage_class: 'standard',
-          registry: 'local_kind_import',
-          pull_secret_ref: 'not_required',
-        },
-      },
-    ],
+    target_profiles: structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES),
     min_release_kit_version: '0.1.0',
     ci_provenance: {
       producer_repo: 'github.com/agentsmith-project/agentsmith',

@@ -88,7 +88,7 @@ export function buildNotebookRunStopTruthResponse(input: {
   task_id: string;
   run_id: string;
   request_id: string | null;
-  stop_mode: NotebookTaskRunStopMode;
+  mode: NotebookTaskRunStopMode;
   can_escalate: boolean;
   escalation_reason?: NotebookRunStopEscalationReason;
 } {
@@ -98,7 +98,7 @@ export function buildNotebookRunStopTruthResponse(input: {
     task_id: input.taskId,
     run_id: input.state.run_id,
     request_id: input.state.request_id ?? input.requestId ?? null,
-    stop_mode: resolveNotebookRunStopMode(input.state),
+    mode: resolveNotebookRunStopMode(input.state),
     ...escalation,
   };
 }
@@ -115,7 +115,7 @@ export function buildNotebookRunStopEscalationUnavailableResponse(input: {
   run_id: string | null;
   request_id: string | null;
   status?: NotebookRunStopStatus;
-  stop_mode?: NotebookTaskRunStopMode;
+  mode?: NotebookTaskRunStopMode;
   can_escalate: false;
   escalation_reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'>;
 } {
@@ -126,7 +126,7 @@ export function buildNotebookRunStopEscalationUnavailableResponse(input: {
     run_id: input.state?.run_id ?? null,
     request_id: input.state?.request_id ?? input.requestId ?? null,
     ...(input.state ? { status: mapNotebookRunStopStatus(input.state) } : {}),
-    ...(input.state?.stop?.mode ? { stop_mode: input.state.stop.mode } : {}),
+    ...(input.state?.stop?.mode ? { mode: input.state.stop.mode } : {}),
     can_escalate: false,
     escalation_reason: input.reason,
   };

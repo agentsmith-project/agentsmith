@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CURRENT_DEPLOYMENT_MODE_MATRIX,
+  CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
+  CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
@@ -26,6 +28,7 @@ import {
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
   validateTruthMatrix,
+  type CurrentDeploymentTargetProfile,
 } from '../current-release-boundary-schema';
 
 const FIXTURE_ROOT = resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary');
@@ -56,6 +59,12 @@ function expectInvalid(result: ValidationResult, expectedReason: string): void {
 
 function cloneFixture(name: string): Record<string, unknown> {
   return structuredClone(readFixture(name));
+}
+
+function targetProfileKey(
+  profile: Pick<CurrentDeploymentTargetProfile, 'target_cluster' | 'substrate_source' | 'distribution'>,
+): string {
+  return `${profile.target_cluster}|${profile.substrate_source}|${profile.distribution}`;
 }
 
 function artifactProvenanceOf(record: Record<string, unknown>): Record<string, unknown> {
@@ -279,32 +288,22 @@ describe('current release boundary schema', () => {
       ['existing_kubernetes', 'kit_installed', 'online', 'advanced'],
       ['existing_kubernetes', 'kit_installed', 'airgap', 'advanced'],
       ['kind_rehearsal', 'kit_installed', 'online', 'rehearsal'],
-      ['kind_rehearsal', 'kit_installed', 'airgap', 'rehearsal'],
-      ['kind_rehearsal', 'external_declared', 'online', 'diagnostic'],
-      ['kind_rehearsal', 'external_declared', 'airgap', 'diagnostic'],
     ]);
     expect(CURRENT_DEPLOYMENT_MODE_MATRIX.filter((entry) => entry.required_target)).toEqual([]);
+    expect(CURRENT_DEPLOYMENT_MODE_MATRIX.map(targetProfileKey)).toEqual(
+      CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey),
+    );
   });
 
   it('declares deployment target profiles as optional handoff candidates without P2 required coverage', () => {
     const contract = readFixture('release-contract.valid.json');
-    const profiles = contract.target_profiles as Record<string, unknown>[];
+    const profiles = contract.target_profiles as CurrentDeploymentTargetProfile[];
 
     expect(profiles.every((profile) => profile.required === false)).toBe(true);
-    expect(profiles).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        target_cluster: 'existing_kubernetes',
-        substrate_source: 'external_declared',
-        distribution: 'online',
-        required: false,
-      }),
-      expect.objectContaining({
-        target_cluster: 'existing_kubernetes',
-        substrate_source: 'external_declared',
-        distribution: 'airgap',
-        required: false,
-      }),
-    ]));
+    expect(profiles.map(targetProfileKey)).toEqual(
+      CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey),
+    );
+    expect(profiles).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
   });
 
   it('declares the release boundary truth matrix and release kit evidence mapping against current writers', () => {
@@ -923,11 +922,16 @@ describe('current release boundary schema', () => {
       'substrate_connection_truth.substrate_source must be external_declared',
     );
 
-    const externalTruth = cloneFixture('release-kit-evidence.valid.json');
-    externalTruth.substrate_source = 'external_declared';
-    externalTruth.substrate_connection_truth = cloneFixture('substrate-connection.external-declared.valid.json');
-    (externalTruth.substrate_connection_truth as Record<string, unknown>).target_cluster = 'kind_rehearsal';
-    expect(validateReleaseKitEvidence(externalTruth).ok).toBe(true);
+    const removedDiagnosticExternalTruth = cloneFixture('release-kit-evidence.valid.json');
+    removedDiagnosticExternalTruth.substrate_source = 'external_declared';
+    removedDiagnosticExternalTruth.substrate_connection_truth =
+      cloneFixture('substrate-connection.external-declared.valid.json');
+    (removedDiagnosticExternalTruth.substrate_connection_truth as Record<string, unknown>).target_cluster =
+      'kind_rehearsal';
+    expectInvalid(
+      validateReleaseKitEvidence(removedDiagnosticExternalTruth),
+      'deployment mode is not allowed by the release boundary matrix',
+    );
 
     const mismatchedTruth = cloneFixture('release-kit-evidence.valid.json');
     mismatchedTruth.substrate_source = 'external_declared';
@@ -1292,6 +1296,40 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateAgentSmithReleaseContract(contract),
       'target profile required must be false for AgentSmith pre-GA handoff candidates',
+    );
+  });
+
+  it.each([
+    ['kind_rehearsal', 'kit_installed', 'airgap'],
+    ['kind_rehearsal', 'external_declared', 'online'],
+    ['kind_rehearsal', 'external_declared', 'airgap'],
+  ])(
+    'rejects non-canonical declarable target profile tuple %s/%s/%s',
+    (targetCluster, substrateSource, distribution) => {
+      const contract = cloneFixture('release-contract.valid.json');
+      const profiles = contract.target_profiles as Record<string, unknown>[];
+      profiles[0] = {
+        ...profiles[0],
+        target_cluster: targetCluster,
+        substrate_source: substrateSource,
+        distribution,
+      };
+
+      expectInvalid(
+        validateAgentSmithReleaseContract(contract),
+        'target profile combination is not allowed by the release boundary matrix',
+      );
+    },
+  );
+
+  it('rejects release contracts that omit a release-kit canonical declarable target profile', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const profiles = contract.target_profiles as Record<string, unknown>[];
+    profiles.pop();
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'target profile tuple kind_rehearsal|kit_installed|online is missing from the release-kit canonical declarable profile handoff',
     );
   });
 

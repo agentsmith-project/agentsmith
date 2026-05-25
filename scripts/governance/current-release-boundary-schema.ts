@@ -108,6 +108,116 @@ export interface CurrentDeploymentTargetProfile {
   };
 }
 
+export const CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES = [
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'external_declared',
+    distribution: 'online',
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'external_declared',
+    distribution: 'airgap',
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'online',
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'airgap',
+  },
+  {
+    target_cluster: 'kind_rehearsal',
+    substrate_source: 'kit_installed',
+    distribution: 'online',
+  },
+] as const satisfies readonly Pick<
+  CurrentDeploymentModeMatrixEntry,
+  'target_cluster' | 'substrate_source' | 'distribution'
+>[];
+
+// Must stay synchronized with release-kit canonical declarable target profiles.
+export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'external_declared',
+    distribution: 'online',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'operator_provided',
+      tls: 'required',
+      storage_class: 'operator_provided',
+      registry: 'ghcr_or_operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'external_declared',
+    distribution: 'airgap',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'operator_provided',
+      tls: 'required',
+      storage_class: 'operator_provided',
+      registry: 'operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'online',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'operator_provided',
+      tls: 'required',
+      storage_class: 'operator_provided',
+      registry: 'ghcr_or_operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'airgap',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'operator_provided',
+      tls: 'required',
+      storage_class: 'operator_provided',
+      registry: 'operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'kind_rehearsal',
+    substrate_source: 'kit_installed',
+    distribution: 'online',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'local_admin',
+      ingress: 'local',
+      tls: 'optional',
+      storage_class: 'standard',
+      registry: 'local_kind_import',
+      pull_secret_ref: 'not_required',
+    },
+  },
+] as const satisfies readonly CurrentDeploymentTargetProfile[];
+
 export interface CurrentArtifactProvenance {
   schema_version: typeof CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION;
   provenance_kind: CurrentArtifactProvenanceKind;
@@ -360,27 +470,6 @@ export const CURRENT_DEPLOYMENT_MODE_MATRIX: readonly CurrentDeploymentModeMatri
     support_level: 'rehearsal',
     required_target: false,
   },
-  {
-    target_cluster: 'kind_rehearsal',
-    substrate_source: 'kit_installed',
-    distribution: 'airgap',
-    support_level: 'rehearsal',
-    required_target: false,
-  },
-  {
-    target_cluster: 'kind_rehearsal',
-    substrate_source: 'external_declared',
-    distribution: 'online',
-    support_level: 'diagnostic',
-    required_target: false,
-  },
-  {
-    target_cluster: 'kind_rehearsal',
-    substrate_source: 'external_declared',
-    distribution: 'airgap',
-    support_level: 'diagnostic',
-    required_target: false,
-  },
 ] as const;
 
 export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixEntry[] = [
@@ -592,6 +681,13 @@ const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeK
   entry.substrate_source,
   entry.distribution,
 )));
+const RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_KEY_SET = new Set(
+  CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map((entry) => modeKey(
+    entry.target_cluster,
+    entry.substrate_source,
+    entry.distribution,
+  )),
+);
 const TARGET_CLUSTER_SET = new Set<string>(CURRENT_DEPLOYMENT_TARGET_CLUSTERS);
 const SUBSTRATE_SOURCE_SET = new Set<string>(CURRENT_DEPLOYMENT_SUBSTRATE_SOURCES);
 const DISTRIBUTION_SET = new Set<string>(CURRENT_DEPLOYMENT_DISTRIBUTIONS);
@@ -2369,6 +2465,15 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
 
     validatePrerequisites(entry.prerequisites, `${path}.prerequisites`, failures);
   });
+
+  for (const expectedProfileKey of RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_KEY_SET) {
+    if (!seenProfileKeys.has(expectedProfileKey)) {
+      failures.push({
+        path: 'target_profiles',
+        reason: `target profile tuple ${expectedProfileKey} is missing from the release-kit canonical declarable profile handoff.`,
+      });
+    }
+  }
 }
 
 function validatePrerequisites(

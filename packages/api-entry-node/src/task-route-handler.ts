@@ -395,6 +395,7 @@ const UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS = [
   'content',
   ...UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS,
 ] as const;
+const UNSUPPORTED_TASK_CANCEL_RUN_FIELDS = ['stop_mode'] as const;
 
 type TaskActivityItem = {
   id: string;
@@ -2421,7 +2422,7 @@ function buildNotebookHardTeardownDebtStopResponse(input: {
   task_id: string;
   run_id: string;
   request_id: string | null;
-  stop_mode: 'terminate';
+  mode: 'terminate';
   can_escalate: false;
   escalation_reason: NotebookRunStopEscalationReason;
 } {
@@ -2430,7 +2431,7 @@ function buildNotebookHardTeardownDebtStopResponse(input: {
     task_id: input.taskId,
     run_id: input.debt.run_id,
     request_id: input.debt.request_id ?? null,
-    stop_mode: 'terminate',
+    mode: 'terminate',
     can_escalate: false,
     escalation_reason: canRequestNotebookRunHardTerminate(input.deps, input.agent)
       ? 'already_terminating'
@@ -5105,6 +5106,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
+    const unsupportedFields = collectUnsupportedFields(body, UNSUPPORTED_TASK_CANCEL_RUN_FIELDS);
+    if (unsupportedFields.length > 0) {
+      json(res, 400, {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: unsupportedFields,
+      });
+      return true;
+    }
     const requestedMode = parseNotebookRunStopMode(body.mode);
     if (!requestedMode) {
       json(res, 422, {

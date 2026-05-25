@@ -71,7 +71,7 @@ AgentSmith 仍保留：
 2. Release kit 可以打包、渲染、执行和等待 bootstrap workload，并产出部署证据；它不解释产品 schema，也不改 bootstrap 业务逻辑。
 3. Runner repo 可以实现 builtin skills 的本地 runtime 和请求级投影消费；Context Store 权限、scope 和 managed credential 解析语义仍由 AgentSmith 定义。
 4. 新 repo 本地目录与 `agentsmith` 同级只是当前 workspace bootstrap 约定：`/home/percy/works/mbos-v1/<repo>`，当前目标为 `/home/percy/works/mbos-v1/agentsmith-release-kit`、`/home/percy/works/mbos-v1/agentsmith-runner`；远端 org 已有，文档和创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。CI/release 只认 normalized GitHub identity + provenance；canonical repo identity 固定为 `github.com/agentsmith-project/<repo>`。
-5. `agentsmith-runner` 是唯一 canonical runner repo；当前同级目录已有的 `agentsmith-codex-runner` 只能作为迁移输入或归档对象，不能成为第二条 runner 真相。任何正式 lock、release contract 或 CI adoption 指向 `agentsmith-codex-runner` 都必须 fail fast。
+5. `agentsmith-runner` 是唯一 canonical runner repo；当前同级目录已有的 `agentsmith-codex-runner` 只作为历史同级目录或归档对象，不能作为 bootstrap 输入，也不能成为第二条 runner 真相。任何正式 lock、release contract 或 CI adoption 指向 `agentsmith-codex-runner` 都必须 fail fast。
 6. `agentsmith-runner` 不定义 Context Store scopes、Files/file-library 行为、managed credential resolution、execution ticket 颁发或权限语义；runner 侧 builtin skills runtime 只消费 AgentSmith 请求级只读投影并做本地运行，不能新增权限、scope 或 credential 解析语义。
 
 ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith 只 pin digest 和验证 adoption，不拥有这些 provider 的 release gate。
@@ -144,7 +144,7 @@ operator 默认只需要看三种选择：
 | --- | --- | --- |
 | 真实在线部署 | `existing_kubernetes + external_declared + online` | 常规真实部署主路径。 |
 | 真实离线部署 | `existing_kubernetes + external_declared + airgap` | 真实 airgap 主路径。 |
-| 本机演练 | `kind_rehearsal + kit_installed + online/airgap` | 本机、CI、离线包自测。 |
+| 本机在线演练 | `kind_rehearsal + kit_installed + online` | 本机、CI 自测。 |
 
 其他组合只放在 troubleshooting / advanced runbook 里，不作为首次实施路径。
 
@@ -155,8 +155,7 @@ operator 默认只需要看三种选择：
 | `existing_kubernetes + external_declared + online` | 是 | 常规真实部署主路径。 |
 | `existing_kubernetes + external_declared + airgap` | 是 | 真实离线部署主路径；外部依赖作为 operator prerequisite 记录和校验。 |
 | `existing_kubernetes + kit_installed + online/airgap` | 受控/advanced，需显式 preflight | 自包含或受控环境；release kit 安装 adjacent substrate pack，但不把它伪装成云资源管理或 in-cluster substrate。 |
-| `kind_rehearsal + kit_installed + online/airgap` | 是，演练用途 | 本机/CI/离线包自测。 |
-| `kind_rehearsal + external_declared + online/airgap` | 可选诊断 | 验证连接真相和镜像包，不作为主要用户路径。 |
+| `kind_rehearsal + kit_installed + online` | 是，演练用途 | 本机/CI 自测。 |
 
 心智模型：
 
@@ -416,7 +415,7 @@ evidence/provenance 生产与 adoption 在对应阶段落地。
 3. 增加 New Repo Governance Bootstrap Contract，并把第 4.1 节作为唯一
    bootstrap invariant；P0 只定义 identity、scope/non-goals、minimum bootstrap
    pack、quick guard 和 handoff 入口，不创建 repo、不迁代码、不发布。
-4. 固定 runner repo 命名：`agentsmith-runner` 是唯一 canonical repo，`agentsmith-codex-runner` 只作为迁移输入或归档对象；增加归档/redirect checklist，并让 release lock/adoption guard 拒绝 `agentsmith-codex-runner` producer。
+4. 固定 runner repo 命名：`agentsmith-runner` 是唯一 canonical repo，`agentsmith-codex-runner` 只作为历史同级目录或归档对象，不作为 bootstrap 输入；增加归档/redirect checklist，并让 release lock/adoption guard 拒绝 `agentsmith-codex-runner` producer。
 5. 同步更新权威合同和入口文档：`docs/contracts/unified-deploy-contract.md`、`docs/contracts/product-terminology.md`、runtime lines / unified deploy operations docs 必须增加 migration/vNext 说明，从 Docker-only/local-kind pre-GA diagnostic baseline 逐步收敛到 deployment mode matrix 和 substrate connection truth；在 validator/fixtures 落地前，不能把 `external_declared` 写成当前已支持事实。
 6. 定义 deployment mode matrix：`target_cluster`、`substrate_source`、`distribution` 三轴，以及允许组合。
 7. 定义 pre-GA profile vocabulary bridge：唯一映射 `local-kind -> kind_rehearsal`、`existing-cluster -> existing_kubernetes`；release contract 和 release-kit evidence 只接受新轴值，只有 AgentSmith adapter 可以显式映射 non-canonical pre-GA profile name；P2/P6 移除这些 active workflow 后删除 bridge。
@@ -552,7 +551,7 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 - 缺工具或工具 proof 失败。
 - verify/load/render/apply/smoke 任一步尝试联网下载失败。
 - `existing_kubernetes + external_declared + airgap` 在断网环境 `verify/load/render/apply/smoke` 通过。
-- `kind_rehearsal` 可以作为可选离线包自测，不是 airgap 定义本身。
+- `kind_rehearsal` 只保留 `kit_installed + online` 作为可选演练，不是 airgap declarable target。
 - 手工 operator signoff 仍单独记录，不能被自动化冒充。
 
 ### P4. AgentSmith 发布 Runner Contract 包

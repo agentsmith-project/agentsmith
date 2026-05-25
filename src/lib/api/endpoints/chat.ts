@@ -70,7 +70,7 @@ export interface StopStreamOptions {
 
 function buildStopStreamRequest(options?: StopStreamOptions) {
   const stopMode = options?.mode ?? 'cancel';
-  return { mode: stopMode, stop_mode: stopMode };
+  return { mode: stopMode };
 }
 
 export type StopStreamResponse = {
@@ -78,7 +78,7 @@ export type StopStreamResponse = {
   stream_id: string;
   state: 'stopping' | 'terminating' | 'not_found_or_finished';
   status?: 'stopping' | 'terminating' | 'not_found_or_finished';
-  stop_mode?: ChatStopMode;
+  mode: ChatStopMode;
   can_escalate?: boolean;
   escalation_reason?: string | null;
 };
@@ -88,7 +88,7 @@ export type StopSessionStreamResponse = {
   session_id: string;
   state: 'stopping' | 'terminating' | 'not_found_or_finished';
   status?: 'stopping' | 'terminating' | 'not_found_or_finished';
-  stop_mode?: ChatStopMode;
+  mode: ChatStopMode;
   can_escalate?: boolean;
   escalation_reason?: string | null;
 };

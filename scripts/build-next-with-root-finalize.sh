@@ -11,6 +11,11 @@ BUILD_FINALIZED=0
 
 info() { echo "[build-next-with-root-finalize] $*"; }
 
+build_runner_contract_workspace_package() {
+  info "npm run build -w @mbos/agent-runner-contract"
+  (cd "${SCRIPT_ROOT}" && npm run build -w @mbos/agent-runner-contract)
+}
+
 finalize_on_exit() {
   local status=$?
   if [[ "${BUILD_FINALIZED}" != "1" ]]; then
@@ -22,6 +27,7 @@ finalize_on_exit() {
 
 run_build_with_final_reconcile() {
   local build_status finalize_status
+  build_runner_contract_workspace_package
   next_generated_root_prepare_source_safe_for_tsc
 
   info "${BUILD_COMMAND}"

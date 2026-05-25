@@ -755,7 +755,10 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
       {
         id: 'generate-release-contract',
         role: 'artifact_producer',
-        commands: ['npm run release:contract:ci-artifact'],
+        commands: [
+          'npm run build -w @mbos/agent-runner-contract',
+          'npm run release:contract:ci-artifact',
+        ],
         requiredSecrets: [],
         requiresSecrets: false,
         evidenceRequired: true,

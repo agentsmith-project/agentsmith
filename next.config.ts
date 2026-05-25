@@ -3,6 +3,8 @@ import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'node:path';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
+const apiEntryNodeSource = path.resolve(__dirname, 'packages/api-entry-node/src/index.ts');
+const agentRunnerContractSource = path.resolve(__dirname, 'packages/agent-runner-contract/src/index.ts');
 
 const nextConfig: NextConfig = {
   // Intentionally minimal config for stability and predictable builds.
@@ -18,12 +20,18 @@ const nextConfig: NextConfig = {
     // Keep default behavior unless explicitly disabled for visual builds.
     ignoreDuringBuilds: process.env.NEXT_DISABLE_ESLINT === '1',
   },
+  turbopack: {
+    resolveAlias: {
+      '@mbos/api-entry-node': apiEntryNodeSource,
+      '@mbos/agent-runner-contract': agentRunnerContractSource,
+    },
+  },
   webpack: (config) => {
     config.resolve ??= {};
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
-      '@mbos/api-entry-node': path.resolve(__dirname, 'packages/api-entry-node/src/index.ts'),
-      '@mbos/agent-runner-contract$': path.resolve(__dirname, 'packages/agent-runner-contract/src/index.ts'),
+      '@mbos/api-entry-node': apiEntryNodeSource,
+      '@mbos/agent-runner-contract$': agentRunnerContractSource,
     };
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),

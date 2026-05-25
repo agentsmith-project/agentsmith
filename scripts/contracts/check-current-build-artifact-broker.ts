@@ -49,8 +49,10 @@ const NEXT_BUILD_COMMAND = 'npx next build --no-lint';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 const IMAGE_PUBLISH_WORKFLOW_PATH = '.github/workflows/image-publish.yml';
 const IMAGE_PUBLISH_JOB_ID = 'publish-images';
+const RELEASE_CONTRACT_ARTIFACT_WORKFLOW_PATH = '.github/workflows/release-contract-artifact.yml';
+const RELEASE_CONTRACT_ARTIFACT_JOB_ID = 'generate-release-contract';
 const HOST_NODE_OR_TSX_COMMAND_PATTERN =
-  /(?:^|\s)(?:node(?:\s|$)|npx\s+tsx\b|tsx\s+scripts\/|npm\s+run\s+release:deploy-template-package\b)/u;
+  /(?:^|\s)(?:node(?:\s|$)|npx\s+tsx\b|tsx\s+scripts\/|npm\s+run\s+release:(?:contract:ci-artifact|deploy-template-package)\b)/u;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -184,34 +186,81 @@ function parseWorkflowSteps(content: string, jobId: string): WorkflowStep[] {
   });
 }
 
-function assertImagePublishBuildsRunnerContractBeforeHostNodeScripts(workflowContent: string): void {
-  const steps = parseWorkflowSteps(workflowContent, IMAGE_PUBLISH_JOB_ID);
+function assertWorkflowBuildsRunnerContractBeforeHostNodeScripts(
+  workflowContent: string,
+  jobId: string,
+  workflowLabel: string,
+): void {
+  const steps = parseWorkflowSteps(workflowContent, jobId);
   const installIndex = steps.findIndex((step) => step.name === 'Install dependencies');
   const runnerContractBuildIndex = steps.findIndex((step) => step.run?.trim() === RUNNER_CONTRACT_BUILD_COMMAND);
   const hostNodeScriptSteps = steps
     .map((step, index) => ({ index, step }))
     .filter(({ step }) => step.run !== undefined && HOST_NODE_OR_TSX_COMMAND_PATTERN.test(step.run));
 
-  assert(installIndex >= 0, 'Image Publish workflow must install npm dependencies before host Node/tsx scripts.');
+  assert(installIndex >= 0, `${workflowLabel} workflow must install npm dependencies before host Node/tsx scripts.`);
   assert(
     runnerContractBuildIndex >= 0,
-    `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} on the GitHub runner before host Node/tsx scripts that load workspace package exports.`,
+    `${workflowLabel} workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} on the GitHub runner before host Node/tsx scripts that load workspace package exports.`,
   );
   assert(
     hostNodeScriptSteps.length > 0,
-    'Image Publish workflow contract expected at least one host Node/tsx script step.',
+    `${workflowLabel} workflow contract expected at least one host Node/tsx script step.`,
   );
   assert(
     installIndex >= 0 && runnerContractBuildIndex >= 0 && installIndex < runnerContractBuildIndex,
-    `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci.`,
+    `${workflowLabel} workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci.`,
   );
 
   for (const { index, step } of hostNodeScriptSteps) {
     assert(
       runnerContractBuildIndex >= 0 && runnerContractBuildIndex < index,
-      `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} before host Node/tsx step "${step.name ?? step.run ?? '<unnamed>'}" because @mbos/agent-runner-contract resolves to dist on the GitHub runner.`,
+      `${workflowLabel} workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} before host Node/tsx step "${step.name ?? step.run ?? '<unnamed>'}" because @mbos/agent-runner-contract resolves to dist on the GitHub runner.`,
     );
   }
+}
+
+function assertRootBuildWrapperBuildsRunnerContractBeforeNextBuild(wrapperContent: string): void {
+  const runnerContractBuildIndex = wrapperContent.indexOf(RUNNER_CONTRACT_BUILD_COMMAND);
+  const nextBuildIndex = wrapperContent.indexOf('info "${BUILD_COMMAND}"');
+
+  assert(
+    runnerContractBuildIndex >= 0,
+    `scripts/build-next-with-root-finalize.sh must run ${RUNNER_CONTRACT_BUILD_COMMAND} so root npm run build works in a cold checkout.`,
+  );
+  assert(
+    nextBuildIndex >= 0,
+    'scripts/build-next-with-root-finalize.sh must still execute the configured Next build command.',
+  );
+  assert(
+    runnerContractBuildIndex >= 0 && nextBuildIndex >= 0 && runnerContractBuildIndex < nextBuildIndex,
+    `scripts/build-next-with-root-finalize.sh must run ${RUNNER_CONTRACT_BUILD_COMMAND} before the Next build command.`,
+  );
+}
+
+function assertNextConfigTurbopackWorkspaceAliases(nextConfigContent: string): void {
+  assert(
+    nextConfigContent.includes("const apiEntryNodeSource = path.resolve(__dirname, 'packages/api-entry-node/src/index.ts');"),
+    'next.config.ts must keep @mbos/api-entry-node source alias target centralized.',
+  );
+  assert(
+    nextConfigContent.includes("const agentRunnerContractSource = path.resolve(__dirname, 'packages/agent-runner-contract/src/index.ts');"),
+    'next.config.ts must keep @mbos/agent-runner-contract source alias target centralized.',
+  );
+  assert(nextConfigContent.includes('turbopack:'), 'next.config.ts must configure Turbopack aliases for default npm run dev.');
+  assert(nextConfigContent.includes('resolveAlias:'), 'next.config.ts Turbopack config must use resolveAlias.');
+  assert(
+    nextConfigContent.includes("'@mbos/api-entry-node': apiEntryNodeSource"),
+    'next.config.ts Turbopack aliases must resolve @mbos/api-entry-node to source.',
+  );
+  assert(
+    nextConfigContent.includes("'@mbos/agent-runner-contract': agentRunnerContractSource"),
+    'next.config.ts Turbopack aliases must resolve @mbos/agent-runner-contract to source.',
+  );
+  assert(
+    nextConfigContent.includes("'@mbos/agent-runner-contract$': agentRunnerContractSource"),
+    'next.config.ts webpack aliases must keep the exact @mbos/agent-runner-contract source alias.',
+  );
 }
 
 function assertAgentsmithAppDockerfileBuildContextCopySources(dockerfileContent: string): void {
@@ -330,6 +379,9 @@ function main(): void {
   const agentsmithAppBaseDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app-base');
   const deployContract = readText('docs/contracts/unified-deploy-contract.md');
   const imagePublishWorkflow = readText(IMAGE_PUBLISH_WORKFLOW_PATH);
+  const releaseContractArtifactWorkflow = readText(RELEASE_CONTRACT_ARTIFACT_WORKFLOW_PATH);
+  const rootBuildWrapper = readText('scripts/build-next-with-root-finalize.sh');
+  const nextConfig = readText('next.config.ts');
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -439,7 +491,14 @@ function main(): void {
   assertAgentsmithAppDockerfileBuildContextCopySources(agentsmithAppDockerfile);
   assertAgentsmithAppBaseDockerfileWorkspaceInstallInventory(agentsmithAppBaseDockerfile);
   assertAgentsmithAppDockerfileBuildsRunnerContractBeforeNextBuild(agentsmithAppDockerfile);
-  assertImagePublishBuildsRunnerContractBeforeHostNodeScripts(imagePublishWorkflow);
+  assertWorkflowBuildsRunnerContractBeforeHostNodeScripts(imagePublishWorkflow, IMAGE_PUBLISH_JOB_ID, 'Image Publish');
+  assertWorkflowBuildsRunnerContractBeforeHostNodeScripts(
+    releaseContractArtifactWorkflow,
+    RELEASE_CONTRACT_ARTIFACT_JOB_ID,
+    'Release Contract Artifact',
+  );
+  assertRootBuildWrapperBuildsRunnerContractBeforeNextBuild(rootBuildWrapper);
+  assertNextConfigTurbopackWorkspaceAliases(nextConfig);
 
   const appKey = computeAppImageContentKey({
     files: [

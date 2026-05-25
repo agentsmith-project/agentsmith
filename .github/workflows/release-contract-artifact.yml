@@ -48,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build runner contract workspace package
+        run: npm run build -w @mbos/agent-runner-contract
+
       - name: Generate release contract artifact
         env:
           RELEASE_CONTRACT_INPUT_ARTIFACT_NAME: ${{ inputs.release_contract_input_artifact_name }}

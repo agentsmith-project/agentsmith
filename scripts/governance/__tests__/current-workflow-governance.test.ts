@@ -1215,7 +1215,10 @@ describe('current workflow governance', () => {
       'artifacts/release-contract/agentsmith-release-contract.json',
       'artifacts/release-contract/release-contract-input-source.json',
     ]);
-    expect(job?.commands).toEqual(['npm run release:contract:ci-artifact']);
+    expect(job?.commands).toEqual([
+      RUNNER_CONTRACT_BUILD_COMMAND,
+      'npm run release:contract:ci-artifact',
+    ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ actions: 'read', contents: 'read' });
     expect(downloadStep).toBeDefined();
     expect(downloadWith.name).toBe('${{ inputs.release_contract_input_artifact_name }}');
@@ -1223,7 +1226,11 @@ describe('current workflow governance', () => {
     expect(downloadWith.repository).toBe('${{ github.repository }}');
     expect(downloadWith['github-token']).toBe('${{ github.token }}');
     expect(downloadWith.path).toBe('artifacts/release-contract/input');
+    expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(runCommands).toContain('npm run release:contract:ci-artifact');
+    expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf('npm run release:contract:ci-artifact'),
+    );
     expect(runCommands).toContain('RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');

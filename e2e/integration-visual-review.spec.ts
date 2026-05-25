@@ -446,8 +446,16 @@ async function requestProjectAccess(page: Page, workspaceId: string, projectId: 
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
   const requestButton = page.getByTestId(`projects__join-request-btn--${projectId}`);
   await expect(requestButton).toBeVisible({ timeout: 30_000 });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/join-requests`)
+      && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await requestButton.click();
-  await expect.poll(async () => await requestButton.textContent(), { timeout: 5_000 }).toMatch(/pending|request access/i);
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+  await expect.poll(async () => requestButton.textContent(), { timeout: 15_000 }).toMatch(/pending/i);
 }
 
 async function approveJoinRequest(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -455,7 +463,16 @@ async function approveJoinRequest(page: Page, workspaceId: string, projectId: st
   await expect(page.getByRole('tab', { name: /join requests/i })).toBeVisible({ timeout: 30_000 });
   const requestCard = page.locator('div').filter({ hasText: /integration-member/i }).first();
   await expect(requestCard).toBeVisible({ timeout: 30_000 });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/join-requests/`)
+      && response.url().includes('/approve')
+      && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await requestCard.getByRole('button', { name: /approve and grant project admin|批准并授予项目管理权限/i }).click();
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
   await expect(page.getByText(/project admin/i).first()).toBeVisible({ timeout: 30_000 });
 }
 

@@ -33,6 +33,14 @@ AgentSmith `release:ready` does not execute or require it for the AgentSmith
 release verdict; future deployment/package/operator verdict ownership belongs
 to release-kit repo-local gates and evidence.
 
+Because the project is still pre-GA, profile vocabulary is not a compatibility
+track. The only temporary mapping owner is the AgentSmith release-boundary
+adapter, the deletion trigger is P2/P6 removal or hiding of these active
+diagnostic workflows after release-kit repo-local gates own deployment verdicts,
+and evidence is `contracts:check-unified-deploy-vocabulary` plus
+`contracts:check-current-verification-campaigns` proving mixed vocabulary and
+synonym drift fail fast.
+
 ## Runtime Topology
 
 ### Docker Substrate

@@ -300,6 +300,7 @@ The following terms are not allowed as primary product-facing names in current U
 2. Pre-GA target contracts reject and remove old runtime/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views.
 - Public OpenAPI paths, route-kind maps, SDK exports, generated client types, route manifests, navigation, i18n, user docs, and module maps must use the current names and paths.
 - Old route paths, payload fields, terminal views, and public API names may appear only in breaking allowlists, negative contract tests, or one-shot cleanup/assertion evidence that explicitly proves they are forbidden or removed.
+- Any such allowlist or cleanup evidence must be exact and owned, with a deletion trigger and a contract/doc check proving it cannot become an active route, alias, bridge, or compatibility layer.
 - Backend storage collection names and implementation-only filenames may contain old implementation terms only when they are not public/runtime entrypoints, not product-facing truth, and not used as compatibility bridges.
 
 3. Product-facing contract docs must use current names when listing pages, navigation sections, or governance objects.

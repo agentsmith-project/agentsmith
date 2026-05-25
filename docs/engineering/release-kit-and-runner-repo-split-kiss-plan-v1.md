@@ -10,8 +10,12 @@ producer passed; release-kit input/evidence intake 已阶段性收口到 fail-fa
 focused diagnostic。Full P1 adoption is not claimed. P2 focused
 diagnostics/bootstrap work can continue; P3-P6 remain gated by the phase checks,
 evidence mapping, provenance checks, redaction checks, and image inventory truth
-in this plan. 当前最小切片是 P4 runner contract artifact 可发布/可消费闭环
-in progress/next；不能宣称 P4 完成，也不能迁 runtime。
+in this plan. 最新 review 结论已收口：当前 `existing-cluster` 仍降级为
+Docker substrate/IP-only diagnostic；runner contract 仍是 local pack manifest，
+不是 release-grade artifact；release contract image inventory 与 deploy
+template manifest 未同步前是 blocker。当前最小切片是 P4 runner contract
+artifact 可发布/可消费闭环 in progress/next；不能宣称 P4 完成，也不能迁
+runtime。
 
 ## 1. 目标
 
@@ -46,8 +50,8 @@ AgentSmith 仍保留：
 - AgentSmith 不提供对外 DevOps 发布编排或发布管理平台能力，见 [项目宪法](../项目宪法.md)。
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
 - 当前 release campaign 只绑定 AgentSmith product readiness / local complete / current product gate、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 transition-only focused diagnostics / 过渡期专项诊断，不属于当前产品门禁结论，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
-- Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。
-- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。pre-GA 已移除旧包、旧输入、旧路径和旧字段不是正式输入；正式路径默认 fail fast，只能出现在负向测试、过渡期专项诊断或 operator 短期说明里。P4 contract 包覆盖 env 约束、P5 runner repo 消费正式包后必须删除或归位，非正式 pre-GA 输入/路径/字段继续直接 fail fast。
+- Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。当前 `existing-cluster` 仍按 Docker substrate/IP-only transition diagnostic 处理，不能冒充真实 cloud/airgap substrate。
+- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。但当前仍是 local pack manifest，不是 release-grade artifact。pre-GA 已移除旧包、旧输入、旧路径和旧字段不是正式输入；正式路径默认 fail fast，只能出现在负向测试、过渡期专项诊断或 operator 短期说明里。P4 contract 包覆盖 env 约束、P5 runner repo 消费正式包后必须删除或归位，非正式 pre-GA 输入/路径/字段继续直接 fail fast。
 - 当前仍是全项目 pre-GA：旧名、旧路径、旧 env/profile 别名不做长期双轨。它们只能作为负向测试、过渡期专项诊断或 operator 短期说明出现，并必须写清删除/归位阶段。部署 profile 映射口在 P2/P6 去掉 active workflow 后删除或归位到 operator docs；runner 已移除旧包/旧输入/旧路径/旧字段/旧 env 在 P4 contract 包覆盖、P5 runner repo/manifest/lock adoption 后删除或归位；P6 只保留必要 fail-fast 负向测试。
 - 当前 runner 执行进程在 [packages/agent-task-runner](../../packages/agent-task-runner)，AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)。
 - AFSCP/ASBCP 只作为新 repo bootstrap 治理做法上的 family reference；本计划采用 ASBCP-lite / non-normative reference，只借鉴启动纪律：repo identity、scope boundary、docs/contracts/runbooks/ADR 入口、quick governance guard、单一 release gate 入口。不复制 AFSCP/ASBCP 的领域模型、风险台账规模、证据分类体系或 gate 实现。
@@ -66,9 +70,12 @@ AgentSmith 仍保留：
 
 当前优先修正 release-kit 输入收口和 runner contract 顺序，先不继续扩展 deploy/airgap 面。
 
-1. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。未来/预留 output 不预留长期双轨，未实现就 fail fast。下一步最小切片先把 `--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界收紧，再继续 P2/P3 deploy 或 airgap 扩展。
-2. Runner 复审结论：不要先搬 runtime。先完成 `@mbos/agent-runner-contract` 可发布、可消费 artifact 的最小闭环；再让 `agentsmith-runner` 增加 consumer conformance skeleton；最后才迁 runner runtime、image build 和 AgentSmith adoption。
-3. 旧输入复审结论：旧名、旧路径、旧 env/profile 别名、已移除旧包和已移除字段只作为负向测试、过渡期专项诊断或 operator 短期说明；正式路径默认 fail fast，并在 P2/P4/P5/P6 删除或归位。
+1. 部署/运维复审结论：当前 `existing-cluster` 只能命名为 Docker substrate/IP-only transition diagnostic。它不等于真实 Kubernetes/cloud/airgap substrate，也不能进入 AgentSmith `release:ready` 结论。真实 online/airgap/cloud substrate 由 release-kit repo-local gate 暴露；AgentSmith 侧只能降级展示、显式命名、误用就 fail fast。
+2. Release kit 前置 blocker：先补齐 digest-only image refs、所有 workload live `imageID` 校验、host/TLS/pull-secret/storage/substrate secret-ref 输入接口、operator runbook，以及 deploy template manifest 中机器可读的 `required_image_ids`。release contract generator/check 必须覆盖所有模板 image 引用；image inventory 与模板 manifest 未同步时停止。
+3. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。未来/预留 output 不预留长期双轨，未实现就 fail fast。下一步最小切片先把 `--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界收紧，再继续 P2/P3 deploy 或 airgap 扩展。
+4. Runner 复审结论：不要先搬 runtime。当前 `@mbos/agent-runner-contract` 方向正确，但仍只是 local pack manifest，不是 release-grade artifact；P4/P5 必须补 artifact digest/integrity/URI/provenance、下载/安装 consumer test、runner release manifest adoption 比对。完成后再让 `agentsmith-runner` 增加 consumer conformance skeleton；最后才迁 runner runtime、image build 和 AgentSmith adoption。
+5. Runner 迁移结论：旧 `@mbos/agent-runner` shim 不能成为长期双轨；`buildAgentRuntimeEnv` 归属必须在 P5 迁到 runner runtime 所属包或被正式 contract 覆盖，旧包只保留负向测试/短期诊断并在 P6 删除或归位。当前 runner image 仍走 AgentSmith 源码路径，不能作为拆分证据或 release proof。
+6. 旧输入复审结论：旧名、旧路径、旧 env/profile 别名、已移除旧包和已移除字段只作为负向测试、过渡期专项诊断或 operator 短期说明；正式路径默认 fail fast，并在 P2/P4/P5/P6 删除或归位。
 
 ## 4. Repo 职责
 
@@ -120,6 +127,9 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
 7. 新 repo 的事实源只能是 repo-local 文档、合同、runbook、ADR、gate，以及
    AgentSmith 发布出来的 versioned contract / image digest / release manifest；
    不能回读 `agentsmith` 工作树或 sibling repo 状态当作事实源。
+8. `agentsmith-release-kit` 自己必须把 source-boundary、remote identity 和
+   provenance check 接入 repo-local required CI；AgentSmith handoff 的 sibling
+   scan 只能作为交接证据，不能替代 release-kit 自身门禁。
 
 ## 5. 不做
 
@@ -137,6 +147,8 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
 10. 不复制大型治理体系，不把 quick gate 等同 release readiness，不把新 repo 的
     sibling repo status 当 gate。
 11. 不把源码迁移、工具迁移或从 `agentsmith` 工作树读取事实作为新 repo 第一步。
+12. 不把 `site.env.example`、本地 site env 或当前 `existing-cluster` 诊断输出当作
+    正式 prerequisite image truth。
 
 ## 6. 部署模式矩阵
 
@@ -215,6 +227,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 - `deploy_image_inventory`
 - `deploy_template_digest`
 - `deploy_template_package`
+- `deploy_template_required_image_ids`
 - `openapi_digest`
 - `asyncapi_digest`
 - `required_product_flows`
@@ -236,17 +249,22 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 9. `deploy_image_inventory` 是 AgentSmith release contract 输出的最终 image inventory，必须由 `product_images`、`adopted_provider_images`、`release_kit_prerequisite_images` 和 deploy template 渲染输入生成；release kit 只能验证 rendered manifests 与该 inventory 一致，不能另起一份 image 真相。
 10. 所有会被 pull/load/apply 的 image 都必须能追溯到 digest。
 11. `deploy_template_package` 是 release contract required field，包含模板包
-    URI、package sha256、manifest sha256 和 provenance；release kit 读取它，
-    不能猜 AgentSmith repo path 或直接 import 产品源码。
-12. `required_product_flows` 当前最小集合是 `workspace_project`、`files`、`agent_task_managed_runner`。其他流程只有在 release scope 明确要求时才加入。
-13. `target_profiles` 声明支持的 `target_cluster`、`substrate_source`、`distribution` 组合，以及每个组合的 namespace/RBAC/ingress/TLS/storage class/registry/pull secret prerequisites；`target_profiles.required` 表示 release-kit adoption / repo-local readiness 前必须有正式 evidence 的组合。
-14. `substrate_connection_schema` 使用中性连接真相命名，例如 `agentsmith.substrate-connection.truth/v1`；`agentsmith.docker-substrate.truth/v1` 是真实 Docker substrate truth，只能作为 `kit_installed` 的内部 installer truth；已移除的未命名空间输入名 `docker-substrate.truth/v1` 是 pre-GA invalid input，直接 fail fast，两者都不得用于 `external_declared`。
-15. `artifact_provenance` 至少包含 producer repo identity、commit SHA、workflow/run/job、artifact URI、artifact digest、generated_at 和 generator version。正式 release adapter 必须拒绝缺 provenance、local provenance 或 repo identity 不匹配的 contract。
-16. bootstrap 阶段 `--inputs` / contract intake 只允许作为 focused diagnostic：
+    URI、package sha256、manifest sha256、机器可读 `required_image_ids` 和
+    provenance；release kit 读取它，不能猜 AgentSmith repo path 或直接
+    import 产品源码。
+12. `deploy_template_required_image_ids` 必须来自 deploy template manifest，
+    覆盖所有模板引用的 image ID；release contract generator/check 必须验证
+    它是 `deploy_image_inventory` 的子集且没有 orphan/missing image。模板新增
+    image 引用但未更新 manifest 或 inventory 时 fail fast。
+13. `required_product_flows` 当前最小集合是 `workspace_project`、`files`、`agent_task_managed_runner`。其他流程只有在 release scope 明确要求时才加入。
+14. `target_profiles` 声明支持的 `target_cluster`、`substrate_source`、`distribution` 组合，以及每个组合的 namespace/RBAC/ingress/TLS/storage class/registry/pull secret prerequisites；`target_profiles.required` 表示 release-kit adoption / repo-local readiness 前必须有正式 evidence 的组合。
+15. `substrate_connection_schema` 使用中性连接真相命名，例如 `agentsmith.substrate-connection.truth/v1`；`agentsmith.docker-substrate.truth/v1` 是真实 Docker substrate truth，只能作为 `kit_installed` 的内部 installer truth；已移除的未命名空间输入名 `docker-substrate.truth/v1` 是 pre-GA invalid input，直接 fail fast，两者都不得用于 `external_declared`。
+16. `artifact_provenance` 至少包含 producer repo identity、commit SHA、workflow/run/job、artifact URI、artifact digest、generated_at 和 generator version。正式 release adapter 必须拒绝缺 provenance、local provenance 或 repo identity 不匹配的 contract。
+17. bootstrap 阶段 `--inputs` / contract intake 只允许作为 focused diagnostic：
     它可以输出 `intake-report` 和 `image-digest-plan`，但不代表 deploy/package/operator verdict
     或 AgentSmith product gate；这类输出必须显式标记
     `readiness=false`，缺失或被上层当作 AgentSmith product gate 或 deploy/package/operator verdict 时 fail fast。
-17. P1/P2 adoption 前，正式 intake 必须通过三项 guard：三轴枚举拒绝 non-canonical pre-GA profile names 和同义词；最小字段校验覆盖 image digest、deploy image inventory、
+18. P1/P2 adoption 前，正式 intake 必须通过三项 guard：三轴枚举拒绝 non-canonical pre-GA profile names 和同义词；最小字段校验覆盖 image digest、deploy image inventory、
     template package、provenance 和 `target_profiles.required`；required 组合缺
     正式 evidence 时只能得到 `readiness=false`，不能进入 deploy/package/operator verdict 或 AgentSmith product gate。
 
@@ -262,6 +280,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 - Redis：host、port、password secret ref、TLS mode
 - object storage：S3-compatible endpoint、bucket、access key secret ref、scheme/TLS、path/virtual-host style
 - Keycloak/OIDC：public issuer、realm/client id、JWKS/metadata reachability、read-only validation mode
+- Kubernetes deploy prerequisites：namespace/RBAC mode、ingress host/TLS secret ref、registry pull secret ref、storage class/PV policy、substrate secret refs
 - product-flow probe secret refs：仅在产品 flow 需要直接 DB/OIDC/admin probe 时由 operator 显式提供；不能从 Docker defaults 或云环境里猜
 - redacted fingerprint
 
@@ -346,7 +365,8 @@ Pre-GA transition-only diagnostic mapping（不属于 AgentSmith product gate）
 
 ### 7.4 Runner Contract v1
 
-Runner contract 从当前 `packages/agent-runner` 收敛为唯一版本化包，例如 `@mbos/agent-runner-contract`。
+Runner contract 已从旧 `packages/agent-runner` shim 收敛到
+`packages/agent-runner-contract` / `@mbos/agent-runner-contract` 方向；下一步是把它从 local pack manifest 补成 release-grade artifact。
 
 P4 完成后，唯一机器真相是 contract package 内的 schema/types/fixtures。AsyncAPI 和协议文档是生成或校验输出；它们可以解释语义，但不能新增 contract package 没有的字段。AgentSmith 产品合同仍决定产品边界，runner repo 只消费 contract package，不反向定义 Agent task 产品语义。
 
@@ -378,12 +398,12 @@ v1 冻结：
 | Truth | Owner | 物理来源 | 生成器 | 校验器/消费者 | fail-fast 条件 |
 | --- | --- | --- | --- | --- | --- |
 | AgentSmith release contract | AgentSmith | AgentSmith CI artifact | AgentSmith release contract generator | release kit、AgentSmith release summary adapter | 缺 digest、缺 provenance、repo identity 不匹配、tag-only image、OpenAPI/AsyncAPI/template digest 漂移 |
-| Deploy template package | AgentSmith | AgentSmith CI artifact | AgentSmith deploy template package generator | AgentSmith release contract validator、release kit source-boundary guard | 缺 package URI、缺 digest、缺 provenance、manifest digest 漂移、release kit 猜 AgentSmith repo path |
-| Deploy image inventory | AgentSmith | release contract 内 `deploy_image_inventory` | AgentSmith contract generator | release kit render/check、mirror、smoke | rendered workload image 不在 inventory、target registry digest 不匹配、live imageID 不匹配 |
+| Deploy template package | AgentSmith | AgentSmith CI artifact | AgentSmith deploy template package generator | AgentSmith release contract validator、release kit source-boundary guard | 缺 package URI、缺 digest、缺 provenance、缺 `required_image_ids`、manifest digest 漂移、release kit 猜 AgentSmith repo path |
+| Deploy image inventory | AgentSmith | release contract 内 `deploy_image_inventory` | AgentSmith contract generator | release kit render/check、mirror、smoke | rendered workload image 不在 inventory、`required_image_ids` 未覆盖模板引用、target registry digest 不匹配、live imageID 不匹配 |
 | Substrate connection truth | release kit 生成/校验，AgentSmith 定义 schema | neutral truth JSON | `kit_installed` installer 或 `external_declared` validator | render/apply/smoke、AgentSmith product flow producer | Docker truth 用于 external、缺 endpoint/secret ref/TLS/extension、明文 secret |
 | Release kit evidence | release kit | release kit evidence root | release kit commands | AgentSmith thin adapter、operator runbook | 缺 input digest/provenance、stale evidence、writer id 不匹配、secret 泄露 |
-| Runner contract | AgentSmith shared-contract flow | `@mbos/agent-runner-contract` package (`packages/agent-runner-contract/src`) schema/types/fixtures；已移除旧包 `@mbos/agent-runner` 是 pre-GA 旧输入，正式路径默认拒绝，只能出现在负向测试、过渡期专项诊断或短期迁移说明里，P4/P5 后删除或归位 | AgentSmith runner contract sync from `@mbos/agent-runner-contract` | AgentSmith API、runner repo、AsyncAPI/doc checks | AsyncAPI 漂移、已移除旧字段、unsupported protocol version、手工复制类型 |
-| Runner release manifest | `agentsmith-runner` | runner repo CI artifact | runner repo release workflow | AgentSmith runner lock checker | 缺 image digest/provenance、缺 contract artifact digest/provenance、contract version 不匹配、producer repo 不是 `agentsmith-runner` |
+| Runner contract | AgentSmith shared-contract flow | `@mbos/agent-runner-contract` package (`packages/agent-runner-contract/src`) schema/types/fixtures；当前 local pack manifest 不是 release-grade artifact；已移除旧包 `@mbos/agent-runner` 是 pre-GA 旧输入，正式路径默认拒绝，只能出现在负向测试、过渡期专项诊断或短期迁移说明里，P4/P5 后删除或归位 | AgentSmith runner contract sync from `@mbos/agent-runner-contract` | AgentSmith API、runner repo、AsyncAPI/doc checks、download/install consumer test | 缺 artifact URI/digest/integrity/provenance、AsyncAPI 漂移、已移除旧字段、unsupported protocol version、手工复制类型 |
+| Runner release manifest | `agentsmith-runner` | runner repo CI artifact | runner repo release workflow | AgentSmith runner lock checker | 缺 image digest/provenance、缺 contract artifact URI/digest/integrity/provenance、contract version 不匹配、producer repo 不是 `agentsmith-runner` |
 | Runner image lock | AgentSmith | `agent-task-runner-image.lock` | AgentSmith adoption PR | AgentSmith release contract generator、backend-real | lock 与 runner manifest/release contract digest 不一致 |
 
 ### 7.6 Provenance 与 Redaction
@@ -432,20 +452,20 @@ evidence/provenance 生产与 adoption 在对应阶段落地。
    bootstrap invariant；P0 只定义 identity、scope/non-goals、minimum bootstrap
    pack、quick guard 和 handoff 入口，不创建 repo、不迁代码、不发布。
 4. 固定 runner repo 命名：`agentsmith-runner` 是唯一 canonical repo，`agentsmith-codex-runner` 只作为历史同级目录或归档对象，不作为 bootstrap 输入；增加归档/redirect checklist，并让 release lock/adoption guard 拒绝 `agentsmith-codex-runner` producer。
-5. 同步更新权威合同和入口文档：`docs/contracts/unified-deploy-contract.md`、`docs/contracts/product-terminology.md`、runtime lines / unified deploy operations docs 必须增加 migration/vNext 说明，从 Docker-only/local-kind pre-GA diagnostic baseline 逐步收敛到 deployment mode matrix 和 substrate connection truth；在 validator/fixtures 落地前，不能把 `external_declared` 写成当前已支持事实。
+5. 同步更新权威合同和入口文档：`docs/contracts/unified-deploy-contract.md`、`docs/contracts/product-terminology.md`、runtime lines / unified deploy operations docs 必须增加 migration/vNext 说明，从 Docker-only/local-kind/`existing-cluster` pre-GA diagnostic baseline 逐步收敛到 deployment mode matrix 和 substrate connection truth；在 validator/fixtures 落地前，不能把 `external_declared` 或真实 cloud/airgap support 写成当前已支持事实。
 6. 定义 deployment mode matrix：`target_cluster`、`substrate_source`、`distribution` 三轴，以及允许组合。
 7. 定义 pre-GA profile vocabulary 映射口：唯一映射 `local-kind -> kind_rehearsal`、`existing-cluster -> existing_kubernetes`；release contract 和 release-kit evidence 只接受新轴值，只有 AgentSmith adapter 可以显式映射 non-canonical pre-GA profile name；P2/P6 移除这些 active workflow 后删除映射口。
 8. 定义 `agentsmith-release-contract/v1` schema。
 9. 定义中性 `substrate-connection truth/v1` schema。
 10. 定义 release kit evidence schema。
 11. 定义 runner contract package 的 v1 冻结范围。
-12. 定义 release kit 如何读取 deploy template package；模板源码可以逐步迁到 release kit，但在迁移完成前必须由 AgentSmith 明确产出 template package，不允许 release kit 猜 repo 路径。
+12. 定义 release kit 如何读取 deploy template package；模板源码可以逐步迁到 release kit，但在迁移完成前必须由 AgentSmith 明确产出 template package，不允许 release kit 猜 repo 路径。template manifest 必须包含机器可读 `required_image_ids`，并由 release contract generator/check 覆盖所有模板 image 引用。
 13. 定义 deterministic provenance subject：release contract body without provenance、release kit `evidence-subject.json`、runner manifest body without provenance；禁止 hash 包含自身 provenance 的 JSON。
 14. 增加 truth matrix：release contract、deploy image inventory、substrate truth、release kit evidence、runner contract、runner release manifest、runner image lock 分别列 owner、物理来源、生成器、校验器、消费者、fail-fast 条件。
 15. 增加 P0 handoff fixtures：release contract example、`external_declared` truth example、`kit_installed` truth example、release kit evidence example、runner manifest example。
 16. 增加 release kit evidence adapter mapping，明确 release kit outputs 如何进入当前 `lane-unified-deploy-*` native `result.json`、`<campaign-root>/unified-deploy/*` 目录和 release summary 四段。
 17. 增加 provenance/redaction schema 和 tests。
-18. 增加 fail-fast contract tests：tag-only image、缺 digest、缺 required flow、已移除旧 runner field、release kit 误 import AgentSmith 产品源码、kind 被当成必需部署目标、non-canonical pre-GA profile name 与新轴值混写、同义词漂移、`target_profiles.required` 缺失或被当成 optional、`--inputs` focused diagnostic 被当成 readiness、`--evidence` 接受未实现或不能重新语义校验的 output、external substrate 使用 Docker truth、local-kind evidence 冒充 existing Kubernetes evidence、明文 secret 泄露、缺 provenance、runner contract 与 AsyncAPI 漂移、provenance hash subject 自引用。
+18. 增加 fail-fast contract tests：tag-only image、缺 digest、缺 required flow、deploy template `required_image_ids` 与 image inventory 不一致、`site.env.example` 被当作正式 image truth、已移除旧 runner field、release kit 误 import AgentSmith 产品源码、kind 被当成必需部署目标、`existing-cluster` 诊断被当成真实 cloud/airgap substrate 或 AgentSmith `release:ready` verdict、non-canonical pre-GA profile name 与新轴值混写、同义词漂移、`target_profiles.required` 缺失或被当成 optional、`--inputs` focused diagnostic 被当成 readiness、`--evidence` 接受未实现或不能重新语义校验的 output、external substrate 使用 Docker truth、local-kind evidence 冒充 existing Kubernetes evidence、明文 secret 泄露、缺 provenance、runner contract 与 AsyncAPI 漂移、provenance hash subject 自引用。
 
 验收：
 
@@ -476,10 +496,11 @@ release evidence adapter mapping 和 release contract intake 三项 guard 通过
 
 1. AgentSmith CI 发布 product image digest，当前只覆盖 canonical `agentsmith_app`。它是单一 app image digest；不得为计划补 `web` / `api` / `product_schema_bootstrap` 假 component ID。未来真拆镜像时再新增 machine IDs、fixtures 和 tests。
 2. P1 不发布 `managed_runner` 临时 digest；runner release proof 归 P5 runner manifest/lock 和 AgentSmith lock adoption。
-3. 生成 `agentsmith-release-contract.json`，包含 `product_images`、`adopted_provider_images`、`release_kit_prerequisite_images`、`deploy_image_inventory` 和 `artifact_provenance`。
+3. 生成 `agentsmith-release-contract.json`，包含 `product_images`、`adopted_provider_images`、`release_kit_prerequisite_images`、`deploy_image_inventory`、deploy template `required_image_ids` 和 `artifact_provenance`。
 4. release summary 记录 release contract 路径、digest 和 provenance。
 5. AgentSmith adapter 拒绝 local/stale/缺 provenance 的 release contract。
 6. 保持 `npm run release:ready` 作为 AgentSmith product readiness / local complete / current product gate 入口不变，避免同时改产品验收和部署工具归属。
+7. `site.env.example` 只能作为示例或本地诊断输入；正式 prerequisite image truth 只能来自 release contract、deploy template manifest 和 profile-specific env/schema。
 
 P1.1 当前已完成：手动触发的 AgentSmith CI artifact producer 只生成并上传
 `agentsmith-release-contract.json`。该 producer 的 provenance 只来自 GitHub CI 环境
@@ -493,6 +514,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 - P1 不要求 runner digest；不得为 `managed_runner` 补 release proof，它的缺席也不能被当作 P1 失败。
 - contract 与当前 OpenAPI/AsyncAPI 和 deploy template digest 对齐。
 - deploy image inventory 是唯一 image inventory 输入。
+- deploy template manifest 的 `required_image_ids` 与 `deploy_image_inventory` 完全同步；缺失、孤儿 image 或模板引用未覆盖都失败。
 - `release:ready` 仍使用当前产品证据闭环，不消费 deploy/package/operator verdict。
 
 ### P2. Release Kit Online MVP
@@ -505,7 +527,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 2. bootstrap PR 通过前，repo-local workers 不迁部署工具、不迁 release-kit runtime；通过后只解锁专项开发，不解锁 release/adoption。
 3. bootstrap PR 通过后，再迁入不依赖 AgentSmith 产品源码的 deploy 工具：manifest/render、Kubernetes apply/dry-run、substrate install/status/connection truth verify、address truth、API single-replica、route smoke。
 4. 所有路径参数化，禁止默认读 AgentSmith repo root。
-5. 提供 `target preflight`、`render/check`、`images mirror`、`apply`、`rollout`、`smoke`。
+5. 提供 `target preflight`、`render/check`、`images mirror`、`apply`、`rollout`、`smoke` 和 operator runbook；preflight 输入必须覆盖 host/TLS、pull secret、storage class、substrate secret refs。
 6. bootstrap 阶段 `release-kit --inputs` 和 `release-kit --evidence` 只做 focused diagnostic：
    `--inputs` 只能输出 `readiness=false` 的 `intake-report` / `image-digest-plan`；
    `--evidence` 只能接受当前 producer 可重新语义校验的 focused output：
@@ -514,13 +536,14 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
    `deploy-result.json#substrate` 等未来/预留 output 不保留长期双轨，未实现就 fail fast；正式 adoption 前必须补齐三轴枚举、最小字段和
    `target_profiles.required` guard。
 7. `images mirror` 只 pull/mirror digest-pinned images，不从 AgentSmith 或 runner repo source build image；目标 registry 由 operator 指定，不能写死 `kind-registry`。
-8. `render/check` 必须验证 rendered workload images 全部来自 release contract 的 `deploy_image_inventory`。
+8. `render/check` 必须验证 rendered workload images 全部来自 release contract 的 `deploy_image_inventory`，并覆盖 deploy template manifest 的 `required_image_ids`。
 9. `rollout/smoke` 必须采集所有 AgentSmith/runner/provider workload 的 live `imageID`，并和 release contract / target registry digest 对齐。
 10. API single-replica 等规则来源仍是 AgentSmith release contract / deploy contract；release kit 只执行检查，不独立定义产品部署规则。
 11. 支持 `existing_kubernetes + external_declared + online` 作为在线部署主路径。
 12. 支持 `kind_rehearsal + kit_installed + online` 作为本机/CI 证明工具。
 13. `existing_kubernetes + kit_installed` 只在 pod-routability preflight 存在后进入 advanced runbook；P2 MVP 不把它作为默认路径。
-14. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
+14. `agentsmith-release-kit` 必须把 source-boundary、remote identity、provenance check 作为 repo-local required CI；AgentSmith sibling scan/handoff evidence 只能证明交接输入可读，不能替代 release-kit CI。
+15. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
 
 不迁：
 
@@ -534,11 +557,13 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 
 - online deploy 能从 GHCR/digest 或 operator 指定 registry 拉取 image。
 - `existing_kubernetes + external_declared + online` 能产出 preflight、render、apply、rollout、route probe、image adoption evidence。
+- 当前 AgentSmith `existing-cluster` 诊断在 P2 前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
 - `kit_installed` 模式的 substrate lifecycle/truth evidence 在 release-ready deploy snapshot 中可见；如果 P2 早期暂留 AgentSmith，不能宣称 release kit 已完整拥有 online deploy。
 - kind rehearsal 产出 images、rollout、route probe evidence，但不能作为用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
 - P2 过渡说明以当前边界为准：AgentSmith `release:ready` 是 product readiness / local complete / current product gate，不要求 dependencies/images/rollout/product-flow deploy evidence；这些 unified deploy outputs 只保留为过渡期专项诊断，直到 P2/P3/P6 收口时从 AgentSmith active status/workflow 删除或隐藏。这里不暗示未来 AgentSmith release campaign 会继续消费它们。
 - release kit CI 至少覆盖 contract schema、render/dry-run、digest-only、no source import；真实 Kubernetes/cloud smoke 可以是手动或 scheduled，需要 secrets/kubeconfig 时必须产出同一 evidence schema。
+- release kit repo-local CI 覆盖 source-boundary、canonical remote identity 和 provenance；AgentSmith handoff scan 不算替代证明。
 - AgentSmith transition diagnostic profile 还是 local-kind 时，真实 Kubernetes/cloud evidence 只能作为 operator deploy evidence；除非当前 manifest 显式新增/调整 writer，否则不能写入 local-kind gate id。
 
 ### P3. Release Kit Airgap MVP
@@ -555,7 +580,10 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 6. 禁止在 airgap 路径从公网下载工具、模板或 image；目标网络内的 operator-declared substrate endpoint 可以作为 prerequisite 被校验，但不代表 release kit 创建云资源。
 7. 所有工具只有两种来源：包内携带并带 sha256，或 operator prerequisite 明确声明名称、版本、安装位置和 proof；两者都没有时 fail fast。
 
-image 范围由 release contract 的 `deploy_image_inventory`、rendered manifests 和 operator prerequisite 声明共同校验，避免手写清单漂移。最小类别：
+image 范围由 release contract 的 `deploy_image_inventory`、deploy template
+manifest `required_image_ids`、rendered manifests 和 operator prerequisite
+声明共同校验，避免手写清单漂移。`site.env.example` 不是正式 image truth。
+最小类别：
 
 - AgentSmith components：`agentsmith_app`（当前单一 canonical product image；未来真拆镜像时按 P1 guard 新增 machine IDs、fixtures 和 tests）；
 - managed runner：仅在 P5 runner manifest/lock adoption 后由 release contract 的 `deploy_image_inventory` 引入；P1/P3 不伪造临时 digest 或 archive 要求；
@@ -582,16 +610,17 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 
 工作：
 
-1. 在现有 `packages/agent-runner-contract` 上完成唯一正式 contract 包 `@mbos/agent-runner-contract` 的可发布、可消费 artifact 最小闭环；P4 完成后 schema/types/fixtures 是唯一机器真相。
-2. artifact 至少包含 machine-readable schema、types、fixtures、版本和 provenance；AgentSmith 本仓用同一 artifact 消费路径验证，不能依赖 runner runtime 源码。
+1. 在现有 `packages/agent-runner-contract` 上完成唯一正式 contract 包 `@mbos/agent-runner-contract` 的可发布、可消费 artifact 最小闭环；P4 完成后 schema/types/fixtures 是唯一机器真相。当前 local pack manifest 不能直接算 release-grade artifact。
+2. artifact 至少包含 machine-readable schema、types、fixtures、版本、artifact URI、sha256/integrity 和 provenance；AgentSmith 本仓用同一 artifact 消费路径验证，不能依赖 runner runtime 源码。
 3. AsyncAPI 和协议文档改为从 contract package 生成或被 contract package 校验；漂移即 fail fast。
 4. AgentSmith API 和 runner repo 都只依赖这个包；P4 只允许 runner repo 准备 consumer skeleton 所需的合同输入，不迁 runner runtime。
 5. 增加 protocol、terminal recovery/adopt/close 和 runner support HTTP conformance tests；runner support HTTP 只冻结 wire shape 和 error shape，不定义 authorization/scope/resource ownership 语义。
+6. 增加下载/安装 consumer test：从 artifact URI 拉取，校验 sha256/integrity/provenance，再在干净 consumer workspace 安装并运行 fixtures。
 
 验收：
 
 - AgentSmith 不再直接依赖 runner 实现类型。
-- `@mbos/agent-runner-contract` artifact 可以发布、下载/安装并被 AgentSmith 消费校验。
+- `@mbos/agent-runner-contract` artifact 可以发布、下载/安装并被 AgentSmith 消费校验，且 digest/integrity/URI/provenance 不缺失。
 - 已移除旧字段和已移除旧路径在 pre-GA 直接 fail-fast 拒绝，负向测试通过。
 - protocol version 不匹配时 fail fast。
 - execution ticket、workspace access/release、Context Store 请求级投影、managed credential 只读投影都有 fixtures。
@@ -606,15 +635,16 @@ image 范围由 release contract 的 `deploy_image_inventory`、rendered manifes
 
 1. 先在 `agentsmith-runner` 按第 4.1 节完成 bootstrap-only/docs-governance-first PR；quick gate 通过不代表 release readiness。
 2. bootstrap PR 通过前，repo-local workers 不迁 runner runtime、不迁 runner Dockerfile；通过后只解锁专项开发，不解锁 release/adoption。
-3. bootstrap PR 通过后，先增加 consumer conformance skeleton：只安装/导入 `@mbos/agent-runner-contract` artifact，跑 protocol fixtures、unsupported protocol version、已移除旧字段/旧路径 fail-fast、missing HOME/TASK_HOME、forbidden persisted credential 和禁止新增 scope/credential/ticket 语义的负向 fixtures。
+3. bootstrap PR 通过后，先增加 consumer conformance skeleton：只通过 artifact URI 下载/校验/安装 `@mbos/agent-runner-contract` artifact，跑 protocol fixtures、unsupported protocol version、已移除旧字段/旧路径 fail-fast、missing HOME/TASK_HOME、forbidden persisted credential 和禁止新增 scope/credential/ticket 语义的负向 fixtures。
 4. consumer conformance skeleton 通过后，再迁入 `packages/agent-task-runner`、builtin skills runtime、runner Dockerfile 和 runner 单测。
 5. Runner repo 不允许定义 Context Store scopes、Files/file-library 行为、managed credential resolution、execution ticket 颁发或权限语义；这些语义仍由 AgentSmith contract/support API 和 fixtures 定义，runner 只消费请求级只读投影并执行本地 runtime；`mbos-context` 只能被执行/打包，不能定义 scope、write policy 或 managed credential 语义。
 6. Runner repo CI 覆盖 typecheck、unit、builtin skill tests、fake WS contract tests、invalid JSON、unsupported protocol version、missing HOME/TASK_HOME、forbidden persisted credential、禁止新增 scope/credential/ticket 语义的负向 fixtures、Docker build、启动缺 env fail-fast smoke；P5 后 source-boundary guard 只允许正式路径 import `@mbos/agent-runner-contract`，其他 `@mbos/*` import 失败。
-7. Runner repo 发布 image 到 GHCR，release manifest 包含 image digest、source commit、contract version、contract artifact digest/provenance、Codex version、breaking changes/fail-fast adoption policy 和 artifact provenance。
-8. AgentSmith 新增 `agent-task-runner-image.lock`，并用 runner release manifest 校验 image digest、contract version、Codex version 和 fail-fast adoption policy。
+7. Runner repo 发布 image 到 GHCR，release manifest 包含 image digest、source commit、contract version、contract artifact URI/digest/integrity/provenance、Codex version、breaking changes/fail-fast adoption policy 和 artifact provenance。
+8. AgentSmith 新增 `agent-task-runner-image.lock`，并用 runner release manifest 比对 image digest、contract version、contract artifact digest/provenance、Codex version 和 fail-fast adoption policy。
 9. Runner adoption 顺序固定为：runner repo consumer conformance skeleton -> runtime migration / image build CI 通过 -> runner repo release manifest/image digest -> AgentSmith 更新 lock -> AgentSmith release contract 输出锁定 digest -> release kit 消费 release contract。
-10. P5 runtime 迁移前补 monorepo runner adapter inventory，并逐项迁移：local-kind runner image build、API 默认 managed runner image、internal agent pod health/imageID probe、`agent:task-runner` dev script、skills diagnostics、P5 manifest/lock adoption 后的 release contract runner digest。
-11. 迁移期保留本地 dev 启动说明，但正式 release contract 只能接受 runner manifest + lock adoption；本地 dev 路径不能作为 release proof。P5 runner repo dev command 可用后删除 AgentSmith 本地开发启动入口，或归位为 docs-only 本地启动说明。
+10. P5 runtime 迁移前补 monorepo runner adapter inventory，并逐项迁移：local-kind runner image build、API 默认 managed runner image、internal agent pod health/imageID probe、`agent:task-runner` dev script、skills diagnostics、`buildAgentRuntimeEnv` ownership、P5 manifest/lock adoption 后的 release contract runner digest。
+11. 旧 `@mbos/agent-runner` shim 只保留负向测试或短期诊断；`buildAgentRuntimeEnv` 必须随 runtime 迁入 runner repo 所属包，或被正式 contract 明确替代。它不能成为 AgentSmith 与 runner repo 的长期共享包。
+12. 迁移期保留本地 dev 启动说明，但正式 release contract 只能接受 runner manifest + lock adoption；本地 dev 路径不能作为 release proof。P5 runner repo dev command 可用后删除 AgentSmith 本地开发启动入口，或归位为 docs-only 本地启动说明。
 
 P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-adapter-inventory.valid.json`
 是当前 monorepo runner adapter 的机器清单，`npm run contracts:check-release-boundary` 必须校验必需 item、当前路径存在、canonical repo、`release_proof_allowed:false`
@@ -626,9 +656,11 @@ P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-ada
 - AgentSmith backend-real / managed runner 主链可用。
 - 本地开发可以保留 override，但不能作为 release proof。
 - lock-only 更新不能算采纳成功；release contract 的 runner digest 与 lock/runner manifest 不一致时失败。
+- runner release manifest adoption 必须比对 image digest、contract artifact digest/provenance 和 lock；任一不一致失败。
 - 真实 Kubernetes smoke 校验 managed runner 运行中 pod `imageID` 与 release contract digest 一致。
 - runner consumer conformance skeleton 先通过，且 source-boundary guard 只允许正式路径 import `@mbos/agent-runner-contract`。
 - producer repo 不是 `agentsmith-runner`、缺 image/contract artifact digest 或 provenance、或指向 `agentsmith-codex-runner` 时 adoption 失败。
+- 当前 runner image 若仍从 AgentSmith 源码路径 build，只能算过渡诊断，不能算拆分证据或 release proof。
 
 ### P6. 清理和防回流
 
@@ -638,7 +670,9 @@ P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-ada
 
 1. 在 release-kit / runner 集成面上，AgentSmith 只保留 thin adapters、contract checker、docs 指向和产品集成测试；AgentSmith 的产品合同、OpenAPI/AsyncAPI、验证入口和产品代码继续保留。
 2. 只有 release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确后，才从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试；不得删除当前 unified deploy contract/model。
-3. 删除 runner runtime 源码；只保留 docs-only 迁移说明，不保留长期本地启动双轨。
+3. 删除 runner runtime 源码、旧 `@mbos/agent-runner` shim 和 AgentSmith 侧
+   `buildAgentRuntimeEnv` 长期共享路径；只保留 docs-only 迁移说明或必要
+   fail-fast 负向测试，不保留长期本地启动双轨。
 4. 增加 static guard，防止正式路径重新 import 外部 repo 源码、tag-only image、已移除旧 runner fields、release kit import 产品源码。
 
 验收：
@@ -662,7 +696,7 @@ P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-ada
 - checksums；
 - operator examples。
 
-它从 GHCR 或配置的在线 registry 拉取 digest-pinned images。它不 build AgentSmith 或 runner 源码。正式输入不能使用含 mutable tag 的 `site.env.example`；必须由 release contract 和 profile-specific env/schema 生成。在线 smoke 的最低证明是：rendered image ref、target registry digest、live workload `imageID` 三者一致。
+它从 GHCR 或配置的在线 registry 拉取 digest-pinned images。它不 build AgentSmith 或 runner 源码。正式输入不能使用含 mutable tag 的 `site.env.example`，也不能把 `site.env.example` 当 prerequisite image truth；必须由 release contract、deploy template manifest 和 profile-specific env/schema 生成。在线 smoke 的最低证明是：rendered image ref、target registry digest、live workload `imageID` 三者一致。
 
 ### Airgap
 
@@ -740,6 +774,11 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 10. P1.1 artifact producer 通过只表示 CI artifact producer 可产物；full P1 adoption
     仍未宣称完成。当前 `product_images` 只接受 `agentsmith_app`，P1 不发布
     `managed_runner` release proof。
+11. deploy template manifest 已提供机器可读 `required_image_ids`，release contract
+    generator/check 已证明模板引用、`deploy_image_inventory` 和 prerequisite images
+    同步；`site.env.example` 没有被当作正式 image truth。
+12. 当前 `existing-cluster` 仍按 Docker substrate/IP-only diagnostic 降级命名；
+    任何把它并入 AgentSmith `release:ready` 或真实 cloud/airgap evidence 的路径都失败。
 
 ### P2 / P5 start 前
 
@@ -757,12 +796,20 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    只接受 `image-map.json`、`online-deployment-gate-report.json`、
    `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`，且三轴枚举、
    最小字段、`target_profiles.required` guard 已通过。
-4. P5 runner 正式 adoption 前，source-boundary guard 只允许
+4. P2 release-kit 正式 adoption 前，repo-local required CI 已覆盖
+   source-boundary、remote identity、provenance、digest-only、所有 workload live
+   `imageID`、host/TLS/pull-secret/storage/substrate secret-ref 输入和 operator
+   runbook；AgentSmith sibling scan 只作为 handoff evidence。
+5. P5 runner 正式 adoption 前，source-boundary guard 只允许
    `@mbos/agent-runner-contract`，runner support/context fixtures 来自 AgentSmith
    contract，`mbos-context` 不定义 scope/write/credential policy。
-5. 如果复制 AFSCP/ASBCP gate 脚本作为权威 gate、把 sibling repo status 当 gate、
+6. P5 runner 正式 adoption 前，runner contract artifact 必须有
+   URI/digest/integrity/provenance 和下载/安装 consumer test；runner release
+   manifest adoption 必须比对 image digest、contract artifact digest/provenance
+   和 lock。
+7. 如果复制 AFSCP/ASBCP gate 脚本作为权威 gate、把 sibling repo status 当 gate、
    或让 quick gate/team signoff 变成 release readiness，停止并回到边界评审。
-6. runner runtime 迁移暂缓，直到 P4 runner contract artifact 可发布/可消费，且
+8. runner runtime 迁移暂缓，直到 P4 runner contract artifact 可发布/可消费，且
    runner repo consumer conformance skeleton 通过；在此之前只允许 focused diagnostics、
    inventory 和边界检查。runtime 迁出后，才进入 image 发布、manifest/lock adoption
    和 release-kit image inventory 串联。
@@ -790,6 +837,9 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 19. 有没有让 `--inputs` / contract intake 的 `intake-report` 或 `image-digest-plan` 变成 deploy/package/operator verdict 或 AgentSmith product gate，或让 `--evidence` 接受未实现/不能重新语义校验的 output？
 20. 有没有让 runner repo 新定义 Context Store scopes、Files/file-library 行为、managed credential resolution、execution ticket 颁发或权限语义，或让 `mbos-context` 定义这些 policy？
 21. 有没有让 runner repo 正式路径 import `@mbos/*` 中除 `@mbos/agent-runner-contract` 以外的包？
+22. 有没有把 `existing-cluster` 诊断、`site.env.example` 或源码 build runner image 当成正式 release proof？
+23. 有没有让 deploy template `required_image_ids` 与 release contract image inventory 脱节？
+24. 有没有让旧 `@mbos/agent-runner` shim 或 `buildAgentRuntimeEnv` 形成长期双轨？
 
 任一答案为“有”，停止并回到边界评审。
 
@@ -803,6 +853,6 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 4. 每个复杂点都回到已有合同，而不是发明新体系。
 5. AgentSmith 产品范围没有变大。
 
-推荐执行顺序：P0/P1.1 -> release-kit `--inputs` / `--evidence` 收口 -> P4 runner contract artifact 最小闭环（当前 slice in progress/next）-> P2 online focused repo-local work -> P3 airgap -> P5 runner consumer conformance skeleton -> P5 runtime/image/adoption -> P6 收口。P4 只做可发布/可消费 contract artifact，不进入 runner runtime 迁移；P5 完成前也不能删除 monorepo runner build 或宣称最终发布包闭环完成。
+推荐执行顺序：P0/P1.1 -> release-kit `--inputs` / `--evidence` 收口 -> image inventory / deploy template `required_image_ids` 同步 -> P4 runner contract artifact 最小闭环（当前 slice in progress/next）-> P2 online focused repo-local work -> P3 airgap -> P5 runner consumer conformance skeleton -> P5 runtime/image/adoption -> P6 收口。P4 只做可发布/可消费 contract artifact，不进入 runner runtime 迁移；P5 完成前也不能删除 monorepo runner build 或宣称最终发布包闭环完成。
 
-当前交接判断：P0 done，machine guards passed。P1.1 done，手动 CI release contract artifact producer passed。release-kit `--inputs` / `--evidence` intake 已阶段性收口到 fail-fast focused diagnostic；Full P1 adoption 仍不能宣称完成，仍受 release contract intake、evidence mapping、provenance、redaction 和 deploy image inventory truth 约束。当前 runner 侧最小切片是 P4 `@mbos/agent-runner-contract` artifact 可发布/可消费闭环 in progress/next；完成该 slice 后再做 P5 consumer conformance skeleton，最后才迁 runtime/image/adoption。
+当前交接判断：P0 done，machine guards passed。P1.1 done，手动 CI release contract artifact producer passed。release-kit `--inputs` / `--evidence` intake 已阶段性收口到 fail-fast focused diagnostic；Full P1 adoption 仍不能宣称完成，仍受 release contract intake、evidence mapping、provenance、redaction、deploy image inventory truth 和 deploy template `required_image_ids` 同步约束。当前 `existing-cluster` 只按 Docker substrate/IP-only transition diagnostic 处理。当前 runner 侧最小切片是 P4 `@mbos/agent-runner-contract` artifact 可发布/可消费闭环 in progress/next；完成该 slice 后再做 P5 consumer conformance skeleton，最后才迁 runtime/image/adoption。旧 `@mbos/agent-runner` shim、`buildAgentRuntimeEnv` 和源码路径 runner image 都不能作为长期双轨或 release proof。

@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildAfscpTemplateId,
+  buildFileLibraryRestoreOperationPublicId,
   buildTaskFileTemplateIdempotencyRequestHash,
   buildTaskFileTemplateIdempotencyId,
   JsonDocFileLibraryVersionOperationRepo,
@@ -273,7 +274,7 @@ function publicRestoreOperationFailureReason(operation: FileLibraryRestoreOperat
 function presentFileLibraryRestoreActiveOperation(operation: FileLibraryRestoreOperationRecord) {
   const failureReason = publicRestoreOperationFailureReason(operation);
   return {
-    id: operation.id,
+    id: buildFileLibraryRestoreOperationPublicId(operation),
     kind: 'restore',
     file_library_id: operation.file_library_id,
     source_save_point_id: operation.source_save_point_id,
@@ -436,7 +437,7 @@ async function recordSuccessfulFileLibraryRestore(input: {
     sourceSavePointLabel: publicSavePointLabel(savePoint),
     sourceSavePointCreatedAt: savePoint.created_at,
     restoredAt: input.operation.updated_at,
-    restoreOperationId: input.operation.id,
+    restoreOperationId: buildFileLibraryRestoreOperationPublicId(input.operation),
   });
 }
 
@@ -802,7 +803,7 @@ async function writeFileLibraryRestoreAuditEvent(input: {
     metadata: {
       file_library_id: input.operation.file_library_id,
       source_save_point_id: input.operation.source_save_point_id,
-      restore_operation_id: input.operation.id,
+      restore_operation_id: buildFileLibraryRestoreOperationPublicId(input.operation),
       restore_operation_status: input.operation.status,
       final_result: input.finalResult ?? (
         input.action === 'project.file_library.restore.succeeded'
@@ -2143,7 +2144,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
 
       const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-      const restoreOperation = await restoreRepo.getByIdInProject(workspaceId, projectId, operationId);
+      const restoreOperation = await restoreRepo.getByPublicIdInProject(workspaceId, projectId, operationId);
       if (restoreOperation) {
         const reconciled = await reconcileRestoreOperationRecord({
           deps,

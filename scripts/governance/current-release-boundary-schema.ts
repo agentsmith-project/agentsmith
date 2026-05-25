@@ -283,12 +283,18 @@ export interface CurrentReleaseKitCanonicalWriter {
   summary_section?: string;
 }
 
+export type CurrentReleaseKitEvidenceTargetProfileTuple = Pick<
+  CurrentDeploymentModeMatrixEntry,
+  'target_cluster' | 'substrate_source' | 'distribution'
+>;
+
 export interface CurrentReleaseKitEvidenceMappingEntry {
   release_kit_output: string;
   target: CurrentReleaseKitEvidenceTarget;
   canonical_writer: CurrentReleaseKitCanonicalWriter;
   canonical_evidence_owner: 'agentsmith' | 'agentsmith-release-kit';
   current_campaign_target_clusters: readonly CurrentDeploymentTargetCluster[];
+  current_campaign_target_profiles?: readonly CurrentReleaseKitEvidenceTargetProfileTuple[];
   expected_product_flow_producer?: 'unified-deploy-product-flows';
   reject_conditions: readonly string[];
 }
@@ -628,6 +634,32 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
   },
   {
+    release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json',
+    target: 'images',
+    canonical_writer: {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+      npm_script: 'bash scripts/verify-release.sh --airgap-bundle-check',
+      native_result_path: '<release-kit-evidence-root>/airgap-bundle-check-report.json',
+      evidence_root: '<release-kit-evidence-root>',
+      summary_section: 'images',
+    },
+    canonical_evidence_owner: 'agentsmith-release-kit',
+    current_campaign_target_clusters: ['existing_kubernetes'],
+    current_campaign_target_profiles: [
+      {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'airgap',
+      },
+    ],
+    reject_conditions: [
+      'missing_airgap_bundle_manifest',
+      'target_registry_digest_mismatch',
+      'bundle_image_inventory_mismatch',
+    ],
+  },
+  {
     release_kit_output: 'render-report.json+rollout-report.json',
     target: 'rollout',
     canonical_writer: {
@@ -664,6 +696,32 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       'missing_live_image_id',
       'target_digest_mismatch',
       'smoke_route_failed',
+    ],
+  },
+  {
+    release_kit_output: 'online-deployment-gate-report.json',
+    target: 'rollout',
+    canonical_writer: {
+      gate_id: 'release-kit-online-deployment-gate',
+      line_kind: 'release_kit_online_deployment_gate',
+      npm_script: 'bash scripts/verify-release.sh --online-deployment-gate',
+      native_result_path: '<release-kit-evidence-root>/online-deployment-gate-report.json',
+      evidence_root: '<release-kit-evidence-root>',
+      summary_section: 'rollout',
+    },
+    canonical_evidence_owner: 'agentsmith-release-kit',
+    current_campaign_target_clusters: ['existing_kubernetes'],
+    current_campaign_target_profiles: [
+      {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'online',
+      },
+    ],
+    reject_conditions: [
+      'online_deployment_gate_failed',
+      'profile_mismatch',
+      'missing_native_result',
     ],
   },
   {
@@ -1220,7 +1278,7 @@ export function validateReleaseKitEvidence(
   }
 
   validateCanonicalWriter(value.canonical_writer, 'canonical_writer', failures);
-  validateEvidenceMappingCompatibility(value, target, targetCluster, failures);
+  validateEvidenceMappingCompatibility(value, target, targetCluster, substrateSource, distribution, failures);
   validateReleaseKitSubstrateConnectionTruth(value, targetCluster, substrateSource, distribution, failures);
 
   const evidenceSubject = value.evidence_subject;
@@ -1606,6 +1664,14 @@ export function validateReleaseKitEvidenceMapping(
         failures,
       );
     });
+    if (hasOwn(entry, 'current_campaign_target_profiles')) {
+      validateReleaseKitEvidenceMappingTargetProfiles(
+        entry.current_campaign_target_profiles,
+        `${path}.current_campaign_target_profiles`,
+        targetClusters,
+        failures,
+      );
+    }
     validateStringArray(entry.reject_conditions, `${path}.reject_conditions`, failures);
 
     if (entry.target === 'product_flows') {
@@ -1634,6 +1700,81 @@ export function validateReleaseKitEvidenceMapping(
   }
 
   return finish(value as readonly CurrentReleaseKitEvidenceMappingEntry[], failures);
+}
+
+function validateReleaseKitEvidenceMappingTargetProfiles(
+  value: unknown,
+  path: string,
+  targetClusters: readonly string[] | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!Array.isArray(value)) {
+    failures.push({
+      path,
+      reason: `${path} must be an array.`,
+    });
+    return;
+  }
+
+  const seenProfileKeys = new Set<string>();
+  value.forEach((entry, index) => {
+    const entryPath = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      failures.push({
+        path: entryPath,
+        reason: 'target profile tuple must be an object.',
+      });
+      return;
+    }
+
+    const targetCluster = validateEnum(
+      entry.target_cluster,
+      TARGET_CLUSTER_SET,
+      `${entryPath}.target_cluster`,
+      'target_cluster is not in the release boundary matrix.',
+      failures,
+    ) as CurrentDeploymentTargetCluster | undefined;
+    const substrateSource = validateEnum(
+      entry.substrate_source,
+      SUBSTRATE_SOURCE_SET,
+      `${entryPath}.substrate_source`,
+      'substrate_source is not in the release boundary matrix.',
+      failures,
+    ) as CurrentDeploymentSubstrateSource | undefined;
+    const distribution = validateEnum(
+      entry.distribution,
+      DISTRIBUTION_SET,
+      `${entryPath}.distribution`,
+      'distribution is not in the release boundary matrix.',
+      failures,
+    ) as CurrentDeploymentDistribution | undefined;
+
+    if (!targetCluster || !substrateSource || !distribution) {
+      return;
+    }
+
+    const profileKey = modeKey(targetCluster, substrateSource, distribution);
+    if (seenProfileKeys.has(profileKey)) {
+      failures.push({
+        path: entryPath,
+        reason: `target profile tuple ${profileKey} is declared more than once.`,
+      });
+    }
+    seenProfileKeys.add(profileKey);
+
+    if (!MODE_KEY_SET.has(profileKey)) {
+      failures.push({
+        path: entryPath,
+        reason: 'target profile tuple is not allowed by the release boundary matrix.',
+      });
+    }
+    if (targetClusters && !targetClusters.includes(targetCluster)) {
+      failures.push({
+        path: `${entryPath}.target_cluster`,
+        reason: 'target profile target_cluster must be listed in current_campaign_target_clusters.',
+      });
+    }
+  });
 }
 
 export function validateRunnerAdapterInventory(
@@ -2917,6 +3058,8 @@ function validateEvidenceMappingCompatibility(
   value: Record<string, unknown>,
   target: CurrentReleaseKitEvidenceTarget | undefined,
   targetCluster: CurrentDeploymentTargetCluster | undefined,
+  substrateSource: CurrentDeploymentSubstrateSource | undefined,
+  distribution: CurrentDeploymentDistribution | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (!target) {
@@ -2951,6 +3094,22 @@ function validateEvidenceMappingCompatibility(
     failures.push({
       path: 'target_cluster',
       reason: 'target_cluster is not allowed for the mapped current release-kit evidence writer.',
+    });
+  }
+  if (
+    targetCluster
+    && substrateSource
+    && distribution
+    && mapping.current_campaign_target_profiles
+    && !mapping.current_campaign_target_profiles.some((profile) => (
+      profile.target_cluster === targetCluster
+      && profile.substrate_source === substrateSource
+      && profile.distribution === distribution
+    ))
+  ) {
+    failures.push({
+      path: 'target_profile',
+      reason: 'target profile tuple is not allowed for the mapped current release-kit evidence writer.',
     });
   }
 

@@ -1173,6 +1173,14 @@ function scopedDigestId(prefix: string, parts: string[], length = 24): string {
   return `${prefix}_${digest}`;
 }
 
+function scopedHexDigestId(prefix: string, parts: string[], length = 24): string {
+  const digest = createHash('sha256')
+    .update(parts.join('\0'))
+    .digest('hex')
+    .slice(0, length);
+  return `${prefix}_${digest}`;
+}
+
 export function buildFileLibrarySavePointPublicId(input: {
   workspaceId: string;
   projectId: string;
@@ -1217,11 +1225,27 @@ export function buildFileLibraryRestoreOperationIdempotencyId(input: {
   libraryId: string;
   idempotencyKey: string;
 }): string {
-  return scopedDigestId('flro', [
+  return scopedHexDigestId('flro', [
     input.workspaceId,
     input.projectId,
     input.libraryId,
     input.idempotencyKey,
+  ]);
+}
+
+const FORBIDDEN_PUBLIC_RESTORE_OPERATION_ID_FRAGMENT = /repo_|sp_user_|op_restore|ns_|plan_|credential|control_root/;
+
+export function buildFileLibraryRestoreOperationPublicId(
+  record: Pick<FileLibraryRestoreOperationRecord, 'id' | 'workspace_id' | 'project_id' | 'library_id'>,
+): string {
+  if (!FORBIDDEN_PUBLIC_RESTORE_OPERATION_ID_FRAGMENT.test(record.id)) {
+    return record.id;
+  }
+  return scopedHexDigestId('flro', [
+    record.workspace_id,
+    record.project_id,
+    record.library_id,
+    record.id,
   ]);
 }
 
@@ -1333,7 +1357,7 @@ function publicRestoreOperation(
 ): FileLibraryRestoreOperationPublicRecord {
   const failureReason = publicOperationFailureReason(record.failure_reason, 'file_library_restore_failed');
   return {
-    id: record.id,
+    id: buildFileLibraryRestoreOperationPublicId(record),
     file_library_id: record.file_library_id,
     source_save_point_id: record.source_save_point_id,
     status: record.status,
@@ -2122,6 +2146,25 @@ export class JsonDocFileLibraryRestoreOperationRepo {
       return null;
     }
     return record;
+  }
+
+  async getByPublicIdInProject(
+    workspaceId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<FileLibraryRestoreOperationRecord | null> {
+    const direct = await this.getByIdInProject(workspaceId, projectId, operationId);
+    if (direct) {
+      return direct;
+    }
+    const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
+      FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+      },
+    );
+    return records.find((record) => buildFileLibraryRestoreOperationPublicId(record) === operationId) ?? null;
   }
 
   async updateStatus(input: {

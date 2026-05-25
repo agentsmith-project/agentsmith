@@ -136,8 +136,7 @@ describe('current release boundary schema', () => {
     const releaseKitEvidenceSubjectFiles = releaseKitEvidenceSubject.files as Record<string, unknown>[];
     expect(releaseKitEvidenceSubjectFiles.map((file) => file.path)).toEqual([
       'evidence.json',
-      'render-report.json',
-      'rollout-report.json',
+      'online-deployment-gate-report.json',
     ]);
     expect(validateReleaseKitEvidence(releaseKitEvidence).ok).toBe(true);
     expect(validateReleaseKitEvidenceForAggregate(releaseKitEvidence)).toMatchObject({
@@ -147,10 +146,10 @@ describe('current release boundary schema', () => {
         target: 'rollout',
         summary_section: 'rollout',
         canonical_writer: {
-          gate_id: 'release-kit-rollout',
-          line_kind: 'release_kit_rollout',
-          npm_script: 'bash scripts/verify-release.sh --rollout',
-          native_result_path: '<release-kit-evidence-root>/rollout-report.json',
+          gate_id: 'release-kit-online-deployment-gate',
+          line_kind: 'release_kit_online_deployment_gate',
+          npm_script: 'bash scripts/verify-release.sh --online-deployment-gate',
+          native_result_path: '<release-kit-evidence-root>/online-deployment-gate-report.json',
           evidence_root: '<release-kit-evidence-root>',
         },
       },
@@ -325,6 +324,31 @@ describe('current release boundary schema', () => {
       canonical_evidence_owner: 'agentsmith',
       expected_product_flow_producer: 'unified-deploy-product-flows',
     });
+
+    expect(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        release_kit_output: 'online-deployment-gate-report.json',
+        target: 'rollout',
+        current_campaign_target_profiles: [
+          {
+            target_cluster: 'existing_kubernetes',
+            substrate_source: 'external_declared',
+            distribution: 'online',
+          },
+        ],
+      }),
+      expect.objectContaining({
+        release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json',
+        target: 'images',
+        current_campaign_target_profiles: [
+          {
+            target_cluster: 'existing_kubernetes',
+            substrate_source: 'external_declared',
+            distribution: 'airgap',
+          },
+        ],
+      }),
+    ]));
   });
 
   it('rejects tag-only images, missing image digests, and missing required product flows', () => {
@@ -909,6 +933,7 @@ describe('current release boundary schema', () => {
   it('requires external_declared release-kit evidence to bind an external substrate connection truth', () => {
     const missingTruth = cloneFixture('release-kit-evidence.valid.json');
     missingTruth.substrate_source = 'external_declared';
+    delete missingTruth.substrate_connection_truth;
     expectInvalid(
       validateReleaseKitEvidence(missingTruth),
       'external_declared release kit evidence must include substrate_connection_truth',
@@ -1001,6 +1026,42 @@ describe('current release boundary schema', () => {
     const secretLeak = cloneFixture('release-kit-evidence.valid.json');
     secretLeak.debug_log = 'database password=super-secret';
     expectInvalid(validateReleaseKitEvidence(secretLeak), 'secret-looking value');
+  });
+
+  it('rejects focused release-kit outputs bound to the wrong target profile distribution', () => {
+    const onlineWithAirgapDistribution = cloneFixture('release-kit-evidence.valid.json');
+    onlineWithAirgapDistribution.distribution = 'airgap';
+    (onlineWithAirgapDistribution.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    expectInvalid(
+      validateReleaseKitEvidence(onlineWithAirgapDistribution),
+      'target profile tuple is not allowed for the mapped current release-kit evidence writer',
+    );
+
+    const airgapWithOnlineDistribution = cloneFixture('release-kit-evidence.valid.json');
+    airgapWithOnlineDistribution.target = 'images';
+    airgapWithOnlineDistribution.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    (airgapWithOnlineDistribution.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      },
+    ];
+    rehashArtifactProvenanceSubject(airgapWithOnlineDistribution, 'evidence_subject');
+    expectInvalid(
+      validateReleaseKitEvidence(airgapWithOnlineDistribution),
+      'target profile tuple is not allowed for the mapped current release-kit evidence writer',
+    );
   });
 
   it('rejects prefixed env token and secret key leaks in release-kit evidence', () => {

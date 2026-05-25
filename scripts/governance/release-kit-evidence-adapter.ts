@@ -20,6 +20,11 @@ const RELEASE_KIT_EVIDENCE_SUBJECT_NAME = 'release-kit-evidence-subject';
 const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[]> = {
   'deploy-result.json#substrate': ['evidence.json', 'deploy-result.json'],
   'image-map.json': ['evidence.json', 'image-map.json'],
+  'airgap-bundle-check-report.json+airgap-bundle-manifest.json': [
+    'evidence.json',
+    'airgap-bundle-check-report.json',
+    'airgap-bundle-manifest.json',
+  ],
   'render-report.json+rollout-report.json': ['evidence.json', 'render-report.json', 'rollout-report.json'],
   'render-report.json+rollout-report.json+smoke-report.json': [
     'evidence.json',
@@ -27,6 +32,7 @@ const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[
     'rollout-report.json',
     'smoke-report.json',
   ],
+  'online-deployment-gate-report.json': ['evidence.json', 'online-deployment-gate-report.json'],
 };
 
 export interface ReleaseKitEvidenceAdapterTargetProfile {

@@ -334,12 +334,14 @@ export const FileLibraryStatusSchema = z.enum([
   'deleting',
 ]);
 
+export const FileLibraryRestoreOperationPublicIdSchema = z.string().regex(/^flro_[0-9a-f]{24}$/);
+
 export const FileLibraryLastRestoreSchema = z.object({
   source_save_point_id: z.string().min(1),
   source_save_point_label: z.string().min(1),
   source_save_point_created_at: z.string().datetime(),
   restored_at: z.string().datetime(),
-  restore_operation_id: z.string().min(1),
+  restore_operation_id: FileLibraryRestoreOperationPublicIdSchema,
 }).strict();
 
 export const FileLibrarySchema = z.object({
@@ -414,7 +416,7 @@ export const FileLibraryRestoreOperationStatusSchema = z.enum([
 ]);
 
 export const FileLibraryRestoreOperationSchema = z.object({
-  id: z.string().min(1),
+  id: FileLibraryRestoreOperationPublicIdSchema,
   file_library_id: z.string().min(1),
   source_save_point_id: z.string().min(1),
   status: FileLibraryRestoreOperationStatusSchema,

@@ -1104,6 +1104,49 @@ describe('project-file-library-routes', () => {
       message: 'not_found',
     });
     expect(storageAdapter.reconcileRestoreOperation).not.toHaveBeenCalled();
+    expect(storageAdapter.getOperationProjection).not.toHaveBeenCalled();
+
+    const rawAfscpLookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_restore_public_route',
+      req: { headers: { 'x-request-id': 'req_restore_raw_afscp_public_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: rawAfscpLookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(rawAfscpLookupJson).toHaveBeenCalledWith(expect.anything(), 404, {
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'not_found',
+    });
+    expect(storageAdapter.getOperationProjection).not.toHaveBeenCalled();
+    expect(JSON.stringify(rawAfscpLookupJson.mock.calls[0]?.[2]))
+      .not.toMatch(/op_restore_public_route/);
+
+    const malformedPublicLookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'flro_public_route',
+      req: { headers: { 'x-request-id': 'req_restore_malformed_public_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: malformedPublicLookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(malformedPublicLookupJson).toHaveBeenCalledWith(expect.anything(), 404, {
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'not_found',
+    });
+    expect(storageAdapter.getOperationProjection).not.toHaveBeenCalled();
 
     const publicLookupJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({

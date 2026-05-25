@@ -290,6 +290,12 @@ function presentFileLibraryRestoreActiveOperation(operation: FileLibraryRestoreO
   };
 }
 
+function isBlockedRestoreOperationLookupId(operationId: string): boolean {
+  return /^restore_op(?:_|$)/u.test(operationId)
+    || /^op_restore(?:_|$)/u.test(operationId)
+    || (/^flro_/u.test(operationId) && !isFileLibraryRestoreOperationPublicId(operationId));
+}
+
 function isFileLibraryVersionOperationActiveStatus(status: FileLibraryVersionOperationStatus): boolean {
   return status === 'accepted' || status === 'running';
 }
@@ -2160,10 +2166,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         return true;
       }
 
-      if (
-        /^restore_op(?:_|$)/u.test(operationId)
-        || (/^flro_/u.test(operationId) && !isFileLibraryRestoreOperationPublicId(operationId))
-      ) {
+      if (isBlockedRestoreOperationLookupId(operationId)) {
         json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'not_found' });
         return true;
       }

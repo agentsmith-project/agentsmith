@@ -8341,6 +8341,7 @@ components:
           format: date-time
         restore_operation_id:
           type: string
+          pattern: "^flro_[0-9a-f]{24}$"
     FileLibrary:
       type: object
       additionalProperties: false
@@ -8713,6 +8714,7 @@ components:
       properties:
         id:
           type: string
+          pattern: "^flro_[0-9a-f]{24}$"
         file_library_id:
           type: string
         source_save_point_id:

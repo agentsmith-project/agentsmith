@@ -13238,7 +13238,8 @@
             "format": "date-time"
           },
           "restore_operation_id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^flro_[0-9a-f]{24}$"
           }
         }
       },
@@ -13775,7 +13776,8 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^flro_[0-9a-f]{24}$"
           },
           "file_library_id": {
             "type": "string"

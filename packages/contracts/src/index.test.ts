@@ -42,6 +42,11 @@ const baseFileLibrary = {
   updated_at: '2026-05-09T00:00:00.000Z',
 };
 
+const restoreOperationId = 'flro_111111111111111111111111';
+const recoveryRestoreOperationId = 'flro_222222222222222222222222';
+const activeRestoreOperationId = 'flro_333333333333333333333333';
+const rawFieldRestoreOperationId = 'flro_444444444444444444444444';
+
 describe('agent task persistent HOME contracts', () => {
   it('accepts the CreateTask workspace_mode matrix for create_new, use_existing, and use_template', () => {
     expect(CreateTaskRequestSchema.safeParse({
@@ -160,19 +165,19 @@ describe('agent task persistent HOME contracts', () => {
     });
 
     expect(FileLibraryRestoreOperationSchema.parse({
-      id: 'flro_safe',
+      id: restoreOperationId,
       file_library_id: 'flib_a',
       source_save_point_id: 'flsp_safe',
       status: 'restoring',
       created_at: '2026-05-09T00:00:00.000Z',
       updated_at: '2026-05-09T00:00:00.000Z',
     })).toMatchObject({
-      id: 'flro_safe',
+      id: restoreOperationId,
       source_save_point_id: 'flsp_safe',
       status: 'restoring',
     });
     expect(FileLibraryRestoreOperationSchema.parse({
-      id: 'flro_recovery',
+      id: recoveryRestoreOperationId,
       file_library_id: 'flib_a',
       source_save_point_id: 'flsp_safe',
       status: 'recovery_required',
@@ -185,7 +190,7 @@ describe('agent task persistent HOME contracts', () => {
     });
     expect(GetFileLibraryActiveOperationResponseSchema.parse({
       operation: {
-        id: 'flro_active_restore',
+        id: activeRestoreOperationId,
         file_library_id: 'flib_a',
         source_save_point_id: 'flsp_safe',
         status: 'restoring',
@@ -194,15 +199,15 @@ describe('agent task persistent HOME contracts', () => {
       },
     })).toMatchObject({
       operation: {
-        id: 'flro_active_restore',
+        id: activeRestoreOperationId,
         status: 'restoring',
       },
     });
     expect(FileLibraryRestoreOperationSchema.safeParse({
-      id: 'flro_raw_summary',
+      id: rawFieldRestoreOperationId,
       file_library_id: 'flib_a',
       source_save_point_id: 'flsp_safe',
-      status: 'ready',
+      status: 'succeeded',
       summary: 'raw restore summary',
       blockers: ['raw blocker'],
       created_at: '2026-05-09T00:00:00.000Z',
@@ -285,6 +290,38 @@ describe('agent task persistent HOME contracts', () => {
     }).success).toBe(false);
   });
 
+  it('requires canonical public restore operation ids', () => {
+    const restoreOperation = {
+      id: restoreOperationId,
+      file_library_id: 'flib_a',
+      source_save_point_id: 'flsp_safe',
+      status: 'restoring',
+      created_at: '2026-05-09T00:00:00.000Z',
+      updated_at: '2026-05-09T00:00:00.000Z',
+    };
+
+    expect(FileLibraryRestoreOperationSchema.safeParse({
+      ...restoreOperation,
+      id: 'flro_short',
+    }).success).toBe(false);
+    expect(FileLibraryRestoreOperationSchema.safeParse({
+      ...restoreOperation,
+      id: 'flro_zzzzzzzzzzzzzzzzzzzzzzzz',
+    }).success).toBe(false);
+    expect(FileLibrarySchema.safeParse({
+      ...baseFileLibrary,
+      task_home_binding_status: 'unbound',
+      bound_task_visible: false,
+      last_restore: {
+        source_save_point_id: 'flsp_safe',
+        source_save_point_label: 'Before migration',
+        source_save_point_created_at: '2026-05-09T00:00:00.000Z',
+        restored_at: '2026-05-09T00:05:00.000Z',
+        restore_operation_id: 'flro_short',
+      },
+    }).success).toBe(false);
+  });
+
   it('requires safe task HOME binding fields on FileLibrary DTOs', () => {
     expect(FileLibrarySchema.parse({
       ...baseFileLibrary,
@@ -295,7 +332,7 @@ describe('agent task persistent HOME contracts', () => {
         source_save_point_label: 'Before migration',
         source_save_point_created_at: '2026-05-09T00:00:00.000Z',
         restored_at: '2026-05-09T00:05:00.000Z',
-        restore_operation_id: 'flro_safe',
+        restore_operation_id: restoreOperationId,
       },
     })).toMatchObject({
       task_home_binding_status: 'unbound',

@@ -6,9 +6,12 @@
   "main": "dist/index.js",
   "types": "src/index.ts",
   "scripts": {
+    "pretypecheck": "npm run build -w @mbos/agent-runner-contract",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prebuild": "npm run build -w @mbos/agent-runner-contract",
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --external:node-pty --external:ws --outfile=dist/index.js --log-level=warning",
     "start": "node dist/index.js",
+    "predev": "npm run build -w @mbos/agent-runner-contract",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {

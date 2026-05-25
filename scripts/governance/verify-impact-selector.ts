@@ -220,6 +220,7 @@ const RELEASE_REAL_VERIFY_COMMAND = 'npm run verify:release-real';
 const AGENT_TASK_RUNNER_FAST_COMMAND = 'npm run test:agent-task:runner:fast';
 const AGENT_TASK_RUNNER_BACKEND_REAL_COMMAND = 'npm run test:agent-task:runner:backend-real';
 const PACKAGE_TOPOLOGY_TYPECHECK_COMMAND = 'npm run ws:typecheck';
+const RUNNER_CONTRACT_ARTIFACT_CHECK_COMMAND = 'npm run contracts:check-agent-runner-contract-artifact';
 const ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_NAME = 'test:endpoint-model-catalog';
 const ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_COMMAND = 'npm run test:run -- src/lib/endpoints/__tests__/provider-catalog.test.ts src/lib/endpoints/__tests__/model-catalog-provider-options.test.ts';
 const ENDPOINT_MODEL_CATALOG_TEST_COMMAND = `npm run ${ENDPOINT_MODEL_CATALOG_TEST_SCRIPT_NAME}`;
@@ -227,6 +228,7 @@ const COMMAND_ORDER = [
   'npm run verify:quick',
   'npm run verify:default',
   ENDPOINT_MODEL_CATALOG_TEST_COMMAND,
+  RUNNER_CONTRACT_ARTIFACT_CHECK_COMMAND,
   PACKAGE_TOPOLOGY_TYPECHECK_COMMAND,
   'npm run verify:visual',
   AGENT_TASK_RUNNER_FAST_COMMAND,
@@ -423,11 +425,8 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^e2e\/integration-agent-task-terminal/,
   /^e2e\/integration-(?:agent-task-isolation|agent-member-permissions|context-store-isolation|governance-member-workflow-continuity|internal-sandbox-reclaim|internal-task-isolation|invite-first-effective-work|membership-chat-isolation|resource-policy-observable-effect)\.spec\.ts$/,
   /^e2e\/integration-real-helpers\.ts$/,
-  /^packages\/agent-runner-contract\/src\//,
-  /^packages\/agent-runner-contract\/(?:package\.json|tsconfig\.json)$/,
-  /^packages\/agent-runner\/package\.json$/,
+  /^packages\/agent-runner-contract\/src\/(?:contract-schema|protocol|runner-spec)(?:\.test)?\.ts$/,
   /^packages\/agent-runner\/src\//,
-  /^packages\/agent-task-runner\/package\.json$/,
   /^packages\/agent-task-runner\/src\//,
   /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
   /^packages\/api-entry-node\/src\/task-route-handler(?:\.test)?\.ts$/,
@@ -536,6 +535,7 @@ function isGovernanceToolingPath(filePath: string, baseRefs: readonly string[] =
     /^scripts\/run-mock-lane-playwright\.test\.ts$/,
     /^scripts\/contracts\/check-current-[^/]+(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-engineering-governance(?:\.test)?\.ts$/,
+    /^scripts\/contracts\/check-agent-runner-contract-artifact(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-runner-(?:contract-sync|naming)(?:\.test)?\.ts$/,
   ].some((pattern) => pattern.test(filePath));
 }
@@ -547,10 +547,8 @@ function isEndpointModelCatalogPath(filePath: string): boolean {
   ].some((pattern) => pattern.test(filePath));
 }
 
-function isPackageTopologyPath(filePath: string): boolean {
-  return filePath === 'package-lock.json'
-    || /^packages\/(?:agent-runner-contract|agent-runner|agent-task-runner|api-entry-node)\/package\.json$/.test(filePath)
-    || /^packages\/agent-runner-contract\/tsconfig\.json$/.test(filePath);
+function isPackageTopologyPath(filePath: string, baseRefs: readonly string[] = []): boolean {
+  return isExactPackageTopologyPath(filePath, baseRefs);
 }
 
 type JsonObject = Record<string, unknown>;
@@ -848,6 +846,241 @@ function packageJsonComparisonForChangedFile(
   return packageJsonComparisonFromBranchBase(baseRefs, filePath);
 }
 
+const RUNNER_CONTRACT_BUILD_WORKSPACE_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+
+const EXPECTED_RUNNER_CONTRACT_PACKAGE_JSON: JsonObject = {
+  name: '@mbos/agent-runner-contract',
+  version: '0.1.0',
+  type: 'module',
+  main: './dist/index.js',
+  types: './dist/index.d.ts',
+  exports: {
+    '.': {
+      types: './dist/index.d.ts',
+      import: './dist/index.js',
+      default: './dist/index.js',
+    },
+    './artifact': {
+      types: './dist/artifact.d.ts',
+      import: './dist/artifact.js',
+      default: './dist/artifact.js',
+    },
+    './contract-artifact.json': './contract-artifact.json',
+    './package.json': './package.json',
+  },
+  files: [
+    'dist',
+    'contract-artifact.json',
+  ],
+  scripts: {
+    clean: 'rm -rf dist',
+    build: 'npm run clean && tsc -p tsconfig.json',
+    prepack: 'npm run build',
+    typecheck: 'tsc -p tsconfig.json --noEmit',
+  },
+};
+
+const EXPECTED_RUNNER_CONTRACT_TSCONFIG_JSON: JsonObject = {
+  compilerOptions: {
+    target: 'ES2022',
+    module: 'NodeNext',
+    moduleResolution: 'NodeNext',
+    esModuleInterop: true,
+    strict: true,
+    declaration: true,
+    skipLibCheck: true,
+    noEmit: false,
+    rootDir: 'src',
+    outDir: 'dist',
+    types: ['node'],
+  },
+  include: ['src/**/*.ts'],
+  exclude: ['src/**/*.test.ts', 'dist'],
+};
+
+const EXPECTED_RUNNER_CONTRACT_ARTIFACT_JSON: JsonObject = {
+  name: '@mbos/agent-runner-contract',
+  version: '0.1.0',
+  artifact_kind: 'local_pack_manifest',
+  formal_release_provenance: false,
+  provenance_note: 'Local pack metadata for P4 focused diagnostics only; this is not formal release provenance.',
+  entrypoints: {
+    version: './dist/artifact.js',
+    schema: './dist/contract-schema.js',
+    types: './dist/index.d.ts',
+    fixtures: './dist/contract-schema.js',
+  },
+};
+
+const RUNNER_CONTRACT_CONSUMER_PACKAGE_PATHS = new Set([
+  'packages/agent-runner/package.json',
+  'packages/agent-task-runner/package.json',
+  'packages/api-entry-node/package.json',
+]);
+
+const RUNNER_CONTRACT_CONSUMER_PRE_SCRIPT_NAMES = new Set([
+  'prebuild',
+  'pretypecheck',
+  'predev',
+  'pretest',
+]);
+
+const RUNNER_CONTRACT_ARTIFACT_TS = `export const RUNNER_CONTRACT_VERSION = '0.1.0';
+
+export const RUNNER_CONTRACT_ARTIFACT = {
+  name: '@mbos/agent-runner-contract',
+  version: RUNNER_CONTRACT_VERSION,
+  artifact_kind: 'local_pack_manifest',
+  formal_release_provenance: false,
+  entrypoints: {
+    version: './dist/artifact.js',
+    schema: './dist/contract-schema.js',
+    types: './dist/index.d.ts',
+    fixtures: './dist/contract-schema.js',
+  },
+} as const;
+`;
+
+const RUNNER_CONTRACT_INDEX_ARTIFACT_EXPORT = `export * from './artifact.js';
+`;
+
+const VITEST_RUNNER_CONTRACT_ALIAS_BLOCK = `      '@mbos/agent-runner-contract': path.resolve(
+        __dirname,
+        './packages/agent-runner-contract/src/index.ts',
+      ),
+`;
+
+function jsonEquals(left: unknown, right: unknown): boolean {
+  return stableJson(left) === stableJson(right);
+}
+
+function currentJsonForChangedFile(baseRefs: readonly string[], filePath: string): JsonObject | null {
+  return packageJsonComparisonForChangedFile(baseRefs, filePath)?.currentPackageJson
+    ?? readPackageJsonFromWorktree(filePath);
+}
+
+function currentTextForChangedFile(baseRefs: readonly string[], filePath: string): string | null {
+  return textFileComparisonForChangedFile(baseRefs, filePath)?.currentText
+    ?? readTextFromWorktree(filePath);
+}
+
+function textDiffIsSingleInsertion(
+  baseRefs: readonly string[],
+  filePath: string,
+  insertedText: string,
+  expectedBaseInsertionIndex?: (baseText: string) => number | null,
+): boolean {
+  const comparison = textFileComparisonForChangedFile(baseRefs, filePath);
+  if (!comparison) {
+    return false;
+  }
+
+  const insertionIndex = comparison.currentText.indexOf(insertedText);
+  if (insertionIndex === -1) {
+    return false;
+  }
+  if (expectedBaseInsertionIndex) {
+    const expectedInsertionIndex = expectedBaseInsertionIndex(comparison.baseText);
+    if (expectedInsertionIndex === null || insertionIndex !== expectedInsertionIndex) {
+      return false;
+    }
+  }
+
+  const currentWithoutInsertion = [
+    comparison.currentText.slice(0, insertionIndex),
+    comparison.currentText.slice(insertionIndex + insertedText.length),
+  ].join('');
+  return currentWithoutInsertion === comparison.baseText
+    && comparison.currentText.indexOf(insertedText, insertionIndex + insertedText.length) === -1;
+}
+
+function isExactRunnerContractPackageMetadataChange(filePath: string, baseRefs: readonly string[]): boolean {
+  return filePath === 'packages/agent-runner-contract/package.json'
+    && jsonEquals(currentJsonForChangedFile(baseRefs, filePath), EXPECTED_RUNNER_CONTRACT_PACKAGE_JSON);
+}
+
+function isExactRunnerContractTsconfigChange(filePath: string, baseRefs: readonly string[]): boolean {
+  return filePath === 'packages/agent-runner-contract/tsconfig.json'
+    && jsonEquals(currentJsonForChangedFile(baseRefs, filePath), EXPECTED_RUNNER_CONTRACT_TSCONFIG_JSON);
+}
+
+function isExactRunnerContractConsumerPackageScriptChange(
+  filePath: string,
+  baseRefs: readonly string[],
+): boolean {
+  if (!RUNNER_CONTRACT_CONSUMER_PACKAGE_PATHS.has(filePath)) {
+    return false;
+  }
+
+  const comparison = packageJsonComparisonForChangedFile(baseRefs, filePath);
+  if (!comparison) {
+    return false;
+  }
+
+  const packageChangedKeys = changedJsonKeys(comparison.basePackageJson, comparison.currentPackageJson);
+  if (packageChangedKeys.length !== 1 || packageChangedKeys[0] !== 'scripts') {
+    return false;
+  }
+
+  const baseScripts = comparison.basePackageJson.scripts;
+  const currentScripts = comparison.currentPackageJson.scripts;
+  if (!isJsonObject(baseScripts) || !isJsonObject(currentScripts)) {
+    return false;
+  }
+
+  const changedScriptNames = changedJsonKeys(baseScripts, currentScripts);
+  return changedScriptNames.length > 0
+    && changedScriptNames.every((scriptName) => {
+      const previousCommand = baseScripts[scriptName];
+      const currentCommand = currentScripts[scriptName];
+      return RUNNER_CONTRACT_CONSUMER_PRE_SCRIPT_NAMES.has(scriptName)
+        && currentCommand === RUNNER_CONTRACT_BUILD_WORKSPACE_COMMAND
+        && (previousCommand === undefined || previousCommand === RUNNER_CONTRACT_BUILD_WORKSPACE_COMMAND);
+    });
+}
+
+function isExactPackageTopologyPath(filePath: string, baseRefs: readonly string[]): boolean {
+  return filePath === 'package-lock.json'
+    || filePath === 'packages/agent-runner-contract/src/package-metadata.test.ts'
+    || isExactRunnerContractPackageMetadataChange(filePath, baseRefs)
+    || isExactRunnerContractTsconfigChange(filePath, baseRefs)
+    || isExactRunnerContractConsumerPackageScriptChange(filePath, baseRefs);
+}
+
+function isRunnerContractArtifactPath(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath === 'packages/agent-runner-contract/contract-artifact.json') {
+    return jsonEquals(currentJsonForChangedFile(baseRefs, filePath), EXPECTED_RUNNER_CONTRACT_ARTIFACT_JSON);
+  }
+
+  if (filePath === 'packages/agent-runner-contract/src/artifact.ts') {
+    return currentTextForChangedFile(baseRefs, filePath) === RUNNER_CONTRACT_ARTIFACT_TS;
+  }
+
+  if (filePath === 'packages/agent-runner-contract/src/index.ts') {
+    return textDiffIsSingleInsertion(
+      baseRefs,
+      filePath,
+      RUNNER_CONTRACT_INDEX_ARTIFACT_EXPORT,
+      () => 0,
+    );
+  }
+
+  if (filePath === 'vitest.config.ts') {
+    return textDiffIsSingleInsertion(
+      baseRefs,
+      filePath,
+      VITEST_RUNNER_CONTRACT_ALIAS_BLOCK,
+      (baseText) => {
+        const apiEntryAlias = "      '@mbos/api-entry-node': path.resolve(__dirname, './packages/api-entry-node/src/index.ts'),\n";
+        const insertionIndex = baseText.indexOf(apiEntryAlias);
+        return insertionIndex === -1 ? null : insertionIndex;
+      },
+    );
+  }
+
+  return false;
+}
+
 const MAKEFILE_CURRENT_WORKFLOW_GENERATED_BLOCKS: readonly Array<readonly [string, string]> = [
   ['# current-workflow:help-extended:start', '# current-workflow:help-extended:end'],
   ['# current-workflow:quick-help:start', '# current-workflow:quick-help:end'],
@@ -982,9 +1215,31 @@ function isSafeMockLaneDiagnosticCommand(command: string): boolean {
   });
 }
 
+const buildFirstContractCommand = (scriptPath: string): string => (
+  `${RUNNER_CONTRACT_BUILD_WORKSPACE_COMMAND} && tsx ${scriptPath}`
+);
+
 const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
+  'contracts:check-release-boundary': buildFirstContractCommand('scripts/contracts/check-release-boundary-contract.ts'),
+  'contracts:check-runner-image-lock': buildFirstContractCommand('scripts/contracts/check-runner-image-lock.ts'),
   'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts',
-  'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+  'contracts:check-repo-split-bootstrap': buildFirstContractCommand('scripts/contracts/check-repo-split-bootstrap.ts'),
+  'contracts:check-agent-runner-contract-artifact': buildFirstContractCommand('scripts/contracts/check-agent-runner-contract-artifact.ts'),
+  'contracts:check-runner-contract-sync': buildFirstContractCommand('scripts/contracts/check-runner-contract-sync.ts'),
+};
+const LEGACY_SAFE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, readonly string[]>>> = {
+  'contracts:check-release-boundary': [
+    'tsx scripts/contracts/check-release-boundary-contract.ts',
+  ],
+  'contracts:check-runner-image-lock': [
+    'tsx scripts/contracts/check-runner-image-lock.ts',
+  ],
+  'contracts:check-repo-split-bootstrap': [
+    'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+  ],
+  'contracts:check-runner-contract-sync': [
+    'tsx scripts/contracts/check-runner-contract-sync.ts',
+  ],
 };
 const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
   'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
@@ -1002,6 +1257,7 @@ const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Pa
   ],
 };
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
+const SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT = 'npm run contracts:check-agent-runner-contract-artifact';
 const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
   'npm run contracts:check-limit-naming',
   'npm run contracts:check-current-workflows',
@@ -1019,6 +1275,7 @@ const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
   'npm run contracts:check-unified-deploy-vocabulary',
   'npm run contracts:check-doc-governance',
   'npm run contracts:check-asyncapi-sync',
+  SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT,
   'npm run contracts:check-runner-contract-sync',
   'npm run story-generated-spec:check',
   'npm run contracts:check-engineering-governance',
@@ -1058,9 +1315,10 @@ function sameStringSequence(left: readonly string[], right: readonly string[]): 
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function isSafeContractsCheckSourceBoundaryInsertion(
+function isSafeContractsCheckSegmentInsertion(
   previousCommand: unknown,
   currentCommand: string,
+  segment: string,
 ): boolean {
   if (typeof previousCommand !== 'string') {
     return false;
@@ -1072,19 +1330,24 @@ function isSafeContractsCheckSourceBoundaryInsertion(
     return false;
   }
 
-  const sourceBoundaryCount = currentSegments.filter(
-    (segment) => segment === SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
-  ).length;
-  if (sourceBoundaryCount !== 1) {
+  const segmentCount = currentSegments.filter((currentSegment) => currentSegment === segment).length;
+  if (segmentCount !== 1) {
     return false;
   }
 
-  const currentWithoutSourceBoundary = removeSingleSegment(
-    currentSegments,
+  const currentWithoutSegment = removeSingleSegment(currentSegments, segment);
+  return currentWithoutSegment !== null
+    && sameStringSequence(previousSegments, currentWithoutSegment);
+}
+
+function isSafeContractsCheckInsertion(
+  previousCommand: unknown,
+  currentCommand: string,
+): boolean {
+  return [
     SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
-  );
-  return currentWithoutSourceBoundary !== null
-    && sameStringSequence(previousSegments, currentWithoutSourceBoundary);
+    SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT,
+  ].some((segment) => isSafeContractsCheckSegmentInsertion(previousCommand, currentCommand, segment));
 }
 
 function isSafeContractPackageScriptChange(
@@ -1093,13 +1356,21 @@ function isSafeContractPackageScriptChange(
   currentCommand: string,
 ): boolean {
   const exactContractCommand = SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS[scriptName];
+  const legacySafePreviousCommands = LEGACY_SAFE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS[scriptName] ?? [];
   if (exactContractCommand) {
     return currentCommand === exactContractCommand
-      && (previousCommand === undefined || previousCommand === exactContractCommand);
+      && (
+        previousCommand === undefined
+        || previousCommand === exactContractCommand
+        || (
+          typeof previousCommand === 'string'
+          && legacySafePreviousCommands.includes(previousCommand)
+        )
+      );
   }
 
   return scriptName === 'contracts:check'
-    && isSafeContractsCheckSourceBoundaryInsertion(previousCommand, currentCommand);
+    && isSafeContractsCheckInsertion(previousCommand, currentCommand);
 }
 
 function isSafeReleaseContractPackageScriptChange(
@@ -2358,7 +2629,28 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    if (isPackageTopologyPath(changedFile)) {
+    if (isRunnerContractArtifactPath(changedFile, packageJsonBaseRefs)) {
+      mapped = true;
+      const levels: readonly VerificationLevel[] = ['V0', 'V1'];
+      const action = `Run ${GOVERNED_PR_VERIFY_COMMAND} and ${RUNNER_CONTRACT_ARTIFACT_CHECK_COMMAND} for the runner contract artifact surface.`;
+      const surface = 'runner-contract-artifact';
+      addLevels(accumulator, levels);
+      accumulator.commands.add(RUNNER_CONTRACT_ARTIFACT_CHECK_COMMAND);
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} touches the runner contract artifact manifest or local test alias.`);
+      pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'governance_tooling',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
+        broadImpact: false,
+      });
+    }
+
+    if (isPackageTopologyPath(changedFile, packageJsonBaseRefs)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
       const action = `Manual package graph/topology owner review required; run ${GOVERNED_PR_VERIFY_COMMAND} and ${PACKAGE_TOPOLOGY_TYPECHECK_COMMAND} before accepting the package topology impact.`;

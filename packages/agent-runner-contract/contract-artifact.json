@@ -1,0 +1,13 @@
+{
+  "name": "@mbos/agent-runner-contract",
+  "version": "0.1.0",
+  "artifact_kind": "local_pack_manifest",
+  "formal_release_provenance": false,
+  "provenance_note": "Local pack metadata for P4 focused diagnostics only; this is not formal release provenance.",
+  "entrypoints": {
+    "version": "./dist/artifact.js",
+    "schema": "./dist/contract-schema.js",
+    "types": "./dist/index.d.ts",
+    "fixtures": "./dist/contract-schema.js"
+  }
+}

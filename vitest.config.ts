@@ -54,6 +54,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@mbos/agent-runner-contract': path.resolve(
+        __dirname,
+        './packages/agent-runner-contract/src/index.ts',
+      ),
       '@mbos/api-entry-node': path.resolve(__dirname, './packages/api-entry-node/src/index.ts'),
     },
   },

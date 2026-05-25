@@ -6,11 +6,12 @@ Status: `p0_machine_guards_passed_p1_1_ci_artifact_producer_passed`
 Date: 2026-05-23
 Owner: Product + Engineering
 Handoff scope: P0 machine guards passed; P1.1 CI release contract artifact
-producer passed. Full P1 adoption is not claimed. P2 focused
+producer passed; release-kit input/evidence intake 已阶段性收口到 fail-fast
+focused diagnostic。Full P1 adoption is not claimed. P2 focused
 diagnostics/bootstrap work can continue; P3-P6 remain gated by the phase checks,
 evidence mapping, provenance checks, redaction checks, and image inventory truth
-in this plan. 当前下一步先收紧 release-kit input/evidence intake，并先闭合
-runner contract artifact，再继续扩展 deploy/airgap 或迁 runtime。
+in this plan. 当前最小切片是 P4 runner contract artifact 可发布/可消费闭环
+in progress/next；不能宣称 P4 完成，也不能迁 runtime。
 
 ## 1. 目标
 
@@ -802,6 +803,6 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 4. 每个复杂点都回到已有合同，而不是发明新体系。
 5. AgentSmith 产品范围没有变大。
 
-推荐执行顺序：P0/P1.1 -> release-kit `--inputs` / `--evidence` 收口 -> P2 online focused repo-local work -> P3 airgap -> P4 runner contract artifact -> P5 runner consumer conformance skeleton -> P5 runtime/image/adoption -> P6 收口。P4 可以提前做只读设计，但在 P4 runner contract artifact 可发布/可消费、runner repo consumer conformance skeleton 通过前，不进入 runner runtime 迁移；P5 完成前也不能删除 monorepo runner build 或宣称最终发布包闭环完成。
+推荐执行顺序：P0/P1.1 -> release-kit `--inputs` / `--evidence` 收口 -> P4 runner contract artifact 最小闭环（当前 slice in progress/next）-> P2 online focused repo-local work -> P3 airgap -> P5 runner consumer conformance skeleton -> P5 runtime/image/adoption -> P6 收口。P4 只做可发布/可消费 contract artifact，不进入 runner runtime 迁移；P5 完成前也不能删除 monorepo runner build 或宣称最终发布包闭环完成。
 
-当前交接判断：P0 done，machine guards passed。P1.1 done，手动 CI release contract artifact producer passed。Full P1 adoption 不能宣称完成，仍受 release contract intake、evidence mapping、provenance、redaction 和 deploy image inventory truth 约束。下一步最小切片先收紧 release-kit `--inputs` / `--evidence`，确保未来/预留 output 未实现就 fail fast；runner 侧先做 P4 `@mbos/agent-runner-contract` artifact 可发布/可消费闭环，再做 P5 consumer conformance skeleton，最后才迁 runtime/image/adoption。
+当前交接判断：P0 done，machine guards passed。P1.1 done，手动 CI release contract artifact producer passed。release-kit `--inputs` / `--evidence` intake 已阶段性收口到 fail-fast focused diagnostic；Full P1 adoption 仍不能宣称完成，仍受 release contract intake、evidence mapping、provenance、redaction 和 deploy image inventory truth 约束。当前 runner 侧最小切片是 P4 `@mbos/agent-runner-contract` artifact 可发布/可消费闭环 in progress/next；完成该 slice 后再做 P5 consumer conformance skeleton，最后才迁 runtime/image/adoption。

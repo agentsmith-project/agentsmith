@@ -538,8 +538,23 @@ describe('check-runner-contract-sync', () => {
     };
     const scripts = packageJson.scripts ?? {};
 
+    expect(scripts['contracts:check-agent-runner-contract-artifact']).toBe(
+      'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-agent-runner-contract-artifact.ts',
+    );
     expect(scripts['contracts:check-runner-contract-sync']).toBe(
-      'tsx scripts/contracts/check-runner-contract-sync.ts',
+      'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-runner-contract-sync.ts',
+    );
+    expect(scripts['contracts:check-release-boundary']).toBe(
+      'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-release-boundary-contract.ts',
+    );
+    expect(scripts['contracts:check-runner-image-lock']).toBe(
+      'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-runner-image-lock.ts',
+    );
+    expect(scripts['contracts:check-repo-split-bootstrap']).toBe(
+      'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-repo-split-bootstrap.ts',
+    );
+    expect(scripts['contracts:check']).toContain(
+      'npm run contracts:check-agent-runner-contract-artifact',
     );
     expect(scripts['contracts:check']).toContain(
       'npm run contracts:check-runner-contract-sync',

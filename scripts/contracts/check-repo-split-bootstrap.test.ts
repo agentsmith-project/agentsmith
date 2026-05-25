@@ -264,7 +264,7 @@ describe('repo split bootstrap contract', () => {
     ) as { scripts?: Record<string, string> };
 
     expect(packageJson.scripts?.['contracts:check-repo-split-bootstrap'])
-      .toBe('tsx scripts/contracts/check-repo-split-bootstrap.ts');
+      .toBe('npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-repo-split-bootstrap.ts');
     expect(packageJson.scripts?.['contracts:check'] ?? '')
       .not.toContain('contracts:check-repo-split-bootstrap');
   });

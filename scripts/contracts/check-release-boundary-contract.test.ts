@@ -16,10 +16,11 @@ const RELEASE_BOUNDARY_FIXTURE_ROOT = path.join(
   '__fixtures__',
   'release-boundary',
 );
-const CHECK_SCRIPT = 'tsx scripts/contracts/check-release-boundary-contract.ts';
+const CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+const CHECK_SCRIPT = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts/check-release-boundary-contract.ts`;
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
 const RUNNER_IMAGE_LOCK_SCRIPT = 'contracts:check-runner-image-lock';
-const RUNNER_IMAGE_LOCK_COMMAND = 'tsx scripts/contracts/check-runner-image-lock.ts';
+const RUNNER_IMAGE_LOCK_COMMAND = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts/check-runner-image-lock.ts`;
 const RUNNER_ADAPTER_INVENTORY_FIXTURE = 'runner-adapter-inventory.valid.json';
 
 function writePackageJson(root: string): void {

@@ -729,7 +729,9 @@ describe('verify impact selector', () => {
 
   it('maps runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
     const changedFiles = [
-      'packages/agent-runner-contract/src/index.ts',
+      'packages/agent-runner-contract/src/contract-schema.ts',
+      'packages/agent-runner-contract/src/protocol.ts',
+      'packages/agent-runner-contract/src/runner-spec.ts',
       'packages/agent-runner/src/index.ts',
       'packages/agent-task-runner/src/runner.ts',
       'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
@@ -902,19 +904,13 @@ describe('verify impact selector', () => {
   it('maps P4 runner contract package extraction files to focused owner review without unmapped expansion', () => {
     const changedFiles = [
       'package-lock.json',
-      'packages/agent-runner-contract/package.json',
-      'packages/agent-runner-contract/tsconfig.json',
       'packages/agent-runner-contract/src/contract-schema.test.ts',
       'packages/agent-runner-contract/src/contract-schema.ts',
-      'packages/agent-runner-contract/src/index.ts',
       'packages/agent-runner-contract/src/package-metadata.test.ts',
       'packages/agent-runner-contract/src/protocol.test.ts',
       'packages/agent-runner-contract/src/protocol.ts',
       'packages/agent-runner-contract/src/runner-spec.test.ts',
       'packages/agent-runner-contract/src/runner-spec.ts',
-      'packages/agent-runner/package.json',
-      'packages/agent-task-runner/package.json',
-      'packages/api-entry-node/package.json',
       'infra/runner/Dockerfile.agent-task-runner',
       'infra/runner/Dockerfile.agent-task-runner-base',
       'scripts/skills-runtime-fast-gate.sh',
@@ -967,9 +963,23 @@ describe('verify impact selector', () => {
         manualReviewRequired: true,
       }),
       expect.objectContaining({
-        changedFile: 'packages/agent-runner-contract/package.json',
-        matchedRules: ['runner_context_credential', 'governance_tooling'],
-        affectedSurfaces: ['package/topology', 'runner/context-store/credentials'],
+        changedFile: 'packages/agent-runner-contract/src/contract-schema.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'packages/agent-runner-contract/src/protocol.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'packages/agent-runner-contract/src/runner-spec.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
         broadImpact: true,
         manualReviewRequired: true,
       }),
@@ -1001,7 +1011,511 @@ describe('verify impact selector', () => {
     ]));
   });
 
-  it('adds runner owner review for api-entry package metadata only when runner contract dependencies change', () => {
+  it('maps runner contract artifact manifest only for the exact generated JSON', () => {
+    const baseArtifactJson = {};
+    const currentArtifactJson = {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      artifact_kind: 'local_pack_manifest',
+      formal_release_provenance: false,
+      provenance_note: 'Local pack metadata for P4 focused diagnostics only; this is not formal release provenance.',
+      entrypoints: {
+        version: './dist/artifact.js',
+        schema: './dist/contract-schema.js',
+        types: './dist/index.d.ts',
+        fixtures: './dist/contract-schema.js',
+      },
+    };
+
+    withPackageFileGitFixture(
+      'packages/agent-runner-contract/contract-artifact.json',
+      baseArtifactJson,
+      currentArtifactJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/contract-artifact.json'],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run contracts:check-agent-runner-contract-artifact',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['runner-contract-artifact']);
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.storyCards).toEqual([]);
+        expect(plan.riskSummary.broadImpact).toBe(false);
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/contract-artifact.json',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['runner-contract-artifact'],
+            broadImpact: false,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps runner contract artifact source only for the exact generated module', () => {
+    const currentContent = `export const RUNNER_CONTRACT_VERSION = '0.1.0';
+
+export const RUNNER_CONTRACT_ARTIFACT = {
+  name: '@mbos/agent-runner-contract',
+  version: RUNNER_CONTRACT_VERSION,
+  artifact_kind: 'local_pack_manifest',
+  formal_release_provenance: false,
+  entrypoints: {
+    version: './dist/artifact.js',
+    schema: './dist/contract-schema.js',
+    types: './dist/index.d.ts',
+    fixtures: './dist/contract-schema.js',
+  },
+} as const;
+`;
+
+    withTextFileGitFixture(
+      'packages/agent-runner-contract/src/artifact.ts',
+      '',
+      currentContent,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/src/artifact.ts'],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run contracts:check-agent-runner-contract-artifact',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['runner-contract-artifact']);
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/src/artifact.ts',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['runner-contract-artifact'],
+            broadImpact: false,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps runner contract index artifact re-export only at the canonical export position', () => {
+    const baseContent = `export * from './protocol.js';
+export * from './contract-schema.js';
+export * from './runner-spec.js';
+`;
+    const currentContent = `export * from './artifact.js';
+export * from './protocol.js';
+export * from './contract-schema.js';
+export * from './runner-spec.js';
+`;
+
+    withTextFileGitFixture(
+      'packages/agent-runner-contract/src/index.ts',
+      baseContent,
+      currentContent,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/src/index.ts'],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run contracts:check-agent-runner-contract-artifact',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['runner-contract-artifact']);
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/src/index.ts',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['runner-contract-artifact'],
+            broadImpact: false,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('keeps exact runner contract artifact re-export fail-closed at the wrong location', () => {
+    const baseContent = `export * from './protocol.js';
+export * from './contract-schema.js';
+export * from './runner-spec.js';
+`;
+    const currentContent = `export * from './protocol.js';
+export * from './contract-schema.js';
+export * from './runner-spec.js';
+export * from './artifact.js';
+`;
+
+    withTextFileGitFixture(
+      'packages/agent-runner-contract/src/index.ts',
+      baseContent,
+      currentContent,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/src/index.ts'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/src/index.ts',
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps runner contract artifact checker files and package metadata tests without heavy expansion', () => {
+    const changedFiles = [
+      'packages/agent-runner-contract/src/package-metadata.test.ts',
+      'scripts/contracts/check-agent-runner-contract-artifact.ts',
+      'scripts/contracts/check-agent-runner-contract-artifact.test.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run ws:typecheck',
+    ]);
+    expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+    expect(plan.affectedSurfaces).toEqual([
+      'engineering-governance-tooling',
+      'package/topology',
+    ]);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'packages/agent-runner-contract/src/package-metadata.test.ts',
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['package/topology'],
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-agent-runner-contract-artifact.ts',
+        matchedRules: ['governance_tooling'],
+        affectedSurfaces: ['engineering-governance-tooling'],
+      }),
+    ]));
+  });
+
+  it('maps runner contract package metadata only for the exact packable artifact topology', () => {
+    const basePackageJson = {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      private: true,
+      type: 'module',
+      main: 'src/index.ts',
+      types: 'src/index.ts',
+      scripts: {
+        typecheck: 'tsc -p tsconfig.json --noEmit',
+      },
+    };
+    const currentPackageJson = {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      type: 'module',
+      main: './dist/index.js',
+      types: './dist/index.d.ts',
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          import: './dist/index.js',
+          default: './dist/index.js',
+        },
+        './artifact': {
+          types: './dist/artifact.d.ts',
+          import: './dist/artifact.js',
+          default: './dist/artifact.js',
+        },
+        './contract-artifact.json': './contract-artifact.json',
+        './package.json': './package.json',
+      },
+      files: [
+        'dist',
+        'contract-artifact.json',
+      ],
+      scripts: {
+        clean: 'rm -rf dist',
+        build: 'npm run clean && tsc -p tsconfig.json',
+        prepack: 'npm run build',
+        typecheck: 'tsc -p tsconfig.json --noEmit',
+      },
+    };
+
+    withPackageFileGitFixture(
+      'packages/agent-runner-contract/package.json',
+      basePackageJson,
+      currentPackageJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/package.json'],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run ws:typecheck',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['package/topology']);
+        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/package.json',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['package/topology'],
+            broadImpact: false,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps runner contract tsconfig only for the exact dist artifact topology', () => {
+    const baseContent = `${JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        esModuleInterop: true,
+        strict: true,
+        declaration: false,
+        skipLibCheck: true,
+        noEmit: true,
+        types: ['node'],
+      },
+      include: ['src/**/*.ts'],
+    }, null, 2)}\n`;
+    const currentContent = `${JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        esModuleInterop: true,
+        strict: true,
+        declaration: true,
+        skipLibCheck: true,
+        noEmit: false,
+        rootDir: 'src',
+        outDir: 'dist',
+        types: ['node'],
+      },
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'dist'],
+    }, null, 2)}\n`;
+
+    withTextFileGitFixture(
+      'packages/agent-runner-contract/tsconfig.json',
+      baseContent,
+      currentContent,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/tsconfig.json'],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run ws:typecheck',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['package/topology']);
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/tsconfig.json',
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['package/topology'],
+            broadImpact: false,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('keeps non-exact runner contract tsconfig changes fail-closed', () => {
+    withTextFileGitFixture(
+      'packages/agent-runner-contract/tsconfig.json',
+      '{"compilerOptions":{"strict":true}}\n',
+      '{"compilerOptions":{"strict":false}}\n',
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner-contract/tsconfig.json'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner-contract/tsconfig.json',
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps direct runner contract consumers only for exact pre-build topology scripts', () => {
+    const contractBuildScript = 'npm run build -w @mbos/agent-runner-contract';
+    const cases = [
+      {
+        path: 'packages/agent-runner/package.json',
+        base: {
+          name: '@mbos/agent-runner',
+          scripts: {
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+          },
+        },
+        current: {
+          name: '@mbos/agent-runner',
+          scripts: {
+            pretypecheck: contractBuildScript,
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+          },
+        },
+      },
+      {
+        path: 'packages/agent-task-runner/package.json',
+        base: {
+          name: '@mbos/agent-task-runner',
+          scripts: {
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+            build: 'esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --external:node-pty --external:ws --outfile=dist/index.js --log-level=warning',
+            dev: 'tsx src/index.ts',
+          },
+        },
+        current: {
+          name: '@mbos/agent-task-runner',
+          scripts: {
+            pretypecheck: contractBuildScript,
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+            prebuild: contractBuildScript,
+            build: 'esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --external:node-pty --external:ws --outfile=dist/index.js --log-level=warning',
+            predev: contractBuildScript,
+            dev: 'tsx src/index.ts',
+          },
+        },
+      },
+      {
+        path: 'packages/api-entry-node/package.json',
+        base: {
+          name: '@mbos/api-entry-node',
+          scripts: {
+            build: 'esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from \'node:module\';const require = createRequire(import.meta.url);" --outdir=dist --entry-names=[name] --log-level=warning',
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+            dev: 'tsx src/index.ts',
+            test: 'vitest run --config vitest.config.ts',
+          },
+        },
+        current: {
+          name: '@mbos/api-entry-node',
+          scripts: {
+            prebuild: contractBuildScript,
+            build: 'esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from \'node:module\';const require = createRequire(import.meta.url);" --outdir=dist --entry-names=[name] --log-level=warning',
+            pretypecheck: contractBuildScript,
+            typecheck: 'tsc -p tsconfig.json --noEmit',
+            predev: contractBuildScript,
+            dev: 'tsx src/index.ts',
+            pretest: contractBuildScript,
+            test: 'vitest run --config vitest.config.ts',
+          },
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      withPackageFileGitFixture(testCase.path, testCase.base, testCase.current, ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: [testCase.path],
+          catalog,
+        });
+
+        expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+        expect(plan.recommendedCommands).toEqual([
+          'npm run verify:quick',
+          'npm run verify:default',
+          'npm run ws:typecheck',
+        ]);
+        expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+        expect(plan.affectedSurfaces).toEqual(['package/topology']);
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: testCase.path,
+            matchedRules: ['governance_tooling'],
+            affectedSurfaces: ['package/topology'],
+            broadImpact: false,
+          }),
+        ]);
+      });
+    }
+  });
+
+  it('keeps non-exact consumer package scripts fail-closed', () => {
+    const basePackageJson = {
+      name: '@mbos/agent-runner',
+      scripts: {
+        typecheck: 'tsc -p tsconfig.json --noEmit',
+      },
+    };
+    const currentPackageJson = {
+      name: '@mbos/agent-runner',
+      scripts: {
+        pretypecheck: 'npm run build -w @mbos/agent-runner-contract && echo unsafe',
+        typecheck: 'tsc -p tsconfig.json --noEmit',
+      },
+    };
+
+    withPackageFileGitFixture(
+      'packages/agent-runner/package.json',
+      basePackageJson,
+      currentPackageJson,
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['packages/agent-runner/package.json'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'packages/agent-runner/package.json',
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('keeps package dependency changes fail-closed instead of treating them as package topology', () => {
     const basePackageJson = {
       name: '@mbos/api-entry-node',
       dependencies: {
@@ -1035,13 +1549,13 @@ describe('verify impact selector', () => {
         });
 
         expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
-        expect(plan.affectedSurfaces).toContain('package/topology');
+        expect(plan.affectedSurfaces).not.toContain('package/topology');
         expect(plan.affectedSurfaces).not.toContain('unmapped-source');
         expect(plan.changedFileImpacts).toEqual([
           expect.objectContaining({
             changedFile: 'packages/api-entry-node/package.json',
-            matchedRules: ['runner_context_credential', 'governance_tooling'],
-            affectedSurfaces: ['package/topology', 'runner/context-store/credentials'],
+            matchedRules: ['runner_context_credential'],
+            affectedSurfaces: ['runner/context-store/credentials'],
           }),
         ]);
       },
@@ -1057,14 +1571,94 @@ describe('verify impact selector', () => {
           catalog,
         });
 
-        expect(plan.affectedSurfaces).toEqual(['package/topology']);
+        expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
         expect(plan.affectedSurfaces).not.toContain('runner/context-store/credentials');
-        expect(plan.affectedSurfaces).not.toContain('unmapped-source');
         expect(plan.changedFileImpacts).toEqual([
           expect.objectContaining({
             changedFile: 'packages/api-entry-node/package.json',
-            matchedRules: ['governance_tooling'],
-            affectedSurfaces: ['package/topology'],
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
+          }),
+        ]);
+      },
+    );
+  });
+
+  it('maps the exact vitest runner contract alias addition without unmapped expansion', () => {
+    const baseContent = `import path from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@mbos/api-entry-node': path.resolve(__dirname, './packages/api-entry-node/src/index.ts'),
+    },
+  },
+});
+`;
+    const currentContent = `import path from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@mbos/agent-runner-contract': path.resolve(
+        __dirname,
+        './packages/agent-runner-contract/src/index.ts',
+      ),
+      '@mbos/api-entry-node': path.resolve(__dirname, './packages/api-entry-node/src/index.ts'),
+    },
+  },
+});
+`;
+
+    withTextFileGitFixture('vitest.config.ts', baseContent, currentContent, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['vitest.config.ts'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+        'npm run contracts:check-agent-runner-contract-artifact',
+      ]);
+      expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+      expect(plan.affectedSurfaces).toEqual(['runner-contract-artifact']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'vitest.config.ts',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['runner-contract-artifact'],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('keeps non-exact vitest.config.ts changes fail-closed', () => {
+    withTextFileGitFixture(
+      'vitest.config.ts',
+      'export default { resolve: { alias: {} } };\n',
+      'export default { resolve: { alias: { unsafe: true } } };\n',
+      ({ catalog }) => {
+        const plan = buildVerificationPlan({
+          changedFiles: ['vitest.config.ts'],
+          catalog,
+        });
+
+        expect(plan.affectedSurfaces).toContain('unmapped-source');
+        expect(plan.changedFileImpacts).toEqual([
+          expect.objectContaining({
+            changedFile: 'vitest.config.ts',
+            matchedRules: ['unmapped_source'],
+            affectedSurfaces: ['unmapped-source'],
+            broadImpact: true,
           }),
         ]);
       },
@@ -1785,7 +2379,7 @@ describe('verify impact selector', () => {
       scripts: {
         'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
         'contracts:check-release-kit-source-boundary': 'tsx scripts/contracts/check-release-kit-source-boundary.ts',
-        'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+        'contracts:check-repo-split-bootstrap': 'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-repo-split-bootstrap.ts',
         'contracts:check-product-terminology': 'tsx scripts/contracts/check-product-terminology.ts',
         'contracts:check': 'npm run contracts:check-release-boundary && npm run contracts:check-release-kit-source-boundary && npm run contracts:check-product-terminology',
       },
@@ -1816,6 +2410,85 @@ describe('verify impact selector', () => {
           affectedSurfaces: ['engineering-governance-tooling'],
           storyIds: [],
           broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('maps current runner contract artifact package.json scripts only for exact commands', () => {
+    const buildFirst = 'npm run build -w @mbos/agent-runner-contract';
+    const basePackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+        'contracts:check-runner-image-lock': 'tsx scripts/contracts/check-runner-image-lock.ts',
+        'contracts:check-repo-split-bootstrap': 'tsx scripts/contracts/check-repo-split-bootstrap.ts',
+        'contracts:check-runner-contract-sync': 'tsx scripts/contracts/check-runner-contract-sync.ts',
+        'contracts:check': 'npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-current-gates && npm run contracts:check-current-gate-results && npm run contracts:check-current-verification-campaigns && npm run contracts:check-current-runtime-lines && npm run contracts:check-current-governance-observability && npm run contracts:check-current-build-artifact-broker && npm run contracts:check-current-real-session-coverage && npm run contracts:check-asbcp-image-only && npm run contracts:check-release-boundary && npm run contracts:check-release-kit-source-boundary && npm run contracts:check-product-terminology && npm run contracts:check-unified-deploy-vocabulary && npm run contracts:check-doc-governance && npm run contracts:check-asyncapi-sync && npm run contracts:check-runner-contract-sync && npm run story-generated-spec:check && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-next-dist-types.ts && tsx scripts/contracts/check-runner-naming.ts && tsx scripts/contracts/check-permission-gates.ts',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': `${buildFirst} && tsx scripts/contracts/check-release-boundary-contract.ts`,
+        'contracts:check-runner-image-lock': `${buildFirst} && tsx scripts/contracts/check-runner-image-lock.ts`,
+        'contracts:check-repo-split-bootstrap': `${buildFirst} && tsx scripts/contracts/check-repo-split-bootstrap.ts`,
+        'contracts:check-agent-runner-contract-artifact': `${buildFirst} && tsx scripts/contracts/check-agent-runner-contract-artifact.ts`,
+        'contracts:check-runner-contract-sync': `${buildFirst} && tsx scripts/contracts/check-runner-contract-sync.ts`,
+        'contracts:check': 'npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-current-gates && npm run contracts:check-current-gate-results && npm run contracts:check-current-verification-campaigns && npm run contracts:check-current-runtime-lines && npm run contracts:check-current-governance-observability && npm run contracts:check-current-build-artifact-broker && npm run contracts:check-current-real-session-coverage && npm run contracts:check-asbcp-image-only && npm run contracts:check-release-boundary && npm run contracts:check-release-kit-source-boundary && npm run contracts:check-product-terminology && npm run contracts:check-unified-deploy-vocabulary && npm run contracts:check-doc-governance && npm run contracts:check-asyncapi-sync && npm run contracts:check-agent-runner-contract-artifact && npm run contracts:check-runner-contract-sync && npm run story-generated-spec:check && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-next-dist-types.ts && tsx scripts/contracts/check-runner-naming.ts && tsx scripts/contracts/check-permission-gates.ts',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
+  it('keeps runner contract artifact package.json scripts fail-closed when commands are not exact', () => {
+    const basePackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'tsx scripts/contracts/check-release-boundary-contract.ts',
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        'contracts:check-release-boundary': 'npm run build -w @mbos/agent-runner-contract && tsx scripts/contracts/check-release-boundary-contract.ts && echo unsafe',
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toContain('unmapped-source');
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
         }),
       ]);
     });

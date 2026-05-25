@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import YAML from 'yaml';
 
 import {
   CURRENT_BUILD_ARTIFACT_TARGETS,
@@ -28,6 +29,11 @@ type PackageJson = {
   scripts?: Record<string, string>;
 };
 
+type WorkflowStep = {
+  name?: string;
+  run?: string;
+};
+
 const failures: string[] = [];
 const LOCKED_DIGEST_A = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST_B = `sha256:${'b'.repeat(64)}`;
@@ -41,6 +47,10 @@ const BUILD_PRODUCER = {
 };
 const NEXT_BUILD_COMMAND = 'npx next build --no-lint';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+const IMAGE_PUBLISH_WORKFLOW_PATH = '.github/workflows/image-publish.yml';
+const IMAGE_PUBLISH_JOB_ID = 'publish-images';
+const HOST_NODE_OR_TSX_COMMAND_PATTERN =
+  /(?:^|\s)(?:node(?:\s|$)|npx\s+tsx\b|tsx\s+scripts\/|npm\s+run\s+release:deploy-template-package\b)/u;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -54,6 +64,12 @@ function readJson<T>(relativePath: string): T {
 
 function readText(relativePath: string): string {
   return readFileSync(resolve(relativePath), 'utf8');
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function parseKeyValueText(text: string): Map<string, string> {
@@ -149,6 +165,53 @@ function parseDockerfileMountOption(mountOption: string): Map<string, string> | 
   }
 
   return attributes;
+}
+
+function parseWorkflowSteps(content: string, jobId: string): WorkflowStep[] {
+  const parsedWorkflow = asRecord(YAML.parse(content) as unknown);
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+
+  return steps.map((step): WorkflowStep => {
+    const stepRecord = asRecord(step);
+    const name = stepRecord.name;
+    const run = stepRecord.run;
+
+    return {
+      name: typeof name === 'string' ? name : undefined,
+      run: typeof run === 'string' ? run : undefined,
+    };
+  });
+}
+
+function assertImagePublishBuildsRunnerContractBeforeHostNodeScripts(workflowContent: string): void {
+  const steps = parseWorkflowSteps(workflowContent, IMAGE_PUBLISH_JOB_ID);
+  const installIndex = steps.findIndex((step) => step.name === 'Install dependencies');
+  const runnerContractBuildIndex = steps.findIndex((step) => step.run?.trim() === RUNNER_CONTRACT_BUILD_COMMAND);
+  const hostNodeScriptSteps = steps
+    .map((step, index) => ({ index, step }))
+    .filter(({ step }) => step.run !== undefined && HOST_NODE_OR_TSX_COMMAND_PATTERN.test(step.run));
+
+  assert(installIndex >= 0, 'Image Publish workflow must install npm dependencies before host Node/tsx scripts.');
+  assert(
+    runnerContractBuildIndex >= 0,
+    `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} on the GitHub runner before host Node/tsx scripts that load workspace package exports.`,
+  );
+  assert(
+    hostNodeScriptSteps.length > 0,
+    'Image Publish workflow contract expected at least one host Node/tsx script step.',
+  );
+  assert(
+    installIndex >= 0 && runnerContractBuildIndex >= 0 && installIndex < runnerContractBuildIndex,
+    `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci.`,
+  );
+
+  for (const { index, step } of hostNodeScriptSteps) {
+    assert(
+      runnerContractBuildIndex >= 0 && runnerContractBuildIndex < index,
+      `Image Publish workflow must run ${RUNNER_CONTRACT_BUILD_COMMAND} before host Node/tsx step "${step.name ?? step.run ?? '<unnamed>'}" because @mbos/agent-runner-contract resolves to dist on the GitHub runner.`,
+    );
+  }
 }
 
 function assertAgentsmithAppDockerfileBuildContextCopySources(dockerfileContent: string): void {
@@ -266,6 +329,7 @@ function main(): void {
   const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
   const agentsmithAppBaseDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app-base');
   const deployContract = readText('docs/contracts/unified-deploy-contract.md');
+  const imagePublishWorkflow = readText(IMAGE_PUBLISH_WORKFLOW_PATH);
 
   assert(
     packageJson.scripts?.['contracts:check-current-build-artifact-broker']
@@ -375,6 +439,7 @@ function main(): void {
   assertAgentsmithAppDockerfileBuildContextCopySources(agentsmithAppDockerfile);
   assertAgentsmithAppBaseDockerfileWorkspaceInstallInventory(agentsmithAppBaseDockerfile);
   assertAgentsmithAppDockerfileBuildsRunnerContractBeforeNextBuild(agentsmithAppDockerfile);
+  assertImagePublishBuildsRunnerContractBeforeHostNodeScripts(imagePublishWorkflow);
 
   const appKey = computeAppImageContentKey({
     files: [

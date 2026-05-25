@@ -65,6 +65,7 @@ const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
 const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
   'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>';
+const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -1265,6 +1266,11 @@ describe('current workflow governance', () => {
     expect(job?.requiresSecrets).toBe(false);
     expect(job?.evidenceRequired).toBe(true);
     expect(job?.evidenceFamilies).toEqual(['image_publish_handoff']);
+    expect(job?.commands).toEqual([
+      RUNNER_CONTRACT_BUILD_COMMAND,
+      'scripts/governance/build-artifact-broker-cli.ts',
+      'npm run release:deploy-template-package',
+    ]);
     expect(job?.artifactPaths).toEqual([
       'artifacts/image-publish/VERSION',
       'artifacts/image-publish/build-artifact-broker-plan.json',
@@ -1275,6 +1281,7 @@ describe('current workflow governance', () => {
       'artifacts/image-publish/agentsmith-deploy-template-package.tgz',
     ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read', packages: 'write' });
+    expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(runCommands).toContain('docker push "${APP_RELEASE_REF}"');
     expect(runCommands).toContain('BUILD_ARTIFACT_BROKER_IMAGE_DIGEST_COMMAND');
     expect(runCommands).toContain('npm run release:deploy-template-package');
@@ -1286,6 +1293,12 @@ describe('current workflow governance', () => {
     expect(workflowSource).not.toContain('agentsmith-api:${');
     expect(runCommands).not.toContain('npm run release:ready');
     expect(runCommands).not.toContain('npm run release:contract:ci-artifact');
+    expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf('npx tsx scripts/governance/build-artifact-broker-cli.ts'),
+    );
+    expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf('npm run release:deploy-template-package'),
+    );
   });
 
   it('publishes run-scoped mock-lane evidence from CI jobs that execute mock or visual lanes', () => {

@@ -48,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build runner contract workspace package
+        run: npm run build -w @mbos/agent-runner-contract
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
 

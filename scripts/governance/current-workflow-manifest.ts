@@ -689,6 +689,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         id: 'publish-images',
         role: 'artifact_producer',
         commands: [
+          'npm run build -w @mbos/agent-runner-contract',
           'scripts/governance/build-artifact-broker-cli.ts',
           'npm run release:deploy-template-package',
         ],

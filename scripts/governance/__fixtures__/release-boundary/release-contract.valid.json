@@ -15,6 +15,16 @@
       "id": "llmup",
       "image": "ghcr.io/agentsmith-project/llm-universal-proxy:2026.05.23-p0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
       "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "id": "afscp",
+      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    {
+      "id": "asbcp",
+      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.7@sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200",
+      "digest": "sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200"
     }
   ],
   "release_kit_prerequisite_images": [
@@ -22,6 +32,11 @@
       "id": "ingress_nginx_controller",
       "image": "registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "id": "ingress_nginx_certgen",
+      "image": "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
   "deploy_image_inventory": [
@@ -38,9 +53,27 @@
       "source": "adopted_provider_images"
     },
     {
+      "id": "afscp",
+      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "source": "adopted_provider_images"
+    },
+    {
+      "id": "asbcp",
+      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.7@sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200",
+      "digest": "sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200",
+      "source": "adopted_provider_images"
+    },
+    {
       "id": "ingress_nginx_controller",
       "image": "registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "source": "release_kit_prerequisite_images"
+    },
+    {
+      "id": "ingress_nginx_certgen",
+      "image": "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "source": "release_kit_prerequisite_images"
     }
   ],
@@ -50,6 +83,14 @@
     "package_uri": "gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz",
     "package_sha256": "sha256:abababababababababababababababababababababababababababababababab",
     "manifest_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "required_image_ids": [
+      "afscp",
+      "agentsmith_app",
+      "asbcp",
+      "ingress_nginx_certgen",
+      "ingress_nginx_controller",
+      "llmup"
+    ],
     "artifact_provenance": {
       "schema_version": "agentsmith.artifact-provenance/v1",
       "provenance_kind": "ci_artifact",
@@ -57,7 +98,7 @@
       "normalized_remote": "github.com/agentsmith-project/agentsmith",
       "commit_sha": "0123456789abcdef0123456789abcdef01234567",
       "subject_name": "agentsmith-deploy-template-package",
-      "subject_sha256": "sha256:2c33733083b29c7d01d5382f94e19e11a737d60ac0dce39feb73f9f153744a68",
+      "subject_sha256": "sha256:faf996a298e178761c40c76c0dd3314bae83c5a6ac472ad2720353fc19e71d32",
       "subject_uri": "deploy-template-package.json",
       "workflow_name": "release-contract",
       "run_id": "10001",
@@ -164,14 +205,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:e15bd21ccf101d048324e608328c70147da00aba1d44af1b7e20a8ba4713c196",
+    "subject_sha256": "sha256:80155efc8cc89aa1cfd38174521990ca8959ccf2d323eecf6d3fc6ee308e7fb0",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:4695af7aaae6d30832a1d007a67f7924316c67f257a10c0bb4346dd16595c68a",
+    "artifact_sha256": "sha256:c279a51c65795f1d7cd76fd3da7051bfeefe4db42c3e96752e79135627646ed1",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

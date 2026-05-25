@@ -1,0 +1,6 @@
+# AgentSmith AFSCP external image lock.
+# This repository treats AFSCP as an external image dependency, not an AgentSmith-built target.
+# The digest below is the current pinned release truth for release contract handoff.
+# Format: afscp_version=<version> and afscp_source_image=<image:tag@sha256:digest>
+afscp_version=v1.0.7
+afscp_source_image=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2

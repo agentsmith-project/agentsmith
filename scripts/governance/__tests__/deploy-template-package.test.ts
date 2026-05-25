@@ -46,6 +46,8 @@ const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
 const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
+const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
+const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
 const VALID_REMOTE_ATTESTATION = {
@@ -54,6 +56,14 @@ const VALID_REMOTE_ATTESTATION = {
 } as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'c'.repeat(64)}`;
+const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
+  'afscp',
+  'agentsmith_app',
+  'asbcp',
+  'ingress_nginx_certgen',
+  'ingress_nginx_controller',
+  'llmup',
+] as const;
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
   version: 'test',
@@ -96,7 +106,7 @@ function makeTempRoot(): string {
   const deployRoot = join(root, 'infra/deploy/unified');
   mkdirSync(join(deployRoot, 'templates/app'), { recursive: true });
   mkdirSync(join(deployRoot, 'templates/local-kind-admin-preflight'), { recursive: true });
-  writeFileSync(join(deployRoot, 'templates/app/rbac.yaml.tpl'), 'kind: Role\n');
+  writeFileSync(join(deployRoot, 'templates/app/rbac.yaml.tpl'), 'kind: Pod\nimage: "{{API_IMAGE}}"\n');
   writeFileSync(
     join(deployRoot, 'templates/local-kind-admin-preflight/namespace.yaml.tpl'),
     'kind: Namespace\n',
@@ -209,6 +219,7 @@ function descriptorSubject(descriptor: CurrentDeployTemplatePackage): Omit<
     package_uri: descriptor.package_uri,
     package_sha256: descriptor.package_sha256,
     manifest_sha256: descriptor.manifest_sha256,
+    required_image_ids: descriptor.required_image_ids,
   };
 }
 
@@ -311,12 +322,27 @@ function buildReleaseContractAssemblyInput(
         image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
+      {
+        id: 'afscp',
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
+        digest: `sha256:${'5'.repeat(64)}`,
+      },
+      {
+        id: 'asbcp',
+        image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.7@sha256:${'6'.repeat(64)}`,
+        digest: `sha256:${'6'.repeat(64)}`,
+      },
     ],
     release_kit_prerequisite_images: [
       {
         id: 'ingress_nginx_controller',
         image: `registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:${'4'.repeat(64)}`,
         digest: `sha256:${'4'.repeat(64)}`,
+      },
+      {
+        id: 'ingress_nginx_certgen',
+        image: `registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:${'7'.repeat(64)}`,
+        digest: `sha256:${'7'.repeat(64)}`,
       },
     ],
     target_profiles: structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES),
@@ -568,6 +594,8 @@ describe('deploy template package generator', () => {
     expect(readArchiveJson(result.archivePath, 'manifest.json')).toEqual(result.manifest);
     expect(readJson(result.descriptorPath)).toEqual(result.descriptor);
     expect(result.manifest.schema_version).toBe('agentsmith.deploy-template-manifest/v1');
+    expect(result.manifest.required_image_ids).toEqual(REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS);
+    expect(result.descriptor.required_image_ids).toEqual(REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS);
     expect(result.manifest.templates.every((template) => template.kind === 'kubernetes')).toBe(true);
     expect(new Set(result.manifest.templates.map((template) => template.path)).size).toBe(
       result.manifest.templates.length,
@@ -635,9 +663,21 @@ describe('deploy template package generator', () => {
     const workloads = readArchiveMemberBytes(result.archivePath, 'templates/app/workloads.yaml').toString('utf8');
 
     expect(workloads).toContain('${{ images.agentsmith_app.image }}');
+    expect(workloads).toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
     expect(workloads).not.toContain('{{API_IMAGE}}');
     expect(workloads).not.toContain('{{WEB_IMAGE}}');
+    expect(workloads).not.toContain('${{ images.managed_runner.image }}');
     expect(workloads).not.toContain('{{NAMESPACE}}');
+  });
+
+  it('fails fast when a template adds an undeclared image placeholder', () => {
+    const repoRoot = makeTempRoot();
+    writeFileSync(
+      join(repoRoot, 'infra/deploy/unified/templates/app/rbac.yaml.tpl'),
+      'kind: Pod\nimage: "{{MYSTERY_IMAGE}}"\n',
+    );
+
+    expectPackageGenerationFailure(repoRoot, 'template image placeholder "{{MYSTERY_IMAGE}}" is not declared');
   });
 
   it('repeats the same manifest and archive digests for identical input', () => {
@@ -666,7 +706,7 @@ describe('deploy template package generator', () => {
 
     writeFileSync(
       join(repoRoot, 'infra/deploy/unified/templates/app/rbac.yaml.tpl'),
-      'kind: Role\nmetadata:\n  name: changed\n',
+      'kind: Pod\nmetadata:\n  name: changed\nimage: "{{API_IMAGE}}"\n',
     );
     const second = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot,

@@ -368,6 +368,33 @@ function assertValidationOk(label: string, result: { ok: boolean; failures?: rea
   );
 }
 
+function assertVersionedImageLock(
+  lockValues: ReadonlyMap<string, string>,
+  versionKey: string,
+  imageKey: string,
+  expectedImageRepository: string,
+): void {
+  const version = lockValues.get(versionKey);
+  const sourceImage = lockValues.get(imageKey);
+  assert(typeof version === 'string' && version.length > 0, `${versionKey} must be present in shared image lock.`);
+  assert(typeof sourceImage === 'string' && sourceImage.length > 0, `${imageKey} must be present in shared image lock.`);
+  if (typeof version !== 'string' || typeof sourceImage !== 'string') {
+    return;
+  }
+
+  const parsedSourceImage = parseLockedImageRef(sourceImage);
+  assert(
+    parsedSourceImage.ok,
+    `${imageKey} failed validation: ${parsedSourceImage.ok ? '' : parsedSourceImage.reason}`,
+  );
+  if (!parsedSourceImage.ok) {
+    return;
+  }
+
+  assert(parsedSourceImage.value.image === expectedImageRepository, `${imageKey} must use ${expectedImageRepository}.`);
+  assert(parsedSourceImage.value.tag === version, `${imageKey} tag must match ${versionKey}.`);
+}
+
 function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
@@ -375,6 +402,8 @@ function main(): void {
   const buildBroker = readText('scripts/governance/build-artifact-broker.ts');
   const buildBaseImagesLock = readText('infra/deploy/shared/build-base-images.lock');
   const llmupImageLock = readText('infra/deploy/shared/llmup-image.lock');
+  const afscpImageLock = readText('infra/deploy/shared/afscp-image.lock');
+  const ingressNginxImageLock = readText('infra/deploy/shared/ingress-nginx-image.lock');
   const agentsmithAppDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app');
   const agentsmithAppBaseDockerfile = readText('infra/deploy/Dockerfile.agentsmith-app-base');
   const deployContract = readText('docs/contracts/unified-deploy-contract.md');
@@ -486,6 +515,48 @@ function main(): void {
         'llmup image lock source image tag must match llmup_version.',
       );
     }
+  }
+  assertVersionedImageLock(
+    parseKeyValueText(afscpImageLock),
+    'afscp_version',
+    'afscp_source_image',
+    'ghcr.io/agentsmith-project/agentsmith-fs-control-plane',
+  );
+  const ingressNginxLockValues = parseKeyValueText(ingressNginxImageLock);
+  assertVersionedImageLock(
+    ingressNginxLockValues,
+    'ingress_nginx_controller_version',
+    'ingress_nginx_controller_source_image',
+    'registry.k8s.io/ingress-nginx/controller',
+  );
+  assertVersionedImageLock(
+    ingressNginxLockValues,
+    'ingress_nginx_certgen_version',
+    'ingress_nginx_certgen_source_image',
+    'registry.k8s.io/ingress-nginx/kube-webhook-certgen',
+  );
+  for (const requiredLockPath of [
+    'infra/deploy/shared/llmup-image.lock',
+    'infra/deploy/shared/afscp-image.lock',
+    'infra/deploy/shared/asbcp-image.lock',
+    'infra/deploy/shared/ingress-nginx-image.lock',
+  ]) {
+    assert(
+      imagePublishWorkflow.includes(requiredLockPath),
+      `image-publish release contract input handoff must read formal image truth from ${requiredLockPath}.`,
+    );
+  }
+  for (const forbiddenSiteEnvTruth of [
+    'infra/deploy/unified/env/site.env.example',
+    'siteEnv.get',
+    'AFSCP_IMAGE',
+    'INGRESS_NGINX_CONTROLLER_IMAGE',
+    'INGRESS_NGINX_CERTGEN_IMAGE',
+  ]) {
+    assert(
+      !imagePublishWorkflow.includes(forbiddenSiteEnvTruth),
+      `image-publish release contract input handoff must not read formal image truth from site.env.example: ${forbiddenSiteEnvTruth}.`,
+    );
   }
   assertAgentsmithAppNextBuildCacheMount(agentsmithAppDockerfile);
   assertAgentsmithAppDockerfileBuildContextCopySources(agentsmithAppDockerfile);

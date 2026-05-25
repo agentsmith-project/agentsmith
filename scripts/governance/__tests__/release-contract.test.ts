@@ -25,6 +25,16 @@ const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
 const CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = ['ghcr.io/agentsmith-project', 'llmup'].join('/');
+const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
+const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
+  'afscp',
+  'agentsmith_app',
+  'asbcp',
+  'ingress_nginx_certgen',
+  'ingress_nginx_controller',
+  'llmup',
+] as const;
 const RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES = [
   'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
   'scripts/governance/__tests__/release-contract.test.ts',
@@ -46,6 +56,16 @@ const ADOPTED_PROVIDER_IMAGES = [
     image: `${CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
     digest: `sha256:${'3'.repeat(64)}`,
   },
+  {
+    id: 'afscp',
+    image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
+    digest: `sha256:${'5'.repeat(64)}`,
+  },
+  {
+    id: 'asbcp',
+    image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.7@sha256:${'6'.repeat(64)}`,
+    digest: `sha256:${'6'.repeat(64)}`,
+  },
 ] as const;
 
 const RELEASE_KIT_PREREQUISITE_IMAGES = [
@@ -53,6 +73,11 @@ const RELEASE_KIT_PREREQUISITE_IMAGES = [
     id: 'ingress_nginx_controller',
     image: `registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:${'4'.repeat(64)}`,
     digest: `sha256:${'4'.repeat(64)}`,
+  },
+  {
+    id: 'ingress_nginx_certgen',
+    image: `registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:${'7'.repeat(64)}`,
+    digest: `sha256:${'7'.repeat(64)}`,
   },
 ] as const;
 
@@ -62,6 +87,7 @@ function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
     package_uri: 'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz',
     package_sha256: `sha256:${'a'.repeat(64)}`,
     manifest_sha256: `sha256:${'6'.repeat(64)}`,
+    required_image_ids: REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS,
   };
 
   return {
@@ -194,8 +220,11 @@ describe('release contract generator', () => {
 
     expect(contract.deploy_image_inventory).toEqual([
       { ...PRODUCT_IMAGES[0], source: 'product_images' },
-      { ...ADOPTED_PROVIDER_IMAGES[0], source: 'adopted_provider_images' },
-      { ...RELEASE_KIT_PREREQUISITE_IMAGES[0], source: 'release_kit_prerequisite_images' },
+      ...ADOPTED_PROVIDER_IMAGES.map((image) => ({ ...image, source: 'adopted_provider_images' as const })),
+      ...RELEASE_KIT_PREREQUISITE_IMAGES.map((image) => ({
+        ...image,
+        source: 'release_kit_prerequisite_images' as const,
+      })),
     ]);
     expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
 

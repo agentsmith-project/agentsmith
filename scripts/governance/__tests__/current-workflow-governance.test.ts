@@ -1294,10 +1294,23 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('npm run release:deploy-template-package');
     expect(runCommands).toContain('release-contract-input.json');
     expect(runCommands).toContain("id: 'agentsmith_app'");
+    expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/llmup-image.lock')");
+    expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/afscp-image.lock')");
+    expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/asbcp-image.lock')");
+    expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/ingress-nginx-image.lock')");
+    expect(runCommands).toContain("pinnedImage('afscp', afscpLock.get('afscp_source_image'))");
+    expect(runCommands).toContain(
+      "pinnedImage('ingress_nginx_controller', ingressNginxLock.get('ingress_nginx_controller_source_image'))",
+    );
+    expect(runCommands).toContain(
+      "pinnedImage('ingress_nginx_certgen', ingressNginxLock.get('ingress_nginx_certgen_source_image'))",
+    );
     expect(workflowSource).toContain('ghcr.io/${owner_lc}/agentsmith-app');
     expect(workflowSource).toContain('agentsmith-release-contract-input');
     expect(workflowSource).toContain('No separate backend/API image digest is fabricated');
     expect(workflowSource).not.toContain('agentsmith-api:${');
+    expect(runCommands).not.toContain('site.env.example');
+    expect(runCommands).not.toContain('siteEnv.get');
     expect(runCommands).not.toContain('npm run release:ready');
     expect(runCommands).not.toContain('npm run release:contract:ci-artifact');
     expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(

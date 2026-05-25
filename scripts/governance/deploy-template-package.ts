@@ -36,11 +36,25 @@ export const DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION =
 const DEPLOY_ROOT_RELATIVE_PATH = 'infra/deploy/unified';
 const DEPLOYMENT_MANIFEST_FILE_NAME = 'deployment.manifest.json';
 const ZERO_DIGEST = `sha256:${'0'.repeat(64)}`;
+const EARLY_DESCRIPTOR_REQUIRED_IMAGE_IDS = ['agentsmith_app'] as const;
 const RESERVED_TEMPLATE_GROUP_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 const TEMPLATE_GROUP_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
 const RESERVED_TEMPLATE_PACKAGE_PATHS = new Set([
   DEPLOY_TEMPLATE_PACKAGE_MANIFEST_NAME,
   DEPLOYMENT_MANIFEST_FILE_NAME,
+]);
+const RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS = {
+  API_IMAGE: 'agentsmith_app',
+  WEB_IMAGE: 'agentsmith_app',
+  LLMUP_IMAGE: 'llmup',
+  AFSCP_IMAGE: 'afscp',
+  ASBCP_IMAGE: 'asbcp',
+  INGRESS_NGINX_CONTROLLER_IMAGE: 'ingress_nginx_controller',
+  INGRESS_NGINX_CERTGEN_IMAGE: 'ingress_nginx_certgen',
+} as const satisfies Record<string, string>;
+const VALUE_IMAGE_PLACEHOLDERS = new Set<string>([
+  // Runner image release proof is not part of the current AgentSmith release-grade inventory handoff.
+  'MANAGED_RUNNER_IMAGE',
 ]);
 const REQUIRED_CI_PROVENANCE_STRING_FIELDS = [
   'workflow_name',
@@ -83,6 +97,7 @@ export interface DeployTemplatePackageManifestTemplate {
 
 export interface DeployTemplatePackageManifest {
   schema_version: typeof DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION;
+  required_image_ids: readonly string[];
   templates: readonly DeployTemplatePackageManifestTemplate[];
 }
 
@@ -166,7 +181,12 @@ export function generateDeployTemplatePackage(
   options: DeployTemplatePackageGenerationOptions,
 ): DeployTemplatePackageGenerationResult {
   const normalizedInput = normalizeGeneratorInput(input, options);
-  assertValidDescriptor(buildDescriptor(normalizedInput, ZERO_DIGEST, ZERO_DIGEST));
+  assertValidDescriptor(buildDescriptor(
+    normalizedInput,
+    ZERO_DIGEST,
+    ZERO_DIGEST,
+    EARLY_DESCRIPTOR_REQUIRED_IMAGE_IDS,
+  ));
 
   const repoRoot = resolveRepoRoot(options.repoRoot ?? process.cwd());
   const outputDir = path.resolve(normalizedInput.outputDir);
@@ -182,6 +202,7 @@ export function generateDeployTemplatePackage(
   const deploymentManifest = parseDeploymentManifest(deploymentManifestBytes, deploymentManifestSourcePath);
   const templateGroups = resolveTemplateGroups(deploymentManifest, deployRoot);
   const packageSources = buildPackageSources(deployRoot, templateGroups);
+  const requiredImageIds = collectRequiredImageIds(packageSources);
   const templates = packageSources
     .map((source) => ({
       path: source.packagePath,
@@ -191,6 +212,7 @@ export function generateDeployTemplatePackage(
 
   const manifest: DeployTemplatePackageManifest = {
     schema_version: DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION,
+    required_image_ids: requiredImageIds,
     templates,
   };
   const manifestBytes = Buffer.from(`${canonicalReleaseBoundaryJson(manifest)}\n`, 'utf8');
@@ -212,7 +234,7 @@ export function generateDeployTemplatePackage(
       ...packageSources.map((source) => source.packagePath),
     ]);
     const packageSha256 = sha256FileDigest(tempArchivePath);
-    const descriptor = buildDescriptor(normalizedInput, packageSha256, manifestSha256);
+    const descriptor = buildDescriptor(normalizedInput, packageSha256, manifestSha256, requiredImageIds);
     assertValidDescriptor(descriptor);
 
     renameSync(tempArchivePath, archivePath);
@@ -395,12 +417,14 @@ function buildDescriptor(
   input: DeployTemplatePackageGenerationInput,
   packageSha256: string,
   manifestSha256: string,
+  requiredImageIds: readonly string[],
 ): CurrentDeployTemplatePackage {
   const subject: Omit<CurrentDeployTemplatePackage, 'artifact_provenance'> = {
     schema_version: CURRENT_DEPLOY_TEMPLATE_PACKAGE_SCHEMA_VERSION,
     package_uri: input.package_uri,
     package_sha256: packageSha256,
     manifest_sha256: manifestSha256,
+    required_image_ids: requiredImageIds,
   };
 
   return {
@@ -511,6 +535,45 @@ function buildPackageSources(
   return sources;
 }
 
+function collectRequiredImageIds(sources: readonly PackageFileSource[]): string[] {
+  const imageIds = new Set<string>();
+
+  for (const source of sources) {
+    if (source.transform !== 'release-kit-template') {
+      continue;
+    }
+
+    const sourceContent = readFileSync(source.sourcePath, 'utf8');
+    for (const placeholder of legacyTemplatePlaceholders(sourceContent)) {
+      const imageId = releaseContractImageIdForLegacyPlaceholder(placeholder);
+      if (imageId) {
+        imageIds.add(imageId);
+        continue;
+      }
+      if (VALUE_IMAGE_PLACEHOLDERS.has(placeholder)) {
+        continue;
+      }
+      if (isImagePlaceholder(placeholder)) {
+        throw new Error(
+          `template image placeholder "{{${placeholder}}}" is not declared in deploy template image placeholder map.`,
+        );
+      }
+    }
+
+    const packageContent = renderReleaseKitTemplatePackageContent(sourceContent);
+    for (const imageId of releaseKitImageIds(packageContent)) {
+      imageIds.add(imageId);
+    }
+  }
+
+  const requiredImageIds = [...imageIds].sort((left, right) => left.localeCompare(right));
+  if (requiredImageIds.length === 0) {
+    throw new Error('deploy template required_image_ids must not be empty.');
+  }
+
+  return requiredImageIds;
+}
+
 function stagePackageFiles(packageRoot: string, sources: readonly PackageFileSource[]): void {
   for (const source of sources) {
     const outputPath = path.join(packageRoot, source.packagePath);
@@ -547,25 +610,25 @@ function renderReleaseKitTemplatePackageContent(source: string): string {
 }
 
 function releaseKitImageKeyForLegacyPlaceholder(key: string): string | null {
-  switch (key) {
-    case 'API_IMAGE':
-    case 'WEB_IMAGE':
-      return 'agentsmith_app';
-    case 'LLMUP_IMAGE':
-      return 'llmup';
-    case 'AFSCP_IMAGE':
-      return 'afscp';
-    case 'ASBCP_IMAGE':
-      return 'asbcp';
-    case 'MANAGED_RUNNER_IMAGE':
-      return 'managed_runner';
-    case 'INGRESS_NGINX_CONTROLLER_IMAGE':
-      return 'ingress_nginx_controller';
-    case 'INGRESS_NGINX_CERTGEN_IMAGE':
-      return 'ingress_nginx_certgen';
-    default:
-      return null;
-  }
+  return releaseContractImageIdForLegacyPlaceholder(key);
+}
+
+function releaseContractImageIdForLegacyPlaceholder(key: string): string | null {
+  return Object.hasOwn(RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS, key)
+    ? RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS[key as keyof typeof RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS]
+    : null;
+}
+
+function legacyTemplatePlaceholders(source: string): string[] {
+  return [...source.matchAll(/\{\{\s*([A-Z][A-Z0-9_]*)\s*\}\}/gu)].map((match) => match[1]);
+}
+
+function releaseKitImageIds(source: string): string[] {
+  return [...source.matchAll(/\$\{\{\s*images\.([a-z][a-z0-9_]*)\.image\s*\}\}/gu)].map((match) => match[1]);
+}
+
+function isImagePlaceholder(key: string): boolean {
+  return key === 'IMAGE' || key.endsWith('_IMAGE');
 }
 
 function createDeterministicArchive(

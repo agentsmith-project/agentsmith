@@ -656,6 +656,42 @@ describe('current release boundary schema', () => {
     expectInvalid(validateAgentSmithReleaseContract(contract), 'deploy_template_package is required');
   });
 
+  it('rejects deploy template required image ids that are missing, unsorted, duplicated, or outside inventory', () => {
+    const missingRequiredIds = cloneFixture('deploy-template-package.valid.json');
+    delete missingRequiredIds.required_image_ids;
+    expectInvalid(validateDeployTemplatePackage(missingRequiredIds), 'required_image_ids must be an array');
+
+    const emptyRequiredIds = cloneFixture('deploy-template-package.valid.json');
+    emptyRequiredIds.required_image_ids = [];
+    expectInvalid(validateDeployTemplatePackage(emptyRequiredIds), 'required_image_ids must not be empty');
+
+    const unsortedRequiredIds = cloneFixture('deploy-template-package.valid.json');
+    unsortedRequiredIds.required_image_ids = ['agentsmith_app', 'afscp'];
+    expectInvalid(
+      validateDeployTemplatePackage(unsortedRequiredIds),
+      'required_image_ids must be sorted ascending and unique',
+    );
+
+    const duplicateRequiredIds = cloneFixture('deploy-template-package.valid.json');
+    duplicateRequiredIds.required_image_ids = ['afscp', 'afscp'];
+    expectInvalid(validateDeployTemplatePackage(duplicateRequiredIds), 'required image id "afscp" is declared more than once');
+
+    const contract = cloneFixture('release-contract.valid.json');
+    const deployTemplatePackage = contract.deploy_template_package as Record<string, unknown>;
+    deployTemplatePackage.required_image_ids = [
+      ...(deployTemplatePackage.required_image_ids as string[]),
+      'undeclared_provider',
+    ].sort();
+    rehashArtifactProvenanceContainer(deployTemplatePackage);
+    rehashArtifactProvenanceContainer(contract);
+    rehashReleaseContractProjection(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'deploy template required image id "undeclared_provider" is missing from deploy_image_inventory',
+    );
+  });
+
   it('rejects missing provenance, self-referential provenance subjects, and wrong or local repo identity', () => {
     expect(normalizeReleaseBoundaryRemote('https://github.com/agentsmith-project/agentsmith.git'))
       .toBe(AGENTSMITH_CANONICAL_REPO);

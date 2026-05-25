@@ -251,6 +251,7 @@ export interface CurrentDeployTemplatePackage {
   package_uri: string;
   package_sha256: string;
   manifest_sha256: string;
+  required_image_ids: readonly string[];
   artifact_provenance: CurrentArtifactProvenance;
 }
 
@@ -504,6 +505,8 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     fail_fast: [
       'missing_package_uri',
       'missing_digest',
+      'missing_required_image_ids',
+      'undeclared_image_placeholder',
       'missing_provenance',
       'manifest_digest_mismatch',
       'release_kit_guesses_agentsmith_repo_path',
@@ -518,6 +521,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     consumers: ['mirror', 'render', 'smoke'],
     fail_fast: [
       'rendered_workload_image_not_in_inventory',
+      'deploy_template_required_image_missing',
       'target_registry_digest_mismatch',
       'live_image_id_mismatch',
     ],
@@ -967,6 +971,7 @@ export function validateAgentSmithReleaseContract(
   );
   validateDeployImageInventory(value.deploy_image_inventory, imageRegistry, failures);
   validateReleaseContractDeployTemplatePackage(value, deployTemplateDigest, gitSha, failures);
+  validateDeployTemplateRequiredImagesInInventory(value, failures);
   validateRequiredProductFlows(value.required_product_flows, 'required_product_flows', failures);
   validateTargetProfiles(value.target_profiles, failures);
 
@@ -1059,6 +1064,7 @@ export function validateDeployTemplatePackage(
   validateRemoteCiArtifactUri(packageUri, 'package_uri', failures);
   const packageSha256 = validateDigest(value.package_sha256, 'package_sha256', failures);
   validateDigest(value.manifest_sha256, 'manifest_sha256', failures);
+  validateRequiredImageIds(value.required_image_ids, 'required_image_ids', failures);
 
   if (!hasOwn(value, 'artifact_provenance')) {
     failures.push({
@@ -2479,6 +2485,44 @@ function validateDeployImageInventory(
   }
 }
 
+function validateRequiredImageIds(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): readonly string[] | null {
+  const imageIds = validateStringArray(value, path, failures);
+  if (!imageIds) {
+    return null;
+  }
+
+  if (imageIds.length === 0) {
+    failures.push({
+      path,
+      reason: `${path} must not be empty.`,
+    });
+  }
+
+  const seenIds = new Set<string>();
+  imageIds.forEach((imageId, index) => {
+    if (seenIds.has(imageId)) {
+      failures.push({
+        path: `${path}[${index}]`,
+        reason: `required image id "${imageId}" is declared more than once.`,
+      });
+    }
+    seenIds.add(imageId);
+
+    if (index > 0 && imageIds[index - 1] > imageId) {
+      failures.push({
+        path,
+        reason: `${path} must be sorted ascending and unique.`,
+      });
+    }
+  });
+
+  return imageIds;
+}
+
 function validateReleaseContractDeployTemplatePackage(
   contract: Record<string, unknown>,
   deployTemplateDigest: string | undefined,
@@ -2528,6 +2572,36 @@ function validateReleaseContractDeployTemplatePackage(
     failures.push({
       path: 'deploy_template_package.artifact_provenance.commit_sha',
       reason: 'deploy_template_package.artifact_provenance.commit_sha must match git_sha.',
+    });
+  }
+}
+
+function validateDeployTemplateRequiredImagesInInventory(
+  contract: Record<string, unknown>,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const deployTemplatePackage = contract.deploy_template_package;
+  if (!isRecord(deployTemplatePackage) || !Array.isArray(deployTemplatePackage.required_image_ids)) {
+    return;
+  }
+  if (!Array.isArray(contract.deploy_image_inventory)) {
+    return;
+  }
+
+  const inventoryIds = new Set<string>();
+  for (const entry of contract.deploy_image_inventory) {
+    if (isRecord(entry) && typeof entry.id === 'string') {
+      inventoryIds.add(entry.id);
+    }
+  }
+
+  for (const imageId of deployTemplatePackage.required_image_ids) {
+    if (typeof imageId !== 'string' || inventoryIds.has(imageId)) {
+      continue;
+    }
+    failures.push({
+      path: 'deploy_template_package.required_image_ids',
+      reason: `deploy template required image id "${imageId}" is missing from deploy_image_inventory.`,
     });
   }
 }

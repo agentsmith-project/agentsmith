@@ -232,7 +232,9 @@ jobs:
           };
 
           const llmupLock = parseKeyValue('infra/deploy/shared/llmup-image.lock');
-          const siteEnv = parseKeyValue('infra/deploy/unified/env/site.env.example');
+          const afscpLock = parseKeyValue('infra/deploy/shared/afscp-image.lock');
+          const asbcpLock = parseKeyValue('infra/deploy/shared/asbcp-image.lock');
+          const ingressNginxLock = parseKeyValue('infra/deploy/shared/ingress-nginx-image.lock');
           const targetProfiles = readJson('scripts/governance/release-contract-target-profiles.json');
           const releaseId = process.env.RELEASE_ID;
           const gitSha = process.env.GITHUB_SHA;
@@ -246,10 +248,12 @@ jobs:
             asyncapi_subject: readJson('docs/contracts/specs/asyncapi.json'),
             adopted_provider_images: [
               pinnedImage('llmup', llmupLock.get('llmup_source_image')),
+              pinnedImage('afscp', afscpLock.get('afscp_source_image')),
+              pinnedImage('asbcp', asbcpLock.get('asbcp_source_image')),
             ],
             release_kit_prerequisite_images: [
-              pinnedImage('ingress_nginx_controller', siteEnv.get('INGRESS_NGINX_CONTROLLER_IMAGE')),
-              pinnedImage('ingress_nginx_certgen', siteEnv.get('INGRESS_NGINX_CERTGEN_IMAGE')),
+              pinnedImage('ingress_nginx_controller', ingressNginxLock.get('ingress_nginx_controller_source_image')),
+              pinnedImage('ingress_nginx_certgen', ingressNginxLock.get('ingress_nginx_certgen_source_image')),
             ],
             target_profiles: targetProfiles,
             min_release_kit_version: '0.1.0',

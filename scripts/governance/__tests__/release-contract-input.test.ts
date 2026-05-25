@@ -38,6 +38,16 @@ const CLI_SOURCE_ARGV = ['--source-git-sha', GIT_SHA] as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
 const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
+const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
+const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
+  'afscp',
+  'agentsmith_app',
+  'asbcp',
+  'ingress_nginx_certgen',
+  'ingress_nginx_controller',
+  'llmup',
+] as const;
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
   version: 'test',
@@ -88,6 +98,7 @@ function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
     package_uri: 'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz',
     package_sha256: `sha256:${'6'.repeat(64)}`,
     manifest_sha256: `sha256:${'7'.repeat(64)}`,
+    required_image_ids: REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS,
   };
 
   return {
@@ -157,12 +168,27 @@ function buildReleaseContractInput(
         image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
+      {
+        id: 'afscp',
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
+        digest: `sha256:${'5'.repeat(64)}`,
+      },
+      {
+        id: 'asbcp',
+        image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.7@sha256:${'6'.repeat(64)}`,
+        digest: `sha256:${'6'.repeat(64)}`,
+      },
     ],
     release_kit_prerequisite_images: [
       {
         id: 'ingress_nginx_controller',
         image: `registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:${'4'.repeat(64)}`,
         digest: `sha256:${'4'.repeat(64)}`,
+      },
+      {
+        id: 'ingress_nginx_certgen',
+        image: `registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:${'7'.repeat(64)}`,
+        digest: `sha256:${'7'.repeat(64)}`,
       },
     ],
     deploy_template_digest: `sha256:${'7'.repeat(64)}`,
@@ -205,12 +231,27 @@ function buildAssemblyInput(): AgentSmithReleaseContractGeneratorInputAssemblyIn
         image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
         digest: `sha256:${'3'.repeat(64)}`,
       },
+      {
+        id: 'afscp',
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
+        digest: `sha256:${'5'.repeat(64)}`,
+      },
+      {
+        id: 'asbcp',
+        image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.7@sha256:${'6'.repeat(64)}`,
+        digest: `sha256:${'6'.repeat(64)}`,
+      },
     ],
     release_kit_prerequisite_images: [
       {
         id: 'ingress_nginx_controller',
         image: `registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:${'4'.repeat(64)}`,
         digest: `sha256:${'4'.repeat(64)}`,
+      },
+      {
+        id: 'ingress_nginx_certgen',
+        image: `registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:${'7'.repeat(64)}`,
+        digest: `sha256:${'7'.repeat(64)}`,
       },
     ],
     target_profiles: buildTargetProfiles(),

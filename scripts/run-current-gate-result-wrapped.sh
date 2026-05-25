@@ -134,6 +134,45 @@ if (existsSync(sourceManifestPath)) {
 NODE
 }
 
+gate_select_visual_validation_error() {
+  local validation_log="$1"
+
+  node - <<'NODE' "${validation_log}"
+const fs = require('node:fs');
+const [file] = process.argv.slice(2);
+let raw = '';
+try {
+  raw = fs.readFileSync(file, 'utf8');
+} catch {}
+
+const lines = raw
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0 && !/^Node\.js v\d+\.\d+\.\d+$/.test(line));
+
+const prefixed = lines.find((line) => /^(?:evidence_missing|contract_drift)::/.test(line));
+const errorLine = lines.find((line) => /^(?:[A-Za-z]*Error|ERR[_A-Z0-9-]*)(?::|\b)/.test(line));
+const keywordLine = lines.find((line) => /\b(?:Error|ERR|contract|evidence)\b/i.test(line));
+const selected = prefixed ?? errorLine ?? keywordLine ?? lines.at(-1) ?? '';
+
+process.stdout.write(selected.replace(/\s+/g, ' '));
+NODE
+}
+
+gate_preserve_visual_validation_log() {
+  local validation_log="$1"
+  local target_log="${EVIDENCE_DIR}/visual-run-manifest-validation.log"
+
+  if [[ ! -s "${validation_log}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "${EVIDENCE_DIR}"
+  if ! cp "${validation_log}" "${target_log}"; then
+    printf '[current-gate-result] warning: failed to preserve lane-visual evidence validation log\n' >&2
+  fi
+}
+
 gate_current_run_diagnostics_timestamp() {
   node -e 'const now = new Date(); process.stdout.write(`${now.toISOString()} ${now.getTime()}`);'
 }
@@ -259,7 +298,8 @@ if [[ "${status}" -eq 0 ]]; then
   if [[ "${GATE_ID}" == "lane-visual" ]]; then
     validation_log="$(mktemp)"
     if ! gate_write_visual_run_manifest "${EVIDENCE_DIR}" 2>"${validation_log}"; then
-      validation_error="$(tail -n 1 "${validation_log}" || true)"
+      validation_error="$(gate_select_visual_validation_error "${validation_log}")"
+      gate_preserve_visual_validation_log "${validation_log}"
       rm -f "${validation_log}"
       validation_failure_class="contract_drift"
       validation_summary="lane-visual evidence validation failed"

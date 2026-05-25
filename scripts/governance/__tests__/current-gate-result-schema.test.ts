@@ -18,6 +18,7 @@ type GateResultPayload = {
   gate_id: string;
   status: string;
   failure_class: string;
+  summary: string;
   evidence_dir: string;
   gate_adapter: {
     npm_script: string | null;
@@ -400,6 +401,43 @@ describe("current gate result schema", () => {
       status: "failed",
       failure_class: "evidence_missing",
     });
+  });
+
+  it("preserves useful lane-visual evidence validation errors instead of the Node version footer", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-validation-error-"));
+    const payload = runWrappedGateResultExpectFailure({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: "run-wrapper-validation-error",
+        VISUAL_BASELINE_BUILD_INFO_FILE: join(tempRoot, "missing-build-info.json"),
+      },
+    });
+
+    expect(payload).toMatchObject({
+      gate_id: "lane-visual",
+      status: "failed",
+      failure_class: "contract_drift",
+    });
+    expect(payload.summary).toContain("Error: missing visual build info file:");
+    expect(payload.summary).not.toMatch(/Node\.js v\d+\.\d+\.\d+/);
+
+    const failure = JSON.parse(
+      readFileSync(join(payload.evidence_dir, "failure-classification.json"), "utf8"),
+    ) as { classification: string; message: string; stage: string };
+    expect(failure).toMatchObject({
+      classification: "contract_drift",
+      stage: "evidence",
+    });
+    expect(failure.message).toContain("Error: missing visual build info file:");
+    expect(failure.message).not.toMatch(/Node\.js v\d+\.\d+\.\d+/);
+
+    const validationLog = readFileSync(
+      join(payload.evidence_dir, "visual-run-manifest-validation.log"),
+      "utf8",
+    );
+    expect(validationLog).toContain("missing visual build info file");
   });
 
   it("fails closed when release-grade lane-visual evidence declares partial coverage", () => {

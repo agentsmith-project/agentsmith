@@ -646,7 +646,7 @@ P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-ada
 - `npm run verify -- --goal=pr --run` 通过。
 - runner/skills 相关改动按范围跑 `npm run test:skills:fast` 或 `npm run test:agent-task:runner:fast`。
 - AgentSmith product readiness 收口跑 `npm run release:ready`。
-- P2/P3/P6 完成后，AgentSmith active status/workflow 不再展示 unified deploy transition-only diagnostics；deploy/package/operator verdict 只由 release-kit repo-local gate/evidence 给出。
+- P2/P3/P6 完成后，移除或隐藏 AgentSmith active status/workflow 中的 unified deploy transition-only diagnostics；deploy/package/operator verdict 只由 release-kit repo-local gate/evidence 给出。
 
 ## 9. 发布模式
 

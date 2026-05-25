@@ -43,6 +43,20 @@ const rules: Rule[] = [
   },
 ];
 
+const HUMAN_MARKDOWN_ONLY_PUSH_PATHS_IGNORE = [
+  'docs/**/*.md',
+  'README.md',
+  'DEVELOPMENT.md',
+  'DESIGN.md',
+  'AGENTS.md',
+  '.github/PULL_REQUEST_TEMPLATE.md',
+] as const;
+
+const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
+  '.github/workflows/image-publish.yml',
+  '.github/workflows/quality-gates.yml',
+]);
+
 function listTrackedFiles(): string[] {
   const stdout = execFileSync('git', ['ls-files'], {
     cwd: rootDir,
@@ -119,6 +133,12 @@ function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): strin
     return asStringArray(rawOn).sort();
   }
   return Object.keys(asRecord(rawOn)).sort();
+}
+
+function collectWorkflowPushPathsIgnore(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  const push = asRecord(asRecord(rawOn).push);
+  return asStringArray(push['paths-ignore']);
 }
 
 function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
@@ -365,6 +385,15 @@ for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
     `${workflow.path} triggers must match CI workflow manifest`,
     failures,
   );
+
+  if (WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES.has(workflow.path)) {
+    assertArrayEqual(
+      collectWorkflowPushPathsIgnore(parsedWorkflow),
+      HUMAN_MARKDOWN_ONLY_PUSH_PATHS_IGNORE,
+      `${workflow.path} push paths-ignore must ignore only human markdown docs`,
+      failures,
+    );
+  }
 
   assertArrayEqual(
     workflow.jobs.map((job) => job.id),

@@ -157,7 +157,7 @@ describe('release kit raw evidence adapter', () => {
     expectInvalid(adapt(smokeRaw), 'release_kit_output is not mapped');
   });
 
-  it('maps deploy-result and image-map raw outputs when their subject files match', () => {
+  it('fails fast on removed deploy-result output and maps image-map and airgap raw outputs', () => {
     const substrateSubject = evidenceSubjectForFiles([
       {
         path: 'evidence.json',
@@ -173,23 +173,7 @@ describe('release kit raw evidence adapter', () => {
 
     const substrateResult = adapt(substrateRaw, substrateSubject);
 
-    expect(substrateResult.ok).toBe(true);
-    if (substrateResult.ok) {
-      expect(substrateResult.value).toMatchObject({
-        target: 'dependencies',
-        canonical_writer: {
-          gate_id: 'release-kit-target-preflight',
-          line_kind: 'release_kit_target_preflight',
-        },
-      });
-      expect(validateReleaseKitEvidenceForAggregate(substrateResult.value)).toMatchObject({
-        ok: true,
-        value: {
-          target: 'dependencies',
-          summary_section: 'dependencies',
-        },
-      });
-    }
+    expectInvalid(substrateResult, 'release_kit_output is not mapped');
 
     const imageSubject = evidenceSubjectForFiles([
       {
@@ -237,9 +221,13 @@ describe('release kit raw evidence adapter', () => {
         path: 'airgap-bundle-manifest.json',
         sha256: `sha256:${'c'.repeat(64)}`,
       },
+      {
+        path: 'image-map.json',
+        sha256: `sha256:${'f'.repeat(64)}`,
+      },
     ]);
     const airgapRaw = validRawEnvelope(airgapSubject);
-    airgapRaw.release_kit_output = 'airgap-bundle-check-report.json+airgap-bundle-manifest.json';
+    airgapRaw.release_kit_output = 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json';
     airgapRaw.distribution = 'airgap';
     (airgapRaw.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
 
@@ -268,6 +256,54 @@ describe('release kit raw evidence adapter', () => {
         },
       });
     }
+  });
+
+  it('fails fast on old two-file airgap evidence output and missing image-map subject file', () => {
+    const twoFileAirgapSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+    ]);
+    const oldAirgapRaw = validRawEnvelope(twoFileAirgapSubject);
+    oldAirgapRaw.release_kit_output = 'airgap-bundle-check-report.json+airgap-bundle-manifest.json';
+    oldAirgapRaw.distribution = 'airgap';
+    (oldAirgapRaw.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+
+    expectInvalid(
+      adapt(oldAirgapRaw, twoFileAirgapSubject, {
+        expectedTargetProfile: {
+          target_cluster: 'existing_kubernetes',
+          substrate_source: 'external_declared',
+          distribution: 'airgap',
+        },
+      }),
+      'release_kit_output is not mapped',
+    );
+
+    const newAirgapRaw = validRawEnvelope(twoFileAirgapSubject);
+    newAirgapRaw.release_kit_output = 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json';
+    newAirgapRaw.distribution = 'airgap';
+    (newAirgapRaw.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+
+    expectInvalid(
+      adapt(newAirgapRaw, twoFileAirgapSubject, {
+        expectedTargetProfile: {
+          target_cluster: 'existing_kubernetes',
+          substrate_source: 'external_declared',
+          distribution: 'airgap',
+        },
+      }),
+      'release_kit_output airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json requires evidence_subject.files to include image-map.json',
+    );
   });
 
   it('fails fast when release_kit_output is missing, unknown, or product-flow-owned', () => {

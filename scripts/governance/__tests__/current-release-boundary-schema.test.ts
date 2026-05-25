@@ -338,7 +338,7 @@ describe('current release boundary schema', () => {
         ],
       }),
       expect.objectContaining({
-        release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json',
+        release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
         target: 'images',
         current_campaign_target_profiles: [
           {
@@ -1056,6 +1056,10 @@ describe('current release boundary schema', () => {
         path: 'airgap-bundle-manifest.json',
         sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       },
+      {
+        path: 'image-map.json',
+        sha256: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
     ];
     rehashArtifactProvenanceSubject(airgapWithOnlineDistribution, 'evidence_subject');
     expectInvalid(
@@ -1093,12 +1097,45 @@ describe('current release boundary schema', () => {
         path: 'airgap-bundle-check-report.json',
         sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       },
+      {
+        path: 'image-map.json',
+        sha256: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
     ];
     rehashArtifactProvenanceSubject(airgapMissingManifest, 'evidence_subject');
 
     expectInvalid(
       validateReleaseKitEvidence(airgapMissingManifest),
       'mapped release-kit native output file(s): airgap-bundle-manifest.json',
+    );
+
+    const airgapMissingImageMap = cloneFixture('release-kit-evidence.valid.json');
+    airgapMissingImageMap.target = 'images';
+    airgapMissingImageMap.distribution = 'airgap';
+    (airgapMissingImageMap.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    airgapMissingImageMap.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    (airgapMissingImageMap.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      },
+    ];
+    rehashArtifactProvenanceSubject(airgapMissingImageMap, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(airgapMissingImageMap),
+      'mapped release-kit native output file(s): image-map.json',
     );
   });
 
@@ -1271,8 +1308,8 @@ describe('current release boundary schema', () => {
     const duplicateMapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
     duplicateMapping.push({ ...duplicateMapping[0] });
     const duplicateResult = validateReleaseKitEvidenceMapping(duplicateMapping);
-    expectInvalid(duplicateResult, 'release kit output "deploy-result.json#substrate" is declared more than once');
-    expectInvalid(duplicateResult, 'canonical writer "release-kit-target-preflight|release_kit_target_preflight" is declared more than once');
+    expectInvalid(duplicateResult, 'release kit output "image-map.json" is declared more than once');
+    expectInvalid(duplicateResult, 'canonical writer "release-kit-image-map|release_kit_image_map" is declared more than once');
 
     const forgedProductFlows = cloneFixture('release-kit-evidence.valid.json');
     forgedProductFlows.target = 'product_flows';

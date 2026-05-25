@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths-ignore:
-      - "docs/**"
+      - "docs/**/*.md"
       - "README.md"
       - "DEVELOPMENT.md"
       - "DESIGN.md"

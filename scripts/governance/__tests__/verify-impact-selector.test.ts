@@ -1389,6 +1389,7 @@ describe('verify impact selector', () => {
 
   it('maps root governance gate and current contract checks without unmapped or visual impact', () => {
     const changedFiles = [
+      '.github/workflows/quality-gates.yml',
       'scripts/default-gate.sh',
       'scripts/default-gate.test.ts',
       'scripts/contracts/check-current-gates.ts',
@@ -1420,6 +1421,22 @@ describe('verify impact selector', () => {
         broadImpact: false,
       })),
     ));
+  });
+
+  it('keeps unrelated GitHub workflow files fail-closed instead of broad workflow mapping', () => {
+    const changedFile = '.github/workflows/experimental.yml';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['unmapped_source'],
+        affectedSurfaces: ['unmapped-source'],
+        manualReviewRequired: true,
+        broadImpact: true,
+      }),
+    ]);
   });
 
   it('maps release/repo-split boundary guard, schema, and fixture files to targeted owner review', () => {

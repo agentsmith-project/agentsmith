@@ -18,12 +18,12 @@ const RAW_RELEASE_KIT_EVIDENCE_ENVELOPE_SCHEMA_VERSION =
 const RELEASE_KIT_EVIDENCE_SUBJECT_NAME = 'release-kit-evidence-subject';
 
 const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[]> = {
-  'deploy-result.json#substrate': ['evidence.json', 'deploy-result.json'],
   'image-map.json': ['evidence.json', 'image-map.json'],
-  'airgap-bundle-check-report.json+airgap-bundle-manifest.json': [
+  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json': [
     'evidence.json',
     'airgap-bundle-check-report.json',
     'airgap-bundle-manifest.json',
+    'image-map.json',
   ],
   'online-deployment-gate-report.json': ['evidence.json', 'online-deployment-gate-report.json'],
 };

@@ -528,6 +528,7 @@ function isGovernanceToolingPath(filePath: string, baseRefs: readonly string[] =
     return true;
   }
   return [
+    /^\.github\/workflows\/quality-gates\.yml$/,
     /^docs\/contracts\/current-gate-manifest-contract\.md$/,
     /^scripts\/governance\/.*\.ts$/,
     /^scripts\/default-gate(?:\.test)?\.(?:sh|ts)$/,

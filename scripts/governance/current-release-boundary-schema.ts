@@ -596,26 +596,6 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
 
 export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvidenceMappingEntry[] = [
   {
-    release_kit_output: 'deploy-result.json#substrate',
-    target: 'dependencies',
-    canonical_writer: {
-      gate_id: 'release-kit-target-preflight',
-      line_kind: 'release_kit_target_preflight',
-      npm_script: 'bash scripts/verify-release.sh --target-preflight',
-      native_result_path: '<release-kit-evidence-root>/deploy-result.json',
-      evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'dependencies',
-    },
-    canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['existing_kubernetes', 'kind_rehearsal'],
-    reject_conditions: [
-      'missing_native_result',
-      'missing_release_contract_digest',
-      'profile_mismatch',
-      'external_declared_uses_docker_truth',
-    ],
-  },
-  {
     release_kit_output: 'image-map.json',
     target: 'images',
     canonical_writer: {
@@ -634,7 +614,7 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
   },
   {
-    release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json',
+    release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
     target: 'images',
     canonical_writer: {
       gate_id: 'release-kit-airgap-bundle-check',
@@ -655,6 +635,7 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
     reject_conditions: [
       'missing_airgap_bundle_manifest',
+      'missing_image_map',
       'target_registry_digest_mismatch',
       'bundle_image_inventory_mismatch',
     ],
@@ -734,6 +715,12 @@ const RELEASE_KIT_TARGET_SET = new Set<string>([
   'rollout',
   'product_flows',
 ] satisfies CurrentReleaseKitEvidenceTarget[]);
+const REQUIRED_CURRENT_RELEASE_KIT_EVIDENCE_MAPPING_OUTPUTS = [
+  'image-map.json',
+  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
+  'online-deployment-gate-report.json',
+  'AgentSmith product flow aggregate',
+] as const;
 const INVENTORY_SOURCE_SET = new Set<string>([
   'product_images',
   'adopted_provider_images',
@@ -1575,7 +1562,6 @@ export function validateReleaseKitEvidenceMapping(
     return invalid('release_kit_evidence_mapping', 'release kit evidence mapping must be an array.', failures);
   }
 
-  const seenTargets = new Set<string>();
   const seenReleaseKitOutputs = new Set<string>();
   const seenCanonicalWriters = new Set<string>();
   value.forEach((entry, index) => {
@@ -1595,16 +1581,13 @@ export function validateReleaseKitEvidenceMapping(
       }
       seenReleaseKitOutputs.add(releaseKitOutput);
     }
-    const target = validateEnum(
+    validateEnum(
       entry.target,
       RELEASE_KIT_TARGET_SET,
       `${path}.target`,
       'release kit evidence target is not supported.',
       failures,
     );
-    if (target) {
-      seenTargets.add(target);
-    }
     validateCanonicalWriter(entry.canonical_writer, `${path}.canonical_writer`, failures);
 
     if (
@@ -1697,11 +1680,11 @@ export function validateReleaseKitEvidenceMapping(
     }
   });
 
-  for (const target of RELEASE_KIT_TARGET_SET) {
-    if (!seenTargets.has(target)) {
+  for (const releaseKitOutput of REQUIRED_CURRENT_RELEASE_KIT_EVIDENCE_MAPPING_OUTPUTS) {
+    if (!seenReleaseKitOutputs.has(releaseKitOutput)) {
       failures.push({
         path: 'release_kit_evidence_mapping',
-        reason: `release kit evidence mapping is missing "${target}".`,
+        reason: `release kit evidence mapping is missing "${releaseKitOutput}".`,
       });
     }
   }

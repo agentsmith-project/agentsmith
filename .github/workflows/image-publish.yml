@@ -7,7 +7,7 @@ on:
     tags:
       - "*"
     paths-ignore:
-      - "docs/**"
+      - "docs/**/*.md"
       - "README.md"
       - "DEVELOPMENT.md"
       - "DESIGN.md"

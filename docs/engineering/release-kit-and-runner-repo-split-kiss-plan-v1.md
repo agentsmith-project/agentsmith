@@ -65,7 +65,7 @@ AgentSmith 仍保留：
 
 当前优先修正 release-kit 输入收口和 runner contract 顺序，先不继续扩展 deploy/airgap 面。
 
-1. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`。未来/预留 output 不预留长期双轨，未实现就 fail fast。下一步最小切片先把 `--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界收紧，再继续 P2/P3 deploy 或 airgap 扩展。
+1. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。未来/预留 output 不预留长期双轨，未实现就 fail fast。下一步最小切片先把 `--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界收紧，再继续 P2/P3 deploy 或 airgap 扩展。
 2. Runner 复审结论：不要先搬 runtime。先完成 `@mbos/agent-runner-contract` 可发布、可消费 artifact 的最小闭环；再让 `agentsmith-runner` 增加 consumer conformance skeleton；最后才迁 runner runtime、image build 和 AgentSmith adoption。
 3. 旧输入复审结论：旧名、旧路径、旧 env/profile 别名、已移除旧包和已移除字段只作为负向测试、过渡期专项诊断或 operator 短期说明；正式路径默认 fail fast，并在 P2/P4/P5/P6 删除或归位。
 
@@ -306,7 +306,7 @@ hash subject 规则：
 
 - `image-map.json`
 - `online-deployment-gate-report.json`
-- `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`
+- `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`
 
 未来/预留 output，例如 `deploy-result.json#substrate`、`render-report.json`、
 `rollout-report.json`、`registry-mirror-map.json`，只有在 producer 已实现且
@@ -323,7 +323,7 @@ hash subject 规则：
 7. 正式 evidence 不能包含 kubeconfig、pull secret、DB password、OIDC client secret、execution ticket、API token、managed credential 或完整连接串；只允许 secret ref、redacted fingerprint 和最小诊断字段。
 8. AgentSmith adapter 必须对 evidence JSON 和日志做 redaction check；发现明文 secret 时 fail fast，不能把 evidence 映射进 release summary。
 9. contract intake / `--inputs` 产物如果只完成输入解析、digest 计划或模板依赖检查，只能进入 diagnostic evidence root；`intake-report` / `image-digest-plan` 不能写入 deploy/package/operator verdict 或 AgentSmith product gate，且必须保留 `readiness=false`。
-10. `--evidence` 只能接受当前 producer 可重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`。`deploy-result.json#substrate` 等未来/预留 output 不保留长期双轨；未实现、不能重新校验语义或字段只在说明里预留时，直接 fail fast。
+10. `--evidence` 只能接受当前 producer 可重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。`deploy-result.json#substrate` 等未来/预留 output 不保留长期双轨；未实现、不能重新校验语义或字段只在说明里预留时，直接 fail fast。
 
 Pre-GA transition-only diagnostic mapping（不属于 AgentSmith product gate）：
 
@@ -333,7 +333,6 @@ Pre-GA transition-only diagnostic mapping（不属于 AgentSmith product gate）
 
 | Release-kit-style diagnostic output | AgentSmith diagnostic writer | diagnostic path | diagnostic section | reject 条件 |
 | --- | --- | --- | --- | --- |
-| `deploy-result.json` 中的 substrate/preflight 部分 | `lane-unified-deploy-substrate` / `unified_deploy_substrate` | `<diagnostic-root>/lane-unified-deploy-substrate/native/result.json` 与 `<diagnostic-root>/unified-deploy/substrate/` | dependencies | 缺 native `result.json`、缺 `release_contract_digest`、profile 与 transition diagnostic profile 不匹配、`external_declared` 冒充 Docker truth |
 | `image-map.json` / mirror report | `lane-unified-deploy-local-kind-images` / `unified_deploy_local_kind_images`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind-images/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind-images/` | images | tag-only image、digest mismatch、local-kind evidence 被用于 `existing_kubernetes` |
 | `render-report.json` + `rollout-report.json` | `lane-unified-deploy-local-kind` / `unified_deploy_local_kind`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind/` | rollout | rendered image inventory 与 release contract 不一致、live imageID 缺失、不匹配 target digest |
 | AgentSmith product flow aggregate | `lane-unified-deploy-product-flows` / `unified_deploy_product_flows` | `<diagnostic-root>/lane-unified-deploy-product-flows/native/result.json` 与 `<diagnostic-root>/unified-deploy/product-flows/` | product flows | 由 release kit 伪造、缺 required flows、仍从 Docker defaults 猜外部 substrate |
@@ -510,7 +509,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
    `--inputs` 只能输出 `readiness=false` 的 `intake-report` / `image-digest-plan`；
    `--evidence` 只能接受当前 producer 可重新语义校验的 focused output：
    `image-map.json`、`online-deployment-gate-report.json`、
-   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`。
+   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。
    `deploy-result.json#substrate` 等未来/预留 output 不保留长期双轨，未实现就 fail fast；正式 adoption 前必须补齐三轴枚举、最小字段和
    `target_profiles.required` guard。
 7. `images mirror` 只 pull/mirror digest-pinned images，不从 AgentSmith 或 runner repo source build image；目标 registry 由 operator 指定，不能写死 `kind-registry`。
@@ -735,7 +734,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 9. bootstrap `--inputs` / intake diagnostic 产物保留 `readiness=false`，没有被
    写成 deploy/package/operator verdict 或 AgentSmith product gate；`--evidence`
    只接受 `image-map.json`、`online-deployment-gate-report.json`、
-   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`，未来/预留
+   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`，未来/预留
    output 未实现就 fail fast。
 10. P1.1 artifact producer 通过只表示 CI artifact producer 可产物；full P1 adoption
     仍未宣称完成。当前 `product_images` 只接受 `agentsmith_app`，P1 不发布
@@ -755,7 +754,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    主协调 agent 只做分发、审查和收口。
 3. P2 release-kit 正式 adoption 前，`--inputs` 仍只是 focused diagnostic，`--evidence`
    只接受 `image-map.json`、`online-deployment-gate-report.json`、
-   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json`，且三轴枚举、
+   `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`，且三轴枚举、
    最小字段、`target_profiles.required` guard 已通过。
 4. P5 runner 正式 adoption 前，source-boundary guard 只允许
    `@mbos/agent-runner-contract`，runner support/context fixtures 来自 AgentSmith

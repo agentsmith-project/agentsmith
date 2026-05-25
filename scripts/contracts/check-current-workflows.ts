@@ -52,6 +52,8 @@ const HUMAN_MARKDOWN_ONLY_PUSH_PATHS_IGNORE = [
   '.github/PULL_REQUEST_TEMPLATE.md',
 ] as const;
 
+const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
   '.github/workflows/quality-gates.yml',
@@ -195,13 +197,17 @@ function collectDirectWorkflowDispatchInputRunInterpolations(
 }
 
 function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
+  return collectJobRunCommandList(parsedWorkflow, jobId).join('\n');
+}
+
+function collectJobRunCommandList(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
   const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
   const steps = Array.isArray(job.steps) ? job.steps : [];
 
   return steps
     .map((step) => asRecord(step).run)
     .filter((run): run is string => typeof run === 'string')
-    .join('\n');
+    .map((run) => run.trim());
 }
 
 function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
@@ -299,6 +305,39 @@ function assertArrayEqual(
   const expectedText = sorted(expected).join('\n');
   if (actualText !== expectedText) {
     failures.push(`${message}; expected [${sorted(expected).join(', ')}], got [${sorted(actual).join(', ')}]`);
+  }
+}
+
+function assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
+  parsedWorkflow: Record<string, unknown>,
+  jobId: string,
+  gateCommand: string,
+  failures: string[],
+): void {
+  const runCommands = collectJobRunCommandList(parsedWorkflow, jobId);
+  const installIndex = runCommands.indexOf('npm ci');
+  const buildIndex = runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND);
+  const gateIndex = runCommands.indexOf(gateCommand);
+  const playwrightIndex = runCommands.findIndex((command) => command.startsWith('npx playwright install '));
+  const label = `.github/workflows/quality-gates.yml:${jobId}`;
+
+  if (installIndex === -1) {
+    failures.push(`${label} must install dependencies with npm ci before cold gate execution`);
+  }
+  if (buildIndex === -1) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci in cold CI`);
+  }
+  if (gateIndex === -1) {
+    failures.push(`${label} must run ${gateCommand}`);
+  }
+  if (installIndex >= 0 && buildIndex >= 0 && installIndex >= buildIndex) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci`);
+  }
+  if (buildIndex >= 0 && playwrightIndex >= 0 && buildIndex >= playwrightIndex) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} before Playwright install`);
+  }
+  if (buildIndex >= 0 && gateIndex >= 0 && buildIndex >= gateIndex) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} before ${gateCommand}`);
   }
 }
 
@@ -455,6 +494,13 @@ if (!engineeringRunCommands.includes('npm run lane:backend-real:core')) {
 if (engineeringRunCommands.includes('make verify-governance')) {
   failures.push('engineering-gate.yml must not claim backend-real coverage while running make verify-governance');
 }
+
+assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
+  parseWorkflow('.github/workflows/quality-gates.yml'),
+  'lane-visual',
+  'npm run lane:visual',
+  failures,
+);
 
 if (failures.length > 0) {
   console.error('[contracts] current workflow check failed:');

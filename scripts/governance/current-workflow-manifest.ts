@@ -825,7 +825,10 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         id: 'lane-visual',
         role: 'visual_lane',
         laneId: 'lane-visual',
-        commands: ['npm run lane:visual'],
+        commands: [
+          'npm run build -w @mbos/agent-runner-contract',
+          'npm run lane:visual',
+        ],
         requiredSecrets: [],
         requiresSecrets: false,
         evidenceRequired: true,

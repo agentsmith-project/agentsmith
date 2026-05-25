@@ -1100,6 +1100,30 @@ describe('current workflow governance', () => {
     }
   });
 
+  it('builds the runner contract on the lane-visual cold Quality Gates path', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === '.github/workflows/quality-gates.yml',
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === 'lane-visual');
+    const runCommands = collectJobRunCommands(parseWorkflow('.github/workflows/quality-gates.yml'), 'lane-visual');
+
+    expect(job?.commands).toEqual([
+      RUNNER_CONTRACT_BUILD_COMMAND,
+      'npm run lane:visual',
+    ]);
+    expect(runCommands).toContain('npm ci');
+    expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
+    expect(runCommands).toContain('npx playwright install --with-deps chromium');
+    expect(runCommands).toContain('npm run lane:visual');
+    expect(runCommands.indexOf('npm ci')).toBeLessThan(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND));
+    expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf('npx playwright install --with-deps chromium'),
+    );
+    expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf('npm run lane:visual'),
+    );
+  });
+
   it('keeps CI producer commands on npm adapters instead of removed Make compatibility targets', () => {
     const removedMakeCommandPattern = /\bmake (?:gate-(?:fast|default|release)|lane-(?:mock|visual|real-core|real-release)|backend-real-(?:reset|bootstrap|ready|run|report))\b/;
 

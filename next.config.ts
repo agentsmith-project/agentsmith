@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
       '@mbos/api-entry-node': path.resolve(__dirname, 'packages/api-entry-node/src/index.ts'),
+      '@mbos/agent-runner-contract$': path.resolve(__dirname, 'packages/agent-runner-contract/src/index.ts'),
     };
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),

@@ -6,6 +6,13 @@ on:
       - main
     tags:
       - "*"
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "DEVELOPMENT.md"
+      - "DESIGN.md"
+      - "AGENTS.md"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
   workflow_dispatch:
     inputs:
       release_id:

@@ -81,11 +81,11 @@ Current local operational baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
-standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required release evidence.
+standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required AgentSmith product-gate evidence.
 <!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms

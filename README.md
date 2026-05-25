@@ -138,14 +138,14 @@ Current local runtime baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
 Current local developer flow:
 - `local-manual` — Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint.
 
-Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for transition-only focused `local-kind` and `existing-cluster` deploy diagnostics / 过渡期专项诊断 under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith release verdict.
+Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy Operations` for transition-only focused `local-kind` and `existing-cluster` deploy diagnostics / 过渡期专项诊断 under `artifacts/unified-deploy/`; those diagnostics are not part of the AgentSmith product gate.
 <!-- current-runtime-lines:readme:end -->
 
 ### No-Sandbox Deployment Baseline

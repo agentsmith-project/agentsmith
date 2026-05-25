@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are profiles, not separate products.',
+    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.',
     binding: 'contract',
   },
   {
@@ -81,7 +81,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
 ] as const;
 
 export const CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY = {
-  currentMainline: 'Current Docker-only local-kind unified deploy remains the current mainline.',
+  currentMainline: 'The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.',
   externalDeclared: '`external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.',
 } as const;
 

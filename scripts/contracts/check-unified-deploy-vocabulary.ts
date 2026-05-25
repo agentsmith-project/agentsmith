@@ -478,11 +478,11 @@ function validateP0HandoffBoundary(
 ): void {
   const blocks = parseMarkdownBlocks(parseMarkdownLines(content));
   const hasCompleteBoundaryBlock = hasBlockWithPatterns(blocks, [
-    /\bcurrent\b/iu,
+    /\bcurrent\b|当前/iu,
     /\bDocker[- ]only\b/iu,
     /\blocal-kind\b/iu,
     /\bunified deploy\b/iu,
-    /\bmainline\b|主线/u,
+    /\bmainline\b|主线|\b(?:pre-GA|focused diagnostic|diagnostic baseline|diagnostic)\b|过渡期专项诊断|诊断/iu,
     /\bexternal[-_ ]declared\b/iu,
     /\bP0\b/u,
     /\bschema\b/iu,
@@ -502,7 +502,7 @@ function validateP0HandoffBoundary(
     addFailure(
       failures,
       path,
-      `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy remains the current mainline; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
+      `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy is a pre-GA focused diagnostic baseline, not a long-term deployment truth; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
     );
   }
 }
@@ -522,10 +522,10 @@ function validateReleaseKitHandoffBoundary(
     /\bterminal aggregate\b/iu,
     /\bunified deploy\b/iu,
     /\blocal-kind\b/iu,
-    /\btransition-only\b/iu,
+    /\btransition-only\b|\bpre-GA\b/iu,
     /\bfocused diagnostics?\b/iu,
     /过渡期专项诊断/u,
-    /\bnot\b[\s\S]{0,80}\bAgentSmith release verdict\b|不属于[\s\S]{0,80}AgentSmith release verdict/iu,
+    /\bnot\b[\s\S]{0,120}\b(?:AgentSmith product gate|AgentSmith release verdict|(?:deployment|deploy)[\s\S]{0,50}package[\s\S]{0,50}operator[\s\S]{0,30}verdict|deploy\/package\/operator verdict)\b|不属于[\s\S]{0,80}(?:AgentSmith 产品门禁|AgentSmith release verdict|AgentSmith product gate)/iu,
     /\brelease[- ]kit\b|\bagentsmith-release-kit\b/iu,
     /\bfuture\b|\bready\s+后\b|完成后|未来|长期/u,
     /\bdeploy(?:ment)?\b|部署/iu,
@@ -543,7 +543,7 @@ function validateReleaseKitHandoffBoundary(
     addFailure(
       failures,
       path,
-      `${path} must state the release-kit handoff boundary: current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断 and not part of the AgentSmith release verdict; release-kit owns the future deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
+      `${path} must state the release-kit handoff boundary: AgentSmith release:ready is product readiness / local complete / current product gate, not a deployment/package/operator verdict; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断; release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
     );
   }
 

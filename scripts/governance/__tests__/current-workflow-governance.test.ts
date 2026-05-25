@@ -1393,7 +1393,7 @@ describe('current workflow governance', () => {
       'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.',
     );
     expect(governanceModel).toContain(
-      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required release evidence.',
+      'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required AgentSmith product-gate evidence.',
     );
     expect(governanceModel).not.toContain(
       'standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles',
@@ -1433,7 +1433,7 @@ describe('current workflow governance', () => {
     expect(workflowSource).toMatch(/transition-only focused diagnostics[\s\S]*过渡期专项诊断/i);
     expect(workflowSource).not.toMatch(/legacy\/focused diagnostics|legacy focused diagnostic|legacy unified deploy/i);
     expect(docs).toMatch(/transition-only focused diagnostics[\s\S]*过渡期专项诊断/i);
-    expect(docs).toMatch(/not part of (?:the )?AgentSmith release verdict/i);
+    expect(docs).toMatch(/not part of (?:the )?(?:current )?AgentSmith product gate/i);
     expect(docs).not.toMatch(/legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|Legacy deploy diagnostics|旧部署诊断/i);
     expect(docs).not.toMatch(/current AgentSmith release readiness is transitional product readiness and local-kind evidence/i);
     expect(docs).not.toMatch(/must[\s\S]{0,80}(?:unified deploy|local-kind|product-flow)[\s\S]{0,80}(?:evidence|passed)/i);

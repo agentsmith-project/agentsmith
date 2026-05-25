@@ -17,13 +17,13 @@ Detailed commands live in:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 profile，不是两套产品。
+1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic profiles，不是两套产品，也不是 `release:ready` 的部署结论。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 
 AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成多套部署入口。

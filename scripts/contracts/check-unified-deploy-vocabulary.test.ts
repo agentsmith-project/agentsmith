@@ -27,7 +27,7 @@ Status: current_deploy_contract
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 `;
@@ -41,7 +41,7 @@ const validP0BoundaryDoc = `# Active Doc
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 `;
@@ -50,7 +50,7 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 
 ## Release Kit Handoff Boundary
 
-Current AgentSmith release readiness is product readiness plus full visual, backend-real release, and terminal aggregate evidence. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断 and are not part of the AgentSmith release verdict. After the release-kit functional repo is ready, release-kit owns future deployment, package, and operator runbook release verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+AgentSmith release:ready is product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
 const releaseKitSplitPlanWithoutNewRepoBootstrapDoc = `# Release Kit Split Plan
@@ -59,7 +59,7 @@ Status: team_reviewed_p0_start_ready
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 
@@ -396,9 +396,9 @@ This intentionally omits the concrete deployment decisions.
 
     expect(text).toContain(`${path}:`);
     expect(text).toContain('release-kit handoff boundary');
-    expect(text).toContain('product readiness plus full visual');
+    expect(text).toContain('product readiness / local complete / current product gate');
     expect(text).toContain('transition-only focused diagnostics / 过渡期专项诊断');
-    expect(text).toContain('future deploy/package/operator verdict');
+    expect(text).toContain('deployment/package/operator verdict');
   });
 
   it('requires the split plan to document release-kit handoff-only checks', () => {
@@ -476,7 +476,7 @@ This intentionally omits the concrete deployment decisions.
       activeDocOverrides: {
         'docs/user-guides/runtime-lines-matrix.md': `# Active Doc
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 

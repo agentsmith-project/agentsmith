@@ -6,7 +6,10 @@ This directory holds engineering-side guidance, active implementation rationale,
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
+Current Docker-only local-kind unified deploy is the current diagnostic baseline /
+过渡期专项诊断基线, not the product mainline or deployment truth. Runner runtime
+migration remains gated by the P4 contract artifact and P5 consumer conformance
+skeleton gate before runtime/image/adoption.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary
 only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
@@ -25,7 +28,7 @@ Current guidance and implementation plans:
 
 Approved split plans:
 
-- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `p0_machine_guards_passed_p1_1_ci_artifact_producer_passed`; P0 machine guards passed and P1.1 CI artifact producer passed; full P1 not claimed; KISS split plan for release kit and runner repos
+- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `p0_machine_guards_passed_p1_1_ci_artifact_producer_passed`; P0 machine guards passed and P1.1 CI artifact producer passed; full P1 not claimed; 下一步先收紧 pre-GA 已移除输入和 evidence 的 fail-fast 边界，再扩展 deploy/airgap 或迁 runner runtime
 
 Decision-required analyses:
 

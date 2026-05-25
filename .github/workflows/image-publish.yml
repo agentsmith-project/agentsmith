@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
     tags:
       - "*"
   workflow_dispatch:
@@ -59,7 +58,7 @@ jobs:
           if [[ -z "${raw_release_id}" ]]; then
             if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
               raw_release_id="${GITHUB_REF_NAME}"
-            elif [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_REF_NAME}" == "master" ]]; then
+            elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
               raw_release_id="main-${GITHUB_SHA::12}"
             else
               raw_release_id="manual-${GITHUB_SHA::12}"

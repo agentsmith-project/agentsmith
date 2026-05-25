@@ -63,15 +63,19 @@ function listTrackedFiles(): string[] {
 }
 
 function listTrackedWorkflowFiles(): string[] {
-  const stdout = execFileSync('git', ['ls-files', '.github/workflows/*.yml'], {
+  const trackedStdout = execFileSync('git', ['ls-files', '.github/workflows/*.yml'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+  const untrackedStdout = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '.github/workflows/*.yml'], {
     cwd: rootDir,
     encoding: 'utf8',
   });
 
-  return stdout
+  return [...new Set(`${trackedStdout}\n${untrackedStdout}`
     .split('\n')
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter(Boolean))]
     .sort();
 }
 

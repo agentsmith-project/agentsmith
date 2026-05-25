@@ -211,6 +211,7 @@ export const CURRENT_CI_WORKFLOW_EVIDENCE_FAMILIES = [
   'backend_real_current_state',
   'backend_real_run',
   'governance_report',
+  'image_publish_handoff',
   'integration_log',
   'mock_lane_run',
   'playwright_report',
@@ -271,6 +272,7 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   '.github/workflows/quality-gates.yml',
   '.github/workflows/contracts-check.yml',
   '.github/workflows/engineering-gate.yml',
+  '.github/workflows/image-publish.yml',
   '.github/workflows/integration-e2e.yml',
   '.github/workflows/release-contract-artifact.yml',
   'scripts/contracts/check-current-workflows.ts',
@@ -379,7 +381,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     whenToUse: '只改前端页面、交互、文案，暂时不需要真实后端或 notebook / runner 主链。',
     startCommands: ['npm run dev', 'npm run verify'],
     docs: ['README.md', 'DEVELOPMENT.md', 'docs/testing/diagnostic-catalog-v1.md'],
-    avoid: ['不要把 `npm run dev` 当成 release verdict。', '不要直接跳到 `gate:release:full`。'],
+    avoid: ['不要把 `npm run dev` 当成产品侧 readiness 结论。', '不要直接跳到 `gate:release:full`。'],
   },
   {
     id: 'local_manual',
@@ -396,7 +398,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
   {
     id: 'release_grade',
     label: 'Release grade',
-    whenToUse: '准备收口大改动、发布前总验收、或者 incident 修复后的跨层复验。',
+    whenToUse: '准备收口大改动、发布前产品侧 readiness 复核、或者 incident 修复后的跨层复验。',
     startCommands: [
       'npm run release:ready',
       'npm run release:status',
@@ -409,7 +411,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     ],
     avoid: [
       '不要用 focused test 代替最终 verdict。',
-      '不要跳过 visual / release evidence owners。',
+      '不要跳过 visual / product readiness evidence owners。',
       '不要直接把 `gate:release:full` 当 release 执行入口；它只做显式 campaign context 下的聚合复核。',
     ],
   },
@@ -437,7 +439,7 @@ export const CURRENT_WORKFLOW_GLOSSARY: readonly CurrentWorkflowGlossaryTerm[] =
   {
     term: 'campaign',
     plainLanguage: '围绕一个目标组织起来的一组验证动作。',
-    currentMeaning: 'campaign 用来组织 release-grade 或 incident 后复验这类多步骤动作，它消费 gate/lane 真相，而不是发明第二套 truth。',
+    currentMeaning: 'campaign 用来组织产品侧 readiness 或 incident 后复验这类多步骤动作，它消费 gate/lane 真相，而不是发明第二套 truth。',
     doNotConfuseWith: 'campaign 不是新的 gate id，也不是 story truth source。',
   },
   {
@@ -524,8 +526,8 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     command: 'npm run test:release:precheck',
     npmScript: 'test:release:precheck',
     workflowRole: 'diagnostic',
-    whenToUse: '准备进入 release-grade 验证前，先确认本地 release substrate 和端口就绪。',
-    nextStep: 'precheck 绿只是准入，不是最终 release verdict；继续跑 `npm run release:ready`。',
+    whenToUse: '准备进入产品侧 readiness 验证前，先确认本地 substrate 和端口就绪。',
+    nextStep: 'precheck 绿只是准入，不是产品侧 readiness 结论；继续跑 `npm run release:ready`。',
   },
   {
     id: 'mock-lane',
@@ -539,12 +541,12 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
   {
     id: 'release-backend-real-owner',
     internalAdapter: 'gate:release',
-    ownerSurface: 'backend-real release evidence owner',
+    ownerSurface: 'backend-real product readiness evidence owner',
     npmScript: 'gate:release',
     gateId: 'gate-release',
     workflowRole: 'diagnostic',
-    whenToUse: 'release campaign 失败指向 backend-real release owner，或需要单独复核 `ux_trace_bundle` owner。',
-    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 terminal aggregate verdict。',
+    whenToUse: '产品侧 readiness campaign 失败指向 backend-real owner，或需要单独复核 `ux_trace_bundle` owner。',
+    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 aggregate readiness check。',
   },
   {
     id: 'release-unified-deploy-substrate-owner',
@@ -554,7 +556,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-substrate',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only unified deploy substrate reset / readiness 诊断。',
-    nextStep: '修复本机 substrate 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
+    nextStep: '修复本机 substrate 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-images-owner',
@@ -564,7 +566,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-local-kind-images',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only local-kind image handoff 诊断。',
-    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
+    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-owner',
@@ -574,7 +576,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-local-kind',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only local-kind Kubernetes rollout / ingress smoke 诊断。',
-    nextStep: '修复 deploy topology 或 ingress route 后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
+    nextStep: '修复 deploy topology 或 ingress route 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-unified-deploy-product-flows-owner',
@@ -584,16 +586,16 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-product-flows',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only deployed project / files / managed runner product-flow 诊断。',
-    nextStep: '修复产品链路后重跑该 diagnostic；release readiness 仍使用 `npm run release:ready`。',
+    nextStep: '修复产品链路后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
   },
   {
     id: 'release-terminal-aggregate',
     internalAdapter: 'gate:release:full',
-    ownerSurface: 'release campaign terminal aggregate verifier',
+    ownerSurface: 'AgentSmith product readiness aggregate verifier',
     npmScript: 'gate:release:full',
     gateId: 'gate-release-full',
     workflowRole: 'diagnostic',
-    whenToUse: '只在已有显式 campaign root/run id 时复核 terminal aggregate verdict；该命令不会执行任何 suite。',
+    whenToUse: '只在已有显式 campaign root/run id 时复核 aggregate readiness evidence；该命令不会执行任何 suite。',
     nextStep: '如果缺少显式 campaign context，改跑 `npm run release:ready` 生成当前 campaign evidence。',
   },
 ] as const;
@@ -675,6 +677,42 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     ],
   }),
   defineCurrentCIWorkflow({
+    path: '.github/workflows/image-publish.yml',
+    workflowName: 'Image Publish',
+    role: 'release_artifact_producer',
+    triggers: ['push', 'workflow_dispatch'],
+    blockingFor: ['manual', 'release'],
+    scheduled: false,
+    releaseBlocking: false,
+    jobs: [
+      {
+        id: 'publish-images',
+        role: 'artifact_producer',
+        commands: [
+          'scripts/governance/build-artifact-broker-cli.ts',
+          'npm run release:deploy-template-package',
+        ],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['image_publish_handoff'],
+        artifactPaths: [
+          'artifacts/image-publish/VERSION',
+          'artifacts/image-publish/build-artifact-broker-plan.json',
+          'artifacts/image-publish/build-manifest.json',
+          'artifacts/image-publish/image-publish-summary.json',
+          'artifacts/image-publish/release-contract-input.json',
+          'artifacts/image-publish/deploy-template-package.json',
+          'artifacts/image-publish/agentsmith-deploy-template-package.tgz',
+        ],
+        blockingFor: ['manual', 'release'],
+        scheduled: false,
+        releaseBlocking: false,
+        notes: 'Publishes the single shared agentsmith-app product image to GHCR and uploads the release-contract input handoff; it is not an AgentSmith product readiness gate.',
+      },
+    ],
+  }),
+  defineCurrentCIWorkflow({
     path: '.github/workflows/integration-e2e.yml',
     workflowName: 'Integration E2E',
     role: 'integration_e2e',
@@ -728,7 +766,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         blockingFor: ['manual'],
         scheduled: false,
         releaseBlocking: false,
-        notes: 'Produces the AgentSmith release contract handoff artifact only; it is not a release or deploy gate.',
+        notes: 'Produces the AgentSmith release contract handoff artifact only; it is not a deployment, package, or operator gate.',
       },
     ],
   }),
@@ -1067,14 +1105,14 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run gate:release',
-        description: 'run the release-grade engineering gate',
+        description: 'run the backend-real product readiness gate',
         canonical: 'npm',
         npmScript: 'gate:release',
         gateId: 'gate-release',
       },
       {
         command: 'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full',
-        description: 'aggregate an explicitly selected release campaign into the terminal release verdict',
+        description: 'aggregate an explicitly selected AgentSmith product readiness campaign',
         canonical: 'npm',
         npmScript: 'gate:release:full',
         gateId: 'gate-release-full',
@@ -1153,7 +1191,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     commands: [
       {
         command: 'npm run release:ready',
-        description: 'run the human-friendly release readiness wrapper',
+        description: 'run the human-friendly AgentSmith product readiness wrapper',
         canonical: 'npm',
         npmScript: 'release:ready',
         recommended: true,
@@ -1169,7 +1207,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run release:aggregate -- --campaign-root=<campaign-root>',
-        description: 'aggregate an explicitly selected campaign and write its summary',
+        description: 'aggregate an explicitly selected AgentSmith product readiness campaign and write its summary',
         canonical: 'npm',
         npmScript: 'release:aggregate',
       },
@@ -1241,7 +1279,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run release:campaign:full',
-        description: 'run the campaign launcher behind release:ready; do not use as the human release entrypoint',
+        description: 'run the product readiness campaign launcher behind release:ready; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:campaign:full',
       },
@@ -1370,7 +1408,7 @@ const CURRENT_INTENTIONAL_DUPLICATE_SAFETY_CHECKS: readonly CurrentGovernanceInt
   {
     id: 'terminal-aggregate-revalidation',
     where: 'gate:release:full',
-    whyNotWaste: 'recomputes campaign evidence completeness before the terminal release verdict',
+    whyNotWaste: 'recomputes campaign evidence completeness before the aggregate readiness result',
   },
   {
     id: 'rollout-image-consumability-preflight',
@@ -1452,7 +1490,7 @@ function listCleanupCommandsAndOwnershipProofs(): CurrentGovernanceCleanupOwners
     {
       command: 'npm run backend-real:reset',
       ownershipProof: `current-resource-lock:${destructiveLockId}`,
-      note: 'owner cleanup for backend-real release verification state',
+      note: 'owner cleanup for backend-real product readiness verification state',
     },
     {
       command: 'npm run integration:deps:down',
@@ -1479,7 +1517,7 @@ export function listCurrentGovernanceSurfaceInventory(): CurrentGovernanceSurfac
     runLocalStateRoots: listCurrentRuntimeLines().map((line) => ({
       path: line.runtimePath.currentRootRelative,
       source: line.id,
-      note: 'run-local operational state; not release sign-off evidence',
+      note: 'run-local operational state; not product readiness / handoff evidence',
     })),
     cleanupCommandsAndOwnershipProofs: listCleanupCommandsAndOwnershipProofs(),
     dependencyStartupReadinessCallers: CURRENT_DEPENDENCY_STARTUP_READINESS_CALLERS,

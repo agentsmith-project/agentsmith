@@ -108,6 +108,40 @@ function withPackageFileGitFixture<T>(
   });
 }
 
+function withTextFileGitFixture<T>(
+  relativePath: string,
+  baseContent: string,
+  currentContent: string,
+  run: (args: { root: string; catalog: ReturnType<typeof buildVerificationCatalog> }) => T,
+): T {
+  const catalog = buildVerificationCatalog();
+  return withTempDir('agentsmith-text-file-impact-', (root) => {
+    const fullPath = join(root, relativePath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, baseContent);
+    runGitInFixture(root, ['init']);
+    runGitInFixture(root, ['add', relativePath]);
+    runGitInFixture(root, [
+      '-c',
+      'user.email=agentsmith@example.test',
+      '-c',
+      'user.name=AgentSmith Test',
+      'commit',
+      '-m',
+      'base text file',
+    ]);
+    writeFileSync(fullPath, currentContent);
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      return run({ root, catalog });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+}
+
 function withCleanBranchPackageJsonGitFixture<T>(
   basePackageJson: unknown,
   currentPackageJson: unknown,
@@ -355,7 +389,7 @@ describe('verify impact selector', () => {
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
+    expect(plan.nextAction).toContain('not a product readiness conclusion');
     expect(plan.releaseVerdict).toBe(false);
   });
 
@@ -1194,7 +1228,7 @@ describe('verify impact selector', () => {
       expect(plan.recommendedCommands).toContain('npm run verify:release-real');
       expect(plan.recommendedCommands).not.toContain('npm run verify:real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
-      expect(plan.riskSummary.warnings.join('\n')).toContain('cannot cover release-owned backend-real changes');
+      expect(plan.riskSummary.warnings.join('\n')).toContain('cannot cover product-readiness backend-real owner changes');
       expect(plan.riskSummary.warnings.join('\n')).toContain('npm run release:ready');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify -- --goal=release-real --run');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
@@ -1217,7 +1251,7 @@ describe('verify impact selector', () => {
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
+    expect(plan.nextAction).toContain('not a product readiness conclusion');
   });
 
   it('carries trace spec story binding sources into the acceptance report projection', () => {
@@ -1398,6 +1432,7 @@ describe('verify impact selector', () => {
       'scripts/contracts/check-repo-split-bootstrap.test.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.ts',
       'scripts/contracts/check-unified-deploy-vocabulary.test.ts',
+      '.github/workflows/image-publish.yml',
       '.github/workflows/release-contract-artifact.yml',
       'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
@@ -1426,6 +1461,7 @@ describe('verify impact selector', () => {
     expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-boundary-guard');
     expect(plan.nextAction).toContain('release/repo-split boundary guard owner review');
     expect(plan.riskSummary.reasons.join('\n')).toContain('release/repo-split boundary guard');
+    expect(plan.riskSummary.reasons.join('\n')).toContain('.github/workflows/image-publish.yml');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.riskSummary.broadImpact).toBe(false);
     expect(plan.riskSummary.warnings.join('\n')).not.toContain('did not match canonical story markdown');
@@ -1455,6 +1491,132 @@ describe('verify impact selector', () => {
         broad_impact: false,
       })),
     ));
+  });
+
+  it('maps current workflow generated Makefile help sync to governance tooling only', () => {
+    const baseMakefile = [
+      'help:',
+      '\t@echo "help"',
+      '',
+      '# current-workflow:help-extended:start',
+      'help-extended:',
+      '\t@echo "  npm run release:ready  # run the human-friendly release readiness wrapper"',
+      '# current-workflow:help-extended:end',
+      '',
+      '# current-workflow:quick-help:start',
+      'quick-help:',
+      '\t@echo "    Run the human-friendly release readiness wrapper."',
+      '# current-workflow:quick-help:end',
+      '',
+      'help-glossary:',
+      '\t@echo "glossary"',
+      '',
+    ].join('\n');
+    const currentMakefile = [
+      'help:',
+      '\t@echo "help"',
+      '',
+      '# current-workflow:help-extended:start',
+      'help-extended:',
+      '\t@echo "  npm run release:ready  # run the human-friendly AgentSmith product readiness wrapper"',
+      '# current-workflow:help-extended:end',
+      '',
+      '# current-workflow:quick-help:start',
+      'quick-help:',
+      '\t@echo "    Run the human-friendly AgentSmith product readiness wrapper."',
+      '# current-workflow:quick-help:end',
+      '',
+      'help-glossary:',
+      '\t@echo "glossary"',
+      '',
+    ].join('\n');
+
+    withTextFileGitFixture('Makefile', baseMakefile, currentMakefile, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['Makefile'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'Makefile',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+          manualReviewRequired: false,
+        }),
+      ]);
+      expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+    });
+  });
+
+  it('keeps arbitrary Makefile changes fail-closed as unmapped source impact', () => {
+    const baseMakefile = [
+      'help:',
+      '\t@echo "help"',
+      '',
+      '# current-workflow:help-extended:start',
+      'help-extended:',
+      '\t@echo "  npm run release:ready  # run the human-friendly release readiness wrapper"',
+      '# current-workflow:help-extended:end',
+      '',
+      '# current-workflow:quick-help:start',
+      'quick-help:',
+      '\t@echo "    Run the human-friendly release readiness wrapper."',
+      '# current-workflow:quick-help:end',
+      '',
+    ].join('\n');
+    const currentMakefile = [
+      'help:',
+      '\t@echo "help"',
+      '',
+      'unsafe-target:',
+      '\trm -rf artifacts',
+      '',
+      '# current-workflow:help-extended:start',
+      'help-extended:',
+      '\t@echo "  npm run release:ready  # run the human-friendly AgentSmith product readiness wrapper"',
+      '# current-workflow:help-extended:end',
+      '',
+      '# current-workflow:quick-help:start',
+      'quick-help:',
+      '\t@echo "    Run the human-friendly AgentSmith product readiness wrapper."',
+      '# current-workflow:quick-help:end',
+      '',
+    ].join('\n');
+
+    withTextFileGitFixture('Makefile', baseMakefile, currentMakefile, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['Makefile'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
+      expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+      expect(plan.recommendedCommands).toContain('npm run verify:visual');
+      expect(plan.recommendedCommands).toContain('npm run verify:real');
+      expect(plan.riskSummary.broadImpact).toBe(true);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'Makefile',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
+          manualReviewRequired: true,
+        }),
+      ]);
+    });
   });
 
   it('maps selected docs/contracts markdown to docs-only impact without broad unmapped expansion', () => {
@@ -2106,7 +2268,7 @@ describe('verify impact selector', () => {
     expect(plan.affectedSurfaces).toEqual(['release/deploy']);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.nextAction).toContain('npm run release:ready');
-    expect(plan.nextAction).toContain('not a release verdict');
+    expect(plan.nextAction).toContain('not a product readiness conclusion');
     expect(plan.finalVerdict).toBe('not_evaluated_next_action_required');
     expect(plan.releaseVerdict).toBe(false);
   });
@@ -2345,7 +2507,7 @@ describe('verify impact selector', () => {
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
-    expect(plan.nextAction).toContain('not a release verdict until npm run release:ready runs');
+    expect(plan.nextAction).toContain('not a product readiness conclusion');
     expect(report.recommended_commands).toEqual(['npm run release:ready']);
     expect(JSON.stringify(report)).not.toContain('npm run verify:');
     expect(JSON.stringify(report)).not.toContain('--goal=release-real');
@@ -2550,8 +2712,8 @@ describe('verify impact selector', () => {
       const markdown = readFileSync(markdownPath, 'utf8');
       expect(markdown).toContain('Story Acceptance Report');
       expect(markdown).toContain('| Story | Risk | Status | Required levels | Manual review | Next action |');
-      expect(markdown).toContain('not release readiness');
-      expect(markdown).toContain('not a release verdict');
+      expect(markdown).toContain('not AgentSmith product readiness / handoff input completeness');
+      expect(markdown).toContain('not a product readiness conclusion');
       expect(markdown).toContain('## Traceability Gaps');
       expect(markdown).toContain('missing_catalog_mapping');
       expect(markdown).toContain('No registered current gate result writer for gate-fast');

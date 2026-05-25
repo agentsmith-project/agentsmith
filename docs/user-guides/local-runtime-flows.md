@@ -71,4 +71,4 @@ If local test PVs remain after Agent task or file-library work, clean the local 
 1. `local-real` is the supported developer-machine runtime.
 2. Unified deploy is the supported deployment runtime.
 3. Run them serially on one machine.
-4. Use focused checks first; reserve heavy gates for stage closeout or release sign-off.
+4. Use focused checks first; reserve heavy gates for stage closeout or product readiness / handoff sign-off.

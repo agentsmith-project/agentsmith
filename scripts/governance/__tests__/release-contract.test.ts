@@ -31,14 +31,9 @@ const RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES = [
 
 const PRODUCT_IMAGES = [
   {
-    id: 'web',
-    image: `ghcr.io/agentsmith-project/agentsmith-web:${RELEASE_ID}@sha256:${'1'.repeat(64)}`,
+    id: 'agentsmith_app',
+    image: `ghcr.io/agentsmith-project/agentsmith-app:${RELEASE_ID}@sha256:${'1'.repeat(64)}`,
     digest: `sha256:${'1'.repeat(64)}`,
-  },
-  {
-    id: 'api',
-    image: `ghcr.io/agentsmith-project/agentsmith-api:${RELEASE_ID}@sha256:${'2'.repeat(64)}`,
-    digest: `sha256:${'2'.repeat(64)}`,
   },
 ] as const;
 
@@ -97,7 +92,7 @@ function buildTargetProfiles(): AgentSmithReleaseContractGeneratorInput['target_
       target_cluster: 'existing_kubernetes',
       substrate_source: 'external_declared',
       distribution: 'online',
-      required: true,
+      required: false,
       prerequisites: {
         namespace: 'agentsmith',
         rbac: 'namespace_admin',
@@ -206,7 +201,6 @@ describe('release contract generator', () => {
 
     expect(contract.deploy_image_inventory).toEqual([
       { ...PRODUCT_IMAGES[0], source: 'product_images' },
-      { ...PRODUCT_IMAGES[1], source: 'product_images' },
       { ...ADOPTED_PROVIDER_IMAGES[0], source: 'adopted_provider_images' },
       { ...RELEASE_KIT_PREREQUISITE_IMAGES[0], source: 'release_kit_prerequisite_images' },
     ]);
@@ -236,7 +230,7 @@ describe('release contract generator', () => {
     input.product_images = [
       {
         ...PRODUCT_IMAGES[0],
-        image: `ghcr.io/agentsmith-project/agentsmith-web:${RELEASE_ID}`,
+        image: `ghcr.io/agentsmith-project/agentsmith-app:${RELEASE_ID}`,
       },
     ];
 
@@ -252,7 +246,7 @@ describe('release contract generator', () => {
       },
     ];
 
-    expectThrowsWithMessage(input, 'image id "web" is declared more than once');
+    expectThrowsWithMessage(input, 'image id "agentsmith_app" is declared more than once');
   });
 
   it('rejects deploy template digest drift from package manifest digest', () => {
@@ -398,7 +392,7 @@ describe('release contract CLI', () => {
     input.product_images = [
       {
         ...PRODUCT_IMAGES[0],
-        image: `ghcr.io/agentsmith-project/agentsmith-web:${RELEASE_ID}`,
+        image: `ghcr.io/agentsmith-project/agentsmith-app:${RELEASE_ID}`,
       },
     ];
     writeFileSync(inputPath, `${JSON.stringify(input, null, 2)}\n`);

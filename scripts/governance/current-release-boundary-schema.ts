@@ -96,7 +96,7 @@ export interface CurrentDeploymentTargetProfile {
   target_cluster: CurrentDeploymentTargetCluster;
   substrate_source: CurrentDeploymentSubstrateSource;
   distribution: CurrentDeploymentDistribution;
-  required: boolean;
+  required: false;
   prerequisites: {
     namespace: string;
     rbac: string;
@@ -2356,20 +2356,14 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
     if (hasOwn(entry, 'support_level')) {
       failures.push({
         path: `${path}.support_level`,
-        reason: 'target profile support_level is not allowed and cannot replace required.',
+        reason: 'target profile support_level is not allowed; support level lives in the release boundary matrix.',
       });
     }
 
-    if (typeof entry.required !== 'boolean') {
+    if (entry.required !== false) {
       failures.push({
         path: `${path}.required`,
-        reason: 'target profile required must be a boolean.',
-      });
-    }
-    if (targetCluster === 'kind_rehearsal' && entry.required === true) {
-      failures.push({
-        path: `${path}.required`,
-        reason: 'kind_rehearsal must not be marked as a required deployment target.',
+        reason: 'target profile required must be false for AgentSmith pre-GA handoff candidates.',
       });
     }
 

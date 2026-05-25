@@ -27,46 +27,46 @@ Plain-language glossary:
 - `e2e`: a testing method. It means walking a complete user flow, usually with Playwright in this repo. It is not a gate or a lane.
 - `lane`: a verification channel. It says which truth path is being used, such as mock, full visual, backend-real, or unified deploy evidence.
 - `gate`: an acceptance point. It gives the formal pass/fail verdict for one engineering tier.
-- `campaign`: a group of verification actions for one goal, such as release-grade verification. It consumes gates and lanes; it is not a second gate truth.
+- `campaign`: a group of verification actions for one goal, such as AgentSmith product-side readiness verification. It consumes gates and lanes; it is not a second gate truth.
 - `diagnostic`: a focused command or lane used to locate a problem. It helps fix the issue but does not replace the owning gate.
 - `verdict`: the formal conclusion for a layer. A verdict must include required evidence completeness when the owning gate or lane declares evidence.
 
 Workflow role model:
 - `scripts/governance/current-workflow-manifest.ts` classifies command surfaces as `environment_setup`, `diagnostic`, `diagnostic_lane`, `evidence_lane`, `gate_verdict`, `terminal_gate_verdict`, or `release_operation`.
-- `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not release evidence and does not replace `gate:default`.
-- `release:ready` is the human-friendly release readiness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
-- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, and the terminal aggregate verdict.
+- `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not product readiness evidence and does not replace `gate:default`.
+- `release:ready` is the human-friendly AgentSmith product-side readiness / handoff input completeness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
+- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, and the aggregate readiness check.
 - `gate:release:full` is aggregate-only. It should be used only with explicit campaign context, such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`, and must not be described as a suite launcher or daily release entrypoint.
-- `gate:release:full` recomputes required release evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
+- `gate:release:full` recomputes required product readiness evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
 
 Current gate truth:
 - `scripts/governance/current-gate-manifest.ts` is the machine-readable source for stable gate ids, gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
-- story evidence is part of current gate truth, not a release-only prose convention.
+- story evidence is part of current gate truth, not a prose-only convention.
 - `visual_scene_catalog` is the machine-readable evidence kind owned by `test:visual` / `lane:visual`, with scene linkage defined in `e2e/visual-baseline-support.ts`.
-- `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and release-tier backend-real commands:
+- `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and product-readiness backend-real commands:
   - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
-  - standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.
-  - `release:campaign:full` writes its release-grade trace bundles under `<campaign-root>/gate-release/backend-real-visual/ux-traces`
+  - standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is product readiness authority.
+  - `release:campaign:full` writes its backend-real product readiness trace bundles under `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
 - `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and the currently registered backend-real runtime result writers.
 - for gate/lane pairs registered in `scripts/governance/current-gate-result-schema.ts`, canonical gate-result artifact location is `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
 - gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
 - `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
 - `gate:default` does not own the full visual lane.
-- `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run release:ready` for release-grade sign-off.
+- `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run release:ready` for product-side readiness / handoff input completeness.
 
 Verification governance rules:
 - Focused `测试` commands and targeted `验证通道` runs are diagnosis paths used to localize failures, verify one subsystem, or regenerate one evidence family.
 - Stable engineering acceptance still comes from the machine-readable gate ids in `scripts/governance/current-gate-manifest.ts`; focused reruns never replace the final gate verdict they support.
-- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers. `release:ready` is the human-facing release-grade execution entrypoint; it delegates to `release:campaign:full` after the non-verdict precheck passes. `gate:release:full` is the terminal aggregate verifier inside or after an explicit campaign context.
-- `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and release-grade backend-real evidence, but they do not replace the final release verdict.
+- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers. `release:ready` is the human-facing product-side readiness execution entrypoint; it delegates to `release:campaign:full` after the non-verdict precheck passes. `gate:release:full` is the aggregate readiness verifier inside or after an explicit campaign context.
+- `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and backend-real product readiness evidence, but they do not replace the aggregate readiness check.
 - For any gate or lane that owns required machine-readable evidence, `command passed` and evidence completeness are same-level acceptance conditions. Missing required review artifacts, missing `visual_scene_catalog`, or missing required `ux_trace_bundle` output is a failure, not a soft warning.
 - Where a current result writer is registered in `scripts/governance/current-gate-result-schema.ts`, evidence completeness also requires canonical `<evidence_dir>/result.json`.
 - Evidence must be producer-owned. Wrappers and aggregate verifiers may relay or validate authority artifacts, but they must not synthesize replacement authority truth from the current checkout.
 - `lane:visual` authority artifact is producer-owned `run-manifest.json` plus run-scoped actual captures under the same review root; committed baselines remain comparison input, not release authority.
 - backend-real UX trace authority is producer-owned `ux-trace-index.json` plus per-bundle `contract-snapshot.json`; aggregate verification must consume those snapshots instead of reloading current repo story definitions.
 - `failure_class` in canonical `result.json` is a gate-verdict taxonomy only. It must not be treated as the same thing as troubleshooting categories produced by local diagnosis tools or incident notes.
-- Automated release-grade verification and operator-only checks must stay separated. Current manual Feishu steps belong in release operator guidance, not in machine-readable gate identity or gate-result truth.
+- Automated product-side readiness verification and operator-only checks must stay separated. Current manual Feishu steps belong in operator guidance, not in machine-readable gate identity or gate-result truth.
 - Human-oriented campaign guidance lives in [Verification Campaigns v1](./testing/verification-campaigns-v1.md); if it conflicts with manifests or contracts, machine-readable governance truth wins.
 
 <!-- current-runtime-lines:governance-model:start -->
@@ -81,7 +81,7 @@ Current local operational baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and outside release:ready product readiness / handoff scope.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
@@ -105,7 +105,7 @@ Current engineering guidance only uses these top-level terms:
 - A full verification path with a distinct source of truth, such as mock, visual, or real backend.
 
 5. `发布`
-- Unified deploy and release-grade verification flow.
+- Unified deploy diagnostics and AgentSmith product-side readiness verification flow.
 
 ### Terms That Are Not Current Top-Level Workflow Terms
 
@@ -179,9 +179,9 @@ Internal adapters and owner diagnostics stay behind manifests, CI, failure proje
 - focused owner scripts such as `test:unified-deploy:*`, `test:backend-real:*`, and `test:agent-task:*`
 
 Evidence roots:
-- campaign authority: release campaign paths under `<campaign-root>/...`, normally `artifacts/release-runs/<campaign-run-id>/...`
+- campaign authority: product readiness campaign paths under `<campaign-root>/...`, normally `artifacts/release-runs/<campaign-run-id>/...`
 - standalone diagnostics: `artifacts/backend-real/runs/`, `artifacts/backend-real-visual/`, `artifacts/visual-baseline-reviews/`, and `artifacts/unified-deploy/` unless linked from the campaign root
-- run-local state: `artifacts/runtime/lines/<line>/current`; this is operational state, not release sign-off evidence
+- run-local state: `artifacts/runtime/lines/<line>/current`; this is operational state, not product readiness / handoff evidence
 
 Cleanup commands and ownership proofs:
 - `make local-real-down` / `make local-real-reset`: `current-runtime-line:local-manual`
@@ -203,7 +203,7 @@ Current dependency startup/readiness callers:
 
 Intentional duplicate-looking safety checks:
 - wrapper `result.json` plus native `result.json`: preserves wrapper versus producer truth
-- terminal aggregate revalidation: recomputes campaign evidence before release verdict
+- terminal aggregate revalidation: recomputes campaign evidence before the product readiness conclusion
 - rollout image preflight: proves the rollout target can consume the image
 - route smoke before product flows: fails fast on basic availability before expensive checks
 
@@ -245,16 +245,16 @@ Important:
 4. Blocking rule
 - Default engineering gates do not fail solely because visual baselines are missing.
 - The visual verification lane fails when visual checks fail.
-- Release-grade visual review requirements must be stated explicitly in release guidance.
+- Product readiness visual review requirements must be stated explicitly in release guidance.
 
 5. Ownership rule
 - `gate:default` may contain targeted visual checks inside domain gates.
 - `lane:visual` is the internal full visual evidence owner / verification owner.
-- Human full visual execution outside release uses `npm run verify -- --goal=visual --run`; release-grade sign-off uses `npm run release:ready`.
+- Human full visual execution outside release uses `npm run verify -- --goal=visual --run`; product-side readiness / handoff verification uses `npm run release:ready`.
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
-- `lane:visual` release authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
+- `lane:visual` product readiness authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
 - `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.
-- Standalone release backend-real owner diagnostics publish `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.
+- Standalone backend-real owner diagnostics publish `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is product readiness authority.
 - backend-real trace bundles must publish `ux-trace-index.json` at the trace root and `contract-snapshot.json` inside each bundle directory.
 - Checklists and contracts must use these machine-readable evidence kinds instead of inventing parallel release-only names.
 

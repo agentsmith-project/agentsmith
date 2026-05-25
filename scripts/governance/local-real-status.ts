@@ -64,7 +64,7 @@ export function runLocalRealStatusProjection(
       return 0;
     }
 
-    dependencies.stdout.write('Diagnostic only: not a release verdict.\n');
+    dependencies.stdout.write('Diagnostic only: not a product readiness conclusion.\n');
     dependencies.stdout.write(renderStatusProjection(projection));
     const evidencePath = defaultResourceOwnerPreflightEvidencePath({ target: 'local-real-status' });
     const preflight = ownerPreflight(evidencePath);

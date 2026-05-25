@@ -411,11 +411,11 @@ function passingOwnerPreflight(evidencePath: string): ResourceOwnerPreflightResu
 }
 
 function expectCanonicalNotStartedBlocker(output: string, blocker: string): void {
-  expect(output).toContain('AgentSmith Release Readiness');
+  expect(output).toContain('AgentSmith Product Readiness');
   expect(output).toContain(`Blocker: ${blocker}`);
   expect(output).toContain('Stage: preflight');
   expect(output).toContain('Rerun: npm run release:ready');
-  expect(output).toContain('Evidence: no campaign evidence was produced; no release verdict was written.');
+  expect(output).toContain('Evidence: no campaign evidence was produced; no product readiness conclusion was written.');
   expect(output).not.toContain('Automated release verdict: NOT STARTED');
   expect(output).not.toContain('Blocked before:');
   expect(output).not.toContain('Next:');
@@ -499,7 +499,7 @@ describe('release readiness human entrypoints', () => {
       expect(existsSync(join(root, 'summary.json'))).toBe(true);
       expect(existsSync(join(root, 'summary.md'))).toBe(true);
       const summaryMarkdown = readFileSync(join(root, 'summary.md'), 'utf8');
-      expect(summaryMarkdown).toContain('- Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(summaryMarkdown).toContain('- Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(summaryMarkdown).toContain('- dependencies: passed');
       expect(summaryMarkdown).not.toContain('- - dependencies');
       const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
@@ -780,7 +780,7 @@ describe('release readiness human entrypoints', () => {
       expect(rendered).toContain('Inspect:');
       expect(rendered).toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${root}`);
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(rendered).not.toContain('lane-unified-deploy-product-flows');
       expect(rendered).not.toContain('npm run lane:');
     } finally {
@@ -1044,7 +1044,7 @@ exit 0
       const output = `${result.stdout}\n${result.stderr}`;
       expectCanonicalNotStartedBlocker(output, 'release_precheck');
       expect(output).toContain('Inspect: see the release precheck output above.');
-      expect(output).toContain('no release verdict');
+      expect(output).toContain('no product readiness conclusion');
       expect(readFileSync(logPath, 'utf8')).toBe('run test:release:precheck\n');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
       expect(existsSync(join(root, 'summary.json'))).toBe(false);
@@ -1228,7 +1228,7 @@ exit 0
       expect(scripts).toEqual([]);
       expect(sentinelProfiles).toEqual([]);
       expect(combinedOutput.trim().split('\n')).toHaveLength(8);
-      expect(combinedOutput).toContain('AgentSmith Release Readiness');
+      expect(combinedOutput).toContain('AgentSmith Product Readiness');
       expect(combinedOutput).toContain('Blocker: environment_conflict');
       expect(combinedOutput).toContain('Stage: preflight');
       expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
@@ -1261,7 +1261,7 @@ exit 0
         gitCleanGuard: () => ({
           ok: false,
           blocker: 'release_git_clean_guard',
-          why: 'release:ready requires a clean git worktree before release sign-off.',
+          why: 'release:ready requires a clean git worktree before product readiness / handoff sign-off.',
           inspectCommand: 'git status --short',
         }),
         runNpmScript: (script) => {

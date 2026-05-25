@@ -1,0 +1,310 @@
+name: Image Publish
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Release id for the release-* image alias; defaults to the tag name or current commit"
+        required: false
+        type: string
+
+concurrency:
+  group: image-publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-images:
+    name: publish-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      WORKFLOW_RELEASE_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.release_id || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve image refs
+        run: |
+          set -euo pipefail
+          raw_release_id="${WORKFLOW_RELEASE_ID:-}"
+          if [[ -z "${raw_release_id}" ]]; then
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              raw_release_id="${GITHUB_REF_NAME}"
+            elif [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_REF_NAME}" == "master" ]]; then
+              raw_release_id="main-${GITHUB_SHA::12}"
+            else
+              raw_release_id="manual-${GITHUB_SHA::12}"
+            fi
+          fi
+          if [[ ! "${raw_release_id}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "release_id must contain only letters, numbers, dot, underscore, or dash." >&2
+            exit 1
+          fi
+          if [[ "${raw_release_id}" == release-* ]]; then
+            release_alias_tag="${raw_release_id}"
+          else
+            release_alias_tag="release-${raw_release_id}"
+          fi
+
+          owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          app_repo="ghcr.io/${owner_lc}/agentsmith-app"
+          app_release_ref="${app_repo}:${release_alias_tag}"
+          app_sha_ref="${app_repo}:sha-${GITHUB_SHA::12}"
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+
+          lock_value() {
+            awk -F= -v key="$1" '$1 == key { print $2 }' infra/deploy/shared/build-base-images.lock
+          }
+          app_node_base_image="$(lock_value app_node_base_image)"
+          app_mc_image="$(lock_value app_mc_image)"
+          test -n "${app_node_base_image}"
+          test -n "${app_mc_image}"
+
+          {
+            echo "RELEASE_ID=${raw_release_id}"
+            echo "RELEASE_ALIAS_TAG=${release_alias_tag}"
+            echo "APP_IMAGE_REPOSITORY=${app_repo}"
+            echo "APP_RELEASE_REF=${app_release_ref}"
+            echo "APP_SHA_REF=${app_sha_ref}"
+            echo "APP_NODE_BASE_IMAGE=${app_node_base_image}"
+            echo "APP_MC_IMAGE=${app_mc_image}"
+            echo "IMAGE_PUBLISH_GENERATED_AT=${generated_at}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Write prebuild image plan
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/image-publish
+          {
+            echo "release_id=${RELEASE_ID}"
+            echo "agentsmith_app_image=${APP_RELEASE_REF}"
+          } > artifacts/image-publish/VERSION
+
+          broker_args=(
+            --release-root artifacts/image-publish
+            --release-id "${RELEASE_ID}"
+            --app-source-dir .
+            --artifact-kind prebuild-plan
+          )
+          while IFS='=' read -r key value; do
+            [[ -z "${key}" || "${key}" == \#* ]] && continue
+            broker_args+=(--app-base-image "${value}")
+          done < infra/deploy/shared/build-base-images.lock
+
+          npx tsx scripts/governance/build-artifact-broker-cli.ts "${broker_args[@]}"
+          content_ref="$(node -e "const fs=require('node:fs'); const plan=JSON.parse(fs.readFileSync('artifacts/image-publish/build-artifact-broker-plan.json','utf8')); console.log(plan.targets[0].content_ref)")"
+          test -n "${content_ref}"
+          echo "CONTENT_REF=${content_ref}" >> "${GITHUB_ENV}"
+
+      - name: Build and push AgentSmith app image
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE}" \
+            -t agentsmith-app-base:ci \
+            -f infra/deploy/Dockerfile.agentsmith-app-base \
+            .
+          docker build \
+            --build-arg APP_BASE_IMAGE=agentsmith-app-base:ci \
+            --build-arg NODE_RUNTIME_IMAGE="${APP_NODE_BASE_IMAGE}" \
+            --build-arg MC_IMAGE="${APP_MC_IMAGE}" \
+            -t "${CONTENT_REF}" \
+            -t "${APP_RELEASE_REF}" \
+            -t "${APP_SHA_REF}" \
+            -f infra/deploy/Dockerfile.agentsmith-app \
+            .
+          docker push "${CONTENT_REF}"
+          docker push "${APP_RELEASE_REF}"
+          docker push "${APP_SHA_REF}"
+
+          app_digest="$(docker buildx imagetools inspect "${APP_RELEASE_REF}" --format '{{.Manifest.Digest}}')"
+          if [[ ! "${app_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "Failed to resolve pushed app image digest for ${APP_RELEASE_REF}." >&2
+            exit 1
+          fi
+          echo "APP_IMAGE_DIGEST=${app_digest}" >> "${GITHUB_ENV}"
+
+      - name: Write build manifest
+        run: |
+          set -euo pipefail
+          cat > artifacts/image-publish/image-digest-probe <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "$1" in
+            "${APP_RELEASE_REF}"|"${CONTENT_REF}"|"${APP_SHA_REF}") printf '%s\n' "${APP_IMAGE_DIGEST}" ;;
+            *) echo "unexpected image ref for digest probe: $1" >&2; exit 1 ;;
+          esac
+          EOF
+          sed -i 's/^          //' artifacts/image-publish/image-digest-probe
+          chmod +x artifacts/image-publish/image-digest-probe
+
+          broker_args=(
+            --release-root artifacts/image-publish
+            --release-id "${RELEASE_ID}"
+            --app-source-dir .
+            --target-decision app=built
+          )
+          while IFS='=' read -r key value; do
+            [[ -z "${key}" || "${key}" == \#* ]] && continue
+            broker_args+=(--app-base-image "${value}")
+          done < infra/deploy/shared/build-base-images.lock
+
+          BUILD_ARTIFACT_BROKER_IMAGE_DIGEST_COMMAND="${PWD}/artifacts/image-publish/image-digest-probe" \
+            npx tsx scripts/governance/build-artifact-broker-cli.ts "${broker_args[@]}"
+
+      - name: Package deploy templates
+        run: |
+          set -euo pipefail
+          npm run release:deploy-template-package -- \
+            --package-uri "gh-artifact://${GITHUB_REPOSITORY}/agentsmith-release-contract-input/${GITHUB_RUN_ID}/agentsmith-deploy-template-package.tgz" \
+            --git-sha "${GITHUB_SHA}" \
+            --source-git-sha "${GITHUB_SHA}" \
+            --output-dir artifacts/image-publish \
+            --ci-workflow-name "${GITHUB_WORKFLOW}" \
+            --ci-run-id "${GITHUB_RUN_ID}" \
+            --ci-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --ci-job "publish-images" \
+            --generated-at "${IMAGE_PUBLISH_GENERATED_AT}" \
+            --generator-command "npm run release:deploy-template-package" \
+            --generator-version "p1-image-publish" \
+            --attestation none
+
+      - name: Write release contract input handoff
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+          const parseKeyValue = (path) => {
+            const values = new Map();
+            for (const rawLine of readFileSync(path, 'utf8').split(/\r?\n/u)) {
+              const line = rawLine.trim();
+              if (!line || line.startsWith('#')) continue;
+              const index = line.indexOf('=');
+              if (index <= 0) continue;
+              values.set(line.slice(0, index).trim(), line.slice(index + 1).trim());
+            }
+            return values;
+          };
+          const pinnedImage = (id, image) => {
+            const digest = String(image ?? '').match(/@(sha256:[a-f0-9]{64})$/u)?.[1];
+            if (!digest) throw new Error(`${id} must be pinned by sha256 digest.`);
+            return { id, image, digest };
+          };
+
+          const llmupLock = parseKeyValue('infra/deploy/shared/llmup-image.lock');
+          const siteEnv = parseKeyValue('infra/deploy/unified/env/site.env.example');
+          const releaseId = process.env.RELEASE_ID;
+          const gitSha = process.env.GITHUB_SHA;
+          const appImage = `${process.env.APP_RELEASE_REF}@${process.env.APP_IMAGE_DIGEST}`;
+          const releaseContractInput = {
+            release_id: releaseId,
+            git_sha: gitSha,
+            buildManifestAggregate: readJson('artifacts/image-publish/build-manifest.json'),
+            deployTemplatePackage: readJson('artifacts/image-publish/deploy-template-package.json'),
+            openapi_subject: readJson('docs/contracts/specs/openapi.json'),
+            asyncapi_subject: readJson('docs/contracts/specs/asyncapi.json'),
+            adopted_provider_images: [
+              pinnedImage('llmup', llmupLock.get('llmup_source_image')),
+            ],
+            release_kit_prerequisite_images: [
+              pinnedImage('ingress_nginx_controller', siteEnv.get('INGRESS_NGINX_CONTROLLER_IMAGE')),
+              pinnedImage('ingress_nginx_certgen', siteEnv.get('INGRESS_NGINX_CERTGEN_IMAGE')),
+            ],
+            target_profiles: [
+              {
+                target_cluster: 'existing_kubernetes',
+                substrate_source: 'external_declared',
+                distribution: 'online',
+                required: false,
+                prerequisites: {
+                  namespace: 'agentsmith',
+                  rbac: 'namespace_admin',
+                  ingress: 'operator_provided',
+                  tls: 'required',
+                  storage_class: 'operator_provided',
+                  registry: 'ghcr_or_operator_mirror',
+                  pull_secret_ref: 'operator_secret_ref',
+                },
+              },
+              {
+                target_cluster: 'kind_rehearsal',
+                substrate_source: 'kit_installed',
+                distribution: 'online',
+                required: false,
+                prerequisites: {
+                  namespace: 'agentsmith',
+                  rbac: 'local_admin',
+                  ingress: 'local',
+                  tls: 'optional',
+                  storage_class: 'standard',
+                  registry: 'local_kind_import',
+                  pull_secret_ref: 'not_required',
+                },
+              },
+            ],
+            min_release_kit_version: '0.1.0',
+          };
+          const summary = {
+            schema_version: 'agentsmith.image-publish-handoff/v1',
+            release_id: releaseId,
+            git_sha: gitSha,
+            product_images: [
+              {
+                id: 'agentsmith_app',
+                image: appImage,
+                digest: process.env.APP_IMAGE_DIGEST,
+              },
+            ],
+            build_manifest_path: 'build-manifest.json',
+            release_contract_input_path: 'release-contract-input.json',
+            note: 'Pre-GA publishes the single shared agentsmith-app product image. No separate backend/API image digest is fabricated in this repo.',
+          };
+
+          writeFileSync('artifacts/image-publish/release-contract-input.json', `${JSON.stringify(releaseContractInput, null, 2)}\n`);
+          writeFileSync('artifacts/image-publish/image-publish-summary.json', `${JSON.stringify(summary, null, 2)}\n`);
+          NODE
+
+      - name: Upload release contract input handoff
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentsmith-release-contract-input
+          if-no-files-found: error
+          path: |
+            artifacts/image-publish/VERSION
+            artifacts/image-publish/build-artifact-broker-plan.json
+            artifacts/image-publish/build-manifest.json
+            artifacts/image-publish/image-publish-summary.json
+            artifacts/image-publish/release-contract-input.json
+            artifacts/image-publish/deploy-template-package.json
+            artifacts/image-publish/agentsmith-deploy-template-package.tgz

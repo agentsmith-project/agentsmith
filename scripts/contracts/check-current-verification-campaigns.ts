@@ -69,7 +69,7 @@ function main(): void {
   assert(terminalStep.evidenceChecks.length > 0, 'gate-release-full must declare aggregate evidence checks.');
   assert(
     terminalStep.dependsOn.includes('lane-visual') && terminalStep.dependsOn.includes('gate-release'),
-    'gate-release-full must aggregate both lane-visual and gate-release evidence.',
+    'gate-release-full must aggregate both lane-visual and gate-release product readiness evidence.',
   );
   assert(
     !terminalStep.dependsOn.some((stepId) => stepId.startsWith('lane-unified-deploy-')),
@@ -81,8 +81,8 @@ function main(): void {
     assert(step.evidenceChecks.length > 0, `${step.id} must declare concrete evidence checks.`);
   }
   const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
-  assert(visualStep?.workflowRole === 'evidence_owner', 'lane-visual must stay a release evidence owner.');
-  assert(visualStep.evidenceRequired, 'lane-visual release evidence must stay required.');
+  assert(visualStep?.workflowRole === 'evidence_owner', 'lane-visual must stay a product readiness evidence owner.');
+  assert(visualStep.evidenceRequired, 'lane-visual product readiness evidence must stay required.');
   assert(
     visualStep?.evidenceChecks.some((check) => check.kind === 'visual_baseline_automated_passes'),
     'lane-visual campaign step must require visual baseline automated-pass artifacts.',

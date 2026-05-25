@@ -46,7 +46,7 @@ function assertReleaseHumanEntrypointSurface(
   requireMatch(
     content,
     /npm run release:ready/,
-    `${owner} must point human release-grade execution to npm run release:ready`,
+    `${owner} must point human product readiness / handoff execution to npm run release:ready`,
     failures,
   );
   requireMatch(
@@ -327,10 +327,10 @@ forbidMatch(governanceDefaultGate, /npm run test:visual/, 'governance default ga
 requireMatch(workspaceDefaultGate, /source "\$\{ROOT_DIR\}\/scripts\/lib\/backend-real-gate-ports\.sh"/, 'workspace-project default gate must source backend-real-gate-ports when backend-real is enabled', failures);
 requireMatch(workspaceDefaultGate, /cleanup_gate_ports "\$\{real_api_port\}" "\$\{real_web_port\}" "\$\{real_spec\}"/, 'workspace-project default gate must clean stale backend-real ports before running integration-minimal', failures);
 
-forbidMatch(backendRealFullGate, /npm run gate:default/, 'backend-real release lane must not rerun gate:default; release campaign owns that ordering', failures);
-requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'backend-real full gate must keep backend-real visual review as a release-only evidence step', failures);
+forbidMatch(backendRealFullGate, /npm run gate:default/, 'backend-real product readiness lane must not rerun gate:default; product readiness campaign owns that ordering', failures);
+requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'backend-real full gate must keep backend-real visual review as a product readiness evidence step', failures);
 requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts/, 'gate:release:full adapter must be aggregate-only and execute run-release-full-aggregate.ts', failures);
-requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts "\$@"/, 'gate:release:full adapter must pass operator flags through to the terminal aggregate verifier', failures);
+requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts "\$@"/, 'gate:release:full adapter must pass operator flags through to the aggregate readiness verifier', failures);
 requireMatch(releaseFullCampaign, /run-current-verification-campaign\.ts release-full/, 'release:campaign:full adapter must execute the release-full campaign runner', failures);
 forbidMatch(packageJson.scripts?.['gate:release:full'] ?? '', /npm run gate:release|npm run lane:visual|npm run lane:unified-deploy:[a-z0-9:_-]+/, 'gate:release:full package adapter must not rerun release campaign steps', failures);
 for (const scriptName of ['lane:visual', 'lane:unified-deploy:substrate', 'lane:unified-deploy:local-kind:images', 'lane:unified-deploy:local-kind', 'lane:unified-deploy:product-flows'] as const) {
@@ -406,7 +406,7 @@ requireMatch(gateContract, /artifacts\/unified-deploy/, 'current gate manifest c
 
 requireMatch(workspaceDefaultChecklist, /npm run verify -- --goal=pr --run/, 'workspace/project checklist must point default execution to npm run verify -- --goal=pr --run', failures);
 requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e[\s\S]{0,200}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:default-e2e as focused diagnostics, not the default entrypoint', failures);
-requireMatch(workspaceDefaultChecklist, /npm run test:backend-real:core[\s\S]{0,240}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:backend-real:core as focused diagnostics, not release sign-off', failures);
+requireMatch(workspaceDefaultChecklist, /npm run test:backend-real:core[\s\S]{0,240}(focused diagnostics|evidence-owner producer)/, 'workspace/project checklist must label test:backend-real:core as focused diagnostics, not product readiness / handoff sign-off', failures);
 requireMatch(workspaceDefaultChecklist, /ux_trace_bundle/, 'workspace/project checklist must describe the default-tier backend-real ux_trace_bundle evidence', failures);
 requireMatch(workspaceDefaultChecklist, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'workspace/project checklist must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(workspaceDefaultChecklist, /targeted visual/, 'workspace/project checklist must explain that its visual coverage is targeted', failures);
@@ -421,7 +421,7 @@ requireMatch(governanceDefaultChecklist, /npm run verify -- --goal=visual --run/
 requireMatch(governanceDefaultChecklist, /internal evidence ownership remains `lane:visual`/, 'governance checklist must keep lane:visual only as internal visual evidence ownership', failures);
 forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance checklist must document its own canonical gate command instead of gate:default', failures);
 
-requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);
+requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing product readiness / handoff entrypoint', failures);
 requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define npm run release:status as the read-only status entrypoint', failures);
 requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics', failures);
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics', failures);
@@ -435,8 +435,8 @@ forbidMatch(releaseChecklist, /gate:release:full as the full release command/, '
 assertReleaseHumanEntrypointSurface(agentTaskRunnerRunbook, 'Agent task runner runbook', failures);
 assertReleaseHumanEntrypointSurface(verificationCampaigns, 'verification campaigns guide', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
-requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as a required release evidence kind', failures);
-requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);
+requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as required product readiness evidence', failures);
+requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as required product readiness evidence', failures);
 requireMatch(releaseChecklist, /e2e\/visual-baseline-support\.ts/, 'release checklist must identify the visual scene catalog source', failures);
 requireMatch(releaseChecklist, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'release checklist must identify the backend-real ux trace bundle path', failures);
 requireMatch(releaseChecklist, /substrate-lifecycle\.ts reset|clean reset/, 'release checklist must explain that unified deploy diagnostics can begin from a clean substrate reset', failures);

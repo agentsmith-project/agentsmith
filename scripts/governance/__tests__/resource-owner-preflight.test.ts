@@ -163,7 +163,7 @@ describe('resource owner preflight', () => {
       });
 
       const rendered = renderResourceOwnerPreflightSummary(result, {
-        title: 'AgentSmith Release Readiness',
+        title: 'AgentSmith Product Readiness',
         rerunCommand: 'npm run release:ready',
       });
       expect(rendered.trim().split('\n')).toHaveLength(8);

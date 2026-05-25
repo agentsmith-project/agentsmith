@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.',
+    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and outside release:ready product readiness / handoff scope.',
     binding: 'contract',
   },
   {

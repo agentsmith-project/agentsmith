@@ -48,9 +48,9 @@ Before you run commands, choose one entry path:
 | --- | --- | --- |
 | `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run verify` for the dry-run plan. |
 | `local_manual` | You need the real local API, Agent tasks, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
-| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the frozen summary/projection snapshot. |
+| `release_grade` | You need an AgentSmith product-side readiness / handoff input completeness answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the frozen summary/projection snapshot. |
 
-Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when a failure needs maintainer diagnosis and you need the smallest command that can reproduce or narrow it. The catalog is not a default command directory; diagnostic commands help you find the problem, then the clean entrypoint gives the final verdict for a layer.
+Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when a failure needs maintainer diagnosis and you need the smallest command that can reproduce or narrow it. The catalog is not a default command directory; diagnostic commands help you find the problem, then the clean entrypoint gives the product or gate conclusion for that layer.
 
 ```bash
 # Install dependencies
@@ -126,6 +126,12 @@ npm run release:status
 ```
 <!-- current-workflow:readme:end -->
 
+### CI Image Publishing
+
+`Image Publish` is the CI producer for GHCR image handoff. On `main`/tag pushes or manual dispatch it publishes the current shared `ghcr.io/<owner>/agentsmith-app` product image and uploads `agentsmith-release-contract-input` for the release contract artifact workflow.
+
+Pre-GA, AgentSmith does not publish a separate backend/API product image from this repo. Web/API/bootstrap workloads use the shared `agentsmith_app` image truth; a future backend/API owner must add its own image digest instead of reusing or fabricating one here.
+
 ## Local Runtime In Plain Words
 
 <!-- current-runtime-lines:readme:start -->
@@ -138,7 +144,7 @@ Current local runtime baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and not a release:ready deployment verdict.
+- There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and outside release:ready product readiness / handoff scope.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
@@ -160,11 +166,11 @@ This validates the required behavior for MVP deployment without sandbox:
 
 ### Internal Adapters And Owner Diagnostics
 
-For daily verification, use the generated workflow entry above: `npm run verify`. For release readiness, use `npm run release:ready` and `npm run release:status`.
+For daily verification, use the generated workflow entry above: `npm run verify`. For AgentSmith product-side readiness / handoff input completeness, use `npm run release:ready` and `npm run release:status`.
 
 Low-level `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
-When a release campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of release owner identities are `gate:default`, `lane:visual`, `gate:release`, and the aggregate-only `gate:release:full`; unified deploy producers are transition-only focused diagnostics / 过渡期专项诊断, not current release owners.
+When a product readiness campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of readiness evidence owner identities are `gate:default`, `lane:visual`, `gate:release`, and the aggregate-only `gate:release:full`; unified deploy producers are transition-only focused diagnostics / 过渡期专项诊断, not current AgentSmith product readiness owners.
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:
 
@@ -241,7 +247,7 @@ src/
 - [Current Engineering Governance Model](./docs/current-engineering-governance-model.md) — 当前唯一工程治理模型与术语表
 - [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
-- [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) — release-grade automated verification、evidence、story、visual 与 verdict 的执行说明
+- [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) — AgentSmith product-side readiness campaign、evidence、story、visual 与 gate conclusion 的执行说明
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [Personal Connections & Workspace Integrations](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、workspace integrations 与 Feishu 连接说明
 - [File Library Access Model](./docs/user-guides/file-library-access-model.md) — Files Web/API 与 task HOME 展示模型

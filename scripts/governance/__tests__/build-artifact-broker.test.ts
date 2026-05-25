@@ -7,6 +7,7 @@ import {
   buildBuildManifestTarget,
   computeAppImageContentKey,
   CURRENT_BUILD_ARTIFACT_TARGETS,
+  CURRENT_BUILD_PRODUCT_IMAGE_IDS,
   normalizeReleaseAliasTag,
   parseBaseDependencyImageLock,
   parseLockedImageRef,
@@ -70,6 +71,7 @@ function expectAppKeyToChange(path: string): void {
 describe('build artifact broker', () => {
   it('limits AgentSmith-owned build artifact targets to the app image', () => {
     expect(CURRENT_BUILD_ARTIFACT_TARGETS).toEqual(['app']);
+    expect(CURRENT_BUILD_PRODUCT_IMAGE_IDS).toEqual(['agentsmith_app']);
   });
 
   it('calculates deterministic content keys with stable input sorting', () => {

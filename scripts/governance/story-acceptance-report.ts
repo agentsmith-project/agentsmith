@@ -424,7 +424,7 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
       ? [`- Verification catalog: ${report.verification_catalog_path}`]
       : []),
     '',
-    'This report is not release readiness and not a release verdict. It only records not_evaluated, missing, or manual_review_needed states.',
+    'This report is not AgentSmith product readiness / handoff input completeness and not a product readiness conclusion. It only records not_evaluated, missing, or manual_review_needed states.',
     '',
     '## Verdict',
     '',

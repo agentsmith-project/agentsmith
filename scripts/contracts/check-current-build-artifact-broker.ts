@@ -7,6 +7,7 @@ import {
   CURRENT_BUILD_MANIFEST_AGGREGATE_VERSION,
   CURRENT_BUILD_MANIFEST_MODES,
   CURRENT_BUILD_MANIFEST_TARGET_DECISIONS,
+  CURRENT_BUILD_PRODUCT_IMAGE_IDS,
   CURRENT_BUILD_SKIP_DECISION_SCHEMA,
   CURRENT_BUILD_SKIP_DECISION_VERSION,
   CURRENT_BUILD_SKIP_OPERATIONS,
@@ -255,6 +256,10 @@ function main(): void {
   assert(
     JSON.stringify(CURRENT_BUILD_ARTIFACT_TARGETS) === JSON.stringify(['app']),
     'current build artifact broker targets must be limited to AgentSmith-owned app.',
+  );
+  assert(
+    JSON.stringify(CURRENT_BUILD_PRODUCT_IMAGE_IDS) === JSON.stringify(['agentsmith_app']),
+    'current build product image ids must expose only the single shared AgentSmith app image.',
   );
   for (const mode of ['build', 'bundle', 'release-fidelity', 'offline-package'] as const) {
     assert(CURRENT_BUILD_MANIFEST_MODES.includes(mode), `build manifest aggregate mode ${mode} must be supported.`);

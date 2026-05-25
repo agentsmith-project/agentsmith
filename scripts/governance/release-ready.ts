@@ -151,7 +151,7 @@ function renderNotStarted(options: {
   logs: string;
 }): string {
   return [
-    'AgentSmith Release Readiness',
+    'AgentSmith Product Readiness',
     '',
     renderShortFailureProjection({
       verdict: 'BLOCKED',
@@ -160,7 +160,7 @@ function renderNotStarted(options: {
       why: options.why,
       inspectCommand: options.logs,
       rerunCommand: 'npm run release:ready',
-      evidencePath: 'no campaign evidence was produced; no release verdict was written.',
+      evidencePath: 'no campaign evidence was produced; no product readiness conclusion was written.',
     }).trimEnd(),
     '',
   ].join('\n');
@@ -347,7 +347,7 @@ function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
     return {
       ok: false,
       blocker: 'release_git_clean_guard',
-      why: 'release:ready requires a traceable git HEAD before release sign-off.',
+      why: 'release:ready requires a traceable git HEAD before product readiness / handoff sign-off.',
       inspectCommand: 'git rev-parse --verify HEAD',
     };
   }
@@ -365,7 +365,7 @@ function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
     return {
       ok: false,
       blocker: 'release_git_clean_guard',
-      why: 'release:ready requires a clean git worktree before release sign-off.',
+      why: 'release:ready requires a clean git worktree before product readiness / handoff sign-off.',
       inspectCommand: 'git status --short',
     };
   }
@@ -444,7 +444,7 @@ export function runReleaseReady(
   const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath, guardedEnv, cwd);
   if (!ownerPreflightResult.ok) {
     stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
-      title: 'AgentSmith Release Readiness',
+      title: 'AgentSmith Product Readiness',
       rerunCommand: 'npm run release:ready',
     }));
     return 1;
@@ -587,7 +587,7 @@ export function runReleaseReady(
 
     const status = readReleaseStatus({ campaignRoot: campaignContext.campaignRoot });
     const statusExitCode = status.kind === 'ready' ? 0 : 1;
-    stdout.write(renderReleaseStatus(status).replace('AgentSmith Release Status', 'AgentSmith Release Readiness'));
+    stdout.write(renderReleaseStatus(status).replace('AgentSmith Product Readiness Status', 'AgentSmith Product Readiness'));
     const campaignExitCode = typeof campaign.status === 'number' ? campaign.status : 1;
     exitCode = campaignExitCode === 0 ? statusExitCode : campaignExitCode;
     return exitCode;

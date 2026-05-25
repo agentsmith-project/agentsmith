@@ -7,10 +7,12 @@ import {
 } from '../current-verification-campaign-manifest';
 
 describe('current verification campaign manifest', () => {
-  it('defines release-full as the release-grade campaign truth', () => {
+  it('defines release-full as the AgentSmith product-side readiness campaign truth', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
 
     expect(CURRENT_VERIFICATION_CAMPAIGN_MANIFEST).toContain(releaseFull);
+    expect(releaseFull?.description).toContain('AgentSmith product-side readiness');
+    expect(releaseFull?.description).not.toMatch(/terminal aggregate verdict|deployment|package|operator/i);
     expect(releaseFull?.runRootPattern).toBe('artifacts/release-runs/<campaign-run-id>');
     expect(releaseFull?.steps.map((step) => step.id)).toEqual([
       'gate-fast',
@@ -55,7 +57,7 @@ describe('current verification campaign manifest', () => {
     }
   });
 
-  it('separates executable evidence owners from the aggregate-only terminal verdict', () => {
+  it('separates executable evidence owners from the aggregate-only readiness check', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {
       throw new Error('Missing release-full campaign.');
@@ -77,7 +79,7 @@ describe('current verification campaign manifest', () => {
     }
   });
 
-  it('binds visual release evidence at the terminal aggregate instead of gate-release', () => {
+  it('binds visual product readiness evidence at the aggregate check instead of gate-release', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {
       throw new Error('Missing release-full campaign.');

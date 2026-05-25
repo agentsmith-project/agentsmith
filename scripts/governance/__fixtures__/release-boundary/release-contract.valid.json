@@ -5,19 +5,9 @@
   "git_sha": "0123456789abcdef0123456789abcdef01234567",
   "product_images": [
     {
-      "id": "web",
-      "image": "ghcr.io/agentsmith-project/agentsmith-web:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "id": "agentsmith_app",
+      "image": "ghcr.io/agentsmith-project/agentsmith-app:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
       "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-    },
-    {
-      "id": "api",
-      "image": "ghcr.io/agentsmith-project/agentsmith-api:2026.05.23-p0@sha256:2222222222222222222222222222222222222222222222222222222222222222",
-      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-    },
-    {
-      "id": "product_schema_bootstrap",
-      "image": "ghcr.io/agentsmith-project/agentsmith-product-schema-bootstrap:2026.05.23-p0@sha256:3333333333333333333333333333333333333333333333333333333333333333",
-      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
     }
   ],
   "adopted_provider_images": [
@@ -36,21 +26,9 @@
   ],
   "deploy_image_inventory": [
     {
-      "id": "web",
-      "image": "ghcr.io/agentsmith-project/agentsmith-web:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "id": "agentsmith_app",
+      "image": "ghcr.io/agentsmith-project/agentsmith-app:2026.05.23-p0@sha256:1111111111111111111111111111111111111111111111111111111111111111",
       "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-      "source": "product_images"
-    },
-    {
-      "id": "api",
-      "image": "ghcr.io/agentsmith-project/agentsmith-api:2026.05.23-p0@sha256:2222222222222222222222222222222222222222222222222222222222222222",
-      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-      "source": "product_images"
-    },
-    {
-      "id": "product_schema_bootstrap",
-      "image": "ghcr.io/agentsmith-project/agentsmith-product-schema-bootstrap:2026.05.23-p0@sha256:3333333333333333333333333333333333333333333333333333333333333333",
-      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
       "source": "product_images"
     },
     {
@@ -105,7 +83,7 @@
       "target_cluster": "existing_kubernetes",
       "substrate_source": "external_declared",
       "distribution": "online",
-      "required": true,
+      "required": false,
       "prerequisites": {
         "namespace": "agentsmith",
         "rbac": "namespace_admin",
@@ -156,14 +134,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:4df7763cc420e0477013a7a545a7857e35ecec9a5f0a0d3eb39908badc535d11",
+    "subject_sha256": "sha256:3ac0f6a83a6673c3026fa009816d9ff66666bb98d59a6b4cd3dda405e2661ddc",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:bd0d4d4956cf8208b5c3f62d116823866d8d85f7f05b32880fb50808652825d8",
+    "artifact_sha256": "sha256:3b42a27aff4c00359d481ca28f165b63bd6400003d617bec0d0dd953fee186e5",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

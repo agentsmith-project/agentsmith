@@ -113,7 +113,7 @@ When you need focused owner diagnostics or prerequisite evidence before the rele
 npm run test:backend-real:core
 ```
 
-`npm run test:backend-real:core` is a focused diagnostics / evidence-owner producer rerun, not the daily real-backend gate entry and not release sign-off. Release sign-off remains `npm run release:ready`.
+`npm run test:backend-real:core` is a focused diagnostics / evidence-owner producer rerun, not the daily real-backend gate entry and not product-side readiness / handoff sign-off. Product-side readiness / handoff sign-off remains `npm run release:ready`.
 
 This adds:
 

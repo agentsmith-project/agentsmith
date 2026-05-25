@@ -267,7 +267,7 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('freezes the deployment mode matrix without making kind a required target', () => {
+  it('freezes the deployment mode matrix without making any target required', () => {
     expect(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => [
       entry.target_cluster,
       entry.substrate_source,
@@ -286,16 +286,17 @@ describe('current release boundary schema', () => {
     expect(CURRENT_DEPLOYMENT_MODE_MATRIX.filter((entry) => entry.required_target)).toEqual([]);
   });
 
-  it('keeps P2 target coverage required for online while only declaring airgap for P3', () => {
+  it('declares deployment target profiles as optional handoff candidates without P2 required coverage', () => {
     const contract = readFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as Record<string, unknown>[];
 
+    expect(profiles.every((profile) => profile.required === false)).toBe(true);
     expect(profiles).toEqual(expect.arrayContaining([
       expect.objectContaining({
         target_cluster: 'existing_kubernetes',
         substrate_source: 'external_declared',
         distribution: 'online',
-        required: true,
+        required: false,
       }),
       expect.objectContaining({
         target_cluster: 'existing_kubernetes',
@@ -330,7 +331,7 @@ describe('current release boundary schema', () => {
   it('rejects tag-only images, missing image digests, and missing required product flows', () => {
     const tagOnly = cloneFixture('release-contract.valid.json');
     const productImages = tagOnly.product_images as Record<string, unknown>[];
-    productImages[0].image = 'ghcr.io/agentsmith-project/agentsmith-web:v1.0.0';
+    productImages[0].image = 'ghcr.io/agentsmith-project/agentsmith-app:v1.0.0';
     expectInvalid(validateAgentSmithReleaseContract(tagOnly), 'image must be pinned by digest');
 
     const missingDigest = cloneFixture('release-contract.valid.json');
@@ -1280,29 +1281,21 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('rejects target profiles that mark kind as a required deployment target', () => {
+  it('rejects target profiles that mark any deployment target as required', () => {
     const contract = cloneFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as Record<string, unknown>[];
-    profiles.push({
-      target_cluster: 'kind_rehearsal',
-      substrate_source: 'kit_installed',
-      distribution: 'online',
+    profiles[0] = {
+      ...profiles[0],
       required: true,
-      prerequisites: {
-        namespace: 'agentsmith',
-        rbac: 'namespace_admin',
-        ingress: 'local',
-        tls: 'optional',
-        storage_class: 'standard',
-        registry: 'local',
-        pull_secret_ref: 'not_required',
-      },
-    });
+    };
 
-    expectInvalid(validateAgentSmithReleaseContract(contract), 'kind_rehearsal must not be marked as a required deployment target');
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'target profile required must be false for AgentSmith pre-GA handoff candidates',
+    );
   });
 
-  it('rejects duplicate target profile tuples and support_level-only required declarations', () => {
+  it('rejects duplicate target profile tuples and support_level-only handoff declarations', () => {
     const duplicateContract = cloneFixture('release-contract.valid.json');
     const duplicateProfiles = duplicateContract.target_profiles as Record<string, unknown>[];
     duplicateProfiles.push({
@@ -1322,7 +1315,7 @@ describe('current release boundary schema', () => {
 
     expectInvalid(
       validateAgentSmithReleaseContract(supportLevelOnlyContract),
-      'target profile required must be a boolean',
+      'target profile required must be false for AgentSmith pre-GA handoff candidates',
     );
 
     const supportLevelWithRequiredContract = cloneFixture('release-contract.valid.json');
@@ -1333,7 +1326,7 @@ describe('current release boundary schema', () => {
 
     expectInvalid(
       validateAgentSmithReleaseContract(supportLevelWithRequiredContract),
-      'target profile support_level is not allowed and cannot replace required',
+      'target profile support_level is not allowed; support level lives in the release boundary matrix',
     );
   });
 });

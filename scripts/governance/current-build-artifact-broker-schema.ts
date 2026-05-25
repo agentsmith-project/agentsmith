@@ -5,6 +5,8 @@ export const CURRENT_BUILD_SKIP_DECISION_VERSION = 1 as const;
 
 export const CURRENT_BUILD_ARTIFACT_TARGETS = ['app'] as const;
 export type CurrentBuildArtifactTarget = (typeof CURRENT_BUILD_ARTIFACT_TARGETS)[number];
+export const CURRENT_BUILD_PRODUCT_IMAGE_IDS = ['agentsmith_app'] as const;
+export type CurrentBuildProductImageId = (typeof CURRENT_BUILD_PRODUCT_IMAGE_IDS)[number];
 export type CurrentBuildOperationalSkipTarget = `image:${string}`;
 export type CurrentBuildSkipDecisionTarget = CurrentBuildArtifactTarget | CurrentBuildOperationalSkipTarget;
 

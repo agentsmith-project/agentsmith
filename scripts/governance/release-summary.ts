@@ -622,8 +622,8 @@ function nextActionForFailure(
   }
 
   const ownerInspection = blockedStep
-    ? `Inspect the release evidence for ${renderHumanReleaseStepLabel(blockedStep)}, fix the owning issue, then rerun npm run release:ready.`
-    : 'Inspect the release evidence, fix the owning issue, then rerun npm run release:ready.';
+    ? `Inspect the product readiness evidence for ${renderHumanReleaseStepLabel(blockedStep)}, fix the owning issue, then rerun npm run release:ready.`
+    : 'Inspect the product readiness evidence, fix the owning issue, then rerun npm run release:ready.';
 
   if (failureClass === 'infra_setup_failure') {
     return 'Fix the local release environment, then rerun npm run release:ready.';
@@ -646,7 +646,7 @@ function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
     .map((line) => (line.startsWith('- ') ? `  ${line}` : `- ${line}`));
   const releaseContractReference = renderReleaseContractReference(summary.release_contract);
   return [
-    '# AgentSmith Release Readiness Summary',
+    '# AgentSmith Product Readiness Summary',
     '',
     `- status: ${summary.status}`,
     `- blocker: ${summary.blocked_step ? renderHumanReleaseStepLabel(summary.blocked_step) : '<none>'}`,
@@ -1235,10 +1235,10 @@ export function readReleaseStatus(options: ReadReleaseStatusOptions = {}): Relea
 export function renderReleaseStatus(status: ReleaseStatusRead): string {
   if (status.kind === 'missing_latest') {
     return [
-      'AgentSmith Release Status',
+      'AgentSmith Product Readiness Status',
       '',
       'Status: missing',
-      `Latest summary: not found (${status.latestPath})`,
+      `Latest product readiness summary: not found (${status.latestPath})`,
       'Next: run npm run release:ready',
       renderShortFailureProjection({
         readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
@@ -1256,17 +1256,17 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
 
   if (status.kind === 'missing_summary') {
     return [
-      'AgentSmith Release Status',
+      'AgentSmith Product Readiness Status',
       '',
       'Status: missing',
-      `Summary: not found (${status.summaryPath})`,
+      `Product readiness summary: not found (${status.summaryPath})`,
       'Next: run npm run release:ready to produce a fresh campaign summary.',
       renderShortFailureProjection({
         readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
         verdict: 'BLOCKED',
         blocker: 'release_status_missing_summary',
         stage: 'report',
-        why: `Release summary is missing: ${status.summaryPath}`,
+        why: `Product readiness summary is missing: ${status.summaryPath}`,
         rerunCommand: 'npm run release:ready',
         evidencePath: status.summaryPath,
       }).trimEnd(),
@@ -1277,7 +1277,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
 
   if (status.kind === 'malformed') {
     return [
-      'AgentSmith Release Status',
+      'AgentSmith Product Readiness Status',
       '',
       'Status: unknown',
       `Why: ${renderHumanReleaseText(status.error)}`,
@@ -1301,7 +1301,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
   const releaseContractReference = renderReleaseContractReference(summary.release_contract);
   if (summary.status !== 'passed') {
     return [
-      'AgentSmith Release Status',
+      'AgentSmith Product Readiness Status',
       '',
       `Status: ${summary.status}`,
       renderShortFailureProjection({
@@ -1325,7 +1325,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
   }
 
   return [
-    'AgentSmith Release Status',
+    'AgentSmith Product Readiness Status',
     '',
     'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Status: ${summary.status}`,

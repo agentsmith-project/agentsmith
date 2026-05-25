@@ -552,7 +552,7 @@ describe('verify human entrypoints', () => {
     expect(recommendedBlock).toContain('1. npm run test:unified-deploy:unit');
     expect(recommendedBlock).not.toContain('npm run release:ready');
     expect(recommendedBlock).not.toContain('npm run verify:visual');
-    expect(output).toContain('Next action: Release or deploy path changed. Use npm run release:ready');
+    expect(output).toContain('Next action: Release or deploy-support path changed. Use npm run release:ready');
   });
 
   it('prints heavy evidence decisions from selector output for docs-only and env-only plans', () => {
@@ -623,7 +623,7 @@ describe('verify human entrypoints', () => {
     expect(recommendedBlock).not.toContain('npm run verify -- --goal=real --run');
     expect(recommendedBlock).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
     expect(output).toContain('Next action: Run npm run release:ready');
-    expect(output).toContain('not a release verdict until npm run release:ready runs');
+    expect(output).toContain('not a product readiness conclusion');
     expect(output).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
   });
 
@@ -742,7 +742,7 @@ describe('verify human entrypoints', () => {
       expect(stderr.join('')).toBe('');
       expect(recommendedPlanBlock(output).trim()).toBe('1. npm run release:ready');
       expect(report.recommended_commands).toEqual(['npm run release:ready']);
-      expect(output).toContain('not a release verdict until npm run release:ready runs');
+      expect(output).toContain('not a product readiness conclusion');
       expectCleanVerifyReportSurface(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1140,7 +1140,7 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('Goal: visual');
       expect(result.stdout).toContain('Mode: dry-run');
       expect(result.stdout).toContain('npm run verify -- --goal=visual --run');
-      expect(result.stdout).toContain('this is not release readiness');
+      expect(result.stdout).toContain('this is not AgentSmith product readiness / handoff input completeness');
       expect(result.stdout).toContain(`Verification catalog: ${join(root, 'verification-catalog.json')}`);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
@@ -1763,13 +1763,13 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('Goal: release-real');
       expect(result.stdout).toContain('Required levels: V3');
       expect(result.stdout).toContain('npm run release:ready');
-      expect(result.stdout).toContain('not a release verdict until npm run release:ready runs');
+      expect(result.stdout).toContain('not a product readiness conclusion');
       expect(result.stdout).not.toContain('npm run verify -- --goal=real --run');
       expect(result.stdout).not.toContain('npm run verify -- --goal=release-real --run');
       expect(result.stdout).not.toContain('npm run verify:release-real');
       expect(result.stdout).not.toContain('npm run verify:visual');
       expect(result.stdout).not.toContain('npm run verify:real');
-      expect(result.stdout).toContain('this is not release readiness and not a release verdict');
+      expect(result.stdout).toContain('this is not AgentSmith product readiness / handoff input completeness and not a product readiness conclusion');
 
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
         release_verdict: boolean;
@@ -2081,11 +2081,11 @@ describe('verify human entrypoints', () => {
       });
 
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(result.stdout).toContain('--goal=visual --run cannot cover product-readiness backend-real owner changes');
       expect(result.stdout).toContain('npm run release:ready');
       expect(result.stdout).not.toContain('npm run verify -- --goal=real --run');
       expectCleanVerifyHumanOutput(result.stdout);
-      expect(result.stderr).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(result.stderr).toContain('--goal=visual --run cannot cover product-readiness backend-real owner changes');
       expect(result.stderr).toContain('npm run release:ready');
       expect(result.stderr).not.toContain('npm run verify -- --goal=real --run');
       expectCleanVerifyHumanOutput(result.stderr);
@@ -2102,7 +2102,7 @@ describe('verify human entrypoints', () => {
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
       expect(report.recommended_commands).toContain('npm run release:ready');
       expect(report.release_verdict).toBe(false);
-      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot cover release-owned backend-real changes');
+      expect(report.risk_summary.warnings.join('\n')).toContain('--goal=visual --run cannot cover product-readiness backend-real owner changes');
       expect(report.risk_summary.warnings.join('\n')).toContain('npm run release:ready');
       expectCleanVerifyReportSurface(root);
     } finally {
@@ -3353,7 +3353,7 @@ describe('verify human entrypoints', () => {
       expect(markdown).toContain(
         '- V4: owner=npm run release:ready; status=manual_review_needed; path_template=artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json; additional_path_templates=artifacts/release-runs/<campaign-run-id>',
       );
-      expect(markdown).toContain('This report is not release readiness and not a release verdict.');
+      expect(markdown).toContain('This report is not AgentSmith product readiness / handoff input completeness and not a product readiness conclusion.');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

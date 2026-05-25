@@ -105,7 +105,7 @@ function campaignStep(
 export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificationCampaignDefinition[] = [
   {
     id: 'release-full',
-    description: 'release-grade automated verification campaign with one terminal aggregate verdict',
+    description: 'AgentSmith product-side readiness campaign for local completeness, contracts, and handoff inputs',
     runRootPattern: 'artifacts/release-runs/<campaign-run-id>',
     steps: [
       campaignStep({

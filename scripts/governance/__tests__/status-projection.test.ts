@@ -282,7 +282,7 @@ function expectNoPublicAdapterTerm(value: unknown): void {
 describe('current status projection', () => {
   it('renders clean command failures with the canonical blocker-only shape', () => {
     const rendered = renderShortFailureProjection({
-      title: 'AgentSmith Release Readiness',
+      title: 'AgentSmith Product Readiness',
       verdict: 'FAILED',
       blocker: 'environment_conflict',
       stage: 'preflight',
@@ -301,7 +301,7 @@ describe('current status projection', () => {
       'Evidence: artifacts/release-runs/run-001/preflight/evidence.json',
       '',
     ].join('\n'));
-    expect(rendered).not.toContain('AgentSmith Release Readiness');
+    expect(rendered).not.toContain('AgentSmith Product Readiness');
     expect(rendered).not.toContain('Verdict:');
   });
 
@@ -379,13 +379,13 @@ describe('current status projection', () => {
       });
       const rendered = renderStatusProjectionSummary(projection);
 
-      expect(rendered).toContain('AgentSmith Release Status');
+      expect(rendered).toContain('AgentSmith Product Readiness Status');
       expect(rendered).toContain('Status: failed');
       expect(rendered).toContain('Blocker: Backend-real check');
       expect(rendered).toContain('Why: Backend-real check did not pass.');
       expect(rendered).toContain(`Evidence: ${campaignRoot}`);
       expect(rendered).toContain('Rerun: npm run release:ready');
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(rendered).toContain('- dependencies: passed');
       expect(rendered).toContain('- images: passed');
       expect(rendered).toContain('- rollout: passed');
@@ -435,7 +435,7 @@ describe('current status projection', () => {
       expect(rendered).toContain('Total duration: 1h 30m 32s');
       expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Transition-only deploy diagnostic product flows 2m 45s');
       expect(rendered).not.toContain('Slowest stages: gate-release');
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(rendered).toContain('- dependencies: passed');
       expect(rendered).toContain('- images: passed');
       expect(rendered).toContain('- rollout: passed');
@@ -467,7 +467,7 @@ describe('current status projection', () => {
       });
       const rendered = renderStatusProjectionSummary(projection);
 
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(rendered).toContain('- product flows: passed');
       expect(rendered).not.toContain('- product flows: failed');
     });

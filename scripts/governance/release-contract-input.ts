@@ -1,4 +1,5 @@
 import {
+  CURRENT_BUILD_PRODUCT_IMAGE_IDS,
   normalizeReleaseAliasTag,
   validateBuildManifestAggregate,
   type CurrentBuildManifestTarget,
@@ -13,9 +14,10 @@ import type {
   AgentSmithReleaseContractGeneratorInput,
 } from './release-contract';
 
-const MANAGED_RUNNER_PRODUCT_IMAGE_ID = 'managed_runner';
-const PRODUCT_IMAGE_IDS = ['web', 'api', 'product_schema_bootstrap'] as const;
+const AGENTSMITH_APP_PRODUCT_IMAGE_ID = CURRENT_BUILD_PRODUCT_IMAGE_IDS[0];
 const FORBIDDEN_ASSEMBLY_INPUT_FIELDS = [
+  'product_images',
+  'managed_runner_image',
   'deploy_template_digest',
   'deploy_image_inventory',
   'artifact_provenance',
@@ -43,7 +45,6 @@ export interface AgentSmithReleaseContractGeneratorInputAssemblyInput {
   git_sha: string;
   sourceGitSha: string;
   buildManifestAggregate: unknown;
-  managed_runner_image: CurrentReleaseImage;
   deployTemplatePackage: CurrentDeployTemplatePackage;
   openapi_subject: unknown;
   openapi_digest?: string;
@@ -74,7 +75,6 @@ export function assembleReleaseContractGeneratorInput(
     expectedReleaseId: releaseId,
   });
   const appProductImages = buildProductImagesFromAppTarget(appTarget);
-  const managedRunnerImage = requireManagedRunnerImage(input.managed_runner_image);
 
   const deployTemplatePackage = input.deployTemplatePackage;
   const deployTemplateDigest = requireNonEmptyString(
@@ -94,7 +94,7 @@ export function assembleReleaseContractGeneratorInput(
   return {
     release_id: releaseId,
     git_sha: gitSha,
-    product_images: [...appProductImages, managedRunnerImage],
+    product_images: appProductImages,
     adopted_provider_images: input.adopted_provider_images,
     release_kit_prerequisite_images: input.release_kit_prerequisite_images,
     deploy_template_digest: deployTemplateDigest,
@@ -115,17 +115,6 @@ export function buildProductImagesFromBuildManifest(
   options: BuildProductImagesFromBuildManifestOptions,
 ): CurrentReleaseImage[] {
   return buildProductImagesFromAppTarget(resolveBuildManifestAppTarget(buildManifestAggregate, options));
-}
-
-function requireManagedRunnerImage(value: unknown): CurrentReleaseImage {
-  if (!isRecord(value)) {
-    throw new Error('managed_runner_image must be an object.');
-  }
-  if (value.id !== MANAGED_RUNNER_PRODUCT_IMAGE_ID) {
-    throw new Error('managed_runner_image.id must be "managed_runner".');
-  }
-
-  return value as CurrentReleaseImage;
 }
 
 function resolveBuildManifestAppTarget(
@@ -173,11 +162,11 @@ function resolveBuildManifestAppTarget(
 function buildProductImagesFromAppTarget(target: CurrentBuildManifestTarget): CurrentReleaseImage[] {
   const image = `${target.release_alias_ref}@${target.image_digest}`;
 
-  return PRODUCT_IMAGE_IDS.map((id) => ({
-    id,
+  return [{
+    id: AGENTSMITH_APP_PRODUCT_IMAGE_ID,
     image,
     digest: target.image_digest,
-  }));
+  }];
 }
 
 function assertAssemblyInputShape(
@@ -207,6 +196,10 @@ function assertNoGeneratorOwnedInputFields(
     }
 
     switch (field) {
+      case 'product_images':
+        throw new Error('product_images must be assembled from buildManifestAggregate.');
+      case 'managed_runner_image':
+        throw new Error('managed_runner_image is not an AgentSmith product image input.');
       case 'deploy_template_digest':
         throw new Error('deploy_template_digest must be assembled from deployTemplatePackage.manifest_sha256.');
       case 'deploy_image_inventory':

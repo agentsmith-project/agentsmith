@@ -282,7 +282,7 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
         ]
       : []),
     `Final verdict: ${humanizeVerdict(plan.finalVerdict)}`,
-    'Note: this is not release readiness and not a release verdict.',
+    'Note: this is not AgentSmith product readiness / handoff input completeness and not a product readiness conclusion.',
     '',
   ].join('\n');
 }
@@ -314,7 +314,7 @@ function renderVerifyStatusProjection(projection: CurrentStatusProjection): stri
     `Release decision produced: ${String(projection.release_decision_produced)}`,
     `Commands executed: ${String(projection.commands_executed)}`,
     `Authority aggregate: ${renderProjectionValue(projection.authority_paths.aggregate)}`,
-    'Note: this status projection is read-only and does not produce a release verdict.',
+    'Note: this status projection is read-only and does not produce a product readiness conclusion.',
     '',
   ].join('\n');
 }

@@ -32,7 +32,6 @@ import {
   sha256Digest,
   validateDeployTemplatePackage,
   type CurrentDeployTemplatePackage,
-  type CurrentReleaseImage,
 } from '../current-release-boundary-schema';
 import {
   DEPLOY_TEMPLATE_PACKAGE_ARCHIVE_NAME,
@@ -54,7 +53,6 @@ const VALID_REMOTE_ATTESTATION = {
 } as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
 const LOCKED_DIGEST = `sha256:${'c'.repeat(64)}`;
-const MANAGED_RUNNER_DIGEST = `sha256:${'b'.repeat(64)}`;
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
   version: 'test',
@@ -275,14 +273,6 @@ function buildManifestAggregate() {
   });
 }
 
-function buildManagedRunnerImage(): CurrentReleaseImage {
-  return {
-    id: 'managed_runner',
-    image: `ghcr.io/agentsmith-project/agentsmith-managed-runner:${RELEASE_ID}@${MANAGED_RUNNER_DIGEST}`,
-    digest: MANAGED_RUNNER_DIGEST,
-  };
-}
-
 function buildReleaseContractAssemblyInput(
   deployTemplatePackage: CurrentDeployTemplatePackage,
 ): AgentSmithReleaseContractGeneratorInputAssemblyInput {
@@ -308,7 +298,6 @@ function buildReleaseContractAssemblyInput(
     git_sha: GIT_SHA,
     sourceGitSha: GIT_SHA,
     buildManifestAggregate: buildManifestAggregate(),
-    managed_runner_image: buildManagedRunnerImage(),
     deployTemplatePackage,
     openapi_subject: openapiSubject,
     openapi_digest: sha256Digest(canonicalReleaseBoundaryJson(openapiSubject)),
@@ -333,7 +322,7 @@ function buildReleaseContractAssemblyInput(
         target_cluster: 'existing_kubernetes',
         substrate_source: 'external_declared',
         distribution: 'online',
-        required: true,
+        required: false,
         prerequisites: {
           namespace: 'agentsmith',
           rbac: 'namespace_admin',

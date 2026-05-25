@@ -205,10 +205,10 @@ function replaceInternalReleaseTerms(value: string): string {
     .replace(/\bDeploy check \/ rollout\b/gi, 'Transition-only deploy diagnostic / rollout')
     .replace(/\bDeploy check \/ product flows\b/gi, 'Transition-only deploy diagnostic / product flows')
     .replace(/\bDeploy product flows\b/gi, 'Transition-only deploy diagnostic product flows')
-    .replace(/\brelease-full campaign evidence passed aggregate verification\./gi, 'Release checks passed.')
+    .replace(/\brelease-full campaign evidence passed aggregate verification\./gi, 'Product readiness checks passed.')
     .replace(/\bCampaign step\b/g, 'Release check')
     .replace(/\bcampaign step\b/g, 'release check')
-    .replace(/\bcampaign evidence\b/g, 'release evidence')
+    .replace(/\bcampaign evidence\b/g, 'product readiness evidence')
     .replace(/\bcampaign-scoped\b/g, 'release-run')
     .replace(/\bcampaign\b/g, 'release run');
 }
@@ -311,7 +311,7 @@ export function renderDeployCheckLines(
     return [];
   }
   return [
-    'Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):',
+    'Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):',
     ...snapshot.items.map((item) => (
       `- ${item.label}: ${renderDeployStatus(item.status)} (evidence: ${redactProjectionPath(item.evidence_path)})`
     )),
@@ -351,7 +351,7 @@ export function renderShortFailureProjection(input: ShortFailureProjectionInput)
     lines.push(`Read-only: ${renderPublicFailureText(input.readOnlyMessage)}`);
   }
   if (input.diagnosticOnly) {
-    lines.push('Diagnostic only: not a release verdict.');
+    lines.push('Diagnostic only: not a product readiness conclusion.');
   }
   lines.push(`Blocker: ${redactProjectionText(input.blocker)}`);
   lines.push(`Stage: ${redactProjectionText(input.stage)}`);
@@ -396,7 +396,7 @@ function readReleaseAggregateResult(campaignRoot?: string | null): AggregateResu
       ok: false,
       path: '',
       reasonCode: 'aggregate_result_not_applicable',
-      summary: 'No release campaign root was provided.',
+      summary: 'No product readiness campaign root was provided.',
     };
   }
 
@@ -1377,7 +1377,7 @@ export function renderStatusProjectionSummary(projection: CurrentStatusProjectio
   const blocker = renderProjectionBlocker(projection, { humanSummary: true });
   const evidenceRoot = releaseEvidenceRootForProjection(projection) ?? primaryEvidencePath(projection);
   return [
-    'AgentSmith Release Status',
+    'AgentSmith Product Readiness Status',
     '',
     'Read-only: release:status does not rerun checks or revalidate evidence.',
     `Status: ${projection.presentation_status}`,

@@ -281,11 +281,11 @@ describe('clean status entrypoints', () => {
         encoding: 'utf8',
       });
 
-      expect(output).toContain('AgentSmith Release Status');
+      expect(output).toContain('AgentSmith Product Readiness Status');
       expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Status: passed');
       expect(output).toContain(`Evidence: ${campaignRoot}`);
-      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith release verdict):');
+      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
       expect(output).toContain('- dependencies: not available');
       expect(output).toContain('- images: not available');
       expect(output).toContain('- rollout: not available');
@@ -602,7 +602,7 @@ describe('clean status entrypoints', () => {
 
     expect(exitCode).toBe(0);
     expect(stderr.join('')).toBe('');
-    expect(output).toContain('Diagnostic only: not a release verdict.');
+    expect(output).toContain('Diagnostic only: not a product readiness conclusion.');
     expect(output).toContain('AgentSmith Status Projection');
     expect(output).toContain('Blocker: environment_conflict');
     expect(output).toContain('Why: port 20000 is owned by node scripts/local-manual/start-api.js');

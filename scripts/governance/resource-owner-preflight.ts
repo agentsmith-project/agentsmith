@@ -624,7 +624,7 @@ export function defaultResourceOwnerPreflightEvidencePath(input: {
 
 function titleForTarget(target: ResourceOwnerPreflightTarget): string {
   if (target === 'release-ready') {
-    return 'AgentSmith Release Readiness';
+    return 'AgentSmith Product Readiness';
   }
   if (target === 'verify-real') {
     return 'AgentSmith Verification';
@@ -703,7 +703,7 @@ export function runResourceOwnerPreflightCli(argv: readonly string[] = process.a
       return options.target === 'local-real-status' ? 0 : 1;
     }
     if (options.target === 'local-real-status') {
-      process.stdout.write('Diagnostic only: not a release verdict.\nResource owner preflight: fixed-local-ports clear\n');
+      process.stdout.write('Diagnostic only: not a product readiness conclusion.\nResource owner preflight: fixed-local-ports clear\n');
     } else {
       process.stdout.write('[resource-owner-preflight] fixed-local-ports clear\n');
     }

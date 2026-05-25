@@ -392,7 +392,7 @@ requireMatch(governanceModel, /artifacts\/backend-real\/runs\/<run-id>\/ux-trace
 requireMatch(governanceModel, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current engineering governance model must identify the backend-real ux trace bundle root');
 requireMatch(testingIndex, /diagnostic-catalog-v1/, 'testing README must index the diagnostic catalog');
 requireMatch(testingIndex, /entry path/i, 'testing README must explain where the entry path selector lives');
-requireMatch(diagnosticCatalog, /diagnostic commands are not final verdicts/i, 'diagnostic catalog must separate diagnostics from verdicts');
+requireMatch(diagnosticCatalog, /diagnostic commands are not final conclusions/i, 'diagnostic catalog must separate diagnostics from conclusions');
 requireMatch(diagnosticCatalog, /lane:mock/, 'diagnostic catalog must include lane:mock as an internal adapter reference');
 forbidMatch(diagnosticCatalog, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'diagnostic catalog must not present internal gate/lane/backend-real adapters as copyable human defaults');
 forbidMatch(diagnosticCatalog, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'diagnostic catalog must not present gate:release:full as a copyable human default');
@@ -403,17 +403,17 @@ requireMatch(storyTruthGuide, /regenerate/i, 'story truth guide must explain reg
 requireMatch(storyTruthGuide, /re-run/i, 'story truth guide must explain rerunning the affected story evidence owner');
 requireMatch(userGuidesIndex, /`ui_only`/, 'user guides index must point UI-only readers back to the right entry path');
 requireMatch(userGuidesIndex, /`local_manual`/, 'user guides index must point local-manual readers back to the right entry path');
-requireMatch(userGuidesIndex, /`release_grade`/, 'user guides index must point release-grade readers back to the right entry path');
+requireMatch(userGuidesIndex, /`release_grade`/, 'user guides index must point product readiness readers back to the right entry path');
 requireMatch(releaseChecklist, /preflight/i, 'release checklist must label preflight steps');
 requireMatch(releaseChecklist, /evidence owner/i, 'release checklist must label evidence-owner steps');
-requireMatch(releaseChecklist, /terminal verdict/i, 'release checklist must label the terminal verdict step');
+requireMatch(releaseChecklist, /aggregate readiness check/i, 'release checklist must label the aggregate readiness check step');
 requireMatch(releaseChecklist, /CI green/i, 'release checklist must explain what CI green means');
-requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define release:ready as the human-facing full release entrypoint');
-requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define release:status as the read-only release status entrypoint');
+requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define release:ready as the human-facing product readiness / handoff entrypoint');
+requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define release:status as the read-only product readiness status entrypoint');
 requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics');
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics');
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow deploy diagnostics');
-forbidMatch(releaseChecklist, /current AgentSmith release readiness is transitional product readiness and local-kind evidence/i, 'release checklist must not make local-kind evidence part of current AgentSmith release readiness');
+forbidMatch(releaseChecklist, /local-kind evidence[\s\S]{0,80}(?:part of|belongs to|属于)[\s\S]{0,80}AgentSmith product readiness/i, 'release checklist must not make local-kind evidence part of current AgentSmith product readiness');
 requireMatch(verificationCampaigns, /transition-only focused diagnostics[\s\S]{0,80}过渡期专项诊断/i, 'verification campaign guide must describe unified deploy producers as transition-only focused diagnostics / 过渡期专项诊断');
 forbidMatch(verificationCampaigns, /legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/i, 'verification campaign guide must not describe current unified deploy diagnostics as legacy');
 forbidMatch(verificationCampaigns, /由 release campaign 编排/i, 'verification campaign guide must not say release campaign orchestrates unified deploy producers');
@@ -589,13 +589,13 @@ requireMatch(
 );
 for (const movedCheck of RELEASE_PRECHECK_MOVED_CHECK_EVIDENCE_OWNERSHIP) {
   if (movedCheck.formalOwners.length === 0) {
-    failures.push(`release-local-precheck moved-check mapping ${movedCheck.id} must have formal release evidence owners`);
+    failures.push(`release-local-precheck moved-check mapping ${movedCheck.id} must have formal product readiness evidence owners`);
   }
 }
 forbidMatch(
   releaseLocalPrecheck,
   /run_clean npx playwright test|playwright test|e2e\/integration-(?:system-admin-entry|workspace-public-login|workspace-entry|workspace-publish-usable|workspace-settings-directory)\.spec\.ts/,
-  'release-local-precheck must not run Playwright product scenarios; release evidence ownership is mapped separately',
+  'release-local-precheck must not run Playwright product scenarios; product readiness evidence ownership is mapped separately',
 );
 forbidMatch(
   releaseLocalPrecheck,

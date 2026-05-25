@@ -162,8 +162,12 @@ export function checkReleaseBoundaryContract(
   if (CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION !== 'agentsmith.current-release-boundary/v1') {
     addFailure(failures, 'scripts/governance/current-release-boundary-schema.ts', 'unexpected release boundary schema version.');
   }
-  if (CURRENT_DEPLOYMENT_MODE_MATRIX.some((entry) => entry.target_cluster === 'kind_rehearsal' && entry.required_target)) {
-    addFailure(failures, 'scripts/governance/current-release-boundary-schema.ts', 'kind_rehearsal must not be a required target.');
+  if (CURRENT_DEPLOYMENT_MODE_MATRIX.some((entry) => entry.required_target)) {
+    addFailure(
+      failures,
+      'scripts/governance/current-release-boundary-schema.ts',
+      'AgentSmith pre-GA deployment target profiles must not be required targets.',
+    );
   }
 
   const truthMatrix = validateTruthMatrix(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);

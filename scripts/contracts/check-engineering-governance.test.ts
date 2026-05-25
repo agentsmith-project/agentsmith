@@ -50,7 +50,7 @@ describe('check-engineering-governance contract', () => {
         'npm run test:unified-deploy:local-kind',
         '```',
         '',
-        'Owner diagnostics return to `npm run release:ready` for release sign-off.',
+        'Owner diagnostics return to `npm run release:ready` for product-side readiness / handoff sign-off.',
       ].join('\n'),
     });
 

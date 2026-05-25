@@ -179,15 +179,19 @@ function internalReferenceContext(content: string, lineNumber: number): string {
 }
 
 function readTrackedWorkflowFiles(): string[] {
-  const stdout = execSync('git ls-files .github/workflows/*.yml', {
+  const trackedStdout = execSync('git ls-files .github/workflows/*.yml', {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+  const untrackedStdout = execSync('git ls-files --others --exclude-standard .github/workflows/*.yml', {
     cwd: rootDir,
     encoding: 'utf8',
   });
 
-  return stdout
+  return [...new Set(`${trackedStdout}\n${untrackedStdout}`
     .split('\n')
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter(Boolean))]
     .sort();
 }
 
@@ -593,7 +597,7 @@ describe('current workflow governance', () => {
     }
   });
 
-  it('models release-grade entry through the campaign launcher instead of the aggregate-only gate', () => {
+  it('models product-side readiness entry through the campaign launcher instead of the aggregate-only gate', () => {
     const releaseEntry = CURRENT_WORKFLOW_ENTRY_PATHS.find((entry) => entry.id === 'release_grade');
     const commands = listCurrentWorkflowCommands();
     const releaseReady = commands.find((command) => command.npmScript === 'release:ready');
@@ -630,6 +634,8 @@ describe('current workflow governance', () => {
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
 
     expect(releaseReady?.workflowRole).toBe('release_operation');
+    expect(releaseReady?.description).toMatch(/AgentSmith product readiness/i);
+    expect(releaseReady?.description).not.toMatch(/deployment|package|operator|verdict/i);
     expect(releaseReady?.recommended).toBe(true);
     expect(releaseReady?.gateId).toBeUndefined();
     expect(releaseStatus?.workflowRole).toBe('release_operation');
@@ -654,8 +660,11 @@ describe('current workflow governance', () => {
     expect(releaseCampaign?.recommended).not.toBe(true);
     expect(fullReleaseGate?.workflowRole).toBe('terminal_gate_verdict');
     expect(fullReleaseGate?.command).toBe('RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full');
+    expect(fullReleaseGate?.description).toMatch(/AgentSmith product readiness campaign/i);
+    expect(fullReleaseGate?.description).not.toMatch(/terminal release verdict|deployment|package|operator/i);
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
+    expect(releaseGate?.description).toMatch(/backend-real product readiness/i);
     expect(unifiedDeployLanes.every((lane) => lane?.workflowRole === 'diagnostic_lane')).toBe(true);
     expect(unifiedDeployLanes.every((lane) => lane?.description.includes('transition-only unified deploy'))).toBe(true);
     expect(unifiedDeployLanes.every((lane) => lane?.description.includes('focused diagnostic'))).toBe(true);
@@ -1063,6 +1072,7 @@ describe('current workflow governance', () => {
     expect(CURRENT_CI_WORKFLOW_MANIFEST.map((workflow) => workflow.path).sort()).toEqual([
       '.github/workflows/contracts-check.yml',
       '.github/workflows/engineering-gate.yml',
+      '.github/workflows/image-publish.yml',
       '.github/workflows/integration-e2e.yml',
       '.github/workflows/quality-gates.yml',
       '.github/workflows/release-contract-artifact.yml',
@@ -1238,6 +1248,46 @@ describe('current workflow governance', () => {
     expect(workflowSource).not.toMatch(/deploy readiness|release readiness/i);
   });
 
+  it('models GHCR image publishing as a product image handoff producer', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === '.github/workflows/image-publish.yml',
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === 'publish-images');
+    const parsedWorkflow = parseWorkflow('.github/workflows/image-publish.yml');
+    const workflowSource = readRepoFile('.github/workflows/image-publish.yml');
+    const runCommands = collectJobRunCommands(parsedWorkflow, 'publish-images');
+
+    expect(workflow?.workflowName).toBe('Image Publish');
+    expect(workflow?.role).toBe('release_artifact_producer');
+    expect(workflow?.triggers).toEqual(['push', 'workflow_dispatch']);
+    expect(workflow?.releaseBlocking).toBe(false);
+    expect(job?.role).toBe('artifact_producer');
+    expect(job?.requiresSecrets).toBe(false);
+    expect(job?.evidenceRequired).toBe(true);
+    expect(job?.evidenceFamilies).toEqual(['image_publish_handoff']);
+    expect(job?.artifactPaths).toEqual([
+      'artifacts/image-publish/VERSION',
+      'artifacts/image-publish/build-artifact-broker-plan.json',
+      'artifacts/image-publish/build-manifest.json',
+      'artifacts/image-publish/image-publish-summary.json',
+      'artifacts/image-publish/release-contract-input.json',
+      'artifacts/image-publish/deploy-template-package.json',
+      'artifacts/image-publish/agentsmith-deploy-template-package.tgz',
+    ]);
+    expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read', packages: 'write' });
+    expect(runCommands).toContain('docker push "${APP_RELEASE_REF}"');
+    expect(runCommands).toContain('BUILD_ARTIFACT_BROKER_IMAGE_DIGEST_COMMAND');
+    expect(runCommands).toContain('npm run release:deploy-template-package');
+    expect(runCommands).toContain('release-contract-input.json');
+    expect(runCommands).toContain("id: 'agentsmith_app'");
+    expect(workflowSource).toContain('ghcr.io/${owner_lc}/agentsmith-app');
+    expect(workflowSource).toContain('agentsmith-release-contract-input');
+    expect(workflowSource).toContain('No separate backend/API image digest is fabricated');
+    expect(workflowSource).not.toContain('agentsmith-api:${');
+    expect(runCommands).not.toContain('npm run release:ready');
+    expect(runCommands).not.toContain('npm run release:contract:ci-artifact');
+  });
+
   it('publishes run-scoped mock-lane evidence from CI jobs that execute mock or visual lanes', () => {
     const jobs = listCurrentCIWorkflowJobs();
     const mockEvidenceOwners = jobs.filter((job) => job.evidenceFamilies.includes('mock_lane_run'));
@@ -1386,11 +1436,11 @@ describe('current workflow governance', () => {
     }
   });
 
-  it('keeps standalone release evidence roots diagnostic unless campaign-linked', () => {
+  it('keeps standalone product readiness evidence roots diagnostic unless campaign-linked', () => {
     const governanceModel = readRepoFile('docs/current-engineering-governance-model.md');
 
     expect(governanceModel).toContain(
-      'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is release authority.',
+      'standalone `artifacts/backend-real-visual/<run-id>/ux-traces` is focused owner diagnostic evidence; only campaign-linked `<campaign-root>/gate-release/backend-real-visual/ux-traces` is product readiness authority.',
     );
     expect(governanceModel).toContain(
       'standalone `artifacts/unified-deploy/` is deploy diagnostic evidence. Unified deploy lanes remain transition-only focused diagnostics / 过渡期专项诊断 and are not required AgentSmith product-gate evidence.',

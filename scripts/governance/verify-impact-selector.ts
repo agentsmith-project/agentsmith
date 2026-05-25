@@ -398,7 +398,7 @@ export function verificationRunContractFailure(input: {
   }
 
   if (blockedCommands.includes(RELEASE_REAL_VERIFY_COMMAND)) {
-    return `--goal=${publicGoal} --run cannot cover release-owned backend-real changes; use ${PUBLIC_RELEASE_READY_COMMAND}. This verify report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
+    return `--goal=${publicGoal} --run cannot cover product-readiness backend-real owner changes; use ${PUBLIC_RELEASE_READY_COMMAND}. This verify report is not a product readiness conclusion; ${PUBLIC_RELEASE_READY_COMMAND} refreshes AgentSmith product readiness / handoff inputs.`;
   }
 
   const blockedGovernedCommands = [...new Set(blockedCommands.map(publicGovernedVerifyCommandForInternalAlias))];
@@ -502,6 +502,7 @@ function isUnifiedDeployPath(filePath: string): boolean {
 
 function isReleaseBoundaryGuardPath(filePath: string): boolean {
   return [
+    /^\.github\/workflows\/image-publish\.yml$/,
     /^\.github\/workflows\/release-contract-artifact\.yml$/,
     /^docs\/engineering\/release-kit-and-runner-repo-split-kiss-plan-v1\.md$/,
     /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
@@ -516,12 +517,15 @@ function isReleaseBoundaryGuardPath(filePath: string): boolean {
   ].some((pattern) => pattern.test(filePath));
 }
 
-function isGovernanceToolingPath(filePath: string): boolean {
+function isGovernanceToolingPath(filePath: string, baseRefs: readonly string[] = []): boolean {
   if (isReleaseDeployPath(filePath)) {
     return false;
   }
   if (isReleaseBoundaryGuardPath(filePath)) {
     return false;
+  }
+  if (isSafeCurrentWorkflowGeneratedMakefileChange(filePath, baseRefs)) {
+    return true;
   }
   return [
     /^docs\/contracts\/current-gate-manifest-contract\.md$/,
@@ -598,7 +602,7 @@ function readGitText(args: readonly string[]): string | null {
   return result.stdout;
 }
 
-function packageJsonHasDiffAgainstHead(filePath = 'package.json'): boolean {
+function fileHasDiffAgainstHead(filePath: string): boolean {
   const diff = readGitText(['diff', '--name-only', 'HEAD', '--', filePath]);
   if (diff === null) {
     return false;
@@ -609,7 +613,7 @@ function packageJsonHasDiffAgainstHead(filePath = 'package.json'): boolean {
     .includes(filePath);
 }
 
-function packageJsonHasUnstagedDiff(filePath = 'package.json'): boolean {
+function fileHasUnstagedDiff(filePath: string): boolean {
   const diff = readGitText(['diff', '--name-only', '--', filePath]);
   if (diff === null) {
     return false;
@@ -620,7 +624,7 @@ function packageJsonHasUnstagedDiff(filePath = 'package.json'): boolean {
     .includes(filePath);
 }
 
-function packageJsonHasCachedDiff(filePath = 'package.json'): boolean {
+function fileHasCachedDiff(filePath: string): boolean {
   const diff = readGitText(['diff', '--name-only', '--cached', '--', filePath]);
   if (diff === null) {
     return false;
@@ -629,6 +633,18 @@ function packageJsonHasCachedDiff(filePath = 'package.json'): boolean {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .includes(filePath);
+}
+
+function packageJsonHasDiffAgainstHead(filePath = 'package.json'): boolean {
+  return fileHasDiffAgainstHead(filePath);
+}
+
+function packageJsonHasUnstagedDiff(filePath = 'package.json'): boolean {
+  return fileHasUnstagedDiff(filePath);
+}
+
+function packageJsonHasCachedDiff(filePath = 'package.json'): boolean {
+  return fileHasCachedDiff(filePath);
 }
 
 function readPackageJsonFromHead(filePath = 'package.json'): JsonObject | null {
@@ -654,7 +670,27 @@ function readPackageJsonFromWorktree(filePath = 'package.json'): JsonObject | nu
   }
 }
 
-function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string, filePath = 'package.json'): boolean {
+function readTextFromGitRef(ref: string, filePath: string): string | null {
+  return readGitText(['show', `${ref}:${filePath}`]);
+}
+
+function readTextFromHead(filePath: string): string | null {
+  return readTextFromGitRef('HEAD', filePath);
+}
+
+function readTextFromIndex(filePath: string): string | null {
+  return readGitText(['show', `:${filePath}`]);
+}
+
+function readTextFromWorktree(filePath: string): string | null {
+  try {
+    return readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function hasFileDiffBetweenRefs(baseRef: string, currentRef: string, filePath: string): boolean {
   const diff = readGitText(['diff', '--name-only', `${baseRef}..${currentRef}`, '--', filePath]);
   if (diff === null) {
     return false;
@@ -663,6 +699,10 @@ function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string, file
     .split(/\r?\n/)
     .map((line) => line.trim())
     .includes(filePath);
+}
+
+function hasPackageJsonDiffBetweenRefs(baseRef: string, currentRef: string, filePath = 'package.json'): boolean {
+  return hasFileDiffBetweenRefs(baseRef, currentRef, filePath);
 }
 
 function packageJsonBaseRefCandidates(
@@ -737,6 +777,66 @@ function packageJsonComparisonFromWorktree(filePath = 'package.json'): PackageJs
   };
 }
 
+interface TextFileComparison {
+  baseText: string;
+  currentText: string;
+}
+
+function textFileComparisonFromBranchBase(
+  baseRefs: readonly string[],
+  filePath: string,
+): TextFileComparison | null {
+  for (const baseRef of packageJsonBaseRefCandidates(baseRefs)) {
+    const verifyBaseResult = readGitText(['rev-parse', '--verify', baseRef]);
+    if (verifyBaseResult === null) {
+      continue;
+    }
+
+    const mergeBase = readGitText(['merge-base', 'HEAD', baseRef])?.trim().split(/\r?\n/)[0]?.trim();
+    if (!mergeBase || !hasFileDiffBetweenRefs(mergeBase, 'HEAD', filePath)) {
+      continue;
+    }
+
+    const baseText = readTextFromGitRef(mergeBase, filePath);
+    const currentText = readTextFromHead(filePath);
+    if (baseText !== null && currentText !== null) {
+      return { baseText, currentText };
+    }
+  }
+
+  return null;
+}
+
+function textFileComparisonFromWorktree(filePath: string): TextFileComparison | null {
+  if (!fileHasDiffAgainstHead(filePath)) {
+    return null;
+  }
+
+  const hasCachedDiff = fileHasCachedDiff(filePath);
+  const hasUnstagedDiff = fileHasUnstagedDiff(filePath);
+  if (hasCachedDiff && hasUnstagedDiff) {
+    return null;
+  }
+
+  const baseText = readTextFromHead(filePath);
+  const currentText = hasCachedDiff ? readTextFromIndex(filePath) : readTextFromWorktree(filePath);
+  if (baseText === null || currentText === null) {
+    return null;
+  }
+
+  return { baseText, currentText };
+}
+
+function textFileComparisonForChangedFile(
+  baseRefs: readonly string[],
+  filePath: string,
+): TextFileComparison | null {
+  if (fileHasDiffAgainstHead(filePath)) {
+    return textFileComparisonFromWorktree(filePath);
+  }
+  return textFileComparisonFromBranchBase(baseRefs, filePath);
+}
+
 function packageJsonComparisonForChangedFile(
   baseRefs: readonly string[],
   filePath = 'package.json',
@@ -745,6 +845,57 @@ function packageJsonComparisonForChangedFile(
     return packageJsonComparisonFromWorktree(filePath);
   }
   return packageJsonComparisonFromBranchBase(baseRefs, filePath);
+}
+
+const MAKEFILE_CURRENT_WORKFLOW_GENERATED_BLOCKS: readonly Array<readonly [string, string]> = [
+  ['# current-workflow:help-extended:start', '# current-workflow:help-extended:end'],
+  ['# current-workflow:quick-help:start', '# current-workflow:quick-help:end'],
+];
+
+function stripMarkedBlock(content: string, startMarker: string, endMarker: string): string | null {
+  const startIndex = content.indexOf(startMarker);
+  if (startIndex === -1) {
+    return null;
+  }
+  const endIndex = content.indexOf(endMarker, startIndex + startMarker.length);
+  if (endIndex === -1) {
+    return null;
+  }
+  return [
+    content.slice(0, startIndex),
+    startMarker,
+    '\n',
+    endMarker,
+    content.slice(endIndex + endMarker.length),
+  ].join('');
+}
+
+function stripCurrentWorkflowGeneratedMakefileBlocks(content: string): string | null {
+  let stripped = content;
+  for (const [startMarker, endMarker] of MAKEFILE_CURRENT_WORKFLOW_GENERATED_BLOCKS) {
+    const next = stripMarkedBlock(stripped, startMarker, endMarker);
+    if (next === null) {
+      return null;
+    }
+    stripped = next;
+  }
+  return stripped;
+}
+
+function isSafeCurrentWorkflowGeneratedMakefileChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== 'Makefile') {
+    return false;
+  }
+  const comparison = textFileComparisonForChangedFile(baseRefs, filePath);
+  if (!comparison || comparison.baseText === comparison.currentText) {
+    return false;
+  }
+
+  const strippedBase = stripCurrentWorkflowGeneratedMakefileBlocks(comparison.baseText);
+  const strippedCurrent = stripCurrentWorkflowGeneratedMakefileBlocks(comparison.currentText);
+  return strippedBase !== null
+    && strippedCurrent !== null
+    && strippedBase === strippedCurrent;
 }
 
 const RUNNER_CONTRACT_PACKAGE_DEPENDENCY_NAMES = new Set([
@@ -1597,14 +1748,14 @@ function riskReasonForCard(
 
   if (riskLevel === 'R0') {
     if (requiredLevels.includes('V4')) {
-      return `${prefix}: V4 release/deploy story card requires operator review; verify report is not release readiness. ${policyReason}`;
+      return `${prefix}: V4 release/deploy story card requires operator review; verify report is not product readiness / handoff input completeness. ${policyReason}`;
     }
     if (
       releaseRealDiagnosticSelected(context)
       && requiredLevels.length === 1
       && requiredLevels[0] === 'V3'
     ) {
-      return `${prefix}: release-real owner diagnostic stays V3-only; policy floor is retained as a risk note and this report is not release readiness. ${policyReason}`;
+      return `${prefix}: release-real owner diagnostic stays V3-only; policy floor is retained as a risk note and this report is not product readiness / handoff input completeness. ${policyReason}`;
     }
     return `${prefix}: R0 governance policy floor requires full V0/V1/V2/V3 evidence selection; verify report did not inspect evidence. ${policyReason}`;
   }
@@ -1625,7 +1776,7 @@ function manualReviewReasonForLevel(
     return 'Visual V2 needs review; verify report did not inspect visual evidence.';
   }
   if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.releaseDeployOperatorReview)) {
-    return 'Release/deploy operator review required; verify report did not inspect release evidence.';
+    return 'Release/deploy operator review required; verify report did not inspect product readiness / handoff evidence.';
   }
   if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview)) {
     return 'Runner, Context Store, or credential owner review required; verify report did not inspect backend-real evidence.';
@@ -1737,7 +1888,7 @@ function evidenceOwnerForLevel(level: VerificationLevel, context: EvidenceCardBu
 
 function evidenceNoteForLevel(level: VerificationLevel): string {
   if (level === 'V4') {
-    return 'Report-only pointer to release:ready campaign evidence; this report is not a release verdict.';
+    return 'Report-only pointer to release:ready product readiness / handoff evidence; this report is not a product readiness conclusion.';
   }
   return 'Report-only pointer to producer-owned evidence; verify report did not inspect this artifact.';
 }
@@ -1805,7 +1956,7 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
 
 function defaultNextAction(levels: readonly VerificationLevel[]): string {
   if (levels.includes('V4')) {
-    return 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
+    return 'Release or deploy-support path changed. Use npm run release:ready to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.';
   }
   if (levels.includes('V3')) {
     return `Run ${GOVERNED_REAL_VERIFY_COMMAND} after reviewing the fail-closed impact selection.`;
@@ -1830,7 +1981,7 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
   pushUnique(
     accumulator.nextActions,
     goal === 'release-real'
-      ? `Run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`
+      ? `Run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`
       : defaultNextAction(levels),
   );
 }
@@ -1883,7 +2034,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       const releaseRealDiagnosticStoryImpact = releaseRealDiagnosticGoal && isReleaseRealDiagnosticStory(exactStory);
       const levels: readonly VerificationLevel[] = releaseRealDiagnosticStoryImpact ? ['V3'] : levelsForStory(exactStory);
       const action = releaseRealDiagnosticStoryImpact
-        ? `Manual story review required because canonical story markdown changed; then run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`
+        ? `Manual story review required because canonical story markdown changed; then run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`
         : 'Manual story review required because canonical story markdown changed; then run the governed verification entrypoint.';
       const surface = `story:${exactStory.storyId}`;
       const impactSource: VerificationStoryImpactSource = {
@@ -2273,12 +2424,12 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
-      const action = `Run ${PUBLIC_RELEASE_READY_COMMAND} for release backend-real owner coverage; this report is not a release verdict until ${PUBLIC_RELEASE_READY_COMMAND} runs.`;
+      const action = `Run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`;
       const surface = 'release-real-owner';
       accumulator.levels.add('V3');
       accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);
       accumulator.surfaces.add(surface);
-      accumulator.reasons.push(`${changedFile} owns the backend-real release diagnostic gate.`);
+      accumulator.reasons.push(`${changedFile} owns the backend-real product readiness diagnostic gate.`);
       pushUnique(accumulator.nextActions, action);
       recordChangedFileImpact(accumulator, {
         changedFile,
@@ -2294,7 +2445,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     if (isReleaseDeployPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V4'];
-      const action = 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
+      const action = 'Release or deploy-support path changed. Use npm run release:ready to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.';
       const surface = 'release/deploy';
       const storyIds = stories.map((story) => story.storyId);
       const impactSource: VerificationStoryImpactSource = {
@@ -2353,7 +2504,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    if (isGovernanceToolingPath(changedFile)) {
+    if (isGovernanceToolingPath(changedFile, packageJsonBaseRefs)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1'];
       const action = 'Run npm run verify -- --goal=pr --run for the governance tooling change; heavy visual/backend-real evidence is not selected by this impact report.';

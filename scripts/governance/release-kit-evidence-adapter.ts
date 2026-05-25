@@ -25,13 +25,6 @@ const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[
     'airgap-bundle-check-report.json',
     'airgap-bundle-manifest.json',
   ],
-  'render-report.json+rollout-report.json': ['evidence.json', 'render-report.json', 'rollout-report.json'],
-  'render-report.json+rollout-report.json+smoke-report.json': [
-    'evidence.json',
-    'render-report.json',
-    'rollout-report.json',
-    'smoke-report.json',
-  ],
   'online-deployment-gate-report.json': ['evidence.json', 'online-deployment-gate-report.json'],
 };
 

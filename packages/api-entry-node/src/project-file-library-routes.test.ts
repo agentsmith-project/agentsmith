@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
+  buildFileLibraryRestoreOperationPublicId,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectTaskFileTemplateRepo,
@@ -988,7 +989,8 @@ describe('project-file-library-routes', () => {
       status: 'failed',
       failure_reason: 'file_library_restore_failed',
     }));
-    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2])).not.toContain('op_restore_lookup_failed');
+    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2]))
+      .not.toMatch(/restore_op_|op_restore_lookup_failed/);
   });
 
   it('serves local restore recovery-required projections through public operation lookup', async () => {
@@ -1044,7 +1046,114 @@ describe('project-file-library-routes', () => {
       failure_reason: 'file_library_storage_admin_action_required',
     }));
     expect(JSON.stringify(lookupJson.mock.calls[0]?.[2]))
-      .not.toMatch(/op_restore_lookup_recovery|operator|JVS|control_root/);
+      .not.toMatch(/restore_op_|op_restore_lookup_recovery|operator|JVS|control_root/);
+  });
+
+  it('requires restore public ids for public operation and active-operation responses', async () => {
+    const storageAdapter = createStorageAdapter({
+      getOperationProjection: vi.fn(async () => {
+        throw new Error('file_library_operation_not_found');
+      }),
+      reconcileRestoreOperation: vi.fn(async (input) => {
+        if (input.operationId !== 'op_restore_public_route') {
+          throw new Error('file_library_operation_not_found');
+        }
+        return {
+          operationId: 'op_restore_public_route',
+          operationStatus: 'pending',
+          sourceSavePointId: 'sp_user_001',
+        };
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const savePoint = await createSavePointForRestore({ deps, libraryId });
+    const restoreOperation = await new JsonDocFileLibraryRestoreOperationRepo(deps.docStore).create({
+      id: 'restore_op_public_route_raw',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      afscpOperationId: 'op_restore_public_route',
+      sourceSavePointId: String(savePoint.id),
+      sourceAfscpSavePointId: 'sp_user_001',
+      status: 'restoring',
+      idempotencyKey: 'restore-public-route',
+      createdByUserId: 'user_1',
+    });
+    const publicOperationId = buildFileLibraryRestoreOperationPublicId(restoreOperation);
+    expect(publicOperationId).toMatch(/^flro_[0-9a-f]{24}$/);
+    expect(publicOperationId).not.toBe(restoreOperation.id);
+
+    const rawLookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: restoreOperation.id,
+      req: { headers: { 'x-request-id': 'req_restore_raw_public_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: rawLookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(rawLookupJson).toHaveBeenCalledWith(expect.anything(), 404, {
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'not_found',
+    });
+    expect(storageAdapter.reconcileRestoreOperation).not.toHaveBeenCalled();
+
+    const publicLookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: publicOperationId,
+      req: { headers: { 'x-request-id': 'req_restore_public_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: publicLookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(publicLookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: publicOperationId,
+      kind: 'restore',
+      file_library_id: libraryId,
+      source_save_point_id: savePoint.id,
+      status: 'running',
+    }));
+    expect(JSON.stringify(publicLookupJson.mock.calls[0]?.[2]))
+      .not.toMatch(/restore_op_public_route_raw|op_restore_public_route/);
+
+    const activeJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryActiveOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_restore_public_active' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: activeJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(activeJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      operation: expect.objectContaining({
+        id: publicOperationId,
+        kind: 'restore',
+        file_library_id: libraryId,
+        source_save_point_id: savePoint.id,
+        status: 'running',
+      }),
+    });
+    expect(JSON.stringify(activeJson.mock.calls[0]?.[2]))
+      .not.toMatch(/restore_op_public_route_raw|op_restore_public_route/);
   });
 
   it('maps invisible file-library operation projections to not_found', async () => {
@@ -2662,7 +2771,7 @@ describe('project-file-library-routes', () => {
     });
 
     expect(JSON.stringify([restoreJson.mock.calls, repeatJson.mock.calls, activeJson.mock.calls]))
-      .not.toMatch(/repo_|sp_user_|op_restore|ns_|plan_|credential|control_root/);
+      .not.toMatch(/repo_|sp_user_|restore_op_|op_restore|ns_|plan_|credential|control_root/);
   });
 
   it('reuses one durable direct restore operation for concurrent matching idempotency keys', async () => {
@@ -2937,7 +3046,7 @@ describe('project-file-library-routes', () => {
         },
       }),
     ]));
-    expect(JSON.stringify(auditEvents)).not.toMatch(/op_restore|repo_|sp_user_|ns_|plan_|credential|control_root/);
+    expect(JSON.stringify(auditEvents)).not.toMatch(/restore_op_|op_restore|repo_|sp_user_|ns_|plan_|credential|control_root/);
   });
 
   it('continues a pre-start direct restore idempotency replay when the local operation has no storage operation id', async () => {
@@ -3708,7 +3817,7 @@ describe('project-file-library-routes', () => {
       sourceSavePointLabel: 'Existing restore',
       sourceSavePointCreatedAt: '2026-05-09T00:00:00.000Z',
       restoredAt: '2026-05-09T00:05:00.000Z',
-      restoreOperationId: 'flro_existing_restore',
+      restoreOperationId: 'flro_444444444444444444444444',
     });
 
     await expect(handleProjectFileLibraryRoutes({
@@ -3743,7 +3852,7 @@ describe('project-file-library-routes', () => {
         source_save_point_label: 'Existing restore',
         source_save_point_created_at: '2026-05-09T00:00:00.000Z',
         restored_at: '2026-05-09T00:05:00.000Z',
-        restore_operation_id: 'flro_existing_restore',
+        restore_operation_id: 'flro_444444444444444444444444',
       },
     });
   });
@@ -4106,8 +4215,10 @@ describe('project-file-library-routes', () => {
         }),
       }),
     ]));
-    expect(JSON.stringify(restoreJson.mock.calls)).not.toMatch(/repo_hidden|ns_hidden|metadata_url|postgres|credential|control_root/);
-    expect(JSON.stringify([restoreRecords, auditEvents])).not.toMatch(/repo_hidden|ns_hidden|metadata_url|postgres|credential|control_root/);
+    expect(JSON.stringify(restoreJson.mock.calls))
+      .not.toMatch(/restore_op_|repo_hidden|ns_hidden|metadata_url|postgres|credential|control_root/);
+    expect(JSON.stringify([restoreRecords, auditEvents]))
+      .not.toMatch(/restore_op_|repo_hidden|ns_hidden|metadata_url|postgres|credential|control_root/);
   });
 
   it('rejects direct restore for a missing save point before storage or durable operation', async () => {
@@ -4656,7 +4767,7 @@ describe('project-file-library-routes', () => {
       deleteJson.mock.calls,
       runtimeAccessReleaseJson.mock.calls,
     ]))
-      .not.toMatch(/op_restore|repo_|sp_user_|ns_|credential|control_root/);
+      .not.toMatch(/restore_op_|op_restore|repo_|sp_user_|ns_|credential|control_root/);
   });
 
   it('does not call legacy restore preview/run/fence helpers on the direct restore route', () => {
@@ -5352,7 +5463,7 @@ describe('project-file-library-routes', () => {
       restoreCorrelationId,
     })).resolves.toMatchObject({ ok: true, claimed: true });
     const restoreRepo = new JsonDocFileLibraryRestoreOperationRepo(deps.docStore);
-    await restoreRepo.create({
+    const restoreOperation = await restoreRepo.create({
       id: operationId,
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -5364,6 +5475,7 @@ describe('project-file-library-routes', () => {
       idempotencyKey: 'restore-key-missing-release-association',
       createdByUserId: OWNER_USER.id,
     });
+    const publicOperationId = buildFileLibraryRestoreOperationPublicId(restoreOperation);
 
     const replayJson = vi.fn();
     await expect(handleProjectFileLibraryRoutes({
@@ -5389,7 +5501,7 @@ describe('project-file-library-routes', () => {
 
     expect(storageAdapter.restoreFileLibrary).not.toHaveBeenCalled();
     expect(replayJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
-      id: operationId,
+      id: publicOperationId,
       status: 'succeeded',
     }));
     await expect(bindingRepo.find({

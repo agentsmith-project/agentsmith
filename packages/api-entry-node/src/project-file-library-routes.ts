@@ -19,6 +19,7 @@ import {
   buildFileLibraryRestoreOperationPublicId,
   buildTaskFileTemplateIdempotencyRequestHash,
   buildTaskFileTemplateIdempotencyId,
+  isFileLibraryRestoreOperationPublicId,
   JsonDocFileLibraryVersionOperationRepo,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocProjectFileLibraryCatalogRepo,
@@ -2156,6 +2157,14 @@ export async function handleProjectFileLibraryRoutes(args: {
           requestId,
         });
         json(res, 200, presentFileLibraryRestoreActiveOperation(reconciled));
+        return true;
+      }
+
+      if (
+        /^restore_op(?:_|$)/u.test(operationId)
+        || (/^flro_/u.test(operationId) && !isFileLibraryRestoreOperationPublicId(operationId))
+      ) {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'not_found' });
         return true;
       }
 

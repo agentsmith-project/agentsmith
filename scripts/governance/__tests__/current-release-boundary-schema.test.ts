@@ -1064,6 +1064,44 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it('rejects canonical release-kit evidence missing mapped native output files', () => {
+    const onlineMissingReport = cloneFixture('release-kit-evidence.valid.json');
+    const onlineFiles = (onlineMissingReport.evidence_subject as Record<string, unknown>).files as Record<string, unknown>[];
+    (onlineMissingReport.evidence_subject as Record<string, unknown>).files = onlineFiles
+      .filter((file) => file.path !== 'online-deployment-gate-report.json');
+    rehashArtifactProvenanceSubject(onlineMissingReport, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(onlineMissingReport),
+      'mapped release-kit native output file(s): online-deployment-gate-report.json',
+    );
+
+    const airgapMissingManifest = cloneFixture('release-kit-evidence.valid.json');
+    airgapMissingManifest.target = 'images';
+    airgapMissingManifest.distribution = 'airgap';
+    (airgapMissingManifest.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    airgapMissingManifest.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    (airgapMissingManifest.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+    ];
+    rehashArtifactProvenanceSubject(airgapMissingManifest, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(airgapMissingManifest),
+      'mapped release-kit native output file(s): airgap-bundle-manifest.json',
+    );
+  });
+
   it('rejects prefixed env token and secret key leaks in release-kit evidence', () => {
     const prefixedToken = cloneFixture('release-kit-evidence.valid.json');
     prefixedToken.debug_log = 'release operator exported GITHUB_TOKEN=ghp_plainreleaseleak1234567890';

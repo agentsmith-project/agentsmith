@@ -660,45 +660,6 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
   },
   {
-    release_kit_output: 'render-report.json+rollout-report.json',
-    target: 'rollout',
-    canonical_writer: {
-      gate_id: 'release-kit-rollout',
-      line_kind: 'release_kit_rollout',
-      npm_script: 'bash scripts/verify-release.sh --rollout',
-      native_result_path: '<release-kit-evidence-root>/rollout-report.json',
-      evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'rollout',
-    },
-    canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['existing_kubernetes'],
-    reject_conditions: [
-      'rendered_inventory_mismatch',
-      'missing_live_image_id',
-      'target_digest_mismatch',
-    ],
-  },
-  {
-    release_kit_output: 'render-report.json+rollout-report.json+smoke-report.json',
-    target: 'rollout',
-    canonical_writer: {
-      gate_id: 'release-kit-rollout-smoke',
-      line_kind: 'release_kit_rollout_smoke',
-      npm_script: 'bash scripts/verify-release.sh --online-deployment-gate',
-      native_result_path: '<release-kit-evidence-root>/smoke-report.json',
-      evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'rollout',
-    },
-    canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['existing_kubernetes'],
-    reject_conditions: [
-      'rendered_inventory_mismatch',
-      'missing_live_image_id',
-      'target_digest_mismatch',
-      'smoke_route_failed',
-    ],
-  },
-  {
     release_kit_output: 'online-deployment-gate-report.json',
     target: 'rollout',
     canonical_writer: {
@@ -1278,11 +1239,21 @@ export function validateReleaseKitEvidence(
   }
 
   validateCanonicalWriter(value.canonical_writer, 'canonical_writer', failures);
-  validateEvidenceMappingCompatibility(value, target, targetCluster, substrateSource, distribution, failures);
+  const evidenceMapping = validateEvidenceMappingCompatibility(
+    value,
+    target,
+    targetCluster,
+    substrateSource,
+    distribution,
+    failures,
+  );
   validateReleaseKitSubstrateConnectionTruth(value, targetCluster, substrateSource, distribution, failures);
 
   const evidenceSubject = value.evidence_subject;
   const evidenceSubjectRecord = validateReleaseKitEvidenceSubject(evidenceSubject, 'evidence_subject', failures);
+  if (evidenceSubjectRecord && evidenceMapping) {
+    validateReleaseKitEvidenceSubjectMappingFiles(evidenceSubjectRecord, evidenceMapping, failures);
+  }
 
   if (target === 'product_flows') {
     failures.push({
@@ -1308,6 +1279,42 @@ export function validateReleaseKitEvidence(
   }
 
   return finish(value as CurrentReleaseKitEvidence, failures);
+}
+
+function releaseKitOutputNativeFiles(releaseKitOutput: string): string[] {
+  return releaseKitOutput
+    .split('+')
+    .map((part) => part.split('#')[0])
+    .filter((part) => part.endsWith('.json'));
+}
+
+function validateReleaseKitEvidenceSubjectMappingFiles(
+  evidenceSubject: Record<string, unknown>,
+  mapping: CurrentReleaseKitEvidenceMappingEntry,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (mapping.canonical_evidence_owner !== 'agentsmith-release-kit') {
+    return;
+  }
+
+  const requiredFiles = releaseKitOutputNativeFiles(mapping.release_kit_output);
+  if (requiredFiles.length === 0 || !Array.isArray(evidenceSubject.files)) {
+    return;
+  }
+
+  const subjectFilePaths = new Set<string>();
+  for (const entry of evidenceSubject.files) {
+    if (isRecord(entry) && typeof entry.path === 'string') {
+      subjectFilePaths.add(entry.path);
+    }
+  }
+  const missingFiles = requiredFiles.filter((file) => !subjectFilePaths.has(file));
+  if (missingFiles.length > 0) {
+    failures.push({
+      path: 'evidence_subject.files',
+      reason: `evidence_subject.files must include mapped release-kit native output file(s): ${missingFiles.join(', ')}.`,
+    });
+  }
 }
 
 function validateReleaseKitStatusFailureClass(
@@ -3061,9 +3068,9 @@ function validateEvidenceMappingCompatibility(
   substrateSource: CurrentDeploymentSubstrateSource | undefined,
   distribution: CurrentDeploymentDistribution | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
-): void {
+): CurrentReleaseKitEvidenceMappingEntry | null {
   if (!target) {
-    return;
+    return null;
   }
 
   const mappings = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.filter((entry) => entry.target === target);
@@ -3072,12 +3079,12 @@ function validateEvidenceMappingCompatibility(
       path: 'target',
       reason: 'release kit evidence mapping is missing for target.',
     });
-    return;
+    return null;
   }
 
   const writer = isRecord(value.canonical_writer) ? value.canonical_writer : null;
   if (!writer) {
-    return;
+    return null;
   }
   const mapping = mappings.find((entry) => (
     writer.gate_id === entry.canonical_writer.gate_id
@@ -3088,7 +3095,7 @@ function validateEvidenceMappingCompatibility(
       path: 'canonical_writer',
       reason: 'release kit evidence writer id does not match the current mapping.',
     });
-    return;
+    return null;
   }
   if (targetCluster && !mapping.current_campaign_target_clusters.includes(targetCluster)) {
     failures.push({
@@ -3122,6 +3129,8 @@ function validateEvidenceMappingCompatibility(
       });
     }
   }
+
+  return mapping;
 }
 
 function validateCanonicalWriter(

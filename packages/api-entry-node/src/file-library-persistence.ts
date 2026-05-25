@@ -12,6 +12,7 @@ const FILE_LIBRARY_RESTORE_OPERATION_COLLECTION = 'project_file_library_restore_
 const FILE_LIBRARY_RESTORE_OPERATION_ACTIVE_LOCK_COLLECTION = 'project_file_library_restore_operation_active_locks';
 const TASK_FILE_TEMPLATE_COLLECTION = 'project_task_file_templates';
 const FILE_LIBRARY_HOME_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const FILE_LIBRARY_RESTORE_OPERATION_PUBLIC_ID_PATTERN = /^flro_[0-9a-f]{24}$/u;
 
 type FileLibraryLifecycleFenceKind = 'binding_acquire';
 
@@ -203,12 +204,16 @@ function normalizePublicLastRestore(value: unknown): FileLibraryLastRestore | un
     'restored_at',
     'restore_operation_id',
   ]));
+  const restoreOperationId = requireNonEmptyStringField(raw, 'restore_operation_id');
+  if (!isFileLibraryRestoreOperationPublicId(restoreOperationId)) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
   return {
     source_save_point_id: requireNonEmptyStringField(raw, 'source_save_point_id'),
     source_save_point_label: requireNonEmptyStringField(raw, 'source_save_point_label'),
     source_save_point_created_at: requireNonEmptyStringField(raw, 'source_save_point_created_at'),
     restored_at: requireNonEmptyStringField(raw, 'restored_at'),
-    restore_operation_id: requireNonEmptyStringField(raw, 'restore_operation_id'),
+    restore_operation_id: restoreOperationId,
   };
 }
 
@@ -227,7 +232,32 @@ function readStoredLastRestore(raw: Record<string, unknown>): FileLibraryLastRes
   if (presentCount !== 5) {
     throw new Error('invalid_file_library_catalog_record');
   }
-  return values as FileLibraryLastRestore;
+  const sourceSavePointId = values.source_save_point_id;
+  const sourceSavePointLabel = values.source_save_point_label;
+  const sourceSavePointCreatedAt = values.source_save_point_created_at;
+  const restoredAt = values.restored_at;
+  const restoreOperationId = values.restore_operation_id;
+  if (
+    !sourceSavePointId
+    || !sourceSavePointLabel
+    || !sourceSavePointCreatedAt
+    || !restoredAt
+    || !restoreOperationId
+  ) {
+    throw new Error('invalid_file_library_catalog_record');
+  }
+  return {
+    source_save_point_id: sourceSavePointId,
+    source_save_point_label: sourceSavePointLabel,
+    source_save_point_created_at: sourceSavePointCreatedAt,
+    restored_at: restoredAt,
+    restore_operation_id: buildFileLibraryRestoreOperationPublicId({
+      id: restoreOperationId,
+      workspace_id: requireStringField(raw, 'workspace_id'),
+      project_id: requireStringField(raw, 'project_id'),
+      library_id: requireStringField(raw, 'id'),
+    }),
+  };
 }
 
 function readCatalogLastRestore(raw: Record<string, unknown>): FileLibraryLastRestore | undefined {
@@ -608,6 +638,12 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     ) {
       return toPublicFileLibraryRecord(existing);
     }
+    const publicRestoreOperationId = buildFileLibraryRestoreOperationPublicId({
+      id: input.restoreOperationId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      library_id: input.libraryId,
+    });
     const next: FileLibraryStoredRecord = {
       ...existing,
       version: existing.version + 1,
@@ -615,7 +651,7 @@ export class JsonDocProjectFileLibraryCatalogRepo {
       last_restored_save_point_label: input.sourceSavePointLabel,
       last_restored_save_point_created_at: input.sourceSavePointCreatedAt,
       last_restored_at: input.restoredAt,
-      last_restore_operation_id: input.restoreOperationId,
+      last_restore_operation_id: publicRestoreOperationId,
       updated_at: input.restoredAt,
     };
     await this.saveStored(next);
@@ -1233,12 +1269,14 @@ export function buildFileLibraryRestoreOperationIdempotencyId(input: {
   ]);
 }
 
-const FORBIDDEN_PUBLIC_RESTORE_OPERATION_ID_FRAGMENT = /repo_|sp_user_|op_restore|ns_|plan_|credential|control_root/;
+export function isFileLibraryRestoreOperationPublicId(value: string): boolean {
+  return FILE_LIBRARY_RESTORE_OPERATION_PUBLIC_ID_PATTERN.test(value);
+}
 
 export function buildFileLibraryRestoreOperationPublicId(
   record: Pick<FileLibraryRestoreOperationRecord, 'id' | 'workspace_id' | 'project_id' | 'library_id'>,
 ): string {
-  if (!FORBIDDEN_PUBLIC_RESTORE_OPERATION_ID_FRAGMENT.test(record.id)) {
+  if (isFileLibraryRestoreOperationPublicId(record.id)) {
     return record.id;
   }
   return scopedHexDigestId('flro', [
@@ -2153,9 +2191,8 @@ export class JsonDocFileLibraryRestoreOperationRepo {
     projectId: string,
     operationId: string,
   ): Promise<FileLibraryRestoreOperationRecord | null> {
-    const direct = await this.getByIdInProject(workspaceId, projectId, operationId);
-    if (direct) {
-      return direct;
+    if (!isFileLibraryRestoreOperationPublicId(operationId)) {
+      return null;
     }
     const records = await this.docStore.list<FileLibraryRestoreOperationRecord>(
       FILE_LIBRARY_RESTORE_OPERATION_COLLECTION,

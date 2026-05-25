@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { JsonDocConditionalCreateResult } from '@mbos/ports';
 import {
+  buildFileLibraryRestoreOperationPublicId,
   buildFileLibraryRecord,
   JsonDocFileLibraryRestoreOperationRepo,
   JsonDocFileLibrarySavePointMappingRepo,
@@ -241,7 +242,7 @@ describe('file-library-persistence catalog schema', () => {
       sourceSavePointLabel: 'Before restore',
       sourceSavePointCreatedAt: '2026-05-09T00:01:00.000Z',
       restoredAt: '2026-05-09T00:02:00.000Z',
-      restoreOperationId: 'flro_restore_success',
+      restoreOperationId: 'flro_111111111111111111111111',
     })).resolves.toMatchObject({
       id: 'flib_restore_projection',
       last_restore: {
@@ -249,7 +250,7 @@ describe('file-library-persistence catalog schema', () => {
         source_save_point_label: 'Before restore',
         source_save_point_created_at: '2026-05-09T00:01:00.000Z',
         restored_at: '2026-05-09T00:02:00.000Z',
-        restore_operation_id: 'flro_restore_success',
+        restore_operation_id: 'flro_111111111111111111111111',
       },
     });
 
@@ -261,7 +262,7 @@ describe('file-library-persistence catalog schema', () => {
       last_restored_save_point_label: 'Before restore',
       last_restored_save_point_created_at: '2026-05-09T00:01:00.000Z',
       last_restored_at: '2026-05-09T00:02:00.000Z',
-      last_restore_operation_id: 'flro_restore_success',
+      last_restore_operation_id: 'flro_111111111111111111111111',
     });
     const stored = await docStore.get<Record<string, unknown>>(
       'project_file_libraries',
@@ -276,7 +277,7 @@ describe('file-library-persistence catalog schema', () => {
         source_save_point_label: 'Before restore',
         source_save_point_created_at: '2026-05-09T00:01:00.000Z',
         restored_at: '2026-05-09T00:02:00.000Z',
-        restore_operation_id: 'flro_restore_success',
+        restore_operation_id: 'flro_111111111111111111111111',
       },
     });
   });
@@ -301,7 +302,7 @@ describe('file-library-persistence catalog schema', () => {
       sourceSavePointLabel: 'Newer restore',
       sourceSavePointCreatedAt: '2026-05-09T00:03:00.000Z',
       restoredAt: '2026-05-09T00:05:00.000Z',
-      restoreOperationId: 'flro_restore_newer',
+      restoreOperationId: 'flro_222222222222222222222222',
     });
 
     await expect(repo.recordSuccessfulRestore({
@@ -312,12 +313,12 @@ describe('file-library-persistence catalog schema', () => {
       sourceSavePointLabel: 'Older replay',
       sourceSavePointCreatedAt: '2026-05-09T00:01:00.000Z',
       restoredAt: '2026-05-09T00:02:00.000Z',
-      restoreOperationId: 'flro_restore_older',
+      restoreOperationId: 'flro_333333333333333333333333',
     })).resolves.toMatchObject({
       last_restore: {
         source_save_point_id: 'flsp_newer',
         restored_at: '2026-05-09T00:05:00.000Z',
-        restore_operation_id: 'flro_restore_newer',
+        restore_operation_id: 'flro_222222222222222222222222',
       },
     });
   });
@@ -368,6 +369,45 @@ describe('file-library-persistence catalog schema', () => {
     )).resolves.toMatchObject({ id: record.id });
     await expect(repo.findActiveByLibrary('ws_default', 'proj_1', 'flib_restore'))
       .resolves.toMatchObject({ id: record.id });
+  });
+
+  it('maps raw restore operation ids to allowlisted public ids while keeping internal lookup available', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocFileLibraryRestoreOperationRepo(
+      docStore,
+      () => '2026-05-09T12:00:00.000Z',
+    );
+
+    const record = await repo.create({
+      id: 'restore_op_internal_raw',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_restore_raw',
+      afscpOperationId: 'op_restore_direct',
+      sourceSavePointId: 'flsp_restore',
+      sourceAfscpSavePointId: 'sp_restore',
+      status: 'restoring',
+      idempotencyKey: 'restore-key-raw',
+      createdByUserId: 'user_1',
+    });
+    const publicId = buildFileLibraryRestoreOperationPublicId(record);
+
+    expect(publicId).toMatch(/^flro_[0-9a-f]{24}$/);
+    expect(publicId).not.toBe(record.id);
+    expect(repo.toPublic(record)).toMatchObject({
+      id: publicId,
+      file_library_id: 'flib_restore_raw',
+      source_save_point_id: 'flsp_restore',
+      status: 'restoring',
+    });
+    expect(JSON.stringify(repo.toPublic(record))).not.toContain('restore_op_internal_raw');
+    await expect(repo.getByPublicIdInProject('ws_default', 'proj_1', record.id)).resolves.toBeNull();
+    await expect(repo.getByPublicIdInProject('ws_default', 'proj_1', publicId)).resolves.toMatchObject({
+      id: record.id,
+    });
+    await expect(repo.getByIdInProject('ws_default', 'proj_1', record.id)).resolves.toMatchObject({
+      id: record.id,
+    });
   });
 
   it('supports a durable pre-start direct restore operation before the AFSCP operation id is assigned', async () => {

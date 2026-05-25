@@ -40,12 +40,8 @@ function validEvidenceSubject(): Record<string, unknown> {
       sha256: EVIDENCE_JSON_SHA256,
     },
     {
-      path: 'render-report.json',
+      path: 'online-deployment-gate-report.json',
       sha256: `sha256:${'b'.repeat(64)}`,
-    },
-    {
-      path: 'rollout-report.json',
-      sha256: `sha256:${'c'.repeat(64)}`,
     },
   ]);
 }
@@ -62,7 +58,7 @@ function validRawEnvelope(evidenceSubject = validEvidenceSubject()): Record<stri
 
   return {
     schema_version: 'agentsmith.release-kit-evidence-envelope/v1',
-    release_kit_output: 'render-report.json+rollout-report.json',
+    release_kit_output: 'online-deployment-gate-report.json',
     release_contract_digest: EXPECTED_RELEASE_CONTRACT_DIGEST,
     release_id: '2026.05.23-p0',
     git_sha: '0123456789abcdef0123456789abcdef01234567',
@@ -119,7 +115,7 @@ function adapt(
 }
 
 describe('release kit raw evidence adapter', () => {
-  it('maps a release-kit raw output into canonical AgentSmith release-kit evidence', () => {
+  it('maps the current online deployment gate raw output into canonical AgentSmith release-kit evidence', () => {
     const evidenceSubject = validEvidenceSubject();
     const result = adapt(validRawEnvelope(evidenceSubject), evidenceSubject);
 
@@ -132,8 +128,8 @@ describe('release kit raw evidence adapter', () => {
       schema_version: 'agentsmith.release-kit-evidence/v1',
       target: 'rollout',
       canonical_writer: {
-        gate_id: 'release-kit-rollout',
-        line_kind: 'release_kit_rollout',
+        gate_id: 'release-kit-online-deployment-gate',
+        line_kind: 'release_kit_online_deployment_gate',
         summary_section: 'rollout',
       },
     });
@@ -147,58 +143,18 @@ describe('release kit raw evidence adapter', () => {
     const files = result.value.evidence_subject.files as Record<string, unknown>[];
     expect(files.map((file) => file.path)).toEqual([
       'evidence.json',
-      'render-report.json',
-      'rollout-report.json',
+      'online-deployment-gate-report.json',
     ]);
   });
 
-  it('maps render/rollout/smoke raw output without falling back to local-kind writers', () => {
-    const smokeSubject = evidenceSubjectForFiles([
-      {
-        path: 'evidence.json',
-        sha256: EVIDENCE_JSON_SHA256,
-      },
-      {
-        path: 'render-report.json',
-        sha256: `sha256:${'b'.repeat(64)}`,
-      },
-      {
-        path: 'rollout-report.json',
-        sha256: `sha256:${'c'.repeat(64)}`,
-      },
-      {
-        path: 'smoke-report.json',
-        sha256: `sha256:${'d'.repeat(64)}`,
-      },
-    ]);
-    const raw = validRawEnvelope(smokeSubject);
-    raw.release_kit_output = 'render-report.json+rollout-report.json+smoke-report.json';
+  it('fails fast on removed render/rollout release-kit outputs', () => {
+    const rolloutRaw = validRawEnvelope();
+    rolloutRaw.release_kit_output = 'render-report.json+rollout-report.json';
+    expectInvalid(adapt(rolloutRaw), 'release_kit_output is not mapped');
 
-    const result = adapt(raw, smokeSubject);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value).toMatchObject({
-        target_cluster: 'existing_kubernetes',
-        target: 'rollout',
-        canonical_writer: {
-          gate_id: 'release-kit-rollout-smoke',
-          line_kind: 'release_kit_rollout_smoke',
-          summary_section: 'rollout',
-        },
-      });
-      expect(validateReleaseKitEvidenceForAggregate(result.value)).toMatchObject({
-        ok: true,
-        value: {
-          target_cluster: 'existing_kubernetes',
-          target: 'rollout',
-          canonical_writer: {
-            gate_id: 'release-kit-rollout-smoke',
-            line_kind: 'release_kit_rollout_smoke',
-          },
-        },
-      });
-    }
+    const smokeRaw = validRawEnvelope();
+    smokeRaw.release_kit_output = 'render-report.json+rollout-report.json+smoke-report.json';
+    expectInvalid(adapt(smokeRaw), 'release_kit_output is not mapped');
   });
 
   it('maps deploy-result and image-map raw outputs when their subject files match', () => {
@@ -267,6 +223,51 @@ describe('release kit raw evidence adapter', () => {
         },
       });
     }
+
+    const airgapSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+    ]);
+    const airgapRaw = validRawEnvelope(airgapSubject);
+    airgapRaw.release_kit_output = 'airgap-bundle-check-report.json+airgap-bundle-manifest.json';
+    airgapRaw.distribution = 'airgap';
+    (airgapRaw.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+
+    const airgapResult = adapt(airgapRaw, airgapSubject, {
+      expectedTargetProfile: {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'airgap',
+      },
+    });
+
+    expect(airgapResult.ok).toBe(true);
+    if (airgapResult.ok) {
+      expect(airgapResult.value).toMatchObject({
+        target: 'images',
+        canonical_writer: {
+          gate_id: 'release-kit-airgap-bundle-check',
+          line_kind: 'release_kit_airgap_bundle_check',
+        },
+      });
+      expect(validateReleaseKitEvidenceForAggregate(airgapResult.value)).toMatchObject({
+        ok: true,
+        value: {
+          target: 'images',
+          summary_section: 'images',
+        },
+      });
+    }
   });
 
   it('fails fast when release_kit_output is missing, unknown, or product-flow-owned', () => {
@@ -293,40 +294,36 @@ describe('release kit raw evidence adapter', () => {
       'release_kit_output image-map.json requires evidence_subject.files to include image-map.json',
     );
 
-    const partialRolloutSubject = evidenceSubjectForFiles([
+    const partialOnlineSubject = evidenceSubjectForFiles([
       {
         path: 'evidence.json',
         sha256: EVIDENCE_JSON_SHA256,
       },
       {
-        path: 'render-report.json',
+        path: 'deploy-result.json',
         sha256: `sha256:${'b'.repeat(64)}`,
       },
     ]);
-    const partialRolloutRaw = validRawEnvelope(partialRolloutSubject);
+    const partialOnlineRaw = validRawEnvelope(partialOnlineSubject);
 
     expectInvalid(
-      adapt(partialRolloutRaw, partialRolloutSubject),
-      'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to include rollout-report.json',
+      adapt(partialOnlineRaw, partialOnlineSubject),
+      'release_kit_output online-deployment-gate-report.json requires evidence_subject.files to include online-deployment-gate-report.json',
     );
   });
 
   it('fails fast when evidence_subject omits evidence.json', () => {
     const subjectWithoutEvidenceJson = evidenceSubjectForFiles([
       {
-        path: 'render-report.json',
+        path: 'online-deployment-gate-report.json',
         sha256: `sha256:${'b'.repeat(64)}`,
-      },
-      {
-        path: 'rollout-report.json',
-        sha256: `sha256:${'c'.repeat(64)}`,
       },
     ]);
     const raw = validRawEnvelope(subjectWithoutEvidenceJson);
 
     expectInvalid(
       adapt(raw, subjectWithoutEvidenceJson),
-      'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to include evidence.json',
+      'release_kit_output online-deployment-gate-report.json requires evidence_subject.files to include evidence.json',
     );
   });
 
@@ -337,12 +334,8 @@ describe('release kit raw evidence adapter', () => {
         sha256: EVIDENCE_JSON_SHA256,
       },
       {
-        path: 'render-report.json',
+        path: 'online-deployment-gate-report.json',
         sha256: `sha256:${'b'.repeat(64)}`,
-      },
-      {
-        path: 'rollout-report.json',
-        sha256: `sha256:${'c'.repeat(64)}`,
       },
       {
         path: 'evidence.json',
@@ -368,7 +361,7 @@ describe('release kit raw evidence adapter', () => {
         sha256: `sha256:${'f'.repeat(64)}`,
       },
       {
-        path: 'rollout-report.json',
+        path: 'online-deployment-gate-report.json',
         sha256: `sha256:${'c'.repeat(64)}`,
       },
     ]);
@@ -381,30 +374,26 @@ describe('release kit raw evidence adapter', () => {
     );
   });
 
-  it('fails fast when render/rollout evidence subject includes unrelated output files', () => {
-    const rolloutSubject = evidenceSubjectForFiles([
+  it('fails fast when online deployment gate evidence subject includes unrelated output files', () => {
+    const onlineSubject = evidenceSubjectForFiles([
       {
         path: 'evidence.json',
         sha256: EVIDENCE_JSON_SHA256,
       },
       {
-        path: 'render-report.json',
+        path: 'online-deployment-gate-report.json',
         sha256: `sha256:${'b'.repeat(64)}`,
-      },
-      {
-        path: 'rollout-report.json',
-        sha256: `sha256:${'c'.repeat(64)}`,
       },
       {
         path: 'image-map.json',
         sha256: `sha256:${'f'.repeat(64)}`,
       },
     ]);
-    const rolloutRaw = validRawEnvelope(rolloutSubject);
+    const onlineRaw = validRawEnvelope(onlineSubject);
 
     expectInvalid(
-      adapt(rolloutRaw, rolloutSubject),
-      'release_kit_output render-report.json+rollout-report.json requires evidence_subject.files to contain only evidence.json, render-report.json, rollout-report.json',
+      adapt(onlineRaw, onlineSubject),
+      'release_kit_output online-deployment-gate-report.json requires evidence_subject.files to contain only evidence.json, online-deployment-gate-report.json',
     );
   });
 

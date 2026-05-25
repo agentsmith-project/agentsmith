@@ -48,6 +48,24 @@ run_deploy_bootstrap() {
   [[ -n "${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}" ]] || die "missing PRESET_ANTHROPIC_ENDPOINT_BASE_URL"
   [[ -n "${PRESET_OPENAI_ENDPOINT_BASE_URL}" ]] || die "missing PRESET_OPENAI_ENDPOINT_BASE_URL"
 
+  new_secret_body_file() {
+    local file
+    file="$(mktemp "${TMPDIR:-/tmp}/mbos-bootstrap-secret.XXXXXX.json")" || die "failed to create secret request body file"
+    chmod 600 "${file}" || {
+      rm -f "${file}"
+      die "failed to secure secret request body file"
+    }
+    printf '%s\n' "${file}"
+  }
+
+  write_preset_credential_create_body() {
+    docker_compose exec -T api node -e 'let value="";process.stdin.on("data",d=>value+=d);process.stdin.on("end",()=>{console.log(JSON.stringify({name:process.argv[1], type:"api_key", value}))})' "$1"
+  }
+
+  write_preset_credential_rotate_body() {
+    docker_compose exec -T api node -e 'let value="";process.stdin.on("data",d=>value+=d);process.stdin.on("end",()=>{console.log(JSON.stringify({value}))})'
+  }
+
   wait_keycloak_admin_token_via_api_container() {
     local started status
     started="$(date +%s)"
@@ -135,18 +153,38 @@ run_deploy_bootstrap() {
   )"
   CREDENTIAL_ID="$(printf '%s' "${credential_list_resp}" | json_find_named_id "${PRESET_CREDENTIAL_NAME}")"
   if [[ -z "${CREDENTIAL_ID}" ]]; then
-    credential_resp="$(
-      curl -sS -X POST "${PROJECT_BASE}/credentials" \
+    credential_body_file="$(new_secret_body_file)"
+    if ! printf '%s' "${PRESET_ENDPOINT_API_KEY}" | write_preset_credential_create_body "${PRESET_CREDENTIAL_NAME}" > "${credential_body_file}"; then
+      rm -f "${credential_body_file}"
+      die "failed to build preset credential request body"
+    fi
+    if ! credential_resp="$(
+      curl -fsS -X POST "${PROJECT_BASE}/credentials" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${PRESET_ENDPOINT_API_KEY}" "${PRESET_CREDENTIAL_NAME}")"
-    )"
-    CREDENTIAL_ID="$(printf '%s' "${credential_resp}" | json_extract id)"
+        --data-binary @"${credential_body_file}"
+    )"; then
+      rm -f "${credential_body_file}"
+      die "failed to create preset credential"
+    fi
+    rm -f "${credential_body_file}"
+    if ! CREDENTIAL_ID="$(printf '%s' "${credential_resp}" | json_extract id)" || [[ -z "${CREDENTIAL_ID}" ]]; then
+      die "failed to create preset credential: missing credential id"
+    fi
   else
-    curl -fsS -X POST "${PROJECT_BASE}/credentials/${CREDENTIAL_ID}/rotate" \
+    credential_body_file="$(new_secret_body_file)"
+    if ! printf '%s' "${PRESET_ENDPOINT_API_KEY}" | write_preset_credential_rotate_body > "${credential_body_file}"; then
+      rm -f "${credential_body_file}"
+      die "failed to build preset credential rotate request body"
+    fi
+    if ! curl -fsS -X POST "${PROJECT_BASE}/credentials/${CREDENTIAL_ID}/rotate" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({value:process.argv[1]}))' "${PRESET_ENDPOINT_API_KEY}")" >/dev/null
+      --data-binary @"${credential_body_file}" >/dev/null; then
+      rm -f "${credential_body_file}"
+      die "failed to rotate preset credential"
+    fi
+    rm -f "${credential_body_file}"
   fi
 
   endpoint_payload() {

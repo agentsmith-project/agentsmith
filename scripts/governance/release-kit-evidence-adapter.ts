@@ -21,6 +21,12 @@ const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[
   'deploy-result.json#substrate': ['evidence.json', 'deploy-result.json'],
   'image-map.json': ['evidence.json', 'image-map.json'],
   'render-report.json+rollout-report.json': ['evidence.json', 'render-report.json', 'rollout-report.json'],
+  'render-report.json+rollout-report.json+smoke-report.json': [
+    'evidence.json',
+    'render-report.json',
+    'rollout-report.json',
+    'smoke-report.json',
+  ],
 };
 
 export interface ReleaseKitEvidenceAdapterTargetProfile {

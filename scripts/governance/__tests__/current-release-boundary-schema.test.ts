@@ -147,11 +147,11 @@ describe('current release boundary schema', () => {
         target: 'rollout',
         summary_section: 'rollout',
         canonical_writer: {
-          gate_id: 'lane-unified-deploy-local-kind',
-          line_kind: 'unified_deploy_local_kind',
-          npm_script: 'lane:unified-deploy:local-kind',
-          native_result_path: '<campaign-root>/lane-unified-deploy-local-kind/native/result.json',
-          evidence_root: '<campaign-root>/unified-deploy/local-kind',
+          gate_id: 'release-kit-rollout',
+          line_kind: 'release_kit_rollout',
+          npm_script: 'bash scripts/verify-release.sh --rollout',
+          native_result_path: '<release-kit-evidence-root>/rollout-report.json',
+          evidence_root: '<release-kit-evidence-root>',
         },
       },
     });
@@ -990,10 +990,13 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('rejects local-kind evidence masquerading as existing Kubernetes release evidence and secret leaks', () => {
+  it('rejects release-kit evidence with target cluster/writer mismatches and secret leaks', () => {
     const masquerade = cloneFixture('release-kit-evidence.valid.json');
-    masquerade.target_cluster = 'existing_kubernetes';
-    expectInvalid(validateReleaseKitEvidence(masquerade), 'local-kind campaign writer cannot accept existing_kubernetes evidence');
+    masquerade.target_cluster = 'kind_rehearsal';
+    expectInvalid(
+      validateReleaseKitEvidence(masquerade),
+      'target_cluster is not allowed for the mapped current release-kit evidence writer',
+    );
 
     const secretLeak = cloneFixture('release-kit-evidence.valid.json');
     secretLeak.debug_log = 'database password=super-secret';
@@ -1156,10 +1159,11 @@ describe('current release boundary schema', () => {
 
   it('rejects mappings to nonexistent writers, duplicate ownership, and release-kit-forged product-flow evidence', () => {
     const mapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
-    mapping[0] = {
-      ...mapping[0],
+    const productFlowMappingIndex = mapping.findIndex((entry) => entry.target === 'product_flows');
+    mapping[productFlowMappingIndex] = {
+      ...mapping[productFlowMappingIndex],
       canonical_writer: {
-        ...mapping[0].canonical_writer,
+        ...mapping[productFlowMappingIndex].canonical_writer,
         gate_id: 'lane-unified-deploy-missing',
       },
     };
@@ -1168,8 +1172,8 @@ describe('current release boundary schema', () => {
     const duplicateMapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
     duplicateMapping.push({ ...duplicateMapping[0] });
     const duplicateResult = validateReleaseKitEvidenceMapping(duplicateMapping);
-    expectInvalid(duplicateResult, 'release kit evidence target "dependencies" is declared more than once');
-    expectInvalid(duplicateResult, 'canonical writer "lane-unified-deploy-substrate|unified_deploy_substrate" is declared more than once');
+    expectInvalid(duplicateResult, 'release kit output "deploy-result.json#substrate" is declared more than once');
+    expectInvalid(duplicateResult, 'canonical writer "release-kit-target-preflight|release_kit_target_preflight" is declared more than once');
 
     const forgedProductFlows = cloneFixture('release-kit-evidence.valid.json');
     forgedProductFlows.target = 'product_flows';

@@ -593,15 +593,15 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     release_kit_output: 'deploy-result.json#substrate',
     target: 'dependencies',
     canonical_writer: {
-      gate_id: 'lane-unified-deploy-substrate',
-      line_kind: 'unified_deploy_substrate',
-      npm_script: 'lane:unified-deploy:substrate',
-      native_result_path: '<campaign-root>/lane-unified-deploy-substrate/native/result.json',
-      evidence_root: '<campaign-root>/unified-deploy/substrate',
+      gate_id: 'release-kit-target-preflight',
+      line_kind: 'release_kit_target_preflight',
+      npm_script: 'bash scripts/verify-release.sh --target-preflight',
+      native_result_path: '<release-kit-evidence-root>/deploy-result.json',
+      evidence_root: '<release-kit-evidence-root>',
       summary_section: 'dependencies',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['kind_rehearsal'],
+    current_campaign_target_clusters: ['existing_kubernetes', 'kind_rehearsal'],
     reject_conditions: [
       'missing_native_result',
       'missing_release_contract_digest',
@@ -613,39 +613,57 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     release_kit_output: 'image-map.json',
     target: 'images',
     canonical_writer: {
-      gate_id: 'lane-unified-deploy-local-kind-images',
-      line_kind: 'unified_deploy_local_kind_images',
-      npm_script: 'lane:unified-deploy:local-kind:images',
-      native_result_path: '<campaign-root>/lane-unified-deploy-local-kind-images/native/result.json',
-      evidence_root: '<campaign-root>/unified-deploy/local-kind-images',
+      gate_id: 'release-kit-image-map',
+      line_kind: 'release_kit_image_map',
+      npm_script: 'bash scripts/verify-release.sh --image-map',
+      native_result_path: '<release-kit-evidence-root>/image-map.json',
+      evidence_root: '<release-kit-evidence-root>',
       summary_section: 'images',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['kind_rehearsal'],
+    current_campaign_target_clusters: ['existing_kubernetes'],
     reject_conditions: [
       'tag_only_image',
       'digest_mismatch',
-      'local_kind_used_for_existing_kubernetes',
     ],
   },
   {
     release_kit_output: 'render-report.json+rollout-report.json',
     target: 'rollout',
     canonical_writer: {
-      gate_id: 'lane-unified-deploy-local-kind',
-      line_kind: 'unified_deploy_local_kind',
-      npm_script: 'lane:unified-deploy:local-kind',
-      native_result_path: '<campaign-root>/lane-unified-deploy-local-kind/native/result.json',
-      evidence_root: '<campaign-root>/unified-deploy/local-kind',
+      gate_id: 'release-kit-rollout',
+      line_kind: 'release_kit_rollout',
+      npm_script: 'bash scripts/verify-release.sh --rollout',
+      native_result_path: '<release-kit-evidence-root>/rollout-report.json',
+      evidence_root: '<release-kit-evidence-root>',
       summary_section: 'rollout',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
-    current_campaign_target_clusters: ['kind_rehearsal'],
+    current_campaign_target_clusters: ['existing_kubernetes'],
     reject_conditions: [
       'rendered_inventory_mismatch',
       'missing_live_image_id',
       'target_digest_mismatch',
-      'local_kind_used_for_existing_kubernetes',
+    ],
+  },
+  {
+    release_kit_output: 'render-report.json+rollout-report.json+smoke-report.json',
+    target: 'rollout',
+    canonical_writer: {
+      gate_id: 'release-kit-rollout-smoke',
+      line_kind: 'release_kit_rollout_smoke',
+      npm_script: 'bash scripts/verify-release.sh --online-deployment-gate',
+      native_result_path: '<release-kit-evidence-root>/smoke-report.json',
+      evidence_root: '<release-kit-evidence-root>',
+      summary_section: 'rollout',
+    },
+    canonical_evidence_owner: 'agentsmith-release-kit',
+    current_campaign_target_clusters: ['existing_kubernetes'],
+    reject_conditions: [
+      'rendered_inventory_mismatch',
+      'missing_live_image_id',
+      'target_digest_mismatch',
+      'smoke_route_failed',
     ],
   },
   {
@@ -1493,6 +1511,7 @@ export function validateReleaseKitEvidenceMapping(
   }
 
   const seenTargets = new Set<string>();
+  const seenReleaseKitOutputs = new Set<string>();
   const seenCanonicalWriters = new Set<string>();
   value.forEach((entry, index) => {
     const path = `release_kit_evidence_mapping[${index}]`;
@@ -1501,7 +1520,16 @@ export function validateReleaseKitEvidenceMapping(
       return;
     }
 
-    validateRequiredString(entry.release_kit_output, `${path}.release_kit_output`, failures);
+    const releaseKitOutput = validateRequiredString(entry.release_kit_output, `${path}.release_kit_output`, failures);
+    if (releaseKitOutput) {
+      if (seenReleaseKitOutputs.has(releaseKitOutput)) {
+        failures.push({
+          path: `${path}.release_kit_output`,
+          reason: `release kit output "${releaseKitOutput}" is declared more than once.`,
+        });
+      }
+      seenReleaseKitOutputs.add(releaseKitOutput);
+    }
     const target = validateEnum(
       entry.target,
       RELEASE_KIT_TARGET_SET,
@@ -1510,12 +1538,6 @@ export function validateReleaseKitEvidenceMapping(
       failures,
     );
     if (target) {
-      if (seenTargets.has(target)) {
-        failures.push({
-          path: `${path}.target`,
-          reason: `release kit evidence target "${target}" is declared more than once.`,
-        });
-      }
       seenTargets.add(target);
     }
     validateCanonicalWriter(entry.canonical_writer, `${path}.canonical_writer`, failures);
@@ -1538,13 +1560,23 @@ export function validateReleaseKitEvidenceMapping(
     const writer = isRecord(entry.canonical_writer) && typeof entry.canonical_writer.gate_id === 'string'
       ? findCurrentGateDefinitionById(entry.canonical_writer.gate_id)
       : undefined;
-    if (!writer && isRecord(entry.canonical_writer) && typeof entry.canonical_writer.gate_id === 'string') {
+    if (
+      entry.canonical_evidence_owner === 'agentsmith'
+      && !writer
+      && isRecord(entry.canonical_writer)
+      && typeof entry.canonical_writer.gate_id === 'string'
+    ) {
       failures.push({
         path: `${path}.canonical_writer.gate_id`,
         reason: 'canonical writer gate_id does not exist.',
       });
     }
-    if (writer && isRecord(entry.canonical_writer) && typeof entry.canonical_writer.npm_script === 'string') {
+    if (
+      entry.canonical_evidence_owner === 'agentsmith'
+      && writer
+      && isRecord(entry.canonical_writer)
+      && typeof entry.canonical_writer.npm_script === 'string'
+    ) {
       if (writer.npmScript !== entry.canonical_writer.npm_script) {
         failures.push({
           path: `${path}.canonical_writer.npm_script`,
@@ -2891,8 +2923,8 @@ function validateEvidenceMappingCompatibility(
     return;
   }
 
-  const mapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => entry.target === target);
-  if (!mapping) {
+  const mappings = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.filter((entry) => entry.target === target);
+  if (mappings.length === 0) {
     failures.push({
       path: 'target',
       reason: 'release kit evidence mapping is missing for target.',
@@ -2904,18 +2936,21 @@ function validateEvidenceMappingCompatibility(
   if (!writer) {
     return;
   }
-  if (writer.gate_id !== mapping.canonical_writer.gate_id || writer.line_kind !== mapping.canonical_writer.line_kind) {
+  const mapping = mappings.find((entry) => (
+    writer.gate_id === entry.canonical_writer.gate_id
+    && writer.line_kind === entry.canonical_writer.line_kind
+  ));
+  if (!mapping) {
     failures.push({
       path: 'canonical_writer',
       reason: 'release kit evidence writer id does not match the current mapping.',
     });
+    return;
   }
   if (targetCluster && !mapping.current_campaign_target_clusters.includes(targetCluster)) {
     failures.push({
       path: 'target_cluster',
-      reason: targetCluster === 'existing_kubernetes'
-        ? 'local-kind campaign writer cannot accept existing_kubernetes evidence.'
-        : 'target_cluster is not allowed for the mapped current campaign writer.',
+      reason: 'target_cluster is not allowed for the mapped current release-kit evidence writer.',
     });
   }
 
@@ -3390,7 +3425,11 @@ export function validateNoSecretLeak(
 function buildReleaseKitEvidenceAggregateCanonicalShape(
   evidence: CurrentReleaseKitEvidence,
 ): CurrentReleaseKitEvidenceAggregateCanonicalShape | null {
-  const mapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => entry.target === evidence.target);
+  const mapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => (
+    entry.target === evidence.target
+    && entry.canonical_writer.gate_id === evidence.canonical_writer.gate_id
+    && entry.canonical_writer.line_kind === evidence.canonical_writer.line_kind
+  ));
   if (!mapping) {
     return null;
   }

@@ -222,6 +222,7 @@ function readDeploymentManifestTemplates(repoRoot: string): string[] {
   return Object.values(templates)
     .flatMap((group) => Array.isArray(group) ? group : [])
     .filter((path): path is string => typeof path === 'string')
+    .map((path) => path.endsWith('.tpl') ? path.slice(0, -'.tpl'.length) : path)
     .sort();
 }
 
@@ -566,13 +567,12 @@ describe('deploy template package generator', () => {
     expect(result.descriptor.package_sha256).toBe(sha256FileDigest(result.archivePath));
     expect(readArchiveJson(result.archivePath, 'manifest.json')).toEqual(result.manifest);
     expect(readJson(result.descriptorPath)).toEqual(result.descriptor);
-    expect(result.manifest.source_deployment_manifest.sha256).toBe(
-      sha256FileDigest(join(REPO_ROOT, 'infra/deploy/unified/deployment.manifest.json')),
+    expect(result.manifest.schema_version).toBe('agentsmith.deploy-template-manifest/v1');
+    expect(result.manifest.templates.every((template) => template.kind === 'kubernetes')).toBe(true);
+    expect(new Set(result.manifest.templates.map((template) => template.path)).size).toBe(
+      result.manifest.templates.length,
     );
-    expect(result.manifest.package_files.map((file) => file.path)).toContain('deployment.manifest.json');
-    expect(new Set(result.manifest.package_files.map((file) => file.path)).size).toBe(
-      result.manifest.package_files.length,
-    );
+    expect(result.manifest.templates.some((template) => template.path.endsWith('.tpl'))).toBe(false);
 
     const subject = descriptorSubject(result.descriptor);
     expect(result.descriptor.artifact_provenance.subject_sha256).toBe(
@@ -600,7 +600,7 @@ describe('deploy template package generator', () => {
     expect(result.descriptor.manifest_sha256).toBe(sha256BufferDigest(archivedManifestBytes));
   });
 
-  it('archives only manifest.json, deployment.manifest.json, and deployment manifest declared templates', () => {
+  it('archives only manifest.json and deployment manifest declared templates in release-kit paths', () => {
     const result = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot: REPO_ROOT,
       outputDir: outputRoot(),
@@ -610,12 +610,12 @@ describe('deploy template package generator', () => {
     const entries = archiveList(result.archivePath);
 
     expect(entries).toEqual([
-      'deployment.manifest.json',
       'manifest.json',
       ...templates,
     ].sort());
     for (const forbidden of [
       'env/site.env.example',
+      'deployment.manifest.json',
       'substrate/connection.env',
       'substrate/docker-compose.yml',
       'package.json',
@@ -624,6 +624,20 @@ describe('deploy template package generator', () => {
     }
     expect(entries.some((entry) => entry.startsWith('scripts/'))).toBe(false);
     expect(entries.some((entry) => entry.includes('node_modules'))).toBe(false);
+  });
+
+  it('stages release-kit canonical placeholders for product image handoff', () => {
+    const result = generateDeployTemplatePackage(buildGenerationInput(), {
+      repoRoot: REPO_ROOT,
+      outputDir: outputRoot(),
+      sourceGitSha: GIT_SHA,
+    });
+    const workloads = readArchiveMemberBytes(result.archivePath, 'templates/app/workloads.yaml').toString('utf8');
+
+    expect(workloads).toContain('${{ images.agentsmith_app.image }}');
+    expect(workloads).not.toContain('{{API_IMAGE}}');
+    expect(workloads).not.toContain('{{WEB_IMAGE}}');
+    expect(workloads).not.toContain('{{NAMESPACE}}');
   });
 
   it('repeats the same manifest and archive digests for identical input', () => {
@@ -642,7 +656,7 @@ describe('deploy template package generator', () => {
     expect(second.descriptor.package_sha256).toBe(first.descriptor.package_sha256);
   });
 
-  it('changes manifest_sha256 when a declared template changes', () => {
+  it('changes package_sha256 when a declared template changes', () => {
     const repoRoot = makeTempRoot();
     const first = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot,
@@ -660,7 +674,8 @@ describe('deploy template package generator', () => {
       sourceGitSha: GIT_SHA,
     });
 
-    expect(second.descriptor.manifest_sha256).not.toBe(first.descriptor.manifest_sha256);
+    expect(second.descriptor.package_sha256).not.toBe(first.descriptor.package_sha256);
+    expect(second.descriptor.manifest_sha256).toBe(first.descriptor.manifest_sha256);
   });
 
   it.each([

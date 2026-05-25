@@ -31,12 +31,10 @@ export const DEPLOY_TEMPLATE_PACKAGE_ARCHIVE_NAME = 'agentsmith-deploy-template-
 export const DEPLOY_TEMPLATE_PACKAGE_DESCRIPTOR_NAME = 'deploy-template-package.json' as const;
 export const DEPLOY_TEMPLATE_PACKAGE_MANIFEST_NAME = 'manifest.json' as const;
 export const DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION =
-  'agentsmith.deploy-template-package.manifest/v1' as const;
+  'agentsmith.deploy-template-manifest/v1' as const;
 
 const DEPLOY_ROOT_RELATIVE_PATH = 'infra/deploy/unified';
 const DEPLOYMENT_MANIFEST_FILE_NAME = 'deployment.manifest.json';
-const DEPLOYMENT_MANIFEST_SOURCE_RELATIVE_PATH =
-  `${DEPLOY_ROOT_RELATIVE_PATH}/${DEPLOYMENT_MANIFEST_FILE_NAME}`;
 const ZERO_DIGEST = `sha256:${'0'.repeat(64)}`;
 const RESERVED_TEMPLATE_GROUP_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 const TEMPLATE_GROUP_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
@@ -78,20 +76,14 @@ export interface DeployTemplatePackageGenerationOptions {
   sourceGitSha: string;
 }
 
-export interface DeployTemplatePackageManifestFile {
+export interface DeployTemplatePackageManifestTemplate {
   path: string;
-  sha256: string;
+  kind: 'kubernetes';
 }
 
 export interface DeployTemplatePackageManifest {
   schema_version: typeof DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION;
-  source_deployment_manifest: {
-    path: typeof DEPLOYMENT_MANIFEST_SOURCE_RELATIVE_PATH;
-    package_path: typeof DEPLOYMENT_MANIFEST_FILE_NAME;
-    sha256: string;
-  };
-  template_groups: Readonly<Record<string, readonly string[]>>;
-  package_files: readonly DeployTemplatePackageManifestFile[];
+  templates: readonly DeployTemplatePackageManifestTemplate[];
 }
 
 export interface DeployTemplatePackageGenerationResult {
@@ -159,6 +151,7 @@ type DeployTemplatePackageCliFlag = keyof typeof DEPLOY_TEMPLATE_PACKAGE_CLI_FLA
 interface PackageFileSource {
   packagePath: string;
   sourcePath: string;
+  transform?: 'release-kit-template';
 }
 
 class DeployTemplatePackageGenerationError extends Error {
@@ -188,23 +181,17 @@ export function generateDeployTemplatePackage(
   const deploymentManifestBytes = readRequiredFile(deploymentManifestSourcePath);
   const deploymentManifest = parseDeploymentManifest(deploymentManifestBytes, deploymentManifestSourcePath);
   const templateGroups = resolveTemplateGroups(deploymentManifest, deployRoot);
-  const packageSources = buildPackageSources(deployRoot, templateGroups, deploymentManifestSourcePath);
-  const packageFiles = packageSources
+  const packageSources = buildPackageSources(deployRoot, templateGroups);
+  const templates = packageSources
     .map((source) => ({
       path: source.packagePath,
-      sha256: sha256FileDigest(source.sourcePath),
+      kind: 'kubernetes' as const,
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
   const manifest: DeployTemplatePackageManifest = {
     schema_version: DEPLOY_TEMPLATE_PACKAGE_MANIFEST_SCHEMA_VERSION,
-    source_deployment_manifest: {
-      path: DEPLOYMENT_MANIFEST_SOURCE_RELATIVE_PATH,
-      package_path: DEPLOYMENT_MANIFEST_FILE_NAME,
-      sha256: sha256BufferDigest(deploymentManifestBytes),
-    },
-    template_groups: templateGroups,
-    package_files: packageFiles,
+    templates,
   };
   const manifestBytes = Buffer.from(`${canonicalReleaseBoundaryJson(manifest)}\n`, 'utf8');
   const manifestSha256 = sha256BufferDigest(manifestBytes);
@@ -222,7 +209,7 @@ export function generateDeployTemplatePackage(
 
     createDeterministicArchive(tempArchivePath, packageRoot, [
       DEPLOY_TEMPLATE_PACKAGE_MANIFEST_NAME,
-      ...packageFiles.map((file) => file.path),
+      ...packageSources.map((source) => source.packagePath),
     ]);
     const packageSha256 = sha256FileDigest(tempArchivePath);
     const descriptor = buildDescriptor(normalizedInput, packageSha256, manifestSha256);
@@ -510,19 +497,14 @@ function resolveTemplateGroups(
 function buildPackageSources(
   deployRoot: string,
   templateGroups: Readonly<Record<string, readonly string[]>>,
-  deploymentManifestSourcePath: string,
 ): PackageFileSource[] {
-  const sources: PackageFileSource[] = [
-    {
-      packagePath: DEPLOYMENT_MANIFEST_FILE_NAME,
-      sourcePath: deploymentManifestSourcePath,
-    },
-  ];
+  const sources: PackageFileSource[] = [];
 
   for (const templatePath of Object.values(templateGroups).flat()) {
     sources.push({
-      packagePath: templatePath,
+      packagePath: releaseKitTemplatePackagePath(templatePath),
       sourcePath: resolveTemplateSourcePath(deployRoot, templatePath),
+      transform: 'release-kit-template',
     });
   }
 
@@ -533,7 +515,56 @@ function stagePackageFiles(packageRoot: string, sources: readonly PackageFileSou
   for (const source of sources) {
     const outputPath = path.join(packageRoot, source.packagePath);
     mkdirSync(path.dirname(outputPath), { recursive: true });
-    copyFileSync(source.sourcePath, outputPath);
+    if (source.transform === 'release-kit-template') {
+      writeFileSync(outputPath, renderReleaseKitTemplatePackageContent(readFileSync(source.sourcePath, 'utf8')));
+    } else {
+      copyFileSync(source.sourcePath, outputPath);
+    }
+  }
+}
+
+function releaseKitTemplatePackagePath(templatePath: string): string {
+  if (!templatePath.endsWith('.tpl')) {
+    throw new Error(`template path "${templatePath}" must end with .tpl.`);
+  }
+
+  return templatePath.slice(0, -'.tpl'.length);
+}
+
+function renderReleaseKitTemplatePackageContent(source: string): string {
+  return source.replace(/\{\{\s*([A-Z][A-Z0-9_]*)\s*\}\}/gu, (_match, key: string) => {
+    const imageKey = releaseKitImageKeyForLegacyPlaceholder(key);
+    if (imageKey) {
+      return `\${{ images.${imageKey}.image }}`;
+    }
+
+    if (key === 'NAMESPACE') {
+      return '${{ values.namespace }}';
+    }
+
+    return `\${{ values.${key} }}`;
+  });
+}
+
+function releaseKitImageKeyForLegacyPlaceholder(key: string): string | null {
+  switch (key) {
+    case 'API_IMAGE':
+    case 'WEB_IMAGE':
+      return 'agentsmith_app';
+    case 'LLMUP_IMAGE':
+      return 'llmup';
+    case 'AFSCP_IMAGE':
+      return 'afscp';
+    case 'ASBCP_IMAGE':
+      return 'asbcp';
+    case 'MANAGED_RUNNER_IMAGE':
+      return 'managed_runner';
+    case 'INGRESS_NGINX_CONTROLLER_IMAGE':
+      return 'ingress_nginx_controller';
+    case 'INGRESS_NGINX_CERTGEN_IMAGE':
+      return 'ingress_nginx_certgen';
+    default:
+      return null;
   }
 }
 

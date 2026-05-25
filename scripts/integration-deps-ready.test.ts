@@ -206,4 +206,17 @@ describe('integration deps readiness polling', () => {
     expect(depsSmoke.split('\n')[0]).toMatch(/\bdeps-init\b/);
     expect(bootstrap.split('\n')[0]).toMatch(/\bdeps-smoke\b/);
   });
+
+  it('keeps minio-init internal MinIO calls out of inherited proxies', () => {
+    const composeText = readFileSync('infra/integration/docker-compose.yml', 'utf8');
+    const minioInitBlock = composeText.match(/\n  minio-init:\n[\s\S]*?(?=\n  [a-z][\w-]*:|\nvolumes:)/u)?.[0] ?? '';
+
+    expect(minioInitBlock).not.toBe('');
+    expect(minioInitBlock).toContain('NO_PROXY:');
+    expect(minioInitBlock).toContain('no_proxy:');
+
+    for (const host of ['minio', 'mbos-minio', '127.0.0.1', 'localhost']) {
+      expect(minioInitBlock).toContain(host);
+    }
+  });
 });

@@ -90,6 +90,8 @@ services:
     volumes:
       - ./minio/init-minio.sh:/scripts/init-minio.sh:ro
     environment:
+      NO_PROXY: minio,mbos-minio,127.0.0.1,localhost
+      no_proxy: minio,mbos-minio,127.0.0.1,localhost
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mbos}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mbos_dev_password}
       MINIO_BUCKET: ${MINIO_BUCKET:-mbos-dev}

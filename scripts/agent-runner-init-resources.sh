@@ -94,6 +94,24 @@ secret_fingerprint() {
   printf 'sha256:%s\n' "${digest}"
 }
 
+new_secret_body_file() {
+  local file
+  file="$(mktemp "${TMPDIR:-/tmp}/mbos-agent-runner-init-secret.XXXXXX.json")" || {
+    echo "[init] failed to create secret request body file" >&2
+    exit 1
+  }
+  chmod 600 "${file}" || {
+    rm -f "${file}"
+    echo "[init] failed to secure secret request body file" >&2
+    exit 1
+  }
+  printf '%s\n' "${file}"
+}
+
+write_credential_create_body() {
+  node -e 'let value="";process.stdin.on("data",d=>value+=d);process.stdin.on("end",()=>{console.log(JSON.stringify({name:process.argv[1], type:"api_key", value}))})' "$1"
+}
+
 api_curl() {
   curl -sS "$@"
 }
@@ -116,12 +134,25 @@ echo "[init] project_id=${PROJECT_ID}"
 PROJECT_BASE="${BASE}/projects/${PROJECT_ID}"
 
 echo "[init] creating credential..."
-cred_resp="$(api_curl -X POST "${PROJECT_BASE}/credentials" \
+credential_body_file="$(new_secret_body_file)"
+if ! printf '%s' "${PRESET_ENDPOINT_API_KEY}" | write_credential_create_body "${CREDENTIAL_NAME}" > "${credential_body_file}"; then
+  rm -f "${credential_body_file}"
+  echo "[init] failed to build credential request body" >&2
+  exit 2
+fi
+if ! cred_resp="$(api_curl -f -X POST "${PROJECT_BASE}/credentials" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-      -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], type:"api_key", value:process.argv[2]}))' \
-      "${CREDENTIAL_NAME}" "${PRESET_ENDPOINT_API_KEY}")")"
-CRED_ID="$(printf '%s' "${cred_resp}" | json_get id)"
+  --data-binary @"${credential_body_file}")"; then
+  rm -f "${credential_body_file}"
+  echo "[init] create credential failed" >&2
+  exit 2
+fi
+rm -f "${credential_body_file}"
+if ! CRED_ID="$(printf '%s' "${cred_resp}" | json_get id)" || [[ -z "${CRED_ID}" ]]; then
+  echo "[init] create credential failed: missing credential id" >&2
+  exit 2
+fi
 state_set_string credential.id "${CRED_ID}"
 state_set_string credential.name "${CREDENTIAL_NAME}"
 echo "[init] credential_id=${CRED_ID}"

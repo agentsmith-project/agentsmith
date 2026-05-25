@@ -528,6 +528,32 @@ curl_status() {
   curl -s -o /dev/null -w "%{http_code}" "${url}" || true
 }
 
+curl_status_with_timeout() {
+  local timeout_seconds="$1"
+  local url="$2"
+  curl -sS --max-time "${timeout_seconds}" -o /dev/null -w "%{http_code}" "${url}" || true
+}
+
+is_warmed_route_status() {
+  local status="$1"
+  case "${status}" in
+    200|307|308)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_route_bundle_compiled_status() {
+  local status="$1"
+  case "${status}" in
+    200|307|308|401|403|404)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 lane_owner_field_value() {
   local file_path="$1"
   local field_name="$2"
@@ -681,12 +707,12 @@ warm_route() {
   local last_code=""
   for _ in $(seq 1 "${attempts}"); do
     last_code="$(curl_status "${url}")"
-    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
+    if is_warmed_route_status "${last_code}"; then
       # Hit the route a second time after a short pause so Next dev can finish
       # compiling and the page is less likely to open as a blank first render.
       sleep 1
       last_code="$(curl_status "${url}")"
-      if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
+      if is_warmed_route_status "${last_code}"; then
         return 0
       fi
     fi
@@ -701,6 +727,36 @@ try_warm_route() {
   if ! warm_route "${path}"; then
     echo "[integration-e2e-full] continuing after non-fatal warm-up miss for ${path}" >&2
   fi
+}
+
+warm_project_shell_route_bundle() {
+  local route_name="$1"
+  local path="$2"
+  local cold_timeout="${INTEGRATION_ROUTE_BUNDLE_COLD_COMPILE_TIMEOUT_SECONDS:-120}"
+  local hot_timeout="${INTEGRATION_ROUTE_BUNDLE_HOT_READY_TIMEOUT_SECONDS:-10}"
+  local url="${PLAYWRIGHT_BASE_URL}${path}"
+  local cold_code hot_code
+
+  cold_code="$(curl_status_with_timeout "${cold_timeout}" "${url}")"
+  if ! is_route_bundle_compiled_status "${cold_code}"; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "project_shell_route_bundle_warmup" "${route_name} route bundle did not compile within ${cold_timeout}s (status: ${cold_code})"
+    echo "[integration-e2e-full] ${route_name} route bundle did not compile within ${cold_timeout}s (status: ${cold_code})." >&2
+    echo "--- Web log tail ---" >&2
+    tail -n 120 "${WEB_LOG}" >&2 || true
+    return 1
+  fi
+
+  sleep 1
+  hot_code="$(curl_status_with_timeout "${hot_timeout}" "${url}")"
+  if ! is_route_bundle_compiled_status "${hot_code}"; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "project_shell_route_bundle_warmup" "${route_name} route bundle was not ready after warm-up within ${hot_timeout}s (status: ${hot_code})"
+    echo "[integration-e2e-full] ${route_name} route bundle was not ready after warm-up within ${hot_timeout}s (status: ${hot_code})." >&2
+    echo "--- Web log tail ---" >&2
+    tail -n 120 "${WEB_LOG}" >&2 || true
+    return 1
+  fi
+
+  return 0
 }
 
 port_in_use() {
@@ -1016,6 +1072,10 @@ try_warm_route "/${INTEGRATION_LOCALE}/system/login"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/login"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
+if ! warm_project_shell_route_bundle "files" "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects/proj_001/files"; then
+  exit 1
+fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "project_shell_route_bundle_warmup" "passed" "files route bundle warmed"
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "browser_auth_preflight" "passed" "workspace routes warmed"
 
 run_playwright_command() {

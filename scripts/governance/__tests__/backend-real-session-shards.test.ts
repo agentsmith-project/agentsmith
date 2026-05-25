@@ -377,7 +377,7 @@ case "\${url}" in
 	  */admin/state)
 	    status="200"
 	    ;;
-  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
+  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default/login|*/workspaces/ws_default|*/workspaces/ws_default/projects|*/workspaces/ws_default/projects/proj_001/files)
     status="200"
     ;;
 esac

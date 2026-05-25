@@ -4,16 +4,16 @@
   "release_id": "2026.05.23-p0",
   "git_sha": "0123456789abcdef0123456789abcdef01234567",
   "release_kit_version": "0.1.0",
-  "target_cluster": "kind_rehearsal",
+  "target_cluster": "existing_kubernetes",
   "substrate_source": "kit_installed",
   "distribution": "online",
   "target": "rollout",
   "status": "passed",
   "failure_class": "none",
-  "evidence_root": "artifacts/release-runs/release-ready-20260523T120000Z/unified-deploy/local-kind",
+  "evidence_root": "artifacts/release-runs/release-ready-20260523T120000Z/release-kit/rollout",
   "canonical_writer": {
-    "gate_id": "lane-unified-deploy-local-kind",
-    "line_kind": "unified_deploy_local_kind"
+    "gate_id": "release-kit-rollout",
+    "line_kind": "release_kit_rollout"
   },
   "evidence_subject": {
     "schema_version": "agentsmith.release-kit-evidence-subject/v1",

@@ -59,7 +59,6 @@ function evidenceSubjectForFiles(files: Record<string, unknown>[]): Record<strin
 
 function validRawEnvelope(evidenceSubject = validEvidenceSubject()): Record<string, unknown> {
   const substrateConnectionTruth = cloneFixture('substrate-connection.external-declared.valid.json');
-  substrateConnectionTruth.target_cluster = 'kind_rehearsal';
 
   return {
     schema_version: 'agentsmith.release-kit-evidence-envelope/v1',
@@ -68,7 +67,7 @@ function validRawEnvelope(evidenceSubject = validEvidenceSubject()): Record<stri
     release_id: '2026.05.23-p0',
     git_sha: '0123456789abcdef0123456789abcdef01234567',
     release_kit_version: '0.1.0',
-    target_cluster: 'kind_rehearsal',
+    target_cluster: 'existing_kubernetes',
     substrate_source: 'external_declared',
     distribution: 'online',
     target: {
@@ -109,7 +108,7 @@ function adapt(
   return adaptReleaseKitRawEvidenceEnvelope(rawEnvelope, evidenceSubject, {
     expectedReleaseContractDigest: EXPECTED_RELEASE_CONTRACT_DIGEST,
     expectedTargetProfile: {
-      target_cluster: 'kind_rehearsal',
+      target_cluster: 'existing_kubernetes',
       substrate_source: 'external_declared',
       distribution: 'online',
     },
@@ -133,8 +132,8 @@ describe('release kit raw evidence adapter', () => {
       schema_version: 'agentsmith.release-kit-evidence/v1',
       target: 'rollout',
       canonical_writer: {
-        gate_id: 'lane-unified-deploy-local-kind',
-        line_kind: 'unified_deploy_local_kind',
+        gate_id: 'release-kit-rollout',
+        line_kind: 'release_kit_rollout',
         summary_section: 'rollout',
       },
     });
@@ -151,6 +150,55 @@ describe('release kit raw evidence adapter', () => {
       'render-report.json',
       'rollout-report.json',
     ]);
+  });
+
+  it('maps render/rollout/smoke raw output without falling back to local-kind writers', () => {
+    const smokeSubject = evidenceSubjectForFiles([
+      {
+        path: 'evidence.json',
+        sha256: EVIDENCE_JSON_SHA256,
+      },
+      {
+        path: 'render-report.json',
+        sha256: `sha256:${'b'.repeat(64)}`,
+      },
+      {
+        path: 'rollout-report.json',
+        sha256: `sha256:${'c'.repeat(64)}`,
+      },
+      {
+        path: 'smoke-report.json',
+        sha256: `sha256:${'d'.repeat(64)}`,
+      },
+    ]);
+    const raw = validRawEnvelope(smokeSubject);
+    raw.release_kit_output = 'render-report.json+rollout-report.json+smoke-report.json';
+
+    const result = adapt(raw, smokeSubject);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toMatchObject({
+        target_cluster: 'existing_kubernetes',
+        target: 'rollout',
+        canonical_writer: {
+          gate_id: 'release-kit-rollout-smoke',
+          line_kind: 'release_kit_rollout_smoke',
+          summary_section: 'rollout',
+        },
+      });
+      expect(validateReleaseKitEvidenceForAggregate(result.value)).toMatchObject({
+        ok: true,
+        value: {
+          target_cluster: 'existing_kubernetes',
+          target: 'rollout',
+          canonical_writer: {
+            gate_id: 'release-kit-rollout-smoke',
+            line_kind: 'release_kit_rollout_smoke',
+          },
+        },
+      });
+    }
   });
 
   it('maps deploy-result and image-map raw outputs when their subject files match', () => {
@@ -174,8 +222,8 @@ describe('release kit raw evidence adapter', () => {
       expect(substrateResult.value).toMatchObject({
         target: 'dependencies',
         canonical_writer: {
-          gate_id: 'lane-unified-deploy-substrate',
-          line_kind: 'unified_deploy_substrate',
+          gate_id: 'release-kit-target-preflight',
+          line_kind: 'release_kit_target_preflight',
         },
       });
       expect(validateReleaseKitEvidenceForAggregate(substrateResult.value)).toMatchObject({
@@ -207,8 +255,8 @@ describe('release kit raw evidence adapter', () => {
       expect(imageResult.value).toMatchObject({
         target: 'images',
         canonical_writer: {
-          gate_id: 'lane-unified-deploy-local-kind-images',
-          line_kind: 'unified_deploy_local_kind_images',
+          gate_id: 'release-kit-image-map',
+          line_kind: 'release_kit_image_map',
         },
       });
       expect(validateReleaseKitEvidenceForAggregate(imageResult.value)).toMatchObject({
@@ -362,7 +410,7 @@ describe('release kit raw evidence adapter', () => {
 
   it('fails fast on target axes and release contract digest mismatch', () => {
     const wrongAxes = validRawEnvelope();
-    wrongAxes.target_cluster = 'existing_kubernetes';
+    wrongAxes.target_cluster = 'kind_rehearsal';
     expectInvalid(adapt(wrongAxes), 'target axes must match adapter context');
 
     const wrongDigest = validRawEnvelope();

@@ -415,7 +415,7 @@ set -euo pipefail
   */api/test/system/workspaces/seed)
     status="200"
     ;;
-  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
+  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects|*/workspaces/ws_default/projects/proj_001/files)
     status="200"
     ;;
 esac
@@ -1459,7 +1459,7 @@ exit 0
       status="200"
     fi
     ;;
-  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects)
+  */en-US/login|*/login|*/login/workspace|*/system/login|*/workspaces/ws_default|*/workspaces/ws_default/projects|*/workspaces/ws_default/projects/proj_001/files)
     if [[ -f "${tempRoot}/stop-web-probe" ]]; then
       status="000"
     else

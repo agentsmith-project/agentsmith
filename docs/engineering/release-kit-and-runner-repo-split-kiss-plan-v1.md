@@ -69,7 +69,7 @@ mechanism/app-current inventory 剩余 load/import/offline install/deploy smoke
 2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只作为本机/CI 演练工具，不是用户部署前提或 airgap declarable target。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
 4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness / local complete / current product gate，内部覆盖 full visual、backend-real release 和 terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith 产品门禁结论。release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
-5. 项目整体仍 pre-GA：不为旧名、旧路径、旧 env/profile 别名、已移除旧包或已移除字段保留长期心智负担。正式路径默认删除或 fail fast；确实临时需要时，只能出现在负向测试、过渡期专项诊断或 operator 短期说明里，并按第 3.2 节写清 owner、删除触发条件和验收证据。
+5. 项目整体仍 pre-GA：不为旧名、旧路径、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包或已移除字段保留长期兼容和心智负担。正式路径默认删除或 fail fast；确实临时需要时，只能作为临时参考、迁移线索或后续删除清单，出现在负向测试、过渡期专项诊断或 operator 短期说明里，并按第 3.2 节写清删除责任、退出条件、删除时机和验收证据。
 
 这不是新增 DevOps 发布平台，也不是新增 runner 产品面。
 
@@ -93,8 +93,8 @@ AgentSmith 仍保留：
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
 - 当前 release campaign 只绑定 AgentSmith product readiness / local complete / current product gate、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 transition-only focused diagnostics / 过渡期专项诊断，不属于当前产品门禁结论，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
 - Unified deploy 只有一个部署模型，`local-kind` 和 `existing-cluster` 只是 profile，不是两个产品，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。当前 `existing-cluster` 仍按 Docker substrate/IP-only transition diagnostic 处理，不能冒充真实 cloud/airgap substrate。
-- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。P4 已完成 formal artifact producer/checker；正式 artifact 是外部 `runner-contract-artifact.json` + tgz，包内 manifest 是 package manifest v1，`local_pack_manifest` 只允许作为负向测试输入。pre-GA 已移除旧包、旧输入、旧路径和旧字段不是正式输入；正式路径默认删除或 fail fast，只能出现在第 3.2 节定义的负向测试、过渡期专项诊断或 operator 短期说明里。P5.0 runner repo consumer diagnostic skeleton 已能消费正式 artifact；P5.1 start guard/CI 化已完成（runner repo commit `cdfa800`）。这些证据不能据此宣称 runtime migration、image adoption 或 release readiness。
-- 当前仍是全项目 pre-GA：旧名、旧路径、旧 env/profile 别名不做长期双轨。它们只能作为第 3.2 节定义的负向测试、过渡期专项诊断或 operator 短期说明出现。部署 profile 映射口在 P2/P6 去掉 active workflow 后删除或归位到 operator docs；runner 已移除旧包/旧输入/旧路径/旧字段/旧 env 在 P5 runner repo/manifest/lock adoption 和 runtime migration 完成后删除或归位；P6 只保留必要 fail-fast 负向测试。
+- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。P4 已完成 formal artifact producer/checker；正式 artifact 是外部 `runner-contract-artifact.json` + tgz，包内 manifest 是 package manifest v1，`local_pack_manifest` 只允许作为负向测试输入。pre-GA 已移除旧包、旧输入、旧路径和旧字段不是正式输入；正式路径默认删除或 fail fast，只能作为第 3.2 节定义的临时参考、迁移线索或后续删除清单，出现在负向测试、过渡期专项诊断或 operator 短期说明里。P5.0 runner repo consumer diagnostic skeleton 已能消费正式 artifact；P5.1 start guard/CI 化已完成（runner repo commit `cdfa800`）。这些证据不能据此宣称 runtime migration、image adoption 或 release readiness。
+- 当前仍是全项目 pre-GA：旧名、旧路径、旧文档/旧脚本引用、旧 env/profile 别名不做长期双轨或兼容承诺。它们只能作为第 3.2 节定义的临时参考、迁移线索或后续删除清单，出现在负向测试、过渡期专项诊断或 operator 短期说明里。部署 profile 映射口在 P2/P6 去掉 active workflow 后删除或归位到 operator docs；runner 已移除旧包/旧输入/旧路径/旧字段/旧 env 在 P5 runner repo/manifest/lock adoption 和 runtime migration 完成后删除或归位；P6 只保留必要 fail-fast 负向测试。
 - 当前 runner 执行进程在 [packages/agent-task-runner](../../packages/agent-task-runner)，AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)。
 - AFSCP/ASBCP 只作为新 repo bootstrap 治理做法上的 family reference；本计划采用 ASBCP-lite / non-normative reference，只借鉴启动纪律：repo identity、scope boundary、docs/contracts/runbooks/ADR 入口、quick governance guard、单一 release gate 入口。不复制 AFSCP/ASBCP 的领域模型、风险台账规模、证据分类体系或 gate 实现。
 
@@ -133,22 +133,23 @@ airgap mechanism/app-current inventory closure。
 3. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。online target-registry evidence root 只是 envelope/container，内含 `evidence.json`、`evidence-subject.json` 和 `online-deployment-gate-report.json`，可被 `--evidence` revalidate，但不列为 machine accepted focused output 值。`airgap-bundle-render-check-report.json` 虽已有 focused diagnostic producer，但仍是 `readiness=false` 诊断输出，`--evidence` 继续拒收。未来/预留 output 不预留长期双轨，未实现或未接入 `--evidence` 语义校验就 fail fast。`--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界已随 P2 online apply/evidence spine 与 P3 render-check focused 切片阶段性收紧；后续继续 P2 full online adoption、release-kit operator signoff、AgentSmith product-flow evidence 分别收口，或 P3 airgap mechanism/app-current inventory 剩余工作。
 4. Runner 复审结论：不要先搬 runtime。P4 AgentSmith formal artifact producer/checker 已完成，正式 artifact 是外部 `runner-contract-artifact.json` + tgz；P5.0 runner repo consumer diagnostic skeleton 已完成并可消费正式 artifact；P5.1 start guard/CI 化已完成。下一步才迁 runner runtime、image build 和 AgentSmith adoption。
 5. Runner 迁移结论：旧 `@mbos/agent-runner` shim 不能成为长期双轨；`buildAgentRuntimeEnv` 归属必须在 P5 runtime 迁移时迁到 runner runtime 所属包或被正式 contract 覆盖，旧包只保留第 3.2 节定义的负向测试/短期诊断并在 P6 删除或归位。当前 runner image 仍走 AgentSmith 源码路径，不能作为拆分证据或 release proof。
-6. 旧输入复审结论：项目仍 pre-GA，旧名、旧路径、旧 env/profile 别名、已移除旧包和已移除字段默认删除或 fail fast，不做长期兼容。只有负向测试、过渡期专项诊断或 operator 短期说明确实需要时才临时保留；任何暂留都必须挂 owner、删除触发条件和验收证据，并在 P2/P5/P6 删除或归位。
+6. 旧输入复审结论：项目仍 pre-GA，旧名、旧路径、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包和已移除字段默认删除或 fail fast，不做长期兼容。只有负向测试、过渡期专项诊断或 operator 短期说明确实需要临时参考或迁移线索时才短期保留；任何暂留都必须挂删除责任、退出条件、删除时机和验收证据，并在 P2/P5/P6 删除或归位。
 
-### 3.2 Pre-GA 已移除/旧输入处理规则
+### 3.2 Pre-GA 旧路径/旧引用处理规则
 
 项目整体仍 pre-GA，KISS 规则是：能删就删，正式路径不能接受的输入就
-fail fast，不为历史形态保留长期心智负担。这里的“旧输入/old/shim/兼容”
-只表示 pre-GA 已移除输入、过渡诊断或一次性迁移说明，不是长期轨道。
-只有下表列出的临时保留可以出现，且必须同时有 owner、删除触发条件和
-验收证据。缺任一项时，不保留。
+fail fast，不为历史形态保留长期心智负担。这里的“旧路径/旧文档/旧脚本引用/旧输入/old/shim/兼容”
+只表示 pre-GA 已移除内容、过渡诊断、临时参考或一次性迁移线索，不是长期轨道，
+也不是兼容承诺。只有下表列出的临时保留可以出现，且必须同时有删除责任、
+退出条件、删除时机和验收证据。缺任一项时，不保留；临时价值用完后，
+按表中时机删除或移出 active workflow/docs。
 
-| 临时保留项 | Owner | 删除触发条件 | 验收证据 |
+| 临时保留项 | 删除责任 | 退出条件 / 删除时机 | 验收证据 |
 | --- | --- | --- | --- |
 | `local-kind` / `existing-cluster` non-canonical profile name 映射口 | AgentSmith release-boundary owner | P2/P6 移除或隐藏 AgentSmith active status/workflow 中的 transition-only diagnostics，或 release-kit repo-local gate 已拥有 deployment/package/operator verdict | `contracts:check-unified-deploy-vocabulary`、`contracts:check-current-verification-campaigns`、`contracts:check-release-boundary` 证明新轴值为正式输入，混写和同义词漂移 fail fast |
 | release-kit `--inputs` / `--evidence` focused diagnostic 输出和未来/预留 output 拒绝说明 | release-kit boundary owner | producer 已实现且 `--evidence` 能重新语义校验后进入正式接受清单；否则继续 fail fast 并在 P2/P3/P6 清掉无实现说明 | `contracts:check-release-boundary`、`contracts:check-release-kit-source-boundary -- --scan-root <repo>` 交接检查、provenance/redaction 负向测试 |
 | 已移除 runner 包、字段、路径、`@mbos/agent-runner` shim、`buildAgentRuntimeEnv` 临时归属说明 | runner contract/runtime owner | P5 runner manifest/lock adoption 和 runtime migration 完成；P6 删除 AgentSmith 长期共享路径，只留必要 fail-fast 负向测试 | `contracts:check-agent-runner-contract-artifact`、`contracts:check-runner-contract-sync`、`contracts:check-release-boundary`、`contracts:check-runner-image-lock -- --adoption --manifest <path>` |
-| operator 短期迁移说明中的已移除命令、路径或名称 | 对应 runbook/doc owner | runbook 不再需要一次性迁移提示，或 P6 收口时迁到 docs-only 历史说明并从 active workflow 删除 | `contracts:check-doc-governance`、`contracts:check-engineering-governance` 和对应 source-boundary/static guard 证明它不能被 Make/npm/GitHub Actions/release/local-real/backend-real wrapper 间接调用 |
+| operator 短期迁移说明中的已移除命令、路径、旧文档链接、旧脚本入口或名称 | 对应 runbook/doc owner | runbook 不再需要一次性迁移提示，或 P6 收口时迁到 docs-only 历史说明并从 active workflow 删除 | `contracts:check-doc-governance`、`contracts:check-engineering-governance` 和对应 source-boundary/static guard 证明它不能被 Make/npm/GitHub Actions/release/local-real/backend-real wrapper 间接调用 |
 
 ## 4. Repo 职责
 
@@ -164,7 +165,7 @@ fail fast，不为历史形态保留长期心智负担。这里的“旧输入/o
 2. Release kit 可以打包、渲染、执行和等待 bootstrap workload，并产出部署证据；它不解释产品 schema，也不改 bootstrap 业务逻辑。
 3. Runner repo 可以实现 builtin skills 的本地 runtime 和请求级投影消费；Context Store 权限、scope 和 managed credential 解析语义仍由 AgentSmith 定义。
 4. 新 repo 本地目录与 `agentsmith` 同级只是当前 workspace bootstrap 约定：`/home/percy/works/mbos-v1/<repo>`，当前目标为 `/home/percy/works/mbos-v1/agentsmith-release-kit`、`/home/percy/works/mbos-v1/agentsmith-runner`；远端 org 已有，文档和创建命令使用 `https://github.com/agentsmith-project/<repo>.git`。CI/release 只认 normalized GitHub identity + provenance；canonical repo identity 固定为 `github.com/agentsmith-project/<repo>`。
-5. `agentsmith-runner` 是唯一 canonical runner repo；当前同级目录已有的 `agentsmith-codex-runner` 只作为历史同级目录或归档对象，不能作为 bootstrap 输入，也不能成为第二条 runner 真相。任何正式 lock、release contract 或 CI adoption 指向 `agentsmith-codex-runner` 都必须 fail fast。
+5. `agentsmith-runner` 是唯一 canonical runner repo；当前同级目录已有的 `agentsmith-codex-runner` 只作为临时迁移线索或归档对象，不能作为 bootstrap 输入，也不能成为第二条 runner 真相。任何正式 lock、release contract 或 CI adoption 指向 `agentsmith-codex-runner` 都必须 fail fast。
 6. `agentsmith-runner` 不定义 Context Store scopes、Files/file-library 行为、managed credential resolution、execution ticket 颁发或权限语义；runner 侧 builtin skills runtime 只消费 AgentSmith 请求级只读投影并做本地运行，不能新增权限、scope 或 credential 解析语义。
 
 ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith 只 pin digest 和验证 adoption，不拥有这些 provider 的 release gate。
@@ -214,7 +215,7 @@ ASBCP / AFSCP / LLMUP 继续作为外部 provider image 被消费。AgentSmith �
 4. 不把 `check-product-flows.ts`、visual、backend-real、story/e2e 迁到 release kit。
 5. 不把 Context Store、Files/file library、managed credential、execution ticket 迁到 runner repo。
 6. 不做 API 多副本、execution gateway、离线队列、Keycloak operator、Kubernetes substrate、云集群/数据库/bucket/IAM/network 自动创建。
-7. 不为旧名、旧路径、旧 env、已移除旧字段、已移除旧包保留长期双轨；pre-GA 只允许第 3.2 节列出的负向测试、过渡期专项诊断或 operator 短期说明，并在 P2/P6（deploy/profile）或 P5/P6（runner runtime/adoption）标明 owner、删除触发条件和验收证据。
+7. 不为旧名、旧路径、旧文档/旧脚本引用、旧 env、已移除旧字段、已移除旧包保留长期双轨；pre-GA 只允许第 3.2 节列出的临时参考、迁移线索、后续删除项，并在 P2/P6（deploy/profile）或 P5/P6（runner runtime/adoption）标明删除责任、退出条件、删除时机和验收证据。
 8. 不为小概率环境做厚重兜底；缺合同、缺 digest、缺镜像、缺权限就快速失败。
 9. 不把 AFSCP/ASBCP family reference 变成源码依赖、合同依赖、gate 依赖或新治理平台。
 10. 不复制大型治理体系，不把 quick gate 等同 release readiness，不把新 repo 的
@@ -280,7 +281,7 @@ Profile vocabulary pre-GA 映射口：
    release-kit evidence、release-kit repo-local gate 和 handoff artifact 只接受新轴值。
 3. 同一 payload 内混写 non-canonical pre-GA profile name 和新轴值、根据字符串隐式推断、或引入
    `kind` / `real-k8s` / `cluster` 等同义词漂移时 fail fast。
-4. 这个映射口只服务 pre-GA 迁移入口；owner、删除触发条件和验收证据按第 3.2 节执行。P2/P6 去掉 non-canonical profile active workflow 后删除。若仍需说明已移除旧命令，只归位到 operator docs，不进入 machine contract。
+4. 这个映射口只服务 pre-GA 迁移入口；删除责任、退出条件、删除时机和验收证据按第 3.2 节执行。P2/P6 去掉 non-canonical profile active workflow 后删除。若仍需说明已移除旧命令，只作为 operator docs 的一次性迁移线索，并按第 3.2 节后续删除，不进入 machine contract。
 
 ## 7. 最小合同
 
@@ -820,11 +821,11 @@ P5.1 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-a
 工作：
 
 1. 在 release-kit / runner 集成面上，AgentSmith 只保留 thin adapters、contract checker、docs 指向和产品集成测试；AgentSmith 的产品合同、OpenAPI/AsyncAPI、验证入口和产品代码继续保留。
-2. release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确前，不删除底层部署合同语义；明确后从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试。项目仍是 pre-GA，不为已移除旧输入保留长期心智负担；P6 后旧 profile、旧 writer、旧 command 只能归档到 docs-only 或负向测试，任何短期暂留都必须有 owner、删除触发条件和验收证据；若保留合同，必须归一到 `target_cluster` / `substrate_source` / `distribution` 三轴新模型。
+2. release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确前，不删除底层部署合同语义；明确后从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试。项目仍是 pre-GA，不为已移除旧输入、旧路径或旧文档/旧脚本引用保留长期心智负担；P6 后旧 profile、旧 writer、旧 command、旧 doc/script 引用只能作为 docs-only 迁移线索或负向测试，任何短期暂留都必须有删除责任、退出条件、删除时机和验收证据；若保留合同，必须归一到 `target_cluster` / `substrate_source` / `distribution` 三轴新模型。
 3. 删除 runner runtime 源码、旧 `@mbos/agent-runner` shim 和 AgentSmith 侧
    `buildAgentRuntimeEnv` 长期共享路径；只保留 docs-only 迁移说明或必要
    fail-fast 负向测试，不保留长期本地启动双轨；第 3.2 节中的暂留项必须
-   全部完成 owner、删除触发条件和验收证据核对。
+   全部完成删除责任、退出条件、删除时机和验收证据核对。
 4. 增加 static guard，防止正式路径重新 import 外部 repo 源码、tag-only image、已移除旧 runner fields、release kit import 产品源码。
 
 验收：
@@ -1012,7 +1013,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 22. 有没有把 `existing-cluster` 诊断、`site.env.example` 或源码 build runner image 当成正式 release proof？
 23. 有没有让 `deploy_template_package.required_image_ids` 与 release contract image inventory 的模板 image 范围脱节？
 24. 有没有让旧 `@mbos/agent-runner` shim 或 `buildAgentRuntimeEnv` 形成长期双轨？
-25. 有没有保留未挂 owner、删除触发条件和验收证据的 pre-GA 已移除输入或短期迁移说明？
+25. 有没有保留未挂删除责任、退出条件、删除时机和验收证据的 pre-GA 已移除输入、旧路径/旧文档/旧脚本引用或短期迁移说明？
 26. 有没有把 P2 online evidence root envelope 写成 registry login/push/pull/mirror/presence proof、cloud provisioning、full online adoption、release-kit operator signoff、AgentSmith product-flow evidence 收口或 release readiness？
 
 任一答案为“有”，停止并回到边界评审。

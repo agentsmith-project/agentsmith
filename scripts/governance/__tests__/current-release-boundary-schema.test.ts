@@ -1709,6 +1709,31 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it('rejects runner image refs that use latest even when digest-pinned', () => {
+    const manifest = cloneFixture('runner-release-manifest.valid.json');
+    const manifestImage = manifest.image as Record<string, unknown>;
+    manifestImage.image =
+      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    expectInvalid(
+      validateRunnerReleaseManifest(manifest),
+      'image.image tag "latest" is not allowed for canonical runner image refs.',
+    );
+
+    const lock = parseRunnerImageLockText(
+      readTextFixture('agentsmith-runner-image.lock')
+        .replace(
+          'ghcr.io/agentsmith-project/agentsmith-runner:p5-3a@sha256:',
+          'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:',
+        ),
+      'latest-agentsmith-runner-image.lock',
+    );
+
+    expectInvalid(
+      lock,
+      'image.image tag "latest" is not allowed for canonical runner image refs.',
+    );
+  });
+
   it('rejects legacy runner image ids in image lock text', () => {
     const lock = parseRunnerImageLockText(
       readTextFixture('agentsmith-runner-image.lock')

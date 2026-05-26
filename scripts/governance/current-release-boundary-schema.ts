@@ -2578,11 +2578,19 @@ function validateRunnerImageRecord(
       reason:
         `${path}.image must be ghcr.io/agentsmith-project/agentsmith-runner:<tag>@sha256:<64 lowercase hex>.`,
     });
-  } else if (image.digest !== `sha256:${match[2]}`) {
-    failures.push({
-      path: `${path}.image`,
-      reason: `${path}.image digest must match ${path}.digest.`,
-    });
+  } else {
+    if (match[1] === 'latest') {
+      failures.push({
+        path: `${path}.image`,
+        reason: `${path}.image tag "latest" is not allowed for canonical runner image refs.`,
+      });
+    }
+    if (image.digest !== `sha256:${match[2]}`) {
+      failures.push({
+        path: `${path}.image`,
+        reason: `${path}.image digest must match ${path}.digest.`,
+      });
+    }
   }
 
   return image;

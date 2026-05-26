@@ -13,6 +13,7 @@ import {
   type CurrentAgentSmithReleaseContract,
   type CurrentDeploymentTargetProfile,
   type CurrentDeployTemplatePackage,
+  type CurrentRunnerImageLock,
 } from '../current-release-boundary-schema';
 import {
   generateAgentSmithReleaseContract,
@@ -34,6 +35,7 @@ const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'ingress_nginx_certgen',
   'ingress_nginx_controller',
   'llmup',
+  'managed_runner',
 ] as const;
 const RELEASE_BOUNDARY_PROVIDER_IMAGE_GUARD_FILES = [
   'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
@@ -80,6 +82,25 @@ const RELEASE_KIT_PREREQUISITE_IMAGES = [
     digest: `sha256:${'7'.repeat(64)}`,
   },
 ] as const;
+const RUNNER_IMAGE_LOCK = {
+  schema_version: 'agentsmith.runner-image-lock/v1',
+  runner: 'agentsmith-runner',
+  release_id: 'p5-publish-d07f21c',
+  git_sha: 'd07f21c611d7fd9e0b5a101ee0524eb5e169814d',
+  runner_contract_version: '0.1.0',
+  runner_protocol_version: '1.0',
+  image: {
+    id: 'agentsmith-runner',
+    image:
+      'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+    digest: 'sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+  },
+  manifest: {
+    producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+    subject_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
+    artifact_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
+  },
+} as const satisfies CurrentRunnerImageLock;
 
 function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
   const subject: Omit<CurrentDeployTemplatePackage, 'artifact_provenance'> = {
@@ -119,6 +140,10 @@ function buildTargetProfiles(): AgentSmithReleaseContractGeneratorInput['target_
   return structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
 }
 
+function buildRunnerImageLock(): CurrentRunnerImageLock {
+  return structuredClone(RUNNER_IMAGE_LOCK);
+}
+
 function buildInput(): AgentSmithReleaseContractGeneratorInput {
   const openapiSubject = {
     openapi: '3.1.0',
@@ -143,6 +168,7 @@ function buildInput(): AgentSmithReleaseContractGeneratorInput {
     product_images: PRODUCT_IMAGES,
     adopted_provider_images: ADOPTED_PROVIDER_IMAGES,
     release_kit_prerequisite_images: RELEASE_KIT_PREREQUISITE_IMAGES,
+    runnerImageLock: buildRunnerImageLock(),
     deploy_template_digest: `sha256:${'6'.repeat(64)}`,
     deploy_template_package: buildDeployTemplatePackage(),
     openapi_subject: openapiSubject,
@@ -231,7 +257,20 @@ describe('release contract generator', () => {
         ...image,
         source: 'release_kit_prerequisite_images' as const,
       })),
+      {
+        id: 'managed_runner',
+        image: RUNNER_IMAGE_LOCK.image.image,
+        digest: RUNNER_IMAGE_LOCK.image.digest,
+        source: 'managed_runner_image',
+      },
     ]);
+    expect(contract.managed_runner_image).toEqual(RUNNER_IMAGE_LOCK.image);
+    expect(contract.deploy_image_inventory).toContainEqual({
+      id: 'managed_runner',
+      image: RUNNER_IMAGE_LOCK.image.image,
+      digest: RUNNER_IMAGE_LOCK.image.digest,
+      source: 'managed_runner_image',
+    });
     expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
 
     const contractSubject = cloneAsRecord(contract);
@@ -393,6 +432,31 @@ describe('release contract generator', () => {
       artifact_provenance: {},
     } as AgentSmithReleaseContractGeneratorInput & { artifact_provenance: Record<string, never> };
     expectThrowsWithMessage(provenanceInput, 'artifact_provenance must be generated, not provided by input');
+  });
+
+  it('requires runnerImageLock and rejects caller-provided managed_runner_image', () => {
+    const missingLock = buildInput() as Partial<AgentSmithReleaseContractGeneratorInput>;
+    delete missingLock.runnerImageLock;
+    expect(() => generateAgentSmithReleaseContract(
+      missingLock as AgentSmithReleaseContractGeneratorInput,
+      SOURCE_OPTIONS,
+    )).toThrow('runnerImageLock is required');
+
+    const callerProvided = {
+      ...buildInput(),
+      managed_runner_image: RUNNER_IMAGE_LOCK.image,
+    } as AgentSmithReleaseContractGeneratorInput & { managed_runner_image: unknown };
+    expectThrowsWithMessage(callerProvided, 'managed_runner_image must be assembled from runnerImageLock');
+  });
+
+  it('rejects invalid runnerImageLock protocol and digest drift', () => {
+    const protocolDrift = buildInput();
+    protocolDrift.runnerImageLock.runner_protocol_version = '0.9';
+    expectThrowsWithMessage(protocolDrift, 'runner_protocol_version must exactly equal "1.0"');
+
+    const digestDrift = buildInput();
+    digestDrift.runnerImageLock.image.digest = `sha256:${'9'.repeat(64)}`;
+    expectThrowsWithMessage(digestDrift, 'image.image digest must match image.digest');
   });
 
   it('rejects missing required image arrays with validation failures instead of TypeError', () => {

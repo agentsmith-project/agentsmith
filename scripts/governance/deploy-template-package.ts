@@ -51,11 +51,8 @@ const RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS = {
   ASBCP_IMAGE: 'asbcp',
   INGRESS_NGINX_CONTROLLER_IMAGE: 'ingress_nginx_controller',
   INGRESS_NGINX_CERTGEN_IMAGE: 'ingress_nginx_certgen',
+  MANAGED_RUNNER_IMAGE: 'managed_runner',
 } as const satisfies Record<string, string>;
-const VALUE_IMAGE_PLACEHOLDERS = new Set<string>([
-  // Runner image release proof is not part of the current AgentSmith release-grade inventory handoff.
-  'MANAGED_RUNNER_IMAGE',
-]);
 const REQUIRED_CI_PROVENANCE_STRING_FIELDS = [
   'workflow_name',
   'run_id',
@@ -548,9 +545,6 @@ function collectRequiredImageIds(sources: readonly PackageFileSource[]): string[
       const imageId = releaseContractImageIdForLegacyPlaceholder(placeholder);
       if (imageId) {
         imageIds.add(imageId);
-        continue;
-      }
-      if (VALUE_IMAGE_PLACEHOLDERS.has(placeholder)) {
         continue;
       }
       if (isImagePlaceholder(placeholder)) {

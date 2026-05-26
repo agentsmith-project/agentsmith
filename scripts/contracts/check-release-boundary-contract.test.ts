@@ -328,6 +328,42 @@ describe('check-release-boundary-contract', () => {
     );
   });
 
+  it('reports release contract managed runner digest drift from the canonical lock fixture', () => {
+    const root = writeFixtureRoot();
+    const lockPath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      'agentsmith-runner-image.lock',
+    );
+    const driftDigest = `sha256:${'b'.repeat(64)}`;
+    writeFileSync(
+      lockPath,
+      readFileSync(lockPath, 'utf8')
+        .replace(/@sha256:[0-9a-f]{64}/u, `@${driftDigest}`)
+        .replace(/image_digest=sha256:[0-9a-f]{64}/u, `image_digest=${driftDigest}`),
+      'utf8',
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+          message: expect.stringContaining('managed_runner_image must match agentsmith-runner-image.lock image'),
+        }),
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+          message: expect.stringContaining('managed_runner inventory image must match agentsmith-runner-image.lock image'),
+        }),
+      ]),
+    );
+  });
+
   it('reports missing runner adapter inventory fixture from copied fixtures', () => {
     const root = writeFixtureRoot();
     rmSync(

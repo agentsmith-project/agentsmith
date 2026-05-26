@@ -8,9 +8,11 @@ import {
   CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION,
   CURRENT_REQUIRED_PRODUCT_FLOWS,
   CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION,
+  CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
   canonicalReleaseBoundaryJson,
   sha256Digest,
   validateAgentSmithReleaseContract,
+  validateRunnerImageLock,
   type CurrentAgentSmithReleaseContract,
   type CurrentArtifactProvenance,
   type CurrentDeployTemplatePackage,
@@ -18,6 +20,7 @@ import {
   type CurrentReleaseBoundaryValidationFailure,
   type CurrentReleaseImage,
   type CurrentReleaseInventoryImage,
+  type CurrentRunnerImageLock,
 } from './current-release-boundary-schema';
 
 const GENERATOR_ARTIFACT_SHA256_OMITTED = Symbol('generator artifact sha256 omitted');
@@ -50,6 +53,7 @@ export interface AgentSmithReleaseContractGeneratorInput {
   product_images: readonly CurrentReleaseImage[];
   adopted_provider_images: readonly CurrentReleaseImage[];
   release_kit_prerequisite_images: readonly CurrentReleaseImage[];
+  runnerImageLock: CurrentRunnerImageLock;
   deploy_template_digest: string;
   deploy_template_package: CurrentDeployTemplatePackage;
   openapi_digest?: string;
@@ -151,6 +155,7 @@ function buildReleaseContractSubject(
     product_images: input.product_images,
     adopted_provider_images: input.adopted_provider_images,
     release_kit_prerequisite_images: input.release_kit_prerequisite_images,
+    managed_runner_image: { ...input.runnerImageLock.image },
     deploy_image_inventory: buildDeployImageInventory(input),
     deploy_template_digest: input.deploy_template_digest,
     deploy_template_package: input.deploy_template_package,
@@ -166,7 +171,7 @@ function buildReleaseContractSubject(
 function buildDeployImageInventory(
   input: Pick<
     AgentSmithReleaseContractGeneratorInput,
-    'product_images' | 'adopted_provider_images' | 'release_kit_prerequisite_images'
+    'product_images' | 'adopted_provider_images' | 'release_kit_prerequisite_images' | 'runnerImageLock'
   >,
 ): CurrentReleaseInventoryImage[] {
   return [
@@ -176,6 +181,12 @@ function buildDeployImageInventory(
       ...image,
       source: 'release_kit_prerequisite_images' as const,
     })),
+    {
+      id: CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
+      image: input.runnerImageLock.image.image,
+      digest: input.runnerImageLock.image.digest,
+      source: 'managed_runner_image',
+    },
   ];
 }
 
@@ -260,6 +271,12 @@ function validateGeneratorInput(
       reason: 'deploy_image_inventory must be generated, not provided by input.',
     });
   }
+  if ('managed_runner_image' in record) {
+    failures.push({
+      path: 'managed_runner_image',
+      reason: 'managed_runner_image must be assembled from runnerImageLock.',
+    });
+  }
   if ('artifact_provenance' in record) {
     failures.push({
       path: 'artifact_provenance',
@@ -324,7 +341,29 @@ function validateGeneratorInput(
     }
   }
 
+  if (!hasOwn(record, 'runnerImageLock')) {
+    failures.push({
+      path: 'runnerImageLock',
+      reason: 'runnerImageLock is required.',
+    });
+  } else {
+    const runnerImageLockValidation = validateRunnerImageLock(input.runnerImageLock);
+    if (!runnerImageLockValidation.ok) {
+      failures.push(...prefixValidationFailures('runnerImageLock', runnerImageLockValidation.failures));
+    }
+  }
+
   return failures;
+}
+
+function prefixValidationFailures(
+  prefix: string,
+  failures: readonly CurrentReleaseBoundaryValidationFailure[],
+): CurrentReleaseBoundaryValidationFailure[] {
+  return failures.map((failure) => ({
+    path: failure.path === prefix ? prefix : `${prefix}.${failure.path}`,
+    reason: failure.reason,
+  }));
 }
 
 function resolveRequiredSourceGitSha(options: AgentSmithReleaseContractGenerationOptions): string {
@@ -453,6 +492,10 @@ function formatReleaseContractValidationError(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(value, key);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

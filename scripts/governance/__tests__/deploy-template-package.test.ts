@@ -33,6 +33,7 @@ import {
   sha256Digest,
   validateDeployTemplatePackage,
   type CurrentDeployTemplatePackage,
+  type CurrentRunnerImageLock,
 } from '../current-release-boundary-schema';
 import {
   DEPLOY_TEMPLATE_PACKAGE_ARCHIVE_NAME,
@@ -63,6 +64,7 @@ const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'ingress_nginx_certgen',
   'ingress_nginx_controller',
   'llmup',
+  'managed_runner',
 ] as const;
 const BUILD_PRODUCER = {
   name: 'build-artifact-broker',
@@ -70,6 +72,25 @@ const BUILD_PRODUCER = {
   command: 'npm run build-artifact-broker',
   runtime: 'vitest',
 };
+const RUNNER_IMAGE_LOCK = {
+  schema_version: 'agentsmith.runner-image-lock/v1',
+  runner: 'agentsmith-runner',
+  release_id: 'p5-publish-d07f21c',
+  git_sha: 'd07f21c611d7fd9e0b5a101ee0524eb5e169814d',
+  runner_contract_version: '0.1.0',
+  runner_protocol_version: '1.0',
+  image: {
+    id: 'agentsmith-runner',
+    image:
+      'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+    digest: 'sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+  },
+  manifest: {
+    producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+    subject_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
+    artifact_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
+  },
+} as const satisfies CurrentRunnerImageLock;
 const DEPLOY_TEMPLATE_PACKAGE_SCRIPT = join(REPO_ROOT, 'scripts/governance/deploy-template-package.ts');
 const TSX_LOADER = join(REPO_ROOT, 'node_modules/tsx/dist/loader.mjs');
 
@@ -345,6 +366,7 @@ function buildReleaseContractAssemblyInput(
         digest: `sha256:${'7'.repeat(64)}`,
       },
     ],
+    runnerImageLock: structuredClone(RUNNER_IMAGE_LOCK),
     target_profiles: structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES),
     min_release_kit_version: '0.1.0',
     ci_provenance: {
@@ -661,12 +683,15 @@ describe('deploy template package generator', () => {
       sourceGitSha: GIT_SHA,
     });
     const workloads = readArchiveMemberBytes(result.archivePath, 'templates/app/workloads.yaml').toString('utf8');
+    const config = readArchiveMemberBytes(result.archivePath, 'templates/app/config.yaml').toString('utf8');
 
     expect(workloads).toContain('${{ images.agentsmith_app.image }}');
-    expect(workloads).toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
+    expect(workloads).toContain('${{ images.managed_runner.image }}');
+    expect(config).toContain('${{ images.managed_runner.image }}');
     expect(workloads).not.toContain('{{API_IMAGE}}');
     expect(workloads).not.toContain('{{WEB_IMAGE}}');
-    expect(workloads).not.toContain('${{ images.managed_runner.image }}');
+    expect(workloads).not.toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
+    expect(config).not.toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
     expect(workloads).not.toContain('{{NAMESPACE}}');
   });
 

@@ -844,6 +844,54 @@ describe('current release boundary schema', () => {
     expectInvalid(validateAgentSmithReleaseContract(contract), 'deploy_template_package is required');
   });
 
+  it('requires managed runner image adoption through the runner lock identity and inventory alias', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    expect(contract.managed_runner_image).toMatchObject({
+      id: 'agentsmith-runner',
+      image:
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+      digest: 'sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+    });
+    expect(contract.deploy_image_inventory).toContainEqual({
+      id: 'managed_runner',
+      image:
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+      digest: 'sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+      source: 'managed_runner_image',
+    });
+
+    const missingManagedRunner = cloneFixture('release-contract.valid.json');
+    delete missingManagedRunner.managed_runner_image;
+    expectInvalid(validateAgentSmithReleaseContract(missingManagedRunner), 'managed_runner_image is required');
+
+    const wrongTopLevelId = cloneFixture('release-contract.valid.json');
+    (wrongTopLevelId.managed_runner_image as Record<string, unknown>).id = 'managed_runner';
+    rehashReleaseContract(wrongTopLevelId);
+    expectInvalid(validateAgentSmithReleaseContract(wrongTopLevelId), 'managed_runner_image.id must be "agentsmith-runner"');
+
+    const missingRequiredId = cloneFixture('release-contract.valid.json');
+    const deployTemplatePackage = missingRequiredId.deploy_template_package as Record<string, unknown>;
+    deployTemplatePackage.required_image_ids = (deployTemplatePackage.required_image_ids as string[])
+      .filter((imageId) => imageId !== 'managed_runner');
+    rehashArtifactProvenanceContainer(deployTemplatePackage);
+    rehashArtifactProvenanceContainer(missingRequiredId);
+    rehashReleaseContractProjection(missingRequiredId);
+    expectInvalid(
+      validateAgentSmithReleaseContract(missingRequiredId),
+      'deploy image inventory id "managed_runner" is not required by deploy_template_package.required_image_ids',
+    );
+
+    const valueException = cloneFixture('release-contract.valid.json');
+    (valueException.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'managed_runner',
+    )!.source = 'adopted_provider_images';
+    rehashReleaseContract(valueException);
+    expectInvalid(
+      validateAgentSmithReleaseContract(valueException),
+      'deploy image inventory entry must match the declared image source',
+    );
+  });
+
   it('rejects deploy template required image ids that are missing, unsorted, duplicated, or outside inventory', () => {
     const missingRequiredIds = cloneFixture('deploy-template-package.valid.json');
     delete missingRequiredIds.required_image_ids;

@@ -9,6 +9,7 @@ import {
   CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX,
   CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
+  CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
   parseRunnerImageLockText,
   validateAgentSmithReleaseContract,
   validateDeployTemplatePackage,
@@ -19,7 +20,9 @@ import {
   validateSubstrateConnectionTruth,
   validateTruthMatrix,
   type CurrentDeploymentTargetProfile,
+  type CurrentAgentSmithReleaseContract,
   type CurrentReleaseBoundaryValidationFailure,
+  type CurrentRunnerImageLock,
 } from '../governance/current-release-boundary-schema';
 
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
@@ -205,6 +208,70 @@ function validateRunnerImageLockFixture(rootDir: string, failures: ReleaseBounda
   }
 }
 
+function validateReleaseContractRunnerImageLockAlignment(
+  rootDir: string,
+  failures: ReleaseBoundaryContractFailure[],
+): void {
+  const contractRelativePath = join(FIXTURE_ROOT, 'release-contract.valid.json');
+  const lockRelativePath = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
+  const contractValue = readJson(rootDir, contractRelativePath, failures);
+  const lockValue = readText(rootDir, lockRelativePath, failures);
+  if (contractValue === null || lockValue === null) {
+    return;
+  }
+
+  const contractResult = validateAgentSmithReleaseContract(contractValue);
+  const lockResult = parseRunnerImageLockText(lockValue, lockRelativePath);
+  if (!contractResult.ok || !lockResult.ok) {
+    return;
+  }
+
+  validateManagedRunnerImageMatchesLock(contractResult.value, lockResult.value, failures);
+}
+
+function validateManagedRunnerImageMatchesLock(
+  contract: CurrentAgentSmithReleaseContract,
+  lock: CurrentRunnerImageLock,
+  failures: ReleaseBoundaryContractFailure[],
+): void {
+  const contractRelativePath = join(FIXTURE_ROOT, 'release-contract.valid.json');
+  if (
+    contract.managed_runner_image.id !== lock.image.id
+    || contract.managed_runner_image.image !== lock.image.image
+    || contract.managed_runner_image.digest !== lock.image.digest
+  ) {
+    addFailure(
+      failures,
+      contractRelativePath,
+      'managed_runner_image must match agentsmith-runner-image.lock image.',
+    );
+  }
+
+  const inventoryImage = contract.deploy_image_inventory.find(
+    (image) => image.id === CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
+  );
+  if (!inventoryImage) {
+    addFailure(
+      failures,
+      contractRelativePath,
+      `deploy_image_inventory must include ${CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID}.`,
+    );
+    return;
+  }
+
+  if (
+    inventoryImage.image !== lock.image.image
+    || inventoryImage.digest !== lock.image.digest
+    || inventoryImage.source !== 'managed_runner_image'
+  ) {
+    addFailure(
+      failures,
+      contractRelativePath,
+      `${CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID} inventory image must match agentsmith-runner-image.lock image.`,
+    );
+  }
+}
+
 export function checkReleaseBoundaryContract(
   options: CheckOptions = {},
 ): ReleaseBoundaryContractCheckResult {
@@ -270,6 +337,7 @@ export function checkReleaseBoundaryContract(
   validateFixture(rootDir, 'release-kit-evidence.valid.json', validateReleaseKitEvidenceForAggregate, failures);
   validateFixture(rootDir, 'runner-release-manifest.valid.json', validateRunnerReleaseManifest, failures);
   validateRunnerImageLockFixture(rootDir, failures);
+  validateReleaseContractRunnerImageLockAlignment(rootDir, failures);
   validateFixture(
     rootDir,
     'runner-adapter-inventory.valid.json',

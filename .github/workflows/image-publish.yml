@@ -225,6 +225,32 @@ jobs:
             }
             return values;
           };
+          const requireLockValue = (values, key, path) => {
+            const value = values.get(key);
+            if (!value) throw new Error(`${path} missing ${key}.`);
+            return value;
+          };
+          const parseRunnerImageLock = (path) => {
+            const values = parseKeyValue(path);
+            return {
+              schema_version: requireLockValue(values, 'schema_version', path),
+              runner: requireLockValue(values, 'runner', path),
+              release_id: requireLockValue(values, 'release_id', path),
+              git_sha: requireLockValue(values, 'git_sha', path),
+              runner_contract_version: requireLockValue(values, 'runner_contract_version', path),
+              runner_protocol_version: requireLockValue(values, 'runner_protocol_version', path),
+              image: {
+                id: requireLockValue(values, 'image_id', path),
+                image: requireLockValue(values, 'image', path),
+                digest: requireLockValue(values, 'image_digest', path),
+              },
+              manifest: {
+                producer_repo: requireLockValue(values, 'manifest_producer_repo', path),
+                subject_sha256: requireLockValue(values, 'manifest_subject_sha256', path),
+                artifact_sha256: requireLockValue(values, 'manifest_artifact_sha256', path),
+              },
+            };
+          };
           const pinnedImage = (id, image) => {
             const digest = String(image ?? '').match(/@(sha256:[a-f0-9]{64})$/u)?.[1];
             if (!digest) throw new Error(`${id} must be pinned by sha256 digest.`);
@@ -235,6 +261,9 @@ jobs:
           const afscpLock = parseKeyValue('infra/deploy/shared/afscp-image.lock');
           const asbcpLock = parseKeyValue('infra/deploy/shared/asbcp-image.lock');
           const ingressNginxLock = parseKeyValue('infra/deploy/shared/ingress-nginx-image.lock');
+          const runnerImageLock = parseRunnerImageLock(
+            'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          );
           const targetProfiles = readJson('scripts/governance/release-contract-target-profiles.json');
           const releaseId = process.env.RELEASE_ID;
           const gitSha = process.env.GITHUB_SHA;
@@ -255,6 +284,7 @@ jobs:
               pinnedImage('ingress_nginx_controller', ingressNginxLock.get('ingress_nginx_controller_source_image')),
               pinnedImage('ingress_nginx_certgen', ingressNginxLock.get('ingress_nginx_certgen_source_image')),
             ],
+            runnerImageLock,
             target_profiles: targetProfiles,
             min_release_kit_version: '0.1.0',
           };

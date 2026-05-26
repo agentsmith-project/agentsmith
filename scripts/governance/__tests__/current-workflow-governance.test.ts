@@ -1499,6 +1499,11 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/afscp-image.lock')");
     expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/asbcp-image.lock')");
     expect(runCommands).toContain("parseKeyValue('infra/deploy/shared/ingress-nginx-image.lock')");
+    expect(runCommands).toContain('parseRunnerImageLock(');
+    expect(runCommands).toContain(
+      "'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock'",
+    );
+    expect(runCommands).toContain('runnerImageLock,');
     expect(runCommands).toContain("pinnedImage('afscp', afscpLock.get('afscp_source_image'))");
     expect(runCommands).toContain(
       "pinnedImage('ingress_nginx_controller', ingressNginxLock.get('ingress_nginx_controller_source_image'))",

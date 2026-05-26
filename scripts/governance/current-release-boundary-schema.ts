@@ -27,6 +27,7 @@ export const AGENTSMITH_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmi
 export const RELEASE_KIT_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-release-kit' as const;
 export const RUNNER_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-runner' as const;
 export const FORBIDDEN_RUNNER_REPO = 'github.com/agentsmith-project/agentsmith-codex-runner' as const;
+export const CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID = 'managed_runner' as const;
 
 export const CURRENT_REQUIRED_PRODUCT_FLOWS = [
   'workspace_project',
@@ -91,7 +92,11 @@ export interface CurrentReleaseImage {
 }
 
 export interface CurrentReleaseInventoryImage extends CurrentReleaseImage {
-  source: 'product_images' | 'adopted_provider_images' | 'release_kit_prerequisite_images';
+  source:
+    | 'product_images'
+    | 'adopted_provider_images'
+    | 'release_kit_prerequisite_images'
+    | 'managed_runner_image';
 }
 
 export interface CurrentDeploymentTargetProfile {
@@ -221,6 +226,7 @@ export interface CurrentAgentSmithReleaseContract {
   product_images: readonly CurrentReleaseImage[];
   adopted_provider_images: readonly CurrentReleaseImage[];
   release_kit_prerequisite_images: readonly CurrentReleaseImage[];
+  managed_runner_image: CurrentReleaseImage;
   deploy_image_inventory: readonly CurrentReleaseInventoryImage[];
   deploy_template_digest: string;
   deploy_template_package: CurrentDeployTemplatePackage;
@@ -732,6 +738,7 @@ const INVENTORY_SOURCE_SET = new Set<string>([
   'product_images',
   'adopted_provider_images',
   'release_kit_prerequisite_images',
+  'managed_runner_image',
 ] satisfies CurrentReleaseInventoryImage['source'][]);
 const REQUIRED_TRUTH_IDS = [
   'release_contract',
@@ -1016,6 +1023,7 @@ export function validateAgentSmithReleaseContract(
     imageRegistry,
     failures,
   );
+  validateManagedRunnerImage(value, imageRegistry, failures);
   validateDeployImageInventory(value.deploy_image_inventory, imageRegistry, failures);
   validateReleaseContractDeployTemplatePackage(value, deployTemplateDigest, gitSha, failures);
   validateDeployTemplateRequiredImagesInInventory(value, failures);
@@ -1041,6 +1049,47 @@ export function validateAgentSmithReleaseContract(
   }
 
   return finish(value as CurrentAgentSmithReleaseContract, failures);
+}
+
+function validateManagedRunnerImage(
+  value: Record<string, unknown>,
+  imageRegistry: ImageRegistry,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): CurrentReleaseImage | null {
+  if (!hasOwn(value, 'managed_runner_image')) {
+    failures.push({
+      path: 'managed_runner_image',
+      reason: 'managed_runner_image is required.',
+    });
+    return null;
+  }
+
+  const image = validateRunnerImageRecord(value.managed_runner_image, 'managed_runner_image', failures);
+  if (!image) {
+    return null;
+  }
+
+  if (imageRegistry.has(image.id)) {
+    failures.push({
+      path: 'managed_runner_image.id',
+      reason: 'managed_runner_image runner artifact identity must not be declared in deploy image sets.',
+    });
+  }
+  if (imageRegistry.has(CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID)) {
+    failures.push({
+      path: 'managed_runner_image.id',
+      reason: `deploy image sets must not declare ${CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID}; it is assembled from managed_runner_image.`,
+    });
+  } else {
+    imageRegistry.set(CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID, {
+      id: CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
+      image: image.image,
+      digest: image.digest,
+      source: 'managed_runner_image',
+    });
+  }
+
+  return image;
 }
 
 function validateReleaseContractProvenanceCommitSha(

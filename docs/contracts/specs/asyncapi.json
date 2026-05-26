@@ -1639,8 +1639,7 @@
             "payload": {
               "type": "object",
               "required": [
-                "finish_reason",
-                "usage_tokens"
+                "finish_reason"
               ],
               "properties": {
                 "finish_reason": {

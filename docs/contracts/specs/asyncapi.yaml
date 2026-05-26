@@ -822,7 +822,6 @@ components:
             type: object
             required:
             - finish_reason
-            - usage_tokens
             properties:
               finish_reason:
                 type: string

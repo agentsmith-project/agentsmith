@@ -131,7 +131,9 @@ All frames are JSON objects:
     - `thumbnail_url?: string` (usually for image artifact previews)
 - `agent.response.done`
   - required: `request_id`
-  - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`
+  - payload required: `finish_reason`
+  - payload shape: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens"?: number }`
+  - `usage_tokens` is sent only when the runner or upstream reports real token usage. Missing `usage_tokens` means the runner did not report usage; runners must not estimate it locally.
 - `agent.response.error`
   - required: `request_id`
   - payload: `{ "error_code": "string", "error_message": "string" }`

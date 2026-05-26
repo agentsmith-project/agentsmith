@@ -227,7 +227,7 @@ describe('current release boundary schema', () => {
     });
     expect(validateRunnerReleaseManifest(readFixture('runner-release-manifest.valid.json')).ok).toBe(true);
 
-    const runnerImageLock = parseRunnerImageLockText(readTextFixture('agent-task-runner-image.lock'));
+    const runnerImageLock = parseRunnerImageLockText(readTextFixture('agentsmith-runner-image.lock'));
     expect(runnerImageLock.ok).toBe(true);
     if (runnerImageLock.ok) {
       expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
@@ -1662,6 +1662,61 @@ describe('current release boundary schema', () => {
       validateRunnerReleaseManifest(leadingZeroContractVersion),
       'runner_contract_version must be a semver string',
     );
+  });
+
+  it('rejects runner release manifest legacy image id and P5.3a skeleton drift', () => {
+    const legacyImageId = cloneFixture('runner-release-manifest.valid.json');
+    (legacyImageId.image as Record<string, unknown>).id = 'agent-task-runner';
+    expectInvalid(validateRunnerReleaseManifest(legacyImageId), 'image.id must be "agentsmith-runner"');
+
+    const missingContractArtifact = cloneFixture('runner-release-manifest.valid.json');
+    delete missingContractArtifact.contract_artifact;
+    expectInvalid(validateRunnerReleaseManifest(missingContractArtifact), 'contract_artifact is required');
+
+    const missingAdoptionPolicy = cloneFixture('runner-release-manifest.valid.json');
+    delete missingAdoptionPolicy.adoption_policy;
+    expectInvalid(validateRunnerReleaseManifest(missingAdoptionPolicy), 'adoption_policy is required');
+
+    const descriptorFields = cloneFixture('runner-release-manifest.valid.json');
+    const contractArtifact = descriptorFields.contract_artifact as Record<string, unknown>;
+    contractArtifact.descriptor_uri = 'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/501/descriptor.json';
+    contractArtifact.descriptor_sha256 = `sha256:${'e'.repeat(64)}`;
+    expectInvalid(validateRunnerReleaseManifest(descriptorFields), 'contract_artifact.descriptor_uri is not allowed');
+
+    const artifactHashDrift = cloneFixture('runner-release-manifest.valid.json');
+    artifactProvenanceOf(artifactHashDrift).artifact_sha256 = `sha256:${'0'.repeat(64)}`;
+    expectInvalid(
+      validateRunnerReleaseManifest(artifactHashDrift),
+      'artifact_provenance.artifact_sha256 must equal artifact_provenance.subject_sha256 in skeleton mode',
+    );
+  });
+
+  it('requires canonical runner manifest and P5.2 contract artifact URIs', () => {
+    const nonCanonicalManifestArtifactUri = cloneFixture('runner-release-manifest.valid.json');
+    artifactProvenanceOf(nonCanonicalManifestArtifactUri).artifact_uri =
+      'gh-artifact://agentsmith-runner/release/501/runner-release-manifest.json';
+    expectInvalid(
+      validateRunnerReleaseManifest(nonCanonicalManifestArtifactUri),
+      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/501/runner-release-manifest.json',
+    );
+
+    const nonCanonicalPackageUri = cloneFixture('runner-release-manifest.valid.json');
+    (nonCanonicalPackageUri.contract_artifact as Record<string, unknown>).package_uri =
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-contract-artifact/501/mbos-agent-runner-contract-0.1.0.tgz';
+    expectInvalid(
+      validateRunnerReleaseManifest(nonCanonicalPackageUri),
+      'contract_artifact.package_uri must be gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/<positive-run-id>/<*.tgz>',
+    );
+  });
+
+  it('rejects legacy runner image ids in image lock text', () => {
+    const lock = parseRunnerImageLockText(
+      readTextFixture('agentsmith-runner-image.lock')
+        .replace('image_id=agentsmith-runner', 'image_id=agent-task-runner'),
+      'legacy-agent-task-runner-image.lock',
+    );
+
+    expectInvalid(lock, 'image.id must be "agentsmith-runner"');
   });
 
   it('rejects target profiles that mark any deployment target as required', () => {

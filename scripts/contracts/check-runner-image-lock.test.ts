@@ -21,7 +21,7 @@ import {
 } from '../governance/current-release-boundary-schema';
 
 const FIXTURE_ROOT = join(process.cwd(), 'scripts', 'governance', '__fixtures__', 'release-boundary');
-const LOCK_FIXTURE = join(FIXTURE_ROOT, 'agent-task-runner-image.lock');
+const LOCK_FIXTURE = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
 const MANIFEST_FIXTURE = join(FIXTURE_ROOT, 'runner-release-manifest.valid.json');
 
 const roots: string[] = [];
@@ -40,7 +40,7 @@ function writeFixture(root: string, path: string, content: string): string {
 }
 
 function writeLock(root: string, mutate: (source: string) => string = (source) => source): string {
-  return writeFixture(root, 'agent-task-runner-image.lock', mutate(readFileSync(LOCK_FIXTURE, 'utf8')));
+  return writeFixture(root, 'agentsmith-runner-image.lock', mutate(readFileSync(LOCK_FIXTURE, 'utf8')));
 }
 
 function manifestFixture(): Record<string, unknown> {
@@ -60,7 +60,9 @@ function rehashManifestSubject(manifest: Record<string, unknown>): void {
   const subject = structuredClone(manifest);
   delete subject.artifact_provenance;
   const provenance = manifest.artifact_provenance as Record<string, unknown>;
-  provenance.subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
+  const subjectSha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
+  provenance.subject_sha256 = subjectSha256;
+  provenance.artifact_sha256 = subjectSha256;
 }
 
 function failureText(result: ReturnType<typeof checkRunnerImageLock>): string {
@@ -91,7 +93,7 @@ describe('checkRunnerImageLock', () => {
       source.replace(
         /@sha256:[0-9a-f]{64}/u,
         `@${digest}`,
-      ).replace('image_digest=sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', `image_digest=${digest}`),
+      ).replace(/image_digest=sha256:[0-9a-f]{64}/u, `image_digest=${digest}`),
     );
     const manifestPath = writeManifest(root);
 
@@ -116,13 +118,26 @@ describe('checkRunnerImageLock', () => {
 
   it('rejects malformed runner contract versions before adoption comparison', () => {
     const root = tempRoot();
-    const lockPath = writeLock(root, (source) => source.replace('runner_contract_version=1.0.0', 'runner_contract_version=whatever'));
+    const lockPath = writeLock(root, (source) => source.replace('runner_contract_version=0.1.0', 'runner_contract_version=whatever'));
     const manifestPath = writeManifest(root);
 
     const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('runner_contract_version must be a semver string');
+  });
+
+  it('rejects legacy agent-task-runner image ids in lock text', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root, (source) =>
+      source.replace('image_id=agentsmith-runner', 'image_id=agent-task-runner'),
+    );
+    const manifestPath = writeManifest(root);
+
+    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('image.id must be "agentsmith-runner"');
   });
 
   it.each([
@@ -203,7 +218,7 @@ describe('checkRunnerImageLock', () => {
     const digest = `sha256:${'0'.repeat(64)}`;
     const manifestPath = writeManifest(root, (manifest) => {
       const image = manifest.image as Record<string, unknown>;
-      image.image = `ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@${digest}`;
+      image.image = `ghcr.io/agentsmith-project/agentsmith-runner:p5-3a@${digest}`;
       image.digest = digest;
       rehashManifestSubject(manifest);
     });

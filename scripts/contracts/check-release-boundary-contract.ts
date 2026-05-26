@@ -193,7 +193,7 @@ function validateFixture(
 }
 
 function validateRunnerImageLockFixture(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
-  const relativePath = join(FIXTURE_ROOT, 'agent-task-runner-image.lock');
+  const relativePath = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
   const value = readText(rootDir, relativePath, failures);
   if (value === null) {
     return;

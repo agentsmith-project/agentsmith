@@ -327,7 +327,22 @@ export interface CurrentRunnerReleaseManifest {
   runner_contract_version: string;
   supported_protocol_versions: readonly string[];
   image: CurrentReleaseImage;
+  contract_artifact: CurrentRunnerReleaseContractArtifact;
   artifact_provenance: CurrentArtifactProvenance;
+  adoption_policy: CurrentRunnerReleaseAdoptionPolicy;
+}
+
+export interface CurrentRunnerReleaseContractArtifact {
+  package_uri: string;
+  package_sha256: string;
+  package_integrity: string;
+  descriptor_subject_sha256: string;
+}
+
+export interface CurrentRunnerReleaseAdoptionPolicy {
+  fail_fast: true;
+  lock_update_required: true;
+  release_contract_adoption_required: true;
 }
 
 export interface CurrentRunnerContractArtifactDescriptor {
@@ -567,7 +582,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
   {
     truth: 'runner_image_lock',
     owner: 'agentsmith',
-    physical_source: 'agent-task-runner-image.lock',
+    physical_source: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
     generator: 'AgentSmith adoption PR',
     validators: ['AgentSmith release contract generator', 'backend-real'],
     consumers: ['AgentSmith backend-real', 'release contract generator'],
@@ -680,6 +695,12 @@ const SEMVER_PATTERN =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const PLAIN_SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 const IMAGE_DIGEST_SUFFIX_PATTERN = /@(sha256:[0-9a-f]{64})$/u;
+const RUNNER_IMAGE_ID = 'agentsmith-runner' as const;
+const RUNNER_RELEASE_SUPPORTED_PROTOCOL_VERSIONS = ['1.0'] as const;
+const RUNNER_IMAGE_REF_PATTERN =
+  /^ghcr\.io\/agentsmith-project\/agentsmith-runner:([A-Za-z0-9_][A-Za-z0-9._-]{0,127})@sha256:([0-9a-f]{64})$/u;
+const RUNNER_CONTRACT_PACKAGE_URI_PATTERN =
+  /^gh-artifact:\/\/agentsmith-project\/agentsmith\/runner-contract-artifact\/[1-9][0-9]*\/[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u;
 const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeKey(
   entry.target_cluster,
   entry.substrate_source,
@@ -805,6 +826,50 @@ const RUNNER_IMAGE_LOCK_KEYS = new Set([
   'manifest_subject_sha256',
   'manifest_artifact_sha256',
 ]);
+const RUNNER_RELEASE_MANIFEST_KEYS = new Set([
+  'schema_version',
+  'runner',
+  'release_id',
+  'git_sha',
+  'runner_contract_version',
+  'supported_protocol_versions',
+  'image',
+  'contract_artifact',
+  'artifact_provenance',
+  'adoption_policy',
+]);
+const RUNNER_RELEASE_IMAGE_KEYS = new Set(['id', 'image', 'digest']);
+const RUNNER_RELEASE_CONTRACT_ARTIFACT_KEYS = new Set([
+  'package_uri',
+  'package_sha256',
+  'package_integrity',
+  'descriptor_subject_sha256',
+]);
+const RUNNER_RELEASE_ADOPTION_POLICY_KEYS = new Set([
+  'fail_fast',
+  'lock_update_required',
+  'release_contract_adoption_required',
+]);
+const RUNNER_RELEASE_PROVENANCE_KEYS = new Set([
+  'schema_version',
+  'provenance_kind',
+  'producer_repo',
+  'normalized_remote',
+  'workflow_name',
+  'job',
+  'run_id',
+  'run_attempt',
+  'commit_sha',
+  'generated_at',
+  'artifact_uri',
+  'artifact_sha256',
+  'subject_name',
+  'subject_uri',
+  'subject_sha256',
+  'generator_command',
+  'generator_version',
+  'attestation',
+]);
 
 type ImageRegistry = Map<string, CurrentReleaseImage & { source: CurrentReleaseInventoryImage['source'] }>;
 
@@ -842,7 +907,7 @@ export function normalizeReleaseBoundaryRemote(remote: string): string | null {
 
 export function parseRunnerImageLockText(
   source: string,
-  sourceName = 'agent-task-runner-image.lock',
+  sourceName = 'agentsmith-runner-image.lock',
 ): CurrentReleaseBoundaryValidationResult<CurrentRunnerImageLock> {
   const failures: CurrentReleaseBoundaryValidationFailure[] = [];
   validateNoSecretLeak(source, 'runner_image_lock', failures);
@@ -1432,10 +1497,11 @@ export function validateRunnerReleaseManifest(
     return invalid('runner_release_manifest', 'runner release manifest must be an object.', failures);
   }
 
+  validateOnlyKnownKeys(value, RUNNER_RELEASE_MANIFEST_KEYS, 'runner_release_manifest', failures);
   validateLiteral(value.schema_version, CURRENT_RUNNER_RELEASE_MANIFEST_SCHEMA_VERSION, 'schema_version', failures);
-  validateLiteral(value.runner, 'agentsmith-runner', 'runner', failures);
+  validateLiteral(value.runner, RUNNER_IMAGE_ID, 'runner', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
-  validateGitSha(value.git_sha, 'git_sha', failures);
+  const gitSha = validateGitSha(value.git_sha, 'git_sha', failures);
   validateRunnerContractVersion(value.runner_contract_version, failures);
   const supportedProtocolVersions = validateStringArray(
     value.supported_protocol_versions,
@@ -1445,16 +1511,32 @@ export function validateRunnerReleaseManifest(
   if (
     supportedProtocolVersions
     && (
-      supportedProtocolVersions.length !== 1
-      || supportedProtocolVersions[0] !== CURRENT_RUNNER_PROTOCOL_VERSION
+      supportedProtocolVersions.length !== RUNNER_RELEASE_SUPPORTED_PROTOCOL_VERSIONS.length
+      || supportedProtocolVersions.some((version, index) => version !== RUNNER_RELEASE_SUPPORTED_PROTOCOL_VERSIONS[index])
     )
   ) {
     failures.push({
       path: 'supported_protocol_versions',
-      reason: `supported_protocol_versions must exactly equal ${JSON.stringify([CURRENT_RUNNER_PROTOCOL_VERSION])}.`,
+      reason: `supported_protocol_versions must exactly equal ${JSON.stringify([...RUNNER_RELEASE_SUPPORTED_PROTOCOL_VERSIONS])}.`,
     });
   }
-  validateImageRecord(value.image, 'image', failures);
+  validateRunnerImageRecord(value.image, 'image', failures);
+  if (!hasOwn(value, 'contract_artifact')) {
+    failures.push({
+      path: 'contract_artifact',
+      reason: 'contract_artifact is required.',
+    });
+  } else {
+    validateRunnerReleaseContractArtifact(value.contract_artifact, failures);
+  }
+  if (!hasOwn(value, 'adoption_policy')) {
+    failures.push({
+      path: 'adoption_policy',
+      reason: 'adoption_policy is required.',
+    });
+  } else {
+    validateRunnerReleaseAdoptionPolicy(value.adoption_policy, failures);
+  }
 
   if (!hasOwn(value, 'artifact_provenance')) {
     failures.push({
@@ -1470,6 +1552,7 @@ export function validateRunnerReleaseManifest(
       fullSubjectContainer: value,
       allowedKinds: ['ci_artifact'],
     }, failures);
+    validateRunnerReleaseManifestProvenance(value.artifact_provenance, gitSha, failures);
   }
 
   return finish(value as CurrentRunnerReleaseManifest, failures);
@@ -1486,7 +1569,7 @@ export function validateRunnerImageLock(
   }
 
   validateLiteral(value.schema_version, CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION, 'schema_version', failures);
-  validateLiteral(value.runner, 'agentsmith-runner', 'runner', failures);
+  validateLiteral(value.runner, RUNNER_IMAGE_ID, 'runner', failures);
   validateRequiredString(value.release_id, 'release_id', failures);
   validateGitSha(value.git_sha, 'git_sha', failures);
   validateRunnerContractVersion(value.runner_contract_version, failures);
@@ -1497,7 +1580,7 @@ export function validateRunnerImageLock(
       reason: `runner_protocol_version must exactly equal ${JSON.stringify(CURRENT_RUNNER_PROTOCOL_VERSION)}.`,
     });
   }
-  validateImageRecord(value.image, 'image', failures);
+  validateRunnerImageRecord(value.image, 'image', failures);
 
   if (!hasOwn(value, 'manifest')) {
     failures.push({
@@ -2465,6 +2548,151 @@ function validateImageRecord(
   }
 
   return { id, image, digest };
+}
+
+function validateRunnerImageRecord(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): CurrentReleaseImage | null {
+  if (isRecord(value)) {
+    validateOnlyKnownKeys(value, RUNNER_RELEASE_IMAGE_KEYS, path, failures);
+  }
+
+  const image = validateImageRecord(value, path, failures);
+  if (!image) {
+    return null;
+  }
+
+  if (image.id !== RUNNER_IMAGE_ID) {
+    failures.push({
+      path: `${path}.id`,
+      reason: `${path}.id must be "${RUNNER_IMAGE_ID}".`,
+    });
+  }
+
+  const match = RUNNER_IMAGE_REF_PATTERN.exec(image.image);
+  if (!match) {
+    failures.push({
+      path: `${path}.image`,
+      reason:
+        `${path}.image must be ghcr.io/agentsmith-project/agentsmith-runner:<tag>@sha256:<64 lowercase hex>.`,
+    });
+  } else if (image.digest !== `sha256:${match[2]}`) {
+    failures.push({
+      path: `${path}.image`,
+      reason: `${path}.image digest must match ${path}.digest.`,
+    });
+  }
+
+  return image;
+}
+
+function validateRunnerReleaseContractArtifact(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'contract_artifact',
+      reason: 'contract_artifact must be an object.',
+    });
+    return;
+  }
+
+  validateOnlyKnownKeys(value, RUNNER_RELEASE_CONTRACT_ARTIFACT_KEYS, 'contract_artifact', failures);
+  const packageUri = validateRequiredString(value.package_uri, 'contract_artifact.package_uri', failures);
+  if (packageUri && !RUNNER_CONTRACT_PACKAGE_URI_PATTERN.test(packageUri)) {
+    failures.push({
+      path: 'contract_artifact.package_uri',
+      reason:
+        'contract_artifact.package_uri must be gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/<positive-run-id>/<*.tgz>.',
+    });
+  }
+  validateDigest(value.package_sha256, 'contract_artifact.package_sha256', failures);
+  validateNpmSriIntegrity(value.package_integrity, 'contract_artifact.package_integrity', failures);
+  validateDigest(value.descriptor_subject_sha256, 'contract_artifact.descriptor_subject_sha256', failures);
+}
+
+function validateRunnerReleaseAdoptionPolicy(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'adoption_policy',
+      reason: 'adoption_policy must be an object.',
+    });
+    return;
+  }
+
+  validateOnlyKnownKeys(value, RUNNER_RELEASE_ADOPTION_POLICY_KEYS, 'adoption_policy', failures);
+  validateLiteral(value.fail_fast, true, 'adoption_policy.fail_fast', failures);
+  validateLiteral(value.lock_update_required, true, 'adoption_policy.lock_update_required', failures);
+  validateLiteral(
+    value.release_contract_adoption_required,
+    true,
+    'adoption_policy.release_contract_adoption_required',
+    failures,
+  );
+}
+
+function validateRunnerReleaseManifestProvenance(
+  value: unknown,
+  gitSha: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    return;
+  }
+
+  validateOnlyKnownKeys(value, RUNNER_RELEASE_PROVENANCE_KEYS, 'artifact_provenance', failures);
+  if (
+    gitSha
+    && typeof value.commit_sha === 'string'
+    && GIT_SHA_PATTERN.test(value.commit_sha)
+    && value.commit_sha !== gitSha
+  ) {
+    failures.push({
+      path: 'artifact_provenance.commit_sha',
+      reason: 'artifact_provenance.commit_sha must match git_sha.',
+    });
+  }
+
+  if (typeof value.subject_uri === 'string' && value.subject_uri !== 'runner-release-manifest.json') {
+    failures.push({
+      path: 'artifact_provenance.subject_uri',
+      reason: 'artifact_provenance.subject_uri must be runner-release-manifest.json.',
+    });
+  }
+
+  if (
+    typeof value.artifact_uri === 'string'
+    && typeof value.run_id === 'string'
+    && POSITIVE_INTEGER_STRING_PATTERN.test(value.run_id)
+  ) {
+    const expectedArtifactUri =
+      `gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/${value.run_id}/runner-release-manifest.json`;
+    if (value.artifact_uri !== expectedArtifactUri) {
+      failures.push({
+        path: 'artifact_provenance.artifact_uri',
+        reason: `artifact_provenance.artifact_uri must equal ${expectedArtifactUri}.`,
+      });
+    }
+  }
+
+  if (
+    typeof value.artifact_sha256 === 'string'
+    && DIGEST_PATTERN.test(value.artifact_sha256)
+    && typeof value.subject_sha256 === 'string'
+    && DIGEST_PATTERN.test(value.subject_sha256)
+    && value.artifact_sha256 !== value.subject_sha256
+  ) {
+    failures.push({
+      path: 'artifact_provenance.artifact_sha256',
+      reason: 'artifact_provenance.artifact_sha256 must equal artifact_provenance.subject_sha256 in skeleton mode.',
+    });
+  }
 }
 
 function validateDeployImageInventory(
@@ -3747,6 +3975,22 @@ function isGitHubSourceHost(hostname: string): boolean {
     || hostname === 'raw.githubusercontent.com'
     || hostname === 'codeload.github.com'
     || hostname === 'api.github.com';
+}
+
+function validateOnlyKnownKeys(
+  value: Record<string, unknown>,
+  allowedKeys: ReadonlySet<string>,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      failures.push({
+        path: `${path}.${key}`,
+        reason: `${path}.${key} is not allowed.`,
+      });
+    }
+  }
 }
 
 function validateStringArray(

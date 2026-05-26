@@ -215,9 +215,16 @@ describe('check-release-boundary-contract', () => {
         runner_contract_version: 'whatever',
         supported_protocol_versions: ['1'],
         image: {
-          id: 'agent-task-runner',
+          id: 'agentsmith-runner',
           image: `ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@sha256:${'f'.repeat(64)}`,
           digest: `sha256:${'f'.repeat(64)}`,
+        },
+        contract_artifact: {
+          package_uri:
+            'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/20001/mbos-agent-runner-contract-0.1.0.tgz',
+          package_sha256: `sha256:${'c'.repeat(64)}`,
+          package_integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+          descriptor_subject_sha256: `sha256:${'d'.repeat(64)}`,
         },
         artifact_provenance: {
           schema_version: 'agentsmith.artifact-provenance/v1',
@@ -232,12 +239,18 @@ describe('check-release-boundary-contract', () => {
           run_id: '20001',
           run_attempt: '1',
           job: 'generate-runner-manifest',
-          artifact_uri: 'gh-artifact://agentsmith-runner/release/20001/runner-release-manifest.json',
+          artifact_uri:
+            'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/20001/runner-release-manifest.json',
           artifact_sha256: `sha256:${'d'.repeat(64)}`,
           generated_at: '2026-05-23T12:10:00.000Z',
           generator_command: 'npm run release:manifest',
           generator_version: 'p0',
           attestation: 'none',
+        },
+        adoption_policy: {
+          fail_fast: true,
+          lock_update_required: true,
+          release_contract_adoption_required: true,
         },
       }, null, 2),
       'utf8',
@@ -263,7 +276,7 @@ describe('check-release-boundary-contract', () => {
   it('reports missing runner image lock fixture from copied fixtures', () => {
     const root = writeFixtureRoot();
     rmSync(
-      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agent-task-runner-image.lock'),
+      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agentsmith-runner-image.lock'),
       { force: true },
     );
 
@@ -273,7 +286,7 @@ describe('check-release-boundary-contract', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock',
+          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
           message: expect.stringContaining('must exist'),
         }),
       ]),
@@ -283,20 +296,20 @@ describe('check-release-boundary-contract', () => {
   it('reports malformed runner image lock fixture from copied fixtures', () => {
     const root = writeFixtureRoot();
     writeFileSync(
-      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agent-task-runner-image.lock'),
+      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agentsmith-runner-image.lock'),
       [
         'schema_version=agentsmith.runner-image-lock/v1',
         'runner=agentsmith-runner',
-        'release_id=runner-2026.05.23-p0',
-        'git_sha=abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        'release_id=runner-release-p5-3a.1',
+        'git_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'runner_contract_version=whatever',
         'runner_protocol_version=1.0',
-        'image_id=agent-task-runner',
-        `image=ghcr.io/agentsmith-project/agentsmith-runner:runner-2026.05.23-p0@sha256:${'f'.repeat(64)}`,
-        `image_digest=sha256:${'f'.repeat(64)}`,
+        'image_id=agentsmith-runner',
+        `image=ghcr.io/agentsmith-project/agentsmith-runner:p5-3a@sha256:${'b'.repeat(64)}`,
+        `image_digest=sha256:${'b'.repeat(64)}`,
         'manifest_producer_repo=github.com/agentsmith-project/agentsmith-runner',
-        `manifest_subject_sha256=sha256:${'b'.repeat(64)}`,
-        `manifest_artifact_sha256=sha256:${'d'.repeat(64)}`,
+        'manifest_subject_sha256=sha256:ad1e72a1515a6b296dd0ed3c8029ccc7f5b9df19b7e08c8d609b8e60b1613836',
+        'manifest_artifact_sha256=sha256:ad1e72a1515a6b296dd0ed3c8029ccc7f5b9df19b7e08c8d609b8e60b1613836',
         '',
       ].join('\n'),
       'utf8',
@@ -308,7 +321,7 @@ describe('check-release-boundary-contract', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agent-task-runner-image.lock',
+          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
           message: expect.stringContaining('runner_contract_version must be a semver string'),
         }),
       ]),

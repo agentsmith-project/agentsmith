@@ -30,15 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Download release contract input artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: ${{ inputs.release_contract_input_artifact_name }}
-          run-id: ${{ inputs.release_contract_input_run_id }}
-          repository: ${{ github.repository }}
-          github-token: ${{ github.token }}
-          path: artifacts/release-contract/input
-
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -50,6 +41,200 @@ jobs:
 
       - name: Build runner contract workspace package
         run: npm run build -w @mbos/agent-runner-contract
+
+      - name: Gate release contract input source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CONTRACT_INPUT_ARTIFACT_NAME: ${{ inputs.release_contract_input_artifact_name }}
+          RELEASE_CONTRACT_INPUT_RUN_ID: ${{ inputs.release_contract_input_run_id }}
+          RELEASE_CONTRACT_CURRENT_SHA: ${{ github.sha }}
+          RELEASE_CONTRACT_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          canonical_artifact_name="agentsmith-release-contract-input"
+          canonical_workflow_name="Image Publish"
+          canonical_workflow_path=".github/workflows/image-publish.yml"
+          canonical_job_name="publish-images"
+          gate_dir="artifacts/release-contract/source-gate"
+          export RELEASE_CONTRACT_INPUT_SOURCE_ARTIFACT_NAME="${canonical_artifact_name}"
+          export RELEASE_CONTRACT_INPUT_SOURCE_WORKFLOW_NAME="${canonical_workflow_name}"
+          export RELEASE_CONTRACT_INPUT_SOURCE_WORKFLOW_PATH="${canonical_workflow_path}"
+          export RELEASE_CONTRACT_INPUT_SOURCE_JOB_NAME="${canonical_job_name}"
+
+          if [[ ! "${RELEASE_CONTRACT_INPUT_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "release_contract_input_run_id must be a GitHub Actions numeric run id." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_CONTRACT_INPUT_ARTIFACT_NAME}" != "${canonical_artifact_name}" ]]; then
+            echo "release_contract_input_artifact_name must be ${canonical_artifact_name}." >&2
+            exit 1
+          fi
+
+          mkdir -p "${gate_dir}"
+          gh run view "${RELEASE_CONTRACT_INPUT_RUN_ID}" \
+            --repo "${RELEASE_CONTRACT_REPO}" \
+            --json conclusion,databaseId,headSha,url,workflowName \
+            > "${gate_dir}/run-view.json"
+          gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}" \
+            > "${gate_dir}/run-api.json"
+          gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}/jobs?per_page=100" \
+            > "${gate_dir}/jobs-api.json"
+          gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}/artifacts?per_page=100" \
+            > "${gate_dir}/artifacts-api.json"
+
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+          const path = require('node:path');
+
+          const gateDir = 'artifacts/release-contract/source-gate';
+          const expected = {
+            artifactName: process.env.RELEASE_CONTRACT_INPUT_SOURCE_ARTIFACT_NAME,
+            currentSha: process.env.RELEASE_CONTRACT_CURRENT_SHA,
+            jobName: process.env.RELEASE_CONTRACT_INPUT_SOURCE_JOB_NAME,
+            repo: process.env.RELEASE_CONTRACT_REPO,
+            runId: process.env.RELEASE_CONTRACT_INPUT_RUN_ID,
+            workflowName: process.env.RELEASE_CONTRACT_INPUT_SOURCE_WORKFLOW_NAME,
+            workflowPath: process.env.RELEASE_CONTRACT_INPUT_SOURCE_WORKFLOW_PATH,
+          };
+          const readJson = (fileName) => JSON.parse(readFileSync(path.join(gateDir, fileName), 'utf8'));
+          const fail = (message) => {
+            throw new Error(`release contract input source gate failed: ${message}`);
+          };
+          const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
+          const readString = (value) => (typeof value === 'string' ? value : '');
+          for (const [field, value] of Object.entries(expected)) {
+            if (typeof value !== 'string' || value.trim().length === 0) {
+              fail(`${field} is required.`);
+            }
+          }
+          const runView = readJson('run-view.json');
+          const runApi = readJson('run-api.json');
+          const jobsApi = readJson('jobs-api.json');
+          const artifactsApi = readJson('artifacts-api.json');
+          const runIdNumber = Number(expected.runId);
+
+          if (!isRecord(runView) || !isRecord(runApi)) {
+            fail('GitHub run metadata must be JSON objects.');
+          }
+          if (runView.databaseId !== runIdNumber) {
+            fail(`run id must resolve to ${expected.runId}.`);
+          }
+          if (runApi.repository?.full_name !== expected.repo) {
+            fail(`run repository must be ${expected.repo}.`);
+          }
+          if (runApi.head_repository?.full_name && runApi.head_repository.full_name !== expected.repo) {
+            fail(`run head repository must be ${expected.repo}.`);
+          }
+          if (runView.workflowName !== expected.workflowName || runApi.name !== expected.workflowName) {
+            fail(`run workflow must be ${expected.workflowName}.`);
+          }
+          if (runApi.path !== expected.workflowPath) {
+            fail(`run workflow path must be ${expected.workflowPath}.`);
+          }
+          if (runView.headSha !== expected.currentSha || runApi.head_sha !== expected.currentSha) {
+            fail('run headSha must match the current release contract workflow sha.');
+          }
+          if (runView.conclusion !== 'success' || runApi.conclusion !== 'success') {
+            fail('run conclusion must be success.');
+          }
+
+          const jobs = Array.isArray(jobsApi.jobs) ? jobsApi.jobs.filter(isRecord) : [];
+          const publishJob = jobs.find((job) => job.name === expected.jobName);
+          if (!publishJob) {
+            fail(`run must include ${expected.jobName} job.`);
+          }
+          if (publishJob.conclusion !== 'success') {
+            fail(`${expected.jobName} job conclusion must be success.`);
+          }
+
+          const artifacts = Array.isArray(artifactsApi.artifacts) ? artifactsApi.artifacts.filter(isRecord) : [];
+          const matchingArtifacts = artifacts.filter((artifact) => artifact.name === expected.artifactName);
+          if (matchingArtifacts.length !== 1) {
+            fail(`run must contain exactly one ${expected.artifactName} artifact.`);
+          }
+          const artifact = matchingArtifacts[0];
+          if (artifact.expired === true) {
+            fail(`${expected.artifactName} artifact must not be expired.`);
+          }
+          if (
+            isRecord(artifact.workflow_run)
+            && readString(artifact.workflow_run.head_sha).length > 0
+            && artifact.workflow_run.head_sha !== expected.currentSha
+          ) {
+            fail(`${expected.artifactName} artifact headSha must match the current release contract workflow sha.`);
+          }
+
+          writeFileSync(
+            'artifacts/release-contract/input-source-gate.json',
+            `${JSON.stringify({
+              repo: expected.repo,
+              run_id: expected.runId,
+              workflow_name: runView.workflowName,
+              workflow_path: runApi.path,
+              head_sha: runView.headSha,
+              conclusion: runView.conclusion,
+              job_name: publishJob.name,
+              job_conclusion: publishJob.conclusion,
+              artifact_name: artifact.name,
+              artifact_id: artifact.id,
+              artifact_expired: artifact.expired === true,
+              run_url: runView.url,
+            }, null, 2)}\n`,
+          );
+          NODE
+
+      - name: Download release contract input artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.release_contract_input_artifact_name }}
+          run-id: ${{ inputs.release_contract_input_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: artifacts/release-contract/input
+
+      - name: Verify release contract input handoff files
+        run: |
+          set -euo pipefail
+          input_dir="artifacts/release-contract/input"
+          handoff_input_path="${input_dir}/release-contract-input.json"
+          deploy_template_descriptor_path="${input_dir}/deploy-template-package.json"
+          deploy_template_tgz_path="${input_dir}/agentsmith-deploy-template-package.tgz"
+
+          test -f "${handoff_input_path}"
+          test -f "${deploy_template_descriptor_path}"
+          test -f "${deploy_template_tgz_path}"
+          export RELEASE_CONTRACT_INPUT_PATH="${handoff_input_path}"
+          export RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH="${deploy_template_descriptor_path}"
+          export RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_SHA256="sha256:$(sha256sum "${deploy_template_tgz_path}" | awk '{print $1}')"
+
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+
+          const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+          const fail = (message) => {
+            throw new Error(`release contract input handoff file check failed: ${message}`);
+          };
+          const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
+          const input = readJson(process.env.RELEASE_CONTRACT_INPUT_PATH);
+          const descriptor = readJson(process.env.RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH);
+          const inputPackage = isRecord(input) ? input.deployTemplatePackage : null;
+
+          if (!isRecord(inputPackage)) {
+            fail('release-contract-input.json must contain deployTemplatePackage.');
+          }
+          if (!isRecord(descriptor)) {
+            fail('deploy-template-package.json must be an object.');
+          }
+          if (descriptor.package_sha256 !== process.env.RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_SHA256) {
+            fail('deploy-template-package.json package_sha256 must match agentsmith-deploy-template-package.tgz.');
+          }
+          for (const field of ['package_uri', 'package_sha256', 'manifest_sha256']) {
+            if (inputPackage[field] !== descriptor[field]) {
+              fail(`release-contract-input.json deployTemplatePackage.${field} must match deploy-template-package.json.`);
+            }
+          }
+          NODE
 
       - name: Generate release contract artifact
         env:
@@ -65,23 +250,26 @@ jobs:
           set -euo pipefail
           # This workflow only produces a release contract artifact from a GitHub Actions handoff artifact.
           RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"
+          RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"
           RELEASE_CONTRACT_OUTPUT_DIR="artifacts/release-contract"
-          export RELEASE_CONTRACT_INPUT_PATH RELEASE_CONTRACT_OUTPUT_DIR
+          export RELEASE_CONTRACT_INPUT_PATH RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH RELEASE_CONTRACT_OUTPUT_DIR
           mkdir -p "${RELEASE_CONTRACT_OUTPUT_DIR}"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
+          test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"
           export RELEASE_CONTRACT_INPUT_SHA256="$(sha256sum "${RELEASE_CONTRACT_INPUT_PATH}" | awk '{print $1}')"
           npm run release:contract:ci-artifact -- --input "${RELEASE_CONTRACT_INPUT_PATH}" --output-dir "${RELEASE_CONTRACT_OUTPUT_DIR}"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           node <<'NODE'
-          const { writeFileSync } = require('node:fs');
+          const { readFileSync, writeFileSync } = require('node:fs');
 
           const receipt = {
             input_run_id: process.env.RELEASE_CONTRACT_INPUT_RUN_ID,
             input_artifact_name: process.env.RELEASE_CONTRACT_INPUT_ARTIFACT_NAME,
             repo: process.env.RELEASE_CONTRACT_REPO,
             input_sha256: process.env.RELEASE_CONTRACT_INPUT_SHA256,
+            validated_source: JSON.parse(readFileSync(process.env.RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH, 'utf8')),
             consumer_run_id: process.env.RELEASE_CONTRACT_CONSUMER_RUN_ID,
             consumer_run_attempt: process.env.RELEASE_CONTRACT_CONSUMER_RUN_ATTEMPT,
             consumer_job: process.env.RELEASE_CONTRACT_CONSUMER_JOB,

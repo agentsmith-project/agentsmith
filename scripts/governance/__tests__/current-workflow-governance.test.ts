@@ -1261,8 +1261,18 @@ describe('current workflow governance', () => {
     );
     const releaseContractJob = asRecord(asRecord(parsedWorkflow.jobs)['generate-release-contract']);
     const steps = Array.isArray(releaseContractJob.steps) ? releaseContractJob.steps.map(asRecord) : [];
-    const downloadStep = steps.find((step) => step.uses === 'actions/download-artifact@v7');
+    const sourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate release contract input source');
+    const downloadStepIndex = steps.findIndex((step) => step.uses === 'actions/download-artifact@v7');
+    const handoffFileCheckStepIndex = steps.findIndex(
+      (step) => step.name === 'Verify release contract input handoff files',
+    );
+    const sourceGateStep = steps[sourceGateStepIndex] ?? {};
+    const sourceGateEnv = asRecord(sourceGateStep.env);
+    const sourceGateRun = typeof sourceGateStep.run === 'string' ? sourceGateStep.run : '';
+    const downloadStep = steps[downloadStepIndex];
     const downloadWith = asRecord(downloadStep?.with);
+    const handoffFileCheckStep = steps[handoffFileCheckStepIndex] ?? {};
+    const handoffFileCheckRun = typeof handoffFileCheckStep.run === 'string' ? handoffFileCheckStep.run : '';
     const receiptObjectSource = runCommands.match(/const receipt = \{[\s\S]*?\n\s*\};/)?.[0] ?? '';
 
     expect(workflow?.workflowName).toBe('Release Contract Artifact');
@@ -1282,24 +1292,70 @@ describe('current workflow governance', () => {
       'npm run release:contract:ci-artifact',
     ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ actions: 'read', contents: 'read' });
+    expect(sourceGateStepIndex).toBeGreaterThan(-1);
+    expect(downloadStepIndex).toBeGreaterThan(sourceGateStepIndex);
+    expect(handoffFileCheckStepIndex).toBeGreaterThan(downloadStepIndex);
+    expect(sourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
+    expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_RUN_ID).toBe('${{ inputs.release_contract_input_run_id }}');
+    expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_ARTIFACT_NAME).toBe(
+      '${{ inputs.release_contract_input_artifact_name }}',
+    );
+    expect(sourceGateEnv.RELEASE_CONTRACT_CURRENT_SHA).toBe('${{ github.sha }}');
+    expect(sourceGateEnv.RELEASE_CONTRACT_REPO).toBe('${{ github.repository }}');
+    expect(sourceGateRun).toContain('canonical_artifact_name="agentsmith-release-contract-input"');
+    expect(sourceGateRun).toContain('canonical_workflow_name="Image Publish"');
+    expect(sourceGateRun).toContain('canonical_workflow_path=".github/workflows/image-publish.yml"');
+    expect(sourceGateRun).toContain('canonical_job_name="publish-images"');
+    expect(sourceGateRun).toContain('gh run view "${RELEASE_CONTRACT_INPUT_RUN_ID}"');
+    expect(sourceGateRun).toContain('--json conclusion,databaseId,headSha,url,workflowName');
+    expect(sourceGateRun).toContain(
+      'gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}"',
+    );
+    expect(sourceGateRun).toContain(
+      'gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}/jobs?per_page=100"',
+    );
+    expect(sourceGateRun).toContain(
+      'gh api "repos/${RELEASE_CONTRACT_REPO}/actions/runs/${RELEASE_CONTRACT_INPUT_RUN_ID}/artifacts?per_page=100"',
+    );
+    expect(sourceGateRun).toContain('runApi.repository?.full_name !== expected.repo');
+    expect(sourceGateRun).toContain('runView.workflowName !== expected.workflowName');
+    expect(sourceGateRun).toContain('runApi.path !== expected.workflowPath');
+    expect(sourceGateRun).toContain('runView.headSha !== expected.currentSha');
+    expect(sourceGateRun).toContain("runView.conclusion !== 'success'");
+    expect(sourceGateRun).toContain('job.name === expected.jobName');
+    expect(sourceGateRun).toContain("publishJob.conclusion !== 'success'");
+    expect(sourceGateRun).toContain('artifact.name === expected.artifactName');
+    expect(sourceGateRun).toContain('input-source-gate.json');
     expect(downloadStep).toBeDefined();
     expect(downloadWith.name).toBe('${{ inputs.release_contract_input_artifact_name }}');
     expect(downloadWith['run-id']).toBe('${{ inputs.release_contract_input_run_id }}');
     expect(downloadWith.repository).toBe('${{ github.repository }}');
     expect(downloadWith['github-token']).toBe('${{ github.token }}');
     expect(downloadWith.path).toBe('artifacts/release-contract/input');
+    expect(handoffFileCheckRun).toContain('deploy-template-package.json');
+    expect(handoffFileCheckRun).toContain('agentsmith-deploy-template-package.tgz');
+    expect(handoffFileCheckRun).toContain('RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_SHA256');
+    expect(handoffFileCheckRun).toContain('descriptor.package_sha256');
+    expect(handoffFileCheckRun).toContain('input.deployTemplatePackage');
+    expect(handoffFileCheckRun).toContain("['package_uri', 'package_sha256', 'manifest_sha256']");
     expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(runCommands).toContain('npm run release:contract:ci-artifact');
     expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
       runCommands.indexOf('npm run release:contract:ci-artifact'),
     );
     expect(runCommands).toContain('RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"');
+    expect(runCommands).toContain(
+      'RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"',
+    );
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"');
     expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('release-contract-input-source.json');
     expect(runCommands).toContain('input_sha256');
+    expect(runCommands).toContain('validated_source');
     expect(receiptObjectSource).toContain('input_sha256');
+    expect(receiptObjectSource).toContain('validated_source');
     for (const releaseContractField of [
       'schema_version',
       'product_images',

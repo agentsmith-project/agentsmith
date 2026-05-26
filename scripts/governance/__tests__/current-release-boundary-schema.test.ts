@@ -943,6 +943,18 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it('rejects duplicate deploy image inventory ids', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const inventory = contract.deploy_image_inventory as Array<Record<string, unknown>>;
+    inventory.push(structuredClone(inventory[0]!));
+    rehashReleaseContract(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'deploy_image_inventory id "agentsmith_app" is declared more than once',
+    );
+  });
+
   it('rejects missing provenance, self-referential provenance subjects, and wrong or local repo identity', () => {
     expect(normalizeReleaseBoundaryRemote('https://github.com/agentsmith-project/agentsmith.git'))
       .toBe(AGENTSMITH_CANONICAL_REPO);

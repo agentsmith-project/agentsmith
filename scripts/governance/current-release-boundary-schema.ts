@@ -590,8 +590,16 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     owner: 'agentsmith',
     physical_source: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
     generator: 'AgentSmith adoption PR',
-    validators: ['AgentSmith release contract generator', 'backend-real'],
-    consumers: ['AgentSmith backend-real', 'release contract generator'],
+    validators: [
+      'AgentSmith runner image lock checker',
+      'AgentSmith release contract generator',
+      'AgentSmith release boundary checker',
+    ],
+    consumers: [
+      'AgentSmith runner image lock checker',
+      'AgentSmith release contract generator',
+      'AgentSmith release boundary checker',
+    ],
     fail_fast: [
       'lock_manifest_digest_mismatch',
       'lock_release_contract_digest_mismatch',
@@ -2780,6 +2788,13 @@ function validateDeployImageInventory(
       failures,
     ) as CurrentReleaseInventoryImage['source'] | undefined;
     if (!image) {
+      return;
+    }
+    if (seenIds.has(image.id)) {
+      failures.push({
+        path: `${path}.id`,
+        reason: `deploy_image_inventory id "${image.id}" is declared more than once.`,
+      });
       return;
     }
     seenIds.add(image.id);

@@ -1697,7 +1697,7 @@ describe('current release boundary schema', () => {
       'gh-artifact://agentsmith-runner/release/501/runner-release-manifest.json';
     expectInvalid(
       validateRunnerReleaseManifest(nonCanonicalManifestArtifactUri),
-      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/501/runner-release-manifest.json',
+      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26471533836/runner-release-manifest.json',
     );
 
     const nonCanonicalPackageUri = cloneFixture('runner-release-manifest.valid.json');
@@ -1713,7 +1713,7 @@ describe('current release boundary schema', () => {
     const manifest = cloneFixture('runner-release-manifest.valid.json');
     const manifestImage = manifest.image as Record<string, unknown>;
     manifestImage.image =
-      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b';
     expectInvalid(
       validateRunnerReleaseManifest(manifest),
       'image.image tag "latest" is not allowed for canonical runner image refs.',
@@ -1722,7 +1722,7 @@ describe('current release boundary schema', () => {
     const lock = parseRunnerImageLockText(
       readTextFixture('agentsmith-runner-image.lock')
         .replace(
-          'ghcr.io/agentsmith-project/agentsmith-runner:p5-3a@sha256:',
+          'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:',
           'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:',
         ),
       'latest-agentsmith-runner-image.lock',

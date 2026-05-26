@@ -200,16 +200,22 @@ describe('release contract generator', () => {
     }
   });
 
-  it('keeps CI handoff target profiles equal to the release-kit canonical declarable set', () => {
+  it('keeps CI handoff target profiles on the current evidence-supported canonical subset', () => {
     const targetProfilesFixture = JSON.parse(
       readFileSync(join(process.cwd(), 'scripts/governance/release-contract-target-profiles.json'), 'utf8'),
     ) as readonly CurrentDeploymentTargetProfile[];
     const workflowSource = readFileSync(join(process.cwd(), '.github/workflows/image-publish.yml'), 'utf8');
-    const expectedKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
+    const canonicalCandidateKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
+    const expectedHandoffKeys = [
+      'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|external_declared|airgap',
+    ];
 
-    expect(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map(targetProfileKey)).toEqual(expectedKeys);
+    expect(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map(targetProfileKey)).toEqual(expectedHandoffKeys);
+    expect(expectedHandoffKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(expectedHandoffKeys).not.toEqual(canonicalCandidateKeys);
     expect(targetProfilesFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
-    expect(targetProfilesFixture.map(targetProfileKey)).toEqual(expectedKeys);
+    expect(targetProfilesFixture.map(targetProfileKey)).toEqual(expectedHandoffKeys);
     expect(targetProfilesFixture.every((profile) => profile.required === false)).toBe(true);
     expect(workflowSource).toContain("readJson('scripts/governance/release-contract-target-profiles.json')");
     expect(workflowSource).toContain('target_profiles: targetProfiles');

@@ -106,6 +106,11 @@ function rehashReleaseContractProjection(record: Record<string, unknown>): void 
   artifactProvenanceOf(record).artifact_sha256 = sha256Digest(canonicalReleaseBoundaryJson(projection));
 }
 
+function rehashReleaseContract(record: Record<string, unknown>): void {
+  rehashArtifactProvenanceContainer(record);
+  rehashReleaseContractProjection(record);
+}
+
 const GITHUB_API_SOURCE_ROOT_ENDPOINTS = [
   'https://api.github.com/repos/agentsmith-project/agentsmith/cont%65nts?ref=main',
   'https://api.github.com/repos/agentsmith-project/agentsmith/contents?ref=main',
@@ -352,15 +357,29 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('declares deployment target profiles as optional handoff candidates without P2 required coverage', () => {
+  it('declares deployment target profiles as the current evidence-supported canonical subset', () => {
     const contract = readFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as CurrentDeploymentTargetProfile[];
+    const profileKeys = profiles.map(targetProfileKey);
+    const canonicalCandidateKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
 
     expect(profiles.every((profile) => profile.required === false)).toBe(true);
-    expect(profiles.map(targetProfileKey)).toEqual(
-      CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey),
-    );
+    expect(profileKeys).toEqual([
+      'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|external_declared|airgap',
+    ]);
+    expect(profileKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(profileKeys).not.toEqual(canonicalCandidateKeys);
     expect(profiles).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
+  });
+
+  it('allows release contracts to hand off a canonical target profile subset', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const profiles = contract.target_profiles as Record<string, unknown>[];
+    contract.target_profiles = profiles.slice(0, 1);
+    rehashReleaseContract(contract);
+
+    expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
   });
 
   it('declares the release boundary truth matrix and release kit evidence mapping against current writers', () => {
@@ -1660,12 +1679,15 @@ describe('current release boundary schema', () => {
   });
 
   it.each([
-    ['kind_rehearsal', 'kit_installed', 'airgap'],
-    ['kind_rehearsal', 'external_declared', 'online'],
-    ['kind_rehearsal', 'external_declared', 'airgap'],
+    ['kind_rehearsal', 'kit_installed', 'airgap', 'target profile combination is not allowed by the release boundary matrix'],
+    ['kind_rehearsal', 'external_declared', 'online', 'target profile combination is not allowed by the release boundary matrix'],
+    ['kind_rehearsal', 'external_declared', 'airgap', 'target profile combination is not allowed by the release boundary matrix'],
+    ['local_kind', 'kit_installed', 'online', 'target_cluster is not in the release boundary matrix'],
+    ['existing_kubernetes', 'external', 'online', 'substrate_source is not in the release boundary matrix'],
+    ['existing_kubernetes', 'external_declared', 'offline', 'distribution is not in the release boundary matrix'],
   ])(
     'rejects non-canonical declarable target profile tuple %s/%s/%s',
-    (targetCluster, substrateSource, distribution) => {
+    (targetCluster, substrateSource, distribution, expectedReason) => {
       const contract = cloneFixture('release-contract.valid.json');
       const profiles = contract.target_profiles as Record<string, unknown>[];
       profiles[0] = {
@@ -1677,19 +1699,19 @@ describe('current release boundary schema', () => {
 
       expectInvalid(
         validateAgentSmithReleaseContract(contract),
-        'target profile combination is not allowed by the release boundary matrix',
+        expectedReason,
       );
     },
   );
 
-  it('rejects release contracts that omit a release-kit canonical declarable target profile', () => {
+  it('rejects release contracts with no target profiles', () => {
     const contract = cloneFixture('release-contract.valid.json');
-    const profiles = contract.target_profiles as Record<string, unknown>[];
-    profiles.pop();
+    contract.target_profiles = [];
+    rehashReleaseContract(contract);
 
     expectInvalid(
       validateAgentSmithReleaseContract(contract),
-      'target profile tuple kind_rehearsal|kit_installed|online is missing from the release-kit canonical declarable profile handoff',
+      'target_profiles must not be empty',
     );
   });
 

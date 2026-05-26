@@ -7,6 +7,11 @@ import { afterEach } from 'vitest';
 import { describe, expect, it } from 'vitest';
 
 import { checkReleaseBoundaryContract } from './check-release-boundary-contract';
+import {
+  CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
+  CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
+  type CurrentDeploymentTargetProfile,
+} from '../governance/current-release-boundary-schema';
 
 const fixtureRoots: string[] = [];
 const RELEASE_BOUNDARY_FIXTURE_ROOT = path.join(
@@ -22,6 +27,12 @@ const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
 const RUNNER_IMAGE_LOCK_SCRIPT = 'contracts:check-runner-image-lock';
 const RUNNER_IMAGE_LOCK_COMMAND = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts/check-runner-image-lock.ts`;
 const RUNNER_ADAPTER_INVENTORY_FIXTURE = 'runner-adapter-inventory.valid.json';
+
+function targetProfileKey(
+  profile: Pick<CurrentDeploymentTargetProfile, 'target_cluster' | 'substrate_source' | 'distribution'>,
+): string {
+  return `${profile.target_cluster}|${profile.substrate_source}|${profile.distribution}`;
+}
 
 function writePackageJson(root: string): void {
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({
@@ -70,6 +81,10 @@ function writeFixtureRoot(): string {
   const targetFixtureRoot = path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary');
   mkdirSync(path.dirname(targetFixtureRoot), { recursive: true });
   cpSync(RELEASE_BOUNDARY_FIXTURE_ROOT, targetFixtureRoot, { recursive: true });
+  cpSync(
+    path.join(process.cwd(), 'scripts', 'governance', 'release-contract-target-profiles.json'),
+    path.join(root, 'scripts', 'governance', 'release-contract-target-profiles.json'),
+  );
   writePackageJson(root);
   ensureRunnerAdapterInventoryCurrentPaths(root);
 
@@ -92,6 +107,24 @@ describe('check-release-boundary-contract', () => {
         stdio: 'pipe',
       }),
     ).not.toThrow();
+  });
+
+  it('accepts handoff target profile JSON as a canonical subset instead of the full candidate matrix', () => {
+    const root = writeFixtureRoot();
+    const handoffFixture = JSON.parse(
+      readFileSync(path.join(root, 'scripts', 'governance', 'release-contract-target-profiles.json'), 'utf8'),
+    ) as readonly CurrentDeploymentTargetProfile[];
+    const handoffKeys = handoffFixture.map(targetProfileKey);
+    const canonicalCandidateKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
+
+    expect(checkReleaseBoundaryContract({ rootDir: root }).ok).toBe(true);
+    expect(handoffFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
+    expect(handoffKeys).toEqual([
+      'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|external_declared|airgap',
+    ]);
+    expect(handoffKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(handoffKeys).not.toEqual(canonicalCandidateKeys);
   });
 
   it('reports malformed JSON fixtures as structured contract failures', () => {

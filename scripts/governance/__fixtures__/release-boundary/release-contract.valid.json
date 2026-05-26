@@ -149,51 +149,6 @@
         "registry": "operator_mirror",
         "pull_secret_ref": "operator_secret_ref"
       }
-    },
-    {
-      "target_cluster": "existing_kubernetes",
-      "substrate_source": "kit_installed",
-      "distribution": "online",
-      "required": false,
-      "prerequisites": {
-        "namespace": "agentsmith",
-        "rbac": "namespace_admin",
-        "ingress": "operator_provided",
-        "tls": "required",
-        "storage_class": "operator_provided",
-        "registry": "ghcr_or_operator_mirror",
-        "pull_secret_ref": "operator_secret_ref"
-      }
-    },
-    {
-      "target_cluster": "existing_kubernetes",
-      "substrate_source": "kit_installed",
-      "distribution": "airgap",
-      "required": false,
-      "prerequisites": {
-        "namespace": "agentsmith",
-        "rbac": "namespace_admin",
-        "ingress": "operator_provided",
-        "tls": "required",
-        "storage_class": "operator_provided",
-        "registry": "operator_mirror",
-        "pull_secret_ref": "operator_secret_ref"
-      }
-    },
-    {
-      "target_cluster": "kind_rehearsal",
-      "substrate_source": "kit_installed",
-      "distribution": "online",
-      "required": false,
-      "prerequisites": {
-        "namespace": "agentsmith",
-        "rbac": "local_admin",
-        "ingress": "local",
-        "tls": "optional",
-        "storage_class": "standard",
-        "registry": "local_kind_import",
-        "pull_secret_ref": "not_required"
-      }
     }
   ],
   "substrate_connection_schema": "agentsmith.substrate-connection.truth/v1",
@@ -205,14 +160,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:80155efc8cc89aa1cfd38174521990ca8959ccf2d323eecf6d3fc6ee308e7fb0",
+    "subject_sha256": "sha256:43becf47a2af7feaa91bf64d4844ccbf61a0bdc9f4aaf2ab4806882f8272b268",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:c279a51c65795f1d7cd76fd3da7051bfeefe4db42c3e96752e79135627646ed1",
+    "artifact_sha256": "sha256:b49b704bead9600809d6eb538101a9bb5dfd4bd8f344764b20ab2790a4e8bf21",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

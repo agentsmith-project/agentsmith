@@ -110,6 +110,7 @@ export interface CurrentDeploymentTargetProfile {
   };
 }
 
+// Candidate canonical vocabulary for release-kit schema and fail-fast validation.
 export const CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES = [
   {
     target_cluster: 'existing_kubernetes',
@@ -141,7 +142,7 @@ export const CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES = [
   'target_cluster' | 'substrate_source' | 'distribution'
 >[];
 
-// Must stay synchronized with release-kit canonical declarable target profiles.
+// Formal pre-GA handoff: only profiles with current release-kit evidence owners and executable mappings.
 export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
   {
     target_cluster: 'existing_kubernetes',
@@ -171,51 +172,6 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
       storage_class: 'operator_provided',
       registry: 'operator_mirror',
       pull_secret_ref: 'operator_secret_ref',
-    },
-  },
-  {
-    target_cluster: 'existing_kubernetes',
-    substrate_source: 'kit_installed',
-    distribution: 'online',
-    required: false,
-    prerequisites: {
-      namespace: 'agentsmith',
-      rbac: 'namespace_admin',
-      ingress: 'operator_provided',
-      tls: 'required',
-      storage_class: 'operator_provided',
-      registry: 'ghcr_or_operator_mirror',
-      pull_secret_ref: 'operator_secret_ref',
-    },
-  },
-  {
-    target_cluster: 'existing_kubernetes',
-    substrate_source: 'kit_installed',
-    distribution: 'airgap',
-    required: false,
-    prerequisites: {
-      namespace: 'agentsmith',
-      rbac: 'namespace_admin',
-      ingress: 'operator_provided',
-      tls: 'required',
-      storage_class: 'operator_provided',
-      registry: 'operator_mirror',
-      pull_secret_ref: 'operator_secret_ref',
-    },
-  },
-  {
-    target_cluster: 'kind_rehearsal',
-    substrate_source: 'kit_installed',
-    distribution: 'online',
-    required: false,
-    prerequisites: {
-      namespace: 'agentsmith',
-      rbac: 'local_admin',
-      ingress: 'local',
-      tls: 'optional',
-      storage_class: 'standard',
-      registry: 'local_kind_import',
-      pull_secret_ref: 'not_required',
     },
   },
 ] as const satisfies readonly CurrentDeploymentTargetProfile[];
@@ -2725,6 +2681,13 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
   }
 
   const seenProfileKeys = new Set<string>();
+  if (value.length === 0) {
+    failures.push({
+      path: 'target_profiles',
+      reason: 'target_profiles must not be empty.',
+    });
+  }
+
   value.forEach((entry, index) => {
     const path = `target_profiles[${index}]`;
     if (!isRecord(entry)) {
@@ -2767,7 +2730,7 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
       }
       seenProfileKeys.add(profileKey);
 
-      if (!MODE_KEY_SET.has(profileKey)) {
+      if (!RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_KEY_SET.has(profileKey)) {
         failures.push({
           path,
           reason: 'target profile combination is not allowed by the release boundary matrix.',
@@ -2791,15 +2754,6 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
 
     validatePrerequisites(entry.prerequisites, `${path}.prerequisites`, failures);
   });
-
-  for (const expectedProfileKey of RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_KEY_SET) {
-    if (!seenProfileKeys.has(expectedProfileKey)) {
-      failures.push({
-        path: 'target_profiles',
-        reason: `target profile tuple ${expectedProfileKey} is missing from the release-kit canonical declarable profile handoff.`,
-      });
-    }
-  }
 }
 
 function validatePrerequisites(

@@ -492,7 +492,7 @@ evidence/provenance 生产与 adoption 在对应阶段落地。
 9. 定义中性 `substrate-connection truth/v1` schema。
 10. 定义 release kit evidence schema。
 11. 定义 runner contract package 的 v1 冻结范围。
-12. 定义 release kit 如何读取 deploy template package；模板源码可以逐步迁到 release kit，但在迁移完成前必须由 AgentSmith 明确产出 template package，不允许 release kit 猜 repo 路径。`deploy_template_package.required_image_ids` 必须包含机器可读 required image IDs，并由 release contract generator/check 覆盖所有模板 image 引用和模板 image inventory 双向一致性。
+12. 定义 release kit 如何读取 deploy template package；模板源码可以逐步迁到 release kit，但在迁移完成前必须由 AgentSmith 明确产出 template package，不允许 release kit 猜 repo 路径。`deploy_template_package.required_image_ids` 必须包含机器可读 required image IDs，并由 release contract generator/check 覆盖所有模板 image 引用和模板 image inventory 双向一致性。deploy template package 附近的 migration/vNext 说明不得形成兼容矩阵或长期迁移章节；必须说明旧输入不是正式路径，且只能按第 3.2 节归入一次性 operator note 或负向测试说明。
 13. 定义 deterministic provenance subject：release contract body without provenance、release kit `evidence-subject.json`、runner manifest body without provenance；禁止 hash 包含自身 provenance 的 JSON。
 14. 增加 truth matrix：release contract、deploy image inventory、substrate truth、release kit evidence、runner contract、runner release manifest、runner image lock 分别列 owner、物理来源、生成器、校验器、消费者、fail-fast 条件。
 15. 增加 P0 handoff fixtures：release contract example、`external_declared` truth example、`kit_installed` truth example、release kit evidence example、runner manifest example。
@@ -560,7 +560,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 2. bootstrap PR 通过前，repo-local workers 不迁部署工具、不迁 release-kit runtime；通过后只解锁专项开发，不解锁 release/adoption。
 3. bootstrap PR 通过后，再迁入不依赖 AgentSmith 产品源码的 deploy 工具：manifest/render、Kubernetes apply/dry-run、substrate install/status/connection truth verify、address truth、API single-replica、route smoke。
 4. 所有路径参数化，禁止默认读 AgentSmith repo root。
-5. 提供 `target preflight`、`render/check`、`images mirror`、`apply`、`rollout`、`smoke` 和 operator runbook；preflight 输入必须覆盖 host/TLS、pull secret、storage class、substrate secret refs。
+5. 提供 `target preflight`、`render/check`、`images mirror`、`apply`、`rollout`、`smoke` 和 operator runbook；preflight 输入必须覆盖 host/TLS、pull secret、storage class、substrate secret refs。P2 `target-preflight` 不引入 provider matrix、rollback、airgap、镜像搬运/images mirror 或 cluster provisioning；它只接收一个显式 operator target prerequisites 输入，并对缺失或不支持值 fail fast。
 6. bootstrap 阶段 `release-kit --inputs` 和 `release-kit --evidence` 只做 focused diagnostic：
    `--inputs` 只能输出 `readiness=false` 的 `intake-report` / `image-digest-plan`；
    `--evidence` 只能接受当前 producer 可重新语义校验的 focused output：

@@ -113,7 +113,7 @@ describe('agent-runner-contract package metadata', () => {
     expect(packageJson.scripts?.prepack).toBe('npm run build');
   });
 
-  it('keeps the local pack manifest aligned with artifact entrypoints', () => {
+  it('keeps the package manifest aligned with artifact entrypoints and the external descriptor pointer', () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
       name?: string;
       version?: string;
@@ -121,30 +121,52 @@ describe('agent-runner-contract package metadata', () => {
     const manifest = JSON.parse(
       readFileSync(join(packageDir, '..', 'contract-artifact.json'), 'utf8'),
     ) as {
-      name?: string;
-      version?: string;
-      artifact_kind?: string;
-      formal_release_provenance?: boolean;
+      schema_version?: string;
+      metadata_kind?: string;
+      package?: {
+        name?: string;
+        version?: string;
+      };
       entrypoints?: {
         version?: string;
         schema?: string;
         types?: string;
         fixtures?: string;
       };
+      release_provenance?: {
+        kind?: string;
+        descriptor_name?: string;
+      };
     };
 
-    expect(manifest.name).toBe(packageJson.name);
-    expect(manifest.version).toBe(packageJson.version);
+    expect(manifest.schema_version).toBe('agentsmith.runner-contract-package-manifest/v1');
+    expect(manifest.metadata_kind).toBe('runner_contract_package_manifest');
+    expect(manifest.package).toEqual({
+      name: packageJson.name,
+      version: packageJson.version,
+    });
     expect(RUNNER_CONTRACT_VERSION).toBe(packageJson.version);
-    expect(RUNNER_CONTRACT_ARTIFACT.version).toBe(packageJson.version);
-    expect(manifest.artifact_kind).toBe('local_pack_manifest');
-    expect(manifest.formal_release_provenance).toBe(false);
+    expect(RUNNER_CONTRACT_ARTIFACT.package.version).toBe(packageJson.version);
+    expect(RUNNER_CONTRACT_ARTIFACT.package.name).toBe(packageJson.name);
     expect(manifest.entrypoints).toEqual({
       version: './dist/artifact.js',
       schema: './dist/contract-schema.js',
       types: './dist/index.d.ts',
       fixtures: './dist/contract-schema.js',
     });
+    expect(manifest.release_provenance).toEqual({
+      kind: 'external_descriptor',
+      descriptor_name: 'runner-contract-artifact.json',
+    });
+    expect(manifest).not.toHaveProperty('name');
+    expect(manifest).not.toHaveProperty('version');
+    expect(manifest).not.toHaveProperty('artifact_kind');
+    expect(manifest).not.toHaveProperty('formal_release_provenance');
+    expect(manifest).not.toHaveProperty('artifact');
+    expect(manifest).not.toHaveProperty('artifact_provenance');
+    expect(manifest).not.toHaveProperty('provenance');
+    expect(manifest).not.toHaveProperty('sha256');
+    expect(manifest).not.toHaveProperty('integrity');
   });
 
   it('keeps stale dist files out of the dry-run pack artifact', () => {

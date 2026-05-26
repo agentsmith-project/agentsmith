@@ -14,7 +14,9 @@ import {
   RUNNER_CONTRACT_ARTIFACT_DESCRIPTOR_NAME,
   RUNNER_CONTRACT_ARTIFACT_GENERATOR_COMMAND,
   RUNNER_CONTRACT_ARTIFACT_GENERATOR_VERSION,
+  createSanitizedRunnerContractPackageJson,
   createRunnerContractArtifactDescriptor,
+  readRunnerContractPackageManifestEntrypoints,
   runRunnerContractArtifactCli,
 } from '../runner-contract-artifact';
 
@@ -119,4 +121,102 @@ describe('runner contract artifact producer', () => {
     );
     expect(validateRunnerContractArtifactDescriptor(descriptor).ok).toBe(true);
   });
+
+  it('builds sanitized runtime package metadata for the formal tarball', () => {
+    const packageJson = createSanitizedRunnerContractPackageJson({
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      private: false,
+      type: 'module',
+      main: './dist/index.js',
+      types: './dist/index.d.ts',
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          import: './dist/index.js',
+          default: './dist/index.js',
+        },
+        './package.json': './package.json',
+      },
+      files: ['dist', 'contract-artifact.json'],
+      scripts: {
+        build: 'npm run clean && tsc -p tsconfig.json',
+        prepack: 'npm run build',
+      },
+      dependencies: {
+        '@mbos/agent-task-runner': 'workspace:*',
+      },
+      devDependencies: {
+        typescript: '^5.9.3',
+      },
+    });
+
+    expect(packageJson).toEqual({
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      type: 'module',
+      main: './dist/index.js',
+      types: './dist/index.d.ts',
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          import: './dist/index.js',
+          default: './dist/index.js',
+        },
+        './package.json': './package.json',
+      },
+      files: ['dist', 'contract-artifact.json'],
+    });
+    expect(packageJson).not.toHaveProperty('private');
+    expect(packageJson).not.toHaveProperty('scripts');
+    expect(packageJson).not.toHaveProperty('dependencies');
+    expect(packageJson).not.toHaveProperty('devDependencies');
+  });
+
+  it('reads entrypoints only from the package manifest v1 surface', () => {
+    const packageManifest = createPackageManifest();
+
+    expect(readRunnerContractPackageManifestEntrypoints(
+      packageManifest,
+      '@mbos/agent-runner-contract',
+      '0.1.0',
+    )).toEqual(packageManifest.entrypoints);
+  });
+
+  it('rejects legacy local pack manifest metadata before producing a descriptor', () => {
+    expect(() => readRunnerContractPackageManifestEntrypoints(
+      {
+        name: '@mbos/agent-runner-contract',
+        version: '0.1.0',
+        artifact_kind: 'local_pack_manifest',
+        formal_release_provenance: false,
+        entrypoints: createPackageManifest().entrypoints,
+      },
+      '@mbos/agent-runner-contract',
+      '0.1.0',
+    )).toThrow(
+      'packages/agent-runner-contract/contract-artifact.json must use package manifest v1, not legacy local_pack_manifest.',
+    );
+  });
 });
+
+function createPackageManifest(): Record<string, unknown> {
+  return {
+    schema_version: 'agentsmith.runner-contract-package-manifest/v1',
+    metadata_kind: 'runner_contract_package_manifest',
+    package: {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+    },
+    entrypoints: {
+      version: './dist/artifact.js',
+      schema: './dist/contract-schema.js',
+      types: './dist/index.d.ts',
+      fixtures: './dist/contract-schema.js',
+    },
+    release_provenance: {
+      kind: 'external_descriptor',
+      descriptor_name: 'runner-contract-artifact.json',
+    },
+  };
+}

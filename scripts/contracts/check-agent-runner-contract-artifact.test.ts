@@ -3,10 +3,14 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CONSUMER_INSTALL_NPM_FLAGS,
+  createConsumerInstallNpmArgs,
+  createSanitizedRunnerContractPackageJson,
   validateDescriptorArtifactBytes,
   validateFormalTarballEntryList,
   validateFormalTarballMetadata,
   validateFormalArtifactTextBoundary,
+  validatePackageMetadata,
   validatePackFileList,
 } from './check-agent-runner-contract-artifact';
 import {
@@ -125,6 +129,76 @@ describe('check-agent-runner-contract-artifact', () => {
     expect(errors).toEqual([]);
   });
 
+  it('rejects install-affecting lifecycle scripts and local dependency specs in source package metadata', () => {
+    const packageJson = createPackageJsonForMetadata();
+    const errors: string[] = [];
+
+    packageJson.scripts = {
+      ...(packageJson.scripts as Record<string, string>),
+      preinstall: 'node preinstall.js',
+      install: 'node install.js',
+      postinstall: 'node postinstall.js',
+      prepare: 'node prepare.js',
+    };
+    packageJson.dependencies = {
+      local: 'file:../local-package',
+    };
+    packageJson.devDependencies = {
+      workspaceTool: 'workspace:*',
+    };
+    packageJson.peerDependencies = {
+      linkedPeer: 'link:../linked-peer',
+    };
+
+    validatePackageMetadata(packageJson, errors);
+
+    expect(errors).toEqual(expect.arrayContaining([
+      'scripts.preinstall must not be present on the source package',
+      'scripts.install must not be present on the source package',
+      'scripts.postinstall must not be present on the source package',
+      'scripts.prepare must not be present on the source package',
+      'dependencies.local must not use a workspace/local path spec',
+      'devDependencies.workspaceTool must not use a workspace/local path spec',
+      'peerDependencies.linkedPeer must not use a workspace/local path spec',
+    ]));
+  });
+
+  it('builds sanitized package metadata for default local pack and install validation', () => {
+    const packageJson = createSanitizedRunnerContractPackageJson({
+      ...createPackageJsonForMetadata(),
+      private: false,
+      dependencies: {
+        local: 'file:../local-package',
+      },
+      devDependencies: {
+        typescript: '^5.9.3',
+      },
+    });
+
+    expect(packageJson).toEqual(createSanitizedPackageJsonForMetadata());
+    expect(packageJson).not.toHaveProperty('private');
+    expect(packageJson).not.toHaveProperty('scripts');
+    expect(packageJson).not.toHaveProperty('dependencies');
+    expect(packageJson).not.toHaveProperty('devDependencies');
+  });
+
+  it('installs tarball consumers with npm lifecycle scripts disabled', () => {
+    expect(CONSUMER_INSTALL_NPM_FLAGS).toEqual([
+      '--ignore-scripts',
+      '--package-lock=false',
+      '--no-audit',
+      '--no-fund',
+    ]);
+    expect(createConsumerInstallNpmArgs('/tmp/runner-contract.tgz')).toEqual([
+      'install',
+      '--ignore-scripts',
+      '--package-lock=false',
+      '--no-audit',
+      '--no-fund',
+      '/tmp/runner-contract.tgz',
+    ]);
+  });
+
   it('checks descriptor sha256 and npm SRI integrity against the referenced tgz bytes', () => {
     const artifactBytes = Buffer.from('runner contract tgz bytes');
     const descriptor = createDescriptorForBytes(artifactBytes);
@@ -189,7 +263,10 @@ describe('check-agent-runner-contract-artifact', () => {
     const errors: string[] = [];
 
     packageJson.version = '0.1.1';
-    artifactManifest.version = '0.1.1';
+    artifactManifest.package = {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.1',
+    };
     artifactManifest.entrypoints = {
       ...descriptor.entrypoints,
       schema: './dist/index.js',
@@ -199,9 +276,79 @@ describe('check-agent-runner-contract-artifact', () => {
 
     expect(errors).toEqual(expect.arrayContaining([
       'tarball package.version must match descriptor package.version "0.1.0", got "0.1.1"',
-      'tarball contract-artifact.version must match descriptor package.version "0.1.0", got "0.1.1"',
+      'tarball contract-artifact.package.version must match descriptor package.version "0.1.0", got "0.1.1"',
       'tarball contract-artifact.entrypoints must match descriptor entrypoints.',
     ]));
+  });
+
+  it('rejects legacy local pack manifest metadata and tgz provenance fields inside the package manifest', () => {
+    const descriptor = createDescriptorForBytes(Buffer.from('runner contract tgz bytes'));
+    const packageJson = createSanitizedPackageJsonForMetadata();
+    const artifactManifest = {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+      artifact_kind: 'local_pack_manifest',
+      formal_release_provenance: false,
+      provenance_note: 'Local pack metadata only.',
+      artifact: {
+        sha256: `sha256:${'a'.repeat(64)}`,
+        integrity: 'sha512-test',
+      },
+      artifact_provenance: {
+        artifact_sha256: `sha256:${'a'.repeat(64)}`,
+      },
+      entrypoints: descriptor.entrypoints,
+    };
+    const errors: string[] = [];
+
+    validateFormalTarballMetadata(descriptor, packageJson, artifactManifest, errors);
+
+    expect(errors).toEqual(expect.arrayContaining([
+      'contract-artifact.json must use package manifest v1, not legacy local_pack_manifest',
+      'contract-artifact.schema_version must be "agentsmith.runner-contract-package-manifest/v1", got undefined',
+      'contract-artifact.metadata_kind must be "runner_contract_package_manifest", got undefined',
+      'contract-artifact.name must not be present in package manifest',
+      'contract-artifact.version must not be present in package manifest',
+      'contract-artifact.formal_release_provenance must not be present in package manifest',
+      'contract-artifact.provenance_note must not be present in package manifest',
+      'contract-artifact.artifact must not be present in package manifest',
+      'contract-artifact.artifact_provenance must not be present in package manifest',
+      'contract-artifact.package must be an object.',
+      'contract-artifact.release_provenance must be {"kind":"external_descriptor","descriptor_name":"runner-contract-artifact.json"}, got undefined',
+    ]));
+  });
+
+  it('rejects install-affecting lifecycle scripts and dependency sections in formal tarball package metadata', () => {
+    const descriptor = createDescriptorForBytes(Buffer.from('runner contract tgz bytes'));
+    const packageJson = createPackageJsonForMetadata();
+    const artifactManifest = createArtifactManifestForMetadata();
+    const errors: string[] = [];
+
+    packageJson.dependencies = {
+      zod: '^4.3.6',
+    };
+    packageJson.devDependencies = {
+      typescript: '^5.9.3',
+    };
+
+    validateFormalTarballMetadata(descriptor, packageJson, artifactManifest, errors);
+
+    expect(errors).toEqual(expect.arrayContaining([
+      'formal tarball package scripts.prepack must not be present.',
+      'formal tarball package dependencies must not be present.',
+      'formal tarball package devDependencies must not be present.',
+    ]));
+  });
+
+  it('accepts sanitized runtime package metadata in the formal tarball', () => {
+    const descriptor = createDescriptorForBytes(Buffer.from('runner contract tgz bytes'));
+    const packageJson = createSanitizedPackageJsonForMetadata();
+    const artifactManifest = createArtifactManifestForMetadata();
+    const errors: string[] = [];
+
+    validateFormalTarballMetadata(descriptor, packageJson, artifactManifest, errors);
+
+    expect(errors).toEqual([]);
   });
 });
 
@@ -290,17 +437,29 @@ function createPackageJsonForMetadata(): Record<string, unknown> {
   };
 }
 
+function createSanitizedPackageJsonForMetadata(): Record<string, unknown> {
+  const packageJson = createPackageJsonForMetadata();
+  delete packageJson.scripts;
+  return packageJson;
+}
+
 function createArtifactManifestForMetadata(): Record<string, unknown> {
   return {
-    name: '@mbos/agent-runner-contract',
-    version: '0.1.0',
-    artifact_kind: 'local_pack_manifest',
-    formal_release_provenance: false,
+    schema_version: 'agentsmith.runner-contract-package-manifest/v1',
+    metadata_kind: 'runner_contract_package_manifest',
+    package: {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+    },
     entrypoints: {
       version: './dist/artifact.js',
       schema: './dist/contract-schema.js',
       types: './dist/index.d.ts',
       fixtures: './dist/contract-schema.js',
+    },
+    release_provenance: {
+      kind: 'external_descriptor',
+      descriptor_name: 'runner-contract-artifact.json',
     },
   };
 }

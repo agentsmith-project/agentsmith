@@ -903,16 +903,21 @@ const EXPECTED_RUNNER_CONTRACT_TSCONFIG_JSON: JsonObject = {
 };
 
 const EXPECTED_RUNNER_CONTRACT_ARTIFACT_JSON: JsonObject = {
-  name: '@mbos/agent-runner-contract',
-  version: '0.1.0',
-  artifact_kind: 'local_pack_manifest',
-  formal_release_provenance: false,
-  provenance_note: 'Local pack metadata for P4 focused diagnostics only; this is not formal release provenance.',
+  schema_version: 'agentsmith.runner-contract-package-manifest/v1',
+  metadata_kind: 'runner_contract_package_manifest',
+  package: {
+    name: '@mbos/agent-runner-contract',
+    version: '0.1.0',
+  },
   entrypoints: {
     version: './dist/artifact.js',
     schema: './dist/contract-schema.js',
     types: './dist/index.d.ts',
     fixtures: './dist/contract-schema.js',
+  },
+  release_provenance: {
+    kind: 'external_descriptor',
+    descriptor_name: 'runner-contract-artifact.json',
   },
 };
 
@@ -932,15 +937,21 @@ const RUNNER_CONTRACT_CONSUMER_PRE_SCRIPT_NAMES = new Set([
 const RUNNER_CONTRACT_ARTIFACT_TS = `export const RUNNER_CONTRACT_VERSION = '0.1.0';
 
 export const RUNNER_CONTRACT_ARTIFACT = {
-  name: '@mbos/agent-runner-contract',
-  version: RUNNER_CONTRACT_VERSION,
-  artifact_kind: 'local_pack_manifest',
-  formal_release_provenance: false,
+  schema_version: 'agentsmith.runner-contract-package-manifest/v1',
+  metadata_kind: 'runner_contract_package_manifest',
+  package: {
+    name: '@mbos/agent-runner-contract',
+    version: RUNNER_CONTRACT_VERSION,
+  },
   entrypoints: {
     version: './dist/artifact.js',
     schema: './dist/contract-schema.js',
     types: './dist/index.d.ts',
     fixtures: './dist/contract-schema.js',
+  },
+  release_provenance: {
+    kind: 'external_descriptor',
+    descriptor_name: 'runner-contract-artifact.json',
   },
 } as const;
 `;

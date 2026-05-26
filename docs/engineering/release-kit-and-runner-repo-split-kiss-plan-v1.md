@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 -->
 
-Status: `p1_1_artifact_producer_passed_p2_online_target_registry_apply_evidence_spine_done_p3_airgap_bundle_render_check_done_p5_1_start_guard_done`
+Status: `p1_1_artifact_producer_passed_p2_online_target_registry_apply_evidence_spine_done_operator_signoff_intake_guard_done_p3_airgap_bundle_render_check_done_p5_1_start_guard_done`
 Date: 2026-05-26
 Owner: Product + Engineering
 Handoff scope: P0 machine guards passed; P1.1 CI release contract artifact
@@ -26,6 +26,17 @@ envelope/container，内含 `evidence.json`、`evidence-subject.json` 和
 `online-deployment-gate-report.json`；machine accepted focused output 值是
 `online-deployment-gate-report.json`，不是 evidence root 名称，也不是 release
 readiness。
+release-kit operator signoff intake focused guard 已完成：sibling repo commit
+`0854eeb`，GitHub Actions CI run `26444123230` success。新增
+`--operator-signoff-intake` 只做 operator signoff intake JSON 与 confirmed
+apply `online-deployment-gate-report.json` 的机器绑定校验，输出
+`readiness=false`；它绑定 release id、git sha、release contract raw
+sha256、target profile、operator_run_id 和 raw online gate report sha。online
+gate report 必须是 apply 模式、canonical focused chain steps，并包含
+`capability_map` 和 `generated_at`。它不是签名验证、身份系统、registry
+presence proof、full online adoption、AgentSmith product-flow evidence、
+deploy/package/release readiness，也不是 release-kit evidence envelope
+accepted output。
 P3 `--airgap-bundle-render-check` focused diagnostic 已在 release-kit sibling
 repo 完成（commit `3453c7d`，remote CI success）；它只证明 already assembled
 airgap bundle 的 bundle-local offline render、render-check 和 target image
@@ -37,9 +48,10 @@ start-guard / full-gate-fail-closed checks passed，remote CI success）。这�
 完成项不是 runtime migration、真实 registry login/push/pull/mirror/presence
 proof、cloud provisioning、image load/import、offline install、P3 airgap
 mechanism/app-current inventory closure、full online adoption、release-kit
-operator signoff、AgentSmith product-flow evidence 收口、deployment/package/operator
-full adoption 或 release readiness。P3-P6 仍受本计划里的 phase checks、evidence
-mapping、provenance checks、redaction checks 和 image inventory truth 约束。
+operator signoff 的正式签名验证/身份/完整 verdict、AgentSmith product-flow
+evidence 收口、deployment/package/operator full adoption 或 release readiness。
+P3-P6 仍受本计划里的 phase checks、evidence mapping、provenance checks、
+redaction checks 和 image inventory truth 约束。
 最新 review 结论已收口：当前
 `existing-cluster` 仍降级为 Docker substrate/IP-only diagnostic；正式 runner
 contract artifact 是外部 `runner-contract-artifact.json` + tgz，包内 manifest
@@ -55,7 +67,8 @@ success）。DeepSeek/LLM real lane 没有 tracked changes；AgentSmith defaults
 smoke 15 passed / 0 failed / 1 skipped，未提交 secret。下一步不再是 P2
 target-preflight、P2 online apply/evidence spine、P3 render-check focused
 diagnostic 或 P5.1 启动，而是 P2 full online adoption、release-kit operator
-signoff 与 AgentSmith product-flow evidence 分别收口，P3 airgap
+signoff 的正式签名验证/身份/完整 verdict 与 AgentSmith product-flow evidence
+分别收口，P3 airgap
 mechanism/app-current inventory 剩余 load/import/offline install/deploy smoke
 收口，以及 P5 runtime/image/adoption。
 
@@ -113,24 +126,26 @@ AgentSmith 仍保留：
 本切片已收口 release contract image inventory 与 deploy template package
 required image IDs 的双向一致性 guard；P2 online target-registry confirmed
 apply/evidence spine、P3 `--airgap-bundle-render-check` focused diagnostic、
-P5.1 runner start guard 已完成，仍不迁 runner runtime，也不宣称真实 registry
-presence、full online adoption、release-kit operator signoff、AgentSmith
-product-flow evidence 收口、deployment/package/operator full adoption 或 P3
-airgap mechanism/app-current inventory closure。
+release-kit operator signoff intake focused guard、P5.1 runner start guard 已
+完成，仍不迁 runner runtime，也不宣称真实 registry presence、full online
+adoption、release-kit operator signoff 的正式签名验证/身份/完整 verdict、
+AgentSmith product-flow evidence 收口、deployment/package/operator full
+adoption 或 P3 airgap mechanism/app-current inventory closure。
 
 近期完成证据：
 
 1. AgentSmith release boundary inventory alignment 已完成：commit `86fbc7a0`，local tests/contracts passed，remote CI success。
 2. AgentSmith pre-GA scope clarification 已完成：commit `9fb1fa25`，`contracts:check-engineering-governance` passed，remote Contracts Check success。
 3. release-kit P2 online target-registry confirmed apply/evidence spine 已完成：initial spine commit `2d4739b`，remote `agentsmith-project/agentsmith-release-kit` CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success；本地按 GitHub Actions 顺序通过 `verify-release --quick`、`test-inputs`、`test-template-package`、`test-render`、`test-render-check`、`test-image-map`、`test-bundle-create`、`test-airgap-bundle-check`、`test-bundle-load-plan`、`test-airgap-bundle-render-check`、`test-apply`、`test-rollout`、`test-smoke`、`test-online-deployment-gate`、`test-evidence`、`test-target-preflight`；额外 `node --check scripts/verify-rollout.mjs`、`node --check scripts/verify-online-deployment-gate.mjs`、`bash -n scripts/test-online-deployment-gate.sh scripts/test-rollout.sh scripts/verify-release.sh`、`git diff --check` 和 secret scan passed，新增 diff 无真实 secret。
-4. release-kit P3 `--airgap-bundle-render-check` focused diagnostic 已完成：sibling repo commit `3453c7d`，remote CI success；只证明 already assembled airgap bundle 的 bundle-local offline render、render-check 和 target image inventory，`readiness=false`，`--evidence` 仍拒收 `airgap-bundle-render-check-report.json`。
-5. post-hardening review 已修复 forward-slash UNC-like path `//server/share/...` fail-fast 缺口。
-6. runner P5.1 start guard 已完成：sibling repo commit `cdfa800`，local consumer / start-guard / full-gate-fail-closed checks passed，remote CI success。
-7. DeepSeek/LLM real lane 没有 tracked changes；AgentSmith defaults 和 ignored local env 使用 DeepSeek endpoint/model，LLMUP real compatibility smoke 15 passed / 0 failed / 1 skipped，未提交 secret。
+4. release-kit operator signoff intake focused guard 已完成：sibling repo commit `0854eeb`，GitHub Actions CI run `26444123230` success；`--operator-signoff-intake` 只做 operator signoff intake JSON 与 confirmed apply `online-deployment-gate-report.json` 的机器绑定校验，输出 `readiness=false`，绑定 release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha；online gate report 必须是 apply 模式、canonical focused chain steps，并包含 `capability_map` 和 `generated_at`；这不是签名验证、身份系统、registry presence proof、full online adoption、AgentSmith product-flow evidence、deploy/package/release readiness，也不是 release-kit evidence envelope accepted output。
+5. release-kit P3 `--airgap-bundle-render-check` focused diagnostic 已完成：sibling repo commit `3453c7d`，remote CI success；只证明 already assembled airgap bundle 的 bundle-local offline render、render-check 和 target image inventory，`readiness=false`，`--evidence` 仍拒收 `airgap-bundle-render-check-report.json`。
+6. post-hardening review 已修复 forward-slash UNC-like path `//server/share/...` fail-fast 缺口。
+7. runner P5.1 start guard 已完成：sibling repo commit `cdfa800`，local consumer / start-guard / full-gate-fail-closed checks passed，remote CI success。
+8. DeepSeek/LLM real lane 没有 tracked changes；AgentSmith defaults 和 ignored local env 使用 DeepSeek endpoint/model，LLMUP real compatibility smoke 15 passed / 0 failed / 1 skipped，未提交 secret。
 
 1. 部署/运维复审结论：当前 `existing-cluster` 只能命名为 Docker substrate/IP-only transition diagnostic。它不等于真实 Kubernetes/cloud/airgap substrate，也不能进入 AgentSmith `release:ready` 结论。真实 online/airgap/cloud substrate 由 release-kit repo-local gate 暴露；AgentSmith 侧只能降级展示、显式命名、误用就 fail fast。
-2. Release kit image inventory guard 已收口：本切片已补齐 `deploy_template_package.required_image_ids` 与 `deploy_image_inventory` 的模板 image 范围双向一致性。release contract generator/check 必须覆盖所有模板 image 引用；缺失或 orphan image truth 时停止。P2 online gate 已覆盖 `inputs,target-preflight,template-package,image-map,render,render-check,apply,rollout,smoke`，render 使用 image-map target refs；rollout 对 render/check `matched_by === 'digest'` 的 target/adopted refs 做 strict live ref check，同 digest mixed source+target fail；target/adopted refs 如果 selected pods 只暴露 expected digest、没有可解析 digest-pinned live image ref，也 fail fast；普通 source-registry rollout 保持 digest-only。真实 registry login/push/pull/mirror/presence proof 和 release-kit operator signoff 不在本完成项内。
-3. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。online target-registry evidence root 只是 envelope/container，内含 `evidence.json`、`evidence-subject.json` 和 `online-deployment-gate-report.json`，可被 `--evidence` revalidate，但不列为 machine accepted focused output 值。`airgap-bundle-render-check-report.json` 虽已有 focused diagnostic producer，但仍是 `readiness=false` 诊断输出，`--evidence` 继续拒收。未来/预留 output 不预留长期双轨，未实现或未接入 `--evidence` 语义校验就 fail fast。`--inputs` / `--evidence` 的已实现输出、拒绝条件和 `readiness=false` 边界已随 P2 online apply/evidence spine 与 P3 render-check focused 切片阶段性收紧；后续继续 P2 full online adoption、release-kit operator signoff、AgentSmith product-flow evidence 分别收口，或 P3 airgap mechanism/app-current inventory 剩余工作。
+2. Release kit image inventory guard 已收口：本切片已补齐 `deploy_template_package.required_image_ids` 与 `deploy_image_inventory` 的模板 image 范围双向一致性。release contract generator/check 必须覆盖所有模板 image 引用；缺失或 orphan image truth 时停止。P2 online gate 已覆盖 `inputs,target-preflight,template-package,image-map,render,render-check,apply,rollout,smoke`，render 使用 image-map target refs；rollout 对 render/check `matched_by === 'digest'` 的 target/adopted refs 做 strict live ref check，同 digest mixed source+target fail；target/adopted refs 如果 selected pods 只暴露 expected digest、没有可解析 digest-pinned live image ref，也 fail fast；普通 source-registry rollout 保持 digest-only。真实 registry login/push/pull/mirror/presence proof 不在本完成项内；operator signoff intake focused guard 已完成，但正式签名验证、身份系统和完整 operator verdict 不在本切片内。
+3. Release kit 复审结论：`--evidence` 只能接受当前 producer 能重新语义校验的 focused output：`image-map.json`、`online-deployment-gate-report.json`、`airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`。online target-registry evidence root 只是 envelope/container，内含 `evidence.json`、`evidence-subject.json` 和 `online-deployment-gate-report.json`，可被 `--evidence` revalidate，但不列为 machine accepted focused output 值。`airgap-bundle-render-check-report.json` 虽已有 focused diagnostic producer，但仍是 `readiness=false` 诊断输出，`--evidence` 继续拒收。未来/预留 output 不预留长期双轨，未实现或未接入 `--evidence` 语义校验就 fail fast。`--inputs` / `--evidence` / `--operator-signoff-intake` 的已实现输出、拒绝条件和 `readiness=false` 边界已随 P2 online apply/evidence spine、operator signoff intake focused guard 与 P3 render-check focused 切片阶段性收紧；后续继续 P2 full online adoption、release-kit operator signoff 的正式签名验证/身份/完整 verdict、AgentSmith product-flow evidence 分别收口，或 P3 airgap mechanism/app-current inventory 剩余工作。
 4. Runner 复审结论：不要先搬 runtime。P4 AgentSmith formal artifact producer/checker 已完成，正式 artifact 是外部 `runner-contract-artifact.json` + tgz；P5.0 runner repo consumer diagnostic skeleton 已完成并可消费正式 artifact；P5.1 start guard/CI 化已完成。下一步才迁 runner runtime、image build 和 AgentSmith adoption。
 5. Runner 迁移结论：旧 `@mbos/agent-runner` shim 不能成为长期双轨；`buildAgentRuntimeEnv` 归属必须在 P5 runtime 迁移时迁到 runner runtime 所属包或被正式 contract 覆盖，旧包只保留第 3.2 节定义的负向测试/短期诊断并在 P6 删除或归位。当前 runner image 仍走 AgentSmith 源码路径，不能作为拆分证据或 release proof。
 6. 旧输入复审结论：项目仍 pre-GA，旧名、旧路径、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包和已移除字段默认删除或 fail fast，不做长期兼容。只有负向测试、过渡期专项诊断或 operator 短期说明确实需要临时参考或迁移线索时才短期保留；任何暂留都必须挂删除责任、退出条件、删除时机和验收证据，并在 P2/P5/P6 删除或归位。
@@ -629,12 +644,23 @@ strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run
 `test-bundle-create`、`test-airgap-bundle-check`、`test-bundle-load-plan`、
 `test-airgap-bundle-render-check`、`test-apply`、`test-rollout`、`test-smoke`、
 `test-online-deployment-gate`、`test-evidence`、`test-target-preflight`；
-额外 syntax/diff/secret scan passed，新增 diff 无真实 secret。这个证据证明
+额外 syntax/diff/secret scan passed，新增 diff 无真实 secret。
+release-kit operator signoff intake focused guard 也已完成：sibling repo
+commit `0854eeb`，GitHub Actions CI run `26444123230` success；
+`--operator-signoff-intake` 只做 operator signoff intake JSON 与 confirmed
+apply `online-deployment-gate-report.json` 的机器绑定校验，输出
+`readiness=false`，绑定 release id、git sha、release contract raw sha256、
+target profile、operator_run_id 和 raw online gate report sha；online gate
+report 必须是 apply 模式、canonical focused chain steps，并包含
+`capability_map` 和 `generated_at`。
+这些证据证明
 online gate 的 target-registry confirmed apply、rollout、smoke 和 online
-evidence root envelope positive path 能 repo-local fail fast；仍不等于 registry
-login/push/pull/mirror/presence proof、cloud provisioning、full online
-adoption、release-kit operator signoff、AgentSmith product-flow evidence 收口、
-P3 airgap mechanism/app-current inventory closure 或 release readiness。
+evidence root envelope positive path 能 repo-local fail fast，并证明 operator
+signoff intake 能和 confirmed apply online gate report 做机器绑定；仍不等于
+registry login/push/pull/mirror/presence proof、cloud provisioning、full
+online adoption、release-kit operator signoff 的正式签名验证/身份/完整
+verdict、AgentSmith product-flow evidence 收口、P3 airgap mechanism/app-current
+inventory closure 或 release readiness。
 
 工作：
 
@@ -655,15 +681,16 @@ P3 airgap mechanism/app-current inventory closure 或 release readiness。
    但仍保持 `readiness=false`，`--evidence` 继续拒收。
    `deploy-result.json#substrate` 等未来/预留 output 不保留长期双轨，未实现就 fail fast；正式 adoption 前必须补齐三轴枚举、最小字段和
    `target_profiles.required` guard。
-7. 当前完成项只使用 image-map target/adopted refs 做确认，不做 registry login/push/pull/mirror，也不证明 target registry presence；未来若补 mirror/prove presence，必须作为显式 operator/runbook 工作进入 repo-local gate。
-8. `render/check` 必须验证 rendered workload images 全部来自 release contract 的 `deploy_image_inventory`，并覆盖 `deploy_template_package.required_image_ids`；当前 render 已使用 image-map 的 target refs。
-9. `rollout/smoke` 必须采集所有 AgentSmith/runner/provider workload 的 live `imageID`，并和 release contract / target registry digest 对齐；当前 rollout 已对 render/check `matched_by === 'digest'` 的 target/adopted refs 做 strict live ref check，同 digest mixed source+target fail；target/adopted refs 如果 selected pods 只暴露 expected digest、没有可解析 digest-pinned live image ref，也 fail fast；普通 source-registry rollout 保持 digest-only。
-10. API single-replica 等规则来源仍是 AgentSmith release contract / deploy contract；release kit 只执行检查，不独立定义产品部署规则。
-11. 支持 `existing_kubernetes + external_declared + online` 作为在线部署主路径。
-12. `kind_rehearsal + kit_installed + online` 只作为后续 `kit_installed` 独立 KISS slice 的本机/CI 证明工具；P2 当前 readiness 不依赖它。
-13. `existing_kubernetes + kit_installed` 只在后续最小 substrate pack + pod-routability preflight slice 存在后进入 advanced runbook；不做 provider matrix，P2 MVP 不把它作为默认路径。
-14. `agentsmith-release-kit` 必须把 source-boundary、remote identity、provenance check 作为 repo-local required CI；AgentSmith sibling scan/handoff evidence 只能证明交接输入可读，不能替代 release-kit CI。
-15. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
+7. `--operator-signoff-intake` 只做 intake JSON 与 confirmed apply online gate report 的绑定校验：release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha 必须一致；online gate report 必须是 apply 模式、canonical focused chain steps，并包含 `capability_map` 和 `generated_at`。它输出 `readiness=false`，不是签名验证、身份系统、完整 operator verdict，也不是 `--evidence` accepted output。
+8. 当前完成项只使用 image-map target/adopted refs 做确认，不做 registry login/push/pull/mirror，也不证明 target registry presence；未来若补 mirror/prove presence，必须作为显式 operator/runbook 工作进入 repo-local gate。
+9. `render/check` 必须验证 rendered workload images 全部来自 release contract 的 `deploy_image_inventory`，并覆盖 `deploy_template_package.required_image_ids`；当前 render 已使用 image-map 的 target refs。
+10. `rollout/smoke` 必须采集所有 AgentSmith/runner/provider workload 的 live `imageID`，并和 release contract / target registry digest 对齐；当前 rollout 已对 render/check `matched_by === 'digest'` 的 target/adopted refs 做 strict live ref check，同 digest mixed source+target fail；target/adopted refs 如果 selected pods 只暴露 expected digest、没有可解析 digest-pinned live image ref，也 fail fast；普通 source-registry rollout 保持 digest-only。
+11. API single-replica 等规则来源仍是 AgentSmith release contract / deploy contract；release kit 只执行检查，不独立定义产品部署规则。
+12. 支持 `existing_kubernetes + external_declared + online` 作为在线部署主路径。
+13. `kind_rehearsal + kit_installed + online` 只作为后续 `kit_installed` 独立 KISS slice 的本机/CI 证明工具；P2 当前 readiness 不依赖它。
+14. `existing_kubernetes + kit_installed` 只在后续最小 substrate pack + pod-routability preflight slice 存在后进入 advanced runbook；不做 provider matrix，P2 MVP 不把它作为默认路径。
+15. `agentsmith-release-kit` 必须把 source-boundary、remote identity、provenance check 作为 repo-local required CI；AgentSmith sibling scan/handoff evidence 只能证明交接输入可读，不能替代 release-kit CI。
+16. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
 
 不迁：
 
@@ -677,7 +704,8 @@ P3 airgap mechanism/app-current inventory closure 或 release readiness。
 
 - online deploy focused spine 能从 GHCR/digest 或 operator 指定 target/adopted refs 渲染并执行 apply、rollout、smoke。
 - `existing_kubernetes + external_declared + online` 的 focused path 能产出 preflight、render、render-check、apply、rollout、smoke 和 online evidence root envelope，并通过 `--evidence` revalidation。
-- P2 online target-registry confirmed apply/evidence spine 已有 initial spine commit `2d4739b`、remote CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success，本地 GitHub Actions 顺序全量通过；这不是 full online adoption、release-kit operator signoff、AgentSmith product-flow evidence 收口或 release readiness 证据。
+- P2 online target-registry confirmed apply/evidence spine 已有 initial spine commit `2d4739b`、remote CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success，本地 GitHub Actions 顺序全量通过；这不是 full online adoption、release-kit operator signoff 的正式签名验证/身份/完整 verdict、AgentSmith product-flow evidence 收口或 release readiness 证据。
+- release-kit operator signoff intake focused guard 已有 commit `0854eeb`、GitHub Actions CI run `26444123230` success；它只证明 intake JSON 与 confirmed apply `online-deployment-gate-report.json` 的 release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha 绑定关系，不证明正式签名验证、身份系统、registry presence、full online adoption、完整 operator verdict 或 release readiness。
 - 本切片不做 registry login/push/pull/mirror/prove registry presence，不做 cloud provisioning。
 - 当前 AgentSmith `existing-cluster` 诊断在 P2 full adoption 前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
 - `kit_installed` 是后续独立 KISS slice：最小 substrate pack + pod-routability preflight；不做 provider matrix，也不能写成当前 release-ready deploy snapshot。
@@ -738,7 +766,7 @@ image truth。
 - verify/load/render/apply/smoke 任一步尝试联网下载失败。
 - `existing_kubernetes + external_declared + airgap` 在断网环境基于 app-current inventory 完成 `verify/load/render/apply/smoke`；product-full package 仍等待 P5 runner digest/adoption 进入 release contract。
 - `kind_rehearsal` 只在后续 `kit_installed` slice 中保留 `kit_installed + online` 作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代 `existing_kubernetes + external_declared + airgap` evidence。
-- 手工 operator signoff 仍单独记录，不能被自动化冒充。
+- 正式手工 operator signoff / verdict 仍单独记录，不能被 intake 绑定自动化冒充。
 
 ### P4. AgentSmith 发布 Runner Contract 包
 
@@ -937,18 +965,19 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
     `deploy_image_inventory` 的模板 image 范围双向同步；`site.env.example`
     没有被当作正式 image truth。这个阻断项已由本切片解除，后续作为
     fail-fast guard 保持。Full P1 adoption 仍不能宣称完成，因为
-    release-kit P2 full online adoption、release-kit operator signoff、AgentSmith
-    product-flow evidence 收口、P3 airgap mechanism/app-current inventory 和 P5
-    runtime/adoption 等后续阶段未完成，
+    release-kit P2 full online adoption、release-kit operator signoff 的正式
+    签名验证/身份/完整 verdict、AgentSmith product-flow evidence 收口、P3
+    airgap mechanism/app-current inventory 和 P5 runtime/adoption 等后续阶段未完成，
     deployment/package/operator verdict 不回接 AgentSmith product gate。
 12. 当前 `existing-cluster` 仍按 Docker substrate/IP-only diagnostic 降级命名；
     任何把它并入 AgentSmith `release:ready` 或真实 cloud/airgap evidence 的路径都失败。
 
-### P2 online spine / P3 focused diagnostic / P5.1 start guard 完成后的后续门禁
+### P2 online spine / operator signoff intake / P3 focused diagnostic / P5.1 start guard 完成后的后续门禁
 
 必须确认：
 
-1. P2 online target-registry confirmed apply/evidence spine、P3
+1. P2 online target-registry confirmed apply/evidence spine、
+   `--operator-signoff-intake` focused guard、P3
    `--airgap-bundle-render-check` focused diagnostic 和 P5.1 start guard 已有
    完成证据，但只解锁后续专项；不等于 release readiness。后续任何 P2/P3/P5
    implementation workstream start
@@ -970,9 +999,11 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 4. P2 release-kit 正式 adoption 前，repo-local required CI 已覆盖
    source-boundary、remote identity、provenance、digest-only、host/TLS/pull-secret/
    storage/substrate secret-ref 输入、online gate steps、target/adopted ref strict
-   live check 和 no-op fail-fast、operator runbook；真实 registry login/push/pull/mirror/presence
-   proof 和 release-kit operator signoff 仍必须显式补齐；AgentSmith
-   product-flow evidence 仍归 AgentSmith，不进入 release-kit signoff。
+   live check、no-op fail-fast、operator runbook，以及 operator signoff intake
+   与 confirmed apply online gate report 的机器绑定；真实 registry
+   login/push/pull/mirror/presence proof、正式签名验证、身份系统和完整
+   operator verdict 仍必须显式补齐；AgentSmith product-flow evidence 仍归
+   AgentSmith，不进入 release-kit signoff。
 5. P5 runner 正式 adoption 前，source-boundary guard 只允许
    `@mbos/agent-runner-contract`，runner support/context fixtures 来自 AgentSmith
    contract，`mbos-context` 不定义 scope/write/credential policy。
@@ -1014,7 +1045,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 23. 有没有让 `deploy_template_package.required_image_ids` 与 release contract image inventory 的模板 image 范围脱节？
 24. 有没有让旧 `@mbos/agent-runner` shim 或 `buildAgentRuntimeEnv` 形成长期双轨？
 25. 有没有保留未挂删除责任、退出条件、删除时机和验收证据的 pre-GA 已移除输入、旧路径/旧文档/旧脚本引用或短期迁移说明？
-26. 有没有把 P2 online evidence root envelope 写成 registry login/push/pull/mirror/presence proof、cloud provisioning、full online adoption、release-kit operator signoff、AgentSmith product-flow evidence 收口或 release readiness？
+26. 有没有把 P2 online evidence root envelope 或 `--operator-signoff-intake` 写成 registry login/push/pull/mirror/presence proof、cloud provisioning、full online adoption、release-kit operator signoff 的正式签名验证/身份/完整 verdict、AgentSmith product-flow evidence 收口或 release readiness？
 
 任一答案为“有”，停止并回到边界评审。
 
@@ -1032,8 +1063,11 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 `deploy_image_inventory` / `deploy_template_package.required_image_ids` 双向
 一致性已收口 -> P2 target-preflight focused 切片已完成 -> P2 online
 target-registry confirmed apply/evidence spine 已完成 -> P3
-`--airgap-bundle-render-check` focused diagnostic 已完成 -> P2 full online
-adoption、release-kit operator signoff 与 AgentSmith product-flow evidence 分别收口 -> P3 airgap mechanism/app-current inventory 剩余 load/import/offline install/deploy smoke 收口 -> P5.1 runner start guard/CI 化
+`--airgap-bundle-render-check` focused diagnostic 已完成 -> release-kit
+operator signoff intake focused guard 已完成 -> P2 full online adoption、
+release-kit operator signoff 的正式签名验证/身份/完整 verdict 与
+AgentSmith product-flow evidence 分别收口 -> P3 airgap mechanism/app-current
+inventory 剩余 load/import/offline install/deploy smoke 收口 -> P5.1 runner start guard/CI 化
 已完成 -> P5 runtime/image/adoption -> P6 收口。P4 runner contract artifact
 最小闭环已完成；P5.0 runner repo consumer diagnostic skeleton 已完成；P5.1
 start guard 已完成。P2 online spine 和 P3 render-check 都不表示
@@ -1064,6 +1098,17 @@ source-registry rollout 保持 digest-only；
 online evidence root 作为 envelope/container 已能通过 `--evidence`
 revalidation，machine accepted focused output 是
 `online-deployment-gate-report.json`。
+release-kit operator signoff intake focused guard 已完成（sibling repo commit
+`0854eeb`，GitHub Actions CI run `26444123230` success）；新增
+`--operator-signoff-intake` 只做 operator signoff intake JSON 与 confirmed
+apply `online-deployment-gate-report.json` 的机器绑定校验，输出
+`readiness=false`，绑定 release id、git sha、release contract raw sha256、
+target profile、operator_run_id 和 raw online gate report sha；online gate
+report 必须是 apply 模式、canonical focused chain steps，并包含
+`capability_map` 和 `generated_at`；这不是签名验证、身份系统、registry
+presence proof、full online adoption、AgentSmith product-flow evidence、
+deploy/package/release readiness，也不是 release-kit evidence envelope
+accepted output。
 release-kit P3 `--airgap-bundle-render-check` focused diagnostic 已在 sibling
 repo 完成（commit `3453c7d`，remote CI success）；它只证明 already assembled
 airgap bundle 的 bundle-local offline render、render-check 和 target image
@@ -1072,9 +1117,9 @@ inventory，输出 `readiness=false`，`--evidence` 仍拒收
 load/import、offline install、deploy/package/release readiness 或 product-full
 offline package。post-hardening review 已修复 forward-slash UNC-like path
 `//server/share/...` fail-fast 缺口。Full P1 adoption 仍不能宣称完成，因为
-release-kit P2 full online adoption、release-kit operator signoff、AgentSmith
-product-flow evidence 收口、P3 airgap mechanism/app-current inventory 和 P5
-runtime/adoption 等后续阶段未完成，deployment/package/operator
+release-kit P2 full online adoption、release-kit operator signoff 的正式
+签名验证/身份/完整 verdict、AgentSmith product-flow evidence 收口、P3 airgap
+mechanism/app-current inventory 和 P5 runtime/adoption 等后续阶段未完成，deployment/package/operator
 verdict 不回接 AgentSmith product gate。当前 `existing-cluster` 只按 Docker substrate/IP-only transition
 diagnostic 处理。P4 `@mbos/agent-runner-contract` formal artifact
 producer/checker 已完成；正式 artifact 是外部
@@ -1083,11 +1128,12 @@ P5.0 runner repo consumer diagnostic skeleton 已完成并可消费正式 artifa
 P5.1 runner start guard 已完成（commit `cdfa800`，local consumer /
 start-guard / full-gate-fail-closed checks passed，remote CI success）。这些
 不是 runtime migration、真实 registry login/push/pull/mirror/presence proof、
-cloud provisioning、full online adoption、release-kit operator signoff、
-AgentSmith product-flow evidence 收口或 release readiness。DeepSeek/LLM real lane 没有 tracked changes；AgentSmith defaults 和 ignored local env 使用
+cloud provisioning、full online adoption、release-kit operator signoff 的正式
+签名验证/身份/完整 verdict、AgentSmith product-flow evidence 收口或 release readiness。DeepSeek/LLM real lane 没有 tracked changes；AgentSmith defaults 和 ignored local env 使用
 DeepSeek endpoint/model，LLMUP real compatibility smoke 15 passed / 0 failed /
 1 skipped，未提交 secret。下一步是 P2 full online adoption、release-kit
-operator signoff 与 AgentSmith product-flow evidence 分别收口、P3 airgap
+operator signoff 的正式签名验证/身份/完整 verdict 与 AgentSmith product-flow
+evidence 分别收口、P3 airgap
 mechanism/app-current inventory 剩余 load/import/offline install/deploy smoke
 收口，以及 P5 runtime/image/adoption。旧
 `@mbos/agent-runner` shim、`buildAgentRuntimeEnv` 和源码路径 runner image 都不能

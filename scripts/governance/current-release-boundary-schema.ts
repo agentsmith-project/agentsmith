@@ -545,6 +545,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     fail_fast: [
       'rendered_workload_image_not_in_inventory',
       'deploy_template_required_image_missing',
+      'deploy_template_inventory_orphan',
       'target_registry_digest_mismatch',
       'live_image_id_mismatch',
     ],
@@ -2671,11 +2672,17 @@ function validateDeployTemplateRequiredImagesInInventory(
   }
 
   const inventoryIds = new Set<string>();
-  for (const entry of contract.deploy_image_inventory) {
+  contract.deploy_image_inventory.forEach((entry, index) => {
     if (isRecord(entry) && typeof entry.id === 'string') {
       inventoryIds.add(entry.id);
+      if (!deployTemplatePackage.required_image_ids.includes(entry.id)) {
+        failures.push({
+          path: `deploy_image_inventory[${index}].id`,
+          reason: `deploy image inventory id "${entry.id}" is not required by deploy_template_package.required_image_ids.`,
+        });
+      }
     }
-  }
+  });
 
   for (const imageId of deployTemplatePackage.required_image_ids) {
     if (typeof imageId !== 'string' || inventoryIds.has(imageId)) {

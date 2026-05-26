@@ -271,6 +271,23 @@ describe('release contract generator', () => {
     expectThrowsWithMessage(input, 'image id "agentsmith_app" is declared more than once');
   });
 
+  it('rejects generated deploy image inventory entries that are not required by the deploy template package', () => {
+    const input = buildInput();
+    input.release_kit_prerequisite_images = [
+      ...RELEASE_KIT_PREREQUISITE_IMAGES,
+      {
+        id: 'unused_prerequisite',
+        image: `registry.k8s.io/example/unused-prerequisite:v1.0.0@sha256:${'8'.repeat(64)}`,
+        digest: `sha256:${'8'.repeat(64)}`,
+      },
+    ];
+
+    expectThrowsWithMessage(
+      input,
+      'deploy image inventory id "unused_prerequisite" is not required by deploy_template_package.required_image_ids',
+    );
+  });
+
   it('rejects deploy template digest drift from package manifest digest', () => {
     const input = buildInput();
     input.deploy_template_digest = `sha256:${'7'.repeat(64)}`;

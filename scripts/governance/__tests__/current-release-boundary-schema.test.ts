@@ -861,6 +861,21 @@ describe('current release boundary schema', () => {
     );
   });
 
+  it('rejects deploy image inventory ids that are not required by the deploy template package', () => {
+    const contract = cloneFixture('release-contract.valid.json');
+    const deployTemplatePackage = contract.deploy_template_package as Record<string, unknown>;
+    deployTemplatePackage.required_image_ids = (deployTemplatePackage.required_image_ids as string[])
+      .filter((imageId) => imageId !== 'llmup');
+    rehashArtifactProvenanceContainer(deployTemplatePackage);
+    rehashArtifactProvenanceContainer(contract);
+    rehashReleaseContractProjection(contract);
+
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'deploy image inventory id "llmup" is not required by deploy_template_package.required_image_ids',
+    );
+  });
+
   it('rejects missing provenance, self-referential provenance subjects, and wrong or local repo identity', () => {
     expect(normalizeReleaseBoundaryRemote('https://github.com/agentsmith-project/agentsmith.git'))
       .toBe(AGENTSMITH_CANONICAL_REPO);

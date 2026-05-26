@@ -64,7 +64,7 @@ describe('release local precheck lightweight contract', () => {
     expect(script).toContain('"web_minimal_ready"');
     expect(script).toContain('"public_auth_token_smoke"');
     expect(script.lastIndexOf('\nwrite_precheck_success_report\n')).toBeLessThan(script.lastIndexOf('PRECHECK_STATUS=0'));
-    expect(script).not.toContain('BACKEND_REAL_API_KEY_VALUE",');
+    expect(script).not.toContain('PRESET_ENDPOINT_API_KEY_VALUE",');
     expect(script).not.toContain('ACCESS_TOKEN",');
     expect(script).not.toContain('MINIO_SECRET_KEY",');
   });

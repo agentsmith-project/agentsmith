@@ -24,12 +24,12 @@ import { readStoredAuthToken } from './integration-workspace-access';
 
 function requireInternalEnv(): { namespace: string; apiKey: string } {
   const namespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim();
-  const apiKey = process.env.BACKEND_REAL_API_KEY?.trim() || process.env.PRESET_ENDPOINT_API_KEY?.trim();
+  const apiKey = process.env.PRESET_ENDPOINT_API_KEY?.trim();
   if (!namespace) {
     throw new Error('missing_INTERNAL_AGENT_K8S_NAMESPACE');
   }
   if (!apiKey) {
-    throw new Error('missing_BACKEND_REAL_API_KEY_or_PRESET_ENDPOINT_API_KEY');
+    throw new Error('missing_PRESET_ENDPOINT_API_KEY');
   }
   return { namespace, apiKey };
 }

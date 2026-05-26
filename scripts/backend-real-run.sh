@@ -23,7 +23,7 @@ if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
 fi
 export_backend_real_endpoint_env
 
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   echo "[backend-real-run] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
@@ -31,7 +31,7 @@ fi
 info() { echo "[backend-real-run] $*"; }
 run_real_cmd() {
   (cd "${ROOT_DIR}" && env \
-    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
     BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \
     BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
     BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \

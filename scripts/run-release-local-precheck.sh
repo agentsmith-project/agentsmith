@@ -14,7 +14,7 @@ ensure_backend_real_state
 
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   echo "[release-local-precheck] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi

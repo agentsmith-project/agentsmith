@@ -22,7 +22,7 @@ const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic';
 const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'deepseek-v4-flash';
-const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
+const PRESET_ENDPOINT_API_KEY = process.env.PRESET_ENDPOINT_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
 const DEV_ADMIN_EMAIL = 'dev-admin@example.com';
@@ -76,10 +76,10 @@ function resolveVisualReviewTraceMeta(stepId: string, role: string): VisualRevie
 }
 
 function requireRealLaneApiKey(): string {
-  if (!BACKEND_REAL_API_KEY?.trim()) {
-    throw new Error('missing_BACKEND_REAL_API_KEY');
+  if (!PRESET_ENDPOINT_API_KEY?.trim()) {
+    throw new Error('missing_PRESET_ENDPOINT_API_KEY');
   }
-  return BACKEND_REAL_API_KEY.trim();
+  return PRESET_ENDPOINT_API_KEY.trim();
 }
 
 async function clearAppState(page: Page): Promise<void> {

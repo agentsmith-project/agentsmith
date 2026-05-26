@@ -240,7 +240,7 @@ stop_release_user_story_afscp_local_runtime() {
   with_release_user_story_afscp_runtime_env stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
 }
 
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   echo "[integration-release-user-story] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
@@ -505,7 +505,7 @@ INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="
 info "running full integration release user story"
 (
   cd "${ROOT_DIR}" && \
-    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
     BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
     BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
     BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \

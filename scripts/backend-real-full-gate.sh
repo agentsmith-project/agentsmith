@@ -62,7 +62,7 @@ record_service() {
 }
 
 
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
   echo "[backend-real-full-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   echo "[backend-real-full-gate] Export PRESET_ENDPOINT_API_KEY before running this gate." >&2
@@ -201,12 +201,12 @@ run_real_cmd() {
   shift 2
   local command="$*"
   cleanup_gate_ports "${api_port}" "${web_port}" "${command}"
-  info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} BACKEND_REAL_API_KEY=<redacted> ${command}"
+  info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} PRESET_ENDPOINT_API_KEY=<redacted> ${command}"
   (
     cd "${ROOT_DIR}"
     export INTEGRATION_API_PORT="${api_port}"
     export INTEGRATION_WEB_PORT="${web_port}"
-    export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}"
+    export PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}"
     eval "${command}"
   )
 }
@@ -269,7 +269,7 @@ run_release_browser_trace_spec() {
     export INTEGRATION_RUN_ROOT="${RELEASE_RUN_ROOT}/browser-trace-specs/${spec_slug}"
     export INTEGRATION_LOG_DIR="${RELEASE_RUN_ROOT}/browser-trace-specs/${spec_slug}/integration"
     export UX_TRACE_OUTPUT_ROOT="${AUTHORITATIVE_UX_TRACE_ROOT}"
-    export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}"
+    export PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}"
     export DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
     export REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
     export MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"

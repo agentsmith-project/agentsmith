@@ -26,7 +26,7 @@ const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmi
 const ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.deepseek.com/anthropic';
 const OPENAI_BASE_URL = process.env.BACKEND_REAL_OPENAI_BASE_URL ?? 'https://api.deepseek.com';
 const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'deepseek-v4-flash';
-const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
+const PRESET_ENDPOINT_API_KEY = process.env.PRESET_ENDPOINT_API_KEY;
 const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
 const MEMBER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
@@ -74,9 +74,9 @@ function requireReleaseAgentTaskFlow(flowKey: string): ReleaseAgentTaskFlow {
 }
 
 function requireRealLaneApiKey(): string {
-  const value = BACKEND_REAL_API_KEY?.trim();
+  const value = PRESET_ENDPOINT_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_BACKEND_REAL_API_KEY');
+    throw new Error('missing_PRESET_ENDPOINT_API_KEY');
   }
   return value;
 }

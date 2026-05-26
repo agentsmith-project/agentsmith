@@ -525,7 +525,7 @@ describe('current job metadata manifest', () => {
         'provider-secret-profile',
       ]),
     );
-    expect(gateRelease?.inputs.required_secret_names).toEqual(['BACKEND_REAL_API_KEY']);
+    expect(gateRelease?.inputs.required_secret_names).toEqual(['PRESET_ENDPOINT_API_KEY']);
     expect(gateRelease?.timeouts.source).toBe('p2_metadata_schema_static_envelope');
     expect(gateRelease?.retry).toBe('manual_only');
     expect(gateRelease?.cache).toBe('release_campaign_only');
@@ -581,7 +581,7 @@ describe('current job metadata manifest', () => {
 
   it('allows secret names but rejects secret-looking values anywhere in the manifest', () => {
     const releaseGate = findCurrentJobMetadataById('gate-release');
-    expect(releaseGate?.inputs.required_secret_names).toContain('BACKEND_REAL_API_KEY');
+    expect(releaseGate?.inputs.required_secret_names).toContain('PRESET_ENDPOINT_API_KEY');
     expect(validateCurrentJobMetadataManifest().ok).toBe(true);
 
     for (const value of SECRET_LOOKING_VALUES) {

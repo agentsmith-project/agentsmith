@@ -70,9 +70,9 @@ describe('minimal lease/status shadow', () => {
           ownerStepId: 'lane-backend-real-release',
         }),
       ],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY', 'MISSING_SECRET'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY', 'MISSING_SECRET'],
       env: {
-        BACKEND_REAL_API_KEY: SECRET_VALUE,
+        PRESET_ENDPOINT_API_KEY: SECRET_VALUE,
       },
       generatedAt: GENERATED_AT,
     });
@@ -109,16 +109,16 @@ describe('minimal lease/status shadow', () => {
 
     const rotated = buildMinimalLeaseStatusShadow({
       activeLeases: [],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY', 'MISSING_SECRET'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY', 'MISSING_SECRET'],
       env: {
-        BACKEND_REAL_API_KEY: 'sk-live-rotated-do-not-print',
+        PRESET_ENDPOINT_API_KEY: 'sk-live-rotated-do-not-print',
       },
       generatedAt: GENERATED_AT,
     });
     expect(rotated.secret_profile_lock.profile.digest).toBe(shadow.secret_profile_lock.profile.digest);
 
     const serialized = JSON.stringify(shadow);
-    expect(serialized).not.toContain('BACKEND_REAL_API_KEY');
+    expect(serialized).not.toContain('PRESET_ENDPOINT_API_KEY');
     expect(serialized).not.toContain('MISSING_SECRET');
     expect(serialized).not.toContain(SECRET_VALUE);
     expect(validateMinimalLeaseStatusShadow(shadow)).toEqual({ ok: true, value: shadow });
@@ -176,9 +176,9 @@ describe('minimal lease/status shadow', () => {
 
       const shadow = resolveMinimalLeaseStatusShadow({
         snapshotPath,
-        requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+        requiredSecretNames: ['PRESET_ENDPOINT_API_KEY'],
         env: {
-          BACKEND_REAL_API_KEY: SECRET_VALUE,
+          PRESET_ENDPOINT_API_KEY: SECRET_VALUE,
         },
         generatedAt: GENERATED_AT,
       });
@@ -246,9 +246,9 @@ describe('minimal lease/status shadow', () => {
           ownerStepId: `gate-release-${SNAPSHOT_OWNER_SECRET}`,
         }),
       ],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY'],
       env: {
-        BACKEND_REAL_API_KEY: SECRET_VALUE,
+        PRESET_ENDPOINT_API_KEY: SECRET_VALUE,
       },
       generatedAt: GENERATED_AT,
     });
@@ -310,9 +310,9 @@ describe('minimal lease/status shadow', () => {
   it('rejects secret-looking shadow pollution and raw secret fields', () => {
     const shadow = buildMinimalLeaseStatusShadow({
       activeLeases: [],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY'],
       env: {
-        BACKEND_REAL_API_KEY: SECRET_VALUE,
+        PRESET_ENDPOINT_API_KEY: SECRET_VALUE,
       },
       generatedAt: GENERATED_AT,
     });
@@ -321,7 +321,7 @@ describe('minimal lease/status shadow', () => {
       ...shadow,
       secret_profile_lock: {
         ...shadow.secret_profile_lock,
-        profiles: [{ name: 'BACKEND_REAL_API_KEY', value_digest: SECRET_VALUE }],
+        profiles: [{ name: 'PRESET_ENDPOINT_API_KEY', value_digest: SECRET_VALUE }],
         profile: {
           ...shadow.secret_profile_lock.profile,
           value: SECRET_VALUE,

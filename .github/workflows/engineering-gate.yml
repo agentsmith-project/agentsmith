@@ -21,7 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      BACKEND_REAL_API_KEY: ${{ secrets.BACKEND_REAL_API_KEY }}
+      # Remove the BACKEND_REAL_API_KEY fallback after PRESET_ENDPOINT_API_KEY is configured
+      # and one scheduled Engineering Gate and one manual Quality Gates backend-real core run pass.
+      PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
       REPORT_NAME: ${{ inputs.report_name }}
     steps:
       - name: Checkout
@@ -44,8 +46,8 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          if [[ -z "${BACKEND_REAL_API_KEY:-}" ]]; then
-            echo "BACKEND_REAL_API_KEY secret is required for the engineering gate backend-real run." >&2
+          if [[ -z "${PRESET_ENDPOINT_API_KEY:-}" ]]; then
+            echo "PRESET_ENDPOINT_API_KEY secret is required for the engineering gate backend-real run; BACKEND_REAL_API_KEY is accepted only as a temporary GitHub Actions secret rename fallback." >&2
             exit 1
           fi
 
@@ -53,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${BACKEND_REAL_API_KEY}" > .env.backend-real
+          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${PRESET_ENDPOINT_API_KEY}" > .env.backend-real
 
       - name: Prepare backend-real dependencies
         run: |

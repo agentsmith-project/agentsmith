@@ -283,7 +283,7 @@ function envProfiles(step: CurrentVerificationCampaignStep): readonly string[] {
 
 function requiredSecretNames(step: CurrentVerificationCampaignStep): readonly string[] {
   if (step.id === 'gate-release' || step.nativeResult?.gateId === 'lane-backend-real-release') {
-    return ['BACKEND_REAL_API_KEY'];
+    return ['PRESET_ENDPOINT_API_KEY'];
   }
   return [];
 }

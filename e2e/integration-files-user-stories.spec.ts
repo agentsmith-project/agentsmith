@@ -848,7 +848,7 @@ async function prepareRestoreContinuationAgentTaskProject(
 ): Promise<PreparedRestoreContinuationAgentTaskProject> {
   const providerApiKey = requireBackendRealConfigValue({
     label: 'provider API key',
-    keys: ['BACKEND_REAL_API_KEY', 'PRESET_ENDPOINT_API_KEY'],
+    keys: ['PRESET_ENDPOINT_API_KEY'],
   });
   const model = requireBackendRealConfigValue({
     label: 'backend-real endpoint model',

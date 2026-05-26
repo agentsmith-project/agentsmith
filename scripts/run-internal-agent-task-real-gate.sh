@@ -375,7 +375,7 @@ record_service() {
   gate_record_service_status "${INTERNAL_REAL_DIR}" "${service_name}" "${status}" "${detail}"
 }
 
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
   echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
@@ -445,7 +445,7 @@ run_internal_spec() {
   spec_kubeconfig="$(internal_real_gate_asbcp_kubeconfig_path)"
   (
     cd "${ROOT_DIR}" && \
-      BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+      PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
       ASBCP_INTERNAL_BASE_URL="${ASBCP_INTERNAL_BASE_URL_VALUE}" \
       ASBCP_SERVICE_KEY="${ASBCP_SERVICE_KEY_VALUE}" \
       DATABASE_URL="postgresql://mbos:mbos_dev_password@127.0.0.1:${INTEGRATION_POSTGRES_PORT}/mbos" \

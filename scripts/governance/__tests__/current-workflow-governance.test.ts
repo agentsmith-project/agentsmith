@@ -1205,7 +1205,7 @@ describe('current workflow governance', () => {
     expect(engineeringWorkflow?.scheduled).toBe(true);
     expect(engineeringJob?.laneId).toBe('lane-backend-real-core');
     expect(engineeringJob?.requiresSecrets).toBe(true);
-    expect(engineeringJob?.requiredSecrets).toContain('BACKEND_REAL_API_KEY');
+    expect(engineeringJob?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
     expect(engineeringJob?.evidenceRequired).toBe(true);
     expect(engineeringJob?.artifactPaths).toEqual(
       expect.arrayContaining([
@@ -1218,6 +1218,28 @@ describe('current workflow governance', () => {
     expect(workflowSource).toContain('Daily UTC off-peak run for backend-real engineering regression.');
     expect(runCommands).toContain('npm run lane:backend-real:core');
     expect(runCommands).not.toContain('make verify-governance');
+  });
+
+  it('keeps BACKEND_REAL_API_KEY only as a GitHub Actions secret rename fallback with removal triggers', () => {
+    const engineeringWorkflow = readRepoFile('.github/workflows/engineering-gate.yml');
+    const qualityGatesWorkflow = readRepoFile('.github/workflows/quality-gates.yml');
+
+    for (const [relativePath, workflowSource] of [
+      ['.github/workflows/engineering-gate.yml', engineeringWorkflow],
+      ['.github/workflows/quality-gates.yml', qualityGatesWorkflow],
+    ] as const) {
+      expect(workflowSource, relativePath).toContain(
+        'PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
+      );
+      expect(workflowSource, relativePath).toContain(
+        'Remove the BACKEND_REAL_API_KEY fallback after PRESET_ENDPOINT_API_KEY is configured',
+      );
+      expect(workflowSource, relativePath).toContain(
+        'one scheduled Engineering Gate and one manual Quality Gates backend-real core run pass',
+      );
+      expect(workflowSource, relativePath).not.toContain('BACKEND_REAL_API_KEY secret is required');
+      expect(workflowSource, relativePath).not.toContain('printf \'PRESET_ENDPOINT_API_KEY=%s\\n\' "${BACKEND_REAL_API_KEY}"');
+    }
   });
 
   it('models release contract artifact production as non-readiness CI output', () => {

@@ -517,9 +517,9 @@ describe('current status projection', () => {
           ownerStepId: 'gate-release',
         }),
       ],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY'],
       env: {
-        BACKEND_REAL_API_KEY: 'sk-status-projection-do-not-print',
+        PRESET_ENDPOINT_API_KEY: 'sk-status-projection-do-not-print',
       },
       generatedAt: GENERATED_AT,
     });
@@ -597,9 +597,9 @@ describe('current status projection', () => {
           ownerStepId: 'gate-release',
         }),
       ],
-      requiredSecretNames: ['BACKEND_REAL_API_KEY'],
+      requiredSecretNames: ['PRESET_ENDPOINT_API_KEY'],
       env: {
-        BACKEND_REAL_API_KEY: 'sk-status-render-do-not-print',
+        PRESET_ENDPOINT_API_KEY: 'sk-status-render-do-not-print',
       },
       generatedAt: GENERATED_AT,
     });

@@ -244,9 +244,9 @@ function expectNoLeaseSnapshotSecretLeak(output: string): void {
 
 function withLeaseSnapshotEnv<T>(snapshotPath: string, action: () => T): T {
   const previousSnapshot = process.env[LEASE_SNAPSHOT_ENV];
-  const previousSecret = process.env.BACKEND_REAL_API_KEY;
+  const previousSecret = process.env.PRESET_ENDPOINT_API_KEY;
   process.env[LEASE_SNAPSHOT_ENV] = snapshotPath;
-  process.env.BACKEND_REAL_API_KEY = LEASE_SNAPSHOT_SECRET;
+  process.env.PRESET_ENDPOINT_API_KEY = LEASE_SNAPSHOT_SECRET;
   try {
     return action();
   } finally {
@@ -256,9 +256,9 @@ function withLeaseSnapshotEnv<T>(snapshotPath: string, action: () => T): T {
       process.env[LEASE_SNAPSHOT_ENV] = previousSnapshot;
     }
     if (previousSecret === undefined) {
-      delete process.env.BACKEND_REAL_API_KEY;
+      delete process.env.PRESET_ENDPOINT_API_KEY;
     } else {
-      process.env.BACKEND_REAL_API_KEY = previousSecret;
+      process.env.PRESET_ENDPOINT_API_KEY = previousSecret;
     }
   }
 }
@@ -374,7 +374,7 @@ describe('clean status entrypoints', () => {
       const env = {
         ...process.env,
         [LEASE_SNAPSHOT_ENV]: snapshotPath,
-        BACKEND_REAL_API_KEY: LEASE_SNAPSHOT_SECRET,
+        PRESET_ENDPOINT_API_KEY: LEASE_SNAPSHOT_SECRET,
       };
 
       const jsonOutput = execFileSync('npx', [
@@ -478,7 +478,7 @@ describe('clean status entrypoints', () => {
       const env = {
         ...process.env,
         [LEASE_SNAPSHOT_ENV]: snapshotPath,
-        BACKEND_REAL_API_KEY: LEASE_SNAPSHOT_SECRET,
+        PRESET_ENDPOINT_API_KEY: LEASE_SNAPSHOT_SECRET,
       };
 
       const jsonOutput = execFileSync('npx', [

@@ -39,7 +39,7 @@ WEB_PORT="${INTEGRATION_WEB_PORT:-3061}"
 API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-default.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-default.log}"
 
-if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   echo "[backend-real-default-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   echo "[backend-real-default-gate] Set PRESET_ENDPOINT_API_KEY in .env.backend-real before running this gate." >&2
   exit 1
@@ -81,10 +81,10 @@ info "backend-real logs will be written to:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-info "BACKEND_REAL_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-internal-agent-task-real-gate.sh"
+info "PRESET_ENDPOINT_API_KEY=<redacted> INTEGRATION_API_PORT='${API_PORT}' INTEGRATION_WEB_PORT='${WEB_PORT}' bash scripts/run-internal-agent-task-real-gate.sh"
 (
   cd "${ROOT_DIR}" && \
-    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
     INTEGRATION_API_PORT="${API_PORT}" \
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
     INTEGRATION_API_LOG="${API_LOG}" \

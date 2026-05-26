@@ -137,9 +137,9 @@ test.describe('@lane-real invite to first effective work', () => {
   test('accepted invite takes the member through the correct workspace, overview, and first effective chat work', async ({ browser, page }) => {
     test.setTimeout(600_000);
     const workspaceId = 'ws_default';
-    const apiKey = process.env.BACKEND_REAL_API_KEY?.trim() || process.env.PRESET_ENDPOINT_API_KEY?.trim();
+    const apiKey = process.env.PRESET_ENDPOINT_API_KEY?.trim();
     if (!apiKey) {
-      throw new Error('missing_BACKEND_REAL_API_KEY_or_PRESET_ENDPOINT_API_KEY');
+      throw new Error('missing_PRESET_ENDPOINT_API_KEY');
     }
     const runtime = requireRuntime();
     await ensureIntegrationKeycloakUsers();

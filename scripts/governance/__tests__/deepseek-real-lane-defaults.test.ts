@@ -78,6 +78,34 @@ describe('DeepSeek real lane defaults', () => {
     });
   });
 
+  it('uses PRESET_ENDPOINT_API_KEY as the formal backend-real E2E provider key input', () => {
+    const legacyProviderKeyName = ['BACKEND', 'REAL', 'API', 'KEY'].join('_');
+    const specPaths = [
+      'e2e/integration-agent-member-permissions.spec.ts',
+      'e2e/integration-agent-task-isolation.spec.ts',
+      'e2e/integration-agent-task-runner.spec.ts',
+      'e2e/integration-agent-task-terminal-ux.spec.ts',
+      'e2e/integration-context-store-isolation.spec.ts',
+      'e2e/integration-files-user-stories.spec.ts',
+      'e2e/integration-governance-member-workflow-continuity.spec.ts',
+      'e2e/integration-internal-sandbox-reclaim.spec.ts',
+      'e2e/integration-internal-task-isolation.spec.ts',
+      'e2e/integration-invite-first-effective-work.spec.ts',
+      'e2e/integration-membership-chat-isolation.spec.ts',
+      'e2e/integration-release-user-story.spec.ts',
+      'e2e/integration-resource-policy-observable-effect.spec.ts',
+      'e2e/integration-visual-review.spec.ts',
+    ] as const;
+
+    for (const relativePath of specPaths) {
+      const text = readRepoText(relativePath);
+
+      expect(text, relativePath).toContain('PRESET_ENDPOINT_API_KEY');
+      expect(text, relativePath).not.toContain(legacyProviderKeyName);
+      expect(text, relativePath).not.toContain(`missing_${legacyProviderKeyName}`);
+    }
+  });
+
   it('preserves Anthropic-compatible real runner defaults while keeping OpenAI-specific fixture on OpenAI base', () => {
     const sourceByPath = new Map(
       [

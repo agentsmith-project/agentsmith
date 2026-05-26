@@ -650,7 +650,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'npm run backend-real:bootstrap',
           'npm run lane:backend-real:core',
         ],
-        requiredSecrets: ['BACKEND_REAL_API_KEY'],
+        requiredSecrets: ['PRESET_ENDPOINT_API_KEY'],
         requiresSecrets: true,
         evidenceRequired: true,
         evidenceFamilies: [
@@ -908,7 +908,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'npm run backend-real:bootstrap',
           'npm run lane:backend-real:core',
         ],
-        requiredSecrets: ['BACKEND_REAL_API_KEY'],
+        requiredSecrets: ['PRESET_ENDPOINT_API_KEY'],
         requiresSecrets: true,
         evidenceRequired: true,
         evidenceFamilies: [

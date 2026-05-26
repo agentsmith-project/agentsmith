@@ -62,7 +62,11 @@ describe('backend-real wrapper port preservation contract', () => {
     for (const scriptPath of scriptPaths) {
       const script = readFileSync(scriptPath, 'utf8');
 
-      expect(script, scriptPath).not.toContain("BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}'");
+      const echoedInfoLines = script
+        .split('\n')
+        .filter((line) => line.trim().startsWith('info "'))
+        .join('\n');
+      expect(echoedInfoLines, scriptPath).not.toContain('${PRESET_ENDPOINT_API_KEY_VALUE}');
     }
   });
 });

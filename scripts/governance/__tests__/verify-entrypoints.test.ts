@@ -910,7 +910,7 @@ describe('verify human entrypoints', () => {
         ...process.env,
         PATH: `${root}:${process.env.PATH ?? ''}`,
         [LEASE_SNAPSHOT_ENV]: snapshotPath,
-        BACKEND_REAL_API_KEY: LEASE_SNAPSHOT_SECRET,
+        PRESET_ENDPOINT_API_KEY: LEASE_SNAPSHOT_SECRET,
       };
 
       const jsonResult = spawnSync('npx', [

@@ -822,6 +822,22 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         releaseBlocking: false,
         notes: 'Downloads the produced descriptor/tgz and verifies install/type consumption from that artifact.',
       },
+      {
+        id: 'runner-repo-contract-handoff',
+        role: 'contract_gate',
+        commands: [
+          'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"',
+        ],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: false,
+        evidenceFamilies: [],
+        artifactPaths: [],
+        blockingFor: ['manual'],
+        scheduled: false,
+        releaseBlocking: false,
+        notes: 'Focused cross-repo runner contract artifact handoff to the agentsmith-runner consumer only; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation.',
+      },
     ],
   }),
   defineCurrentCIWorkflow({

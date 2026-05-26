@@ -70,6 +70,12 @@ const RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND =
   'npx tsx scripts/governance/runner-contract-artifact.ts';
 const RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND =
   'npx tsx scripts/contracts/check-agent-runner-contract-artifact.ts --artifact-root artifacts/runner-contract-download';
+const RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND = [
+  'set -euo pipefail',
+  'echo "This workflow only verifies cross-repo runner contract artifact handoff; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation."',
+].join('\n');
+const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
+  'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -1312,19 +1318,36 @@ describe('current workflow governance', () => {
     expect(workflowSource).not.toMatch(/deploy readiness|release readiness/i);
   });
 
-  it('models runner contract artifact production and consumer install as a non-readiness CI output', () => {
+  it('models runner contract artifact production, self-consumer install, and runner repo handoff as a non-readiness CI output', () => {
     const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
       (entry) => entry.path === '.github/workflows/runner-contract-artifact.yml',
     );
     const producerJob = workflow?.jobs.find((entry) => entry.id === 'produce-runner-contract-artifact');
     const consumerJob = workflow?.jobs.find((entry) => entry.id === 'consume-runner-contract-artifact');
+    const handoffJob = workflow?.jobs.find((entry) => entry.id === 'runner-repo-contract-handoff');
     const parsedWorkflow = parseWorkflow('.github/workflows/runner-contract-artifact.yml');
     const workflowSource = readRepoFile('.github/workflows/runner-contract-artifact.yml');
     const producerRunCommands = collectJobRunCommands(parsedWorkflow, 'produce-runner-contract-artifact');
     const consumerRunCommands = collectJobRunCommands(parsedWorkflow, 'consume-runner-contract-artifact');
+    const handoffRunCommands = collectJobRunCommands(parsedWorkflow, 'runner-repo-contract-handoff');
     const workflowJobs = asRecord(parsedWorkflow.jobs);
     const consumerYamlJob = asRecord(workflowJobs['consume-runner-contract-artifact']);
     const producerYamlJob = asRecord(workflowJobs['produce-runner-contract-artifact']);
+    const handoffYamlJob = asRecord(workflowJobs['runner-repo-contract-handoff']);
+    const handoffSteps = Array.isArray(handoffYamlJob.steps) ? handoffYamlJob.steps.map(asRecord) : [];
+    const handoffRunCommandList = handoffSteps
+      .map((step) => step.run)
+      .filter((run): run is string => typeof run === 'string')
+      .map((run) => run.trim());
+    const handoffStepDescriptors = handoffSteps.map((step) => ({
+      name: step.name,
+      run: typeof step.run === 'string' ? step.run.trim() : undefined,
+      uses: step.uses,
+      workingDirectory: step['working-directory'],
+    }));
+    const handoffDownloadWith = asRecord(handoffSteps[0]?.with);
+    const handoffCheckoutWith = asRecord(handoffSteps[1]?.with);
+    const handoffSetupNodeWith = asRecord(handoffSteps[2]?.with);
 
     expect(workflow?.workflowName).toBe('Runner Contract Artifact');
     expect(workflow?.role).toBe('release_artifact_producer');
@@ -1348,8 +1371,57 @@ describe('current workflow governance', () => {
       RUNNER_CONTRACT_BUILD_COMMAND,
       RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND,
     ]);
+    expect(handoffJob?.role).toBe('contract_gate');
+    expect(handoffJob?.requiresSecrets).toBe(false);
+    expect(handoffJob?.evidenceRequired).toBe(false);
+    expect(handoffJob?.releaseBlocking).toBe(false);
+    expect(handoffJob?.commands).toEqual([RUNNER_REPO_CONTRACT_HANDOFF_COMMAND]);
+    expect(handoffJob?.commands).not.toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read' });
     expect(consumerYamlJob.needs).toBe('produce-runner-contract-artifact');
+    expect(handoffYamlJob.needs).toBe('produce-runner-contract-artifact');
+    expect(handoffSteps).toHaveLength(5);
+    expect(handoffStepDescriptors).toEqual([
+      {
+        name: 'Download runner contract artifact',
+        run: undefined,
+        uses: 'actions/download-artifact@v7',
+        workingDirectory: undefined,
+      },
+      {
+        name: 'Checkout agentsmith-runner',
+        run: undefined,
+        uses: 'actions/checkout@v6',
+        workingDirectory: undefined,
+      },
+      {
+        name: 'Setup Node',
+        run: undefined,
+        uses: 'actions/setup-node@v6',
+        workingDirectory: undefined,
+      },
+      {
+        name: 'Non-readiness handoff scope',
+        run: RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND,
+        uses: undefined,
+        workingDirectory: undefined,
+      },
+      {
+        name: 'Verify runner repo contract consumer',
+        run: RUNNER_REPO_CONTRACT_HANDOFF_COMMAND,
+        uses: undefined,
+        workingDirectory: 'agentsmith-runner',
+      },
+    ]);
+    expect(handoffRunCommandList).toEqual([
+      RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND,
+      RUNNER_REPO_CONTRACT_HANDOFF_COMMAND,
+    ]);
+    expect(handoffDownloadWith.name).toBe('agentsmith-runner-contract-artifact');
+    expect(handoffDownloadWith.path).toBe('artifacts/runner-contract-download');
+    expect(handoffCheckoutWith.repository).toBe('agentsmith-project/agentsmith-runner');
+    expect(handoffCheckoutWith.path).toBe('agentsmith-runner');
+    expect(handoffSetupNodeWith['node-version']).toBe('24.14.1');
     expect(producerRunCommands).toContain('npm ci');
     expect(producerRunCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(producerRunCommands).toContain(RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND);
@@ -1368,14 +1440,21 @@ describe('current workflow governance', () => {
     expect(consumerRunCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
       consumerRunCommands.indexOf(RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND),
     );
+    expect(handoffRunCommands).toContain(RUNNER_REPO_CONTRACT_HANDOFF_COMMAND);
+    expect(handoffRunCommands).not.toContain('npm ci');
+    expect(handoffRunCommands).not.toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(workflowSource).toContain(
       'This workflow only produces and consumes the runner contract artifact descriptor; it is not release readiness.',
+    );
+    expect(workflowSource).toContain(
+      'This workflow only verifies cross-repo runner contract artifact handoff; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation.',
     );
     expect(workflowSource).toContain('runner-contract-artifact.json');
     expect(workflowSource).toContain('actions/download-artifact@v7');
     expect(producerYamlJob).not.toHaveProperty('needs');
     expect(producerRunCommands).not.toContain('npm run release:ready');
     expect(consumerRunCommands).not.toContain('npm run release:ready');
+    expect(handoffRunCommands).not.toContain('npm run release:ready');
   });
 
   it('models GHCR image publishing as a product image handoff producer', () => {

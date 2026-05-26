@@ -53,6 +53,18 @@ const HUMAN_MARKDOWN_ONLY_PUSH_PATHS_IGNORE = [
 ] as const;
 
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+const RUNNER_CONTRACT_ARTIFACT_NAME = 'agentsmith-runner-contract-artifact';
+const RUNNER_CONTRACT_ARTIFACT_DOWNLOAD_PATH = 'artifacts/runner-contract-download';
+const RUNNER_CONTRACT_PRODUCER_JOB_ID = 'produce-runner-contract-artifact';
+const RUNNER_REPO_CONTRACT_HANDOFF_JOB_ID = 'runner-repo-contract-handoff';
+const RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND = [
+  'set -euo pipefail',
+  'echo "This workflow only verifies cross-repo runner contract artifact handoff; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation."',
+].join('\n');
+const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
+  'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
+const RUNNER_REPO_CHECKOUT_PATH = 'agentsmith-runner';
+const RUNNER_REPO_REPOSITORY = 'agentsmith-project/agentsmith-runner';
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -201,22 +213,21 @@ function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: s
 }
 
 function collectJobRunCommandList(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
-  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
-  const steps = Array.isArray(job.steps) ? job.steps : [];
-
-  return steps
+  return collectJobSteps(parsedWorkflow, jobId)
     .map((step) => asRecord(step).run)
     .filter((run): run is string => typeof run === 'string')
     .map((run) => run.trim());
 }
 
-function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
+function collectJobSteps(parsedWorkflow: Record<string, unknown>, jobId: string): Record<string, unknown>[] {
   const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
-  const steps = Array.isArray(job.steps) ? job.steps : [];
+  return Array.isArray(job.steps) ? job.steps.map(asRecord) : [];
+}
+
+function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
   const paths: string[] = [];
 
-  for (const step of steps) {
-    const stepRecord = asRecord(step);
+  for (const stepRecord of collectJobSteps(parsedWorkflow, jobId)) {
     if (stepRecord.uses !== 'actions/upload-artifact@v7') {
       continue;
     }
@@ -368,6 +379,89 @@ function assertJobBuildsRunnerContractBeforeColdExecution(
   }
   if (buildIndex >= 0 && targetIndex >= 0 && buildIndex >= targetIndex) {
     failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} before ${targetCommand}`);
+  }
+}
+
+function assertRunnerRepoContractHandoff(
+  parsedWorkflow: Record<string, unknown>,
+  workflowPath: string,
+  failures: string[],
+): void {
+  const label = `${workflowPath}:${RUNNER_REPO_CONTRACT_HANDOFF_JOB_ID}`;
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[RUNNER_REPO_CONTRACT_HANDOFF_JOB_ID]);
+  const steps = collectJobSteps(parsedWorkflow, RUNNER_REPO_CONTRACT_HANDOFF_JOB_ID);
+  const runCommands = collectJobRunCommandList(parsedWorkflow, RUNNER_REPO_CONTRACT_HANDOFF_JOB_ID);
+  const expectedRunCommands = [
+    RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND,
+    RUNNER_REPO_CONTRACT_HANDOFF_COMMAND,
+  ];
+  const [downloadStep = {}, checkoutStep = {}, setupNodeStep = {}, nonReadinessStep = {}, consumerStep = {}] = steps;
+  const downloadWith = asRecord(downloadStep.with);
+  const checkoutWith = asRecord(checkoutStep.with);
+  const setupNodeWith = asRecord(setupNodeStep.with);
+  const nonReadinessRun = typeof nonReadinessStep.run === 'string'
+    ? nonReadinessStep.run.trim()
+    : nonReadinessStep.run;
+  const consumerRun = typeof consumerStep.run === 'string'
+    ? consumerStep.run.trim()
+    : consumerStep.run;
+
+  if (Object.keys(job).length === 0) {
+    failures.push(`${label} must exist as the focused runner repo handoff consumer gate`);
+  }
+  if (job.needs !== RUNNER_CONTRACT_PRODUCER_JOB_ID) {
+    failures.push(`${label} must need ${RUNNER_CONTRACT_PRODUCER_JOB_ID}`);
+  }
+  if (steps.length !== 5) {
+    failures.push(`${label} must contain exactly five focused steps: download artifact, checkout runner repo, setup node, non-readiness scope, runner consumer`);
+  }
+  if (
+    runCommands.length !== expectedRunCommands.length
+    || runCommands.some((command, index) => command !== expectedRunCommands[index])
+  ) {
+    failures.push(`${label} run steps must be exactly the non-readiness scope block followed by ${RUNNER_REPO_CONTRACT_HANDOFF_COMMAND}`);
+  }
+  if (
+    downloadStep.name !== 'Download runner contract artifact'
+    || downloadStep.uses !== 'actions/download-artifact@v7'
+    || downloadStep.run !== undefined
+    || downloadWith.name !== RUNNER_CONTRACT_ARTIFACT_NAME
+    || downloadWith.path !== RUNNER_CONTRACT_ARTIFACT_DOWNLOAD_PATH
+  ) {
+    failures.push(`${label} step[0] must only download ${RUNNER_CONTRACT_ARTIFACT_NAME} to ${RUNNER_CONTRACT_ARTIFACT_DOWNLOAD_PATH}`);
+  }
+  if (
+    checkoutStep.name !== 'Checkout agentsmith-runner'
+    || checkoutStep.uses !== 'actions/checkout@v6'
+    || checkoutStep.run !== undefined
+    || checkoutWith.repository !== RUNNER_REPO_REPOSITORY
+    || checkoutWith.path !== RUNNER_REPO_CHECKOUT_PATH
+  ) {
+    failures.push(`${label} step[1] must only checkout ${RUNNER_REPO_REPOSITORY} into ${RUNNER_REPO_CHECKOUT_PATH}`);
+  }
+  if (
+    setupNodeStep.name !== 'Setup Node'
+    || setupNodeStep.uses !== 'actions/setup-node@v6'
+    || setupNodeStep.run !== undefined
+    || setupNodeWith['node-version'] !== '24.14.1'
+  ) {
+    failures.push(`${label} step[2] must only setup Node 24.14.1 for the runner repo consumer`);
+  }
+  if (
+    nonReadinessStep.name !== 'Non-readiness handoff scope'
+    || nonReadinessStep.uses !== undefined
+    || nonReadinessStep['working-directory'] !== undefined
+    || nonReadinessRun !== RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND
+  ) {
+    failures.push(`${label} step[3] must only declare the non-readiness handoff scope`);
+  }
+  if (
+    consumerStep.name !== 'Verify runner repo contract consumer'
+    || consumerStep.uses !== undefined
+    || consumerStep['working-directory'] !== RUNNER_REPO_CHECKOUT_PATH
+    || consumerRun !== RUNNER_REPO_CONTRACT_HANDOFF_COMMAND
+  ) {
+    failures.push(`${label} step[4] must only run the runner repo contract consumer from ${RUNNER_REPO_CHECKOUT_PATH}`);
   }
 }
 
@@ -537,7 +631,7 @@ const runnerContractArtifactWorkflow = parseWorkflow(runnerContractArtifactWorkf
 assertJobBuildsRunnerContractBeforeColdExecution(
   runnerContractArtifactWorkflow,
   runnerContractArtifactWorkflowPath,
-  'produce-runner-contract-artifact',
+  RUNNER_CONTRACT_PRODUCER_JOB_ID,
   'npx tsx scripts/governance/runner-contract-artifact.ts',
   failures,
 );
@@ -546,6 +640,11 @@ assertJobBuildsRunnerContractBeforeColdExecution(
   runnerContractArtifactWorkflowPath,
   'consume-runner-contract-artifact',
   'npx tsx scripts/contracts/check-agent-runner-contract-artifact.ts --artifact-root artifacts/runner-contract-download',
+  failures,
+);
+assertRunnerRepoContractHandoff(
+  runnerContractArtifactWorkflow,
+  runnerContractArtifactWorkflowPath,
   failures,
 );
 

@@ -78,3 +78,35 @@ jobs:
           set -euo pipefail
           # This workflow only produces and consumes the runner contract artifact descriptor; it is not release readiness.
           test -f artifacts/runner-contract-download/runner-contract-artifact.json
+
+  runner-repo-contract-handoff:
+    name: runner-repo-contract-handoff
+    needs: produce-runner-contract-artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download runner contract artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: agentsmith-runner-contract-artifact
+          path: artifacts/runner-contract-download
+
+      - name: Checkout agentsmith-runner
+        uses: actions/checkout@v6
+        with:
+          repository: agentsmith-project/agentsmith-runner
+          path: agentsmith-runner
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.1
+
+      - name: Non-readiness handoff scope
+        run: |
+          set -euo pipefail
+          echo "This workflow only verifies cross-repo runner contract artifact handoff; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation."
+
+      - name: Verify runner repo contract consumer
+        working-directory: agentsmith-runner
+        run: bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"

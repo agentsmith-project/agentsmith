@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -75,6 +75,21 @@ const RUNNER_IMAGE_LOCK = {
     artifact_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
   },
 } as const satisfies CurrentRunnerImageLock;
+const CANONICAL_RUNNER_IMAGE_LOCK_PATH = join(
+  process.cwd(),
+  'scripts',
+  'governance',
+  '__fixtures__',
+  'release-boundary',
+  'agentsmith-runner-image.lock',
+);
+const CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH = join(
+  'scripts',
+  'governance',
+  '__fixtures__',
+  'release-boundary',
+  'agentsmith-runner-image.lock',
+);
 
 function buildRunnerImageLock(): CurrentRunnerImageLock {
   return structuredClone(RUNNER_IMAGE_LOCK);
@@ -321,7 +336,14 @@ function buildArtifactProducerInput(): Record<string, unknown> {
   const input = JSON.parse(JSON.stringify(buildAssemblyInput())) as Record<string, unknown>;
   delete input.sourceGitSha;
   delete input.ci_provenance;
+  delete input.runnerImageLock;
   return input;
+}
+
+function writeCanonicalRunnerImageLock(root: string): void {
+  const lockPath = join(root, CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH);
+  mkdirSync(join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary'), { recursive: true });
+  writeFileSync(lockPath, readFileSync(CANONICAL_RUNNER_IMAGE_LOCK_PATH, 'utf8'), 'utf8');
 }
 
 function writeArtifactProducerInput(root: string, input: Record<string, unknown>): string {
@@ -965,6 +987,7 @@ describe('release contract assembly CLI', () => {
 describe('release contract CI artifact producer', () => {
   it('writes a consumable release contract artifact with GitHub CI provenance only', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
@@ -1006,6 +1029,13 @@ describe('release contract CI artifact producer', () => {
       generator_version: 'p1.1-release-contract-artifact',
       attestation: 'none',
     });
+    expect(validation.value.managed_runner_image).toEqual(RUNNER_IMAGE_LOCK.image);
+    expect(validation.value.deploy_image_inventory).toContainEqual({
+      id: 'managed_runner',
+      image: RUNNER_IMAGE_LOCK.image.image,
+      digest: RUNNER_IMAGE_LOCK.image.digest,
+      source: 'managed_runner_image',
+    });
   });
 
   it.each([
@@ -1014,6 +1044,7 @@ describe('release contract CI artifact producer', () => {
     ['GITHUB_JOB', 'GITHUB_JOB is required.'],
   ])('fails fast without %s and removes stale output', (envField, expected) => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
@@ -1044,6 +1075,7 @@ describe('release contract CI artifact producer', () => {
 
   it('rejects caller-provided provenance and source sha because CI env owns them', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
     const input = buildArtifactProducerInput();
     input.ci_provenance = buildAssemblyInput().ci_provenance;
     input.sourceGitSha = GIT_SHA;
@@ -1066,8 +1098,38 @@ describe('release contract CI artifact producer', () => {
     expect(existsSync(outputPath)).toBe(false);
   });
 
+  it('rejects caller-provided runnerImageLock because the canonical lock owns it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const input = buildArtifactProducerInput();
+    input.runnerImageLock = {
+      ...buildRunnerImageLock(),
+      image: {
+        ...RUNNER_IMAGE_LOCK.image,
+        digest: `sha256:${'9'.repeat(64)}`,
+      },
+    };
+    const inputPath = writeArtifactProducerInput(root, input);
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('runnerImageLock must be provided by canonical agentsmith-runner-image.lock');
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
   it('fails fast for tag-only image inputs before publishing an artifact', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
     const input = buildArtifactProducerInput();
     const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
     adoptedProviderImages[0] = {

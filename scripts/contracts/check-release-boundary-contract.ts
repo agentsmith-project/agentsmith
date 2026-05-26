@@ -23,6 +23,7 @@ import {
   type CurrentAgentSmithReleaseContract,
   type CurrentReleaseBoundaryValidationFailure,
   type CurrentRunnerImageLock,
+  type CurrentRunnerReleaseManifest,
 } from '../governance/current-release-boundary-schema';
 
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
@@ -214,19 +215,120 @@ function validateReleaseContractRunnerImageLockAlignment(
 ): void {
   const contractRelativePath = join(FIXTURE_ROOT, 'release-contract.valid.json');
   const lockRelativePath = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
+  const manifestRelativePath = join(FIXTURE_ROOT, 'runner-release-manifest.valid.json');
   const contractValue = readJson(rootDir, contractRelativePath, failures);
   const lockValue = readText(rootDir, lockRelativePath, failures);
-  if (contractValue === null || lockValue === null) {
+  const manifestValue = readJson(rootDir, manifestRelativePath, failures);
+  if (contractValue === null || lockValue === null || manifestValue === null) {
     return;
   }
 
   const contractResult = validateAgentSmithReleaseContract(contractValue);
   const lockResult = parseRunnerImageLockText(lockValue, lockRelativePath);
-  if (!contractResult.ok || !lockResult.ok) {
+  const manifestResult = validateRunnerReleaseManifest(manifestValue);
+  if (!contractResult.ok || !lockResult.ok || !manifestResult.ok) {
     return;
   }
 
+  validateRunnerImageLockMatchesManifest(lockResult.value, manifestResult.value, failures);
   validateManagedRunnerImageMatchesLock(contractResult.value, lockResult.value, failures);
+}
+
+function validateRunnerImageLockMatchesManifest(
+  lock: CurrentRunnerImageLock,
+  manifest: CurrentRunnerReleaseManifest,
+  failures: ReleaseBoundaryContractFailure[],
+): void {
+  const manifestProtocol = manifest.supported_protocol_versions[0] ?? '';
+
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.release_id',
+    manifest.release_id,
+    lock.release_id,
+    'lock release_id must match runner release manifest release_id',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.git_sha',
+    manifest.git_sha,
+    lock.git_sha,
+    'lock git_sha must match runner release manifest git_sha',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.runner_contract_version',
+    manifest.runner_contract_version,
+    lock.runner_contract_version,
+    'lock runner_contract_version must match runner release manifest runner_contract_version',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.runner_protocol_version',
+    manifestProtocol,
+    lock.runner_protocol_version,
+    'lock runner_protocol_version must match runner release manifest supported protocol',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.image.id',
+    manifest.image.id,
+    lock.image.id,
+    'lock image id must match runner release manifest image id',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.image.image',
+    manifest.image.image,
+    lock.image.image,
+    'lock image ref must match runner release manifest image ref',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.image.digest',
+    manifest.image.digest,
+    lock.image.digest,
+    'lock image digest must match runner release manifest image digest',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.manifest.producer_repo',
+    manifest.artifact_provenance.producer_repo,
+    lock.manifest.producer_repo,
+    'lock manifest producer_repo must match runner release manifest producer_repo',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.manifest.subject_sha256',
+    manifest.artifact_provenance.subject_sha256,
+    lock.manifest.subject_sha256,
+    'lock manifest subject_sha256 must match runner release manifest subject_sha256',
+  );
+  compareRunnerAdoptionString(
+    failures,
+    'adoption.manifest.artifact_sha256',
+    manifest.artifact_provenance.artifact_sha256,
+    lock.manifest.artifact_sha256,
+    'lock manifest artifact_sha256 must match runner release manifest artifact_sha256',
+  );
+}
+
+function compareRunnerAdoptionString(
+  failures: ReleaseBoundaryContractFailure[],
+  field: string,
+  expected: string,
+  actual: string,
+  message: string,
+): void {
+  if (expected === actual) {
+    return;
+  }
+
+  addFailure(
+    failures,
+    join(FIXTURE_ROOT, 'agentsmith-runner-image.lock'),
+    `${field}: ${message}; expected ${expected}; actual ${actual}`,
+  );
 }
 
 function validateManagedRunnerImageMatchesLock(

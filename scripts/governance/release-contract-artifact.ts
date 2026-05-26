@@ -1,11 +1,13 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
   AGENTSMITH_CANONICAL_REPO,
   canonicalReleaseBoundaryJson,
+  parseRunnerImageLockText,
   type CurrentArtifactProvenance,
+  type CurrentRunnerImageLock,
 } from './current-release-boundary-schema';
 import {
   assembleAgentSmithReleaseContractFromInput,
@@ -22,7 +24,10 @@ export const RELEASE_CONTRACT_ARTIFACT_GENERATOR_COMMAND = 'npm run release:cont
 export const RELEASE_CONTRACT_ARTIFACT_GENERATOR_VERSION = 'p1.1-release-contract-artifact' as const;
 
 const DEFAULT_OUTPUT_DIR = 'artifacts/release-contract';
-const PRODUCER_OWNED_INPUT_FIELDS = ['sourceGitSha', 'ci_provenance'] as const;
+const RUNNER_IMAGE_LOCK_RELATIVE_PATH =
+  'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock' as const;
+const PRODUCER_OWNED_INPUT_FIELDS = ['sourceGitSha', 'ci_provenance', 'runnerImageLock'] as const;
+type ProducerOwnedInputField = typeof PRODUCER_OWNED_INPUT_FIELDS[number];
 
 interface ReleaseContractArtifactCliOptions {
   argv?: readonly string[];
@@ -50,8 +55,8 @@ interface GitHubCiProvenanceEnv {
 
 type ReleaseContractArtifactProducerInput = Omit<
   AgentSmithReleaseContractGeneratorInputAssemblyInput,
-  'sourceGitSha' | 'ci_provenance'
-> & Partial<Pick<AgentSmithReleaseContractGeneratorInputAssemblyInput, 'sourceGitSha' | 'ci_provenance'>>;
+  ProducerOwnedInputField
+> & Partial<Pick<AgentSmithReleaseContractGeneratorInputAssemblyInput, ProducerOwnedInputField>>;
 
 export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCliOptions = {}): number {
   const argv = options.argv ?? process.argv.slice(2);
@@ -66,11 +71,13 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
     outputPath = path.join(config.outputDir, RELEASE_CONTRACT_ARTIFACT_NAME);
     const input = readInput(config.inputPath);
     assertNoProducerOwnedInputFields(input);
+    const runnerImageLock = readCanonicalRunnerImageLock(cwd);
     const ciEnv = resolveGitHubCiProvenanceEnv(env);
     const ciProvenance = buildCiProvenance(ciEnv);
     const contract = assembleAgentSmithReleaseContractFromInput(
       {
         ...input,
+        runnerImageLock,
         sourceGitSha: ciEnv.commitSha,
         ci_provenance: ciProvenance,
       },
@@ -93,6 +100,29 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
 
 function readInput(inputPath: string): ReleaseContractArtifactProducerInput {
   return JSON.parse(readFileSync(inputPath, 'utf8')) as ReleaseContractArtifactProducerInput;
+}
+
+function readCanonicalRunnerImageLock(rootDir: string): CurrentRunnerImageLock {
+  const lockPath = path.join(rootDir, RUNNER_IMAGE_LOCK_RELATIVE_PATH);
+  if (!existsSync(lockPath)) {
+    throw new Error('runnerImageLock must be provided by canonical agentsmith-runner-image.lock.');
+  }
+
+  const result = parseRunnerImageLockText(
+    readFileSync(lockPath, 'utf8'),
+    RUNNER_IMAGE_LOCK_RELATIVE_PATH,
+  );
+
+  if (!result.ok) {
+    const details = result.failures
+      .map((failure) => `${failure.path}: ${failure.reason}`)
+      .join('\n');
+    throw new Error(
+      `runnerImageLock must be provided by canonical agentsmith-runner-image.lock.\n${details}`,
+    );
+  }
+
+  return result.value;
 }
 
 function parseCliArgs(argv: readonly string[], cwd: string): ReleaseContractArtifactCliConfig {
@@ -141,11 +171,21 @@ function assertNoProducerOwnedInputFields(input: ReleaseContractArtifactProducer
   const failures: string[] = [];
   for (const field of PRODUCER_OWNED_INPUT_FIELDS) {
     if (Object.hasOwn(input, field)) {
-      failures.push(`${field} must be provided by GitHub CI env.`);
+      failures.push(formatProducerOwnedInputFieldFailure(field));
     }
   }
   if (failures.length > 0) {
     throw new Error(failures.join('\n'));
+  }
+}
+
+function formatProducerOwnedInputFieldFailure(field: ProducerOwnedInputField): string {
+  switch (field) {
+    case 'sourceGitSha':
+    case 'ci_provenance':
+      return `${field} must be provided by GitHub CI env.`;
+    case 'runnerImageLock':
+      return 'runnerImageLock must be provided by canonical agentsmith-runner-image.lock.';
   }
 }
 

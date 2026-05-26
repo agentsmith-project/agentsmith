@@ -8,8 +8,10 @@ import { describe, expect, it } from 'vitest';
 
 import { checkReleaseBoundaryContract } from './check-release-boundary-contract';
 import {
+  canonicalReleaseBoundaryJson,
   CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES,
   CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES,
+  sha256Digest,
   type CurrentDeploymentTargetProfile,
 } from '../governance/current-release-boundary-schema';
 
@@ -72,6 +74,27 @@ function ensureRunnerAdapterInventoryCurrentPaths(root: string): void {
       writeFileSync(targetPath, '', 'utf8');
     }
   }
+}
+
+function getRecordProperty(
+  value: Record<string, unknown>,
+  property: string,
+): Record<string, unknown> {
+  const propertyValue = value[property];
+  if (!propertyValue || typeof propertyValue !== 'object' || Array.isArray(propertyValue)) {
+    throw new Error(`${property} must be an object in copied release boundary fixture`);
+  }
+  return propertyValue as Record<string, unknown>;
+}
+
+function refreshArtifactProvenanceDigests(fixture: Record<string, unknown>): void {
+  const subject = structuredClone(fixture);
+  delete subject.artifact_provenance;
+
+  const digest = sha256Digest(canonicalReleaseBoundaryJson(subject));
+  const artifactProvenance = getRecordProperty(fixture, 'artifact_provenance');
+  artifactProvenance.subject_sha256 = digest;
+  artifactProvenance.artifact_sha256 = digest;
 }
 
 function writeFixtureRoot(): string {
@@ -359,6 +382,45 @@ describe('check-release-boundary-contract', () => {
         expect.objectContaining({
           path: 'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
           message: expect.stringContaining('managed_runner inventory image must match agentsmith-runner-image.lock image'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports runner release manifest digest drift from the canonical lock fixture', () => {
+    const root = writeFixtureRoot();
+    const manifestPath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      'runner-release-manifest.valid.json',
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    const image = getRecordProperty(manifest, 'image');
+    const driftDigest = `sha256:${'c'.repeat(64)}`;
+    image.image = `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@${driftDigest}`;
+    image.digest = driftDigest;
+    refreshArtifactProvenanceDigests(manifest);
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          message: expect.stringContaining('lock image ref must match runner release manifest image ref'),
+        }),
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          message: expect.stringContaining('lock image digest must match runner release manifest image digest'),
+        }),
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          message: expect.stringContaining('lock manifest subject_sha256 must match runner release manifest subject_sha256'),
         }),
       ]),
     );

@@ -1874,7 +1874,7 @@ describe("api-entry-node projects routes", () => {
         body: JSON.stringify({
           title: "Internal Task",
           workspace_mode: "create_new",
-          initial_inputs: [],
+          input_refs: [],
         }),
       },
     );
@@ -1990,7 +1990,7 @@ describe("api-entry-node projects routes", () => {
           title: "Legacy Task Agent Selector",
           agent_id: "ag_legacy_task",
           workspace_mode: "create_new",
-          initial_inputs: [],
+          input_refs: [],
         }),
       },
     );

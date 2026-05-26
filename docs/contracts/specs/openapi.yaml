@@ -6687,11 +6687,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskInputRefInput"
-        initial_inputs:
-          type: array
-          deprecated: true
-          items:
-            $ref: "#/components/schemas/TaskInputRefInput"
         workspace_mode:
           type: string
           enum:

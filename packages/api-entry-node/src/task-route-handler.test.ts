@@ -2886,8 +2886,8 @@ describe('task-route-handler workspace access', () => {
     })).resolves.toEqual([]);
   });
 
-  it.each(['agent_id', 'agent_name', 'runner_id', 'runner_selection', 'is_default', 'default_endpoint_id', 'config', 'capabilities', 'runner_provider'])(
-    'rejects legacy selector field %s on task create',
+  it.each(['agent_id', 'agent_name', 'runner_id', 'runner_selection', 'is_default', 'default_endpoint_id', 'config', 'capabilities', 'runner_provider', 'initial_inputs'])(
+    'rejects unsupported legacy field %s on task create',
     async (field) => {
       const deps = createDefaultNodeApiDeps();
       const json = vi.fn();
@@ -2922,6 +2922,45 @@ describe('task-route-handler workspace access', () => {
       expect(getTasks('ws_default', 'proj_1')).toHaveLength(0);
     },
   );
+
+  it('rejects unsupported legacy field initial_inputs array payload on task create', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const json = vi.fn();
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({
+        title: 'Legacy initial inputs task',
+        initial_inputs: [
+          {
+            kind: 'url',
+            url: 'https://example.com/source',
+          },
+        ],
+      })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      {
+        error_code: 'unsupported_field',
+        message: 'unsupported_field',
+        fields: ['initial_inputs'],
+      },
+    );
+    expect(getTasks('ws_default', 'proj_1')).toHaveLength(0);
+  });
 
   it.each(['role', 'content', 'agent_id', 'agent_name', 'runner_id', 'runner_selection', 'bound_runner_id', 'agent_runner_id', 'is_default', 'default_endpoint_id', 'config'])(
     'rejects legacy selector field %s on task run dispatch payload',

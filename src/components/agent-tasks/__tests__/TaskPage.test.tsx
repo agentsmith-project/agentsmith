@@ -4582,7 +4582,7 @@ describe('TaskPage', () => {
             prompt: 'Reuse this original task instruction only.',
             workspace_mode: 'create_new',
             workspace_name: 'Recover me workspace',
-            initial_inputs: [
+            input_refs: [
               {
                 kind: 'library_object',
                 library_id: 'lib-1',
@@ -4620,7 +4620,7 @@ describe('TaskPage', () => {
       ]) {
         expect(recoveryPayload).not.toHaveProperty(deniedField);
       }
-      expect(recoveryPayload.initial_inputs).not.toEqual(
+      expect(recoveryPayload.input_refs).not.toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: 'artifact',

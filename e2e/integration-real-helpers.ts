@@ -1761,7 +1761,7 @@ export async function createAgentTaskRunnerBundleViaApi(
     runnerTitle: string;
     taskTitle: string;
     workspaceName?: string;
-    initialInputs?: Array<Record<string, unknown>>;
+    inputRefs?: Array<Record<string, unknown>>;
   },
 ): Promise<{ runnerId: string; runnerName: string; taskId: string }> {
   const runner = await createManagedAgentRunnerViaApi(page, {
@@ -1776,7 +1776,7 @@ export async function createAgentTaskRunnerBundleViaApi(
     projectId: args.projectId,
     title: args.taskTitle,
     workspaceName: args.workspaceName,
-    initialInputs: args.initialInputs,
+    inputRefs: args.inputRefs,
   });
   return {
     runnerId: runner.runnerId,
@@ -2389,7 +2389,7 @@ type CreateAgentTaskViaApiBaseArgs = {
   projectId: string;
   title: string;
   workspaceName?: string;
-  initialInputs?: Array<Record<string, unknown>>;
+  inputRefs?: Array<Record<string, unknown>>;
 };
 
 type CreateAgentTaskViaApiArgs =
@@ -2435,7 +2435,7 @@ export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Pr
           ...(args.workspaceName?.trim()
             ? { workspace_name: args.workspaceName.trim() }
             : {}),
-          ...(args.initialInputs ? { initial_inputs: args.initialInputs } : {}),
+          ...(args.inputRefs ? { input_refs: args.inputRefs } : {}),
         },
       },
     );

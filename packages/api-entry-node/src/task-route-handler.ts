@@ -385,6 +385,7 @@ const UNSUPPORTED_TASK_BINDING_FIELDS = [
   'config',
   'capabilities',
   'runner_provider',
+  'initial_inputs',
 ] as const;
 const UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS = [
   ...UNSUPPORTED_TASK_BINDING_FIELDS,
@@ -2930,7 +2931,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
 
-    const initialInputs = readTaskInputRefs(body.input_refs ?? body.initial_inputs);
+    const requestedInputRefs = readTaskInputRefs(body.input_refs);
     const requestedBoundRunnerId = typeof body.bound_runner_id === 'string' ? body.bound_runner_id.trim() : '';
     if (requestedBoundRunnerId) {
       const probeTask: TaskRecord = {
@@ -2939,7 +2940,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           projectId: route.projectId,
           userId: user.id,
         }),
-        attached_inputs: initialInputs,
+        attached_inputs: requestedInputRefs,
       };
       const explicitRunnerResolution = await resolveExplicitDeveloperAgentRunnerForTask({
         deps,
@@ -2947,7 +2948,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         projectId: route.projectId,
         task: probeTask,
         user,
-        requestedInputs: initialInputs,
+        requestedInputs: requestedInputRefs,
         boundRunnerId: requestedBoundRunnerId,
         requestId,
         source: 'agent_runner_binding',
@@ -3112,7 +3113,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       ownerUserId: user.id,
-      inputs: initialInputs,
+      inputs: requestedInputRefs,
       json,
       res,
     }))) {
@@ -3131,7 +3132,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       file_library_binding_generation: undefined,
       runtime_writable_affordance: 'task_internal_home',
       status: 'active',
-      attached_inputs: initialInputs,
+      attached_inputs: requestedInputRefs,
       created_at: createdAt,
       updated_at: createdAt,
       last_activity_at: createdAt,
@@ -3422,7 +3423,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         projectId: route.projectId,
         task,
         user,
-        requestedInputs: initialInputs,
+        requestedInputs: requestedInputRefs,
         boundRunnerId: typeof body.bound_runner_id === 'string' ? body.bound_runner_id : null,
         requestId,
       });

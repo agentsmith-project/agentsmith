@@ -23,6 +23,7 @@ type ForbiddenCreateTaskSelectors = Extract<
   | 'default_endpoint_id'
   | 'execution_preference'
   | 'execution_preferences'
+  | 'initial_inputs'
 >;
 type ForbiddenGeneratedCreateTaskSelectors = Extract<
   keyof components['schemas']['CreateTaskRequest'],
@@ -36,6 +37,7 @@ type ForbiddenGeneratedCreateTaskSelectors = Extract<
   | 'default_endpoint_id'
   | 'execution_preference'
   | 'execution_preferences'
+  | 'initial_inputs'
 >;
 type ForbiddenStartTaskRunRunnerFields = Extract<
   keyof StartTaskRunRequest,
@@ -128,11 +130,13 @@ describe('Agent Task bound runner contracts', () => {
 
     const localTypes = readFileSync(resolve(process.cwd(), 'src/lib/types/task.ts'), 'utf8');
     expect(localTypes).toContain('bound_runner_id?: string;');
+    expect(localTypes).not.toContain('initial_inputs?:');
     expect(localTypes).not.toContain('export interface TaskRunRunnerSelection');
     expect(localTypes).not.toContain('runner_selection?:');
 
     const generatedTypes = readFileSync(resolve(process.cwd(), 'src/lib/api/types.generated.ts'), 'utf8');
     expect(generatedTypes).toContain('bound_runner_id?: string;');
+    expect(generatedTypes).not.toContain('initial_inputs?:');
     expect(generatedTypes).not.toContain('TaskRunRunnerSelection:');
     expect(generatedTypes).not.toContain('runner_selection?:');
   });
@@ -159,6 +163,9 @@ describe('Agent Task bound runner contracts', () => {
     expect(
       jsonSource.components?.schemas?.StartTaskRunRequest?.properties,
     ).not.toHaveProperty('runner_selection');
+    expect(
+      jsonSource.components?.schemas?.CreateTaskRequest?.properties,
+    ).not.toHaveProperty('initial_inputs');
     expect(
       jsonSource.components?.schemas?.CreateTaskRequest?.properties,
     ).not.toHaveProperty('endpoint_id');

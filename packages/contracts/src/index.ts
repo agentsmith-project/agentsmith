@@ -500,7 +500,6 @@ export const CreateTaskRequestSchema = z.object({
   prompt: z.string().optional(),
   bound_runner_id: z.string().min(1).optional(),
   input_refs: z.array(TaskInputRefInputSchema).optional(),
-  initial_inputs: z.array(TaskInputRefInputSchema).optional(),
   workspace_mode: TaskWorkspaceModeSchema.optional(),
   workspace_name: z.string().min(1).max(255).optional(),
   workspace_file_library_id: z.string().min(1).optional(),

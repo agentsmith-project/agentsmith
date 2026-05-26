@@ -869,11 +869,11 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 必须确认：
 
 1. P2 target-preflight 和 P5.1 start guard 已有完成证据，但只解锁后续专项；
-   不等于 release readiness。后续新增 repo-local implementation workstream
-   仍必须遵守第 4.1 节 bootstrap-only/docs-governance-first invariant：
-   README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES 或
-   verify-release、contracts/runbooks/ADR entrypoints；formal release readiness
-   只能来自 repo-local release gate。
+   不等于 release readiness。后续任何 P2/P5 implementation workstream start
+   前，仍必须经过 bootstrap-only/docs-governance-first PR；minimum bootstrap
+   pack 包含 README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES
+   或 verify-release、contracts/runbooks/ADR entrypoints；quick gate is not
+   release readiness；formal release readiness comes from the repo-local release gate。
 2. repo-local team members 只在 quick gate 后进入互不重叠的专项 workstream；
    主协调 agent 只做分发、审查和收口。
 3. P2 release-kit 正式 adoption 前，`--inputs` 仍只是 focused diagnostic，`--evidence`

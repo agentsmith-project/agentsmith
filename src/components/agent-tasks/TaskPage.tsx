@@ -191,9 +191,9 @@ function getRecoveryTaskPrompt(task: Task): string | undefined {
     : undefined;
 }
 
-function toReusableInitialInput(
+function toReusableInputRef(
   input: TaskInputRef,
-): NonNullable<CreateTaskRequest["initial_inputs"]>[number] | null {
+): NonNullable<CreateTaskRequest["input_refs"]>[number] | null {
   if (input.kind === "library_object") {
     return {
       kind: "library_object",
@@ -218,11 +218,11 @@ function toReusableInitialInput(
   return null;
 }
 
-function getReusableRecoveryInitialInputs(
+function getReusableRecoveryInputRefs(
   task: Task,
-): NonNullable<CreateTaskRequest["initial_inputs"]> {
+): NonNullable<CreateTaskRequest["input_refs"]> {
   return task.attached_inputs.flatMap((input) => {
-    const reusableInput = toReusableInitialInput(input);
+    const reusableInput = toReusableInputRef(input);
     return reusableInput ? [reusableInput] : [];
   });
 }
@@ -1572,15 +1572,15 @@ export function TaskPage({
   const handleCreateBoundRunnerRecoveryTask = React.useCallback(async () => {
     if (!task || !canCreateTask) return;
     try {
-      const reusableInitialInputs = getReusableRecoveryInitialInputs(task);
+      const reusableInputRefs = getReusableRecoveryInputRefs(task);
       const prompt = getRecoveryTaskPrompt(task);
       const data: RecoveryCreateTaskRequest = {
         title: task.title,
         workspace_mode: "create_new",
         workspace_name: deriveDefaultTaskWorkspaceName(task.title),
         ...(prompt ? { prompt } : {}),
-        ...(reusableInitialInputs.length > 0
-          ? { initial_inputs: reusableInitialInputs }
+        ...(reusableInputRefs.length > 0
+          ? { input_refs: reusableInputRefs }
           : {}),
       };
       const newTask = await createTask.mutateAsync({

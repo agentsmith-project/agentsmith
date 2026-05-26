@@ -65,6 +65,11 @@ export type TaskInputRef =
       size_bytes?: number;
     };
 
+export type TaskInputRefInput =
+  | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+  | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
+  | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number };
+
 export type TaskAttachedInputDetail =
   | {
       id: string;
@@ -201,11 +206,7 @@ export interface CreateTaskRequest {
   workspace_mode?: 'create_new' | 'use_existing' | 'use_template';
   workspace_name?: string;
   task_file_template_id?: string;
-  initial_inputs?: Array<
-    | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
-    | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
-    | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
-  >;
+  input_refs?: TaskInputRefInput[];
 }
 
 export interface UpdateTaskRequest {
@@ -263,11 +264,7 @@ export interface TaskRunnerBindingOptionsResponse {
 
 export interface StartTaskRunRequest {
   intent: string;
-  input_refs?: Array<
-    | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
-    | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
-    | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
-  >;
+  input_refs?: TaskInputRefInput[];
 }
 
 export interface TaskListParams {

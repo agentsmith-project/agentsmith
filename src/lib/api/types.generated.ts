@@ -3382,8 +3382,6 @@ export interface components {
         };
         CreateTaskRequest: {
             bound_runner_id?: string;
-            /** @deprecated */
-            initial_inputs?: components["schemas"]["TaskInputRefInput"][];
             input_refs?: components["schemas"]["TaskInputRefInput"][];
             /** @description Initial user prompt. */
             prompt?: string;

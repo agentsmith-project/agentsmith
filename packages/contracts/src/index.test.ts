@@ -71,6 +71,18 @@ describe('agent task persistent HOME contracts', () => {
     }).success).toBe(true);
   });
 
+  it('rejects the pre-GA initial_inputs legacy field on CreateTask', () => {
+    expect(CreateTaskRequestSchema.safeParse({
+      title: 'Legacy input alias',
+      initial_inputs: [
+        {
+          kind: 'url',
+          url: 'https://example.com/source',
+        },
+      ],
+    }).success).toBe(false);
+  });
+
   it('rejects invalid CreateTask workspace_mode combinations before backend execution', () => {
     expect(CreateTaskRequestSchema.safeParse({
       title: 'Invalid implicit create_new',

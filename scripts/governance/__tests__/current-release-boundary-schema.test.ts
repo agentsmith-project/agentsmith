@@ -11,6 +11,7 @@ import {
   CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
   CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION,
   CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION,
+  CURRENT_RUNNER_CONTRACT_ARTIFACT_SCHEMA_VERSION,
   CURRENT_REQUIRED_PRODUCT_FLOWS,
   AGENTSMITH_CANONICAL_REPO,
   canonicalReleaseBoundaryJson,
@@ -24,6 +25,7 @@ import {
   validateReleaseKitEvidenceMapping,
   parseRunnerImageLockText,
   validateRunnerAdapterInventory,
+  validateRunnerContractArtifactDescriptor,
   validateRunnerImageLock,
   validateRunnerReleaseManifest,
   validateSubstrateConnectionTruth,
@@ -86,6 +88,17 @@ function rehashArtifactProvenanceContainer(record: Record<string, unknown>): voi
   artifactProvenanceOf(record).subject_sha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
 }
 
+function setRunnerContractArtifactUri(record: Record<string, unknown>, uri: string): void {
+  const artifact = record.artifact;
+  if (artifact === null || typeof artifact !== 'object' || Array.isArray(artifact)) {
+    throw new Error('Fixture artifact must be a record.');
+  }
+
+  (artifact as Record<string, unknown>).uri = uri;
+  artifactProvenanceOf(record).artifact_uri = uri;
+  rehashArtifactProvenanceContainer(record);
+}
+
 function rehashReleaseContractProjection(record: Record<string, unknown>): void {
   const projection = structuredClone(record);
   const projectionProvenance = artifactProvenanceOf(projection);
@@ -120,6 +133,51 @@ const NON_PLAIN_RELEASE_KIT_VERSIONS = [
   '01.2.3',
   '0.1.0-alpha.1',
 ] as const;
+
+function validRunnerContractArtifactDescriptor(): Record<string, unknown> {
+  const descriptor: Record<string, unknown> = {
+    schema_version: CURRENT_RUNNER_CONTRACT_ARTIFACT_SCHEMA_VERSION,
+    package: {
+      name: '@mbos/agent-runner-contract',
+      version: '0.1.0',
+    },
+    artifact: {
+      filename: 'mbos-agent-runner-contract-0.1.0.tgz',
+      uri: 'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/123/mbos-agent-runner-contract-0.1.0.tgz',
+      sha256: `sha256:${'a'.repeat(64)}`,
+      integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
+    },
+    entrypoints: {
+      version: './dist/artifact.js',
+      schema: './dist/contract-schema.js',
+      types: './dist/index.d.ts',
+      fixtures: './dist/contract-schema.js',
+    },
+    artifact_provenance: {
+      schema_version: 'agentsmith.artifact-provenance/v1',
+      provenance_kind: 'ci_artifact',
+      producer_repo: AGENTSMITH_CANONICAL_REPO,
+      normalized_remote: AGENTSMITH_CANONICAL_REPO,
+      commit_sha: '1'.repeat(40),
+      subject_name: 'runner-contract-artifact',
+      subject_sha256: `sha256:${'0'.repeat(64)}`,
+      subject_uri: 'runner-contract-artifact.json',
+      workflow_name: 'Runner Contract Artifact',
+      run_id: '123',
+      run_attempt: '1',
+      job: 'produce-runner-contract-artifact',
+      artifact_uri:
+        'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/123/mbos-agent-runner-contract-0.1.0.tgz',
+      artifact_sha256: `sha256:${'a'.repeat(64)}`,
+      generated_at: '2026-05-25T00:00:00.000Z',
+      generator_command: 'npx tsx scripts/governance/runner-contract-artifact.ts',
+      generator_version: 'p4-runner-contract-artifact',
+      attestation: 'none',
+    },
+  };
+  rehashArtifactProvenanceContainer(descriptor);
+  return descriptor;
+}
 
 describe('current release boundary schema', () => {
   it('validates P0 handoff fixtures for release contract, substrate truth, release kit evidence, runner manifest, and runner image lock', () => {
@@ -379,6 +437,117 @@ describe('current release boundary schema', () => {
       );
     },
   );
+
+  it('validates runner contract release artifact descriptors and fails fast on missing artifact metadata', () => {
+    const descriptor = validRunnerContractArtifactDescriptor();
+    expect(validateRunnerContractArtifactDescriptor(descriptor).ok).toBe(true);
+
+    const missingUri = validRunnerContractArtifactDescriptor();
+    delete (missingUri.artifact as Record<string, unknown>).uri;
+    rehashArtifactProvenanceContainer(missingUri);
+    expectInvalid(validateRunnerContractArtifactDescriptor(missingUri), 'artifact.uri is required');
+
+    const missingDigest = validRunnerContractArtifactDescriptor();
+    delete (missingDigest.artifact as Record<string, unknown>).sha256;
+    rehashArtifactProvenanceContainer(missingDigest);
+    expectInvalid(validateRunnerContractArtifactDescriptor(missingDigest), 'artifact.sha256 is required');
+
+    const missingIntegrity = validRunnerContractArtifactDescriptor();
+    delete (missingIntegrity.artifact as Record<string, unknown>).integrity;
+    rehashArtifactProvenanceContainer(missingIntegrity);
+    expectInvalid(validateRunnerContractArtifactDescriptor(missingIntegrity), 'artifact.integrity is required');
+
+    const missingProvenance = validRunnerContractArtifactDescriptor();
+    delete missingProvenance.artifact_provenance;
+    expectInvalid(validateRunnerContractArtifactDescriptor(missingProvenance), 'artifact_provenance is required');
+  });
+
+  it('rejects runner contract artifact descriptors with local or zero CI run identity', () => {
+    const localRunId = validRunnerContractArtifactDescriptor();
+    artifactProvenanceOf(localRunId).run_id = 'local';
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(localRunId),
+      'artifact_provenance.run_id must be a positive integer string.',
+    );
+
+    const zeroRunAttempt = validRunnerContractArtifactDescriptor();
+    artifactProvenanceOf(zeroRunAttempt).run_attempt = '0';
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(zeroRunAttempt),
+      'artifact_provenance.run_attempt must be a positive integer string.',
+    );
+  });
+
+  it('only accepts the canonical runner contract gh-artifact URI bound to provenance and filename', () => {
+    const httpsDescriptor = validRunnerContractArtifactDescriptor();
+    setRunnerContractArtifactUri(httpsDescriptor, 'https://example.com/runner-contract-artifact.tgz');
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(httpsDescriptor),
+      'artifact.uri must be gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/<run_id>/<filename>.',
+    );
+
+    const wrongRepo = validRunnerContractArtifactDescriptor();
+    setRunnerContractArtifactUri(
+      wrongRepo,
+      'gh-artifact://agentsmith-project/other/runner-contract-artifact/123/mbos-agent-runner-contract-0.1.0.tgz',
+    );
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(wrongRepo),
+      'artifact.uri repo must be agentsmith-project/agentsmith.',
+    );
+
+    const wrongArtifactName = validRunnerContractArtifactDescriptor();
+    setRunnerContractArtifactUri(
+      wrongArtifactName,
+      'gh-artifact://agentsmith-project/agentsmith/other-artifact/123/mbos-agent-runner-contract-0.1.0.tgz',
+    );
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(wrongArtifactName),
+      'artifact.uri artifact name must be runner-contract-artifact.',
+    );
+
+    const wrongRunId = validRunnerContractArtifactDescriptor();
+    setRunnerContractArtifactUri(
+      wrongRunId,
+      'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/999/mbos-agent-runner-contract-0.1.0.tgz',
+    );
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(wrongRunId),
+      'artifact.uri run_id must match artifact_provenance.run_id.',
+    );
+
+    const wrongFilename = validRunnerContractArtifactDescriptor();
+    setRunnerContractArtifactUri(
+      wrongFilename,
+      'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/123/other.tgz',
+    );
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(wrongFilename),
+      'artifact.uri filename must match artifact.filename.',
+    );
+  });
+
+  it('keeps runner contract artifact provenance owned by canonical AgentSmith repo only', () => {
+    const runnerRepoDescriptor = validRunnerContractArtifactDescriptor();
+    artifactProvenanceOf(runnerRepoDescriptor).producer_repo = 'github.com/agentsmith-project/agentsmith-runner';
+    artifactProvenanceOf(runnerRepoDescriptor).normalized_remote = 'github.com/agentsmith-project/agentsmith-runner';
+
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(runnerRepoDescriptor),
+      'canonical repo identity must be github.com/agentsmith-project/agentsmith',
+    );
+
+    const forbiddenRunnerDescriptor = validRunnerContractArtifactDescriptor();
+    artifactProvenanceOf(forbiddenRunnerDescriptor).producer_repo =
+      'github.com/agentsmith-project/agentsmith-codex-runner';
+    artifactProvenanceOf(forbiddenRunnerDescriptor).normalized_remote =
+      'github.com/agentsmith-project/agentsmith-codex-runner';
+
+    expectInvalid(
+      validateRunnerContractArtifactDescriptor(forbiddenRunnerDescriptor),
+      'canonical repo identity must be github.com/agentsmith-project/agentsmith',
+    );
+  });
 
   it('rejects deploy template package provenance gaps, local provenance, and self-referential subjects', () => {
     const missingProvenance = cloneFixture('deploy-template-package.valid.json');

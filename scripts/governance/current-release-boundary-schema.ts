@@ -15,6 +15,8 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_SUBJECT_SCHEMA_VERSION =
 export const CURRENT_RELEASE_KIT_EVIDENCE_AGGREGATE_CANONICAL_SCHEMA_VERSION =
   'agentsmith.release-kit-evidence.aggregate-canonical/v1' as const;
 export const CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION = 'agentsmith.artifact-provenance/v1' as const;
+export const CURRENT_RUNNER_CONTRACT_ARTIFACT_SCHEMA_VERSION =
+  'agentsmith.runner-contract-artifact/v1' as const;
 export const CURRENT_RUNNER_RELEASE_MANIFEST_SCHEMA_VERSION = 'agentsmith.runner-release-manifest/v1' as const;
 export const CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION = 'agentsmith.runner-image-lock/v1' as const;
 export const CURRENT_RUNNER_ADAPTER_INVENTORY_SCHEMA_VERSION =
@@ -372,6 +374,27 @@ export interface CurrentRunnerReleaseManifest {
   artifact_provenance: CurrentArtifactProvenance;
 }
 
+export interface CurrentRunnerContractArtifactDescriptor {
+  schema_version: typeof CURRENT_RUNNER_CONTRACT_ARTIFACT_SCHEMA_VERSION;
+  package: {
+    name: '@mbos/agent-runner-contract';
+    version: string;
+  };
+  artifact: {
+    filename: string;
+    uri: string;
+    sha256: string;
+    integrity: string;
+  };
+  entrypoints: {
+    version: './dist/artifact.js';
+    schema: './dist/contract-schema.js';
+    types: './dist/index.d.ts';
+    fixtures: './dist/contract-schema.js';
+  };
+  artifact_provenance: CurrentArtifactProvenance;
+}
+
 export interface CurrentRunnerImageLock {
   schema_version: typeof CURRENT_RUNNER_IMAGE_LOCK_SCHEMA_VERSION;
   runner: 'agentsmith-runner';
@@ -694,6 +717,8 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+const NPM_SRI_INTEGRITY_PATTERN = /^sha512-[A-Za-z0-9+/]+={0,2}$/u;
+const POSITIVE_INTEGER_STRING_PATTERN = /^[1-9][0-9]*$/u;
 const SEMVER_PATTERN =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const PLAIN_SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
@@ -1381,6 +1406,63 @@ export function validateReleaseKitEvidenceForAggregate(
     ok: true,
     value: diagnostic.canonical_shape,
   };
+}
+
+export function validateRunnerContractArtifactDescriptor(
+  value: unknown,
+): CurrentReleaseBoundaryValidationResult<CurrentRunnerContractArtifactDescriptor> {
+  const failures: CurrentReleaseBoundaryValidationFailure[] = [];
+  validateNoSecretLeak(value, 'runner_contract_artifact', failures);
+
+  if (!isRecord(value)) {
+    return invalid('runner_contract_artifact', 'runner contract artifact descriptor must be an object.', failures);
+  }
+
+  validateLiteral(value.schema_version, CURRENT_RUNNER_CONTRACT_ARTIFACT_SCHEMA_VERSION, 'schema_version', failures);
+  validateRunnerContractArtifactPackage(value.package, failures);
+  const artifact = validateRunnerContractArtifactRecord(value.artifact, failures);
+  validateRunnerContractArtifactEntrypoints(value.entrypoints, failures);
+
+  if (!hasOwn(value, 'artifact_provenance')) {
+    failures.push({
+      path: 'artifact_provenance',
+      reason: 'artifact_provenance is required.',
+    });
+  } else {
+    validateArtifactProvenanceInto(value.artifact_provenance, {
+      path: 'artifact_provenance',
+      expectedRepo: AGENTSMITH_CANONICAL_REPO,
+      expectedSubjectName: 'runner-contract-artifact',
+      subject: omitRecordKey(value, 'artifact_provenance'),
+      fullSubjectContainer: value,
+      allowedKinds: ['ci_artifact'],
+    }, failures);
+  }
+
+  if (artifact) {
+    validateRunnerContractArtifactUri(
+      artifact,
+      isRecord(value.artifact_provenance) ? value.artifact_provenance : null,
+      failures,
+    );
+  }
+
+  if (artifact && isRecord(value.artifact_provenance)) {
+    if (value.artifact_provenance.artifact_uri !== artifact.uri) {
+      failures.push({
+        path: 'artifact_provenance.artifact_uri',
+        reason: 'artifact_provenance.artifact_uri must match artifact.uri.',
+      });
+    }
+    if (value.artifact_provenance.artifact_sha256 !== artifact.sha256) {
+      failures.push({
+        path: 'artifact_provenance.artifact_sha256',
+        reason: 'artifact_provenance.artifact_sha256 must match artifact.sha256.',
+      });
+    }
+  }
+
+  return finish(value as CurrentRunnerContractArtifactDescriptor, failures);
 }
 
 export function validateRunnerReleaseManifest(
@@ -2257,7 +2339,7 @@ function validateArtifactProvenanceInto(
     || String(value.normalized_remote).includes('agentsmith-codex-runner')) {
     failures.push({
       path: `${options.path}.producer_repo`,
-      reason: `canonical repo identity must be ${RUNNER_CANONICAL_REPO}.`,
+      reason: `canonical repo identity must be ${options.expectedRepo}.`,
     });
   }
   validateGitSha(value.commit_sha, `${options.path}.commit_sha`, failures);
@@ -2285,8 +2367,8 @@ function validateArtifactProvenanceInto(
 
   if (kind === 'ci_artifact') {
     validateRequiredString(value.workflow_name, `${options.path}.workflow_name`, failures);
-    validateRequiredString(value.run_id, `${options.path}.run_id`, failures);
-    validateRequiredString(value.run_attempt, `${options.path}.run_attempt`, failures);
+    validatePositiveIntegerString(value.run_id, `${options.path}.run_id`, failures);
+    validatePositiveIntegerString(value.run_attempt, `${options.path}.run_attempt`, failures);
     validateRequiredString(value.job, `${options.path}.job`, failures);
   } else if (kind === 'signed_operator_run') {
     validateRequiredString(value.operator_run_id, `${options.path}.operator_run_id`, failures);
@@ -3243,6 +3325,224 @@ function validateSecretRef(
   return ref;
 }
 
+function validateRunnerContractArtifactPackage(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'package',
+      reason: 'package is required.',
+    });
+    return;
+  }
+
+  validateLiteral(value.name, '@mbos/agent-runner-contract', 'package.name', failures);
+  validateSemverString(value.version, 'package.version', failures);
+}
+
+function validateRunnerContractArtifactRecord(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): Pick<CurrentRunnerContractArtifactDescriptor['artifact'], 'filename' | 'uri' | 'sha256'> | null {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'artifact',
+      reason: 'artifact is required.',
+    });
+    return null;
+  }
+
+  const filename = validateDescriptorRequiredString(value.filename, 'artifact.filename', failures);
+  if (filename && (!filename.endsWith('.tgz') || filename.includes('/') || filename.includes('\\'))) {
+    failures.push({
+      path: 'artifact.filename',
+      reason: 'artifact.filename must be a tgz filename without path separators.',
+    });
+  }
+
+  const uri = validateDescriptorRequiredString(value.uri, 'artifact.uri', failures);
+  validateRemoteCiArtifactUri(uri, 'artifact.uri', failures);
+  const sha256 = validateDescriptorDigest(value.sha256, 'artifact.sha256', failures);
+  validateNpmSriIntegrity(value.integrity, 'artifact.integrity', failures);
+
+  return filename && uri && sha256 ? { filename, uri, sha256 } : null;
+}
+
+function validateRunnerContractArtifactUri(
+  artifact: Pick<CurrentRunnerContractArtifactDescriptor['artifact'], 'filename' | 'uri'>,
+  provenance: Record<string, unknown> | null,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const parts = parseRunnerContractArtifactUri(artifact.uri);
+  if (!parts) {
+    failures.push({
+      path: 'artifact.uri',
+      reason:
+        'artifact.uri must be gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/<run_id>/<filename>.',
+    });
+    return;
+  }
+
+  if (parts.repo !== 'agentsmith-project/agentsmith') {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri repo must be agentsmith-project/agentsmith.',
+    });
+  }
+
+  if (parts.artifactName !== 'runner-contract-artifact') {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri artifact name must be runner-contract-artifact.',
+    });
+  }
+
+  if (!POSITIVE_INTEGER_STRING_PATTERN.test(parts.runId)) {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri run_id must be a positive integer string.',
+    });
+  }
+
+  if (parts.filename !== artifact.filename) {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri filename must match artifact.filename.',
+    });
+  }
+
+  if (!provenance) {
+    return;
+  }
+
+  if (typeof provenance.producer_repo === 'string' && `github.com/${parts.repo}` !== provenance.producer_repo) {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri repo must match artifact_provenance.producer_repo.',
+    });
+  }
+  if (typeof provenance.subject_name === 'string' && parts.artifactName !== provenance.subject_name) {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri artifact name must match artifact_provenance.subject_name.',
+    });
+  }
+  if (typeof provenance.run_id === 'string' && parts.runId !== provenance.run_id) {
+    failures.push({
+      path: 'artifact.uri',
+      reason: 'artifact.uri run_id must match artifact_provenance.run_id.',
+    });
+  }
+}
+
+function parseRunnerContractArtifactUri(
+  value: string,
+): { repo: string; artifactName: string; runId: string; filename: string } | null {
+  const prefix = 'gh-artifact://';
+  if (!value.startsWith(prefix)) {
+    return null;
+  }
+
+  const segments = value.slice(prefix.length).split('/');
+  if (segments.length !== 5 || segments.some((segment) => segment.length === 0)) {
+    return null;
+  }
+
+  const [owner = '', repoName = '', artifactName = '', runId = '', filename = ''] = segments;
+  return {
+    repo: `${owner}/${repoName}`,
+    artifactName,
+    runId,
+    filename,
+  };
+}
+
+function validateRunnerContractArtifactEntrypoints(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'entrypoints',
+      reason: 'entrypoints is required.',
+    });
+    return;
+  }
+
+  validateLiteral(value.version, './dist/artifact.js', 'entrypoints.version', failures);
+  validateLiteral(value.schema, './dist/contract-schema.js', 'entrypoints.schema', failures);
+  validateLiteral(value.types, './dist/index.d.ts', 'entrypoints.types', failures);
+  validateLiteral(value.fixtures, './dist/contract-schema.js', 'entrypoints.fixtures', failures);
+}
+
+function validateSemverString(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const version = validateDescriptorRequiredString(value, path, failures);
+  if (version && !SEMVER_PATTERN.test(version)) {
+    failures.push({
+      path,
+      reason: `${path} must be a semver string.`,
+    });
+    return undefined;
+  }
+
+  return version;
+}
+
+function validateDescriptorDigest(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const digest = validateDescriptorRequiredString(value, path, failures);
+  if (digest && !DIGEST_PATTERN.test(digest)) {
+    failures.push({
+      path,
+      reason: `${path} must be sha256:<64 lowercase hex>.`,
+    });
+    return undefined;
+  }
+
+  return digest;
+}
+
+function validateNpmSriIntegrity(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const integrity = validateDescriptorRequiredString(value, path, failures);
+  if (integrity && !NPM_SRI_INTEGRITY_PATTERN.test(integrity)) {
+    failures.push({
+      path,
+      reason: `${path} must be an npm sha512 SRI integrity string.`,
+    });
+    return undefined;
+  }
+
+  return integrity;
+}
+
+function validateDescriptorRequiredString(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    failures.push({
+      path,
+      reason: `${path} is required.`,
+    });
+    return undefined;
+  }
+
+  return value;
+}
+
 function validateRunnerContractVersion(
   value: unknown,
   failures: CurrentReleaseBoundaryValidationFailure[],
@@ -3547,6 +3847,23 @@ function validateRequiredString(
   }
 
   return value;
+}
+
+function validatePositiveIntegerString(
+  value: unknown,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): string | undefined {
+  const text = validateRequiredString(value, path, failures);
+  if (text && !POSITIVE_INTEGER_STRING_PATTERN.test(text)) {
+    failures.push({
+      path,
+      reason: `${path} must be a positive integer string.`,
+    });
+    return undefined;
+  }
+
+  return text;
 }
 
 function validatePlainSemver(

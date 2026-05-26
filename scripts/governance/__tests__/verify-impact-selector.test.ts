@@ -2033,6 +2033,34 @@ export default defineConfig({
     ]);
   });
 
+  it('maps the runner contract artifact workflow to release boundary owner review without heavy expansion', () => {
+    const changedFile = '.github/workflows/runner-contract-artifact.yml';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+    ]);
+    expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+    expect(plan.affectedSurfaces).toEqual(['release-boundary-guard']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards).toEqual([]);
+    expect(plan.nextAction).toContain('release/repo-split boundary guard owner review');
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['release_boundary_guard'],
+        affectedSurfaces: ['release-boundary-guard'],
+        storyIds: [],
+        manualReviewRequired: true,
+        broadImpact: false,
+      }),
+    ]);
+  });
+
   it('maps release/repo-split boundary guard, schema, and fixture files to targeted owner review', () => {
     const changedFiles = [
       'scripts/contracts/check-release-boundary-contract.ts',
@@ -2169,6 +2197,93 @@ export default defineConfig({
         }),
       ]);
       expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+    });
+  });
+
+  it('maps .gitignore only when the diff adds the governed runner contract artifact roots', () => {
+    const baseGitignore = [
+      'artifacts/tmp-release-proxy/',
+      'artifacts/release-evidence/',
+      'artifacts/system-state/',
+      '',
+    ].join('\n');
+    const currentGitignore = [
+      'artifacts/tmp-release-proxy/',
+      'artifacts/release-evidence/',
+      'artifacts/runner-contract/',
+      'artifacts/runner-contract-download/',
+      'artifacts/system-state/',
+      '',
+    ].join('\n');
+
+    withTextFileGitFixture('.gitignore', baseGitignore, currentGitignore, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['.gitignore'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: '.gitignore',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+          manualReviewRequired: false,
+        }),
+      ]);
+      expect(defaultGateProfileForVerificationPlan(plan)).toBe('governance_tooling');
+    });
+  });
+
+  it('keeps arbitrary .gitignore changes fail-closed as unmapped source impact', () => {
+    const baseGitignore = [
+      'artifacts/tmp-release-proxy/',
+      'artifacts/release-evidence/',
+      'artifacts/system-state/',
+      '',
+    ].join('\n');
+    const currentGitignore = [
+      'artifacts/tmp-release-proxy/',
+      'artifacts/release-evidence/',
+      'artifacts/runner-contract/',
+      'artifacts/runner-contract-download/',
+      'artifacts/unowned-local-output/',
+      'artifacts/system-state/',
+      '',
+    ].join('\n');
+
+    withTextFileGitFixture('.gitignore', baseGitignore, currentGitignore, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['.gitignore'],
+        catalog,
+      });
+
+      expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
+      expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+      expect(plan.recommendedCommands).toContain('npm run verify:visual');
+      expect(plan.recommendedCommands).toContain('npm run verify:real');
+      expect(plan.riskSummary.broadImpact).toBe(true);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: '.gitignore',
+          matchedRules: ['unmapped_source'],
+          affectedSurfaces: ['unmapped-source'],
+          broadImpact: true,
+          manualReviewRequired: true,
+        }),
+      ]);
     });
   });
 

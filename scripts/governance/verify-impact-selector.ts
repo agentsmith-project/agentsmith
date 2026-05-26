@@ -503,6 +503,7 @@ function isReleaseBoundaryGuardPath(filePath: string): boolean {
   return [
     /^\.github\/workflows\/image-publish\.yml$/,
     /^\.github\/workflows\/release-contract-artifact\.yml$/,
+    /^\.github\/workflows\/runner-contract-artifact\.yml$/,
     /^docs\/engineering\/release-kit-and-runner-repo-split-kiss-plan-v1\.md$/,
     /^scripts\/contracts\/check-release-boundary-contract(?:\.test)?\.ts$/,
     /^scripts\/contracts\/check-release-kit-source-boundary(?:\.test)?\.ts$/,
@@ -524,6 +525,9 @@ function isGovernanceToolingPath(filePath: string, baseRefs: readonly string[] =
     return false;
   }
   if (isSafeCurrentWorkflowGeneratedMakefileChange(filePath, baseRefs)) {
+    return true;
+  }
+  if (isSafeGovernedArtifactGitignoreChange(filePath, baseRefs)) {
     return true;
   }
   return [
@@ -1130,6 +1134,29 @@ function isSafeCurrentWorkflowGeneratedMakefileChange(filePath: string, baseRefs
   return strippedBase !== null
     && strippedCurrent !== null
     && strippedBase === strippedCurrent;
+}
+
+const GOVERNED_RUNNER_CONTRACT_ARTIFACT_GITIGNORE_BLOCK = [
+  'artifacts/runner-contract/',
+  'artifacts/runner-contract-download/',
+  '',
+].join('\n');
+
+function isSafeGovernedArtifactGitignoreChange(filePath: string, baseRefs: readonly string[]): boolean {
+  if (filePath !== '.gitignore') {
+    return false;
+  }
+
+  return textDiffIsSingleInsertion(
+    baseRefs,
+    filePath,
+    GOVERNED_RUNNER_CONTRACT_ARTIFACT_GITIGNORE_BLOCK,
+    (baseText) => {
+      const anchor = 'artifacts/release-evidence/\n';
+      const anchorIndex = baseText.indexOf(anchor);
+      return anchorIndex === -1 ? null : anchorIndex + anchor.length;
+    },
+  );
 }
 
 const RUNNER_CONTRACT_PACKAGE_DEPENDENCY_NAMES = new Set([

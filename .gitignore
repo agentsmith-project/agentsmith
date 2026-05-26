@@ -75,6 +75,8 @@ artifacts/local-real/
 artifacts/tmp/
 artifacts/tmp-release-proxy/
 artifacts/release-evidence/
+artifacts/runner-contract/
+artifacts/runner-contract-download/
 artifacts/system-state/
 artifacts/notebook-runner/
 artifacts/system-workspaces.json

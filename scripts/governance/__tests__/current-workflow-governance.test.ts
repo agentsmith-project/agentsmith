@@ -66,6 +66,10 @@ const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
 const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
   'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+const RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND =
+  'npx tsx scripts/governance/runner-contract-artifact.ts';
+const RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND =
+  'npx tsx scripts/contracts/check-agent-runner-contract-artifact.ts --artifact-root artifacts/runner-contract-download';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -942,6 +946,7 @@ describe('current workflow governance', () => {
       '.github/workflows/engineering-gate.yml',
       '.github/workflows/integration-e2e.yml',
       '.github/workflows/release-contract-artifact.yml',
+      '.github/workflows/runner-contract-artifact.yml',
     ]),
     );
   });
@@ -1024,6 +1029,8 @@ describe('current workflow governance', () => {
       'artifacts/uxui-reviews/',
       'artifacts/local-runtime/',
       'artifacts/tmp-release-proxy/',
+      'artifacts/runner-contract/',
+      'artifacts/runner-contract-download/',
     ]) {
       expect(gitignore).toMatch(new RegExp(`^${artifactRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm'));
     }
@@ -1064,6 +1071,8 @@ describe('current workflow governance', () => {
     expect(checker).toContain(".github/workflows/*.yml");
     expect(checker).toContain('collectJobArtifactPaths');
     expect(checker).toContain('lane:backend-real:core');
+    expect(checker).toContain('.github/workflows/runner-contract-artifact.yml');
+    expect(checker).toContain('npx tsx scripts/governance/runner-contract-artifact.ts');
   });
 
   it('keeps every active GitHub workflow declared in the CI workflow manifest', () => {
@@ -1077,6 +1086,7 @@ describe('current workflow governance', () => {
       '.github/workflows/integration-e2e.yml',
       '.github/workflows/quality-gates.yml',
       '.github/workflows/release-contract-artifact.yml',
+      '.github/workflows/runner-contract-artifact.yml',
     ]);
   });
 
@@ -1278,6 +1288,72 @@ describe('current workflow governance', () => {
     );
     expect(workflowSource).not.toContain('release_contract_input_path');
     expect(workflowSource).not.toMatch(/deploy readiness|release readiness/i);
+  });
+
+  it('models runner contract artifact production and consumer install as a non-readiness CI output', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === '.github/workflows/runner-contract-artifact.yml',
+    );
+    const producerJob = workflow?.jobs.find((entry) => entry.id === 'produce-runner-contract-artifact');
+    const consumerJob = workflow?.jobs.find((entry) => entry.id === 'consume-runner-contract-artifact');
+    const parsedWorkflow = parseWorkflow('.github/workflows/runner-contract-artifact.yml');
+    const workflowSource = readRepoFile('.github/workflows/runner-contract-artifact.yml');
+    const producerRunCommands = collectJobRunCommands(parsedWorkflow, 'produce-runner-contract-artifact');
+    const consumerRunCommands = collectJobRunCommands(parsedWorkflow, 'consume-runner-contract-artifact');
+    const workflowJobs = asRecord(parsedWorkflow.jobs);
+    const consumerYamlJob = asRecord(workflowJobs['consume-runner-contract-artifact']);
+    const producerYamlJob = asRecord(workflowJobs['produce-runner-contract-artifact']);
+
+    expect(workflow?.workflowName).toBe('Runner Contract Artifact');
+    expect(workflow?.role).toBe('release_artifact_producer');
+    expect(workflow?.triggers).toEqual(['workflow_dispatch']);
+    expect(workflow?.releaseBlocking).toBe(false);
+    expect(producerJob?.role).toBe('artifact_producer');
+    expect(producerJob?.requiresSecrets).toBe(false);
+    expect(producerJob?.evidenceRequired).toBe(true);
+    expect(producerJob?.evidenceFamilies).toEqual(['runner_contract_artifact']);
+    expect(producerJob?.artifactPaths).toEqual([
+      'artifacts/runner-contract/runner-contract-artifact.json',
+      'artifacts/runner-contract/*.tgz',
+    ]);
+    expect(producerJob?.commands).toEqual([
+      RUNNER_CONTRACT_BUILD_COMMAND,
+      RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND,
+    ]);
+    expect(consumerJob?.role).toBe('contract_gate');
+    expect(consumerJob?.evidenceRequired).toBe(false);
+    expect(consumerJob?.commands).toEqual([
+      RUNNER_CONTRACT_BUILD_COMMAND,
+      RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND,
+    ]);
+    expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read' });
+    expect(consumerYamlJob.needs).toBe('produce-runner-contract-artifact');
+    expect(producerRunCommands).toContain('npm ci');
+    expect(producerRunCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
+    expect(producerRunCommands).toContain(RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND);
+    expect(producerRunCommands.indexOf('npm ci')).toBeLessThan(
+      producerRunCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND),
+    );
+    expect(producerRunCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      producerRunCommands.indexOf(RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND),
+    );
+    expect(consumerRunCommands).toContain('npm ci');
+    expect(consumerRunCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
+    expect(consumerRunCommands).toContain(RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND);
+    expect(consumerRunCommands.indexOf('npm ci')).toBeLessThan(
+      consumerRunCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND),
+    );
+    expect(consumerRunCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      consumerRunCommands.indexOf(RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND),
+    );
+    expect(workflowSource).toContain(
+      'This workflow only produces and consumes the runner contract artifact descriptor; it is not release readiness.',
+    );
+    expect(workflowSource).toContain('runner-contract-artifact.json');
+    expect(workflowSource).toContain('actions/download-artifact@v7');
+    expect(producerYamlJob).not.toHaveProperty('needs');
+    expect(producerRunCommands).not.toContain('npm run release:ready');
+    expect(consumerRunCommands).not.toContain('npm run release:ready');
   });
 
   it('models GHCR image publishing as a product image handoff producer', () => {

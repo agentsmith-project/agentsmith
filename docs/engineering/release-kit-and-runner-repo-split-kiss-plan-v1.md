@@ -24,7 +24,7 @@ runtime。
 最终目标：
 
 1. AgentSmith repo 负责产品代码、产品合同、产品验证、产品 image 和本地完整测试。
-2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只是本机演练目标。
+2. `agentsmith-release-kit` repo 负责在线部署、离线包、发布包校验、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是一等目标，kind 只作为本机/CI 演练工具，不是用户部署前提或 airgap declarable target。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
 4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness / local complete / current product gate，内部覆盖 full visual、backend-real release 和 terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith 产品门禁结论。release-kit functional repo ready 后，在线/airgap deployment、package 和 operator runbook 的 verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、images/release contract、local full test 和 thin adapter。
 5. 项目整体仍 pre-GA：旧名、旧路径、旧 env/profile 别名、已移除旧包和已移除字段不是长期双轨。正式路径默认 fail fast；只允许出现在负向测试、过渡期专项诊断或 operator 短期说明里，并按第 3.2 节写清 owner、删除触发条件和验收证据。
@@ -582,7 +582,7 @@ OpenAPI/AsyncAPI 和 profile 数据；它不是 AgentSmith product gate，也不
 
 ### P3. Release Kit Airgap MVP
 
-目标：产出可部署到真实 Kubernetes 的离线发布包；kind 只是可选断网演练目标。
+目标：产出可部署到真实 Kubernetes 的离线发布包；kind 只能作为离线包机械自测、本机诊断或 CI rehearsal，不是 airgap declarable target，也不能替代 `existing_kubernetes + external_declared + airgap` evidence。
 
 工作：
 
@@ -615,7 +615,7 @@ manifest `required_image_ids`、rendered manifests 和 operator prerequisite
 - 缺工具或工具 proof 失败。
 - verify/load/render/apply/smoke 任一步尝试联网下载失败。
 - `existing_kubernetes + external_declared + airgap` 在断网环境 `verify/load/render/apply/smoke` 通过。
-- `kind_rehearsal` 只保留 `kit_installed + online` 作为可选演练，不是 airgap declarable target。
+- `kind_rehearsal` 只保留 `kit_installed + online` 作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代 `existing_kubernetes + external_declared + airgap` evidence。
 - 手工 operator signoff 仍单独记录，不能被自动化冒充。
 
 ### P4. AgentSmith 发布 Runner Contract 包
@@ -683,7 +683,7 @@ P5 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-ada
 工作：
 
 1. 在 release-kit / runner 集成面上，AgentSmith 只保留 thin adapters、contract checker、docs 指向和产品集成测试；AgentSmith 的产品合同、OpenAPI/AsyncAPI、验证入口和产品代码继续保留。
-2. 只有 release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确后，才从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试；不得删除当前 unified deploy contract/model。
+2. release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确前，不删除底层部署合同语义；明确后从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试。项目仍是 pre-GA，不为 legacy 保留长期心智负担；P6 后旧 profile、旧 writer、旧 command 只能归档到 docs-only 或负向测试，任何短期暂留都必须有 owner、删除触发条件和验收证据；若保留合同，必须归一到 `target_cluster` / `substrate_source` / `distribution` 三轴新模型。
 3. 删除 runner runtime 源码、旧 `@mbos/agent-runner` shim 和 AgentSmith 侧
    `buildAgentRuntimeEnv` 长期共享路径；只保留 docs-only 迁移说明或必要
    fail-fast 负向测试，不保留长期本地启动双轨；第 3.2 节中的暂留项必须

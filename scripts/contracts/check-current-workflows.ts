@@ -341,6 +341,36 @@ function assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
   }
 }
 
+function assertJobBuildsRunnerContractBeforeColdExecution(
+  parsedWorkflow: Record<string, unknown>,
+  workflowPath: string,
+  jobId: string,
+  targetCommand: string,
+  failures: string[],
+): void {
+  const runCommands = collectJobRunCommandList(parsedWorkflow, jobId);
+  const installIndex = runCommands.indexOf('npm ci');
+  const buildIndex = runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND);
+  const targetIndex = runCommands.indexOf(targetCommand);
+  const label = `${workflowPath}:${jobId}`;
+
+  if (installIndex === -1) {
+    failures.push(`${label} must install dependencies with npm ci before cold CI execution`);
+  }
+  if (buildIndex === -1) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci in cold CI`);
+  }
+  if (targetIndex === -1) {
+    failures.push(`${label} must run ${targetCommand}`);
+  }
+  if (installIndex >= 0 && buildIndex >= 0 && installIndex >= buildIndex) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} after npm ci`);
+  }
+  if (buildIndex >= 0 && targetIndex >= 0 && buildIndex >= targetIndex) {
+    failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} before ${targetCommand}`);
+  }
+}
+
 const failures: string[] = [];
 const governanceSurfaceInventory = listCurrentGovernanceSurfaceInventory();
 const makefile = readFileSync(path.join(rootDir, 'Makefile'), 'utf8');
@@ -499,6 +529,23 @@ assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
   parseWorkflow('.github/workflows/quality-gates.yml'),
   'lane-visual',
   'npm run lane:visual',
+  failures,
+);
+
+const runnerContractArtifactWorkflowPath = '.github/workflows/runner-contract-artifact.yml';
+const runnerContractArtifactWorkflow = parseWorkflow(runnerContractArtifactWorkflowPath);
+assertJobBuildsRunnerContractBeforeColdExecution(
+  runnerContractArtifactWorkflow,
+  runnerContractArtifactWorkflowPath,
+  'produce-runner-contract-artifact',
+  'npx tsx scripts/governance/runner-contract-artifact.ts',
+  failures,
+);
+assertJobBuildsRunnerContractBeforeColdExecution(
+  runnerContractArtifactWorkflow,
+  runnerContractArtifactWorkflowPath,
+  'consume-runner-contract-artifact',
+  'npx tsx scripts/contracts/check-agent-runner-contract-artifact.ts --artifact-root artifacts/runner-contract-download',
   failures,
 );
 

@@ -113,6 +113,28 @@ describe('agent-runner-contract package metadata', () => {
     expect(packageJson.scripts?.prepack).toBe('npm run build');
   });
 
+  it('declares its compiler for workspace-scoped runner image installs', () => {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      devDependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
+    };
+    const lockJson = JSON.parse(readFileSync(join(repoRoot, 'package-lock.json'), 'utf8')) as {
+      packages?: Record<string, {
+        devDependencies?: Record<string, string>;
+      }>;
+    };
+
+    expect(packageJson.scripts?.build).toContain('tsc -p tsconfig.json');
+    expect(packageJson.devDependencies?.['@types/node']).toBe('^22.0.0');
+    expect(packageJson.devDependencies?.typescript).toBe('^5.9.3');
+    expect(lockJson.packages?.['packages/agent-runner-contract']?.devDependencies?.['@types/node']).toBe(
+      packageJson.devDependencies?.['@types/node'],
+    );
+    expect(lockJson.packages?.['packages/agent-runner-contract']?.devDependencies?.typescript).toBe(
+      packageJson.devDependencies?.typescript,
+    );
+  });
+
   it('keeps the package manifest aligned with artifact entrypoints and the external descriptor pointer', () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
       name?: string;

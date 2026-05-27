@@ -1269,8 +1269,27 @@ FAKEMONGO
     const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
     const agentTaskGate = readFileSync('scripts/run-internal-agent-task-real-gate.sh', 'utf8');
     expect(common).toContain('reset_owned_agentsmith_afscp_metadata');
-    expect(reset).toContain('AFSCP_ENVIRONMENT=local-real reset_owned_afscp_local_runtime_data');
-    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_data');
+    expect(common).toContain('reset_owned_afscp_local_runtime_k8s_state');
+    expect(common).toContain('reset_owned_afscp_local_runtime_for_gate');
+    expect(reset).toContain('AFSCP_ENVIRONMENT=local-real reset_owned_afscp_local_runtime_for_gate');
+    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_for_gate');
+  });
+
+  it('clears owned Kubernetes workload state before gate-owned AFSCP metadata reset', () => {
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
+    const agentTaskGate = readFileSync('scripts/run-internal-agent-task-real-gate.sh', 'utf8');
+    const fileLibraryGate = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const wrapperBody = functionBody(common, 'reset_owned_afscp_local_runtime_for_gate');
+
+    expect(common).toContain('kubectl delete namespace "${K8S_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s');
+    expect(wrapperBody.indexOf('reset_owned_afscp_local_runtime_k8s_state')).toBeGreaterThanOrEqual(0);
+    expect(wrapperBody.indexOf('reset_owned_afscp_local_runtime_data')).toBeGreaterThan(
+      wrapperBody.indexOf('reset_owned_afscp_local_runtime_k8s_state'),
+    );
+    expect(reset).toContain('reset_owned_afscp_local_runtime_for_gate');
+    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_for_gate');
+    expect(fileLibraryGate).toContain('reset_owned_afscp_local_runtime_for_gate');
   });
 
   it('fails closed before clearing AgentSmith AFSCP metadata on a non-local Mongo URL', () => {
@@ -2272,11 +2291,11 @@ SH
     const reset = readFileSync('scripts/local-manual/internal-reset.sh', 'utf8');
 
     expect(reset.indexOf('stop_internal_runtime')).toBeGreaterThanOrEqual(0);
-    expect(reset.indexOf('reset_owned_afscp_local_runtime_data')).toBeGreaterThanOrEqual(0);
+    expect(reset.indexOf('reset_owned_afscp_local_runtime_for_gate')).toBeGreaterThanOrEqual(0);
     expect(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"')).toBeGreaterThanOrEqual(0);
-    expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('reset_owned_afscp_local_runtime_data'));
+    expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('reset_owned_afscp_local_runtime_for_gate'));
     expect(reset.indexOf('stop_internal_runtime')).toBeLessThan(reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"'));
-    expect(reset.indexOf('reset_owned_afscp_local_runtime_data')).toBeLessThan(
+    expect(reset.indexOf('reset_owned_afscp_local_runtime_for_gate')).toBeLessThan(
       reset.indexOf('rm -rf "${INTERNAL_REAL_DIR}"'),
     );
   });

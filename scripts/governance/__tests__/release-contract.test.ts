@@ -226,7 +226,7 @@ describe('release contract generator', () => {
     }
   });
 
-  it('keeps CI handoff target profiles on the current evidence-supported canonical subset', () => {
+  it('keeps CI handoff target profiles on the formal online/airgap substrate matrix', () => {
     const targetProfilesFixture = JSON.parse(
       readFileSync(join(process.cwd(), 'scripts/governance/release-contract-target-profiles.json'), 'utf8'),
     ) as readonly CurrentDeploymentTargetProfile[];
@@ -234,11 +234,14 @@ describe('release contract generator', () => {
     const canonicalCandidateKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
     const expectedHandoffKeys = [
       'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|kit_installed|online',
       'existing_kubernetes|external_declared|airgap',
+      'existing_kubernetes|kit_installed|airgap',
     ];
 
     expect(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map(targetProfileKey)).toEqual(expectedHandoffKeys);
     expect(expectedHandoffKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(expectedHandoffKeys).not.toContain('kind_rehearsal|kit_installed|online');
     expect(expectedHandoffKeys).not.toEqual(canonicalCandidateKeys);
     expect(targetProfilesFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
     expect(targetProfilesFixture.map(targetProfileKey)).toEqual(expectedHandoffKeys);

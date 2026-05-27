@@ -150,6 +150,8 @@ export const SYSTEM_ADMIN_PASSWORD =
   process.env.SYSTEM_ADMIN_PASSWORD ?? "mbos-admin";
 const DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS = 300_000;
 const DEFAULT_AGENT_TASK_CREATE_TIMEOUT_MS = 90_000;
+const DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES = 0;
+const DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS = 2_000;
 type ChildProcessWithIgnoredStdin = ChildProcessByStdio<
   null,
   Readable,
@@ -202,6 +204,18 @@ function readPositiveIntegerEnv(
   return Math.floor(value);
 }
 
+function readNonNegativeIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+): number {
+  const raw = env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return Math.floor(value);
+}
+
 export function resolveTerminalSessionCreateTimeoutMs(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
@@ -220,6 +234,42 @@ export function resolveAgentTaskCreateTimeoutMs(
     "INTEGRATION_AGENT_TASK_CREATE_TIMEOUT_MS",
     DEFAULT_AGENT_TASK_CREATE_TIMEOUT_MS,
   );
+}
+
+export function resolveAgentTaskCreateStoragePendingRetries(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return readNonNegativeIntegerEnv(
+    env,
+    "INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES",
+    DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES,
+  );
+}
+
+export function resolveAgentTaskCreateStoragePendingRetryDelayMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return readPositiveIntegerEnv(
+    env,
+    "INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS",
+    DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS,
+  );
+}
+
+function isProjectStoragePendingTaskCreateResponse(
+  status: number,
+  bodyText: string,
+): boolean {
+  if (status !== 409) return false;
+  try {
+    const parsed = JSON.parse(bodyText) as unknown;
+    if (typeof parsed !== "object" || parsed === null) return false;
+    const record = parsed as Record<string, unknown>;
+    return record.error_code === "PROJECT_STORAGE_PENDING"
+      || record.message === "project_storage_pending";
+  } catch {
+    return false;
+  }
 }
 
 type MockTaskContextServerAddress = {
@@ -2405,6 +2455,8 @@ type CreateAgentTaskViaApiArgs =
 export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Promise<string> {
   const token = await readStoredAuthToken(args.page);
   const timeoutMs = resolveAgentTaskCreateTimeoutMs();
+  const storagePendingRetries = resolveAgentTaskCreateStoragePendingRetries();
+  const storagePendingRetryDelayMs = resolveAgentTaskCreateStoragePendingRetryDelayMs();
   const startedAt = Date.now();
   const title = args.title.trim();
   if (!title) {
@@ -2414,40 +2466,62 @@ export async function createAgentTaskViaApi(args: CreateAgentTaskViaApiArgs): Pr
   if (args.fileLibraryId !== undefined && !fileLibraryId) {
     throw new Error("agent_task_workspace_file_library_id_required");
   }
-  let response: Awaited<ReturnType<Page["request"]["post"]>>;
-  try {
-    response = await args.page.request.post(
-      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+  let response: Awaited<ReturnType<Page["request"]["post"]>> | null = null;
+  let body = "";
+  const requestBody = {
+    title,
+    ...(fileLibraryId
+      ? {
+          workspace_mode: "use_existing" as const,
+          workspace_file_library_id: fileLibraryId,
+        }
+      : { workspace_mode: args.workspaceMode ?? "create_new" }),
+    ...(args.workspaceName?.trim()
+      ? { workspace_name: args.workspaceName.trim() }
+      : {}),
+    ...(args.inputRefs ? { input_refs: args.inputRefs } : {}),
+  };
+
+  for (let attempt = 0; attempt <= storagePendingRetries; attempt += 1) {
+    try {
+      response = await args.page.request.post(
+        `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: timeoutMs,
+          data: requestBody,
         },
-        timeout: timeoutMs,
-        data: {
-          title,
-          ...(fileLibraryId
-            ? {
-                workspace_mode: "use_existing" as const,
-                workspace_file_library_id: fileLibraryId,
-              }
-            : { workspace_mode: args.workspaceMode ?? "create_new" }),
-          ...(args.workspaceName?.trim()
-            ? { workspace_name: args.workspaceName.trim() }
-            : {}),
-          ...(args.inputRefs ? { input_refs: args.inputRefs } : {}),
-        },
-      },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `create_agent_task_request_failed:timeout_ms=${timeoutMs}:elapsed_ms=${Date.now() - startedAt}:${message}`,
+      );
+    }
+
+    if (response.ok()) break;
+
+    body = await response.text().catch(() => "");
+    const isStoragePending = isProjectStoragePendingTaskCreateResponse(
+      response.status(),
+      body,
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `create_agent_task_request_failed:timeout_ms=${timeoutMs}:elapsed_ms=${Date.now() - startedAt}:${message}`,
-    );
-  }
-  if (!response.ok()) {
-    const body = await response.text().catch(() => "");
+    if (attempt < storagePendingRetries && isStoragePending) {
+      await setTimeoutPromise(storagePendingRetryDelayMs);
+      continue;
+    }
+    if (isStoragePending) {
+      throw new Error(
+        `create_agent_task_failed:${response.status()}:PROJECT_STORAGE_PENDING:storage_pending_retries=${storagePendingRetries}:storage_pending_attempts=${attempt + 1}:storage_pending_retry_delay_ms=${storagePendingRetryDelayMs}:${body}`,
+      );
+    }
     throw new Error(`create_agent_task_failed:${response.status()}:${body}`);
+  }
+  if (!response || !response.ok()) {
+    throw new Error(`create_agent_task_failed:${response?.status() ?? 0}:${body}`);
   }
   const payload = (await response.json().catch(() => null)) as
     | AgentTaskApiRecord

@@ -103,5 +103,5 @@ stop_afscp_local_runtime_for_gate() {
 
 reset_afscp_local_runtime_for_gate() {
   local runtime_dir="$1"
-  with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_data
+  with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_for_gate
 }

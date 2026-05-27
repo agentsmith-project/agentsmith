@@ -27,5 +27,9 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
   }
 }

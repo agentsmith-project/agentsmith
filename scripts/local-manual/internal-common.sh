@@ -1427,6 +1427,40 @@ SQL
   reset_owned_afscp_local_runtime_object_prefix
 }
 
+reset_owned_afscp_local_runtime_k8s_state() {
+  afscp_validate_local_runtime_reset_marker || return 1
+
+  if ! command -v kubectl >/dev/null 2>&1; then
+    internal_info "skipping AFSCP local-real Kubernetes namespace reset because kubectl is unavailable"
+    return 0
+  fi
+
+  local current_context
+  current_context="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ "${current_context}" != "${KIND_CONTEXT_NAME}" ]]; then
+    if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
+      kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null || {
+        internal_err "failed to select ${KIND_CONTEXT_NAME} before AFSCP local-real Kubernetes namespace reset; local-real fails closed"
+        return 1
+      }
+    else
+      internal_info "skipping AFSCP local-real Kubernetes namespace reset because ${KIND_CONTEXT_NAME} is not available"
+      return 0
+    fi
+  fi
+
+  internal_info "resetting owned AFSCP local-real Kubernetes namespace ${K8S_NAMESPACE}"
+  kubectl delete namespace "${K8S_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s >/dev/null || {
+    internal_err "failed to reset owned AFSCP local-real Kubernetes namespace ${K8S_NAMESPACE}; local-real fails closed"
+    return 1
+  }
+}
+
+reset_owned_afscp_local_runtime_for_gate() {
+  reset_owned_afscp_local_runtime_k8s_state || return 1
+  reset_owned_afscp_local_runtime_data
+}
+
 afscp_resolve_webdav_export_public_base_url() {
   local base prefix trim_prefix
   base="${1%/}"

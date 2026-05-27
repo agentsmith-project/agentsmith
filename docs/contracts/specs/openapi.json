@@ -5995,6 +5995,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": false,
                   "required": [
                     "task_id",
                     "runtime_profile",
@@ -6021,6 +6022,7 @@
                     },
                     "task_home_binding": {
                       "type": "object",
+                      "additionalProperties": false,
                       "required": [
                         "binding_id",
                         "provider",
@@ -6062,6 +6064,7 @@
                         },
                         "holder": {
                           "type": "object",
+                          "additionalProperties": false,
                           "required": [
                             "holder_id",
                             "holder_kind",
@@ -6100,6 +6103,7 @@
                         },
                         "paths": {
                           "type": "object",
+                          "additionalProperties": false,
                           "required": [
                             "task_home_path",
                             "workspace_path",
@@ -6202,16 +6206,24 @@
                 ],
                 "properties": {
                   "holder_id": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
                   },
                   "file_library_id": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
                   },
                   "binding_generation": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[1-9][0-9]*$"
                   },
                   "lease_epoch": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S"
                   }
                 }
               }

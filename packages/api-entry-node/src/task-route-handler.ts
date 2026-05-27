@@ -397,6 +397,15 @@ const UNSUPPORTED_PUBLIC_TASK_RUN_FIELDS = [
   ...UNSUPPORTED_ACTIVE_TASK_BINDING_FIELDS,
 ] as const;
 const UNSUPPORTED_TASK_CANCEL_RUN_FIELDS = ['stop_mode'] as const;
+const TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIELDS = [
+  'holder_id',
+  'file_library_id',
+  'binding_generation',
+  'lease_epoch',
+] as const;
+const TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIELD_SET = new Set<string>(
+  TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIELDS,
+);
 
 type TaskActivityItem = {
   id: string;
@@ -2802,17 +2811,34 @@ function readTaskWorkspaceAccessReleaseRequest(raw: unknown): {
   field: string;
 } {
   const body = asObject(raw);
-  const holderId = typeof body.holder_id === 'string' ? body.holder_id.trim() : '';
+  for (const field of Object.keys(body)) {
+    if (!TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIELD_SET.has(field)) {
+      return { ok: false, field };
+    }
+  }
+  for (const field of TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIELDS) {
+    if (!Object.hasOwn(body, field)) {
+      return { ok: false, field };
+    }
+  }
+
+  const holderId = typeof body.holder_id === 'string' && /\S/u.test(body.holder_id)
+    ? body.holder_id
+    : '';
   if (!holderId) return { ok: false, field: 'holder_id' };
-  const fileLibraryId = typeof body.file_library_id === 'string' ? body.file_library_id.trim() : '';
+  const fileLibraryId = typeof body.file_library_id === 'string' && /\S/u.test(body.file_library_id)
+    ? body.file_library_id
+    : '';
   if (!fileLibraryId) return { ok: false, field: 'file_library_id' };
-  const bindingGenerationWire = typeof body.binding_generation === 'string' ? body.binding_generation.trim() : '';
-  if (!/^\d+$/.test(bindingGenerationWire)) return { ok: false, field: 'binding_generation' };
+  const bindingGenerationWire = typeof body.binding_generation === 'string' ? body.binding_generation : '';
+  if (!/^[1-9][0-9]*$/.test(bindingGenerationWire)) return { ok: false, field: 'binding_generation' };
   const bindingGeneration = Number(bindingGenerationWire);
   if (!Number.isSafeInteger(bindingGeneration) || bindingGeneration <= 0) {
     return { ok: false, field: 'binding_generation' };
   }
-  const leaseEpoch = typeof body.lease_epoch === 'string' ? body.lease_epoch.trim() : '';
+  const leaseEpoch = typeof body.lease_epoch === 'string' && /\S/u.test(body.lease_epoch)
+    ? body.lease_epoch
+    : '';
   if (!leaseEpoch) return { ok: false, field: 'lease_epoch' };
   return {
     ok: true,

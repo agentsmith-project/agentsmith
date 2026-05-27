@@ -107,10 +107,18 @@ function targetProfileKey(
   return `${profile.target_cluster}|${profile.substrate_source}|${profile.distribution}`;
 }
 
+const REQUIRED_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILE_KEYS = [
+  'existing_kubernetes|external_declared|online',
+  'existing_kubernetes|kit_installed|online',
+  'existing_kubernetes|external_declared|airgap',
+  'existing_kubernetes|kit_installed|airgap',
+] as const;
+
 function validateHandoffTargetProfiles(
   profiles: readonly CurrentDeploymentTargetProfile[],
   canonicalDeclarableProfileKeys: readonly string[],
   failures: ReleaseBoundaryContractFailure[],
+  relativePath = 'scripts/governance/current-release-boundary-schema.ts',
 ): void {
   const canonicalDeclarableProfileKeySet = new Set(canonicalDeclarableProfileKeys);
   const seenProfileKeys = new Set<string>();
@@ -118,7 +126,7 @@ function validateHandoffTargetProfiles(
   if (profiles.length === 0) {
     addFailure(
       failures,
-      'scripts/governance/current-release-boundary-schema.ts',
+      relativePath,
       'release contract handoff target profiles must not be empty.',
     );
   }
@@ -128,7 +136,7 @@ function validateHandoffTargetProfiles(
     if (seenProfileKeys.has(profileKey)) {
       addFailure(
         failures,
-        'scripts/governance/current-release-boundary-schema.ts',
+        relativePath,
         `release contract handoff target profile ${profileKey} is declared more than once.`,
       );
     }
@@ -137,17 +145,35 @@ function validateHandoffTargetProfiles(
     if (!canonicalDeclarableProfileKeySet.has(profileKey)) {
       addFailure(
         failures,
-        'scripts/governance/current-release-boundary-schema.ts',
+        relativePath,
         `release contract handoff target profile ${profileKey} is not in the release-kit canonical declarable set.`,
+      );
+    }
+    if (profile.target_cluster === 'kind_rehearsal') {
+      addFailure(
+        failures,
+        relativePath,
+        'release contract handoff target profiles must not include kind_rehearsal; kind is local/dev rehearsal only.',
       );
     }
     if (profile.required !== false) {
       addFailure(
         failures,
-        'scripts/governance/current-release-boundary-schema.ts',
+        relativePath,
         'AgentSmith pre-GA release contract handoff target profiles must not be required targets.',
       );
     }
+  }
+
+  for (const requiredProfileKey of REQUIRED_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILE_KEYS) {
+    if (seenProfileKeys.has(requiredProfileKey)) {
+      continue;
+    }
+    addFailure(
+      failures,
+      relativePath,
+      `release contract handoff target profiles must include ${requiredProfileKey} for the online/airgap x external_declared/kit_installed matrix.`,
+    );
   }
 }
 
@@ -194,6 +220,30 @@ function validateFixture(
   if (!result.ok) {
     pushValidationFailures(failures, relativePath, result.failures ?? []);
   }
+}
+
+function validateReleaseContractFixtureTargetProfiles(
+  rootDir: string,
+  canonicalDeclarableProfileKeys: readonly string[],
+  failures: ReleaseBoundaryContractFailure[],
+): void {
+  const relativePath = join(FIXTURE_ROOT, 'release-contract.valid.json');
+  const value = readJson(rootDir, relativePath, failures);
+  if (value === null) {
+    return;
+  }
+
+  const result = validateAgentSmithReleaseContract(value);
+  if (!result.ok) {
+    return;
+  }
+
+  validateHandoffTargetProfiles(
+    result.value.target_profiles,
+    canonicalDeclarableProfileKeys,
+    failures,
+    relativePath,
+  );
 }
 
 function validateRunnerImageLockFixture(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
@@ -411,15 +461,28 @@ export function checkReleaseBoundaryContract(
     'scripts/governance/release-contract-target-profiles.json',
     failures,
   );
-  if (
-    handoffTargetProfilesJson !== null
-    && JSON.stringify(handoffTargetProfilesJson) !== JSON.stringify(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES)
-  ) {
-    addFailure(
-      failures,
-      'scripts/governance/release-contract-target-profiles.json',
-      'CI handoff target profile JSON must match CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.',
-    );
+  if (handoffTargetProfilesJson !== null) {
+    if (Array.isArray(handoffTargetProfilesJson)) {
+      validateHandoffTargetProfiles(
+        handoffTargetProfilesJson as CurrentDeploymentTargetProfile[],
+        canonicalDeclarableProfileKeys,
+        failures,
+        'scripts/governance/release-contract-target-profiles.json',
+      );
+    } else {
+      addFailure(
+        failures,
+        'scripts/governance/release-contract-target-profiles.json',
+        'CI handoff target profile JSON must be an array.',
+      );
+    }
+    if (JSON.stringify(handoffTargetProfilesJson) !== JSON.stringify(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES)) {
+      addFailure(
+        failures,
+        'scripts/governance/release-contract-target-profiles.json',
+        'CI handoff target profile JSON must match CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.',
+      );
+    }
   }
 
   const truthMatrix = validateTruthMatrix(CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX);
@@ -433,6 +496,7 @@ export function checkReleaseBoundaryContract(
   }
 
   validateFixture(rootDir, 'release-contract.valid.json', validateAgentSmithReleaseContract, failures);
+  validateReleaseContractFixtureTargetProfiles(rootDir, canonicalDeclarableProfileKeys, failures);
   validateFixture(rootDir, 'deploy-template-package.valid.json', validateDeployTemplatePackage, failures);
   validateFixture(rootDir, 'substrate-connection.external-declared.valid.json', validateSubstrateConnectionTruth, failures);
   validateFixture(rootDir, 'substrate-connection.kit-installed.valid.json', validateSubstrateConnectionTruth, failures);

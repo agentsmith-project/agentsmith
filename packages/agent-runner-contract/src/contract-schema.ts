@@ -14,6 +14,7 @@ export type JsonSchema = {
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
+  readonly minProperties?: number;
   readonly additionalProperties?: boolean | JsonSchema;
   readonly required?: readonly string[];
   readonly properties?: Readonly<Record<string, JsonSchema>>;
@@ -113,6 +114,15 @@ const nonEmptyStringJsonSchema = {
   type: 'string',
   minLength: 1,
   pattern: '\\S',
+} as const satisfies JsonSchema;
+
+const dateTimeStringJsonSchema = {
+  ...nonEmptyStringJsonSchema,
+  format: 'date-time',
+} as const satisfies JsonSchema;
+
+const nullableStringJsonSchema = {
+  oneOf: [{ type: 'string' }, { type: 'null' }],
 } as const satisfies JsonSchema;
 
 const taskHomeSegmentJsonSchema = {
@@ -224,6 +234,304 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
           type: 'string',
           enum: ['freeform', 'function'],
         },
+      },
+    },
+  },
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['fields'],
+      properties: {
+        fields: {
+          type: 'object',
+          minProperties: 1,
+          additionalProperties: nonEmptyStringJsonSchema,
+        },
+      },
+    },
+    nonEmptyStringJsonSchema,
+  ],
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['dependencies'],
+  properties: {
+    dependencies: {
+      type: 'object',
+      minProperties: 1,
+      additionalProperties: PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
+    },
+  },
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCIES_ENV_FIXTURE = {
+  dependencies: {
+    'feishu-managed-user': {
+      fields: {
+        access_token: 'projected_access_token',
+      },
+    },
+    'jira-auth': {
+      fields: {
+        base_url: 'https://jira.example.com',
+        token: 'projected_jira_token',
+      },
+    },
+  },
+} as const;
+
+export const RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS = [
+  'context_store',
+  'writable_scopes',
+  'managed_credential_refresh',
+  'credential_files',
+  'user_bearer_token',
+] as const;
+
+export const TASK_WORKSPACE_ACCESS_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'task_id',
+    'runtime_profile',
+    'file_library_id',
+    'file_library_name',
+    'task_home_binding',
+  ],
+  properties: {
+    task_id: { type: 'string' },
+    runtime_profile: {
+      type: 'string',
+      enum: supportedRuntimeProfiles,
+    },
+    file_library_id: { type: 'string' },
+    file_library_name: { type: 'string' },
+    task_home_binding: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'binding_id',
+        'provider',
+        'mode',
+        'task_id',
+        'file_library_id',
+        'task_home_segment',
+        'generation',
+        'holder',
+        'paths',
+      ],
+      properties: {
+        binding_id: { type: 'string' },
+        provider: {
+          type: 'string',
+          enum: ['afscp'],
+        },
+        mode: {
+          type: 'string',
+          enum: ['pre_mounted'],
+        },
+        task_id: { type: 'string' },
+        file_library_id: { type: 'string' },
+        task_home_segment: { type: 'string' },
+        generation: { type: 'string' },
+        holder: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'holder_id',
+            'holder_kind',
+            'binding_generation',
+            'lease_epoch',
+            'issued_at',
+            'expires_at',
+          ],
+          properties: {
+            holder_id: { type: 'string' },
+            holder_kind: {
+              type: 'string',
+              enum: ['runner_workspace', 'terminal_session', 'notebook_run'],
+            },
+            binding_generation: { type: 'string' },
+            lease_epoch: { type: 'string' },
+            issued_at: { type: 'string', format: 'date-time' },
+            expires_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        paths: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'task_home_path',
+            'workspace_path',
+            'artifacts_path',
+            'library_root_path',
+          ],
+          properties: {
+            task_home_path: { type: 'string' },
+            workspace_path: { type: 'string' },
+            artifacts_path: { type: 'string' },
+            library_root_path: {
+              type: 'string',
+              enum: ['.'],
+            },
+          },
+        },
+      },
+    },
+  },
+} as const satisfies JsonSchema;
+
+export const TASK_WORKSPACE_ACCESS_FIXTURE = {
+  task_id: 'task_1',
+  runtime_profile: 'managed',
+  file_library_id: 'flib_1',
+  file_library_name: 'Project workspace',
+  task_home_binding: {
+    binding_id: 'flib_1:7',
+    provider: 'afscp',
+    mode: 'pre_mounted',
+    task_id: 'task_1',
+    file_library_id: 'flib_1',
+    task_home_segment: 'task_1',
+    generation: '7',
+    holder: {
+      holder_id: 'holder_1',
+      holder_kind: 'runner_workspace',
+      binding_generation: '7',
+      lease_epoch: 'lease_1',
+      issued_at: '2026-05-07T00:00:00.000Z',
+      expires_at: '2026-05-07T00:05:00.000Z',
+    },
+    paths: {
+      task_home_path: '/home/task_1',
+      workspace_path: '/home/task_1/workspace',
+      artifacts_path: '/home/task_1/workspace/.artifacts',
+      library_root_path: '.',
+    },
+  },
+} as const;
+
+export const TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'holder_id',
+    'file_library_id',
+    'binding_generation',
+    'lease_epoch',
+  ],
+  properties: {
+    holder_id: nonEmptyStringJsonSchema,
+    file_library_id: nonEmptyStringJsonSchema,
+    binding_generation: {
+      type: 'string',
+      minLength: 1,
+      pattern: '^[1-9][0-9]*$',
+    },
+    lease_epoch: nonEmptyStringJsonSchema,
+  },
+} as const satisfies JsonSchema;
+
+export const TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIXTURE = {
+  holder_id: 'holder_1',
+  file_library_id: 'flib_1',
+  binding_generation: '7',
+  lease_epoch: 'lease_1',
+} as const;
+
+export const CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'scope',
+    'key',
+    'content',
+    'content_type',
+    'read_only',
+    'updated_at',
+    'updated_by',
+  ],
+  properties: {
+    id: nonEmptyStringJsonSchema,
+    scope: nonEmptyStringJsonSchema,
+    key: nonEmptyStringJsonSchema,
+    content: { type: 'string' },
+    content_type: {
+      type: 'string',
+      enum: ['text', 'json', 'markdown', 'yaml'],
+    },
+    user_id: nullableStringJsonSchema,
+    task_id: nullableStringJsonSchema,
+    project_id: nullableStringJsonSchema,
+    workspace_id: nullableStringJsonSchema,
+    read_only: { type: 'boolean' },
+    updated_at: dateTimeStringJsonSchema,
+    updated_by: nonEmptyStringJsonSchema,
+  },
+} as const satisfies JsonSchema;
+
+export const MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'connection_id',
+    'provider',
+    'kind',
+    'display_name',
+    'workspace_id',
+    'status',
+    'fields',
+    'scopes',
+    'expires_at',
+    'updated_at',
+    'provenance',
+  ],
+  properties: {
+    connection_id: nonEmptyStringJsonSchema,
+    provider: nonEmptyStringJsonSchema,
+    kind: nonEmptyStringJsonSchema,
+    display_name: { type: 'string' },
+    workspace_id: nullableStringJsonSchema,
+    status: {
+      type: 'string',
+      enum: ['active', 'expired', 'reauth_required', 'error'],
+    },
+    fields: {
+      type: 'object',
+      additionalProperties: { type: 'string' },
+    },
+    scopes: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    expires_at: nullableStringJsonSchema,
+    updated_at: dateTimeStringJsonSchema,
+    provenance: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['source', 'binding_scope', 'binding_key'],
+      properties: {
+        source: {
+          type: 'string',
+          enum: ['project_member_binding', 'member_binding', 'workspace_active_connection'],
+        },
+        binding_scope: {
+          oneOf: [
+            {
+              type: 'string',
+              enum: ['member', 'project_member'],
+            },
+            { type: 'null' },
+          ],
+        },
+        binding_key: nonEmptyStringJsonSchema,
       },
     },
   },

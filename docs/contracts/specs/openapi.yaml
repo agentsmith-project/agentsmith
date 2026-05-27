@@ -3526,6 +3526,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 required:
                   - task_id
                   - runtime_profile
@@ -3546,6 +3547,7 @@ paths:
                     type: string
                   task_home_binding:
                     type: object
+                    additionalProperties: false
                     required:
                       - binding_id
                       - provider
@@ -3577,6 +3579,7 @@ paths:
                         type: string
                       holder:
                         type: object
+                        additionalProperties: false
                         required:
                           - holder_id
                           - holder_kind
@@ -3605,6 +3608,7 @@ paths:
                             format: date-time
                       paths:
                         type: object
+                        additionalProperties: false
                         required:
                           - task_home_path
                           - workspace_path
@@ -3664,12 +3668,20 @@ paths:
               properties:
                 holder_id:
                   type: string
+                  minLength: 1
+                  pattern: \S
                 file_library_id:
                   type: string
+                  minLength: 1
+                  pattern: \S
                 binding_generation:
                   type: string
+                  minLength: 1
+                  pattern: ^[1-9][0-9]*$
                 lease_epoch:
                   type: string
+                  minLength: 1
+                  pattern: \S
       responses:
         "200":
           description: Holder release accepted

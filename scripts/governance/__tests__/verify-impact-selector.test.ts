@@ -757,6 +757,52 @@ describe('verify impact selector', () => {
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
   });
 
+  it('maps runner support API projection package test to the runner contract owner surface', () => {
+    const changedFile = 'packages/agent-runner-contract/src/support-api-projections.test.ts';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]);
+  });
+
+  it('keeps task route handler runtime changes on runner context credential real review', () => {
+    const changedFile = 'packages/api-entry-node/src/task-route-handler.ts';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]);
+  });
+
   it('maps backend-real runner config defaults without leaving source paths unmapped', () => {
     const changedFiles = [
       'infra/runtime/presets.env',
@@ -766,6 +812,7 @@ describe('verify impact selector', () => {
       'scripts/integration-keycloak-init.test.ts',
       'secrets/e2e-openai-compatible.demo.json',
       'e2e/integration-real-helpers.ts',
+      'scripts/integration-real-helpers.test.ts',
       'e2e/integration-agent-task-isolation.spec.ts',
       'e2e/integration-context-store-isolation.spec.ts',
     ];
@@ -783,6 +830,15 @@ describe('verify impact selector', () => {
         broadImpact: true,
       })),
     ));
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'scripts/integration-real-helpers.test.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]));
   });
 
   it('maps endpoint provider and model catalog paths to focused catalog verification without unmapped impact', () => {
@@ -819,6 +875,66 @@ describe('verify impact selector', () => {
         broadImpact: false,
       })),
     ));
+    expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
+  });
+
+  it('maps OpenAPI specs and runner support projection checker tooling to runner owner review', () => {
+    const changedFiles = [
+      'docs/contracts/specs/openapi.json',
+      'docs/contracts/specs/openapi.yaml',
+      'scripts/contracts/check-runner-support-api-projections.ts',
+      'scripts/contracts/check-runner-support-api-projections.test.ts',
+      'scripts/contracts/runner-support-api-projection-contract.ts',
+    ];
+    const plan = buildVerificationPlan({ changedFiles });
+
+    expect(plan.requiredLevels).toContain('V3');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:fast');
+    expect(plan.recommendedCommands).toContain('npm run test:agent-task:runner:backend-real');
+    expect(plan.recommendedCommands).toContain('npm run verify:real');
+    expect(plan.affectedSurfaces).toEqual(['runner/context-store/credentials']);
+    expect(plan.affectedSurfaces.join('\n')).not.toMatch(/^visual/m);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'docs/contracts/specs/openapi.json',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'docs/contracts/specs/openapi.yaml',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-runner-support-api-projections.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/check-runner-support-api-projections.test.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+      expect.objectContaining({
+        changedFile: 'scripts/contracts/runner-support-api-projection-contract.ts',
+        matchedRules: ['runner_context_credential'],
+        affectedSurfaces: ['runner/context-store/credentials'],
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]));
     expect(defaultGateProfileForVerificationPlan(plan)).toBeNull();
   });
 
@@ -1273,6 +1389,10 @@ export * from './artifact.js';
         prepack: 'npm run build',
         typecheck: 'tsc -p tsconfig.json --noEmit',
       },
+      devDependencies: {
+        '@types/node': '^22.0.0',
+        typescript: '^5.9.3',
+      },
     };
 
     withPackageFileGitFixture(
@@ -1294,6 +1414,7 @@ export * from './artifact.js';
         expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
         expect(plan.affectedSurfaces).toEqual(['package/topology']);
         expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+        expect(plan.riskSummary.manualReviewRequired).toBe(true);
         expect(plan.changedFileImpacts).toEqual([
           expect.objectContaining({
             changedFile: 'packages/agent-runner-contract/package.json',
@@ -2590,6 +2711,63 @@ export default defineConfig({
     });
   });
 
+  it('maps package.json runner support projection checker script insertion as safe governance tooling', () => {
+    const buildFirst = 'npm run build -w @mbos/agent-runner-contract';
+    const baseContractsCheck = [
+      'npm run contracts:check-agent-runner-contract-artifact',
+      'npm run contracts:check-runner-contract-sync',
+      'npm run story-generated-spec:check',
+    ].join(' && ');
+    const currentContractsCheck = [
+      'npm run contracts:check-agent-runner-contract-artifact',
+      'npm run contracts:check-runner-contract-sync',
+      'npm run contracts:check-runner-support-api-projections',
+      'npm run story-generated-spec:check',
+    ].join(' && ');
+    const basePackageJson = {
+      scripts: {
+        'contracts:check-agent-runner-contract-artifact': `${buildFirst} && tsx scripts/contracts/check-agent-runner-contract-artifact.ts`,
+        'contracts:check-runner-contract-sync': `${buildFirst} && tsx scripts/contracts/check-runner-contract-sync.ts`,
+        'contracts:check': baseContractsCheck,
+      },
+    };
+    const currentPackageJson = {
+      scripts: {
+        ...basePackageJson.scripts,
+        'contracts:check-runner-support-api-projections': `${buildFirst} && tsx scripts/contracts/check-runner-support-api-projections.ts`,
+        'contracts:check': currentContractsCheck,
+      },
+    };
+
+    withPackageJsonGitFixture(basePackageJson, currentPackageJson, ({ catalog }) => {
+      const plan = buildVerificationPlan({
+        changedFiles: ['package.json'],
+        catalog,
+      });
+
+      expect(plan.requiredLevels).toEqual(['V0', 'V1']);
+      expect(plan.recommendedCommands).toEqual([
+        'npm run verify:quick',
+        'npm run verify:default',
+      ]);
+      expect(plan.recommendedCommands.join('\n')).not.toMatch(/visual|backend-real|verify:real/);
+      expect(plan.affectedSurfaces).toEqual(['engineering-governance-tooling']);
+      expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+      expect(plan.storyCards).toEqual([]);
+      expect(plan.riskSummary.broadImpact).toBe(false);
+      expect(plan.riskSummary.manualReviewRequired).toBe(false);
+      expect(plan.changedFileImpacts).toEqual([
+        expect.objectContaining({
+          changedFile: 'package.json',
+          matchedRules: ['governance_tooling'],
+          affectedSurfaces: ['engineering-governance-tooling'],
+          storyIds: [],
+          broadImpact: false,
+        }),
+      ]);
+    });
+  });
+
   it('keeps runner contract artifact package.json scripts fail-closed when commands are not exact', () => {
     const basePackageJson = {
       scripts: {
@@ -3350,11 +3528,17 @@ export default defineConfig({
   it('maps backend-real gate diagnostics to backend-real owner review without unmapped or visual impact', () => {
     const changedFiles = [
       'scripts/backend-real-bootstrap.sh',
+      'scripts/backend-real-full-gate.test.ts',
       'scripts/backend-real-run.sh',
       'scripts/backend-real-run.test.ts',
       'scripts/agent-task-real-smoke-gate.sh',
       'scripts/run-internal-agent-task-real-gate.sh',
+      'scripts/run-file-library-real-gate.sh',
       'scripts/internal-backend-real-gate-runtime.test.ts',
+      'scripts/lib/afscp-local-runtime.sh',
+      'scripts/local-manual/internal-common.sh',
+      'scripts/local-manual/internal-handoff.test.ts',
+      'scripts/local-manual/internal-reset.sh',
     ];
     const plan = buildVerificationPlan({ changedFiles });
     const internalAgentTaskGateImpact = plan.changedFileImpacts.find(

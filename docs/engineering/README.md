@@ -2,34 +2,24 @@
 
 <!-- markdownlint-disable MD013 -->
 
-This directory holds engineering-side guidance, active implementation rationale, and closure records that support implementation and maintenance. It does not define product IA or UI style guidance.
+This directory holds engineering-side guidance that supports implementation and maintenance. Product scope, IA, and UI style truth live elsewhere.
 
-## Current vs P0 Handoff Boundary
+## Deployment Boundary
 
-Current Docker-only local-kind unified deploy is the current diagnostic baseline /
-过渡期专项诊断基线, not the product mainline or deployment truth. Runner runtime
-migration remains gated by the P4 contract artifact and P5 consumer conformance
-skeleton gate before runtime/image/adoption.
-`external_declared` in P0 is schema, fixture, validator, and evidence boundary
-only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
-handoff support.
+This index is not a deployment truth source; canonical deploy details stay in
+the unified deploy contract and release-kit split plan. Current Docker-only /
+local-kind unified deploy is only a pre-GA focused diagnostic baseline, not
+long-term deployment truth. In P0, `external_declared` is only the schema,
+fixture, validator, and evidence boundary; it does not mean P2/P3 real
+Kubernetes, cloud, or airgap handoff is complete. AgentSmith does not give a
+release verdict, and the release-kit repo owns online/airgap deployment
+verdict through its own gates and evidence; kind/local-kind remains local
+diagnostic support only.
 
-Current guidance and implementation plans:
+Current active plan:
 
-- [Current Engineering Governance Model](../current-engineering-governance-model.md) - current engineering governance truth; keep aligned with machine-readable manifests/contracts
-- [Agent Task File Library HOME Runtime Implementation Plan](./agent-task-persistent-home-runtime-plan.md) - `current_implementation_plan`; current development plan for making a file-library-stable HOME root the Agent task HOME, enforcing durable one-file-library-per-undeleted-task binding, and keeping artifacts scoped to `workspace/.artifacts`
-- [AFSCP File Library Runtime Rearchitecture Plan](./afscp-file-library-runtime-rearchitecture-plan.md) - `current_milestone_plan`; current plan for AFSCP shared-volume repos, save points, restore, templates, and workload mounts with AgentSmith as product authority
-- [文件库版本管理下一步收敛改进计划 v1](./file-library-version-management-followup-plan-v1.md) - `handoff_ready`; next-step plan for stabilizing save point/restore/template UX, AgentSmith/AFSCP/JVS state contracts, and focused user-story evidence without expanding scope
-- [Agent Task Terminal Runtime Recovery Engineering Guidance](./agent-task-terminal-runtime-recovery-guidance.md) - `current_engineering_guidance`; active guidance and implementation rationale for terminal runtime recovery, separating browser disconnect, runner transport recovery, closing tombstones, and typed terminal failures
-- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - current deploy implementation plan for local-kind and existing-cluster profiles
-- [Governance Lean Closure Plan v1](./governance-lean-closure-plan-v1.md) - `team_reviewed_handoff_ready`; convergent plan for reducing repeated governance work, clarifying clean entrypoints, and avoiding new governance lines
-- [Governance Release Flow Simplification Plan v3](./governance-release-flow-simplification-plan-v3.md) - `team_reviewed_handoff_ready`; low-mind follow-up plan for reducing repeated release/bootstrap work while preserving release evidence authority
-- [前端技术栈与国际化策略-v1](./前端技术栈与国际化策略-v1.md)
+- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - active pre-GA plan for the release-kit / runner repo split and AgentSmith product-side boundary.
 
-Approved split plans:
+Current next blocker:
 
-- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - `p0_machine_guards_passed_p1_1_ci_artifact_producer_passed`; P0 machine guards passed and P1.1 CI artifact producer passed; full P1 not claimed; 下一步先收紧 pre-GA 已移除输入和 evidence 的 fail-fast 边界，再扩展 deploy/airgap 或迁 runner runtime
-
-Decision-required analyses:
-
-- [Internal Agent Terminal Pod Lifecycle Analysis v1](./internal-agent-terminal-pod-lifecycle-analysis-v1.md) - `decision_required_analysis`; current implementation review and options, not a current implementation plan
+- Close AgentSmith runner support API / projection contract consistency with runner/context/credential owner evidence before treating runner runtime/backend-real readiness as ready to hand to sibling repos.

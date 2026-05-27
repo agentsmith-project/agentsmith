@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type http from 'node:http';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import {
+  CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
+  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
+  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
+} from '@mbos/agent-runner-contract';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { createUserExternalConnection } from './user-external-connections-store.js';
 import { handleContextRoute } from './context-route-handler.js';
@@ -21,6 +26,32 @@ type TestResponse = {
   ended: boolean;
   body?: unknown;
 };
+
+function expectJsonObject(value: unknown): Record<string, unknown> {
+  expect(typeof value).toBe('object');
+  expect(value).not.toBeNull();
+  expect(Array.isArray(value)).toBe(false);
+  return value as Record<string, unknown>;
+}
+
+function expectRequiredKeys(value: Record<string, unknown>, required: readonly string[]): void {
+  for (const key of required) {
+    expect(value).toHaveProperty(key);
+  }
+}
+
+function expectNoRejectedSupportProjectionSemantics(value: unknown): void {
+  const serialized = JSON.stringify(value);
+  for (const rejected of RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS) {
+    expect(serialized).not.toContain(rejected);
+  }
+}
+
+function parseProjectedJsonContent(responseBody: Record<string, unknown>): Record<string, unknown> {
+  expect(typeof responseBody.content).toBe('string');
+  const parsed = JSON.parse(responseBody.content as string) as unknown;
+  return expectJsonObject(parsed);
+}
 
 async function executeContextRoute(params: {
   deps: NodeApiDeps;
@@ -487,10 +518,21 @@ describe('context-route-handler', () => {
       scope: 'member',
       key: 'managed_credentials.feishu',
     }));
-    const content = JSON.parse((response.body as { content: string }).content);
+    const responseBody = expectJsonObject(response.body);
+    expectRequiredKeys(responseBody, CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA.required);
+
+    const content = parseProjectedJsonContent(responseBody);
+    expectRequiredKeys(content, MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required);
+    expect(Object.keys(content).sort()).toEqual(
+      [...MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required].sort(),
+    );
+    const fields = expectJsonObject(content.fields);
+    const provenance = expectJsonObject(content.provenance);
     expect(content.display_name).toBe('workspace feishu');
     expect(content.status).toBe('reauth_required');
-    expect(content.fields.access_token).toBe('workspace_token');
+    expect(fields.access_token).toBe('workspace_token');
+    expect(provenance.source).toBe('workspace_active_connection');
+    expectNoRejectedSupportProjectionSemantics({ response: response.body, content });
   });
 
   it('falls back to the global active managed credential projection when the workspace has no match', async () => {

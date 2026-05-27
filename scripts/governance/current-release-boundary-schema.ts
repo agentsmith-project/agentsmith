@@ -147,7 +147,7 @@ export const CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES = [
   'target_cluster' | 'substrate_source' | 'distribution'
 >[];
 
-// Formal pre-GA handoff: only profiles with current release-kit evidence owners and executable mappings.
+// Formal pre-GA handoff: real Kubernetes/cloud targets. kind_rehearsal remains local/dev only.
 export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
   {
     target_cluster: 'existing_kubernetes',
@@ -166,6 +166,21 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
   },
   {
     target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'online',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'kit_installed',
+      tls: 'required',
+      storage_class: 'kit_installed',
+      registry: 'ghcr_or_operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'existing_kubernetes',
     substrate_source: 'external_declared',
     distribution: 'airgap',
     required: false,
@@ -175,6 +190,21 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
       ingress: 'operator_provided',
       tls: 'required',
       storage_class: 'operator_provided',
+      registry: 'operator_mirror',
+      pull_secret_ref: 'operator_secret_ref',
+    },
+  },
+  {
+    target_cluster: 'existing_kubernetes',
+    substrate_source: 'kit_installed',
+    distribution: 'airgap',
+    required: false,
+    prerequisites: {
+      namespace: 'agentsmith',
+      rbac: 'namespace_admin',
+      ingress: 'kit_installed',
+      tls: 'required',
+      storage_class: 'kit_installed',
       registry: 'operator_mirror',
       pull_secret_ref: 'operator_secret_ref',
     },
@@ -3036,6 +3066,12 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
           reason: 'target profile combination is not allowed by the release boundary matrix.',
         });
       }
+      if (targetCluster === 'kind_rehearsal') {
+        failures.push({
+          path: `${path}.target_cluster`,
+          reason: 'kind_rehearsal is a local/dev option and must not be declared as a release contract handoff target.',
+        });
+      }
     }
 
     if (hasOwn(entry, 'support_level')) {
@@ -3054,6 +3090,22 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
 
     validatePrerequisites(entry.prerequisites, `${path}.prerequisites`, failures);
   });
+
+  const requiredProfileKeys = CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES.map((profile) => modeKey(
+    profile.target_cluster,
+    profile.substrate_source,
+    profile.distribution,
+  ));
+  for (const requiredProfileKey of requiredProfileKeys) {
+    if (seenProfileKeys.has(requiredProfileKey)) {
+      continue;
+    }
+    failures.push({
+      path: 'target_profiles',
+      reason:
+        `target_profiles must include ${requiredProfileKey} for the online/airgap x external_declared/kit_installed handoff matrix.`,
+    });
+  }
 }
 
 function validatePrerequisites(

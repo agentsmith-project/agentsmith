@@ -247,6 +247,7 @@ ensure_internal_afscp_local_runtime() {
   (
     export INTERNAL_REAL_DIR
     export ENV_FILE=/dev/null
+    export INTERNAL_AGENT_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
@@ -294,6 +295,7 @@ stop_internal_afscp_local_runtime() {
   (
     export INTERNAL_REAL_DIR
     export ENV_FILE=/dev/null
+    export INTERNAL_AGENT_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
@@ -323,6 +325,7 @@ reset_internal_afscp_local_runtime() {
   (
     export INTERNAL_REAL_DIR
     export ENV_FILE=/dev/null
+    export INTERNAL_AGENT_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
@@ -364,7 +367,7 @@ reset_internal_afscp_local_runtime() {
     export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}"
     # shellcheck disable=SC1091
     source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
-    reset_owned_afscp_local_runtime_data
+    reset_owned_afscp_local_runtime_for_gate
   )
 }
 

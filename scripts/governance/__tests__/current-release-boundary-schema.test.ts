@@ -190,6 +190,7 @@ describe('current release boundary schema', () => {
     expect(validateAgentSmithReleaseContract(readFixture('release-contract.valid.json')).ok).toBe(true);
     expect(validateSubstrateConnectionTruth(readFixture('substrate-connection.external-declared.valid.json')).ok)
       .toBe(true);
+    expect(readFixture('substrate-connection.kit-installed.valid.json').target_cluster).toBe('existing_kubernetes');
     expect(validateSubstrateConnectionTruth(readFixture('substrate-connection.kit-installed.valid.json')).ok)
       .toBe(true);
 
@@ -357,7 +358,7 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('declares deployment target profiles as the current evidence-supported canonical subset', () => {
+  it('declares deployment target profiles as the formal online/airgap substrate handoff matrix', () => {
     const contract = readFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as CurrentDeploymentTargetProfile[];
     const profileKeys = profiles.map(targetProfileKey);
@@ -366,20 +367,26 @@ describe('current release boundary schema', () => {
     expect(profiles.every((profile) => profile.required === false)).toBe(true);
     expect(profileKeys).toEqual([
       'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|kit_installed|online',
       'existing_kubernetes|external_declared|airgap',
+      'existing_kubernetes|kit_installed|airgap',
     ]);
     expect(profileKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(profileKeys).not.toContain('kind_rehearsal|kit_installed|online');
     expect(profileKeys).not.toEqual(canonicalCandidateKeys);
     expect(profiles).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
   });
 
-  it('allows release contracts to hand off a canonical target profile subset', () => {
+  it('rejects release contracts that omit the kit_installed handoff path', () => {
     const contract = cloneFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as Record<string, unknown>[];
-    contract.target_profiles = profiles.slice(0, 1);
+    contract.target_profiles = profiles.filter((profile) => profile.substrate_source !== 'kit_installed');
     rehashReleaseContract(contract);
 
-    expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
+    expectInvalid(
+      validateAgentSmithReleaseContract(contract),
+      'target_profiles must include existing_kubernetes|kit_installed|online for the online/airgap x external_declared/kit_installed handoff matrix',
+    );
   });
 
   it('declares the release boundary truth matrix and release kit evidence mapping against current writers', () => {
@@ -1819,6 +1826,7 @@ describe('current release boundary schema', () => {
   });
 
   it.each([
+    ['kind_rehearsal', 'kit_installed', 'online', 'kind_rehearsal is a local/dev option and must not be declared as a release contract handoff target'],
     ['kind_rehearsal', 'kit_installed', 'airgap', 'target profile combination is not allowed by the release boundary matrix'],
     ['kind_rehearsal', 'external_declared', 'online', 'target profile combination is not allowed by the release boundary matrix'],
     ['kind_rehearsal', 'external_declared', 'airgap', 'target profile combination is not allowed by the release boundary matrix'],

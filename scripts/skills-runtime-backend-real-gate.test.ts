@@ -65,6 +65,10 @@ async function readPlaywrightTitles(specFile: string): Promise<string[]> {
   return Array.from(source.matchAll(PLAYWRIGHT_TEST_TITLE_PATTERN), (match) => match[2]);
 }
 
+function expandGrepLabels(label: string): string[] {
+  return label.split('|').map((entry) => entry.trim()).filter(Boolean);
+}
+
 describe('skills runtime backend-real gate', () => {
   it('delegates managed Agent Task coverage to the internal sandbox backend-real wrapper', async () => {
     const source = await readFile(path.resolve(process.cwd(), GATE_SCRIPT_PATH), 'utf-8');
@@ -90,10 +94,12 @@ describe('skills runtime backend-real gate', () => {
       }
 
       const titles = titleCache.get(entry.specFile) ?? [];
-      expect(
-        titles,
-        `${GATE_SCRIPT_PATH}:${entry.lineNumber} grep label drifted from ${entry.specFile}\nAvailable titles:\n${titles.join('\n')}`,
-      ).toContain(entry.label);
+      for (const label of expandGrepLabels(entry.label)) {
+        expect(
+          titles,
+          `${GATE_SCRIPT_PATH}:${entry.lineNumber} grep label drifted from ${entry.specFile}\nAvailable titles:\n${titles.join('\n')}`,
+        ).toContain(label);
+      }
     }
   });
 });

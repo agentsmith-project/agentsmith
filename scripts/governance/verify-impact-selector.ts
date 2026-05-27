@@ -425,7 +425,9 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^e2e\/integration-agent-task-terminal/,
   /^e2e\/integration-(?:agent-task-isolation|agent-member-permissions|context-store-isolation|governance-member-workflow-continuity|internal-sandbox-reclaim|internal-task-isolation|invite-first-effective-work|membership-chat-isolation|resource-policy-observable-effect)\.spec\.ts$/,
   /^e2e\/integration-real-helpers\.ts$/,
-  /^packages\/agent-runner-contract\/src\/(?:contract-schema|protocol|runner-spec)(?:\.test)?\.ts$/,
+  /^scripts\/integration-real-helpers\.test\.ts$/,
+  /^docs\/contracts\/specs\/openapi\.(?:json|ya?ml)$/,
+  /^packages\/agent-runner-contract\/src\/(?:contract-schema|protocol|runner-spec|support-api-projections)(?:\.test)?\.ts$/,
   /^packages\/agent-runner\/src\//,
   /^packages\/agent-task-runner\/src\//,
   /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
@@ -433,6 +435,7 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^packages\/api-entry-node\/src\/index\.test\.ts$/,
   /^packages\/api-entry-node\/src\/__integration__\/notebook-task-(?:artifacts|events)\.integration\.test\.ts$/,
   /^packages\/api-entry-node\/src\/__integration__\/notebook-tasks\.integration\.test\.ts$/,
+  /^scripts\/contracts\/(?:check-runner-support-api-projections(?:\.test)?|runner-support-api-projection-contract)\.ts$/,
   /^infra\/runner\/Dockerfile\.agent-task-runner(?:-base)?$/,
   /^src\/components\/context\//,
   /^src\/components\/credentials\//,
@@ -882,6 +885,10 @@ const EXPECTED_RUNNER_CONTRACT_PACKAGE_JSON: JsonObject = {
     prepack: 'npm run build',
     typecheck: 'tsc -p tsconfig.json --noEmit',
   },
+  devDependencies: {
+    '@types/node': '^22.0.0',
+    typescript: '^5.9.3',
+  },
 };
 
 const EXPECTED_RUNNER_CONTRACT_TSCONFIG_JSON: JsonObject = {
@@ -1264,6 +1271,7 @@ const SAFE_EXACT_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<strin
   'contracts:check-repo-split-bootstrap': buildFirstContractCommand('scripts/contracts/check-repo-split-bootstrap.ts'),
   'contracts:check-agent-runner-contract-artifact': buildFirstContractCommand('scripts/contracts/check-agent-runner-contract-artifact.ts'),
   'contracts:check-runner-contract-sync': buildFirstContractCommand('scripts/contracts/check-runner-contract-sync.ts'),
+  'contracts:check-runner-support-api-projections': buildFirstContractCommand('scripts/contracts/check-runner-support-api-projections.ts'),
 };
 const LEGACY_SAFE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Record<string, readonly string[]>>> = {
   'contracts:check-release-boundary': [
@@ -1296,6 +1304,7 @@ const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Pa
 };
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';
 const SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT = 'npm run contracts:check-agent-runner-contract-artifact';
+const SAFE_CONTRACTS_CHECK_RUNNER_SUPPORT_API_PROJECTIONS_SEGMENT = 'npm run contracts:check-runner-support-api-projections';
 const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
   'npm run contracts:check-limit-naming',
   'npm run contracts:check-current-workflows',
@@ -1315,6 +1324,7 @@ const SAFE_CONTRACTS_CHECK_SEGMENTS = new Set<string>([
   'npm run contracts:check-asyncapi-sync',
   SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT,
   'npm run contracts:check-runner-contract-sync',
+  SAFE_CONTRACTS_CHECK_RUNNER_SUPPORT_API_PROJECTIONS_SEGMENT,
   'npm run story-generated-spec:check',
   'npm run contracts:check-engineering-governance',
   'tsx scripts/contracts/check-next-dist-types.ts',
@@ -1385,6 +1395,7 @@ function isSafeContractsCheckInsertion(
   return [
     SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT,
     SAFE_CONTRACTS_CHECK_RUNNER_CONTRACT_ARTIFACT_SEGMENT,
+    SAFE_CONTRACTS_CHECK_RUNNER_SUPPORT_API_PROJECTIONS_SEGMENT,
   ].some((segment) => isSafeContractsCheckSegmentInsertion(previousCommand, currentCommand, segment));
 }
 
@@ -1605,13 +1616,18 @@ function isBackendRealDiagnosticToolingPath(filePath: string): boolean {
   return [
     /^infra\/runtime\/presets\.env$/,
     /^scripts\/backend-real-bootstrap\.sh$/,
+    /^scripts\/backend-real-full-gate\.test\.ts$/,
     /^scripts\/backend-real-run(?:\.test)?\.(?:sh|ts)$/,
     /^scripts\/integration-keycloak-init(?:\.test)?\.ts$/,
     /^scripts\/agent-task-real-smoke-gate\.sh$/,
     /^scripts\/run-internal-agent-task-real-gate\.sh$/,
+    /^scripts\/run-file-library-real-gate\.sh$/,
     /^scripts\/internal-backend-real-gate-runtime\.test\.ts$/,
+    /^scripts\/lib\/afscp-local-runtime\.sh$/,
     /^scripts\/lib\/backend-real-env\.sh$/,
     /^scripts\/lib\/bootstrap-common\.sh$/,
+    /^scripts\/local-manual\/internal-(?:common|reset)\.sh$/,
+    /^scripts\/local-manual\/internal-handoff\.test\.ts$/,
     /^secrets\/e2e-openai-compatible\.demo\.json$/,
   ].some((pattern) => pattern.test(filePath));
 }

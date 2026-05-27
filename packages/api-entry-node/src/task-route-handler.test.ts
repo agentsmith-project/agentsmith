@@ -6,7 +6,10 @@ import { PassThrough, Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { assertTaskExecutionContext } from '@mbos/agent-runner-contract';
+import {
+  assertTaskExecutionContext,
+  TASK_WORKSPACE_ACCESS_JSON_SCHEMA,
+} from '@mbos/agent-runner-contract';
 import {
   AgentTaskDeleteBlockedErrorSchema,
   AgentTaskFileLibraryInUseErrorSchema,
@@ -569,7 +572,16 @@ describe('task-route-handler workspace access', () => {
     })).resolves.toBe(true);
 
     const payload = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    const binding = payload.task_home_binding as Record<string, unknown>;
+    const bindingSchema = TASK_WORKSPACE_ACCESS_JSON_SCHEMA.properties
+      .task_home_binding as { required?: readonly string[] };
     expect(json.mock.calls[0]?.[1]).toBe(200);
+    expect(Object.keys(payload).sort()).toEqual(
+      [...TASK_WORKSPACE_ACCESS_JSON_SCHEMA.required].sort(),
+    );
+    expect(Object.keys(binding).sort()).toEqual(
+      [...(bindingSchema.required ?? [])].sort(),
+    );
     expect(payload).toMatchObject({
       task_id: 'task_workspace_access_home',
       file_library_id: 'lib_workspace_access_home',
@@ -598,6 +610,271 @@ describe('task-route-handler workspace access', () => {
     });
     expect(payload).not.toHaveProperty('container_workspace_path');
     expect(JSON.stringify(payload)).not.toMatch(/metadata_url|storage_bucket_url|recommended_mount|filesystem_name|juicefs/i);
+  });
+
+  async function createWorkspaceAccessReleaseFixture(testId: string): Promise<{
+    deps: ReturnType<typeof createDefaultNodeApiDeps>;
+    taskId: string;
+    internalTicket: Awaited<ReturnType<typeof resolveInternalTicket>>;
+    releaseBody: {
+      holder_id: string;
+      file_library_id: string;
+      binding_generation: string;
+      lease_epoch: string;
+    };
+  }> {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const taskId = `task_${testId}`;
+    const libraryId = `lib_${testId}`;
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: `Workspace Access ${testId}`,
+      now,
+    }));
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: `Workspace access ${testId}`,
+      task_home_segment: taskId,
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: `Workspace Access ${testId}`,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const accessJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccess',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: accessJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(accessJson.mock.calls[0]?.[1]).toBe(200);
+
+    const accessPayload = accessJson.mock.calls[0]?.[2] as {
+      file_library_id: string;
+      task_home_binding: {
+        holder: {
+          holder_id: string;
+          binding_generation: string;
+          lease_epoch: string;
+        };
+      };
+    };
+    const issuedTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_1',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      payload: {
+        endpoint_id: `ep_${testId}`,
+        task_id: taskId,
+        runner_session_id: taskId,
+        agent_runner_id: `agent_${testId}`,
+      },
+      maxUses: 1,
+    });
+
+    return {
+      deps,
+      taskId,
+      internalTicket: await resolveInternalTicket(deps.cache, issuedTicket.ticket, 'agent_execution'),
+      releaseBody: {
+        holder_id: accessPayload.task_home_binding.holder.holder_id,
+        file_library_id: accessPayload.file_library_id,
+        binding_generation: accessPayload.task_home_binding.holder.binding_generation,
+        lease_epoch: accessPayload.task_home_binding.holder.lease_epoch,
+      },
+    };
+  }
+
+  async function expectWorkspaceAccessReleaseBodyRejected(input: {
+    testId: string;
+    body: (releaseBody: {
+      holder_id: string;
+      file_library_id: string;
+      binding_generation: string;
+      lease_epoch: string;
+    }) => Record<string, unknown>;
+    field: string;
+  }): Promise<void> {
+    const { deps, taskId, internalTicket, releaseBody } =
+      await createWorkspaceAccessReleaseFixture(input.testId);
+    const releaseJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccessRelease',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      internalTicket,
+      json: releaseJson,
+      readBody: vi.fn(async () => input.body(releaseBody)),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      expect.objectContaining({
+        error_code: 'VALIDATION_ERROR',
+        message: 'invalid_workspace_access_release_request',
+        field: input.field,
+      }),
+    );
+  }
+
+  it('rejects workspace access release binding_generation with a leading zero', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const taskId = 'task_workspace_access_release_generation';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: 'lib_workspace_access_release_generation',
+      name: 'Workspace Access Release Generation',
+      now,
+    }));
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Workspace access release generation task',
+      task_home_segment: taskId,
+      workspace_file_library_id: 'lib_workspace_access_release_generation',
+      workspace_file_library_name: 'Workspace Access Release Generation',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const accessJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccess',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: accessJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    expect(accessJson.mock.calls[0]?.[1]).toBe(200);
+    const accessPayload = accessJson.mock.calls[0]?.[2] as {
+      file_library_id: string;
+      task_home_binding: {
+        holder: {
+          holder_id: string;
+          lease_epoch: string;
+        };
+      };
+    };
+
+    const issuedTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_1',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      payload: {
+        endpoint_id: 'ep_release_generation',
+        task_id: taskId,
+        runner_session_id: taskId,
+        agent_runner_id: 'agent_release_generation',
+      },
+      maxUses: 1,
+    });
+    const internalTicket = await resolveInternalTicket(deps.cache, issuedTicket.ticket, 'agent_execution');
+    const releaseJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskWorkspaceAccessRelease',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      internalTicket,
+      json: releaseJson,
+      readBody: vi.fn(async () => ({
+        holder_id: accessPayload.task_home_binding.holder.holder_id,
+        file_library_id: accessPayload.file_library_id,
+        binding_generation: '01',
+        lease_epoch: accessPayload.task_home_binding.holder.lease_epoch,
+      })),
+    })).resolves.toBe(true);
+
+    expect(releaseJson).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      expect.objectContaining({
+        error_code: 'VALIDATION_ERROR',
+        message: 'invalid_workspace_access_release_request',
+        field: 'binding_generation',
+      }),
+    );
+  });
+
+  it('rejects workspace access release bodies with unknown fields', async () => {
+    await expectWorkspaceAccessReleaseBodyRejected({
+      testId: 'workspace_access_release_unknown_field',
+      body: (releaseBody) => ({
+        ...releaseBody,
+        unexpected_field: true,
+      }),
+      field: 'unexpected_field',
+    });
+  });
+
+  it('rejects workspace access release binding_generation wrapped in whitespace', async () => {
+    await expectWorkspaceAccessReleaseBodyRejected({
+      testId: 'workspace_access_release_whitespace_generation',
+      body: (releaseBody) => ({
+        ...releaseBody,
+        binding_generation: ` ${releaseBody.binding_generation} `,
+      }),
+      field: 'binding_generation',
+    });
+  });
+
+  it('rejects producer-only workspace access holder fields in release bodies', async () => {
+    await expectWorkspaceAccessReleaseBodyRejected({
+      testId: 'workspace_access_release_producer_only',
+      body: (releaseBody) => ({
+        ...releaseBody,
+        holder_kind: 'runner_workspace',
+      }),
+      field: 'holder_kind',
+    });
   });
 
   it('revalidates the task HOME binding after holder acquire and releases the holder on a late release fence', async () => {

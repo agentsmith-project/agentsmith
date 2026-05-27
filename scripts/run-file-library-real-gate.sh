@@ -219,7 +219,7 @@ ensure_file_library_afscp_local_runtime() {
     source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
     stop_afscp_local_runtime >/dev/null 2>&1 || true
     export AFSCP_ENVIRONMENT=local-real
-    reset_owned_afscp_local_runtime_data
+    reset_owned_afscp_local_runtime_for_gate
     ensure_afscp_local_runtime
   )
 }

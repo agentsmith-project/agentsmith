@@ -16,6 +16,21 @@
   },
   {
     "target_cluster": "existing_kubernetes",
+    "substrate_source": "kit_installed",
+    "distribution": "online",
+    "required": false,
+    "prerequisites": {
+      "namespace": "agentsmith",
+      "rbac": "namespace_admin",
+      "ingress": "kit_installed",
+      "tls": "required",
+      "storage_class": "kit_installed",
+      "registry": "ghcr_or_operator_mirror",
+      "pull_secret_ref": "operator_secret_ref"
+    }
+  },
+  {
+    "target_cluster": "existing_kubernetes",
     "substrate_source": "external_declared",
     "distribution": "airgap",
     "required": false,
@@ -25,6 +40,21 @@
       "ingress": "operator_provided",
       "tls": "required",
       "storage_class": "operator_provided",
+      "registry": "operator_mirror",
+      "pull_secret_ref": "operator_secret_ref"
+    }
+  },
+  {
+    "target_cluster": "existing_kubernetes",
+    "substrate_source": "kit_installed",
+    "distribution": "airgap",
+    "required": false,
+    "prerequisites": {
+      "namespace": "agentsmith",
+      "rbac": "namespace_admin",
+      "ingress": "kit_installed",
+      "tls": "required",
+      "storage_class": "kit_installed",
       "registry": "operator_mirror",
       "pull_secret_ref": "operator_secret_ref"
     }

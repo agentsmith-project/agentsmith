@@ -97,6 +97,20 @@ function refreshArtifactProvenanceDigests(fixture: Record<string, unknown>): voi
   artifactProvenance.artifact_sha256 = digest;
 }
 
+function refreshReleaseContractProvenanceDigests(fixture: Record<string, unknown>): void {
+  const subject = structuredClone(fixture);
+  delete subject.artifact_provenance;
+
+  const subjectDigest = sha256Digest(canonicalReleaseBoundaryJson(subject));
+  const artifactProvenance = getRecordProperty(fixture, 'artifact_provenance');
+  artifactProvenance.subject_sha256 = subjectDigest;
+
+  const projection = structuredClone(fixture);
+  const projectionProvenance = getRecordProperty(projection, 'artifact_provenance');
+  delete projectionProvenance.artifact_sha256;
+  artifactProvenance.artifact_sha256 = sha256Digest(canonicalReleaseBoundaryJson(projection));
+}
+
 function writeFixtureRoot(): string {
   const root = mkdtempSync(path.join(tmpdir(), 'release-boundary-contract-'));
   fixtureRoots.push(root);
@@ -132,7 +146,7 @@ describe('check-release-boundary-contract', () => {
     ).not.toThrow();
   });
 
-  it('accepts handoff target profile JSON as a canonical subset instead of the full candidate matrix', () => {
+  it('accepts handoff target profile JSON as the formal online/airgap substrate matrix', () => {
     const root = writeFixtureRoot();
     const handoffFixture = JSON.parse(
       readFileSync(path.join(root, 'scripts', 'governance', 'release-contract-target-profiles.json'), 'utf8'),
@@ -144,10 +158,65 @@ describe('check-release-boundary-contract', () => {
     expect(handoffFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
     expect(handoffKeys).toEqual([
       'existing_kubernetes|external_declared|online',
+      'existing_kubernetes|kit_installed|online',
       'existing_kubernetes|external_declared|airgap',
+      'existing_kubernetes|kit_installed|airgap',
     ]);
     expect(handoffKeys.every((key) => canonicalCandidateKeys.includes(key))).toBe(true);
+    expect(handoffKeys).not.toContain('kind_rehearsal|kit_installed|online');
     expect(handoffKeys).not.toEqual(canonicalCandidateKeys);
+  });
+
+  it('reports release contracts missing the kit_installed handoff path', () => {
+    const root = writeFixtureRoot();
+    const fixturePath = path.join(
+      root,
+      'scripts',
+      'governance',
+      '__fixtures__',
+      'release-boundary',
+      'release-contract.valid.json',
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>;
+    fixture.target_profiles = (fixture.target_profiles as Record<string, unknown>[])
+      .filter((profile) => profile.substrate_source !== 'kit_installed');
+    refreshReleaseContractProvenanceDigests(fixture);
+    writeFileSync(fixturePath, JSON.stringify(fixture, null, 2), 'utf8');
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+          message: expect.stringContaining('existing_kubernetes|kit_installed|online'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports handoff target profile JSON missing the online/airgap substrate matrix', () => {
+    const root = writeFixtureRoot();
+    const fixturePath = path.join(root, 'scripts', 'governance', 'release-contract-target-profiles.json');
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<string, unknown>[];
+    writeFileSync(
+      fixturePath,
+      JSON.stringify(fixture.filter((profile) => profile.substrate_source !== 'kit_installed'), null, 2),
+      'utf8',
+    );
+
+    const result = checkReleaseBoundaryContract({ rootDir: root });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'scripts/governance/release-contract-target-profiles.json',
+          message: expect.stringContaining('existing_kubernetes|kit_installed|online'),
+        }),
+      ]),
+    );
   });
 
   it('reports malformed JSON fixtures as structured contract failures', () => {

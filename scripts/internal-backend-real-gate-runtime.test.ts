@@ -111,7 +111,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
     expect(agentTaskGate).toContain('export AFSCP_EXPORT_GATEWAY_POSTGRES_DSN="${DATABASE_URL}"');
     expect(agentTaskGate).toContain('export AFSCP_ENVIRONMENT=local-real');
-    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_data');
+    expect(agentTaskGate).toContain('reset_owned_afscp_local_runtime_for_gate');
     expect(agentTaskGate).toContain('export POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"');
     expect(agentTaskGate).toContain('export MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"');
     expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-}"');
@@ -201,9 +201,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(startupBlock).not.toContain('\nstop_internal_afscp_local_runtime\n');
     expect(startupBlock.match(/\nreset_internal_afscp_local_runtime\n/g) ?? []).toHaveLength(1);
     expect(resetFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
-    expect(resetFunction).toContain('reset_owned_afscp_local_runtime_data');
+    expect(resetFunction).toContain('reset_owned_afscp_local_runtime_for_gate');
     expect(resetFunction.indexOf('stop_internal_afscp_local_runtime')).toBeLessThan(
-      resetFunction.indexOf('reset_owned_afscp_local_runtime_data'),
+      resetFunction.indexOf('reset_owned_afscp_local_runtime_for_gate'),
     );
     expect(cleanupFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
   });
@@ -362,6 +362,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('export ENV_FILE=/dev/null');
     expect(agentTaskGate).toContain(
       'export ENV_FILE=/dev/null\n'
+      + '    export INTERNAL_AGENT_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"\n'
       + '    export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"',
     );
     expect(backendRealRun).not.toContain('test:e2e:integration:files:user-stories:restore-continue');

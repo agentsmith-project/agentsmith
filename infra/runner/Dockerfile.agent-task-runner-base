@@ -46,6 +46,8 @@ COPY packages/agent-task-runner/tsconfig.json packages/agent-task-runner/tsconfi
 RUN --mount=type=cache,target=/root/.npm \
   set -eux; \
   npm ci --workspace @mbos/agent-runner-contract --workspace @mbos/agent-runner --workspace @mbos/agent-task-runner --include-workspace-root=false --include=dev --no-audit --no-fund; \
+  ./node_modules/.bin/tsc --version >/dev/null; \
+  ./node_modules/.bin/esbuild --version >/dev/null; \
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \

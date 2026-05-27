@@ -464,7 +464,7 @@ describe('backend-real full gate runtime ownership contract', () => {
     const ensureBody = script.slice(ensureStart, ensureEnd);
     const stopIndex = ensureBody.indexOf('stop_afscp_local_runtime >/dev/null 2>&1 || true');
     const markerIndex = ensureBody.indexOf('export AFSCP_ENVIRONMENT=local-real');
-    const resetIndex = ensureBody.indexOf('reset_owned_afscp_local_runtime_data');
+    const resetIndex = ensureBody.indexOf('reset_owned_afscp_local_runtime_for_gate');
     const ensureRuntimeIndex = ensureBody.indexOf('ensure_afscp_local_runtime', resetIndex + 1);
 
     expect(ensureStart).toBeGreaterThanOrEqual(0);
@@ -822,7 +822,7 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"');
     expect(helper).toContain('reset_afscp_local_runtime_for_gate()');
-    expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_data');
+    expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_for_gate');
   });
 
   it('resets owned integration AFSCP local-real data before ensuring the runtime', () => {

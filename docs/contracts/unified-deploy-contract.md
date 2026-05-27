@@ -10,7 +10,10 @@ This document is the current deployment contract for AgentSmith. It defines the
 deployment topology, deployment vocabulary, address truth, and release evidence
 shape used by the current development line.
 
-AgentSmith has one deployment model: `AgentSmith deploy`.
+AgentSmith has one deployment model: `AgentSmith deploy`. In the pre-GA split,
+AgentSmith owns only its product image closure, managed runner image adoption
+truth, local complete test evidence, and handoff readiness inputs. AgentSmith
+does not produce a deployment/package/operator release verdict.
 
 Deployment profiles describe environment preparation only:
 
@@ -22,16 +25,29 @@ Profiles are not separate products, release lines, or UI objects.
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
-`external_declared` in P0 is schema, fixture, validator, and evidence boundary
-only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
-handoff support.
+Current Docker-only local-kind unified deploy remains the current AgentSmith
+diagnostic baseline. `external_declared` in P0 is schema, fixture, validator,
+and evidence boundary only. It does not mean P2/P3 completed real Kubernetes,
+cloud, or airgap handoff support.
 
 The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
 chain is transition-only focused diagnostic evidence / 过渡期专项诊断 only.
 AgentSmith `release:ready` does not execute or require it for the AgentSmith
-release verdict; future deployment/package/operator verdict ownership belongs
-to release-kit repo-local gates and evidence.
+product-side readiness and handoff input check. Deployment/package/operator
+release verdict ownership belongs to release-kit repo-local gates and evidence.
+
+Release-kit handoff plans must cover both distribution modes, `online` and
+`airgap`, against both substrate strategies:
+
+- `use_existing`: connect to operator-provided substrates or cloud interfaces
+  such as PostgreSQL/pgvector, MongoDB, Redis, S3-compatible storage, and
+  Keycloak/OIDC.
+- `install_substrates`: release-kit installs the minimum substrate pack and
+  emits the same connection truth.
+
+`kind` is only an optional local substrate/rehearsal option. It is not the
+production default and cannot replace existing Kubernetes/cloud or airgap
+evidence.
 
 Because the project is still pre-GA, profile vocabulary is not a compatibility
 track. The only temporary mapping owner is the AgentSmith release-boundary
@@ -45,8 +61,8 @@ synonym drift fail fast.
 
 ### Docker Substrate
 
-The supported substrate implementation is Docker-only. It runs outside
-Kubernetes and contains dependency services only:
+The current AgentSmith-owned diagnostic substrate implementation is
+Docker-only. It runs outside Kubernetes and contains dependency services only:
 
 - PostgreSQL
 - MongoDB
@@ -54,9 +70,9 @@ Kubernetes and contains dependency services only:
 - MinIO
 - Keycloak
 
-The substrate module owns dependency lifecycle, destructive reset, dependency
-health, dependency readiness reseed, and one authoritative substrate connection
-truth file consumed by app deployment.
+The diagnostic substrate module owns dependency lifecycle, destructive reset,
+dependency health, dependency readiness reseed, and one authoritative substrate
+connection truth file consumed by app deployment diagnostics.
 
 The substrate module does not own AgentSmith `web`, `api`, `llmup`, the
 internal sandbox execution service (ASBCP), runner workloads, Kubernetes app manifests, product bootstrap,
@@ -255,15 +271,31 @@ Multi-replica API support requires a separate architecture plan.
 
 ## Release Kit Handoff
 
-AgentSmith release contract output is the only handoff from product build truth
-to release kit deploy execution. The release contract must include
-`deploy_template_digest` and the required `deploy_template_package` field. The
-package records the deploy template package URI, package sha256, manifest
-sha256, and provenance.
+AgentSmith release contract output is the handoff from product build truth to
+release-kit deploy execution. The handoff is not a release verdict. It contains
+AgentSmith product image truth, managed runner image truth, dynamic image
+closure through `deploy_image_inventory`, local complete / product-side
+readiness evidence pointers, and template package truth.
+
+The release contract must include `deploy_template_digest` and the required
+`deploy_template_package` field. The package records the deploy template package
+URI, package sha256, manifest sha256, machine-readable `required_image_ids`, and
+provenance. Active image truth is the dynamic image closure:
+`deploy_template_package.required_image_ids` must be an exact subset of image
+IDs present in `deploy_image_inventory` and must cover rendered template image
+references. Fixed six-image or seven-image lists are historical slice evidence,
+not current contract truth.
 
 Release kit reads the release contract, `deploy_template_package`, generated
 artifacts, and operator inputs. It must not infer AgentSmith product source
 paths, import product packages, or create a second image inventory.
+
+Release kit owns online/airgap publishing, release package tests, deploy gates,
+operator runbooks, and the deployment/package/operator verdict. For both
+`online` and `airgap`, release-kit gates must cover both substrate strategies,
+`use_existing` and `install_substrates`. Each release run must explicitly select
+the intended strategy; neither strategy may silently fall back to Docker-only
+local diagnostics.
 
 ## Completion Evidence
 

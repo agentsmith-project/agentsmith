@@ -29,6 +29,8 @@ import {
   parseWorkloadPodSnapshot,
   releaseExpiredWorkloadsViaAsbcp,
   resolveAgentTaskCreateTimeoutMs,
+  resolveAgentTaskCreateStoragePendingRetries,
+  resolveAgentTaskCreateStoragePendingRetryDelayMs,
   resolveAgentTaskRunFinalState,
   selectExpiredWorkloadReleaseTargets,
   resolveIntegrationKeycloakBaseUrl,
@@ -2276,6 +2278,100 @@ describe('integration-real-helpers', () => {
         timeout: 90_000,
       }),
     );
+  });
+
+  it('fails fast by default when Agent Task creation reports pending project storage', async () => {
+    const previousRetries = process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES;
+    const response = <T,>(status: number, body: T) => ({
+      ok: () => status >= 200 && status < 300,
+      status: () => status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    });
+    const post = vi.fn().mockResolvedValue(response(409, {
+      error_code: 'PROJECT_STORAGE_PENDING',
+      message: 'project_storage_pending',
+    }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof createAgentTaskViaApi>[0]['page'];
+
+    try {
+      delete process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES;
+      expect(resolveAgentTaskCreateStoragePendingRetries({})).toBe(0);
+      expect(resolveAgentTaskCreateStoragePendingRetries({
+        INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES: '0',
+      })).toBe(0);
+
+      await expect(createAgentTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_pending',
+        title: 'Agent Task with pending storage',
+      })).rejects.toThrow(
+        'create_agent_task_failed:409:PROJECT_STORAGE_PENDING:storage_pending_retries=0:storage_pending_attempts=1',
+      );
+    } finally {
+      if (previousRetries === undefined) {
+        delete process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES;
+      } else {
+        process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES = previousRetries;
+      }
+    }
+
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries Agent Task creation while project storage is still converging when explicitly enabled', async () => {
+    const previousRetries = process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES;
+    const previousDelay = process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS;
+    process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES = '1';
+    process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS = '1';
+    const response = <T,>(status: number, body: T) => ({
+      ok: () => status >= 200 && status < 300,
+      status: () => status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    });
+    const post = vi.fn()
+      .mockResolvedValueOnce(response(409, {
+        error_code: 'PROJECT_STORAGE_PENDING',
+        message: 'project_storage_pending',
+      }))
+      .mockResolvedValueOnce(response(201, {
+        id: 'task_after_storage_ready',
+        title: 'Agent Task after storage wait',
+      }));
+    const page = {
+      evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+      request: { post },
+    } as unknown as Parameters<typeof createAgentTaskViaApi>[0]['page'];
+
+    try {
+      expect(resolveAgentTaskCreateStoragePendingRetries()).toBe(1);
+      expect(resolveAgentTaskCreateStoragePendingRetryDelayMs()).toBe(1);
+      await expect(createAgentTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_pending',
+        title: 'Agent Task after storage wait',
+      })).resolves.toBe('task_after_storage_ready');
+    } finally {
+      if (previousRetries === undefined) {
+        delete process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES;
+      } else {
+        process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES = previousRetries;
+      }
+      if (previousDelay === undefined) {
+        delete process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS;
+      } else {
+        process.env.INTEGRATION_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS = previousDelay;
+      }
+    }
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[1]?.[1]?.data).toEqual(post.mock.calls[0]?.[1]?.data);
   });
 
   it('keeps Agent Task create request timeout aligned above project storage bootstrap wait', async () => {

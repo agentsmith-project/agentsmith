@@ -25,7 +25,8 @@ Current active plan:
 
 Current next blocker:
 
-- P3 airgap image load/import focused diagnostic and AgentSmith runner support API / projection contract consistency are complete. Remaining work is offline install/deploy smoke, operator/deployment adoption, and runner runtime/backend-real/task execution/Codex smoke; this is still not release readiness, airgap readiness, or sibling-repo runtime handoff readiness.
+- P3 airgap image load/import focused diagnostic, P3 substrate pack focused gate, and AgentSmith runner support API / projection contract consistency are complete. `--substrate-pack-check` only validates minimal substrate pack manifest + matching kit-installed substrate truth for `existing_kubernetes/kit_installed/online|airgap`; it is not an installer, cloud provisioning, DB/bucket/realm creation, deploy/rollout/smoke, package, airgap, or release readiness.
+- Remaining work is offline install/deploy smoke, operator/deployment adoption, and runner runtime/backend-real/task execution/Codex smoke; this is still not release readiness, airgap readiness, or sibling-repo runtime handoff readiness.
 
 Historical/reference note:
 

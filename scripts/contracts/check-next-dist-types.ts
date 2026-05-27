@@ -163,6 +163,7 @@ function checkSourceContractOnce(): ContractStatus {
       error: 'next_env_must_not_reference_lane_specific_types',
     };
   }
+  // This checks source shape; locked typegen/typecheck/build proves tsc safety.
   if (nextEnv === rootGeneratedNextEnv) {
     return { kind: 'canonical' };
   }

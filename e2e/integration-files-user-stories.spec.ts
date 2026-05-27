@@ -3664,6 +3664,7 @@ test.describe.serial('@lane-real files user stories', () => {
               `printf '%s' '${marker.afterOnlyContent}' > "$HOME/${marker.afterOnlyPath}"`,
               `test ! -e "$HOME/${marker.markerPath}"`,
               `test -s "$HOME/${marker.afterOnlyPath}"`,
+              `printf '%s\\n' 'hidden_runtime_mutation_verified:${marker.folder}'`,
             ]),
             `printf '${mutationMarker}\\n'`,
           ].join('; '),
@@ -3671,6 +3672,9 @@ test.describe.serial('@lane-real files user stories', () => {
           timeoutMs: 180_000,
         });
         expect(mutationOutput).toContain(mutationMarker);
+        for (const marker of hiddenRuntimeMarkers) {
+          expect(mutationOutput).toContain(`hidden_runtime_mutation_verified:${marker.folder}`);
+        }
       } finally {
         if (mutationSessionId) {
           await deleteTerminalSessionViaApi({

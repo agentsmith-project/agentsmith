@@ -115,6 +115,23 @@ release_user_story_secret_fingerprint() {
   printf 'sha256:%s\n' "${digest}"
 }
 
+release_user_story_kubectl_context_ready() {
+  kubectl config current-context >/dev/null 2>&1 || return 1
+  kubectl get --raw='/readyz' >/dev/null 2>&1 || kubectl get namespace default >/dev/null 2>&1
+}
+
+release_user_story_default_kind_kubeconfig_path() {
+  local cluster_name="${1:-${KIND_CLUSTER_NAME:-${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}}}"
+  if [[ -z "${cluster_name}" ]]; then
+    cluster_name="agentsmith"
+  fi
+  if [[ -n "${DEPLOY_ROOT:-}" ]]; then
+    printf '%s/state/local-kind/kind-%s.kubeconfig\n' "${DEPLOY_ROOT}" "${cluster_name}"
+    return 0
+  fi
+  printf '%s/agentsmith/local-kind/kind-%s.kubeconfig\n' "${HOME}" "${cluster_name}"
+}
+
 release_user_story_asbcp_kubeconfig_path() {
   local configured="${KUBECONFIG:-}"
   local cluster_name="${KIND_CLUSTER_NAME:-${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}}"
@@ -126,14 +143,14 @@ release_user_story_asbcp_kubeconfig_path() {
     realpath -m "${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
     return 0
   fi
+  if release_user_story_kubectl_context_ready && [[ -f "${HOME}/.kube/config" ]]; then
+    realpath -m "${HOME}/.kube/config"
+    return 0
+  fi
   if [[ -z "${cluster_name}" ]]; then
     cluster_name="agentsmith"
   fi
-  if [[ -n "${DEPLOY_ROOT:-}" ]]; then
-    printf '%s/state/local-kind/kind-%s.kubeconfig\n' "${DEPLOY_ROOT}" "${cluster_name}"
-    return 0
-  fi
-  printf '%s/agentsmith/local-kind/kind-%s.kubeconfig\n' "${HOME}" "${cluster_name}"
+  release_user_story_default_kind_kubeconfig_path "${cluster_name}"
 }
 
 run_release_user_story_clean_env() {
@@ -187,6 +204,10 @@ ensure_release_user_story_integration_deps_for_afscp() {
           MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
           MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
           KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
+          KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+          KEYCLOAK_URL="${KEYCLOAK_BASE_URL%/}/realms" \
+          KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+          KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
           make deps-bootstrap && \
         run_release_user_story_clean_env env \
           POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
@@ -287,14 +308,30 @@ KIND_CLUSTER_NAME="$(
     "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" \
     "${CONTEXT_NAME}"
 )"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 KIND_NODE_NAME="$(
   kind_control_plane_node_name_from_context_or_override \
     "${CONTEXT_NAME}" \
     "${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}" \
-    "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}"
+    "${KIND_CLUSTER_NAME}"
 )"
-ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
+KIND_NODE_NAME="${KIND_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"
+ASBCP_KUBECONFIG_PATH=""
+
+RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0
+cleanup() {
+  local cleanup_status=0
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
+  if [[ "${RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED}" == "1" ]]; then
+    if ! stop_release_user_story_afscp_local_runtime; then
+      cleanup_status=1
+      echo "[integration-release-user-story] cleanup warning: AFSCP local runtime stop failed" >&2
+    fi
+  fi
+  return "${cleanup_status}"
+}
+trap cleanup EXIT
 
 ensure_kind_image() {
   local image="$1"
@@ -311,6 +348,36 @@ ensure_local_image() {
     return 0
   fi
   docker pull "${image}" >/dev/null
+}
+
+ensure_release_user_story_kubernetes_context() {
+  if release_user_story_kubectl_context_ready; then
+    CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
+    ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
+    info "using Kubernetes context ${CONTEXT_NAME}"
+    return 0
+  fi
+
+  if ! command -v kind >/dev/null 2>&1; then
+    echo "[integration-release-user-story] kind is required when no usable Kubernetes context is configured." >&2
+    return 1
+  fi
+
+  local kind_config_path
+  kind_config_path="${KIND_CONFIG_PATH:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"
+  export LOCAL_KIND_FINAL_KUBECONFIG_PATH
+
+  info "ensuring local kind cluster ${KIND_CLUSTER_NAME} for standalone release user story rehearsal"
+  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  LOCAL_KIND_CONFIG_PATH="${kind_config_path}" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \
+    bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"
+
+  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null
+  CONTEXT_NAME="${KIND_CONTEXT_NAME}"
+  ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
 }
 
 wait_for_afscp_storage_csi_pods() {
@@ -366,9 +433,11 @@ ensure_afscp_storage_csi() {
   wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"
 }
 
-ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
-
+ensure_release_user_story_integration_deps_for_afscp
+ensure_release_user_story_kubernetes_context
 ensure_afscp_storage_csi
+ensure_release_user_story_afscp_local_runtime
+ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
 
 KIND_GATEWAY=""
 if docker network inspect kind >/dev/null 2>&1; then
@@ -462,23 +531,6 @@ files:
 buffer:
   capacity: 10000
 EOF
-
-RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0
-cleanup() {
-  local cleanup_status=0
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
-  if [[ "${RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED}" == "1" ]]; then
-    if ! stop_release_user_story_afscp_local_runtime; then
-      cleanup_status=1
-      echo "[integration-release-user-story] cleanup warning: AFSCP local runtime stop failed" >&2
-    fi
-  fi
-  return "${cleanup_status}"
-}
-trap cleanup EXIT
-
-ensure_release_user_story_integration_deps_for_afscp
-ensure_release_user_story_afscp_local_runtime
 
 cat > "${ASBCP_STATE_FILE}" <<EOF
 ROOT_DIR="${ROOT_DIR}"

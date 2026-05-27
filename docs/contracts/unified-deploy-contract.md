@@ -15,20 +15,23 @@ AgentSmith owns only its product image closure, managed runner image adoption
 truth, local complete test evidence, and handoff readiness inputs. AgentSmith
 does not produce a deployment/package/operator release verdict.
 
-Deployment profiles describe environment preparation only:
+The formal release contract vocabulary is three machine axes:
 
-- `local-kind`: Docker substrate plus a local kind cluster for app workloads.
-- `existing-cluster`: operator-provided Kubernetes namespace and prerequisites,
-  consuming the same declared substrate truth shape.
+- `target_cluster`
+- `substrate_source`
+- `distribution`
 
-Profiles are not separate products, release lines, or UI objects.
+Pre-GA diagnostic names such as `local-kind` and `existing-cluster` are not
+authoritative release axes. They can appear only as temporary AgentSmith
+diagnostic entry names or migration references, and must map into the machine
+axes above before release-kit evidence or handoff artifacts are produced.
 
 ## Current vs P0 Handoff Boundary
 
 Current Docker-only local-kind unified deploy remains the current AgentSmith
-diagnostic baseline. `external_declared` in P0 is schema, fixture, validator,
-and evidence boundary only. It does not mean P2/P3 completed real Kubernetes,
-cloud, or airgap handoff support.
+pre-GA/local diagnostic rehearsal baseline. `external_declared` in P0 is schema,
+fixture, validator, and evidence boundary only. It does not mean P2/P3 completed
+real Kubernetes, cloud, or airgap handoff support.
 
 The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
 chain is transition-only focused diagnostic evidence / 过渡期专项诊断 only.
@@ -36,8 +39,8 @@ AgentSmith `release:ready` does not execute or require it for the AgentSmith
 product-side readiness and handoff input check. Deployment/package/operator
 release verdict ownership belongs to release-kit repo-local gates and evidence.
 
-Release-kit handoff plans must cover both distribution modes, `online` and
-`airgap`, against both substrate strategies:
+Release-kit handoff plans must use operator-facing language for the deployment
+choice: `online` / `airgap` distribution against both substrate strategies:
 
 - `use_existing`: connect to operator-provided substrates or cloud interfaces
   such as PostgreSQL/pgvector, MongoDB, Redis, S3-compatible storage, and
@@ -45,12 +48,16 @@ Release-kit handoff plans must cover both distribution modes, `online` and
 - `install_substrates`: release-kit installs the minimum substrate pack and
   emits the same connection truth.
 
-`kind` is only an optional local substrate/rehearsal option. It is not the
-production default and cannot replace existing Kubernetes/cloud or airgap
-evidence.
+The corresponding internal machine values are `distribution=online|airgap` and
+`substrate_source=external_declared|kit_installed`. These machine values are for
+release contract / evidence validation, not a second operator vocabulary.
 
-Because the project is still pre-GA, profile vocabulary is not a compatibility
-track. The only temporary mapping owner is the AgentSmith release-boundary
+`kind` is only an optional local substrate/rehearsal option. It is not a formal
+release target, not the production default, and cannot replace existing
+Kubernetes/cloud or airgap evidence.
+
+Because the project is still pre-GA, old profile vocabulary is not a long-term
+formal path. The only temporary mapping owner is the AgentSmith release-boundary
 adapter, the deletion trigger is P2/P6 removal or hiding of these active
 diagnostic workflows after release-kit repo-local gates own deployment verdicts,
 and evidence is `contracts:check-unified-deploy-vocabulary` plus
@@ -151,6 +158,10 @@ Minimal focused diagnostics after a lock/adoption change are:
 - `npm run test:unified-deploy:render -- --profile=existing-cluster --site-env=<generated-existing-cluster-site-env>` when proving existing-cluster image adoption against generated digest refs
 - `npm run test:unified-deploy:address-truth`
 
+The `local-kind` / `existing-cluster` names in these commands are pre-GA
+diagnostic entry names only. They do not define release-kit handoff authority;
+formal artifacts must use `target_cluster` / `substrate_source` / `distribution`.
+
 Ordinary lock adoption does not require rerunning the Agent task/workload main
 chain.
 
@@ -177,9 +188,9 @@ model-provider feature expansion. A pinned external llmup image/version may
 remain a release input.
 
 Existing protocol/env names such as `MBOS_UNIVERSAL_PROXY_BASE_URL` may remain
-for API compatibility, but rendered app configuration points to the internal
-app-managed `llmup` service. Substrate connection truth must not contain llmup
-service addresses.
+while API still consumes those names, but rendered app configuration points to
+the internal app-managed `llmup` service. Substrate connection truth must not
+contain llmup service addresses.
 
 ## Ingress And Routing
 
@@ -297,6 +308,11 @@ operator runbooks, and the deployment/package/operator verdict. For both
 the intended strategy; neither strategy may silently fall back to Docker-only
 local diagnostics.
 
+In machine artifacts this selection is represented only by
+`target_cluster` / `substrate_source` / `distribution`. Pre-GA names such as
+`local-kind` and `existing-cluster` are not formal authority for release-kit
+handoff or deployment evidence.
+
 ## Completion Evidence
 
 Deploy diagnostic evidence separates these sections:
@@ -310,8 +326,9 @@ Deploy diagnostic evidence separates these sections:
   consumption, `/health` readiness/liveness, and rollout status;
 - product verification matrix.
 
-The `existing-cluster` smoke producer proves profile routing and rollout
-ownership only. It is not sufficient product verification.
+The pre-GA `existing-cluster` smoke producer proves diagnostic routing and
+rollout ownership only. It is not a formal release target and is not sufficient
+product verification.
 
 The current deploy diagnostic product proof is passed only when focused evidence
 exists for these required flows:

@@ -71,6 +71,21 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).not.toContain('endpoint: localhost:19000');
   });
 
+  it('passes release Keycloak truth to deps-bootstrap instead of Makefile defaults', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const bootstrapIndex = script.indexOf('make deps-bootstrap');
+    const envStart = script.lastIndexOf('run_release_user_story_clean_env env \\', bootstrapIndex);
+    const envBlock = script.slice(envStart, bootstrapIndex);
+
+    expect(bootstrapIndex).toBeGreaterThanOrEqual(0);
+    expect(envStart).toBeGreaterThanOrEqual(0);
+    expect(envBlock).toContain('KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \\');
+    expect(envBlock).toContain('KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \\');
+    expect(envBlock).toContain('KEYCLOAK_URL="${KEYCLOAK_BASE_URL%/}/realms" \\');
+    expect(envBlock).toContain('KEYCLOAK_REALM="${KEYCLOAK_REALM}" \\');
+    expect(envBlock).toContain('KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \\');
+  });
+
   it('passes the ASBCP AFSCP env contract directly to the locked ASBCP image', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
@@ -89,6 +104,29 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp');
     expect(script).not.toMatch(/^afscp:\s*$/mu);
     expect(script).not.toContain('http://127.0.0.1:28090');
+  });
+
+  it('ensures a usable standalone Kubernetes context before CSI without empty kind names', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const mainDepsIndex = script.indexOf('\nensure_release_user_story_integration_deps_for_afscp\n');
+    const contextEnsureIndex = script.indexOf('\nensure_release_user_story_kubernetes_context\n', mainDepsIndex);
+    const csiIndex = script.indexOf('\nensure_afscp_storage_csi\n', contextEnsureIndex);
+    const contextFunctionStart = script.indexOf('ensure_release_user_story_kubernetes_context()');
+    const contextFunctionEnd = script.indexOf('\nwait_for_afscp_storage_csi_pods()', contextFunctionStart);
+    const contextFunctionBody = script.slice(contextFunctionStart, contextFunctionEnd);
+
+    expect(script).toContain('KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"');
+    expect(script).toContain('KIND_NODE_NAME="${KIND_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"');
+    expect(contextFunctionStart).toBeGreaterThanOrEqual(0);
+    expect(contextFunctionBody).toContain('if release_user_story_kubectl_context_ready; then');
+    expect(contextFunctionBody).toContain('LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"');
+    expect(contextFunctionBody).toContain('LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \\');
+    expect(contextFunctionBody).toContain('bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"');
+    expect(contextFunctionBody).toContain('export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"');
+    expect(contextFunctionBody).toContain('ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"');
+    expect(mainDepsIndex).toBeGreaterThanOrEqual(0);
+    expect(contextEnsureIndex).toBeGreaterThan(mainDepsIndex);
+    expect(csiIndex).toBeGreaterThan(contextEnsureIndex);
   });
 
   it('keeps release user story ASBCP state artifact free of raw service tokens', () => {
@@ -125,6 +163,29 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(sandboxStartIndex).toBeGreaterThan(ensureIndex);
     expect(cleanupBody).toContain('RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED');
     expect(cleanupBody).toContain('stop_release_user_story_afscp_local_runtime');
+  });
+
+  it('applies sandbox namespace dependencies only after the wrapper-owned AFSCP reset', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const trapIndex = script.indexOf('trap cleanup EXIT');
+    const depsIndex = script.indexOf('\nensure_release_user_story_integration_deps_for_afscp\n', trapIndex);
+    const contextEnsureIndex = script.indexOf('\nensure_release_user_story_kubernetes_context\n', depsIndex);
+    const csiIndex = script.indexOf('\nensure_afscp_storage_csi\n', contextEnsureIndex);
+    const afscpIndex = script.indexOf('\nensure_release_user_story_afscp_local_runtime\n', csiIndex);
+    const namespaceIndex = script.indexOf('\nensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"\n', afscpIndex);
+    const renderExternalDepsIndex = script.indexOf('\nrender_k8s_external_dependency_services \\', namespaceIndex);
+    const applyExternalDepsIndex = script.indexOf('\nkubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null', renderExternalDepsIndex);
+    const sandboxStartIndex = script.indexOf('info "starting ASBCP from locked image"', applyExternalDepsIndex);
+
+    expect(trapIndex).toBeGreaterThanOrEqual(0);
+    expect(depsIndex).toBeGreaterThan(trapIndex);
+    expect(contextEnsureIndex).toBeGreaterThan(depsIndex);
+    expect(csiIndex).toBeGreaterThan(contextEnsureIndex);
+    expect(afscpIndex).toBeGreaterThan(csiIndex);
+    expect(namespaceIndex).toBeGreaterThan(afscpIndex);
+    expect(renderExternalDepsIndex).toBeGreaterThan(namespaceIndex);
+    expect(applyExternalDepsIndex).toBeGreaterThan(renderExternalDepsIndex);
+    expect(sandboxStartIndex).toBeGreaterThan(applyExternalDepsIndex);
   });
 
   it('passes a single AFSCP and ASBCP runtime truth to the child integration wrapper', () => {

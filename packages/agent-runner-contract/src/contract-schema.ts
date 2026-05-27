@@ -1,5 +1,6 @@
 import type {
   AgentWireApi,
+  ProjectedDependenciesEnv,
   TaskExecutionContext,
   TaskRuntimeProfile,
   TaskWorkspaceBindingMode,
@@ -16,6 +17,7 @@ export type JsonSchema = {
   readonly pattern?: string;
   readonly minProperties?: number;
   readonly additionalProperties?: boolean | JsonSchema;
+  readonly propertyNames?: JsonSchema;
   readonly required?: readonly string[];
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly items?: JsonSchema;
@@ -37,6 +39,7 @@ const taskExecutionContextAllowedFieldMap = {
   endpoint_id: true,
   agent_task_model: true,
   resource_proxy: true,
+  projected_dependencies: true,
   wire_api: true,
   model: true,
   username: true,
@@ -92,6 +95,9 @@ export const TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS = [
   'workspace_dir_name',
   'user_bearer_token',
   'credential_files',
+  'context_store',
+  'managed_credential_refresh',
+  'writable_scopes',
 ] as const;
 
 const supportedAgentWireApis = [
@@ -138,6 +144,59 @@ const absoluteTaskPathJsonSchema = {
   pattern: '^(?!.*(?:^|/)[.][.](?:/|$))/',
 } as const satisfies JsonSchema;
 
+const projectedDependencyFieldNameJsonSchema = {
+  type: 'string',
+  pattern: '^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*',
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['fields'],
+      properties: {
+        fields: {
+          type: 'object',
+          minProperties: 1,
+          propertyNames: projectedDependencyFieldNameJsonSchema,
+          additionalProperties: nonEmptyStringJsonSchema,
+        },
+      },
+    },
+    nonEmptyStringJsonSchema,
+  ],
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['dependencies'],
+  properties: {
+    dependencies: {
+      type: 'object',
+      minProperties: 1,
+      additionalProperties: PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
+    },
+  },
+} as const satisfies JsonSchema;
+
+export const PROJECTED_DEPENDENCIES_ENV_FIXTURE = {
+  dependencies: {
+    'feishu-managed-user': {
+      fields: {
+        access_token: 'projected_access_token',
+      },
+    },
+    'jira-auth': {
+      fields: {
+        base_url: 'https://jira.example.com',
+        token: 'projected_jira_token',
+      },
+    },
+  },
+} as const satisfies ProjectedDependenciesEnv;
+
 export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -180,6 +239,7 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
         base_url: nonEmptyStringJsonSchema,
       },
     },
+    projected_dependencies: PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
     wire_api: {
       type: 'string',
       enum: supportedAgentWireApis,
@@ -238,53 +298,6 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
     },
   },
 } as const satisfies JsonSchema;
-
-export const PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA = {
-  oneOf: [
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['fields'],
-      properties: {
-        fields: {
-          type: 'object',
-          minProperties: 1,
-          additionalProperties: nonEmptyStringJsonSchema,
-        },
-      },
-    },
-    nonEmptyStringJsonSchema,
-  ],
-} as const satisfies JsonSchema;
-
-export const PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['dependencies'],
-  properties: {
-    dependencies: {
-      type: 'object',
-      minProperties: 1,
-      additionalProperties: PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
-    },
-  },
-} as const satisfies JsonSchema;
-
-export const PROJECTED_DEPENDENCIES_ENV_FIXTURE = {
-  dependencies: {
-    'feishu-managed-user': {
-      fields: {
-        access_token: 'projected_access_token',
-      },
-    },
-    'jira-auth': {
-      fields: {
-        base_url: 'https://jira.example.com',
-        token: 'projected_jira_token',
-      },
-    },
-  },
-} as const;
 
 export const RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS = [
   'context_store',

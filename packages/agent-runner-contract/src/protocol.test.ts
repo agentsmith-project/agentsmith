@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROJECTED_DEPENDENCIES_ENV_FIXTURE,
+  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
+} from './contract-schema.js';
+import {
   SUPPORTED_AGENT_WIRE_APIS,
   assertTaskExecutionContext,
   isTaskExecutionContext,
@@ -73,6 +77,136 @@ describe('agent-runner task execution context guards', () => {
 
     expect(isTaskExecutionContext(value)).toBe(true);
     expect(assertTaskExecutionContext(value)).toEqual(value);
+  });
+
+  it('accepts request-scoped projected dependencies in the runner env projection shape', () => {
+    const value: TaskExecutionContext = {
+      task_id: 'task_1',
+      ...requiredTaskPaths,
+      projected_dependencies: PROJECTED_DEPENDENCIES_ENV_FIXTURE,
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(true);
+    expect(assertTaskExecutionContext(value)).toEqual(value);
+  });
+
+  it('accepts string projected dependency payloads', () => {
+    const value: TaskExecutionContext = {
+      task_id: 'task_1',
+      ...requiredTaskPaths,
+      projected_dependencies: {
+        dependencies: {
+          'opaque-helper-env': 'PROJECTED_HELPER_ENV_JSON',
+        },
+      },
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(true);
+    expect(assertTaskExecutionContext(value)).toEqual(value);
+  });
+
+  it('rejects whitespace-only string projected dependency payloads', () => {
+    const value = {
+      task_id: 'task_1',
+      ...requiredTaskPaths,
+      projected_dependencies: {
+        dependencies: {
+          'opaque-helper-env': '   ',
+        },
+      },
+    };
+
+    expect(isTaskExecutionContext(value)).toBe(false);
+    expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+  });
+
+  it('rejects disabled product-semantic keys in projected dependency fields', () => {
+    for (const field of RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS) {
+      const value = {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {
+            'jira-auth': {
+              fields: {
+                token: 'projected_jira_token',
+                [field]: 'disabled_product_semantic',
+              },
+            },
+          },
+        },
+      };
+
+      expect(isTaskExecutionContext(value), field).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
+  });
+
+  it('rejects malformed request-scoped projected dependencies', () => {
+    for (const value of [
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {},
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {
+            'jira-auth': {
+              fields: {
+                token: 'projected_jira_token',
+              },
+            },
+          },
+          writable_scopes: ['project'],
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {
+            'jira-auth': {
+              fields: {},
+            },
+          },
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {
+            'jira-auth': {
+              fields: {
+                token: 42,
+              },
+            },
+          },
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        projected_dependencies: {
+          dependencies: {
+            'jira-auth': {
+              fields: {
+                token: 'projected_jira_token',
+              },
+              credential_files: ['legacy-secret'],
+            },
+          },
+        },
+      },
+    ]) {
+      expect(isTaskExecutionContext(value)).toBe(false);
+      expect(() => assertTaskExecutionContext(value)).toThrowError('task_execution_context_invalid');
+    }
   });
 
   it('rejects malformed request-scoped resource proxy and model snapshots', () => {
@@ -483,7 +617,7 @@ describe('agent-runner task execution context guards', () => {
     }
   });
 
-  it('rejects retired secret delivery fields even when canonical task fields are present', () => {
+  it('rejects retired secret delivery and disabled product-semantic fields', () => {
     for (const value of [
       {
         task_id: 'task_1',
@@ -499,6 +633,23 @@ describe('agent-runner task execution context guards', () => {
             content: 'secret',
           },
         ],
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        context_store: {
+          scopes: ['project'],
+        },
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        managed_credential_refresh: true,
+      },
+      {
+        task_id: 'task_1',
+        ...requiredTaskPaths,
+        writable_scopes: ['project'],
       },
     ]) {
       expect(isTaskExecutionContext(value)).toBe(false);
@@ -600,6 +751,8 @@ describe('agent-runner task execution context guards', () => {
       'credential_files' extends keyof TaskExecutionContext ? true : false;
     type ContextHasInteractionKind =
       'interaction_kind' extends keyof TaskExecutionContext ? true : false;
+    type ContextHasProjectedDependencies =
+      'projected_dependencies' extends keyof TaskExecutionContext ? true : false;
 
     const envelopeHasRunnerSessionId = true satisfies EnvelopeHasRunnerSessionId;
     const envelopeHasSessionId = false satisfies EnvelopeHasSessionId;
@@ -612,6 +765,7 @@ describe('agent-runner task execution context guards', () => {
     const contextHasUserBearerToken = false satisfies ContextHasUserBearerToken;
     const contextHasCredentialFiles = false satisfies ContextHasCredentialFiles;
     const contextHasInteractionKind = false satisfies ContextHasInteractionKind;
+    const contextHasProjectedDependencies = true satisfies ContextHasProjectedDependencies;
 
     expect(envelopeHasRunnerSessionId).toBe(true);
     expect(envelopeHasSessionId).toBe(false);
@@ -624,5 +778,6 @@ describe('agent-runner task execution context guards', () => {
     expect(contextHasUserBearerToken).toBe(false);
     expect(contextHasCredentialFiles).toBe(false);
     expect(contextHasInteractionKind).toBe(false);
+    expect(contextHasProjectedDependencies).toBe(true);
   });
 });

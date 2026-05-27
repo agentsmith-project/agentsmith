@@ -44,6 +44,10 @@ describe('runner projected dependency env contract truth', () => {
             fields: {
               type: 'object',
               minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                pattern: expect.stringContaining('context[_]store'),
+              },
               additionalProperties: {
                 type: 'string',
                 minLength: 1,

@@ -1,6 +1,6 @@
 # Managed Agent Runner Execution Channel Protocol (WS, v1)
 
-Last updated: 2026-05-08
+Last updated: 2026-05-27
 Owner: Backend + Frontend
 
 ## 1. Scope
@@ -47,11 +47,13 @@ All frames are JSON objects:
       - `endpoint_id: string`
       - `agent_task_model: { endpoint_id: string; endpoint_display_name?: string; resolved_model: string; upstream_protocol?: "openai_chat_completions" | "openai_responses" | "anthropic_messages"; setting_revision: string; policy_decision_id?: string; resolved_at: string }`
       - `resource_proxy: { base_url: string }`
+      - `projected_dependencies?: { dependencies: Record<string, string | { fields: Record<string, string> }> }`
       - `api_base?: string` (for task helper scripts / file download access)
       - `execution_ticket: string`
       - `wire_api: "openai_chat_completions" | "openai_responses" | "anthropic_messages"`
       - `model: string`
       - `resource_proxy.base_url` is request-scoped and must be used for this run/session instead of any connection-level cache.
+      - `projected_dependencies` is a request-scoped read-only projection envelope. It is only passed through to the runner environment/helper layer; runners must not parse Context Store semantics, refresh managed credentials, infer credential scope, or derive write policy from it.
       - `runner_session_scope: "agent_presence" | "task_execution"`
       - `workspace_binding_mode: "file_library" | "pre_mounted"`; this only identifies the workspace source, not a path shape.
       - `runtime_profile: "managed" | "developer"`
@@ -71,7 +73,7 @@ All frames are JSON objects:
         | runner metadata | `<task_home_path>/.mbos/` |
         | skills | `<task_home_path>/.agents/skills/` |
         | user-visible artifacts | `artifacts_path` |
-        | context / credentials | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections |
+        | context / credentials | AgentSmith-provided request-scoped read-only projections; runners only pass projected dependency env to runtime/helpers and must not define Context Store scope semantics, refresh managed credentials, or derive write policy |
 
         Notes:
         - `task_home_path` is the root of the bound file library while the task binding exists
@@ -187,7 +189,7 @@ This section covers the browser-facing terminal websocket issued by Agent task t
 - Replay source is an API-entry in-memory bounded ring. If `after_seq` is older than the ring, replay is `partial` with `gap: true`; if the ring is unavailable or `after_seq` is ahead of the latest known seq, replay is `unavailable`, and future cursors use `error_code: "future_after_seq"` plus `next_seq`.
 - Reconnect must not synthesize a `started` frame. Browser UI should treat replay status as terminal recovery metadata, not terminal bytes.
 - Routes that issue an interactive terminal `ws_url` or ticket require `project:agent_task:terminal` in addition to task access. Reconnect handshakes and each `terminal.stdin` / `terminal.resize` frame re-check current backend permission truth; revoked permission rejects the frame and closes the websocket instead of trusting a cached ticket or open socket.
-- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.terminal.start.payload.execution_context` is required; its canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, or `interaction_kind`. Those removed names may appear only in AgentSmith-owned negative contract fixtures or generated/checked protocol docs; P4/P5 runner contract artifact and sync checks are the evidence, and stale doc-only mentions without fixtures must be deleted.
+- Terminal runner startup uses the same public `TaskExecutionContext` guard as task runs. The terminal `server.terminal.start.payload.execution_context` is required; its canonical subset includes `workspace_id`, `project_id`, `task_id`, `runner_id`, `api_base`, `execution_ticket`, `runner_session_scope`, request-scoped `resource_proxy`, request-scoped read-only `projected_dependencies`, the `agent_task_model` snapshot when model access is required, workspace binding fields, and optional `task_inputs`; it must not include legacy top-level `session_id`, `agent_id`, `interaction_kind`, `user_bearer_token`, `credential_files`, `context_store`, `managed_credential_refresh`, or `writable_scopes`. `projected_dependencies.dependencies.*.fields` also rejects those disabled field keys. Those removed names may appear only in AgentSmith-owned negative contract fixtures or generated/checked protocol docs; P4/P5 runner contract artifact and sync checks are the evidence, and stale doc-only mentions without fixtures must be deleted.
 
 ## 8. Terminal Recovery And Adopt
 
@@ -325,11 +327,10 @@ npm run agent:task-runner
 
 ## 12. Risk Register
 
-- `R1` user token forwarding to runner:
-  - MBOS forwards user bearer token in execution context for project proxy auth/audit.
-  - Runner must keep this token in-memory only by injecting it through child-process environment variables.
-  - The token must never be written to Codex config files, workspace files, or CLI argv.
-  - Follow-up hardening: replace with short-lived ticket exchange.
+- `R1` retired user token forwarding:
+  - MBOS must not forward `user_bearer_token` or `credential_files` in `TaskExecutionContext`.
+  - Short-lived execution tickets and read-only dependency projections stay request-scoped and must not be written to `HOME`, workspace files, Codex config, reusable tool config, or CLI argv.
+  - Runner code must treat dependency projections as opaque env/helper inputs, not as authority to refresh credentials or decide Context Store scope/write policy.
 
 - `R3` task HOME isolation:
   - Runner runtime state is task-scoped under `task_home_path` for Codex state, runner metadata, skills, caches, and user-mode installs.

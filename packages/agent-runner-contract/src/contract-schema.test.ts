@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROJECTED_DEPENDENCIES_ENV_FIXTURE,
+  PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
+  PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
+  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
   RUNNER_CONTRACT_TERMINAL_FIXTURES,
   TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
   TASK_EXECUTION_CONTEXT_FIXTURES,
@@ -42,6 +46,7 @@ describe('agent-runner contract schema', () => {
       'endpoint_id',
       'agent_task_model',
       'resource_proxy',
+      'projected_dependencies',
       'wire_api',
       'model',
       'username',
@@ -75,8 +80,37 @@ describe('agent-runner contract schema', () => {
       expect(TASK_EXECUTION_CONTEXT_JSON_SCHEMA.properties).not.toHaveProperty(legacyField);
     }
     expect(TASK_EXECUTION_CONTEXT_REJECTED_LEGACY_FIELDS).toEqual(
-      expect.arrayContaining(['user_bearer_token', 'credential_files']),
+      expect.arrayContaining([
+        'user_bearer_token',
+        'credential_files',
+        'context_store',
+        'managed_credential_refresh',
+        'writable_scopes',
+      ]),
     );
+  });
+
+  it('publishes projected dependencies as an optional closed execution context field', () => {
+    const properties = TASK_EXECUTION_CONTEXT_JSON_SCHEMA.properties;
+    const payloadObjectSchema = PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA.oneOf[0];
+    const fieldsSchema = payloadObjectSchema.properties.fields;
+
+    expect(TASK_EXECUTION_CONTEXT_REQUIRED_FIELDS).not.toContain('projected_dependencies');
+    expect(properties.projected_dependencies).toBe(PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA);
+    expect(fieldsSchema.propertyNames).toMatchObject({
+      type: 'string',
+      pattern: expect.stringContaining('context[_]store'),
+    });
+    for (const rejected of RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS) {
+      expect(JSON.stringify(fieldsSchema)).not.toContain(rejected);
+    }
+    expect(assertTaskExecutionContext({
+      ...TASK_EXECUTION_CONTEXT_FIXTURES.managedTaskRun,
+      projected_dependencies: PROJECTED_DEPENDENCIES_ENV_FIXTURE,
+    })).toEqual({
+      ...TASK_EXECUTION_CONTEXT_FIXTURES.managedTaskRun,
+      projected_dependencies: PROJECTED_DEPENDENCIES_ENV_FIXTURE,
+    });
   });
 
   it('projects runtime guard string and path constraints into the JSON schema', () => {

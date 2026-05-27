@@ -1,5 +1,8 @@
 import { isAbsolute, join, normalize } from 'node:path';
-import { TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS } from './contract-schema.js';
+import {
+  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
+  TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
+} from './contract-schema.js';
 
 export const SUPPORTED_AGENT_WIRE_APIS = [
   'openai_chat_completions',
@@ -46,6 +49,16 @@ export type AgentExecutionResourceProxy = {
   base_url: string;
 };
 
+export type ProjectedDependencyPayload =
+  | string
+  | {
+      fields: Record<string, string>;
+    };
+
+export type ProjectedDependenciesEnv = {
+  dependencies: Record<string, ProjectedDependencyPayload>;
+};
+
 export type AgentTaskInput = Record<string, unknown>;
 export type TaskWorkspaceBindingMode = 'file_library' | 'pre_mounted';
 export type TaskRuntimeProfile = 'managed' | 'developer';
@@ -75,6 +88,7 @@ export type TaskExecutionContext = {
   endpoint_id?: string;
   agent_task_model?: AgentTaskModelSnapshot;
   resource_proxy?: AgentExecutionResourceProxy;
+  projected_dependencies?: ProjectedDependenciesEnv;
   wire_api?: AgentWireApi;
   model?: string;
   username?: string;
@@ -134,6 +148,11 @@ const TASK_EXECUTION_CONTEXT_FIELD_NAMES = new Set<string>(
   TASK_EXECUTION_CONTEXT_ALLOWED_FIELDS,
 );
 const RESOURCE_PROXY_FIELD_NAMES = new Set(['base_url']);
+const PROJECTED_DEPENDENCIES_ENV_FIELD_NAMES = new Set(['dependencies']);
+const PROJECTED_DEPENDENCY_OBJECT_FIELD_NAMES = new Set(['fields']);
+const PROJECTED_DEPENDENCY_REJECTED_FIELD_NAMES = new Set<string>(
+  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
+);
 const AGENT_TASK_MODEL_FIELD_NAMES = new Set([
   'endpoint_id',
   'endpoint_display_name',
@@ -202,6 +221,37 @@ function hasValidResourceProxy(input: Record<string, unknown>): boolean {
   if (!isPlainObject(resourceProxy)) return false;
   if (!hasOnlyFields(resourceProxy, RESOURCE_PROXY_FIELD_NAMES)) return false;
   return hasTrimmedStringField(resourceProxy, 'base_url');
+}
+
+function hasOnlyAllowedProjectedDependencyFields(input: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(input)) {
+    if (PROJECTED_DEPENDENCY_REJECTED_FIELD_NAMES.has(key)) return false;
+    if (typeof value !== 'string' || value.trim().length === 0) return false;
+  }
+  return true;
+}
+
+function hasValidProjectedDependencyPayload(input: unknown): boolean {
+  if (typeof input === 'string') return input.trim().length > 0;
+  if (!isPlainObject(input)) return false;
+  if (!hasOnlyFields(input, PROJECTED_DEPENDENCY_OBJECT_FIELD_NAMES)) return false;
+  const fields = input.fields;
+  if (!isPlainObject(fields)) return false;
+  if (Object.keys(fields).length === 0) return false;
+  return hasOnlyAllowedProjectedDependencyFields(fields);
+}
+
+function hasValidProjectedDependencies(input: Record<string, unknown>): boolean {
+  const projectedDependencies = input.projected_dependencies;
+  if (projectedDependencies === undefined) return true;
+  if (!isPlainObject(projectedDependencies)) return false;
+  if (!hasOnlyFields(projectedDependencies, PROJECTED_DEPENDENCIES_ENV_FIELD_NAMES)) return false;
+  const dependencies = projectedDependencies.dependencies;
+  if (!isPlainObject(dependencies)) return false;
+  if (Object.keys(dependencies).length === 0) return false;
+  return Object.values(dependencies).every(
+    (dependency) => hasValidProjectedDependencyPayload(dependency),
+  );
 }
 
 function hasValidAgentTaskModelSnapshot(input: Record<string, unknown>): boolean {
@@ -353,6 +403,7 @@ export function isTaskExecutionContext(input: unknown): input is TaskExecutionCo
   if (!hasValidWireApi(input)) return false;
   if (!hasValidRunnerSessionScope(input)) return false;
   if (!hasValidResourceProxy(input)) return false;
+  if (!hasValidProjectedDependencies(input)) return false;
   if (!hasValidAgentTaskModelSnapshot(input)) return false;
   if (!hasValidModelTokenLimits(input)) return false;
   if (!hasValidModelCatalog(input)) return false;

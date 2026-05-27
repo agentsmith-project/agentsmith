@@ -318,7 +318,7 @@
       },
       "TaskExecutionContext": {
         "type": "object",
-        "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, or credential_files.",
+        "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy, projected_dependencies, and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, credential_files, context_store, managed_credential_refresh, or writable_scopes.",
         "additionalProperties": false,
         "required": [
           "task_id",
@@ -423,6 +423,50 @@
                 "type": "string",
                 "minLength": 1,
                 "pattern": "\\S"
+              }
+            }
+          },
+          "projected_dependencies": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dependencies"
+            ],
+            "properties": {
+              "dependencies": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "fields"
+                      ],
+                      "properties": {
+                        "fields": {
+                          "type": "object",
+                          "minProperties": 1,
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "\\S"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    }
+                  ]
+                }
               }
             }
           },
@@ -634,7 +678,7 @@
                 },
                 "execution_context": {
                   "type": "object",
-                  "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, or credential_files.",
+                  "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy, projected_dependencies, and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, credential_files, context_store, managed_credential_refresh, or writable_scopes.",
                   "additionalProperties": false,
                   "required": [
                     "task_id",
@@ -739,6 +783,50 @@
                           "type": "string",
                           "minLength": 1,
                           "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "projected_dependencies": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "dependencies"
+                      ],
+                      "properties": {
+                        "dependencies": {
+                          "type": "object",
+                          "minProperties": 1,
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "fields"
+                                ],
+                                "properties": {
+                                  "fields": {
+                                    "type": "object",
+                                    "minProperties": 1,
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "\\S"
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "\\S"
+                              }
+                            ]
+                          }
                         }
                       }
                     },
@@ -980,7 +1068,7 @@
                 },
                 "execution_context": {
                   "type": "object",
-                  "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, or credential_files.",
+                  "description": "Public TaskExecutionContext for task runs and terminal startup; request-scoped resource_proxy, projected_dependencies, and agent_task_model snapshot are carried here, while terminal contexts use task_id, runner_id, runner_session_scope and must not include legacy top-level session_id, agent_id, interaction_kind, user_bearer_token, credential_files, context_store, managed_credential_refresh, or writable_scopes.",
                   "additionalProperties": false,
                   "required": [
                     "task_id",
@@ -1085,6 +1173,50 @@
                           "type": "string",
                           "minLength": 1,
                           "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "projected_dependencies": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "dependencies"
+                      ],
+                      "properties": {
+                        "dependencies": {
+                          "type": "object",
+                          "minProperties": 1,
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "fields"
+                                ],
+                                "properties": {
+                                  "fields": {
+                                    "type": "object",
+                                    "minProperties": 1,
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "\\S"
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "\\S"
+                              }
+                            ]
+                          }
                         }
                       }
                     },

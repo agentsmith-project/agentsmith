@@ -25,7 +25,7 @@ Current active plan:
 
 Current next blocker:
 
-- Close AgentSmith runner support API / projection contract consistency with runner/context/credential owner evidence before treating runner runtime/backend-real readiness as ready to hand to sibling repos.
+- P3 airgap image load/import focused diagnostic is complete; remaining airgap work is offline install/deploy smoke and operator/deployment adoption. In parallel, close AgentSmith runner support API / projection contract consistency with runner/context/credential owner evidence before treating runner runtime/backend-real readiness as ready to hand to sibling repos.
 
 Historical/reference note:
 

@@ -18,6 +18,8 @@ diagnostic support only. Operator-facing release language is `online` /
 `airgap` × `use_existing` / `install_substrates`; `install_substrates` is a
 release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith
 substrate deployment and not provider matrix expansion.
+Pre-GA 口径：旧命名、旧路径、旧职责默认删除或 fail fast；只允许带
+owner、删除条件和验收证据的短期待删项，不作为长期兼容承诺。
 
 Current active plan:
 

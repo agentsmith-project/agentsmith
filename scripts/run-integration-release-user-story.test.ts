@@ -108,25 +108,98 @@ describe('run-integration-release-user-story integration dependency contract', (
 
   it('ensures a usable standalone Kubernetes context before CSI without empty kind names', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const resetIndex = script.indexOf('bash "${ROOT_DIR}/scripts/backend-real-reset.sh"');
+    const firstContextEnsureIndex = script.indexOf('\nensure_release_user_story_kubernetes_context\n');
     const mainDepsIndex = script.indexOf('\nensure_release_user_story_integration_deps_for_afscp\n');
     const contextEnsureIndex = script.indexOf('\nensure_release_user_story_kubernetes_context\n', mainDepsIndex);
     const csiIndex = script.indexOf('\nensure_afscp_storage_csi\n', contextEnsureIndex);
     const contextFunctionStart = script.indexOf('ensure_release_user_story_kubernetes_context()');
-    const contextFunctionEnd = script.indexOf('\nwait_for_afscp_storage_csi_pods()', contextFunctionStart);
+    const contextFunctionEnd = script.indexOf('\nrun_release_user_story_clean_env()', contextFunctionStart);
     const contextFunctionBody = script.slice(contextFunctionStart, contextFunctionEnd);
+    const readyFunctionStart = script.indexOf('release_user_story_kubectl_context_ready()');
+    const readyFunctionEnd = script.indexOf('\nrelease_user_story_default_kind_kubeconfig_path()', readyFunctionStart);
+    const readyFunctionBody = script.slice(readyFunctionStart, readyFunctionEnd);
+    const asbcpKubeconfigStart = script.indexOf('release_user_story_asbcp_kubeconfig_path()');
+    const asbcpKubeconfigEnd = script.indexOf('\nrelease_user_story_require_target_kind_context()', asbcpKubeconfigStart);
+    const asbcpKubeconfigBody = script.slice(asbcpKubeconfigStart, asbcpKubeconfigEnd);
 
-    expect(script).toContain('KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"');
-    expect(script).toContain('KIND_NODE_NAME="${KIND_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"');
+    expect(script).toContain('KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"');
+    expect(script).toContain('KIND_NODE_NAME="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"');
+    expect(script).not.toContain('kind_cluster_name_from_context_or_override');
+    expect(script).not.toContain('kind_control_plane_node_name_from_context_or_override');
     expect(contextFunctionStart).toBeGreaterThanOrEqual(0);
-    expect(contextFunctionBody).toContain('if release_user_story_kubectl_context_ready; then');
+    expect(readyFunctionBody).toContain('[[ "${current_context}" == "${KIND_CONTEXT_NAME}" ]] || return 1');
+    expect(readyFunctionBody).toContain('kubectl --context "${KIND_CONTEXT_NAME}" get --raw=');
+    expect(asbcpKubeconfigBody).not.toContain('local configured="${KUBECONFIG:-}"');
+    expect(asbcpKubeconfigBody).not.toContain('${HOME}/.kube/config');
+    expect(contextFunctionBody).toContain('release_user_story_fail "kind is required for the local release user story diagnostic context ${KIND_CONTEXT_NAME}."');
     expect(contextFunctionBody).toContain('LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"');
     expect(contextFunctionBody).toContain('LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \\');
     expect(contextFunctionBody).toContain('bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"');
     expect(contextFunctionBody).toContain('export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"');
+    expect(contextFunctionBody).toContain('release_user_story_require_target_kind_context "release user story rehearsal"');
     expect(contextFunctionBody).toContain('ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"');
+    expect(script).toContain('BACKEND_REAL_RESET_KUBE_CONTEXT="${KIND_CONTEXT_NAME}" \\');
+    expect(firstContextEnsureIndex).toBeGreaterThanOrEqual(0);
+    expect(resetIndex).toBeGreaterThan(firstContextEnsureIndex);
     expect(mainDepsIndex).toBeGreaterThanOrEqual(0);
     expect(contextEnsureIndex).toBeGreaterThan(mainDepsIndex);
     expect(csiIndex).toBeGreaterThan(contextEnsureIndex);
+  });
+
+  it('keeps release Kubernetes writes behind the explicit local kind context guard', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+
+    const csiFunctionStart = script.indexOf('ensure_afscp_storage_csi()');
+    const csiFunctionEnd = script.indexOf('\nensure_release_user_story_integration_deps_for_afscp', csiFunctionStart);
+    const csiFunctionBody = script.slice(csiFunctionStart, csiFunctionEnd);
+    const namespaceApplyIndex = script.indexOf('\nensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"');
+    const namespaceGuardIndex = script.lastIndexOf('release_user_story_require_target_kind_context "sandbox namespace reconciliation"', namespaceApplyIndex);
+    const externalApplyIndex = script.indexOf('\nkubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null');
+    const externalGuardIndex = script.lastIndexOf('release_user_story_require_target_kind_context "external dependency service apply"', externalApplyIndex);
+
+    expect(csiFunctionBody).toContain('release_user_story_require_target_kind_context "AFSCP storage CSI reconciliation"');
+    expect(csiFunctionBody).toContain('kubectl apply --validate=false -f "${csi_manifest}" >/dev/null');
+    expect(csiFunctionBody.indexOf('release_user_story_require_target_kind_context "AFSCP storage CSI reconciliation"')).toBeLessThan(
+      csiFunctionBody.indexOf('kubectl apply --validate=false -f "${csi_manifest}" >/dev/null'),
+    );
+    expect(namespaceGuardIndex).toBeGreaterThanOrEqual(0);
+    expect(namespaceGuardIndex).toBeLessThan(namespaceApplyIndex);
+    expect(externalGuardIndex).toBeGreaterThanOrEqual(0);
+    expect(externalGuardIndex).toBeLessThan(externalApplyIndex);
+  });
+
+  it('fails AFSCP reset closed unless the target kind context and namespace ownership are confirmed', () => {
+    const runtimeLib = readFileSync('scripts/lib/afscp-local-runtime.sh', 'utf8');
+    const internalCommon = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const resetFunctionStart = internalCommon.indexOf('reset_owned_afscp_local_runtime_k8s_state()');
+    const resetFunctionEnd = internalCommon.indexOf('\nreset_owned_afscp_local_runtime_for_gate()', resetFunctionStart);
+    const resetFunctionBody = internalCommon.slice(resetFunctionStart, resetFunctionEnd);
+    const contextGuardStart = internalCommon.indexOf('afscp_ensure_local_kind_context_for_reset()');
+    const contextGuardEnd = internalCommon.indexOf('\nafscp_assert_namespace_owned_for_reset()', contextGuardStart);
+    const contextGuardBody = internalCommon.slice(contextGuardStart, contextGuardEnd);
+    const ownershipGuardStart = internalCommon.indexOf('afscp_assert_namespace_owned_for_reset()');
+    const ownershipGuardEnd = internalCommon.indexOf('\nreset_owned_afscp_local_runtime_k8s_state()', ownershipGuardStart);
+    const ownershipGuardBody = internalCommon.slice(ownershipGuardStart, ownershipGuardEnd);
+
+    expect(runtimeLib).toContain('export INTERNAL_AGENT_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"');
+    expect(runtimeLib).toContain('export LOCAL_KIND_FINAL_KUBECONFIG_PATH');
+    expect(internalCommon).toContain('KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"');
+    expect(contextGuardBody).toContain('kubectl is required before AFSCP local-real Kubernetes namespace reset; local-real fails closed');
+    expect(contextGuardBody).toContain('[[ -n "${KIND_CLUSTER_NAME}" && "${KIND_CONTEXT_NAME}" == kind-* ]]');
+    expect(contextGuardBody).toContain('kubectl config use-context "${KIND_CONTEXT_NAME}"');
+    expect(contextGuardBody).toContain('[[ "${current_context}" == "${KIND_CONTEXT_NAME}" ]]');
+    expect(contextGuardBody).toContain('kubectl --context "${KIND_CONTEXT_NAME}" get --raw=');
+    expect(contextGuardBody).not.toContain('skipping AFSCP local-real Kubernetes namespace reset');
+    expect(ownershipGuardBody).toContain('local owner_label_key="${AFSCP_LOCAL_RUNTIME_K8S_OWNER_LABEL_KEY:-app.kubernetes.io/managed-by}"');
+    expect(ownershipGuardBody).toContain('local owner_label_value="${AFSCP_LOCAL_RUNTIME_K8S_OWNER_LABEL_VALUE:-agentsmith}"');
+    expect(ownershipGuardBody).toContain('kubectl get namespace "${namespace}" -o "jsonpath={.metadata.labels.${escaped_label_key}}"');
+    expect(ownershipGuardBody).toContain('namespace ${namespace} must be labelled ${owner_label_key}=${owner_label_value}');
+    expect(resetFunctionBody).toContain('afscp_ensure_local_kind_context_for_reset || return 1');
+    expect(resetFunctionBody).toContain('afscp_assert_namespace_owned_for_reset "${K8S_NAMESPACE}" || return 1');
+    expect(resetFunctionBody.indexOf('afscp_assert_namespace_owned_for_reset "${K8S_NAMESPACE}" || return 1')).toBeLessThan(
+      resetFunctionBody.indexOf('kubectl delete namespace "${K8S_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s'),
+    );
   });
 
   it('keeps release user story ASBCP state artifact free of raw service tokens', () => {

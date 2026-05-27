@@ -52,7 +52,7 @@ INTERNAL_SANDBOX_PORT="${ASBCP_INTERNAL_BASE_URL_VALUE##*:}"
 INTERNAL_SANDBOX_PORT="${INTERNAL_SANDBOX_PORT%%/*}"
 ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
 ASBCP_IMAGE_LOCK_PATH="${ASBCP_IMAGE_LOCK_PATH:-${ROOT_DIR}/infra/deploy/shared/asbcp-image.lock}"
-KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
+KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
@@ -247,10 +247,23 @@ ensure_agent_task_diagnostics_state_ready() {
 }
 
 ensure_kind_cluster() {
+  local target_kubeconfig
   LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   LOCAL_KIND_CONFIG_PATH="${KIND_CONFIG_PATH}" \
   LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane" \
     ensure_local_kind_cluster
+  if declare -F scenario_kind_kubeconfig_path >/dev/null 2>&1; then
+    target_kubeconfig="$(scenario_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")"
+  else
+    target_kubeconfig="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-${HOME}/agentsmith/local-kind/kind-${KIND_CLUSTER_NAME}.kubeconfig}"
+  fi
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${target_kubeconfig}"
+  export LOCAL_KIND_FINAL_KUBECONFIG_PATH
+  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null || {
+    internal_err "failed to select local kind context ${KIND_CONTEXT_NAME}; local-real fails closed"
+    return 1
+  }
 }
 
 ensure_local_image() {
@@ -1427,27 +1440,77 @@ SQL
   reset_owned_afscp_local_runtime_object_prefix
 }
 
-reset_owned_afscp_local_runtime_k8s_state() {
-  afscp_validate_local_runtime_reset_marker || return 1
+afscp_local_runtime_kube_jsonpath_key() {
+  printf '%s' "$1" | sed 's/\./\\./g'
+}
 
+afscp_ensure_local_kind_context_for_reset() {
   if ! command -v kubectl >/dev/null 2>&1; then
-    internal_info "skipping AFSCP local-real Kubernetes namespace reset because kubectl is unavailable"
-    return 0
+    internal_err "kubectl is required before AFSCP local-real Kubernetes namespace reset; local-real fails closed"
+    return 1
+  fi
+
+  [[ -n "${KIND_CLUSTER_NAME}" && "${KIND_CONTEXT_NAME}" == kind-* ]] || {
+    internal_err "target local kind context is invalid: cluster=${KIND_CLUSTER_NAME:-<empty>} context=${KIND_CONTEXT_NAME:-<empty>}; local-real fails closed"
+    return 1
+  }
+
+  if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
+    export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
   fi
 
   local current_context
   current_context="$(kubectl config current-context 2>/dev/null || true)"
   if [[ "${current_context}" != "${KIND_CONTEXT_NAME}" ]]; then
-    if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
+    if kubectl config get-contexts -o name 2>/dev/null | grep -qx "${KIND_CONTEXT_NAME}"; then
       kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null || {
         internal_err "failed to select ${KIND_CONTEXT_NAME} before AFSCP local-real Kubernetes namespace reset; local-real fails closed"
         return 1
       }
     else
-      internal_info "skipping AFSCP local-real Kubernetes namespace reset because ${KIND_CONTEXT_NAME} is not available"
-      return 0
+      internal_err "target local kind context ${KIND_CONTEXT_NAME} is unavailable before AFSCP local-real Kubernetes namespace reset; local-real fails closed"
+      return 1
     fi
   fi
+
+  current_context="$(kubectl config current-context 2>/dev/null || true)"
+  [[ "${current_context}" == "${KIND_CONTEXT_NAME}" ]] || {
+    internal_err "refusing AFSCP local-real Kubernetes namespace reset on context ${current_context:-<none>}; expected ${KIND_CONTEXT_NAME}"
+    return 1
+  }
+  kubectl --context "${KIND_CONTEXT_NAME}" get --raw='/readyz' >/dev/null 2>&1 \
+    || kubectl --context "${KIND_CONTEXT_NAME}" get namespace default >/dev/null 2>&1 \
+    || {
+      internal_err "target local kind context ${KIND_CONTEXT_NAME} is not ready; local-real fails closed"
+      return 1
+    }
+}
+
+afscp_assert_namespace_owned_for_reset() {
+  local namespace="$1"
+  local owner_label_key="${AFSCP_LOCAL_RUNTIME_K8S_OWNER_LABEL_KEY:-app.kubernetes.io/managed-by}"
+  local owner_label_value="${AFSCP_LOCAL_RUNTIME_K8S_OWNER_LABEL_VALUE:-agentsmith}"
+  local escaped_label_key actual_owner_label
+
+  if ! kubectl get namespace "${namespace}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  escaped_label_key="$(afscp_local_runtime_kube_jsonpath_key "${owner_label_key}")"
+  actual_owner_label="$(
+    kubectl get namespace "${namespace}" -o "jsonpath={.metadata.labels.${escaped_label_key}}" 2>/dev/null \
+      || true
+  )"
+  [[ "${actual_owner_label}" == "${owner_label_value}" ]] || {
+    internal_err "namespace ${namespace} must be labelled ${owner_label_key}=${owner_label_value} before AFSCP local-real reset; local-real fails closed"
+    return 1
+  }
+}
+
+reset_owned_afscp_local_runtime_k8s_state() {
+  afscp_validate_local_runtime_reset_marker || return 1
+  afscp_ensure_local_kind_context_for_reset || return 1
+  afscp_assert_namespace_owned_for_reset "${K8S_NAMESPACE}" || return 1
 
   internal_info "resetting owned AFSCP local-real Kubernetes namespace ${K8S_NAMESPACE}"
   kubectl delete namespace "${K8S_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s >/dev/null || {

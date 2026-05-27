@@ -14,7 +14,10 @@ fixture, validator, and evidence boundary; it does not mean P2/P3 real
 Kubernetes, cloud, or airgap handoff is complete. AgentSmith does not give a
 release verdict, and the release-kit repo owns online/airgap deployment
 verdict through its own gates and evidence; kind/local-kind remains local
-diagnostic support only.
+diagnostic support only. Operator-facing release language is `online` /
+`airgap` × `use_existing` / `install_substrates`; `install_substrates` is a
+release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith
+substrate deployment and not provider matrix expansion.
 
 Current active plan:
 
@@ -23,3 +26,7 @@ Current active plan:
 Current next blocker:
 
 - Close AgentSmith runner support API / projection contract consistency with runner/context/credential owner evidence before treating runner runtime/backend-real readiness as ready to hand to sibling repos.
+
+Historical/reference note:
+
+- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - historical reference for the earlier Docker substrate and unified-deploy diagnostic implementation. It is not the current active plan, and its `local-kind` / `existing-cluster` names are diagnostic evidence names only.

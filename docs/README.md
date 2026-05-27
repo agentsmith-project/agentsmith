@@ -35,8 +35,8 @@
 
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
-- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md)
-  - current plan for one deploy model with local-kind and existing-cluster profiles
+- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md)
+  - active pre-GA boundary plan for release-kit / runner repo split; deployment verdict ownership belongs to release-kit repo-local gates
 - [Testing Docs Index](./testing/README.md)
 - [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
   - choose `ui_only`, `local_manual`, or `release_grade`

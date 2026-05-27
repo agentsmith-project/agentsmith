@@ -1,21 +1,33 @@
 # AgentSmith Deploy And Docker Substrate Milestone Plan
 
-Status: `implemented_current_direction`
+Status: `historical_reference`
 Owner: Product + Engineering
-Last updated: 2026-05-07
+Last updated: 2026-05-27
+
+Historical/reference notice: this file records the earlier Docker substrate and
+unified-deploy diagnostic implementation. It is not the current active
+deployment plan. Current release/deploy truth is
+`docs/contracts/unified-deploy-contract.md` plus
+`docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md`.
+`local-kind` and `existing-cluster` in this file are pre-GA diagnostic entry
+names only; they are not release targets, not operator-facing choices, and not
+`release:ready` deployment conclusions.
 
 ## Purpose
 
 AgentSmith uses one deployment model: `AgentSmith deploy`.
 
-The deployment model has two profiles:
+At the time of this milestone implementation, AgentSmith exposed two
+diagnostic entry names:
 
 - `local-kind`: Docker substrate plus local kind for AgentSmith app workloads.
 - `existing-cluster`: operator-provided Kubernetes namespace and prerequisites,
   consuming the same declared substrate truth shape.
 
-Profiles are environment preparation choices. They are not separate products,
-release lines, or UI objects.
+Those names are now historical/pre-GA diagnostic entry names. The current
+formal release model is `online` / `airgap` × `use_existing` /
+`install_substrates`, represented internally as `target_cluster` /
+`substrate_source` / `distribution`.
 
 ## Product Decisions
 
@@ -78,7 +90,7 @@ The app deployment renders Kubernetes resources for:
 Ingress routes `/api/v1` and runner/terminal WebSocket paths to `api`.
 `/api/public` and `/api/system` route to `web`. `llmup` is internal by default.
 
-## Current Commands
+## Historical Diagnostic Commands
 
 Daily development and manual testing use host runtime:
 
@@ -89,7 +101,9 @@ make local-real-down
 make local-real-reset
 ```
 
-Deployment-focused checks use unified deploy commands:
+These commands are retained here as historical/focused diagnostic evidence
+names. They are not formal release targets and do not produce an AgentSmith
+deployment/package/operator verdict:
 
 ```bash
 npm run test:unified-deploy:substrate-boundary

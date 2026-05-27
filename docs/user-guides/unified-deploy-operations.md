@@ -4,10 +4,22 @@ Status: `current`
 
 This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run release:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are focused diagnostics only. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
-AgentSmith now has one deployment model with two profiles:
+The formal release model is not the command names in this guide. Release-kit
+operator-facing language is `online` / `airgap` crossed with `use_existing` /
+`install_substrates`; internal machine artifacts use `target_cluster` /
+`substrate_source` / `distribution`. `install_substrates` means the
+release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith
+deploying substrates and not a provider matrix.
 
-- `local-kind`: runs the same Kubernetes app topology on a developer machine, with Docker substrate services.
-- `existing-cluster`: applies the same app topology to an operator-owned Kubernetes cluster, consuming declared substrate connection truth.
+This guide still exposes two pre-GA diagnostic entry names:
+
+- `local-kind`: local diagnostic rehearsal on a developer machine, with Docker
+  substrate services and a local kind app cluster.
+- `existing-cluster`: transition-only route/app wiring smoke against an
+  operator-owned Kubernetes cluster plus declared substrate connection truth.
+
+They are not release targets, not long-term operator choices, and not
+`release:ready` deployment conclusions.
 
 ## Current vs P0 Handoff Boundary
 
@@ -81,7 +93,7 @@ npm run test:unified-deploy:address-truth
 npm run test:unified-deploy:k8s-dry-run
 ```
 
-### Local Kubernetes Deploy
+### Local Diagnostic Deploy
 
 ```bash
 npm run test:unified-deploy:local-kind:images
@@ -112,7 +124,7 @@ It does not run chat, audit, usage, or full release verification.
 
 ### Existing Cluster Smoke
 
-`existing-cluster` smoke proves the current pre-GA diagnostic app deploy wiring, rollout, and routing smoke for the real-cluster profile. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith product gate.
+`existing-cluster` smoke proves the current pre-GA diagnostic app deploy wiring, rollout, and routing smoke for the real-cluster diagnostic entry. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith product gate.
 
 ```bash
 npm run test:unified-deploy:existing-cluster-smoke -- \

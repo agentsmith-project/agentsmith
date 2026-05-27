@@ -13,28 +13,30 @@ Detailed commands live in:
 1. `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。
 2. `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。
 
-可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md) 与 [Unified Deploy Operations](./unified-deploy-operations.md)；本矩阵只说明 topology、profile 边界和运行线归属。
+可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md) 与 [Unified Deploy Operations](./unified-deploy-operations.md)；本矩阵只说明 topology、diagnostic entry 边界和运行线归属。
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic profiles，不是两套产品，也不是 `release:ready` 的部署结论。
+1. 只有一个 AgentSmith deploy 模型；正式 release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
+4. `install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 
 ## Current vs P0 Handoff Boundary
 
 The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 
-AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成多套部署入口。
+AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA
+diagnostic entry names 写成正式部署模型。
 
 ## 运行线矩阵
 
 | 运行线 | 当前正式命名 | 主要用途 | App runtime | substrate | 备注 |
 |-------|-------------|---------|-------------|----------|------|
 | 本地真实开发线 | `local-manual` | Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint. | Host API/Web/runner processes. | Local Docker development substrate. | local-real is the product-facing developer path; local-manual is the adapter identity and runtime evidence root. |
-| 统一部署本机 profile | `unified-deploy local-kind` | Local Kubernetes deploy proof on a developer machine. | Kubernetes workloads in local kind. | Docker substrate registered into Kubernetes Services and EndpointSlices. | Use focused product flows after rollout to prove Files and managed runner behavior. |
-| 统一部署既有集群 profile | `unified-deploy existing-cluster` | Deploy smoke against an operator-owned Kubernetes cluster and declared external substrate truth. | Kubernetes workloads in an operator-owned cluster. | Operator-provided external substrate truth. | Route smoke proves deploy wiring; focused product flows still prove Files and managed runner behavior. |
+| 统一部署本机 diagnostic entry | `unified-deploy local-kind` | Local Kubernetes diagnostic rehearsal on a developer machine. | Kubernetes workloads in local kind. | Docker substrate registered into Kubernetes Services and EndpointSlices. | Transition-only focused diagnostic; not a release target. Use focused product flows after rollout to prove Files and managed runner behavior. |
+| 统一部署既有集群 diagnostic entry | `unified-deploy existing-cluster` | Transition-only app/route wiring smoke against an operator-owned Kubernetes cluster and declared external substrate truth. | Kubernetes workloads in an operator-owned cluster. | Operator-provided external substrate truth. | Not formal online/airgap evidence and not an AgentSmith product gate. Route smoke proves deploy wiring; focused product flows still prove Files and managed runner behavior. |
 
 ## 当前证据路径
 
@@ -44,4 +46,7 @@ AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成�
 
 ## Short Rule
 
-Use `local-real` to develop and manually test. Use unified deploy profiles to prove deployment. Use focused product flows to prove file library and managed runner task behavior without running a heavy release campaign.
+Use `local-real` to develop and manually test. Use unified deploy diagnostic
+entries for local/wiring diagnostics only. Formal release targets live in the
+release-kit four-quadrant model; focused product flows prove file library and
+managed runner task behavior without running a heavy release campaign.

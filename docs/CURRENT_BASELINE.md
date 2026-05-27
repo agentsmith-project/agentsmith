@@ -1,6 +1,6 @@
 # Current Baseline (Whitelist)
 
-更新时间：2026-05-07
+更新时间：2026-05-27
 状态：`authoritative`
 
 本文件是唯一的人类 current truth router。它回答两件事：
@@ -49,7 +49,8 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 4. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 5. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
 6. [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
-7. [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
+7. [Unified Deploy Contract](./contracts/unified-deploy-contract.md)
+8. [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
 
 ## 4. 冲突时按谁为准
 
@@ -64,5 +65,6 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 - 产品对象名、页面 IA、用户可见命名冲突时，以 [Product Terminology Contract](./contracts/product-terminology.md) 为准。
 - UI 风格、视觉语言与实现偏好冲突时，以 [DESIGN.md](../DESIGN.md) 为准；产品对象与 IA 不由 `DESIGN.md` 定义。
 - 工程命令、gate、验证通道、发布流程冲突时，以 [Current Engineering Governance Model](./current-engineering-governance-model.md) 和 machine-readable manifests 为准。
-- 部署模型冲突时，以 [Unified Deploy Contract](./contracts/unified-deploy-contract.md) 和 [Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 为准。
+- 部署模型冲突时，以 [Unified Deploy Contract](./contracts/unified-deploy-contract.md) 为正式 release 词汇和机器合同真相；[Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 只负责 pre-GA/local focused diagnostic 操作入口。正式 operator-facing release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`；`local-kind` / `existing-cluster` 不是 release target。
+- Engineering 计划冲突时，以 [Engineering Docs Index](./engineering/README.md) 标记的 active plan 为准；旧 milestone plan 若仍在树中，只是 historical/reference evidence，不是 current active plan。
 - release-grade automated verification 的面向人入口是 `npm run release:ready`；precheck 通过后使用其背后的 internal adapter `release:campaign:full`。证据完整性、aggregate-only `gate:release:full` 复核语义和常见误区，参考 [Verification Campaigns v1](./testing/verification-campaigns-v1.md)；若与 contracts 冲突，仍以 contracts 和 manifests 为准。

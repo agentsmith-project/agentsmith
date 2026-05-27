@@ -939,7 +939,7 @@ async function resolveTaskBoundAgentRunnerForTaskRun(args: {
   needsTerminal?: boolean;
   source: 'agent_runner_task_run' | 'agent_runner_terminal';
 }): Promise<AgentRunnerResolutionResult> {
-  const runnerId = args.task.bound_runner_id?.trim() ?? '';
+  const runnerId = readTaskBoundRunnerId(args.task);
   if (!runnerId) {
     return {
       ok: false,
@@ -1203,6 +1203,12 @@ function readActiveRunResolvedRunnerId(
   state: Pick<NotebookTaskRunState, 'resolved_runner_id' | 'runner_id'> | null | undefined,
 ): string {
   return state?.resolved_runner_id?.trim() ?? '';
+}
+
+function readTaskBoundRunnerId(
+  task: Pick<TaskRecord, 'bound_runner_id'>,
+): string {
+  return task.bound_runner_id?.trim() ?? '';
 }
 
 async function resolveTerminalSessionRunner(args: {
@@ -4082,11 +4088,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         ticketAgentRunnerId,
       )
       : null;
-    const boundAgentForPath = !agent && task.bound_runner_id?.trim()
+    const boundRunnerIdForPath = readTaskBoundRunnerId(task);
+    const boundAgentForPath = !agent && boundRunnerIdForPath
       ? await deps.agentResourceService.getAgent(
         route.workspaceId,
         route.projectId,
-        task.bound_runner_id.trim(),
+        boundRunnerIdForPath,
       )
       : null;
     const runtimePathAgent = agent ?? boundAgentForPath;
@@ -4350,6 +4357,33 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         file_library_id: task.workspace_file_library_id,
       });
       return true;
+    }
+    const boundRunnerId = readTaskBoundRunnerId(task);
+    if (boundRunnerId) {
+      try {
+        await maybeReleaseInternalAgentWorkload(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          taskId: task.id,
+          userId: task.owner_user_id,
+          agentId: boundRunnerId,
+          workspaceFileLibraryId: task.workspace_file_library_id,
+        }, {
+          force: true,
+        });
+      } catch (error) {
+        await rollbackTaskDeletingFence({
+          deps,
+          workspaceId: route.workspaceId,
+          task,
+          correlationId: deleteCorrelationId,
+        });
+        if (!isInternalWorkloadReleasePendingError(error)) {
+          throw error;
+        }
+        json(res, 409, buildInternalWorkloadReleasePendingResponse(task.id, error));
+        return true;
+      }
     }
     const releaseResult = await releaseTaskFileLibraryBindingWithAudit({
       deps,

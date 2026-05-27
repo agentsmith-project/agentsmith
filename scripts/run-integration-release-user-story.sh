@@ -74,6 +74,9 @@ ASBCP_PORT="${INTERNAL_ASBCP_PORT:-28080}"
 ASBCP_INTERNAL_BASE_URL_VALUE="${ASBCP_INTERNAL_BASE_URL:-http://127.0.0.1:${ASBCP_PORT}}"
 ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
+KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
+KIND_NODE_NAME="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"
 CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"
@@ -100,6 +103,11 @@ AFSCP_ACTOR_ID_VALUE="${AFSCP_ACTOR_ID:-${AFSCP_ORCHESTRATOR_ACTOR_ID:-${AFSCP_C
 
 info() { echo "[integration-release-user-story] $*"; }
 
+release_user_story_fail() {
+  echo "[integration-release-user-story] ERROR: $*" >&2
+  exit 1
+}
+
 release_user_story_secret_fingerprint() {
   local value="${1:-}"
   local digest
@@ -116,8 +124,11 @@ release_user_story_secret_fingerprint() {
 }
 
 release_user_story_kubectl_context_ready() {
-  kubectl config current-context >/dev/null 2>&1 || return 1
-  kubectl get --raw='/readyz' >/dev/null 2>&1 || kubectl get namespace default >/dev/null 2>&1
+  local current_context
+  current_context="$(kubectl config current-context 2>/dev/null || true)"
+  [[ "${current_context}" == "${KIND_CONTEXT_NAME}" ]] || return 1
+  kubectl --context "${KIND_CONTEXT_NAME}" get --raw='/readyz' >/dev/null 2>&1 \
+    || kubectl --context "${KIND_CONTEXT_NAME}" get namespace default >/dev/null 2>&1
 }
 
 release_user_story_default_kind_kubeconfig_path() {
@@ -133,24 +144,54 @@ release_user_story_default_kind_kubeconfig_path() {
 }
 
 release_user_story_asbcp_kubeconfig_path() {
-  local configured="${KUBECONFIG:-}"
   local cluster_name="${KIND_CLUSTER_NAME:-${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}}"
-  if [[ -n "${configured}" ]]; then
-    realpath -m "${configured}"
-    return 0
-  fi
   if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
     realpath -m "${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
-    return 0
-  fi
-  if release_user_story_kubectl_context_ready && [[ -f "${HOME}/.kube/config" ]]; then
-    realpath -m "${HOME}/.kube/config"
     return 0
   fi
   if [[ -z "${cluster_name}" ]]; then
     cluster_name="agentsmith"
   fi
   release_user_story_default_kind_kubeconfig_path "${cluster_name}"
+}
+
+release_user_story_require_target_kind_context() {
+  local action="${1:-Kubernetes operation}"
+  if ! release_user_story_kubectl_context_ready; then
+    local current_context
+    current_context="$(kubectl config current-context 2>/dev/null || true)"
+    echo "[integration-release-user-story] ERROR: ${action} requires local kind context ${KIND_CONTEXT_NAME}, got ${current_context:-<none>}" >&2
+    return 1
+  fi
+}
+
+ensure_release_user_story_kubernetes_context() {
+  [[ -n "${KIND_CLUSTER_NAME}" && "${KIND_CONTEXT_NAME}" == kind-* ]] \
+    || release_user_story_fail "target kind context is invalid: cluster=${KIND_CLUSTER_NAME:-<empty>} context=${KIND_CONTEXT_NAME:-<empty>}"
+
+  if ! command -v kind >/dev/null 2>&1; then
+    release_user_story_fail "kind is required for the local release user story diagnostic context ${KIND_CONTEXT_NAME}."
+  fi
+
+  local kind_config_path
+  kind_config_path="${KIND_CONFIG_PATH:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"
+  export LOCAL_KIND_FINAL_KUBECONFIG_PATH
+
+  info "ensuring local kind cluster ${KIND_CLUSTER_NAME} for standalone release user story rehearsal"
+  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  LOCAL_KIND_CONFIG_PATH="${kind_config_path}" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \
+    bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"
+
+  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null \
+    || release_user_story_fail "failed to select local kind context ${KIND_CONTEXT_NAME}."
+  release_user_story_require_target_kind_context "release user story rehearsal" \
+    || exit 1
+  CONTEXT_NAME="${KIND_CONTEXT_NAME}"
+  ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
+  info "using local kind Kubernetes context ${CONTEXT_NAME}"
 }
 
 run_release_user_story_clean_env() {
@@ -276,9 +317,14 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+ASBCP_KUBECONFIG_PATH=""
+ensure_release_user_story_kubernetes_context
+
 if [[ "${RESET_FIRST}" == "1" ]]; then
   info "running clean reset"
-  bash "${ROOT_DIR}/scripts/backend-real-reset.sh"
+  BACKEND_REAL_RESET_KUBE_CONTEXT="${KIND_CONTEXT_NAME}" \
+  BACKEND_REAL_RESET_KUBE_NAMESPACE="${K8S_NAMESPACE}" \
+    bash "${ROOT_DIR}/scripts/backend-real-reset.sh"
 fi
 
 ensure_backend_real_state
@@ -301,23 +347,6 @@ elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2
   exit 1
 fi
-
-CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
-KIND_CLUSTER_NAME="$(
-  kind_cluster_name_from_context_or_override \
-    "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" \
-    "${CONTEXT_NAME}"
-)"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
-KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
-KIND_NODE_NAME="$(
-  kind_control_plane_node_name_from_context_or_override \
-    "${CONTEXT_NAME}" \
-    "${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}" \
-    "${KIND_CLUSTER_NAME}"
-)"
-KIND_NODE_NAME="${KIND_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}"
-ASBCP_KUBECONFIG_PATH=""
 
 RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0
 cleanup() {
@@ -350,36 +379,6 @@ ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
-ensure_release_user_story_kubernetes_context() {
-  if release_user_story_kubectl_context_ready; then
-    CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
-    ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
-    info "using Kubernetes context ${CONTEXT_NAME}"
-    return 0
-  fi
-
-  if ! command -v kind >/dev/null 2>&1; then
-    echo "[integration-release-user-story] kind is required when no usable Kubernetes context is configured." >&2
-    return 1
-  fi
-
-  local kind_config_path
-  kind_config_path="${KIND_CONFIG_PATH:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
-  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"
-  export LOCAL_KIND_FINAL_KUBECONFIG_PATH
-
-  info "ensuring local kind cluster ${KIND_CLUSTER_NAME} for standalone release user story rehearsal"
-  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
-  LOCAL_KIND_CONFIG_PATH="${kind_config_path}" \
-  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \
-    bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"
-
-  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
-  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null
-  CONTEXT_NAME="${KIND_CONTEXT_NAME}"
-  ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"
-}
-
 wait_for_afscp_storage_csi_pods() {
   local namespace="$1"
   local selector="$2"
@@ -406,6 +405,8 @@ wait_for_afscp_storage_csi_ready() {
 }
 
 ensure_afscp_storage_csi() {
+  release_user_story_require_target_kind_context "AFSCP storage CSI reconciliation" \
+    || exit 1
   info "reconciling AFSCP storage CSI driver ${CSI_DRIVER}"
   local csi_manifest="${AFSCP_STORAGE_CSI_MANIFEST_PATH}"
   if [[ ! -f "${csi_manifest}" ]]; then
@@ -413,22 +414,20 @@ ensure_afscp_storage_csi() {
   fi
   kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
-  if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-    info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
-    ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
-    ensure_kind_image "${RUNNER_IMAGE}"
-    ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
-    ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
-    ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
-    ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
-    ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
-    ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
-    ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
+  info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
+  ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+  ensure_kind_image "${RUNNER_IMAGE}"
+  ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
+  ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
+  ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
+  ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
+  ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
+  ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
+  ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
-    kubectl scale statefulset/juicefs-csi-controller -n "${AFSCP_STORAGE_CSI_NAMESPACE}" --replicas=1 >/dev/null || true
-    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
-    kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
-  fi
+  kubectl scale statefulset/juicefs-csi-controller -n "${AFSCP_STORAGE_CSI_NAMESPACE}" --replicas=1 >/dev/null || true
+  kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
+  kubectl delete pod -n "${AFSCP_STORAGE_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
 
   wait_for_afscp_storage_csi_ready "${AFSCP_STORAGE_CSI_NAMESPACE}"
 }
@@ -437,6 +436,8 @@ ensure_release_user_story_integration_deps_for_afscp
 ensure_release_user_story_kubernetes_context
 ensure_afscp_storage_csi
 ensure_release_user_story_afscp_local_runtime
+release_user_story_require_target_kind_context "sandbox namespace reconciliation" \
+  || exit 1
 ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
 
 KIND_GATEWAY=""
@@ -466,6 +467,8 @@ render_k8s_external_dependency_services \
   "${INTEGRATION_POSTGRES_PORT}" \
   "${KIND_GATEWAY}" \
   "${INTEGRATION_MINIO_API_PORT}"
+release_user_story_require_target_kind_context "external dependency service apply" \
+  || exit 1
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
 cat > "${CONFIG_PATH}" <<EOF

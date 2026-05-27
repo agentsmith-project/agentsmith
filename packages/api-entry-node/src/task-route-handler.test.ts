@@ -4826,6 +4826,240 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('hard tears down a bound managed internal workload before releasing the task file library binding on delete', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { runner } = await seedDefaultManagedRunner(deps);
+    const now = new Date().toISOString();
+    const taskId = 'task_delete_managed_teardown';
+    const libraryId = 'lib_delete_managed_teardown';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: 'Delete Managed Teardown Workspace',
+      now,
+    }));
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const acquired = await bindingRepo.acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId,
+      taskTitle: 'Delete managed teardown task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_delete_managed_teardown_acquire',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Delete managed teardown task',
+      task_home_segment: taskId,
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: 'Delete Managed Teardown Workspace',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+      bound_runner_id: runner.id,
+      bound_runner_kind: 'managed',
+      runner_binding_source: 'default_managed',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    let fileLibraryBindingReleaseStarted = false;
+    const requestHardTeardown = vi.fn(async () => {
+      expect(fileLibraryBindingReleaseStarted).toBe(false);
+    });
+    const deleteWorkspaceBinding = vi.fn(async () => {
+      expect(fileLibraryBindingReleaseStarted).toBe(false);
+    });
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.internalAgentWorkspaceBindingManager = {
+      deleteWorkspaceBinding,
+    } as never;
+    const originalDeleteIfMatch = deps.docStore.deleteIfMatch.bind(deps.docStore);
+    deps.docStore.deleteIfMatch = vi.fn(async (collection: string, id: string, operation: never) => {
+      if (collection === 'agent_task_file_library_bindings' && id === `ws_default::proj_1::${libraryId}`) {
+        expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+        expect(deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
+        fileLibraryBindingReleaseStarted = true;
+      }
+      return originalDeleteIfMatch(collection, id, operation);
+    }) as never;
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'DELETE',
+      req: { headers: { 'x-request-id': 'req_delete_managed_teardown' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+    expect(requestHardTeardown).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId(taskId),
+    });
+    expect(deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(fileLibraryBindingReleaseStarted).toBe(true);
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toBeNull();
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toBeNull();
+  });
+
+  it('fails task delete fast when bound managed internal workload release is still pending', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const { runner } = await seedDefaultManagedRunner(deps);
+      const now = new Date().toISOString();
+      const taskId = 'task_delete_managed_release_pending';
+      const libraryId = 'lib_delete_managed_release_pending';
+      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+        id: libraryId,
+        name: 'Delete Managed Release Pending Workspace',
+        now,
+      }));
+      const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+      const acquired = await bindingRepo.acquire({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+        taskId,
+        taskTitle: 'Delete managed release pending task',
+        taskStatus: 'active',
+        ownerUserId: 'user_1',
+        runtimeWritableAffordance: 'task_internal_home',
+        correlationId: 'req_delete_managed_release_pending_acquire',
+        now,
+      });
+      if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+        id: taskId,
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Delete managed release pending task',
+        task_home_segment: taskId,
+        workspace_file_library_id: libraryId,
+        workspace_file_library_name: 'Delete Managed Release Pending Workspace',
+        file_library_binding_generation: acquired.binding.bindingGeneration,
+        runtime_writable_affordance: 'task_internal_home',
+        bound_runner_id: runner.id,
+        bound_runner_kind: 'managed',
+        runner_binding_source: 'default_managed',
+        status: 'active' as const,
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+
+      const releaseError = Object.assign(new Error('asbcp_error: delete_pod 409 release terminal truth missing'), {
+        code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        status: 409,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_task_delete_release_409',
+      });
+      const requestHardTeardown = vi.fn(async () => {
+        throw releaseError;
+      });
+      deps.internalWorkloadCoordinator = {
+        requestHardTeardown,
+      } as never;
+      let fileLibraryBindingReleaseAttempted = false;
+      const originalDeleteIfMatch = deps.docStore.deleteIfMatch.bind(deps.docStore);
+      deps.docStore.deleteIfMatch = vi.fn(async (collection: string, id: string, operation: never) => {
+        if (collection === 'agent_task_file_library_bindings' && id === `ws_default::proj_1::${libraryId}`) {
+          fileLibraryBindingReleaseAttempted = true;
+        }
+        return originalDeleteIfMatch(collection, id, operation);
+      }) as never;
+
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskItem',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+        } as never,
+        method: 'DELETE',
+        req: { headers: { 'x-request-id': 'req_delete_managed_release_pending' }, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+        error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+        message: 'agent_task_internal_workload_release_pending',
+        task_id: taskId,
+        retryable: true,
+        release_diagnostic: expect.objectContaining({
+          code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+          status: 409,
+          operation: 'delete_pod',
+          request_id: 'asbcp_req_task_delete_release_409',
+        }),
+      }));
+      expect(requestHardTeardown).toHaveBeenCalledWith({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: sanitizeWorkloadId(taskId),
+      });
+      expect(fileLibraryBindingReleaseAttempted).toBe(false);
+      await expect(deps.docStore.get<Record<string, unknown>>(
+        notebookTasksCollection('ws_default'),
+        taskId,
+      )).resolves.toMatchObject({
+        id: taskId,
+        status: 'active',
+      });
+      await expect(deps.docStore.get<Record<string, unknown>>(
+        notebookTasksCollection('ws_default'),
+        taskId,
+      )).resolves.not.toHaveProperty('deletion_state');
+      await expect(bindingRepo.find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+      })).resolves.toMatchObject({
+        taskId,
+        bindingState: 'bound',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('fences task delete so concurrent binding hydration cannot recreate a zombie binding', async () => {
     const deps = createDefaultNodeApiDeps();
     const now = new Date().toISOString();

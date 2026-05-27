@@ -2,7 +2,7 @@
 
 Status: `current_deploy_contract`
 Owner: Product + Engineering
-Last updated: 2026-05-23
+Last updated: 2026-05-27
 
 ## Authority
 
@@ -21,15 +21,26 @@ The formal release contract vocabulary is three machine axes:
 - `substrate_source`
 - `distribution`
 
+Operator-facing release language is simpler and must stay at the four-quadrant
+level:
+
+| Operator selection | Internal machine values |
+| --- | --- |
+| `online` + `use_existing` | `target_cluster=existing_kubernetes`, `substrate_source=external_declared`, `distribution=online` |
+| `online` + `install_substrates` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=online` |
+| `airgap` + `use_existing` | `target_cluster=existing_kubernetes`, `substrate_source=external_declared`, `distribution=airgap` |
+| `airgap` + `install_substrates` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=airgap` |
+
 Pre-GA diagnostic names such as `local-kind` and `existing-cluster` are not
 authoritative release axes. They can appear only as temporary AgentSmith
 diagnostic entry names or migration references, and must map into the machine
 axes above before release-kit evidence or handoff artifacts are produced.
 
-## Current vs P0 Handoff Boundary
+## Formal Release Model And P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current AgentSmith
-pre-GA/local diagnostic rehearsal baseline. `external_declared` in P0 is schema,
+Current Docker-only local-kind unified deploy remains only the current
+AgentSmith pre-GA/local diagnostic rehearsal baseline, not a formal release
+target and not long-term deployment truth. `external_declared` in P0 is schema,
 fixture, validator, and evidence boundary only. It does not mean P2/P3 completed
 real Kubernetes, cloud, or airgap handoff support.
 
@@ -45,12 +56,18 @@ choice: `online` / `airgap` distribution against both substrate strategies:
 - `use_existing`: connect to operator-provided substrates or cloud interfaces
   such as PostgreSQL/pgvector, MongoDB, Redis, S3-compatible storage, and
   Keycloak/OIDC.
-- `install_substrates`: release-kit installs the minimum substrate pack and
-  emits the same connection truth.
+- `install_substrates`: the release-kit-owned minimal/adjacent substrate pack
+  is installed by release-kit and emits the same connection truth.
 
 The corresponding internal machine values are `distribution=online|airgap` and
 `substrate_source=external_declared|kit_installed`. These machine values are for
 release contract / evidence validation, not a second operator vocabulary.
+
+`install_substrates` does not mean AgentSmith deploys substrates, does not move
+substrate lifecycle into the AgentSmith product repo, does not create a cloud
+provider matrix, and does not imply cloud cluster/database/bucket/IAM/network
+provisioning. It is a release-kit capability for a minimal adjacent substrate
+pack plus connection truth and pod-routability proof.
 
 `kind` is only an optional local substrate/rehearsal option. It is not a formal
 release target, not the production default, and cannot replace existing

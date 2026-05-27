@@ -43,6 +43,13 @@ with_afscp_local_runtime_env() {
     export ENV_FILE=/dev/null
     export INTERNAL_REAL_DIR="${runtime_dir}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+    export INTERNAL_AGENT_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
+    if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
+      export LOCAL_KIND_FINAL_KUBECONFIG_PATH
+    fi
+    if [[ -n "${KUBECONFIG:-}" ]]; then
+      export KUBECONFIG
+    fi
     export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"
     export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
     export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"

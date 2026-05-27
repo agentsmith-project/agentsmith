@@ -9,10 +9,11 @@ contract 导航；部署真相以当前 deploy contract 为准。
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current mainline.
-`external_declared` in P0 is schema, fixture, validator, and evidence boundary
-only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
-handoff support.
+Current Docker-only local-kind unified deploy remains the current pre-GA
+focused diagnostic baseline, not formal release target vocabulary and not
+long-term deployment truth. `external_declared` in P0 is schema, fixture,
+validator, and evidence boundary only. It does not mean P2/P3 completed real
+Kubernetes, cloud, or airgap handoff support.
 
 基线入口：
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
@@ -24,7 +25,8 @@ handoff support.
   - `engineering gate`：工程验收门禁
 - `product-terminology.md` 是当前产品对象、正式命名、IA 边界的真相源。
 - 当前产品文档与 UI 统一使用 `Model` 作为 Chat 选择器、`Agent tasks` 作为任务执行入口、`Agent Runners` 作为任务执行能力配置面，并使用 `Shared context` 作为共享上下文对象名。
-- unified deploy terms in `product-terminology.md` are current deployment vocabulary.
+- release/deploy terms in `product-terminology.md` mirror the operator-facing
+  vocabulary from `unified-deploy-contract.md`.
 
 ## Deployment Contract: Current
 
@@ -32,10 +34,16 @@ handoff support.
 
 状态：`current_deploy_contract`。
 
-该合同定义当前拓扑：one `AgentSmith deploy`、`local-kind` /
-`existing-cluster` profiles、Docker-only substrate、Keycloak substrate、
+该合同定义当前部署合同：one `AgentSmith deploy`，正式 release 语言是
+`online` / `airgap` × `use_existing` / `install_substrates`；内部机器轴是
+`target_cluster` / `substrate_source` / `distribution`。`local-kind` /
+`existing-cluster` 只能作为 pre-GA/local diagnostic entry names，不是 release
+target。合同同时记录 Docker-only diagnostic substrate、Keycloak substrate、
 app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
 和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。
+
+`install_substrates` 指 release-kit-owned minimal/adjacent substrate pack
+能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 
 Release contract handoff must include the required `deploy_template_package`
 field; release kit consumes that package instead of reading AgentSmith source

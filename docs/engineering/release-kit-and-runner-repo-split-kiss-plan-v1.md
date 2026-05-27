@@ -11,7 +11,7 @@ Active plan 读法：
 
 1. AgentSmith 当前是 pre-GA。旧名称、旧路径、旧 profile、旧 env、旧脚本入口和已移除字段默认不保留长期正式路径；正式路径不能接就删除或 fail fast。
 2. 旧名称和现有 AgentSmith unified deploy / runner 诊断只允许作为临时迁移参考、负向测试或本机诊断；每个暂留项必须在第 3.2 节有 owner、删除条件、删除时机/阶段和验收证据。
-3. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词。
+3. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
 4. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 5. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
 
@@ -495,7 +495,7 @@ fail fast。旧命名、旧路径、旧入口、旧文档/旧脚本引用、旧�
 | 临时保留项 | owner | 删除条件 | 删除时机/阶段 | 验收证据 |
 | --- | --- | --- | --- | --- |
 | `local-kind` / `existing-cluster` non-canonical profile name 映射口 | AgentSmith release-boundary owner | P2/P6 移除或隐藏 AgentSmith active status/workflow 中的 transition-only diagnostics，或 release-kit repo-local gate 已拥有 deployment/package/operator verdict；不得继续作为长期入口或长期发布/部署契约 | 条件满足后立即删除 active workflow/adapter 映射，或至少从 active workflow 隐藏，只保留必要 fail-fast 负向测试 | `contracts:check-unified-deploy-vocabulary`、`contracts:check-current-verification-campaigns`、`contracts:check-release-boundary` 证明新轴值为正式输入，active workflow/adapter 不再接受映射口，混写和同义词漂移 fail fast |
-| `use_existing` / `install_substrates` operator-facing strategy 与内部机器值 `external_declared` / `kit_installed` 的映射说明 | release-kit boundary owner | release-kit repo-local contract、runbook 和 gate 已明确 operator 只看 `use_existing` / `install_substrates`，机器值只出现在 release contract / evidence；不得让两套词都成为 operator 心智负担 | P2/P3/P6 收口时删除重复说明或归一到 release-kit repo-local contract；AgentSmith docs 只保留 handoff input 需要的映射 | release-kit repo-local strategy schema/gate、`contracts:check-release-boundary`、`contracts:check-doc-governance` 和 handoff note 证明 online/airgap 都覆盖 `use_existing` 与 `install_substrates`，且 kind 仍只是 optional local rehearsal |
+| `use_existing` / `install_substrates` operator-facing strategy 与内部机器值 `external_declared` / `kit_installed` 的映射说明 | release-kit boundary owner | release-kit repo-local contract、runbook 和 gate 已明确 operator 只看 `use_existing` / `install_substrates`，机器值只出现在 release contract / evidence；`install_substrates` 明确为 release-kit-owned minimal/adjacent substrate pack，不得让两套词都成为 operator 心智负担，也不得写成 AgentSmith substrate deployment 或 provider matrix | P2/P3/P6 收口时删除重复说明或归一到 release-kit repo-local contract；AgentSmith docs 只保留 handoff input 需要的映射 | release-kit repo-local strategy schema/gate、`contracts:check-release-boundary`、`contracts:check-doc-governance` 和 handoff note 证明 online/airgap 都覆盖 `use_existing` 与 `install_substrates`，且 kind 仍只是 optional local rehearsal |
 | release-kit `--inputs` / `--evidence` focused diagnostic 输出和未来/预留 output 拒绝说明 | release-kit boundary owner | producer 已实现且 `--evidence` 能重新语义校验后进入正式接受清单；否则继续 fail fast | P2/P3/P6 清掉无实现说明，不把预留 output 写成长期发布/部署契约 | `contracts:check-release-boundary`、`contracts:check-release-kit-source-boundary -- --scan-root <repo>` 交接检查、provenance/redaction 负向测试 |
 | 已移除 runner 包、字段、路径、`@mbos/agent-runner` shim、`buildAgentRuntimeEnv` 临时归属说明 | runner contract/runtime owner | P5 runner manifest/lock adoption、Dockerfile/image build adoption、release contract digest adoption 和 runtime semantics 后续收口完成；不能成为长期共享路径或 release proof | P6 删除 AgentSmith 长期共享路径，只留必要 fail-fast 负向测试 | `contracts:check-agent-runner-contract-artifact`、`contracts:check-runner-contract-sync`、`contracts:check-release-boundary`、`contracts:check-runner-image-lock -- --adoption --manifest <path>` |
 | operator 短期迁移说明中的已移除命令、路径、旧文档链接、旧脚本入口或名称 | 对应 runbook/doc owner | runbook 不再需要一次性迁移提示，或 P6 收口；不得继续作为 active operator 心智负担或长期发布/部署契约 | 从 active runbook/workflow 删除；若确需历史说明，只能归档到非规范历史说明，并设 P6 后删除/归档验收 | `contracts:check-doc-governance`、`contracts:check-engineering-governance` 和对应 source-boundary/static guard 证明 active runbook/workflow 不再引用它，且它不能被 Make/npm/GitHub Actions/release/local-real/backend-real wrapper 间接调用 |
@@ -581,7 +581,7 @@ Release kit 的正式部署模式由三根正交机器轴组成。三根轴是�
 | 轴 | 值 | 含义 |
 | --- | --- | --- |
 | `target_cluster` | `existing_kubernetes` | 真实 Kubernetes 目标，包括私有 Kubernetes 和云端托管 Kubernetes。 |
-| `substrate_source` | `kit_installed` | 后续独立 KISS slice：release kit 管理最小 adjacent substrate pack，并产出连接真相和 pod-routability preflight。只做最小 substrate pack，不做 provider matrix；它不是当前 release readiness，不是云资源 provisioning，也不是 in-cluster substrate。 |
+| `substrate_source` | `kit_installed` | 后续独立 KISS slice：release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是当前 release readiness，不是云资源 provisioning，也不是 in-cluster substrate。 |
 | `substrate_source` | `external_declared` | operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible object storage、Keycloak/OIDC 等连接真相；release kit 只校验，不创建云资源。 |
 | `distribution` | `online` | 从 GHCR 或 operator 指定 registry 拉取 digest-pinned images。 |
 | `distribution` | `airgap` | 使用离线包、OCI layout 或 image archives，不联网拉镜像、工具或模板。 |
@@ -591,8 +591,9 @@ strategy 名称；机器合同仍写 `substrate_source` 值：
 
 - `use_existing`：连接 operator 已有 substrates 或云端接口；内部机器值是
   `external_declared`。
-- `install_substrates`：由 release kit 安装最小 substrate pack 并产出同一份连接真相；
-  内部机器值是 `kit_installed`。
+- `install_substrates`：由 release kit 安装 release-kit-owned minimal/adjacent
+  substrate pack 并产出同一份连接真相；内部机器值是 `kit_installed`。它
+  不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 
 online 和 airgap 都必须覆盖这两个 strategy。未覆盖任一 strategy 时，
 release-kit 不能给 deployment/package/operator verdict。

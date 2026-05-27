@@ -32,7 +32,6 @@ ASBCP_PROJECTED_KUBECONFIG_PATH="${ASBCP_PROJECTED_KUBECONFIG_PATH:-${ASBCP_PROJ
 ASBCP_PROJECTED_CONFIG_PATH="${ASBCP_PROJECTED_CONFIG_PATH:-${ASBCP_PROJECTED_KUBECONFIG_DIR}/asbcp-config.yaml}"
 ASBCP_PROJECTION_DIR_BASENAME="asbcp-secrets"
 ASBCP_PROJECTION_MARKER_NAME=".agentsmith-asbcp-projection"
-ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH="${INTERNAL_REAL_DIR}/asbcp-kubeconfig"
 
 info() { echo "[internal-sandbox-control] $*"; }
 
@@ -175,9 +174,6 @@ prepare_asbcp_file_projection() {
     return 1
   fi
   target_dir="$(dirname "${target_path}")"
-  if [[ "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}" != "${ASBCP_PROJECTED_KUBECONFIG_PATH}" ]]; then
-    rm -f "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}"
-  fi
   prepare_asbcp_projection_dir "${target_dir}"
   tmp_path="${target_path}.tmp.$$"
   rm -f "${tmp_path}"
@@ -220,16 +216,11 @@ owned_asbcp_projection_dir() {
 }
 
 cleanup_asbcp_projection() {
-  local projection_dir legacy_path internal_real_dir
+  local projection_dir
   projection_dir="$(owned_asbcp_projection_dir "${ASBCP_PROJECTED_KUBECONFIG_DIR}")" || projection_dir=""
   if [[ -n "${projection_dir}" ]]; then
     rm -rf "${projection_dir}"
   fi
-  internal_real_dir="$(realpath -m "${INTERNAL_REAL_DIR}")"
-  legacy_path="$(realpath -m "${ASBCP_LEGACY_PROJECTED_KUBECONFIG_PATH}")"
-  case "${legacy_path}" in
-    "${internal_real_dir}/"*) rm -f "${legacy_path}" ;;
-  esac
 }
 
 asbcp_container_id() {

@@ -640,7 +640,6 @@ describe('internal sandbox real control', () => {
     const configPath = path.join(tempRoot, 'asbcp.yaml');
     const kubeconfigPath = path.join(tempRoot, 'host-kind.kubeconfig');
     const projectedDir = path.join(internalDir, 'asbcp-secrets');
-    const legacyProjectedPath = path.join(internalDir, 'asbcp-kubeconfig');
 
     mkdirSync(binDir, { recursive: true });
     mkdirSync(internalDir, { recursive: true });
@@ -701,15 +700,12 @@ exit 0
 
     expect(failedStart.status).not.toBe(0);
     expect(statSync(projectedDir, { throwIfNoEntry: false })).toBeUndefined();
-    expect(statSync(legacyProjectedPath, { throwIfNoEntry: false })).toBeUndefined();
 
     mkdirSync(projectedDir, { recursive: true, mode: 0o700 });
     writeFileSync(path.join(projectedDir, 'asbcp-kubeconfig'), 'apiVersion: v1\n', { encoding: 'utf8', mode: 0o640 });
     writeFileSync(path.join(projectedDir, '.agentsmith-asbcp-projection'), 'agentsmith-asbcp-projection\n', 'utf8');
-    writeFileSync(legacyProjectedPath, 'apiVersion: v1\n', { encoding: 'utf8', mode: 0o644 });
     chmodSync(projectedDir, 0o700);
     chmodSync(path.join(projectedDir, 'asbcp-kubeconfig'), 0o640);
-    chmodSync(legacyProjectedPath, 0o644);
 
     execFileSync('bash', [path.join(repoRoot, 'scripts/lib/internal-sandbox-real-control.sh'), 'stop-asbcp'], {
       cwd: repoRoot,
@@ -718,7 +714,6 @@ exit 0
     });
 
     expect(statSync(projectedDir, { throwIfNoEntry: false })).toBeUndefined();
-    expect(statSync(legacyProjectedPath, { throwIfNoEntry: false })).toBeUndefined();
   });
 
   it('does not clean an unsafe ASBCP projection override outside the canonical internal dir', () => {

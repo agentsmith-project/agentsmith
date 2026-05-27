@@ -86,7 +86,7 @@ ${restoreSnippet}
 }
 
 describe('next-generated-root-state', () => {
-  it('classifies Next 15 root-generated route types as valid when the root routes file exists', () => {
+  it('classifies Next 15 root-generated route references as valid when the root routes file exists', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-root-generated-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -114,7 +114,7 @@ ${rootGeneratedNextEnv}EOF_NEXT_ENV
     expect(output).not.toContain('next_env_generated_lane_state');
   });
 
-  it('classifies a missing Next 15 root route file distinctly from lane pollution', () => {
+  it('allows a Next 15 root-generated route reference before the root routes file exists', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-missing-root-routes-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -134,8 +134,8 @@ ${rootGeneratedNextEnv}EOF_NEXT_ENV
       tempRoot,
     );
 
-    expect(output).toContain('status=semantic_drift');
-    expect(output).toContain('reason=next_env_generated_root_missing_types');
+    expect(output).toContain('status=canonical');
+    expect(output).toContain('reason=next_env_generated_root_valid');
     expect(output).not.toContain('next_env_generated_lane_state');
   });
 

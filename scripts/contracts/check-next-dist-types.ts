@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 type TsConfigShape = {
@@ -165,13 +164,7 @@ function checkSourceContractOnce(): ContractStatus {
     };
   }
   if (nextEnv === rootGeneratedNextEnv) {
-    if (existsSync(path.join(process.cwd(), '.next/types/routes.d.ts'))) {
-      return { kind: 'canonical' };
-    }
-    return {
-      kind: 'semantic_drift',
-      error: 'next_env_root_route_types_missing',
-    };
+    return { kind: 'canonical' };
   }
   if (referencePathPattern.test(nextEnv)) {
     return {

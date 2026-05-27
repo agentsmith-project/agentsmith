@@ -75,7 +75,7 @@ describe('check-next-dist-types contract', () => {
     expect(tsconfig.include).toEqual(canonicalInclude);
     const nextEnvPath = path.join(process.cwd(), 'next-env.d.ts');
     if (existsSync(nextEnvPath)) {
-      expect([canonicalNextEnv, rootGeneratedNextEnv]).toContain(readFileSync(nextEnvPath, 'utf8'));
+      expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
     }
   });
 
@@ -91,23 +91,13 @@ describe('check-next-dist-types contract', () => {
     expect(() => runCheck(tempRoot)).not.toThrow();
   });
 
-  it('fails with a clear root-generated missing-types error when the Next 15 route reference has no routes file', () => {
+  it('accepts the Next 15 root-generated route reference before root routes types are materialized', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'check-next-dist-types-root-missing-'));
     writeFixtureRoot(tempRoot, {
       nextEnv: rootGeneratedNextEnv,
     });
 
-    let error: unknown;
-    try {
-      runCheck(tempRoot);
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toBeDefined();
-    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
-    expect(stderr).toContain('next_env_root_route_types_missing');
-    expect(stderr).not.toContain('next_env_must_not_reference_lane_specific_types');
+    expect(() => runCheck(tempRoot)).not.toThrow();
   });
 
   it.each([

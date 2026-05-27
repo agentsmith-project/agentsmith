@@ -2125,6 +2125,12 @@ ensure_afscp_local_runtime_volume_root() {
   fi
 
   local metaurl bucket storage juicefs_name access_key secret_key
+  local -a mount_consistency_options=(
+    --attr-cache 0s
+    --entry-cache 0s
+    --dir-entry-cache 0s
+    --negative-entry-cache 0s
+  )
   metaurl="$(afscp_local_runtime_host_juicefs_metaurl)"
   bucket="$(afscp_local_runtime_host_juicefs_bucket)"
   storage="$(afscp_local_runtime_juicefs_storage)"
@@ -2144,7 +2150,7 @@ ensure_afscp_local_runtime_volume_root() {
     return 1
   fi
   if ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
-    juicefs mount -d --no-usage-report --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
+    juicefs mount -d "${mount_consistency_options[@]}" --no-usage-report --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
     internal_err "failed to mount AFSCP_VOLUME_ROOT with JuiceFS; local-real fails closed"
     unmount_afscp_local_runtime_volume_root || return 1
     return 1

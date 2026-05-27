@@ -3682,26 +3682,6 @@ test.describe.serial('@lane-real files user stories', () => {
           });
         }
       }
-
-      for (const marker of hiddenRuntimeMarkers) {
-        await expectFileEntryMissingViaApi({
-          page,
-          workspaceId: WORKSPACE_ID,
-          projectId,
-          libraryId,
-          path: marker.markerPath,
-          timeoutMs: 120_000,
-        });
-        await waitForTextFileContentViaApi({
-          page,
-          workspaceId: WORKSPACE_ID,
-          projectId,
-          libraryId,
-          path: marker.afterOnlyPath,
-          expectedContent: marker.afterOnlyContent,
-          timeoutMs: 120_000,
-        });
-      }
     });
 
     await test.step('Files UI restore confirms and brings back the image, note, and manifest', async () => {

@@ -280,7 +280,6 @@ const forbiddenNextEnvPatterns = [
   /playwright-managed-/,
   /artifacts\/[^/\n]+\/runs\/[^/\n]+\/next-dist\//,
 ];
-const rootRouteTypesPath = path.join(repoDir, '.next/types/routes.d.ts');
 const referencePathPattern = /\/\/\/ <reference path=/;
 const transientReadErrorCodes = new Set(['ENOENT', 'EBUSY']);
 const unexpectedIoErrorCodes = new Set(['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EMFILE']);
@@ -358,11 +357,7 @@ if (forbiddenNextEnvPatterns.some((pattern) => pattern.test(nextEnv))) {
   process.exit(0);
 }
 if (nextEnv === rootGeneratedNextEnv) {
-  if (fs.existsSync(rootRouteTypesPath)) {
-    emit('canonical', 'next_env_generated_root_valid');
-    process.exit(0);
-  }
-  emit('semantic_drift', 'next_env_generated_root_missing_types');
+  emit('canonical', 'next_env_generated_root_valid');
   process.exit(0);
 }
 if (referencePathPattern.test(nextEnv)) {

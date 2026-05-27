@@ -416,7 +416,7 @@ describe('unified deploy render producer', () => {
     const documents = parsedDocuments(rendered.output);
     const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
 
-    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.7@sha256:c75ef6429993b4c1ce35fcb6d401befb1f1b718889f0fe8ff48ca19cf1b4a200');
+    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.9@sha256:9005855236587b53b0b30836c557cf3b006858eae00d59c70f1461bf032494fb');
   });
 
   it('keeps default producer evidence artifacts out of git', () => {

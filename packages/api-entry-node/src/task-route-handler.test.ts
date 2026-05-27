@@ -10776,6 +10776,7 @@ describe('task-route-handler workspace access', () => {
       await vi.waitFor(() => {
         expect(releasePod).toHaveBeenCalledTimes(1);
       });
+      expect(deleteWorkspaceBinding).not.toHaveBeenCalled();
       expect(finalDeleteRes.statusCode).toBe(0);
       releaseDrain.resolve();
       await vi.waitFor(() => {
@@ -10785,6 +10786,9 @@ describe('task-route-handler workspace access', () => {
       bindingReleaseDrain.resolve();
       await expect(finalDelete).resolves.toBe(true);
       expect(finalDeleteRes.statusCode).toBe(204);
+      expect(releasePod.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteWorkspaceBinding.mock.invocationCallOrder[0],
+      );
       expect(releasePod).toHaveBeenCalledWith(
         'ws_default',
         'proj_1',

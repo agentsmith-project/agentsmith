@@ -1750,6 +1750,9 @@ SH
     expect(result.stdout).toContain('juicefs format --no-update --storage minio --bucket http://localhost:19000/mbos-dev');
     expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable vol-local-manual');
     expect(result.stdout).toContain('juicefs mount -d');
+    expect(result.stdout).toContain(
+      'juicefs mount -d --attr-cache 0s --entry-cache 0s --dir-entry-cache 0s --negative-entry-cache 0s --no-usage-report',
+    );
     expect(result.stdout).toContain('--storage minio --bucket http://localhost:19000/mbos-dev');
     expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable');
   });

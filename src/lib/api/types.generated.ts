@@ -18,6 +18,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a runner support Context Store entry projection */
+        get: operations["getContextEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List runner support Context Store entry projections */
+        get: operations["listContextEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context/managed-credentials/{provider}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh a managed credential Context Store entry projection */
+        post: operations["refreshManagedCredentialContextEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/openapi.json": {
         parameters: {
             query?: never;
@@ -4808,6 +4859,149 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    getContextEntry: {
+        parameters: {
+            query: {
+                key: string;
+                project_id?: string;
+                scope: "member" | "task" | "project_member" | "project" | "workspace";
+                task_id?: string;
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context entry projection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        content: string;
+                        /** @enum {string} */
+                        content_type: "text" | "json" | "markdown" | "yaml";
+                        id: string;
+                        key: string;
+                        project_id?: string | null;
+                        read_only: boolean;
+                        scope: string;
+                        task_id?: string | null;
+                        /** Format: date-time */
+                        updated_at: string;
+                        updated_by: string;
+                        user_id?: string | null;
+                        workspace_id?: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listContextEntries: {
+        parameters: {
+            query: {
+                project_id?: string;
+                scope: "member" | "task" | "project_member" | "project" | "workspace";
+                task_id?: string;
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context entry projection list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            content: string;
+                            /** @enum {string} */
+                            content_type: "text" | "json" | "markdown" | "yaml";
+                            id: string;
+                            key: string;
+                            project_id?: string | null;
+                            read_only: boolean;
+                            scope: string;
+                            task_id?: string | null;
+                            /** Format: date-time */
+                            updated_at: string;
+                            updated_by: string;
+                            user_id?: string | null;
+                            workspace_id?: string | null;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    refreshManagedCredentialContextEntry: {
+        parameters: {
+            query?: {
+                project_id?: string;
+                workspace_id?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refreshed managed credential projection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        content: string;
+                        /** @enum {string} */
+                        content_type: "text" | "json" | "markdown" | "yaml";
+                        id: string;
+                        key: string;
+                        project_id?: string | null;
+                        read_only: boolean;
+                        scope: string;
+                        task_id?: string | null;
+                        /** Format: date-time */
+                        updated_at: string;
+                        updated_by: string;
+                        user_id?: string | null;
+                        workspace_id?: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Managed credential refresh is not supported for the provider */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

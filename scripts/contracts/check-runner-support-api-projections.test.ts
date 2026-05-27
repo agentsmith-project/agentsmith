@@ -27,17 +27,158 @@ import {
   formatRunnerSupportApiProjectionErrors,
 } from './check-runner-support-api-projections';
 
+const CONTEXT_SCOPE_QUERY_ENUM = ['member', 'task', 'project_member', 'project', 'workspace'] as const;
+
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readRecord(value: unknown, key: string): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const child = value[key];
+  return isRecord(child) ? child : null;
+}
+
+function readResponseJsonSchema(input: {
+  openApi: unknown;
+  path: string;
+  method: string;
+}): Record<string, unknown> | null {
+  const paths = readRecord(input.openApi, 'paths');
+  const route = readRecord(paths, input.path);
+  const operation = readRecord(route, input.method);
+  const responses = readRecord(operation, 'responses');
+  const ok = readRecord(responses, '200');
+  const content = readRecord(ok, 'content');
+  const json = readRecord(content, 'application/json');
+  return readRecord(json, 'schema');
+}
+
+function expectNoForbiddenSupportProjectionFields(schema: unknown): void {
+  const serialized = JSON.stringify(schema);
+  for (const rejected of RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS) {
+    expect(serialized).not.toContain(rejected);
+  }
+}
+
+function createContextListResponseSchema(
+  itemSchema: Record<string, unknown> = cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA),
+): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['items', 'total'],
+    properties: {
+      items: {
+        type: 'array',
+        items: itemSchema,
+      },
+      total: {
+        type: 'integer',
+        minimum: 0,
+      },
+    },
+  };
+}
+
+function createContextScopeQueryParameter(): Record<string, unknown> {
+  return {
+    name: 'scope',
+    in: 'query',
+    required: true,
+    schema: {
+      type: 'string',
+      enum: [...CONTEXT_SCOPE_QUERY_ENUM],
+    },
+  };
+}
+
+function readGetScopeQueryParameterSchema(openApi: unknown, apiPath: string): Record<string, unknown> {
+  const paths = readRecord(openApi, 'paths');
+  const route = readRecord(paths, apiPath);
+  const get = readRecord(route, 'get');
+  const parameters = get?.parameters;
+  expect(Array.isArray(parameters)).toBe(true);
+  const scopeParameter = (parameters as unknown[]).find((parameter) => (
+    isRecord(parameter)
+    && parameter.name === 'scope'
+    && parameter.in === 'query'
+  ));
+  const schema = readRecord(scopeParameter, 'schema');
+  expect(schema).not.toBeNull();
+  return schema as Record<string, unknown>;
 }
 
 function createOpenApiFixture(options: {
   workspaceAccessSchema?: Record<string, unknown>;
   releaseRequestSchema?: Record<string, unknown>;
+  contextSchema?: Record<string, unknown>;
+  contextListItemSchema?: Record<string, unknown>;
+  managedCredentialRefreshSchema?: Record<string, unknown>;
 } = {}): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     paths: {
+      '/api/v1/context': {
+        get: {
+          parameters: [
+            createContextScopeQueryParameter(),
+            {
+              name: 'key',
+              in: 'query',
+              required: true,
+              schema: {
+                type: 'string',
+                minLength: 1,
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: options.contextSchema
+                    ?? cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA),
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/context/list': {
+        get: {
+          parameters: [
+            createContextScopeQueryParameter(),
+          ],
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: createContextListResponseSchema(options.contextListItemSchema),
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/context/managed-credentials/{provider}/refresh': {
+        post: {
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: options.managedCredentialRefreshSchema
+                    ?? cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA),
+                },
+              },
+            },
+          },
+        },
+      },
       '/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access': {
         post: {
           responses: {
@@ -72,6 +213,59 @@ function createOpenApiFixture(options: {
 describe('check-runner-support-api-projections', () => {
   it('passes when OpenAPI workspace-access schemas match the runner package contract', () => {
     expect(checkRunnerSupportApiProjections(createOpenApiFixture()).errors).toEqual([]);
+  });
+
+  it('exposes Context support API response schemas in the real checked-in OpenAPI specs', () => {
+    const specs = [
+      {
+        label: 'JSON',
+        openApi: JSON.parse(
+          readFileSync(path.join(process.cwd(), 'docs/contracts/specs/openapi.json'), 'utf8'),
+        ) as unknown,
+      },
+      {
+        label: 'YAML',
+        openApi: YAML.parse(
+          readFileSync(path.join(process.cwd(), 'docs/contracts/specs/openapi.yaml'), 'utf8'),
+        ) as unknown,
+      },
+    ];
+
+    for (const spec of specs) {
+      const contextSchema = readResponseJsonSchema({
+        openApi: spec.openApi,
+        path: '/api/v1/context',
+        method: 'get',
+      });
+      const contextListSchema = readResponseJsonSchema({
+        openApi: spec.openApi,
+        path: '/api/v1/context/list',
+        method: 'get',
+      });
+      const credentialRefreshSchema = readResponseJsonSchema({
+        openApi: spec.openApi,
+        path: '/api/v1/context/managed-credentials/{provider}/refresh',
+        method: 'post',
+      });
+
+      expect(contextSchema, `${spec.label} /api/v1/context GET 200 schema`).toEqual(
+        CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
+      );
+      const contextListProperties = readRecord(contextListSchema, 'properties');
+      const contextListItems = readRecord(contextListProperties, 'items');
+      expect(
+        contextListItems?.items,
+        `${spec.label} /api/v1/context/list GET 200 items.items`,
+      ).toEqual(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA);
+      expect(
+        credentialRefreshSchema,
+        `${spec.label} /api/v1/context/managed-credentials/{provider}/refresh POST 200 schema`,
+      ).toEqual(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA);
+
+      expectNoForbiddenSupportProjectionFields(contextSchema);
+      expectNoForbiddenSupportProjectionFields(contextListSchema);
+      expectNoForbiddenSupportProjectionFields(credentialRefreshSchema);
+    }
   });
 
   it('passes against the real checked-in OpenAPI JSON', () => {
@@ -124,6 +318,115 @@ describe('check-runner-support-api-projections', () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('rejects missing Context support API response schemas', () => {
+    const openApi = createOpenApiFixture();
+    const paths = openApi.paths as Record<string, unknown>;
+    delete paths['/api/v1/context'];
+    delete paths['/api/v1/context/list'];
+    delete paths['/api/v1/context/managed-credentials/{provider}/refresh'];
+
+    const result = checkRunnerSupportApiProjections(openApi);
+
+    expect(result.errors).toEqual([
+      {
+        code: 'missing_context_schema',
+        path: 'paths./api/v1/context.get.responses.200.content.application/json.schema',
+        message: 'OpenAPI must expose the Context Store entry response schema.',
+      },
+      {
+        code: 'missing_context_list_schema',
+        path: 'paths./api/v1/context/list.get.responses.200.content.application/json.schema.properties.items.items',
+        message: 'OpenAPI must expose the Context Store list item response schema.',
+      },
+      {
+        code: 'missing_managed_credential_refresh_schema',
+        path: 'paths./api/v1/context/managed-credentials/{provider}/refresh.post.responses.200.content.application/json.schema',
+        message: 'OpenAPI must expose the managed credential refresh response schema.',
+      },
+    ]);
+  });
+
+  it('rejects Context support API schema drift from the contract schema', () => {
+    const contextSchema = cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA) as Record<string, unknown>;
+    const properties = contextSchema.properties as Record<string, Record<string, unknown>>;
+    properties.scope.enum = ['member'];
+
+    const result = checkRunnerSupportApiProjections(createOpenApiFixture({
+      contextSchema,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'context_schema_mismatch',
+        path: 'paths./api/v1/context.get.responses.200.content.application/json.schema.properties.scope.enum',
+        message: 'Context Store entry response schema differs from runner support projection contract at properties.scope.enum: expected undefined, got ["member"]',
+      },
+    ]);
+  });
+
+  it('rejects descriptions added to Context support API response schemas', () => {
+    const contextSchema = cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA) as Record<string, unknown>;
+    const properties = contextSchema.properties as Record<string, Record<string, unknown>>;
+    properties.scope.description = 'legacy user scope should not be documented here';
+
+    const result = checkRunnerSupportApiProjections(createOpenApiFixture({
+      contextSchema,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'context_schema_mismatch',
+        path: 'paths./api/v1/context.get.responses.200.content.application/json.schema.properties.scope.description',
+        message: 'Context Store entry response schema differs from runner support projection contract at properties.scope.description: expected undefined, got "legacy user scope should not be documented here"',
+      },
+    ]);
+  });
+
+  it('rejects retired user scope on Context success query parameter enums', () => {
+    const openApi = createOpenApiFixture();
+    readGetScopeQueryParameterSchema(openApi, '/api/v1/context').enum = [
+      ...CONTEXT_SCOPE_QUERY_ENUM,
+      'user',
+    ];
+    readGetScopeQueryParameterSchema(openApi, '/api/v1/context/list').enum = [
+      ...CONTEXT_SCOPE_QUERY_ENUM,
+      'user',
+    ];
+
+    const result = checkRunnerSupportApiProjections(openApi);
+
+    expect(result.errors).toEqual([
+      {
+        code: 'context_scope_parameter_mismatch',
+        path: 'paths./api/v1/context.get.parameters.scope.schema.enum',
+        message: '/api/v1/context GET scope query parameter enum must not include retired user scope.',
+      },
+      {
+        code: 'context_scope_parameter_mismatch',
+        path: 'paths./api/v1/context/list.get.parameters.scope.schema.enum',
+        message: '/api/v1/context/list GET scope query parameter enum must not include retired user scope.',
+      },
+    ]);
+  });
+
+  it('rejects forbidden fields inside Context list item schemas', () => {
+    const contextListItemSchema = cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA) as Record<string, unknown>;
+    const properties = contextListItemSchema.properties as Record<string, unknown>;
+    properties.credential_files = { type: 'array' };
+
+    const result = checkRunnerSupportApiProjections(createOpenApiFixture({
+      contextListItemSchema,
+    }));
+
+    expect(result.errors).toEqual([
+      {
+        code: 'support_projection_forbidden_product_semantics',
+        path: 'paths./api/v1/context/list.get.responses.200.content.application/json.schema.properties.items.items.properties',
+        message: 'Context Store list item schema contains fields forbidden from runner package support API projection contract: credential_files',
+      },
+    ]);
   });
 
   it('uses producer-owned support API schemas from the runner package contract', () => {

@@ -24,13 +24,25 @@ const DEFAULT_OPENAPI_PATHS = [
 const WORKSPACE_ACCESS_PATH =
   '/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access';
 const WORKSPACE_ACCESS_RELEASE_PATH = `${WORKSPACE_ACCESS_PATH}/release`;
+const CONTEXT_PATH = '/api/v1/context';
+const CONTEXT_LIST_PATH = '/api/v1/context/list';
+const MANAGED_CREDENTIAL_REFRESH_PATH =
+  '/api/v1/context/managed-credentials/{provider}/refresh';
+const RETIRED_CONTEXT_SCOPE = 'user';
 
 export type RunnerSupportApiProjectionErrorCode =
   | 'invalid_openapi'
   | 'missing_workspace_access_schema'
   | 'missing_workspace_access_release_schema'
+  | 'missing_context_schema'
+  | 'missing_context_list_schema'
+  | 'missing_managed_credential_refresh_schema'
+  | 'context_scope_parameter_mismatch'
   | 'workspace_access_schema_mismatch'
   | 'workspace_access_release_schema_mismatch'
+  | 'context_schema_mismatch'
+  | 'context_list_schema_mismatch'
+  | 'managed_credential_refresh_schema_mismatch'
   | 'support_projection_forbidden_product_semantics';
 
 export type RunnerSupportApiProjectionError = {
@@ -76,10 +88,6 @@ function schemaComparable(value: unknown, peer?: unknown): unknown {
   if (!isRecord(value)) return value;
   const peerRecord = isRecord(peer) ? peer : {};
   const entries = Object.entries(value)
-    .filter(([key]) => {
-      if (key === 'description') return false;
-      return true;
-    })
     .map(([key, child]) => [key, schemaComparable(child, peerRecord[key])] as const)
     .sort(([a], [b]) => a.localeCompare(b));
   return Object.fromEntries(entries);
@@ -162,15 +170,48 @@ function readOpenApiPaths(openApi: unknown): Record<string, unknown> | null {
   return readRecord(openApi, 'paths');
 }
 
-function readWorkspaceAccessResponseSchema(openApi: unknown): Record<string, unknown> | null {
+function readOperation(openApi: unknown, apiPath: string, method: string): Record<string, unknown> | null {
   const paths = readOpenApiPaths(openApi);
-  const route = readRecord(paths, WORKSPACE_ACCESS_PATH);
-  const post = readRecord(route, 'post');
-  const responses = readRecord(post, 'responses');
+  const route = readRecord(paths, apiPath);
+  return readRecord(route, method);
+}
+
+function readResponseJsonSchema(input: {
+  openApi: unknown;
+  apiPath: string;
+  method: string;
+}): Record<string, unknown> | null {
+  const operation = readOperation(input.openApi, input.apiPath, input.method);
+  const responses = readRecord(operation, 'responses');
   const ok = readRecord(responses, '200');
   const content = readRecord(ok, 'content');
   const json = readRecord(content, 'application/json');
   return readRecord(json, 'schema');
+}
+
+function readQueryParameterSchema(input: {
+  openApi: unknown;
+  apiPath: string;
+  method: string;
+  name: string;
+}): Record<string, unknown> | null {
+  const operation = readOperation(input.openApi, input.apiPath, input.method);
+  const parameters = operation?.parameters;
+  if (!Array.isArray(parameters)) return null;
+  const parameter = parameters.find((candidate) => (
+    isRecord(candidate)
+    && candidate.name === input.name
+    && candidate.in === 'query'
+  ));
+  return isRecord(parameter) ? readRecord(parameter, 'schema') : null;
+}
+
+function readWorkspaceAccessResponseSchema(openApi: unknown): Record<string, unknown> | null {
+  return readResponseJsonSchema({
+    openApi,
+    apiPath: WORKSPACE_ACCESS_PATH,
+    method: 'post',
+  });
 }
 
 function readWorkspaceAccessReleaseRequestSchema(openApi: unknown): Record<string, unknown> | null {
@@ -181,6 +222,37 @@ function readWorkspaceAccessReleaseRequestSchema(openApi: unknown): Record<strin
   const content = readRecord(requestBody, 'content');
   const json = readRecord(content, 'application/json');
   return readRecord(json, 'schema');
+}
+
+function readContextResponseSchema(openApi: unknown): Record<string, unknown> | null {
+  return readResponseJsonSchema({
+    openApi,
+    apiPath: CONTEXT_PATH,
+    method: 'get',
+  });
+}
+
+function readContextListResponseSchema(openApi: unknown): Record<string, unknown> | null {
+  return readResponseJsonSchema({
+    openApi,
+    apiPath: CONTEXT_LIST_PATH,
+    method: 'get',
+  });
+}
+
+function readContextListItemSchema(openApi: unknown): Record<string, unknown> | null {
+  const schema = readContextListResponseSchema(openApi);
+  const properties = readRecord(schema, 'properties');
+  const items = readRecord(properties, 'items');
+  return readRecord(items, 'items');
+}
+
+function readManagedCredentialRefreshResponseSchema(openApi: unknown): Record<string, unknown> | null {
+  return readResponseJsonSchema({
+    openApi,
+    apiPath: MANAGED_CREDENTIAL_REFRESH_PATH,
+    method: 'post',
+  });
 }
 
 function findForbiddenSchemaPropertyNames(schema: Record<string, unknown>): string[] {
@@ -199,17 +271,17 @@ function validateForbiddenSchemaProperties(input: {
   errors: RunnerSupportApiProjectionError[];
 }): boolean {
   const forbidden = findForbiddenSchemaPropertyNames(input.schema);
+  let ok = true;
   if (forbidden.length > 0) {
     input.errors.push({
       code: 'support_projection_forbidden_product_semantics',
       path: `${input.path}.properties`,
       message: `${input.schemaLabel} schema contains fields forbidden from runner package support API projection contract: ${forbidden.join(', ')}`,
     });
-    return false;
+    ok = false;
   }
 
   const properties = readRecord(input.schema, 'properties') ?? {};
-  let ok = true;
   for (const [fieldName, fieldSchema] of Object.entries(properties)) {
     if (!isRecord(fieldSchema)) continue;
     ok = validateForbiddenSchemaProperties({
@@ -219,16 +291,56 @@ function validateForbiddenSchemaProperties(input: {
       errors: input.errors,
     }) && ok;
   }
+
+  const items = readRecord(input.schema, 'items');
+  if (items) {
+    ok = validateForbiddenSchemaProperties({
+      schema: items,
+      schemaLabel: input.schemaLabel,
+      path: `${input.path}.items`,
+      errors: input.errors,
+    }) && ok;
+  }
+
+  const additionalProperties = input.schema.additionalProperties;
+  if (isRecord(additionalProperties)) {
+    ok = validateForbiddenSchemaProperties({
+      schema: additionalProperties,
+      schemaLabel: input.schemaLabel,
+      path: `${input.path}.additionalProperties`,
+      errors: input.errors,
+    }) && ok;
+  }
+
+  const oneOf = input.schema.oneOf;
+  if (Array.isArray(oneOf)) {
+    oneOf.forEach((schema, index) => {
+      if (!isRecord(schema)) return;
+      ok = validateForbiddenSchemaProperties({
+        schema,
+        schemaLabel: input.schemaLabel,
+        path: `${input.path}.oneOf.${index}`,
+        errors: input.errors,
+      }) && ok;
+    });
+  }
+
   return ok;
 }
+
+type SchemaMismatchErrorCode = Extract<
+  RunnerSupportApiProjectionErrorCode,
+  | 'workspace_access_schema_mismatch'
+  | 'workspace_access_release_schema_mismatch'
+  | 'context_schema_mismatch'
+  | 'context_list_schema_mismatch'
+  | 'managed_credential_refresh_schema_mismatch'
+>;
 
 function validateSchemaSync(input: {
   expected: unknown;
   actual: Record<string, unknown>;
-  code: Extract<
-    RunnerSupportApiProjectionErrorCode,
-    'workspace_access_schema_mismatch' | 'workspace_access_release_schema_mismatch'
-  >;
+  code: SchemaMismatchErrorCode;
   label: string;
   path: string;
   errors: RunnerSupportApiProjectionError[];
@@ -312,6 +424,86 @@ function defaultSupportProjectionArtifact(): Record<string, unknown> {
   };
 }
 
+type MissingSchemaErrorCode = Extract<
+  RunnerSupportApiProjectionErrorCode,
+  | 'missing_workspace_access_schema'
+  | 'missing_workspace_access_release_schema'
+  | 'missing_context_schema'
+  | 'missing_context_list_schema'
+  | 'missing_managed_credential_refresh_schema'
+>;
+
+function validateSupportProjectionSchema(input: {
+  actual: Record<string, unknown> | null;
+  expected: unknown;
+  missingCode: MissingSchemaErrorCode;
+  mismatchCode: SchemaMismatchErrorCode;
+  label: string;
+  path: string;
+  missingMessage: string;
+  errors: RunnerSupportApiProjectionError[];
+}): void {
+  if (!input.actual) {
+    input.errors.push({
+      code: input.missingCode,
+      path: input.path,
+      message: input.missingMessage,
+    });
+    return;
+  }
+
+  if (!validateForbiddenSchemaProperties({
+    schema: input.actual,
+    schemaLabel: input.label,
+    path: input.path,
+    errors: input.errors,
+  })) {
+    return;
+  }
+
+  validateSchemaSync({
+    expected: input.expected,
+    actual: input.actual,
+    code: input.mismatchCode,
+    label: input.label,
+    path: input.path,
+    errors: input.errors,
+  });
+}
+
+function validateContextScopeQueryParameter(input: {
+  openApi: unknown;
+  apiPath: typeof CONTEXT_PATH | typeof CONTEXT_LIST_PATH;
+  errors: RunnerSupportApiProjectionError[];
+}): void {
+  const operation = readOperation(input.openApi, input.apiPath, 'get');
+  if (!operation) return;
+
+  const enumPath = `paths.${input.apiPath}.get.parameters.scope.schema.enum`;
+  const schema = readQueryParameterSchema({
+    openApi: input.openApi,
+    apiPath: input.apiPath,
+    method: 'get',
+    name: 'scope',
+  });
+  const scopeEnum = schema?.enum;
+  if (!Array.isArray(scopeEnum)) {
+    input.errors.push({
+      code: 'context_scope_parameter_mismatch',
+      path: enumPath,
+      message: `${input.apiPath} GET scope query parameter must expose a closed enum.`,
+    });
+    return;
+  }
+  if (scopeEnum.includes(RETIRED_CONTEXT_SCOPE)) {
+    input.errors.push({
+      code: 'context_scope_parameter_mismatch',
+      path: enumPath,
+      message: `${input.apiPath} GET scope query parameter enum must not include retired user scope.`,
+    });
+  }
+}
+
 export function checkRunnerSupportApiProjections(openApi: unknown): RunnerSupportApiProjectionResult {
   const errors: RunnerSupportApiProjectionError[] = [
     ...checkRunnerSupportApiProjectionArtifact(defaultSupportProjectionArtifact()).errors,
@@ -326,55 +518,96 @@ export function checkRunnerSupportApiProjections(openApi: unknown): RunnerSuppor
     return { errors };
   }
 
+  validateContextScopeQueryParameter({
+    openApi,
+    apiPath: CONTEXT_PATH,
+    errors,
+  });
+  validateContextScopeQueryParameter({
+    openApi,
+    apiPath: CONTEXT_LIST_PATH,
+    errors,
+  });
+
   const workspaceAccessSchemaPath =
     `paths.${WORKSPACE_ACCESS_PATH}.post.responses.200.content.application/json.schema`;
-  const workspaceAccessSchema = readWorkspaceAccessResponseSchema(openApi);
-  if (!workspaceAccessSchema) {
+  validateSupportProjectionSchema({
+    actual: readWorkspaceAccessResponseSchema(openApi),
+    expected: TASK_WORKSPACE_ACCESS_JSON_SCHEMA,
+    missingCode: 'missing_workspace_access_schema',
+    mismatchCode: 'workspace_access_schema_mismatch',
+    label: 'workspace-access response',
+    path: workspaceAccessSchemaPath,
+    missingMessage: 'OpenAPI must expose the task workspace-access response schema.',
+    errors,
+  });
+
+  const releaseRequestSchemaPath =
+    `paths.${WORKSPACE_ACCESS_RELEASE_PATH}.post.requestBody.content.application/json.schema`;
+  validateSupportProjectionSchema({
+    actual: readWorkspaceAccessReleaseRequestSchema(openApi),
+    expected: TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
+    missingCode: 'missing_workspace_access_release_schema',
+    mismatchCode: 'workspace_access_release_schema_mismatch',
+    label: 'workspace-access release request',
+    path: releaseRequestSchemaPath,
+    missingMessage: 'OpenAPI must expose the task workspace-access release request schema.',
+    errors,
+  });
+
+  const contextSchemaPath =
+    `paths.${CONTEXT_PATH}.get.responses.200.content.application/json.schema`;
+  validateSupportProjectionSchema({
+    actual: readContextResponseSchema(openApi),
+    expected: CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
+    missingCode: 'missing_context_schema',
+    mismatchCode: 'context_schema_mismatch',
+    label: 'Context Store entry response',
+    path: contextSchemaPath,
+    missingMessage: 'OpenAPI must expose the Context Store entry response schema.',
+    errors,
+  });
+
+  const contextListResponseSchemaPath =
+    `paths.${CONTEXT_LIST_PATH}.get.responses.200.content.application/json.schema`;
+  const contextListItemSchemaPath = `${contextListResponseSchemaPath}.properties.items.items`;
+  const contextListResponseSchema = readContextListResponseSchema(openApi);
+  if (!contextListResponseSchema) {
     errors.push({
-      code: 'missing_workspace_access_schema',
-      path: workspaceAccessSchemaPath,
-      message: 'OpenAPI must expose the task workspace-access response schema.',
+      code: 'missing_context_list_schema',
+      path: contextListItemSchemaPath,
+      message: 'OpenAPI must expose the Context Store list item response schema.',
     });
   } else if (validateForbiddenSchemaProperties({
-    schema: workspaceAccessSchema,
-    schemaLabel: 'workspace-access response',
-    path: workspaceAccessSchemaPath,
+    schema: contextListResponseSchema,
+    schemaLabel: 'Context Store list item',
+    path: contextListResponseSchemaPath,
     errors,
   })) {
-    validateSchemaSync({
-      expected: TASK_WORKSPACE_ACCESS_JSON_SCHEMA,
-      actual: workspaceAccessSchema,
-      code: 'workspace_access_schema_mismatch',
-      label: 'workspace-access response',
-      path: workspaceAccessSchemaPath,
+    validateSupportProjectionSchema({
+      actual: readContextListItemSchema(openApi),
+      expected: CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
+      missingCode: 'missing_context_list_schema',
+      mismatchCode: 'context_list_schema_mismatch',
+      label: 'Context Store list item',
+      path: contextListItemSchemaPath,
+      missingMessage: 'OpenAPI must expose the Context Store list item response schema.',
       errors,
     });
   }
 
-  const releaseRequestSchemaPath =
-    `paths.${WORKSPACE_ACCESS_RELEASE_PATH}.post.requestBody.content.application/json.schema`;
-  const releaseRequestSchema = readWorkspaceAccessReleaseRequestSchema(openApi);
-  if (!releaseRequestSchema) {
-    errors.push({
-      code: 'missing_workspace_access_release_schema',
-      path: releaseRequestSchemaPath,
-      message: 'OpenAPI must expose the task workspace-access release request schema.',
-    });
-  } else if (validateForbiddenSchemaProperties({
-    schema: releaseRequestSchema,
-    schemaLabel: 'workspace-access release request',
-    path: releaseRequestSchemaPath,
+  const managedCredentialRefreshSchemaPath =
+    `paths.${MANAGED_CREDENTIAL_REFRESH_PATH}.post.responses.200.content.application/json.schema`;
+  validateSupportProjectionSchema({
+    actual: readManagedCredentialRefreshResponseSchema(openApi),
+    expected: CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
+    missingCode: 'missing_managed_credential_refresh_schema',
+    mismatchCode: 'managed_credential_refresh_schema_mismatch',
+    label: 'managed credential refresh response',
+    path: managedCredentialRefreshSchemaPath,
+    missingMessage: 'OpenAPI must expose the managed credential refresh response schema.',
     errors,
-  })) {
-    validateSchemaSync({
-      expected: TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
-      actual: releaseRequestSchema,
-      code: 'workspace_access_release_schema_mismatch',
-      label: 'workspace-access release request',
-      path: releaseRequestSchemaPath,
-      errors,
-    });
-  }
+  });
 
   return { errors };
 }

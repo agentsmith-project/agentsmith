@@ -25,7 +25,7 @@ Current active plan:
 
 Current next blocker:
 
-- P3 airgap image load/import focused diagnostic is complete; remaining airgap work is offline install/deploy smoke and operator/deployment adoption. In parallel, close AgentSmith runner support API / projection contract consistency with runner/context/credential owner evidence before treating runner runtime/backend-real readiness as ready to hand to sibling repos.
+- P3 airgap image load/import focused diagnostic and AgentSmith runner support API / projection contract consistency are complete. Remaining work is offline install/deploy smoke, operator/deployment adoption, and runner runtime/backend-real/task execution/Codex smoke; this is still not release readiness, airgap readiness, or sibling-repo runtime handoff readiness.
 
 Historical/reference note:
 

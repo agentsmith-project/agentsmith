@@ -17,22 +17,20 @@ Detailed commands live in:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；正式 release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。
+1. 只有一个 AgentSmith deploy 模型；正式 release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
-4. `install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 
 ## Current vs P0 Handoff Boundary
 
-The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy diagnostic path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 
-AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA
-diagnostic entry names 写成正式部署模型。
+AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA diagnostic entry names 写成正式部署模型。
 
 ## 运行线矩阵
 
-| 运行线 | 当前正式命名 | 主要用途 | App runtime | substrate | 备注 |
+| 运行线 | 当前入口命名 | 主要用途 | App runtime | substrate | 备注 |
 |-------|-------------|---------|-------------|----------|------|
 | 本地真实开发线 | `local-manual` | Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint. | Host API/Web/runner processes. | Local Docker development substrate. | local-real is the product-facing developer path; local-manual is the adapter identity and runtime evidence root. |
 | 统一部署本机 diagnostic entry | `unified-deploy local-kind` | Local Kubernetes diagnostic rehearsal on a developer machine. | Kubernetes workloads in local kind. | Docker substrate registered into Kubernetes Services and EndpointSlices. | Transition-only focused diagnostic; not a release target. Use focused product flows after rollout to prove Files and managed runner behavior. |

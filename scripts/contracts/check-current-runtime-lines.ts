@@ -186,7 +186,7 @@ if (localLine?.surface !== 'local-flow' || !/local-real/.test(localLine.external
 
 const deployLines = CURRENT_RUNTIME_LINE_MANIFEST.filter((line) => line.surface === 'deploy-profile');
 if (deployLines.length !== 2) {
-  failures.push('current deploy runtime truth must expose exactly local-kind and existing-cluster deploy profiles');
+  failures.push('current deploy runtime truth must expose exactly local-kind and existing-cluster pre-GA/local diagnostic entry names');
 }
 for (const deployLine of deployLines) {
   if (deployLine.guidePath !== 'docs/user-guides/unified-deploy-operations.md') {
@@ -239,7 +239,7 @@ if (!/持续生效的 runtime contract/.test(runtimeLinesMatrix)) {
   failures.push('Runtime Lines Matrix must keep the contract-vs-baseline split visible');
 }
 if (!/unified deploy/i.test(runtimeLinesMatrix) || !/local-kind/.test(runtimeLinesMatrix) || !/existing-cluster/.test(runtimeLinesMatrix)) {
-  failures.push('Runtime Lines Matrix must document the unified deploy local-kind and existing-cluster profiles');
+  failures.push('Runtime Lines Matrix must document the unified deploy local-kind and existing-cluster diagnostic entry names');
 }
 if (!/artifacts\/unified-deploy\//.test(localRuntimeFlows) || !/artifacts\/unified-deploy\//.test(runtimeLinesMatrix) || !/artifacts\/unified-deploy\//.test(unifiedDeployOperations)) {
   failures.push('runtime-line docs must document artifacts/unified-deploy/ as the deploy evidence root');
@@ -251,7 +251,7 @@ if (!/api replicas?=1|api replicas stay at 1|api replicas fixed at 1/i.test(unif
   failures.push('runtime-line docs must state the current api replicas=1 deployment constraint');
 }
 if (!/not separate products|不是两套产品|not two products/i.test(runtimeLinesMatrix + unifiedDeployOperations)) {
-  failures.push('runtime-line docs must state that local-kind/existing-cluster are profiles, not separate products');
+  failures.push('runtime-line docs must state that local-kind/existing-cluster are pre-GA/local diagnostic entry names, not separate products');
 }
 
 if (failures.length > 0) {

@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; local-kind and existing-cluster are pre-GA focused diagnostic profiles, not separate products and outside release:ready product readiness / handoff scope.',
+    summary: 'There is one AgentSmith deploy model; formal release language is `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `install_substrates` is a release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith substrate deployment or provider-matrix expansion.',
     binding: 'contract',
   },
   {
@@ -81,7 +81,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
 ] as const;
 
 export const CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY = {
-  currentMainline: 'The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.',
+  currentMainline: 'The Docker-only local-kind unified deploy diagnostic path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.',
   externalDeclared: '`external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.',
 } as const;
 
@@ -102,14 +102,14 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
   },
   {
     id: 'unified-deploy-local-kind',
-    label: '统一部署本机 profile',
+    label: '统一部署本机 diagnostic entry',
     formalName: 'unified-deploy local-kind',
     surface: 'deploy-profile',
-    primaryUse: 'Local Kubernetes deploy proof on a developer machine.',
+    primaryUse: 'Local Kubernetes diagnostic rehearsal on a developer machine.',
     externalPath: 'npm run test:unified-deploy:local-kind:images then npm run test:unified-deploy:local-kind.',
     internalPath: 'Same app topology as the deploy model; no separate local install path.',
     substrate: 'Docker substrate registered into Kubernetes Services and EndpointSlices.',
-    note: 'Use focused product flows after rollout to prove Files and managed runner behavior.',
+    note: 'Transition-only focused diagnostic; not a release target. Use focused product flows after rollout to prove Files and managed runner behavior.',
     guidePath: 'docs/user-guides/unified-deploy-operations.md',
     runtimePath: defineRuntimeLinePathTruth('unified-deploy-local-kind'),
     appRuntime: 'Kubernetes workloads in local kind.',
@@ -117,14 +117,14 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
   },
   {
     id: 'unified-deploy-existing-cluster',
-    label: '统一部署既有集群 profile',
+    label: '统一部署既有集群 diagnostic entry',
     formalName: 'unified-deploy existing-cluster',
     surface: 'deploy-profile',
-    primaryUse: 'Deploy smoke against an operator-owned Kubernetes cluster and declared external substrate truth.',
+    primaryUse: 'Transition-only app/route wiring smoke against an operator-owned Kubernetes cluster and declared external substrate truth.',
     externalPath: 'npm run test:unified-deploy:existing-cluster-smoke with site env, substrate truth, and public base URL.',
     internalPath: 'Same app topology as local-kind, with api replicas fixed at 1 in the current milestone.',
     substrate: 'Operator-provided external substrate truth.',
-    note: 'Route smoke proves deploy wiring; focused product flows still prove Files and managed runner behavior.',
+    note: 'Not formal online/airgap evidence and not an AgentSmith product gate. Route smoke proves deploy wiring; focused product flows still prove Files and managed runner behavior.',
     guidePath: 'docs/user-guides/unified-deploy-operations.md',
     runtimePath: defineRuntimeLinePathTruth('unified-deploy-existing-cluster'),
     appRuntime: 'Kubernetes workloads in an operator-owned cluster.',

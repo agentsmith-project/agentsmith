@@ -21,9 +21,9 @@
 - [Local Runtime Flows](./local-runtime-flows.md)
   - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。
 - [Runtime Lines Matrix](./runtime-lines-matrix.md)
-  - 当前 local-real 与统一部署 profile 的总表。
+  - 当前 local-real 与统一部署 diagnostic entry 的总表。
 - [Unified Deploy Operations](./unified-deploy-operations.md)
-  - 当前部署入口：one AgentSmith deploy，`local-kind` / `existing-cluster` profiles，Docker substrate，Kubernetes app。
+  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；正式 release 语言看 `online` / `airgap` × `use_existing` / `install_substrates`。
 <!-- current-runtime-lines:user-guides-index:end -->
 
 runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
@@ -32,7 +32,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 - [Release Readiness Checklist](./release-readiness-checklist.md)
   - human product-side readiness / handoff input completeness entrypoint: `npm run release:ready`
 - [Unified Deploy Operations](./unified-deploy-operations.md)
-  - current deployment entrypoint for `local-kind` and `existing-cluster` profiles
+  - pre-GA/local diagnostic entrypoint for `local-kind` and `existing-cluster`; formal release language is `online` / `airgap` × `use_existing` / `install_substrates`
 
 ### 日常排障
 - [Troubleshooting Guide](../troubleshooting-guide-v1.md)

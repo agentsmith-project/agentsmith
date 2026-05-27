@@ -34,7 +34,7 @@ It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff suppo
 
 const cleanActiveDoc = `# Active Doc
 
-AgentSmith deploy uses local-kind and existing-cluster profiles.
+AgentSmith deploy exposes local-kind and existing-cluster as pre-GA/local diagnostic entry names.
 `;
 
 const validP0BoundaryDoc = `# Active Doc
@@ -315,10 +315,10 @@ describe('checkUnifiedDeployVocabulary', () => {
     expect(failureText(root)).toContain('current deploy truth must not use removed deploy command family');
   });
 
-  it('allows current existing-cluster deploy profile wording', () => {
+  it('allows current existing-cluster diagnostic entry wording', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        'scripts/contracts/check-current-runtime-lines.ts': 'current deploy runtime truth must expose exactly local-kind and existing-cluster deploy profiles',
+        'scripts/contracts/check-current-runtime-lines.ts': 'current deploy runtime truth must expose exactly local-kind and existing-cluster pre-GA/local diagnostic entry names',
       },
     });
 

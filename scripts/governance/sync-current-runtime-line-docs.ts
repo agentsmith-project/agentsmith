@@ -43,7 +43,7 @@ function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
   const summaries: Record<string, string> = {
     'local-real-human-entry': '- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。',
     'serial-local-runtime-switching': '- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。',
-    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic profiles，不是两套产品，也不是 `release:ready` 的部署结论。',
+    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；正式 release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。',
     'docker-substrate-k8s-app-boundary': '- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。',
     'api-single-replica-current': '- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。',
   };
@@ -129,7 +129,7 @@ function _renderDocsIndexRuntimeBlock(): string {
     '- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)',
     '  - 当前 local / unified deploy 运行线总表。',
     '- [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)',
-    '  - 当前部署入口：one AgentSmith deploy，`local-kind` / `existing-cluster` profiles，Docker substrate，Kubernetes app。',
+    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；正式 release 语言看 `online` / `airgap` × `use_existing` / `install_substrates`。',
   ].join('\n');
 }
 
@@ -138,15 +138,15 @@ function renderUserGuidesRuntimeBlock(): string {
     '- [Local Runtime Flows](./local-runtime-flows.md)',
     '  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。',
     '- [Runtime Lines Matrix](./runtime-lines-matrix.md)',
-    '  - 当前 local-real 与统一部署 profile 的总表。',
+    '  - 当前 local-real 与统一部署 diagnostic entry 的总表。',
     '- [Unified Deploy Operations](./unified-deploy-operations.md)',
-    '  - 当前部署入口：one AgentSmith deploy，`local-kind` / `existing-cluster` profiles，Docker substrate，Kubernetes app。',
+    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；正式 release 语言看 `online` / `airgap` × `use_existing` / `install_substrates`。',
   ].join('\n');
 }
 
 function renderLocalRuntimeFlowsBlock(): string {
   return [
-    '运行线职责、部署 profile、substrate 边界以',
+    '运行线职责、部署 diagnostic entry、substrate 边界以',
     '[Runtime Lines Matrix](./runtime-lines-matrix.md)',
     '为总入口；这份文档只展开本机操作顺序。',
     '',
@@ -203,7 +203,7 @@ function renderRuntimeLinesMatrixBlock(): string {
     '',
     ...renderRuleListZh('operational_baseline').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
     '',
-    '可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md) 与 [Unified Deploy Operations](./unified-deploy-operations.md)；本矩阵只说明 topology、profile 边界和运行线归属。',
+    '可复制的人类操作入口统一看 [Local Runtime Flows](./local-runtime-flows.md) 与 [Unified Deploy Operations](./unified-deploy-operations.md)；本矩阵只说明 topology、diagnostic entry 边界和运行线归属。',
     '',
     '## 持续生效的 runtime contract',
     '',
@@ -214,11 +214,11 @@ function renderRuntimeLinesMatrixBlock(): string {
     CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.currentMainline,
     CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.externalDeclared,
     '',
-    'AgentSmith deploy 只有 unified deploy 证据链；运行线矩阵不再拆成多套部署入口。',
+    'AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA diagnostic entry names 写成正式部署模型。',
     '',
     '## 运行线矩阵',
     '',
-    '| 运行线 | 当前正式命名 | 主要用途 | App runtime | substrate | 备注 |',
+    '| 运行线 | 当前入口命名 | 主要用途 | App runtime | substrate | 备注 |',
     '|-------|-------------|---------|-------------|----------|------|',
     ...rows,
     '',

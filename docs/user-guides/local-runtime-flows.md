@@ -5,7 +5,7 @@ This guide covers local development and local verification on a developer machin
 For deployment operations, use [Unified Deploy Operations](./unified-deploy-operations.md).
 
 <!-- current-runtime-lines:local-runtime-flows:start -->
-运行线职责、部署 profile、substrate 边界以
+运行线职责、部署 diagnostic entry、substrate 边界以
 [Runtime Lines Matrix](./runtime-lines-matrix.md)
 为总入口；这份文档只展开本机操作顺序。
 
@@ -24,7 +24,7 @@ Machine-readable source:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；`local-kind` 与 `existing-cluster` 是 pre-GA focused diagnostic profiles，不是两套产品，也不是 `release:ready` 的部署结论。
+1. 只有一个 AgentSmith deploy 模型；正式 release 语言是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 

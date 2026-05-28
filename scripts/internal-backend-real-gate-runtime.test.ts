@@ -370,10 +370,21 @@ describe('internal backend-real gate runtime contract', () => {
   });
 
   it('keeps runner projection smoke focused and fail-fast on a canonical runner image', () => {
+    const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const backendRealRun = read('scripts/backend-real-run.sh');
     const agentTaskRunnerSpec = read('e2e/integration-agent-task-runner.spec.ts');
     const realHelpers = read('e2e/integration-real-helpers.ts');
+    const deepseekPrecondition = sectionBetween(
+      agentTaskGate,
+      '\nensure_runner_projection_smoke_deepseek_preconditions() {',
+      '\n}\n\nensure_runner_projection_smoke_image_preconditions',
+    );
+    const imagePrecondition = sectionBetween(
+      agentTaskGate,
+      '\nensure_runner_projection_smoke_image_preconditions() {',
+      '\n}\n\nensure_runner_projection_smoke_deepseek_preconditions',
+    );
     const projectionFunction = shellFunctionBody(agentTaskGate, 'run_runner_projection_smoke_spec');
     const projectionCase = sectionBetween(
       agentTaskRunnerSpec,
@@ -381,6 +392,8 @@ describe('internal backend-real gate runtime contract', () => {
       "test('uses feishu-docs managed credential projection",
     );
 
+    expect(packageJson.scripts?.['test:agent-task:runner:projection-smoke'])
+      .toBe('bash scripts/run-internal-agent-task-real-gate.sh --runner-projection-smoke');
     expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--runner-projection-smoke" ]]');
     expect(agentTaskGate).toContain('running focused runner projection smoke with canonical agentsmith-runner image');
     expect(agentTaskGate).toContain('ensure_runner_projection_smoke_image_preconditions');
@@ -391,17 +404,33 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock}"');
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
-    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must reference an agentsmith-runner image repository');
     expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
     expect(agentTaskGate).toContain('old monorepo runner image build');
+    expect(imagePrecondition).toContain('locked_image="$(runner_image_lock_value image)"');
+    expect(imagePrecondition).toContain('locked_digest="$(runner_image_lock_value image_digest)"');
+    expect(imagePrecondition).toContain('if [[ "${locked_image}" != *@sha256:* ]]; then');
+    expect(imagePrecondition).toContain('if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then');
+    expect(imagePrecondition).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock');
+    expect(imagePrecondition).toContain('tag-only or local non-digest images are not accepted');
+    expect(imagePrecondition).toContain('RUNNER_IMAGE="${locked_image}"');
+    expect(imagePrecondition).toContain('export INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"');
+    expect(imagePrecondition).not.toContain('repo_digests');
+    expect(imagePrecondition).not.toContain('lock_pending');
     expect(agentTaskGate).toContain('command -v docker >/dev/null 2>&1');
     expect(agentTaskGate).toContain('docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1');
     expect(agentTaskGate).toContain("docker image inspect --format '{{.Id}}' \"${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}\"");
     expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID="${image_id}"');
     expect(agentTaskGate).toContain('scripts/contracts/check-runner-image-lock.ts');
-    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match agentsmith-runner-image.lock');
-    expect(agentTaskGate).toContain('canonical registry image must use the locked digest');
     expect(agentTaskGate).toContain('BACKEND_REAL_OPENAI_BASE_URL must resolve to DeepSeek');
+    expect(agentTaskGate).toContain('deepseek_openai_host()');
+    expect(deepseekPrecondition).toContain('deepseek_openai_host "${openai_base_url}"');
+    expect(deepseekPrecondition).toContain('"api.deepseek.com"');
+    expect(deepseekPrecondition).toContain('*.deepseek.com');
+    expect(deepseekPrecondition).not.toContain('*deepseek*');
+    expect(deepseekPrecondition).toContain('resolved_host=${openai_host_for_log}');
+    expect(deepseekPrecondition).toContain('"passed" "host=${openai_host}"');
+    expect(deepseekPrecondition).not.toContain('resolved=${openai_base_url');
+    expect(agentTaskGate).toContain('new URL(raw).hostname.toLowerCase()');
     expect(agentTaskGate).toContain('BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL:-${BACKEND_REAL_OPENAI_BASE_URL_VALUE}}" \\');
     expect(agentTaskGate).toContain('INTEGRATION_RUNNER_PROJECTION_SMOKE="${INTEGRATION_RUNNER_PROJECTION_SMOKE:-0}" \\');
     expect(agentTaskGate).toContain('INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE="${INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE:-0}" \\');

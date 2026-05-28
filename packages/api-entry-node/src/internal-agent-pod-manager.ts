@@ -78,20 +78,15 @@ const INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS = 8_000;
 const DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = [
   'set +e',
   "runner_patterns='[a]gentsmith-runner'",
-  "old_monorepo_runner_patterns='[a]gent-task-runner|[n]ode .*agent-task-runner'",
   'echo "runner_health_probe=agentsmith_runner"',
   'printf "runner_instance_id=%s\\n" "${MBOS_AGENT_RUNNER_INSTANCE_ID:-}"',
   'if command -v pgrep >/dev/null 2>&1; then',
-  '  old_monorepo_pgrep_output="$(pgrep -af "$old_monorepo_runner_patterns" 2>/dev/null | awk -v self="$$" \'$1 != self\' || true)"',
-  '  if [ -n "$old_monorepo_pgrep_output" ]; then echo "runner_health_error=unsupported_old_monorepo_runner_process_detected"; printf "%s\\n" "$old_monorepo_pgrep_output"; exit 1; fi',
   '  pgrep_output="$(pgrep -af "$runner_patterns" 2>/dev/null | awk -v self="$$" \'$1 != self\' || true)"',
   '  if [ -n "$pgrep_output" ]; then printf "%s\\n" "$pgrep_output"; exit 0; fi',
   'fi',
   'if command -v ps >/dev/null 2>&1; then',
   '  ps_output="$(ps -eo pid,ppid,stat,comm,args 2>/dev/null || ps aux 2>/dev/null || ps 2>/dev/null || true)"',
   '  filtered_ps_output="$(printf "%s\\n" "$ps_output" | awk -v self="$$" \'$1 != self\')"',
-  '  printf "%s\\n" "$filtered_ps_output" | grep -E "$old_monorepo_runner_patterns"',
-  '  if [ "$?" -eq 0 ]; then echo "runner_health_error=unsupported_old_monorepo_runner_process_detected"; exit 1; fi',
   '  printf "%s\\n" "$filtered_ps_output" | grep -E "$runner_patterns"',
   '  if [ "$?" -eq 0 ]; then exit 0; fi',
   '  echo "--- ps snapshot ---"',
@@ -548,11 +543,17 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       if (!existing) break;
       await this.waitForExistingLock(existing, signal);
       throwIfAborted(signal);
-      if (await this.isReadyForSession(input.agent.id, input.sessionId)) return;
+      if (await this.isReadyForSession(input.agent.id, input.sessionId)) {
+        await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.sessionId, signal);
+        return;
+      }
     }
 
     throwIfAborted(signal);
-    if (await this.isReadyForSession(agent.id, input.sessionId)) return;
+    if (await this.isReadyForSession(agent.id, input.sessionId)) {
+      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.sessionId, signal);
+      return;
+    }
 
     let releaseLock!: () => void;
     const lock = new Promise<void>((resolve) => {
@@ -790,6 +791,41 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     return error;
   }
 
+  private buildReadySessionRunnerHealthError(input: {
+    workloadId: string;
+    sessionId: string;
+    runnerHealth: RunnerHealthDiagnostic;
+  }): Error {
+    return Object.assign(new Error('sandbox_runner_bootstrap_unhealthy'), {
+      code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      workloadId: input.workloadId,
+      sessionId: input.sessionId,
+      sandboxOperation: 'verify_ready_session_runner_health',
+      runnerHealth: input.runnerHealth,
+    });
+  }
+
+  private async assertReadySessionRunnerHealth(
+    workspaceId: string,
+    projectId: string,
+    workloadId: string,
+    sessionId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!sessionId) {
+      return;
+    }
+    const runnerHealth = await this.collectRunnerHealth(workspaceId, projectId, workloadId, signal);
+    throwIfAborted(signal);
+    if (runnerHealth.status !== 'runner_process_found') {
+      throw this.buildReadySessionRunnerHealthError({
+        workloadId,
+        sessionId,
+        runnerHealth,
+      });
+    }
+  }
+
   private getOnlineState(agentId: string, sessionId?: string): boolean {
     if (sessionId && typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
       return this.agentExecution.getAgentSessionOnlineState(agentId, sessionId);
@@ -807,7 +843,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal);
-    if (await this.isReadyForSession(agent.id, sessionId)) return;
+    if (await this.isReadyForSession(agent.id, sessionId)) {
+      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, sessionId, signal);
+      return;
+    }
     throwIfAborted(signal);
 
     const config = readInternalConfig(agent);
@@ -935,7 +974,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     const sessionReadinessDeadline = this.buildSessionReadinessDeadline(deadline);
     try {
       await this.waitForAgentSessionOnline(agent.id, sessionId, sessionReadinessDeadline, signal);
-      return;
     } catch (error) {
       throwIfAborted(signal);
       const code = readErrorCode(error);
@@ -957,6 +995,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         ...staleCleanup,
       });
     }
+    await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, sessionId, signal);
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

@@ -391,6 +391,107 @@ describe('AgentExecutionService', () => {
     expect(executionService.getAgentSessionOnlineState(agent.id, 'task_canonical_query')).toBe(true);
   });
 
+  it('processes agent.ready when it reaches the server before the runner observes server.hello', async () => {
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    const executionService = new AgentExecutionService(agentResourceService, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'ready-before-hello',
+      runner_provider: 'developer',
+      interaction_kind: 'notebook',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    const sessionId = 'task_ready_before_hello';
+    const readyFrame = Buffer.from(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        capabilities: {
+          ready_before_hello: true,
+        },
+      },
+    }));
+    const originalSend = WebSocket.prototype.send;
+    let helloObservedByRunner = false;
+    let readyInjectedBeforeHelloObserved = false;
+    let readyInjected = false;
+    const sendSpy = vi.spyOn(WebSocket.prototype, 'send').mockImplementation(function sendWithEarlyReady(
+      this: WebSocket,
+      data: unknown,
+      optionsOrCallback?: unknown,
+      callback?: unknown,
+    ): void {
+      let frameType: string | undefined;
+      if (typeof data === 'string' || Buffer.isBuffer(data)) {
+        try {
+          const message = JSON.parse(data.toString()) as { type?: unknown };
+          frameType = typeof message.type === 'string' ? message.type : undefined;
+        } catch {
+          frameType = undefined;
+        }
+      }
+
+      Reflect.apply(originalSend, this, [data, optionsOrCallback, callback]);
+
+      if (!readyInjected && frameType === 'server.hello') {
+        readyInjectedBeforeHelloObserved = !helloObservedByRunner;
+        readyInjected = true;
+        this.emit('message', readyFrame, false);
+      }
+    } as WebSocket['send']);
+
+    try {
+      const url = new URL(`${wsBase}/api/v1/agent-execution/ws`);
+      url.searchParams.set('agent_runner_id', agent.id);
+      url.searchParams.set('runner_session_id', sessionId);
+      const ws = new WebSocket(url.toString(), {
+        headers: { Authorization: `Bearer ${keyPair.key}` },
+      });
+      sockets.push(ws);
+      const helloFramePromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+        ws.once('error', reject);
+        ws.on('message', (raw) => {
+          try {
+            const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+            if (message.type === 'server.hello') {
+              helloObservedByRunner = true;
+              resolve(message);
+            }
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+
+      await expect(helloFramePromise).resolves.toMatchObject({ type: 'server.hello' });
+      expect(readyInjected).toBe(true);
+      expect(readyInjectedBeforeHelloObserved).toBe(true);
+      await waitForSessionConnectionInfo(
+        agentResourceService,
+        agent.id,
+        sessionId,
+        (connection) => connection?.session_id === sessionId,
+      );
+      expect(executionService.getAgentSessionOnlineState(agent.id, sessionId)).toBe(true);
+      await waitForAssertion(async () => {
+        await expect(agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id)).resolves.toEqual(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              capabilities: {
+                ready_before_hello: true,
+              },
+              ready_at: expect.any(String),
+            }),
+          }),
+        );
+      });
+    } finally {
+      sendSpy.mockRestore();
+    }
+  });
+
   it('rejects legacy runner websocket query params without recording presence', async () => {
     const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
     const executionService = new AgentExecutionService(agentResourceService);

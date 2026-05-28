@@ -44,6 +44,15 @@ function buildWorkspaceMount(): InternalAgentWorkspaceMount {
   };
 }
 
+function buildRunnerHealthFoundExec() {
+  return vi.fn().mockResolvedValue({
+    exit_code: 0,
+    stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
+    stderr: '',
+    duration_ms: 4,
+  });
+}
+
 describe('internal-agent-pod-manager', () => {
   it('sanitizes workload id for k8s naming constraints', () => {
     expect(sanitizeWorkloadId('TASK_ABC.123###')).toBe('task-abc-123');
@@ -72,7 +81,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       onlineStateStore,
       'ws://api:20000',
@@ -139,7 +148,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -190,7 +199,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -245,7 +254,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -295,7 +304,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn().mockReturnValue(false),
@@ -335,7 +344,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -367,7 +376,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -399,7 +408,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -434,7 +443,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -488,7 +497,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -541,7 +550,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -567,7 +576,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -596,7 +605,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -624,7 +633,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
         keepalive: vi.fn(),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
@@ -665,7 +674,7 @@ describe('internal-agent-pod-manager', () => {
           createOrEnsurePod,
           deletePod: vi.fn().mockResolvedValue(undefined),
           keepalive: vi.fn().mockResolvedValue(null),
-          exec: vi.fn(),
+          exec: buildRunnerHealthFoundExec(),
         },
         {
           getAgentOnlineState: vi.fn()
@@ -732,7 +741,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -789,7 +798,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod,
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -852,7 +861,7 @@ describe('internal-agent-pod-manager', () => {
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
-          exec: vi.fn(),
+          exec: buildRunnerHealthFoundExec(),
         },
         {
           getAgentOnlineState: vi.fn()
@@ -928,7 +937,7 @@ describe('internal-agent-pod-manager', () => {
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
-          exec: vi.fn(),
+          exec: buildRunnerHealthFoundExec(),
         },
         {
           getAgentOnlineState: vi.fn()
@@ -1002,7 +1011,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod,
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn()
@@ -1078,7 +1087,7 @@ describe('internal-agent-pod-manager', () => {
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
-          exec: vi.fn(),
+          exec: buildRunnerHealthFoundExec(),
         },
         {
           getAgentOnlineState: vi.fn()
@@ -1212,36 +1221,25 @@ describe('internal-agent-pod-manager', () => {
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('[a]gentsmith-runner');
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('runner_instance_id=');
       const healthCommand = String(exec.mock.calls[0]?.[3]?.[2]);
-      expect(healthCommand).toContain('old_monorepo_runner_patterns');
-      expect(healthCommand).toContain('runner_health_error=unsupported_old_monorepo_runner_process_detected');
+      expect(healthCommand).toContain('runner_health_probe=agentsmith_runner');
+      expect(healthCommand).toContain("runner_patterns='[a]gentsmith-runner'");
+      expect(healthCommand).toContain('pgrep -af "$runner_patterns"');
+      expect(healthCommand).toContain('grep -E "$runner_patterns"');
+      expect(healthCommand).toContain('--- ps snapshot ---');
+      expect(healthCommand).toContain('--- task workspace snapshot ---');
+      expect(healthCommand).toContain('--- mount snapshot ---');
+      expect(healthCommand).not.toContain('runner_health_error=');
+      expect(healthCommand.match(/_patterns=/g) ?? []).toHaveLength(1);
+      expect(healthCommand.match(/grep -E/g) ?? []).toHaveLength(1);
       expect(healthCommand).not.toContain('transition-only');
-      expect(
-        healthCommand.split('\n').filter((line) => line.includes('old_monorepo_runner')).join('\n'),
-      ).not.toContain('exit 0');
       const healthCommandLines = healthCommand.split('\n');
-      const oldPgrepCheckLine = healthCommandLines.findIndex((line) =>
-        line.includes('old_monorepo_pgrep_output='),
-      );
-      const canonicalPgrepCheckLine = healthCommandLines.findIndex(
-        (line) => line.includes('pgrep_output=') && !line.includes('old_monorepo'),
-      );
-      const oldPsCheckLine = healthCommandLines.findIndex((line) =>
-        line.includes('grep -E "$old_monorepo_runner_patterns"'),
-      );
+      const canonicalPgrepCheckLine = healthCommandLines.findIndex((line) => line.includes('pgrep_output='));
       const canonicalPsCheckLine = healthCommandLines.findIndex((line) =>
         line.includes('grep -E "$runner_patterns"'),
       );
-      expect(oldPgrepCheckLine).toBeGreaterThan(-1);
       expect(canonicalPgrepCheckLine).toBeGreaterThan(-1);
-      expect(oldPgrepCheckLine).toBeLessThan(canonicalPgrepCheckLine);
-      expect(oldPsCheckLine).toBeGreaterThan(-1);
       expect(canonicalPsCheckLine).toBeGreaterThan(-1);
-      expect(oldPsCheckLine).toBeLessThan(canonicalPsCheckLine);
-      const oldRunnerErrorLines = healthCommandLines.filter((line) =>
-        line.includes('unsupported_old_monorepo_runner_process_detected'),
-      );
-      expect(oldRunnerErrorLines).toHaveLength(2);
-      expect(oldRunnerErrorLines.every((line) => line.includes('exit 1'))).toBe(true);
+      expect(canonicalPgrepCheckLine).toBeLessThan(canonicalPsCheckLine);
       expect(deletePod).not.toHaveBeenCalled();
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {
@@ -1421,7 +1419,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn().mockReturnValue(false),
@@ -1449,6 +1447,12 @@ describe('internal-agent-pod-manager', () => {
 
   it('treats local dispatch authority as ready even if the weaker local session-online boolean has not caught up yet', async () => {
     const createOrEnsurePod = vi.fn();
+    const exec = vi.fn().mockResolvedValue({
+      exit_code: 0,
+      stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
+      stderr: '',
+      duration_ms: 4,
+    });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
@@ -1456,7 +1460,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec,
       },
       {
         getAgentOnlineState: vi.fn().mockReturnValue(false),
@@ -1479,6 +1483,80 @@ describe('internal-agent-pod-manager', () => {
         workspaceMount: buildWorkspaceMount(),
       }),
     ).resolves.toBeUndefined();
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already ready session when health exec cannot find the canonical agentsmith-runner process', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn();
+    const exec = vi.fn().mockResolvedValue({
+      exit_code: 1,
+      stdout: [
+        'runner_health_probe=agentsmith_runner',
+        'runner_instance_id=ag_1:task_1:task_1',
+        '--- ps snapshot ---',
+        '1 tini',
+        '--- mount snapshot ---',
+        'tmpfs /tmp tmpfs rw 0 0',
+      ].join('\n'),
+      stderr: '',
+      duration_ms: 6,
+    });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      message: 'sandbox_runner_bootstrap_unhealthy',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      sandboxOperation: 'verify_ready_session_runner_health',
+      runnerHealth: expect.objectContaining({
+        status: 'runner_process_missing',
+        exitCode: 1,
+        stdout: expect.stringContaining('--- ps snapshot ---'),
+        durationMs: 6,
+      }),
+    });
+
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      'task_1',
+      expect.arrayContaining(['sh', '-lc']),
+      expect.any(Number),
+      undefined,
+    );
+    expect(String(exec.mock.calls[0]?.[3]?.[2])).not.toContain('runner_health_error=');
+    expect(getPodStatus).not.toHaveBeenCalled();
     expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
@@ -1494,7 +1572,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn(() => sessionOnline),
@@ -1563,7 +1641,7 @@ describe('internal-agent-pod-manager', () => {
         }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn(() => sessionOnline),
@@ -1641,7 +1719,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn(() => sessionOnline),
@@ -1716,7 +1794,7 @@ describe('internal-agent-pod-manager', () => {
         }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn(() => phase === 'Running'),
@@ -1778,7 +1856,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
       },
       {
         getAgentOnlineState: vi.fn(() => sessionOnline),

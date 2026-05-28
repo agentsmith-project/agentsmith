@@ -469,7 +469,7 @@ describe('check-release-boundary-contract', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
     const image = getRecordProperty(manifest, 'image');
     const driftDigest = `sha256:${'c'.repeat(64)}`;
-    image.image = `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@${driftDigest}`;
+    image.image = `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-8b2541d@${driftDigest}`;
     image.digest = driftDigest;
     refreshArtifactProvenanceDigests(manifest);
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');

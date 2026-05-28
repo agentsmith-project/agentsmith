@@ -164,27 +164,59 @@ runner_image_lock_value() {
   awk -F= -v expected_key="${key}" '$1 == expected_key { sub(/^[^=]*=/, ""); print; exit }' "${RUNNER_IMAGE_LOCK_PATH}"
 }
 
+deepseek_openai_host() {
+  local raw_url="$1"
+  node -e 'const raw = process.argv[1] || ""; try { process.stdout.write(new URL(raw).hostname.toLowerCase()); } catch { process.exit(1); }' "${raw_url}" 2>/dev/null
+}
+
 ensure_runner_projection_smoke_deepseek_preconditions() {
   if [[ "${GATE_MODE}" != "runner-projection-smoke" ]]; then
     return 0
   fi
   local openai_base_url="${BACKEND_REAL_OPENAI_BASE_URL:-${BACKEND_REAL_OPENAI_BASE_URL_VALUE:-${PRESET_OPENAI_ENDPOINT_BASE_URL:-}}}"
-  if [[ -z "${openai_base_url}" || "${openai_base_url,,}" != *deepseek* ]]; then
+  local openai_host=""
+  local openai_host_for_log="<empty>"
+  if [[ -n "${openai_base_url}" ]]; then
+    if openai_host="$(deepseek_openai_host "${openai_base_url}")"; then
+      openai_host_for_log="${openai_host:-<invalid>}"
+    else
+      openai_host="<invalid>"
+      openai_host_for_log="<invalid>"
+    fi
+  fi
+  if [[ -z "${openai_host}" || ( "${openai_host}" != "api.deepseek.com" && "${openai_host}" != *.deepseek.com ) ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_deepseek" "BACKEND_REAL_OPENAI_BASE_URL must resolve to DeepSeek"
-    echo "[internal-real-gate] --runner-projection-smoke requires BACKEND_REAL_OPENAI_BASE_URL (or the backend-real default) to resolve to DeepSeek; resolved=${openai_base_url:-<empty>}" >&2
+    echo "[internal-real-gate] --runner-projection-smoke requires BACKEND_REAL_OPENAI_BASE_URL (or the backend-real default) host to be api.deepseek.com or *.deepseek.com; resolved_host=${openai_host_for_log}" >&2
     exit 1
   fi
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_deepseek" "passed" "${openai_base_url}"
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_deepseek" "passed" "host=${openai_host}"
 }
 
 ensure_runner_projection_smoke_image_preconditions() {
   if [[ "${GATE_MODE}" != "runner-projection-smoke" ]]; then
     return 0
   fi
-  local image_id locked_image locked_digest repo_digests
+  local image_id locked_image locked_digest
+  if ! "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/contracts/check-runner-image-lock.ts" --lock "${RUNNER_IMAGE_LOCK_PATH}" >/dev/null; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "agentsmith-runner image lock check failed"
+    echo "[internal-real-gate] --runner-projection-smoke requires a valid agentsmith-runner image lock: ${RUNNER_IMAGE_LOCK_PATH}" >&2
+    exit 1
+  fi
+  locked_image="$(runner_image_lock_value image)"
+  locked_digest="$(runner_image_lock_value image_digest)"
+  if [[ -z "${locked_image}" || -z "${locked_digest}" ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "agentsmith-runner image lock is missing image/image_digest"
+    echo "[internal-real-gate] --runner-projection-smoke could not read image/image_digest from ${RUNNER_IMAGE_LOCK_PATH}" >&2
+    exit 1
+  fi
+  if [[ "${locked_image}" != *@sha256:* ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "agentsmith-runner image lock must contain a digest ref"
+    echo "[internal-real-gate] --runner-projection-smoke requires image= in ${RUNNER_IMAGE_LOCK_PATH} to be a digest ref; actual=${locked_image}" >&2
+    exit 1
+  fi
   if [[ -z "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE is required"
-    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to be set to a canonical agentsmith-runner image." >&2
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to be set to the locked digest image: ${locked_image}" >&2
     exit 1
   fi
   if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" == *agent-task-runner* ]]; then
@@ -192,16 +224,21 @@ ensure_runner_projection_smoke_image_preconditions() {
     echo "[internal-real-gate] --runner-projection-smoke requires a canonical agentsmith-runner image; old agent-task-runner image/path is rejected: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
     exit 1
   fi
-  if [[ ! "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" =~ (^|/)agentsmith-runner(:|@) ]]; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE must reference an agentsmith-runner image repository"
-    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to reference an agentsmith-runner image repository: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
-    exit 1
-  fi
   if [[ "${BUILD_RUNNER_IMAGE}" != "0" ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required"
     echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 so it cannot fall back to the old monorepo runner image build." >&2
     exit 1
   fi
+  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock"
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to exactly match image= from ${RUNNER_IMAGE_LOCK_PATH}; tag-only or local non-digest images are not accepted." >&2
+    echo "[internal-real-gate] expected=${locked_image}" >&2
+    echo "[internal-real-gate] actual=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    exit 1
+  fi
+  RUNNER_IMAGE="${locked_image}"
+  EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"
+  export INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"
   if ! command -v docker >/dev/null 2>&1; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE"
     echo "[internal-real-gate] --runner-projection-smoke requires docker to inspect INTEGRATION_INTERNAL_AGENT_IMAGE before running." >&2
@@ -219,46 +256,7 @@ ensure_runner_projection_smoke_image_preconditions() {
     exit 1
   fi
   export INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID="${image_id}"
-
-  if ! "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/contracts/check-runner-image-lock.ts" --lock "${RUNNER_IMAGE_LOCK_PATH}" >/dev/null; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "agentsmith-runner image lock check failed"
-    echo "[internal-real-gate] --runner-projection-smoke requires a valid agentsmith-runner image lock: ${RUNNER_IMAGE_LOCK_PATH}" >&2
-    exit 1
-  fi
-  locked_image="$(runner_image_lock_value image)"
-  locked_digest="$(runner_image_lock_value image_digest)"
-  if [[ -z "${locked_image}" || -z "${locked_digest}" ]]; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "agentsmith-runner image lock is missing image/image_digest"
-    echo "[internal-real-gate] --runner-projection-smoke could not read image/image_digest from ${RUNNER_IMAGE_LOCK_PATH}" >&2
-    exit 1
-  fi
-
-  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" == *@sha256:* ]]; then
-    if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then
-      gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "INTEGRATION_INTERNAL_AGENT_IMAGE must match agentsmith-runner-image.lock"
-      echo "[internal-real-gate] --runner-projection-smoke digest image must match agentsmith-runner-image.lock." >&2
-      echo "[internal-real-gate] expected=${locked_image}" >&2
-      echo "[internal-real-gate] actual=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
-      exit 1
-    fi
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_image_lock" "passed" "image_ref=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE} image_id=${image_id}"
-    return 0
-  fi
-
-  repo_digests="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" 2>/dev/null || true)"
-  if [[ "${repo_digests}" == *"ghcr.io/agentsmith-project/agentsmith-runner@${locked_digest}"* ]]; then
-    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_image_lock" "passed" "repo_digest=ghcr.io/agentsmith-project/agentsmith-runner@${locked_digest} image_id=${image_id}"
-    return 0
-  fi
-
-  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" == ghcr.io/agentsmith-project/agentsmith-runner:* ]]; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "canonical registry image must use the locked digest"
-    echo "[internal-real-gate] --runner-projection-smoke registry image refs must be digest-locked to ${locked_image}; actual=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
-    exit 1
-  fi
-
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_image_id" "passed" "image_ref=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE} image_id=${image_id} lock_pending=${locked_image}"
-  echo "[internal-real-gate] --runner-projection-smoke image has no digest lock; recorded image_id=${image_id}. Release evidence must use locked image ${locked_image}." >&2
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "runner_projection_smoke_image_lock" "passed" "image_ref=${RUNNER_IMAGE} image_digest=${locked_digest} image_id=${image_id}"
 }
 
 ensure_runner_projection_smoke_deepseek_preconditions

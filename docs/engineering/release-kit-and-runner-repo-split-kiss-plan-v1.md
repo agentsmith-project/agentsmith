@@ -11,9 +11,10 @@ Active plan 读法：
 
 1. AgentSmith 当前是 pre-GA。旧名称、旧路径、旧职责、旧 profile、旧 env、旧脚本入口和已移除字段默认不保留长期正式路径；正式路径不能接就删除或 fail fast。
 2. 旧名称和现有 AgentSmith unified deploy / runner 诊断只允许作为负向测试、失败边界、本机诊断或短期待删清单；任何短期临时兼容都必须在第 3.2 节有 owner、删除条件、删除时机/阶段和验收证据。
-3. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
-4. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
-5. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
+3. 本计划只把治理作为核心功能和发布安全的最小保护；过时、低收益、只增加心智负担的治理检查/文档/脚本应删除、降级为 focused diagnostic，或 fail fast，不扩成长期正式层。
+4. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
+5. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
+6. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
 
 <details>
 <summary>Evidence log snapshot（只读交接证据，非规范）</summary>
@@ -1524,7 +1525,7 @@ P5.1 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-a
 工作：
 
 1. 在 release-kit / runner 集成面上，AgentSmith 只保留 thin adapters、contract checker、docs 指向和产品集成测试；AgentSmith 的产品合同、OpenAPI/AsyncAPI、验证入口和产品代码继续保留。
-2. release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确前，不删除底层部署合同语义；明确后从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试。项目仍是 pre-GA，不为已移除旧输入、旧路径或旧文档/旧脚本引用保留长期心智负担；P6 后旧 profile、旧 writer、旧 command、旧 doc/script 引用不得留在 active docs/workflow；如确需历史说明，只能作为非规范归档或一次性短期待删说明，并有删除/归档验收；若保留合同，必须归一到 `target_cluster` / `substrate_source` / `distribution` 三轴新模型。
+2. release kit adapter 完成 parity、release-kit repo-local verdict 已拥有 deployment/package/operator、回滚路径明确前，不删除底层部署合同语义；明确后从 AgentSmith active status/workflow 移除或隐藏 transition-only focused diagnostics / 过渡期专项诊断，只保留必要 fail-fast 负向测试。项目仍是 pre-GA，不为已移除旧输入、旧路径、旧文档/旧脚本引用或过时低收益的治理检查/文档/脚本保留长期心智负担；后者应删除、降级为 focused diagnostic 或 fail fast；P6 后旧 profile、旧 writer、旧 command、旧 doc/script 引用不得留在 active docs/workflow；如确需历史说明，只能作为非规范归档或一次性短期待删说明，并有删除/归档验收；若保留合同，必须归一到 `target_cluster` / `substrate_source` / `distribution` 三轴新模型。
 3. 删除 AgentSmith 侧旧 runner runtime 源码路径、旧 `@mbos/agent-runner` shim 和 AgentSmith 侧
    旧 env helper / monorepo-side `buildAgentRuntimeEnv` 长期共享路径；旧说明不得留在 active docs/workflow，
    只允许非规范归档、一次性短期待删说明或必要 fail-fast 负向测试，不保留长期本地启动正式路径；第 3.2 节中的短期待删项必须

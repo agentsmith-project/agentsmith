@@ -85,20 +85,20 @@ const RELEASE_KIT_PREREQUISITE_IMAGES = [
 const RUNNER_IMAGE_LOCK = {
   schema_version: 'agentsmith.runner-image-lock/v1',
   runner: 'agentsmith-runner',
-  release_id: 'p5-publish-d07f21c',
-  git_sha: 'd07f21c611d7fd9e0b5a101ee0524eb5e169814d',
+  release_id: 'p5-publish-8b2541d',
+  git_sha: '8b2541d9e2b11b3b97481443b061cb7fbc952080',
   runner_contract_version: '0.1.0',
   runner_protocol_version: '1.0',
   image: {
     id: 'agentsmith-runner',
     image:
-      'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
-    digest: 'sha256:8d44f3a080803507336cf91b43f56821740c0deeefaa5c9d0823dd4b2cea2c2b',
+      'ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-8b2541d@sha256:26ba63e1e8c92ac9f8499c55bf4aeaf15c463f0e0682eee523268ee84b44fde7',
+    digest: 'sha256:26ba63e1e8c92ac9f8499c55bf4aeaf15c463f0e0682eee523268ee84b44fde7',
   },
   manifest: {
     producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
-    subject_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
-    artifact_sha256: 'sha256:566bce8b05e911fcadd54b070c09845b637120e5fbe26ff1cb2a4fbe371666cd',
+    subject_sha256: 'sha256:443ca4e58c9c7d71b4f0a4a8fc51f22c57eedbc8463d5a848fed118d3272be4a',
+    artifact_sha256: 'sha256:443ca4e58c9c7d71b4f0a4a8fc51f22c57eedbc8463d5a848fed118d3272be4a',
   },
 } as const satisfies CurrentRunnerImageLock;
 

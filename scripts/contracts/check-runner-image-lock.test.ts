@@ -218,7 +218,7 @@ describe('checkRunnerImageLock', () => {
     const digest = `sha256:${'0'.repeat(64)}`;
     const manifestPath = writeManifest(root, (manifest) => {
       const image = manifest.image as Record<string, unknown>;
-      image.image = `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-d07f21c@${digest}`;
+      image.image = `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-8b2541d@${digest}`;
       image.digest = digest;
       rehashManifestSubject(manifest);
     });

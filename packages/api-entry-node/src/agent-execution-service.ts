@@ -583,6 +583,10 @@ export class AgentExecutionService {
         return;
       }
 
+      ws.on('message', (data) => this.handleAgentMessage(ws, data));
+      ws.on('close', (code, reason) => this.handleSocketClose(ws, code, reason));
+      ws.on('error', () => this.handleSocketClose(ws));
+
       ws.send(
         JSON.stringify({
           type: 'server.hello',
@@ -593,10 +597,6 @@ export class AgentExecutionService {
           },
         }),
       );
-
-      ws.on('message', (data) => this.handleAgentMessage(ws, data));
-      ws.on('close', (code, reason) => this.handleSocketClose(ws, code, reason));
-      ws.on('error', () => this.handleSocketClose(ws));
     });
   }
 

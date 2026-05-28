@@ -1,7 +1,13 @@
 import type { AgentRecord } from './resource-models.js';
 import { isAbsolute, join, normalize } from 'node:path';
 import { isManagedAgentRunner } from './agent-runner-profile.js';
-import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody, SandboxPodEnsureResponse } from './asbcp-client.js';
+import {
+  redactAsbcpLogText,
+  type ExecResponse,
+  type PodStatusResponse,
+  type SandboxPodCreateBody,
+  type SandboxPodEnsureResponse,
+} from './asbcp-client.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
@@ -75,6 +81,8 @@ const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?
 const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED?.trim() || '1';
 const INTERNAL_AGENT_TASK_RUNNER_MODE = 'managed_platform';
 const INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS = 8_000;
+const RUNNER_HEALTH_REDACTED_VALUE = '[redacted]';
+const STANDALONE_SK_TOKEN_RE = /(^|[^A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{8,})(?=$|[^A-Za-z0-9_-])/g;
 const DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = [
   'set +e',
   "runner_patterns='[a]gentsmith-runner'",
@@ -164,6 +172,18 @@ function truncateDiagnosticText(value: string): string {
     return value;
   }
   return `${value.slice(0, INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS)}\n[truncated]`;
+}
+
+function redactStandaloneSkTokens(value: string): string {
+  return value.replace(STANDALONE_SK_TOKEN_RE, `$1${RUNNER_HEALTH_REDACTED_VALUE}`);
+}
+
+function redactRunnerHealthDiagnosticText(value: string): string {
+  return truncateDiagnosticText(redactAsbcpLogText(redactStandaloneSkTokens(value)));
+}
+
+function redactRunnerHealthCommand(command: string[]): string[] {
+  return command.map((part) => redactRunnerHealthDiagnosticText(part));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -265,6 +285,14 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ...(status !== undefined ? { status } : {}),
     ...(requestId ? { requestId } : {}),
     ...(retryable !== undefined ? { retryable } : {}),
+  };
+}
+
+function normalizeRunnerHealthDiagnosticError(error: unknown): DiagnosticError {
+  const diagnostic = normalizeDiagnosticError(error);
+  return {
+    ...diagnostic,
+    message: redactRunnerHealthDiagnosticText(diagnostic.message),
   };
 }
 
@@ -715,6 +743,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     signal?: AbortSignal,
   ): Promise<RunnerHealthDiagnostic> {
     const command = ['sh', '-lc', readRunnerHealthCommand()];
+    const diagnosticCommand = redactRunnerHealthCommand(command);
     const timeoutSeconds = readRunnerHealthExecTimeoutSeconds();
     try {
       const result = await this.runAbortableSandboxRpc(
@@ -725,20 +754,20 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       const durationMs = Number.isFinite(result.duration_ms) ? Math.floor(result.duration_ms) : undefined;
       return {
         status: exitCode === 0 ? 'runner_process_found' : 'runner_process_missing',
-        command,
+        command: diagnosticCommand,
         timeoutSeconds,
         exitCode,
-        stdout: truncateDiagnosticText(result.stdout),
-        stderr: truncateDiagnosticText(result.stderr),
+        stdout: redactRunnerHealthDiagnosticText(result.stdout),
+        stderr: redactRunnerHealthDiagnosticText(result.stderr),
         ...(durationMs !== undefined ? { durationMs } : {}),
       };
     } catch (error) {
       throwIfAborted(signal);
       return {
         status: 'exec_failed',
-        command,
+        command: diagnosticCommand,
         timeoutSeconds,
-        error: normalizeDiagnosticError(error),
+        error: normalizeRunnerHealthDiagnosticError(error),
       };
     }
   }
@@ -796,7 +825,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     sessionId: string;
     runnerHealth: RunnerHealthDiagnostic;
   }): Error {
-    return Object.assign(new Error('sandbox_runner_bootstrap_unhealthy'), {
+    const message = input.runnerHealth.status === 'runner_process_missing'
+      ? 'sandbox_runner_bootstrap_unhealthy'
+      : 'sandbox_startup_timeout';
+    return Object.assign(new Error(message), {
       code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
       workloadId: input.workloadId,
       sessionId: input.sessionId,

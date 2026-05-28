@@ -1560,6 +1560,178 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
+  it('redacts ready-session runner health command and output diagnostics', async () => {
+    const previousHealthCommand = process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+    const fakeSkToken = 'sk-runnerhealthfake000000000000';
+    const commandSecret = 'command-secret-value';
+    process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = `echo ${fakeSkToken} && echo api_key=${commandSecret}`;
+
+    try {
+      const createOrEnsurePod = vi.fn();
+      const getPodStatus = vi.fn();
+      const longOutput = 'x'.repeat(9_000);
+      const exec = vi.fn().mockResolvedValue({
+        exit_code: 1,
+        stdout: `stdout token=stdout-secret-value ${fakeSkToken} ${longOutput}`,
+        stderr: `stderr password=stderr-secret-value ${fakeSkToken} ${longOutput}`,
+        duration_ms: 6,
+      });
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus,
+          createOrEnsurePod,
+          deletePod: vi.fn().mockResolvedValue(undefined),
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec,
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+        },
+        'ws://api:20000',
+      );
+
+      let caught: unknown;
+      try {
+        await manager.ensureAgentReady({
+          workspaceId: 'ws_1',
+          projectId: 'proj_1',
+          workloadId: 'task_1',
+          sessionId: 'task_1',
+          agent: buildAgent({
+            image: 'runner:v1',
+            _internal_raw_key: 'ask_xxx',
+          }),
+          workspaceMount: buildWorkspaceMount(),
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_runner_bootstrap_unhealthy',
+        sandboxOperation: 'verify_ready_session_runner_health',
+        runnerHealth: expect.objectContaining({
+          status: 'runner_process_missing',
+          command: expect.arrayContaining(['sh', '-lc', expect.stringContaining('[redacted]')]),
+          stdout: expect.stringContaining('[redacted]'),
+          stderr: expect.stringContaining('[redacted]'),
+        }),
+      });
+      const runnerHealth = (caught as {
+        runnerHealth?: { command?: string[]; stdout?: string; stderr?: string };
+      }).runnerHealth;
+      expect(runnerHealth?.command?.[2]).not.toContain(fakeSkToken);
+      expect(runnerHealth?.command?.[2]).not.toContain(commandSecret);
+      expect(runnerHealth?.stdout).not.toContain(fakeSkToken);
+      expect(runnerHealth?.stdout).not.toContain('stdout-secret-value');
+      expect(runnerHealth?.stderr).not.toContain(fakeSkToken);
+      expect(runnerHealth?.stderr).not.toContain('stderr-secret-value');
+      expect(runnerHealth?.stdout?.length ?? 0).toBeLessThanOrEqual(8_020);
+      expect(runnerHealth?.stderr?.length ?? 0).toBeLessThanOrEqual(8_020);
+      expect(runnerHealth?.stdout).toContain('[truncated]');
+      expect(runnerHealth?.stderr).toContain('[truncated]');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(fakeSkToken);
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(commandSecret);
+      expect(getPodStatus).not.toHaveBeenCalled();
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    } finally {
+      if (previousHealthCommand === undefined) {
+        delete process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+      } else {
+        process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = previousHealthCommand;
+      }
+    }
+  });
+
+  it('reports ready-session health exec failures as startup timeout without deleting or recreating the pod', async () => {
+    const previousHealthCommand = process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+    const fakeSkToken = 'sk-runnerhealtherrorfake000000000';
+    process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = `echo ${fakeSkToken}`;
+
+    try {
+      const createOrEnsurePod = vi.fn();
+      const getPodStatus = vi.fn();
+      const deletePod = vi.fn().mockResolvedValue(undefined);
+      const longErrorMessage = 'x'.repeat(9_000);
+      const exec = vi.fn().mockRejectedValue(Object.assign(
+        new Error(`exec failed token=transport-secret-value ${fakeSkToken} ${longErrorMessage}`),
+        { code: 'AGENT_SANDBOX_UNAVAILABLE' },
+      ));
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus,
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec,
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+        },
+        'ws://api:20000',
+      );
+
+      let caught: unknown;
+      try {
+        await manager.ensureAgentReady({
+          workspaceId: 'ws_1',
+          projectId: 'proj_1',
+          workloadId: 'task_1',
+          sessionId: 'task_1',
+          agent: buildAgent({
+            image: 'runner:v1',
+            _internal_raw_key: 'ask_xxx',
+          }),
+          workspaceMount: buildWorkspaceMount(),
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_startup_timeout',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        sandboxOperation: 'verify_ready_session_runner_health',
+        runnerHealth: expect.objectContaining({
+          status: 'exec_failed',
+          command: expect.arrayContaining(['sh', '-lc', expect.stringContaining('[redacted]')]),
+          error: expect.objectContaining({
+            code: 'AGENT_SANDBOX_UNAVAILABLE',
+            message: expect.stringContaining('[redacted]'),
+          }),
+        }),
+      });
+      expect(caught).not.toMatchObject({ message: 'sandbox_runner_bootstrap_unhealthy' });
+      const runnerHealth = (caught as {
+        runnerHealth?: { command?: string[]; error?: { message?: string } };
+      }).runnerHealth;
+      expect(runnerHealth?.command?.[2]).not.toContain(fakeSkToken);
+      expect(runnerHealth?.error?.message).not.toContain(fakeSkToken);
+      expect(runnerHealth?.error?.message).not.toContain('transport-secret-value');
+      expect(runnerHealth?.error?.message?.length ?? 0).toBeLessThanOrEqual(8_020);
+      expect(runnerHealth?.error?.message).toContain('[truncated]');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(fakeSkToken);
+      expect(deletePod).not.toHaveBeenCalled();
+      expect(getPodStatus).not.toHaveBeenCalled();
+      expect(createOrEnsurePod).not.toHaveBeenCalled();
+    } finally {
+      if (previousHealthCommand === undefined) {
+        delete process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+      } else {
+        process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = previousHealthCommand;
+      }
+    }
+  });
+
   it('aborts a session-online wait quickly and releases the workload lock for a later ensure', async () => {
     const sleepGate = new Promise<void>(() => {});
     let sessionOnline = false;

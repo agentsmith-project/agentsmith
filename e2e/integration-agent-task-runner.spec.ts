@@ -16,6 +16,8 @@ import {
   createTerminalSessionViaApi,
   ensureIntegrationKeycloakUsers,
   expectAgentTaskRunnerEvidenceViaApi,
+  expectManagedAgentRunnerImageEvidenceViaApi,
+  expectManagedWorkloadPodImage,
   expectTerminalSessionRunnerEvidenceViaApi,
   getContextEntryViaApi,
   keycloakLoginToWorkspace,
@@ -35,8 +37,12 @@ type PreparedAgentTaskProject = {
   projectId: string;
   runnerId: string;
   runnerName: string;
+  runnerConfiguredImage: string | null;
   endpointId: string;
 };
+
+const INTERNAL_AGENT_K8S_NAMESPACE =
+  process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim() || 'agentsmith-sandbox';
 
 function requireRealLaneApiKey(): string {
   const value = process.env.PRESET_ENDPOINT_API_KEY?.trim();
@@ -46,11 +52,23 @@ function requireRealLaneApiKey(): string {
   return value;
 }
 
+function expectRunnerOutputNotToLeakSecret(
+  runnerOutputContent: string,
+  secret: string,
+  redactedLabel: string,
+): void {
+  const leaked = secret.length > 0 && runnerOutputContent.includes(secret);
+  expect(leaked, `${redactedLabel} leaked into runner output`).toBe(false);
+}
+
 async function prepareAgentTaskProject(
   page: Page,
   args: {
     projectPrefix: string;
     runnerTitle: string;
+    runnerImage?: string;
+    forceManagedRunnerUpsert?: boolean;
+    runnerDiagnostics?: Record<string, unknown>;
     username?: string;
     password?: string;
   },
@@ -77,6 +95,9 @@ async function prepareAgentTaskProject(
     projectId,
     endpointId,
     title: `${args.runnerTitle}-${Date.now()}`,
+    image: args.runnerImage,
+    forceManagedRunnerUpsert: args.forceManagedRunnerUpsert,
+    diagnostics: args.runnerDiagnostics,
   });
 
   expect(runner.status).toBe('ready');
@@ -86,8 +107,23 @@ async function prepareAgentTaskProject(
     projectId,
     runnerId: runner.runnerId,
     runnerName: runner.runnerName,
+    runnerConfiguredImage: runner.configuredImage,
     endpointId,
   };
+}
+
+function readRunnerProjectionSmokeImage(): string | null {
+  if (process.env.INTEGRATION_RUNNER_PROJECTION_SMOKE !== '1') {
+    return null;
+  }
+  const image = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim();
+  if (!image) {
+    throw new Error('runner_projection_smoke_missing_INTEGRATION_INTERNAL_AGENT_IMAGE');
+  }
+  if (image.includes('agent-task-runner') || !image.includes('agentsmith-runner')) {
+    throw new Error(`runner_projection_smoke_non_canonical_image:${image}`);
+  }
+  return image;
 }
 
 async function createRunnerlessAgentTask(args: {
@@ -377,6 +413,9 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
     const taskToken = `jira_projection_task_${Date.now()}`;
     const memberDisplayName = `jira-projection-member-${Date.now()}`;
     const taskDisplayName = `jira-projection-task-${Date.now()}`;
+    const projectionSmokeImage = readRunnerProjectionSmokeImage();
+    const projectionSmokeImageId =
+      process.env.INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID?.trim() || null;
     const memberServer = await startMockJiraServer({
       displayName: memberDisplayName,
       expectedToken: memberToken,
@@ -390,7 +429,31 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       const prepared = await prepareAgentTaskProject(page, {
         projectPrefix: 'Agentsmith Runner Projection',
         runnerTitle: 'agentsmith-runner-projection',
+        ...(projectionSmokeImage
+          ? {
+              runnerImage: projectionSmokeImage,
+              forceManagedRunnerUpsert: true,
+              runnerDiagnostics: {
+                runner_projection_smoke: true,
+                runner_projection_smoke_expected_image: projectionSmokeImage,
+                ...(projectionSmokeImageId
+                  ? { runner_projection_smoke_image_id: projectionSmokeImageId }
+                  : {}),
+              },
+            }
+          : {}),
       });
+      if (projectionSmokeImage) {
+        expect(prepared.runnerConfiguredImage).toBe(projectionSmokeImage);
+        await expectManagedAgentRunnerImageEvidenceViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId: prepared.projectId,
+          runnerId: prepared.runnerId,
+          expectedImage: projectionSmokeImage,
+          expectedImageId: projectionSmokeImageId,
+        });
+      }
       const taskId = await createRunnerlessAgentTask({
         page,
         projectId: prepared.projectId,
@@ -456,6 +519,16 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         taskId,
         runnerId: prepared.runnerId,
       });
+      if (projectionSmokeImage) {
+        stage = 'verify_workload_pod_image';
+        await expectManagedWorkloadPodImage({
+          namespace: INTERNAL_AGENT_K8S_NAMESPACE,
+          workspaceId: WORKSPACE_ID,
+          projectId: prepared.projectId,
+          workloadId: taskId,
+          expectedImage: projectionSmokeImage,
+        });
+      }
       stage = 'wait_for_task_projection';
       await waitForRunnerOutputToken({
         page,
@@ -481,8 +554,8 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         .join('\n');
       expect(runnerOutputContent).toContain(`JIRA_PROJECTION::${taskDisplayName}`);
       expect(runnerOutputContent).not.toContain(`JIRA_PROJECTION::${memberDisplayName}`);
-      expect(runnerOutputContent).not.toContain(taskToken);
-      expect(runnerOutputContent).not.toContain(memberToken);
+      expectRunnerOutputNotToLeakSecret(runnerOutputContent, taskToken, 'redacted task Jira token');
+      expectRunnerOutputNotToLeakSecret(runnerOutputContent, memberToken, 'redacted member Jira token');
       stage = 'done';
     } catch (error) {
       throw new Error(`jira_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);

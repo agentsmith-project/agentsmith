@@ -763,6 +763,7 @@ describe('unified deploy product flow producer', () => {
         status: 'ready',
         isDefault: true,
         defaultEndpointId: 'ep_focused',
+        configuredImage: null,
         agentTaskModelSetting: {
           endpointId: 'ep_focused',
           defaultModelId: 'integration-chat-model',

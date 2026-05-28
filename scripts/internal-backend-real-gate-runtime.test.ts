@@ -373,6 +373,7 @@ describe('internal backend-real gate runtime contract', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const backendRealRun = read('scripts/backend-real-run.sh');
     const agentTaskRunnerSpec = read('e2e/integration-agent-task-runner.spec.ts');
+    const realHelpers = read('e2e/integration-real-helpers.ts');
     const projectionFunction = shellFunctionBody(agentTaskGate, 'run_runner_projection_smoke_spec');
     const projectionCase = sectionBetween(
       agentTaskRunnerSpec,
@@ -383,23 +384,49 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--runner-projection-smoke" ]]');
     expect(agentTaskGate).toContain('running focused runner projection smoke with canonical agentsmith-runner image');
     expect(agentTaskGate).toContain('ensure_runner_projection_smoke_image_preconditions');
+    expect(agentTaskGate).toContain('ensure_runner_projection_smoke_deepseek_preconditions');
+    expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_PROJECTION_SMOKE=1');
+    expect(agentTaskGate).toContain('export INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE=1');
     expect(agentTaskGate).toContain('EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"');
+    expect(agentTaskGate).toContain('RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock}"');
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
-    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must contain agentsmith-runner');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must reference an agentsmith-runner image repository');
     expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
     expect(agentTaskGate).toContain('old monorepo runner image build');
     expect(agentTaskGate).toContain('command -v docker >/dev/null 2>&1');
     expect(agentTaskGate).toContain('docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1');
+    expect(agentTaskGate).toContain("docker image inspect --format '{{.Id}}' \"${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}\"");
+    expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID="${image_id}"');
+    expect(agentTaskGate).toContain('scripts/contracts/check-runner-image-lock.ts');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match agentsmith-runner-image.lock');
+    expect(agentTaskGate).toContain('canonical registry image must use the locked digest');
+    expect(agentTaskGate).toContain('BACKEND_REAL_OPENAI_BASE_URL must resolve to DeepSeek');
+    expect(agentTaskGate).toContain('BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL:-${BACKEND_REAL_OPENAI_BASE_URL_VALUE}}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_RUNNER_PROJECTION_SMOKE="${INTEGRATION_RUNNER_PROJECTION_SMOKE:-0}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE="${INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE:-0}" \\');
     expect(agentTaskGate).toContain('docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE');
     expect(agentTaskGate).toContain('local docker image not found');
     expect(projectionFunction).toContain(
       'uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner',
     );
     expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand');
+    expect(projectionCase).toContain('readRunnerProjectionSmokeImage');
+    expect(projectionCase).toContain('runnerImage: projectionSmokeImage');
+    expect(projectionCase).toContain('forceManagedRunnerUpsert: true');
+    expect(projectionCase).toContain('runner_projection_smoke_expected_image: projectionSmokeImage');
+    expect(projectionCase).toContain('expect(prepared.runnerConfiguredImage).toBe(projectionSmokeImage)');
+    expect(projectionCase).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
+    expect(projectionCase).toContain('expectManagedWorkloadPodImage');
     expect(agentTaskRunnerSpec).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
     expect(agentTaskRunnerSpec).toContain('jira-auth');
     expect(agentTaskRunnerSpec).toContain('/rest/api/2/myself');
+    expect(agentTaskRunnerSpec).toContain('runner_projection_smoke_non_canonical_image');
+    expect(realHelpers).toContain('INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE');
+    expect(realHelpers).toContain('managed_runner_projection_smoke_image_required');
+    expect(realHelpers).toContain('configuredImage: seededDefault.configuredImage');
+    expect(realHelpers).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
+    expect(realHelpers).toContain('expectManagedWorkloadPodImage');
     expect(projectionCase).not.toContain('jira_ops.py');
     expect(projectionCase).not.toContain('context_cli.py');
     expect(projectionFunction).not.toContain('reads task context through mbos-context');

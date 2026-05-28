@@ -1284,6 +1284,23 @@ const SPEC_COVERAGE = [
   }),
   grepCoverage({
     spec: "e2e/integration-agent-task-runner.spec.ts",
+    grep: "uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner",
+    proposed_shard_id: "agent-task-runner",
+    evidence_owner: "backend-real-runner:agent-task",
+    isolation_level: "serialized",
+    mutable_resources: [
+      "workspace",
+      "project",
+      "runner_task",
+      "context_store",
+      "runner_mount",
+    ],
+    lock_ids: BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Request-scoped projected dependency coverage mutates task/member context and runner mount projection state.",
+  }),
+  grepCoverage({
+    spec: "e2e/integration-agent-task-runner.spec.ts",
     grep: "uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner",
     proposed_shard_id: "provider-credential",
     evidence_owner: "backend-real-provider:credential",

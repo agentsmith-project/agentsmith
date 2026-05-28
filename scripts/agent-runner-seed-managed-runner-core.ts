@@ -24,6 +24,7 @@ export type DefaultManagedRunnerSeedResult = {
   status: string;
   isDefault: boolean;
   defaultEndpointId: string | null;
+  configuredImage: string | null;
   agentTaskModelSetting: DefaultManagedRunnerAgentTaskModelSettingSeedResult;
   capabilities: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
@@ -211,6 +212,7 @@ export async function upsertDeploymentDefaultManagedRunner(
       status: refreshed.runner_status?.trim() || 'ready',
       isDefault: refreshed.is_default === true,
       defaultEndpointId: projectedDefaultEndpointId || null,
+      configuredImage: refreshed.config?.image?.trim() || null,
       agentTaskModelSetting,
       capabilities: refreshed.capabilities ?? {},
       diagnostics: refreshed.diagnostics ?? {},

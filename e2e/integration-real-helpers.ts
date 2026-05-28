@@ -1870,6 +1870,7 @@ type RunnerIdSource = {
   status: string;
   isDefault: boolean;
   defaultEndpointId: string | null;
+  configuredImage: string | null;
   capabilities: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
 };
@@ -2080,6 +2081,7 @@ function normalizeManagedRunnerResult(
       || "ready",
     isDefault: payload.is_default === true || payload.kind === "system_managed",
     defaultEndpointId: payload.default_endpoint_id?.trim() || null,
+    configuredImage: null,
     capabilities: payload.capabilities ?? {},
     diagnostics: payload.diagnostics ?? {},
   };
@@ -2255,6 +2257,7 @@ export async function createManagedAgentRunnerViaApi(
     image?: string;
     idleTimeoutSec?: number;
     maxLifetimeSec?: number;
+    forceManagedRunnerUpsert?: boolean;
     isDefault?: boolean;
     status?: "draft" | "connected" | "ready" | "degraded" | "offline";
     capabilities?: AgentRunnerCapabilitiesInput;
@@ -2266,6 +2269,7 @@ export async function createManagedAgentRunnerViaApi(
   status: string;
   isDefault: boolean;
   defaultEndpointId: string | null;
+  configuredImage: string | null;
   capabilities: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
 }> {
@@ -2278,8 +2282,14 @@ export async function createManagedAgentRunnerViaApi(
   if (!fallbackEndpointId) {
     throw new Error("managed_agent_runner_endpoint_id_required_for_model_setting");
   }
+  const requestedImage = args.image?.trim();
+  if (process.env.INTEGRATION_RUNNER_PROJECTION_SMOKE === "1" && !requestedImage) {
+    throw new Error("managed_runner_projection_smoke_image_required");
+  }
   const requiresPrivateConfigUpsert =
-    Boolean(args.image?.trim()) ||
+    args.forceManagedRunnerUpsert === true ||
+    process.env.INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE === "1" ||
+    Boolean(requestedImage) ||
     typeof args.idleTimeoutSec === "number" ||
     typeof args.maxLifetimeSec === "number";
   const seededRunnerId = requiresPrivateConfigUpsert
@@ -2311,6 +2321,7 @@ export async function createManagedAgentRunnerViaApi(
       status: resolved.status,
       isDefault: resolved.isDefault,
       defaultEndpointId: resolved.defaultEndpointId,
+      configuredImage: resolved.configuredImage,
       capabilities: resolved.capabilities,
       diagnostics: resolved.diagnostics,
     };
@@ -2327,7 +2338,7 @@ export async function createManagedAgentRunnerViaApi(
     status: "enabled",
     runnerStatus: args.status || "ready",
     isDefault: args.isDefault ?? true,
-    image: args.image,
+    image: requestedImage,
     idleTimeoutSec: args.idleTimeoutSec,
     maxLifetimeSec: args.maxLifetimeSec,
     capabilities: args.capabilities,
@@ -2345,9 +2356,44 @@ export async function createManagedAgentRunnerViaApi(
     status: seededDefault.status || "ready",
     isDefault: seededDefault.isDefault,
     defaultEndpointId: seededDefault.defaultEndpointId,
+    configuredImage: seededDefault.configuredImage,
     capabilities: seededDefault.capabilities,
     diagnostics: seededDefault.diagnostics,
   };
+}
+
+function readRecordString(input: Record<string, unknown> | undefined, key: string): string | null {
+  const value = input?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export async function expectManagedAgentRunnerImageEvidenceViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  runnerId: string;
+  expectedImage: string;
+  expectedImageId?: string | null;
+}): Promise<ManagedAgentRunnerApiPayload> {
+  const payload = await readManagedAgentRunnerById({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    runnerId: args.runnerId,
+  });
+  if (!payload) {
+    throw new Error(`managed_runner_image_evidence_missing:${args.runnerId}`);
+  }
+  expect(payload.id).toBe(args.runnerId);
+  expect(payload.kind).toBe("system_managed");
+  expect(readRecordString(payload.diagnostics, "runner_projection_smoke_expected_image"))
+    .toBe(args.expectedImage);
+  const expectedImageId = args.expectedImageId?.trim();
+  if (expectedImageId) {
+    expect(readRecordString(payload.diagnostics, "runner_projection_smoke_image_id"))
+      .toBe(expectedImageId);
+  }
+  return payload;
 }
 
 export async function createChatSessionViaApi(args: {
@@ -4010,6 +4056,8 @@ export async function waitForAgentTaskRunFinalStateViaApi(args: {
 export type WorkloadPodSnapshot = {
   name?: string | null;
   uid?: string | null;
+  image?: string | null;
+  imageID?: string | null;
   phase?: string | null;
   ready?: boolean | null;
   readyReason?: string | null;
@@ -4033,11 +4081,18 @@ type KubernetesPodItem = {
     reason?: string;
     conditions?: Array<{ type?: string; status?: string; reason?: string }>;
     containerStatuses?: Array<{
+      image?: string;
+      imageID?: string;
       ready?: boolean;
       state?: {
         waiting?: { reason?: string };
         terminated?: { exitCode?: number; reason?: string };
       };
+    }>;
+  };
+  spec?: {
+    containers?: Array<{
+      image?: string;
     }>;
   };
 };
@@ -4261,6 +4316,8 @@ function parseWorkloadPodItemSnapshot(
   return {
     name: item.metadata?.name ?? null,
     uid: item.metadata?.uid ?? null,
+    image: item.spec?.containers?.[0]?.image ?? containerStatuses[0]?.image ?? null,
+    imageID: containerStatuses[0]?.imageID ?? null,
     phase: item.status?.phase ?? null,
     ready,
     readyReason: readyCondition?.reason ?? null,
@@ -4315,6 +4372,35 @@ async function fetchWorkloadPodSnapshot(args: {
     projectId: args.projectId,
   });
   return selection ? parseWorkloadPodItemSnapshot(selection.item) : null;
+}
+
+export async function expectManagedWorkloadPodImage(args: {
+  namespace: string;
+  workloadId: string;
+  workspaceId?: string;
+  projectId?: string;
+  expectedImage: string;
+  timeoutMs?: number;
+}): Promise<WorkloadPodSnapshot> {
+  let latestPod: WorkloadPodSnapshot | null = null;
+  await expect
+    .poll(
+      async () => {
+        latestPod = await fetchWorkloadPodSnapshot({
+          namespace: args.namespace,
+          workloadId: args.workloadId,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+        });
+        return latestPod?.image ?? null;
+      },
+      { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(args.expectedImage);
+  if (!latestPod) {
+    throw new Error(`managed_workload_pod_image_not_observed:${args.workloadId}`);
+  }
+  return latestPod;
 }
 
 async function readArtifactText(artifactPath?: string): Promise<string | null> {

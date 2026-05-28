@@ -312,7 +312,7 @@ describe('handleEndpointRoute downstream abort timing', () => {
     expect(universalProxyService.proxyJsonRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('routes OpenAI responses client requests for chat-completions endpoints through the direct bridge', async () => {
+  it('routes DeepSeek OpenAI responses client requests for chat-completions endpoints through the direct bridge', async () => {
     const req = createRequest();
     const res = createResponse();
     const requestBody = {
@@ -339,7 +339,7 @@ describe('handleEndpointRoute downstream abort timing', () => {
       _res: http.ServerResponse,
       options: DirectProxyOptionsWithSignal,
     ) => {
-      expect(options.upstreamUrl).toBe('https://provider.example/v1/chat/completions');
+      expect(options.upstreamUrl).toBe('https://api.deepseek.com/v1/chat/completions');
       expect(options.endpointProtocol).toBe('openai_chat_completions');
       expect(options.proxyPath).toBe('openai/responses');
       expect(options.requestBody).toEqual(requestBody);
@@ -359,6 +359,7 @@ describe('handleEndpointRoute downstream abort timing', () => {
       res,
       deps: createDeps({
         endpoint: createEndpoint({
+          base_url: 'https://api.deepseek.com/v1',
           model: 'deepseek-chat',
           upstream_protocol: 'openai_chat_completions',
         }),
@@ -376,6 +377,63 @@ describe('handleEndpointRoute downstream abort timing', () => {
     expect(universalProxyService.ensureEndpointNamespace).not.toHaveBeenCalled();
     expect(universalProxyService.proxyJsonRequest).not.toHaveBeenCalled();
     expect(proxyJsonRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes non-DeepSeek OpenAI responses client requests for chat-completions endpoints through universal proxy', async () => {
+    const req = createRequest();
+    const res = createResponse();
+    const requestBody = {
+      model: 'compatible-chat',
+      input: 'run the task',
+    };
+    const universalProxyService = {
+      supportsEndpoint: vi.fn(() => true),
+      supportsProxyPath: vi.fn(() => true),
+      ensureEndpointNamespace: vi.fn(async () => 'ns_1'),
+      proxyJsonRequest: vi.fn(async (options: {
+        proxyPath?: string;
+        model?: string;
+        requestBody?: unknown;
+      }) => {
+        expect(options.proxyPath).toBe('openai/responses');
+        expect(options.model).toBe('compatible-chat');
+        expect(options.requestBody).toEqual(requestBody);
+        return { upstream_status: 200, tokens_total: 19 };
+      }),
+    };
+    const proxyJsonRequest = vi.fn();
+
+    const handled = await handleEndpointRoute({
+      route: {
+        kind: 'endpointProxy',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_1',
+        proxyPath: 'openai/responses',
+      },
+      method: 'POST',
+      req,
+      res,
+      deps: createDeps({
+        endpoint: createEndpoint({
+          base_url: 'https://openai-compatible.provider.example/v1',
+          model: 'compatible-chat',
+          upstream_protocol: 'openai_chat_completions',
+        }),
+        universalProxyService,
+      }),
+      user,
+      internalTicket: null,
+      json: vi.fn(),
+      readBody: vi.fn(async () => requestBody),
+      buildUpstreamUrl,
+      proxyJsonRequest,
+    });
+
+    expect(handled).toBe(true);
+    expect(universalProxyService.ensureEndpointNamespace).toHaveBeenCalledTimes(1);
+    expect(universalProxyService.proxyJsonRequest).toHaveBeenCalledTimes(1);
+    expect(proxyJsonRequest).not.toHaveBeenCalled();
   });
 
   it('passes an already-aborted signal to universal proxy when response close fires immediately after body read', async () => {

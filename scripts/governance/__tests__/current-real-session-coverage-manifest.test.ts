@@ -224,6 +224,11 @@ describe('current real session coverage manifest', () => {
       expect.objectContaining({
         source_kind: 'playwright_grep',
         spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
         grep: 'uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner',
       }),
       expect.objectContaining({

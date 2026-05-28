@@ -149,6 +149,15 @@ function directBridgeChatProxyPath(proxyPath: string): string | null {
   return DIRECT_BRIDGE_CHAT_PROXY_PATHS.has(normalized) ? 'messages/count_tokens' : null;
 }
 
+function isDeepSeekBaseUrl(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    return url.hostname === 'api.deepseek.com' || url.hostname.endsWith('.deepseek.com');
+  } catch {
+    return false;
+  }
+}
+
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, internalTicket, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
@@ -363,7 +372,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         const useDirectOpenAiResponsesToChatBridge =
           action === 'chat'
           && endpoint.upstream_protocol === 'openai_chat_completions'
-          && universalProxyPath === 'openai/responses';
+          && universalProxyPath === 'openai/responses'
+          && isDeepSeekBaseUrl(endpoint.base_url);
         const requiresUniversalProxyForLlm =
           Boolean(universalProxyPath) && !useDirectOpenAiResponsesToChatBridge;
         if (requiresUniversalProxyForLlm && !universalProxyService) {

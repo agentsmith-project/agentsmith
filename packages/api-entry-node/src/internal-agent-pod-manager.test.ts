@@ -1218,6 +1218,30 @@ describe('internal-agent-pod-manager', () => {
       expect(
         healthCommand.split('\n').filter((line) => line.includes('old_monorepo_runner')).join('\n'),
       ).not.toContain('exit 0');
+      const healthCommandLines = healthCommand.split('\n');
+      const oldPgrepCheckLine = healthCommandLines.findIndex((line) =>
+        line.includes('old_monorepo_pgrep_output='),
+      );
+      const canonicalPgrepCheckLine = healthCommandLines.findIndex(
+        (line) => line.includes('pgrep_output=') && !line.includes('old_monorepo'),
+      );
+      const oldPsCheckLine = healthCommandLines.findIndex((line) =>
+        line.includes('grep -E "$old_monorepo_runner_patterns"'),
+      );
+      const canonicalPsCheckLine = healthCommandLines.findIndex((line) =>
+        line.includes('grep -E "$runner_patterns"'),
+      );
+      expect(oldPgrepCheckLine).toBeGreaterThan(-1);
+      expect(canonicalPgrepCheckLine).toBeGreaterThan(-1);
+      expect(oldPgrepCheckLine).toBeLessThan(canonicalPgrepCheckLine);
+      expect(oldPsCheckLine).toBeGreaterThan(-1);
+      expect(canonicalPsCheckLine).toBeGreaterThan(-1);
+      expect(oldPsCheckLine).toBeLessThan(canonicalPsCheckLine);
+      const oldRunnerErrorLines = healthCommandLines.filter((line) =>
+        line.includes('unsupported_old_monorepo_runner_process_detected'),
+      );
+      expect(oldRunnerErrorLines).toHaveLength(2);
+      expect(oldRunnerErrorLines.every((line) => line.includes('exit 1'))).toBe(true);
       expect(deletePod).not.toHaveBeenCalled();
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {

@@ -109,6 +109,7 @@ describe('internal-agent-pod-manager', () => {
           MBOS_AGENT_BUILTIN_SKILLS_DIR: '/etc/codex/skills',
           MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
+          MBOS_AGENT_RUNNER_INSTANCE_ID: 'ag_1:task_1:task_1',
         }),
       }),
       undefined,
@@ -1129,14 +1130,14 @@ describe('internal-agent-pod-manager', () => {
     },
   );
 
-  it('preserves a running workload pod when the runner process exists but session dispatch readiness never arrives', async () => {
+  it('preserves a running workload pod when the agentsmith-runner process exists but session dispatch readiness never arrives', async () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
     const deletePod = vi.fn().mockResolvedValue(undefined);
     const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
     const exec = vi.fn().mockResolvedValue({
       exit_code: 0,
-      stdout: '123 npm run dev -w @mbos/agent-task-runner\n',
+      stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
       stderr: '',
       duration_ms: 8,
     });
@@ -1192,7 +1193,7 @@ describe('internal-agent-pod-manager', () => {
         runnerHealth: expect.objectContaining({
           status: 'runner_process_found',
           exitCode: 0,
-          stdout: '123 npm run dev -w @mbos/agent-task-runner\n',
+          stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
           stderr: '',
           durationMs: 8,
         }),
@@ -1208,7 +1209,15 @@ describe('internal-agent-pod-manager', () => {
         undefined,
       );
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('ps');
-      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('agent-task-runner');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('[a]gentsmith-runner');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('runner_instance_id=');
+      const healthCommand = String(exec.mock.calls[0]?.[3]?.[2]);
+      expect(healthCommand).toContain('old_monorepo_runner_patterns');
+      expect(healthCommand).toContain('runner_health_error=unsupported_old_monorepo_runner_process_detected');
+      expect(healthCommand).not.toContain('transition-only');
+      expect(
+        healthCommand.split('\n').filter((line) => line.includes('old_monorepo_runner')).join('\n'),
+      ).not.toContain('exit 0');
       expect(deletePod).not.toHaveBeenCalled();
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {

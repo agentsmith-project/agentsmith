@@ -57,6 +57,15 @@ function inferProxyPathFromUpstreamUrl(upstreamUrl: string): string {
   return upstreamUrl.split('/').slice(-2).join('/');
 }
 
+function isDeepSeekUpstreamUrl(upstreamUrl: string): boolean {
+  try {
+    const url = new URL(upstreamUrl);
+    return url.hostname === 'api.deepseek.com' || url.hostname.endsWith('.deepseek.com');
+  } catch {
+    return false;
+  }
+}
+
 function normalizeAttachmentFilename(filename: string): string {
   const sanitized = filename
     .replace(/[\u0000-\u001F\u007F]+/g, '')
@@ -231,6 +240,13 @@ export async function proxyJsonRequest(
 
   const upstreamUrl = bridgePlan.upstreamUrl;
   const upstreamBody = bridgePlan.upstreamBody;
+  if (
+    useResponsesFallback
+    && isDeepSeekUpstreamUrl(upstreamUrl)
+    && upstreamBody.thinking === undefined
+  ) {
+    upstreamBody.thinking = { type: 'disabled' };
+  }
 
   const timeoutMs = Math.max(1, options.timeoutSeconds ?? readDefaultEndpointProxyTimeoutSeconds()) * 1000;
   const upstreamAbort = options.signal

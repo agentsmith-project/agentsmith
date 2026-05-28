@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { ProjectedDependenciesEnv } from '@mbos/agent-runner-contract';
 import type { AgentExecutionArtifactPayload, AgentExecutionTraceEventPayload } from './agent-execution-service.js';
 import {
   recordNotebookTaskRunCompleted,
@@ -41,6 +42,7 @@ import {
   DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
   isDeveloperRunnerTaskHomeBindingAvailable,
 } from './developer-runner-workspace-blocker.js';
+import { getContextEntry, type ContextScope } from './context-store.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -273,6 +275,90 @@ function buildRequestScopedResourceProxyBaseUrl(input: {
     + `/workspaces/${encodeURIComponent(input.workspaceId)}`
     + `/projects/${encodeURIComponent(input.projectId)}`
     + `/endpoints/${encodeURIComponent(input.endpointId)}/proxy/openai`;
+}
+
+type JiraAuthProjectionFields = {
+  base_url: string;
+  token: string;
+};
+
+async function readContextContentForProjection(input: {
+  deps: NodeApiDeps;
+  scope: ContextScope;
+  key: string;
+  userId: string;
+  workspaceId: string;
+  projectId?: string;
+  taskId?: string;
+}): Promise<string | null> {
+  const entry = await getContextEntry(input.deps.docStore, {
+    scope: input.scope,
+    key: input.key,
+    user_id: input.userId,
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    task_id: input.taskId,
+  });
+  const content = entry?.content.trim();
+  return content ? content : null;
+}
+
+async function readJiraAuthProjectionFields(input: {
+  deps: NodeApiDeps;
+  userId: string;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<JiraAuthProjectionFields | null> {
+  const [baseUrl, token] = await Promise.all([
+    readContextContentForProjection({
+      deps: input.deps,
+      scope: 'task',
+      key: 'credentials.jira_base_url',
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      taskId: input.taskId,
+    }),
+    readContextContentForProjection({
+      deps: input.deps,
+      scope: 'task',
+      key: 'credentials.jira_token',
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      taskId: input.taskId,
+    }),
+  ]);
+  const sanitizedBaseUrl = sanitizeBaseUrl(baseUrl);
+  if (!sanitizedBaseUrl || !token) return null;
+  return {
+    base_url: sanitizedBaseUrl,
+    token,
+  };
+}
+
+async function buildRequestScopedProjectedDependencies(input: {
+  deps: NodeApiDeps;
+  task: NotebookTaskRecord;
+  user: AuthenticatedUser;
+}): Promise<ProjectedDependenciesEnv | undefined> {
+  const common = {
+    deps: input.deps,
+    userId: input.user.id,
+    workspaceId: input.task.workspace_id,
+    projectId: input.task.project_id,
+    taskId: input.task.id,
+  };
+  const jiraAuthFields = await readJiraAuthProjectionFields(common);
+  if (!jiraAuthFields) return undefined;
+  return {
+    dependencies: {
+      'jira-auth': {
+        fields: jiraAuthFields,
+      },
+    },
+  };
 }
 
 function requireNotebookModelContextWindow(contextWindow: number | undefined): number {
@@ -722,6 +808,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     });
     await throwIfCancellationRequested();
     const executionApiBase = resolveExecutionApiBase(publicBaseUrl, agent);
+    const projectedDependencies = isManagedAgentRunner(agent)
+      ? await buildRequestScopedProjectedDependencies({ deps, task, user })
+      : undefined;
     const dispatched = await taskOnlyRunnerProvider.dispatchTaskRun({
       deps,
       workspaceId: task.workspace_id,
@@ -749,6 +838,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         },
         api_base: executionApiBase,
         execution_ticket: issuedExecutionTicket.ticket,
+        ...(projectedDependencies ? { projected_dependencies: projectedDependencies } : {}),
         wire_api: wireApi,
         model,
         model_context_window: modelContextWindow,

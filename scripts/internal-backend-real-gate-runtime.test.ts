@@ -369,6 +369,43 @@ describe('internal backend-real gate runtime contract', () => {
     expect(backendRealRun).not.toContain('e2e/integration-files-user-stories.spec.ts');
   });
 
+  it('keeps runner projection smoke focused and fail-fast on a canonical runner image', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const backendRealRun = read('scripts/backend-real-run.sh');
+    const agentTaskRunnerSpec = read('e2e/integration-agent-task-runner.spec.ts');
+    const projectionFunction = shellFunctionBody(agentTaskGate, 'run_runner_projection_smoke_spec');
+    const projectionCase = sectionBetween(
+      agentTaskRunnerSpec,
+      "test('uses request-scoped projected dependencies through agentsmith-runner",
+      "test('uses feishu-docs managed credential projection",
+    );
+
+    expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--runner-projection-smoke" ]]');
+    expect(agentTaskGate).toContain('running focused runner projection smoke with canonical agentsmith-runner image');
+    expect(agentTaskGate).toContain('ensure_runner_projection_smoke_image_preconditions');
+    expect(agentTaskGate).toContain('EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must contain agentsmith-runner');
+    expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
+    expect(agentTaskGate).toContain('old monorepo runner image build');
+    expect(agentTaskGate).toContain('command -v docker >/dev/null 2>&1');
+    expect(agentTaskGate).toContain('docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1');
+    expect(agentTaskGate).toContain('docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE');
+    expect(agentTaskGate).toContain('local docker image not found');
+    expect(projectionFunction).toContain(
+      'uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner',
+    );
+    expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand');
+    expect(agentTaskRunnerSpec).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+    expect(agentTaskRunnerSpec).toContain('jira-auth');
+    expect(agentTaskRunnerSpec).toContain('/rest/api/2/myself');
+    expect(projectionCase).not.toContain('jira_ops.py');
+    expect(projectionCase).not.toContain('context_cli.py');
+    expect(projectionFunction).not.toContain('reads task context through mbos-context');
+    expect(backendRealRun).not.toContain('--runner-projection-smoke');
+  });
+
   it('enables AFSCP direct restore recovery only for the focused Files restore continuation gate', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
 

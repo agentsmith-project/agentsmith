@@ -77,18 +77,23 @@ const INTERNAL_AGENT_TASK_RUNNER_MODE = 'managed_platform';
 const INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS = 8_000;
 const DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = [
   'set +e',
-  "runner_patterns='[a]gent-task-runner|[p]ackages/agent-task-runner|[t]sx .*src/index\\.ts|[n]ode .*agent-task-runner'",
-  'echo "runner_health_probe=process_scan"',
+  "runner_patterns='[a]gentsmith-runner'",
+  "old_monorepo_runner_patterns='[a]gent-task-runner|[n]ode .*agent-task-runner'",
+  'echo "runner_health_probe=agentsmith_runner"',
+  'printf "runner_instance_id=%s\\n" "${MBOS_AGENT_RUNNER_INSTANCE_ID:-}"',
   'if command -v pgrep >/dev/null 2>&1; then',
-  '  pgrep -af "$runner_patterns"',
-  '  pgrep_status=$?',
-  '  if [ "$pgrep_status" -eq 0 ]; then exit 0; fi',
+  '  pgrep_output="$(pgrep -af "$runner_patterns" 2>/dev/null | awk -v self="$$" \'$1 != self\' || true)"',
+  '  if [ -n "$pgrep_output" ]; then printf "%s\\n" "$pgrep_output"; exit 0; fi',
+  '  old_monorepo_pgrep_output="$(pgrep -af "$old_monorepo_runner_patterns" 2>/dev/null | awk -v self="$$" \'$1 != self\' || true)"',
+  '  if [ -n "$old_monorepo_pgrep_output" ]; then echo "runner_health_error=unsupported_old_monorepo_runner_process_detected"; printf "%s\\n" "$old_monorepo_pgrep_output"; fi',
   'fi',
   'if command -v ps >/dev/null 2>&1; then',
   '  ps_output="$(ps -eo pid,ppid,stat,comm,args 2>/dev/null || ps aux 2>/dev/null || ps 2>/dev/null || true)"',
-  '  printf "%s\\n" "$ps_output" | grep -E "$runner_patterns"',
-  '  grep_status=$?',
-  '  if [ "$grep_status" -eq 0 ]; then exit 0; fi',
+  '  filtered_ps_output="$(printf "%s\\n" "$ps_output" | awk -v self="$$" \'$1 != self\')"',
+  '  printf "%s\\n" "$filtered_ps_output" | grep -E "$runner_patterns"',
+  '  if [ "$?" -eq 0 ]; then exit 0; fi',
+  '  printf "%s\\n" "$filtered_ps_output" | grep -E "$old_monorepo_runner_patterns"',
+  '  if [ "$?" -eq 0 ]; then echo "runner_health_error=unsupported_old_monorepo_runner_process_detected"; fi',
   '  echo "--- ps snapshot ---"',
   '  printf "%s\\n" "$ps_output" | head -80',
   'else',
@@ -140,6 +145,23 @@ function readRunnerHealthExecTimeoutSeconds(): number {
 
 function readRunnerHealthCommand(): string {
   return process.env.INTERNAL_AGENT_RUNNER_HEALTH_COMMAND?.trim() || DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND;
+}
+
+function sanitizeRunnerInstanceComponent(value: string | undefined): string {
+  const sanitized = value?.trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') ?? '';
+  return sanitized || 'unknown';
+}
+
+function buildRunnerInstanceId(input: {
+  agentId: string;
+  workloadId: string;
+  sessionId?: string;
+}): string {
+  return [
+    sanitizeRunnerInstanceComponent(input.agentId),
+    sanitizeRunnerInstanceComponent(input.workloadId),
+    sanitizeRunnerInstanceComponent(input.sessionId ?? input.workloadId),
+  ].join(':');
 }
 
 function truncateDiagnosticText(value: string): string {
@@ -859,6 +881,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
               MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
               MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
               ...(config.env ?? {}),
+              MBOS_AGENT_RUNNER_INSTANCE_ID: buildRunnerInstanceId({
+                agentId: agent.id,
+                workloadId,
+                sessionId,
+              }),
               TASK_HOME: workspaceMount.taskHomePath,
               HOME: workspaceMount.taskHomePath,
               WORKSPACE_PATH: workspaceMount.workspacePath,

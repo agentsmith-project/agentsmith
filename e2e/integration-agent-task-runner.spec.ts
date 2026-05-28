@@ -113,6 +113,31 @@ async function createRunnerlessAgentTask(args: {
   return taskId;
 }
 
+function buildJiraProjectionEnvSmokeCommand(): string {
+  const python = [
+    'import json,os,sys,urllib.request',
+    '[os.environ.pop(k,None) for k in ("http_proxy","https_proxy","all_proxy","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","no_proxy","NO_PROXY")]',
+    'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',
+    'raw or sys.exit("missing_MBOS_AGENT_PROJECTED_DEPENDENCIES")',
+    'data=json.loads(raw)',
+    'deps=data.get("dependencies") if isinstance(data,dict) else None',
+    'dep=deps.get("jira-auth") if isinstance(deps,dict) else None',
+    'fields=dep.get("fields") if isinstance(dep,dict) else None',
+    'base_url=fields.get("base_url") if isinstance(fields,dict) and isinstance(fields.get("base_url"),str) else None',
+    'token=fields.get("token") if isinstance(fields,dict) and isinstance(fields.get("token"),str) else None',
+    'base_url or sys.exit("missing_jira_base_url")',
+    'token or sys.exit("missing_jira_token")',
+    'url=base_url.rstrip("/")+"/rest/api/2/myself"',
+    'request=urllib.request.Request(url,headers={"Authorization":"Bearer "+token})',
+    'profile=json.loads(urllib.request.urlopen(request,timeout=10).read().decode("utf-8"))',
+    'display_name=profile.get("displayName") if isinstance(profile,dict) and isinstance(profile.get("displayName"),str) else None',
+    'display_name or sys.exit("missing_jira_displayName")',
+    'print("JIRA_PROJECTION::"+display_name)',
+  ].join('; ');
+
+  return `python3 -c '${python}'`;
+}
+
 test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
   test('reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
     test.setTimeout(720_000);
@@ -339,6 +364,128 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       stage = 'done';
     } catch (error) {
       throw new Error(`jira_task_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await memberServer.stop();
+      await taskServer.stop();
+    }
+  });
+
+  test('uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
+    test.setTimeout(720_000);
+    let stage = 'init';
+    const memberToken = `jira_projection_member_${Date.now()}`;
+    const taskToken = `jira_projection_task_${Date.now()}`;
+    const memberDisplayName = `jira-projection-member-${Date.now()}`;
+    const taskDisplayName = `jira-projection-task-${Date.now()}`;
+    const memberServer = await startMockJiraServer({
+      displayName: memberDisplayName,
+      expectedToken: memberToken,
+    });
+    const taskServer = await startMockJiraServer({
+      displayName: taskDisplayName,
+      expectedToken: taskToken,
+    });
+
+    try {
+      const prepared = await prepareAgentTaskProject(page, {
+        projectPrefix: 'Agentsmith Runner Projection',
+        runnerTitle: 'agentsmith-runner-projection',
+      });
+      const taskId = await createRunnerlessAgentTask({
+        page,
+        projectId: prepared.projectId,
+        title: `Agent Task Projection ${Date.now()}`,
+      });
+
+      stage = 'put_member_projection_context';
+      await putContextEntryViaApi({
+        page,
+        scope: 'member',
+        workspaceId: WORKSPACE_ID,
+        key: 'credentials.jira_base_url',
+        content: memberServer.baseUrl,
+      });
+      await putContextEntryViaApi({
+        page,
+        scope: 'member',
+        workspaceId: WORKSPACE_ID,
+        key: 'credentials.jira_token',
+        content: memberToken,
+      });
+
+      stage = 'put_task_projection_context';
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        key: 'credentials.jira_base_url',
+        content: taskServer.baseUrl,
+      });
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        key: 'credentials.jira_token',
+        content: taskToken,
+      });
+
+      stage = 'start_task_run';
+      const jiraProjectionCommand = buildJiraProjectionEnvSmokeCommand();
+      expect(jiraProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        intent: [
+          'Run this exact shell command and use its stdout value in your final reply:',
+          `\`${jiraProjectionCommand}\``,
+          'Reply with exactly one line and no extra text.',
+        ].join(' '),
+      });
+
+      stage = 'verify_runner_evidence';
+      await expectAgentTaskRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        runnerId: prepared.runnerId,
+      });
+      stage = 'wait_for_task_projection';
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: `JIRA_PROJECTION::${taskDisplayName}`,
+        runnerOutputActivityId,
+        runId,
+      });
+
+      stage = 'verify_task_projection_won';
+      const authToken = await readStoredAuthToken(page);
+      const activityResponse = await page.request.get(
+        `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
+        { headers: { Authorization: `Bearer ${authToken}` } },
+      );
+      expect(activityResponse.ok()).toBeTruthy();
+      const activity = (await activityResponse.json()) as Array<{ content?: string; actor?: string; kind?: string }>;
+      const runnerOutputContent = activity
+        .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
+        .map((item) => item.content ?? '')
+        .join('\n');
+      expect(runnerOutputContent).toContain(`JIRA_PROJECTION::${taskDisplayName}`);
+      expect(runnerOutputContent).not.toContain(`JIRA_PROJECTION::${memberDisplayName}`);
+      expect(runnerOutputContent).not.toContain(taskToken);
+      expect(runnerOutputContent).not.toContain(memberToken);
+      stage = 'done';
+    } catch (error) {
+      throw new Error(`jira_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
     } finally {
       await memberServer.stop();
       await taskServer.stop();

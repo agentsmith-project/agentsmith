@@ -179,6 +179,7 @@ export function translateResponsesRequestToChat(body: Record<string, unknown>): 
   if (typeof body.parallel_tool_calls === 'boolean') {
     chatBody.parallel_tool_calls = body.parallel_tool_calls;
   }
+  if (body.thinking !== undefined) chatBody.thinking = body.thinking;
   if (typeof body.user === 'string') chatBody.user = body.user;
 
   return chatBody;
@@ -357,4 +358,3 @@ export function buildResponsesSsePayload(response: Record<string, unknown>): str
     .map((event) => `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n`)
     .join('\n')}\n`;
 }
-

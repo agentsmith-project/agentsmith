@@ -275,6 +275,164 @@ describe('http-utils', () => {
     vi.unstubAllGlobals();
   });
 
+  it('injects disabled thinking for DeepSeek responses fallback requests and preserves explicit thinking', async () => {
+    const upstream = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.deepseek.com/v1/chat/completions');
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        model?: string;
+        thinking?: unknown;
+      };
+      expect(body.model).toBe('placeholder-model');
+      expect(body.thinking).toEqual({ type: 'disabled' });
+
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_deepseek',
+          object: 'chat.completion',
+          created: 1,
+          model: 'placeholder-model',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', upstream);
+
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(
+          JSON.stringify({
+            model: 'placeholder-model',
+            instructions: 'You are helpful',
+            input: [
+              {
+                role: 'user',
+                content: [{ type: 'input_text', text: 'Hello' }],
+              },
+            ],
+          }),
+        );
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    const res = {
+      statusCode: 0,
+      setHeader() {},
+      end() {},
+    } as unknown as import('node:http').ServerResponse;
+
+    await proxyJsonRequest(req, res, {
+      upstreamUrl: 'https://api.deepseek.com/v1/responses',
+      apiKey: 'test-key',
+      timeoutSeconds: 5,
+    });
+
+    expect(upstream).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+
+    const upstreamWithExplicitThinking = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.deepseek.com/v1/chat/completions');
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        thinking?: unknown;
+      };
+      expect(body.thinking).toEqual({ type: 'enabled' });
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_deepseek_explicit',
+          object: 'chat.completion',
+          created: 1,
+          model: 'placeholder-model',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', upstreamWithExplicitThinking);
+
+    const reqWithExplicitThinking = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(
+          JSON.stringify({
+            model: 'placeholder-model',
+            instructions: 'You are helpful',
+            thinking: { type: 'enabled' },
+            input: [
+              {
+                role: 'user',
+                content: [{ type: 'input_text', text: 'Hello' }],
+              },
+            ],
+          }),
+        );
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    await proxyJsonRequest(reqWithExplicitThinking, res, {
+      upstreamUrl: 'https://api.deepseek.com/v1/responses',
+      apiKey: 'test-key',
+      timeoutSeconds: 5,
+    });
+
+    expect(upstreamWithExplicitThinking).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('does not inject thinking for non-DeepSeek responses fallback requests', async () => {
+    const upstream = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.openai.com/v1/chat/completions');
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        thinking?: unknown;
+      };
+      expect(body.thinking).toBeUndefined();
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_openai',
+          object: 'chat.completion',
+          created: 1,
+          model: 'placeholder-model',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', upstream);
+
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(
+          JSON.stringify({
+            model: 'placeholder-model',
+            instructions: 'You are helpful',
+            input: [
+              {
+                role: 'user',
+                content: [{ type: 'input_text', text: 'Hello' }],
+              },
+            ],
+          }),
+        );
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    const res = {
+      statusCode: 0,
+      setHeader() {},
+      end() {},
+    } as unknown as import('node:http').ServerResponse;
+
+    await proxyJsonRequest(req, res, {
+      upstreamUrl: 'https://api.openai.com/v1/responses',
+      apiKey: 'test-key',
+      timeoutSeconds: 5,
+    });
+
+    expect(upstream).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it('maps responses function_call_output items into chat tool messages', async () => {
     const upstream = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
@@ -415,9 +573,14 @@ describe('http-utils', () => {
         tools?: Array<Record<string, unknown>>;
         tool_choice?: unknown;
       };
+      const firstTool = body.tools?.[0] as {
+        type?: string;
+        function?: { name?: string };
+      } | undefined;
       expect(Array.isArray(body.tools)).toBe(true);
       expect(body.tools?.length).toBe(1);
-      expect(body.tools?.[0]?.type).toBe('function');
+      expect(firstTool?.type).toBe('function');
+      expect(firstTool?.function?.name).toBe('shell');
       expect(body.tool_choice).toBe('auto');
       return new Response(
         JSON.stringify({
@@ -440,10 +603,10 @@ describe('http-utils', () => {
             model: 'placeholder-model',
             input: 'hi',
             tools: [
-              { type: 'web_search' },
+              { type: 'multi_agent_v1' },
               { type: 'function', name: 'shell', parameters: { type: 'object', properties: {} } },
             ],
-            tool_choice: { type: 'function', name: 'web_search' },
+            tool_choice: { type: 'function', name: 'multi_agent_v1' },
           }),
         );
       },

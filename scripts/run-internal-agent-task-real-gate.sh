@@ -31,6 +31,9 @@ elif [[ "${1:-}" == "--visual-review" ]]; then
 elif [[ "${1:-}" == "--files-restore-continue" ]]; then
   GATE_MODE="files-restore-continue"
   shift
+elif [[ "${1:-}" == "--runner-projection-smoke" ]]; then
+  GATE_MODE="runner-projection-smoke"
+  shift
 fi
 if [[ "${1:-}" == "--" ]]; then
   shift
@@ -90,6 +93,7 @@ ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
+EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
 RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
@@ -149,6 +153,44 @@ MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${INTEGRATION
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
+
+ensure_runner_projection_smoke_image_preconditions() {
+  if [[ "${GATE_MODE}" != "runner-projection-smoke" ]]; then
+    return 0
+  fi
+  if [[ -z "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE is required"
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to be set to a canonical agentsmith-runner image." >&2
+    exit 1
+  fi
+  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" == *agent-task-runner* ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path"
+    echo "[internal-real-gate] --runner-projection-smoke requires a canonical agentsmith-runner image; old agent-task-runner image/path is rejected: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    exit 1
+  fi
+  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != *agentsmith-runner* ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE must contain agentsmith-runner"
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to contain agentsmith-runner: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    exit 1
+  fi
+  if [[ "${BUILD_RUNNER_IMAGE}" != "0" ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required"
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 so it cannot fall back to the old monorepo runner image build." >&2
+    exit 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE"
+    echo "[internal-real-gate] --runner-projection-smoke requires docker to inspect INTEGRATION_INTERNAL_AGENT_IMAGE before running." >&2
+    exit 1
+  fi
+  if ! docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "local docker image not found"
+    echo "[internal-real-gate] --runner-projection-smoke requires the local docker image to exist: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    exit 1
+  fi
+}
+
+ensure_runner_projection_smoke_image_preconditions
 
 ensure_internal_integration_deps_for_afscp() {
   (
@@ -429,6 +471,8 @@ elif [[ "${GATE_MODE}" == "visual-review" ]]; then
   info "running backend-real visual review with internal managed Agent Task sandbox"
 elif [[ "${GATE_MODE}" == "files-restore-continue" ]]; then
   info "running Files restore continuation with internal managed Agent Task sandbox"
+elif [[ "${GATE_MODE}" == "runner-projection-smoke" ]]; then
+  info "running focused runner projection smoke with canonical agentsmith-runner image"
 else
   info "running internal agent-task workspace real integration"
 fi
@@ -560,6 +604,15 @@ run_skills_runtime_specs() {
   return "${skills_status}"
 }
 
+run_runner_projection_smoke_spec() {
+  local runner_api_port="${1:-20074}"
+  local runner_web_port="${2:-3074}"
+  local projection_status=0
+
+  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner" "${runner_api_port}" "${runner_web_port}" "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || projection_status=$?
+  return "${projection_status}"
+}
+
 run_internal_reclaim_spec() {
   local reclaim_api_port="$1"
   local reclaim_web_port="$2"
@@ -623,6 +676,18 @@ run_internal_workspace_specs() {
 }
 
 set +e
+if [[ "${GATE_MODE}" == "runner-projection-smoke" ]]; then
+  run_runner_projection_smoke_spec
+  GATE_STATUS=$?
+  set -e
+  if [[ "${GATE_STATUS}" -ne 0 ]]; then
+    exit "${GATE_STATUS}"
+  fi
+  info "focused runner projection smoke passed"
+  gate_record_success "${INTERNAL_REAL_DIR}" "runner_projection_smoke_spec"
+  exit 0
+fi
+
 if [[ "${GATE_MODE}" == "skills-runtime" ]]; then
   run_skills_runtime_specs
   GATE_STATUS=$?

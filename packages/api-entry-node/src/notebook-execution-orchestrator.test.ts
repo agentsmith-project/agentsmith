@@ -6,6 +6,7 @@ import {
   resolveExecutionApiBase,
   runNotebookTaskWithExecutionAgent,
 } from './notebook-execution-orchestrator.js';
+import type { AgentTaskModelResolvedTarget } from './agent-task-model-setting-service.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
@@ -20,6 +21,7 @@ import {
   DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_CODE,
   DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
 } from './developer-runner-workspace-blocker.js';
+import { putContextEntry } from './context-store.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -149,6 +151,181 @@ function setManagedExecutionApiBaseForTest(value = 'http://api:20000'): () => vo
     if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
     else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
   };
+}
+
+function buildResolvedTargetForTest(input: {
+  workspaceId: string;
+  projectId: string;
+  endpointId: string;
+  model?: string;
+}): AgentTaskModelResolvedTarget {
+  const model = input.model ?? 'placeholder-model';
+  return {
+    endpoint: {
+      id: input.endpointId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      status: 'active',
+      model,
+      credential_ref: `cred_${input.endpointId}`,
+      name: `endpoint-${input.endpointId}`,
+      type: 'custom',
+      upstream_protocol: 'openai_chat_completions',
+      base_url: 'https://example.com',
+      model_profile: {
+        max_context_tokens: 128000,
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    resolvedModel: model,
+    upstreamProtocol: 'openai_chat_completions',
+    setting: {
+      id: `project:${input.projectId}`,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      endpoint_id: input.endpointId,
+      default_model_id: model,
+      setting_revision: `set_${input.endpointId}`,
+      updated_at: '2026-05-07T00:00:00.000Z',
+      updated_by_user_id: 'test_admin',
+    },
+    snapshot: {
+      endpoint_id: input.endpointId,
+      endpoint_display_name: `endpoint-${input.endpointId}`,
+      resolved_model: model,
+      upstream_protocol: 'openai_chat_completions',
+      setting_revision: `set_${input.endpointId}`,
+      policy_decision_id: `policy_${input.endpointId}`,
+      resolved_at: '2026-05-07T00:00:00.000Z',
+    },
+  };
+}
+
+async function runManagedJiraProjectionDispatchForTest(input: {
+  caseId: string;
+  contextEntries: Array<{
+    scope: 'member' | 'task';
+    key: 'credentials.jira_base_url' | 'credentials.jira_token';
+    content: string;
+  }>;
+}): Promise<Record<string, unknown>> {
+  const restoreInternalApiBase = setManagedExecutionApiBaseForTest('http://api:20000');
+  const docStore = new InMemoryJsonDocStore();
+  const dispatchStreamingRequest = vi.fn(async () => ({
+    requestId: `req_${input.caseId}`,
+    cancel: () => undefined,
+    stream: (async function* stream() {})(),
+  }));
+  const deps = attachManagedExecutionDeps({
+    cache: new InMemoryCache(),
+    docStore,
+    agentResourceService: {
+      getAgent: vi.fn(async () => ({
+        id: `agent_${input.caseId}`,
+        status: 'enabled',
+        runner_provider: 'managed',
+        mode: 'internal',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: `ep_${input.caseId}`,
+          },
+        },
+      })),
+    },
+    agentExecutionService: {
+      dispatchStreamingRequest,
+    },
+  }) as unknown as NodeApiDeps;
+  const task = {
+    id: `task_${input.caseId}`,
+    workspace_id: `ws_${input.caseId}`,
+    project_id: `proj_${input.caseId}`,
+    owner_user_id: `user_${input.caseId}`,
+    title: `projected jira ${input.caseId}`,
+    agent_name: 'internal agent',
+    task_home_segment: `task_${input.caseId}`,
+    status: 'active' as const,
+    attached_inputs: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(),
+    agent_id: `agent_${input.caseId}`,
+    workspace_file_library_id: `flib_${input.caseId}`,
+    workspace_file_library_name: `Projected Jira ${input.caseId}`,
+  };
+  await seedReadyTaskWorkspaceLibraryForTask(docStore, task);
+  for (const entry of input.contextEntries) {
+    const common = {
+      scope: entry.scope,
+      key: entry.key,
+      user_id: task.owner_user_id,
+      workspace_id: task.workspace_id,
+      content: entry.content,
+      content_type: 'text' as const,
+      updated_by: task.owner_user_id,
+    };
+    if (entry.scope === 'task') {
+      await putContextEntry(docStore, {
+        ...common,
+        scope: 'task',
+        project_id: task.project_id,
+        task_id: task.id,
+      });
+    } else {
+      await putContextEntry(docStore, {
+        ...common,
+        scope: 'member',
+      });
+    }
+  }
+
+  try {
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage: {
+        id: `msg_${input.caseId}`,
+        task_id: task.id,
+        role: 'agent',
+        content: '',
+        created_at: new Date().toISOString(),
+      },
+      agentId: `agent_${input.caseId}`,
+      agentTaskModelTarget: buildResolvedTargetForTest({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        endpointId: `ep_${input.caseId}`,
+      }),
+      user: { id: task.owner_user_id, name: 'Projected User', email: 'projected@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => `run_${input.caseId}`,
+      buildProxyUsername: () => 'projected_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: `artifact_${input.caseId}`,
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+  } finally {
+    restoreInternalApiBase();
+  }
+
+  const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
+  if (!dispatchArg?.executionContext) {
+    throw new Error('execution_context_not_dispatched');
+  }
+  return dispatchArg.executionContext;
 }
 
 describe('notebook-execution-orchestrator governance preflight', () => {
@@ -628,6 +805,57 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         error_code: 'AGENT_FINALIZE_PERSIST_FAILED',
       },
     });
+  });
+
+  it('projects request-scoped jira-auth fields from complete task Context Store and ignores member context', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_jira',
+      contextEntries: [
+        { scope: 'member', key: 'credentials.jira_base_url', content: 'https://jira-member.example.com/' },
+        { scope: 'member', key: 'credentials.jira_token', content: 'member-token' },
+        { scope: 'task', key: 'credentials.jira_base_url', content: 'https://jira-task.example.com/' },
+        { scope: 'task', key: 'credentials.jira_token', content: 'task-token' },
+      ],
+    });
+    expect(executionContext.projected_dependencies).toEqual({
+      dependencies: {
+        'jira-auth': {
+          fields: {
+            base_url: 'https://jira-task.example.com',
+            token: 'task-token',
+          },
+        },
+      },
+    });
+    const serializedProjection = JSON.stringify(executionContext.projected_dependencies);
+    expect(serializedProjection).not.toMatch(
+      /context_store|writable_scopes|managed_credential_refresh|credential_files|user_bearer_token/,
+    );
+    expect(serializedProjection).not.toContain('jira-member.example.com');
+    expect(serializedProjection).not.toContain('member-token');
+  });
+
+  it('omits jira-auth projection when task scope is incomplete even if member scope is complete', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_jira_task_incomplete',
+      contextEntries: [
+        { scope: 'task', key: 'credentials.jira_base_url', content: 'https://jira-incomplete-task.example.com/' },
+        { scope: 'member', key: 'credentials.jira_base_url', content: 'https://jira-member-fallback.example.com/' },
+        { scope: 'member', key: 'credentials.jira_token', content: 'member-fallback-token' },
+      ],
+    });
+    expect(executionContext).not.toHaveProperty('projected_dependencies');
+  });
+
+  it('omits jira-auth projection when neither scope has a complete credential pair', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_jira_incomplete',
+      contextEntries: [
+        { scope: 'task', key: 'credentials.jira_token', content: 'task-token-without-base-url' },
+        { scope: 'member', key: 'credentials.jira_base_url', content: 'https://jira-member-incomplete.example.com/' },
+      ],
+    });
+    expect(executionContext).not.toHaveProperty('projected_dependencies');
   });
 
   it('uses internal execution api base derived from agent execution websocket base', async () => {

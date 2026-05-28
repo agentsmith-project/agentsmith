@@ -360,7 +360,12 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           action === 'chat'
             ? canonicalUniversalProxyPath(effectiveProxyPath)
             : null;
-        const requiresUniversalProxyForLlm = Boolean(universalProxyPath);
+        const useDirectOpenAiResponsesToChatBridge =
+          action === 'chat'
+          && endpoint.upstream_protocol === 'openai_chat_completions'
+          && universalProxyPath === 'openai/responses';
+        const requiresUniversalProxyForLlm =
+          Boolean(universalProxyPath) && !useDirectOpenAiResponsesToChatBridge;
         if (requiresUniversalProxyForLlm && !universalProxyService) {
           json(res, 503, {
             error_code: 'UNIVERSAL_PROXY_REQUIRED',
@@ -392,7 +397,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           return true;
         }
         const canUseUniversalProxy =
-          universalProxyService
+          !useDirectOpenAiResponsesToChatBridge
+          && universalProxyService
           && universalProxyService.supportsEndpoint(endpoint)
           && universalProxyPath
           && universalProxyService.supportsProxyPath(universalProxyPath);
@@ -401,7 +407,13 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             ? requestBody
             : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
         const targetUpstreamProxyPath =
-          directBridgeChatProxyPath(normalizedOriginalProxyPath) ?? resolved.proxyPath;
+          useDirectOpenAiResponsesToChatBridge
+            ? resolved.proxyPath
+            : (directBridgeChatProxyPath(normalizedOriginalProxyPath) ?? resolved.proxyPath);
+        const directProxyPath =
+          useDirectOpenAiResponsesToChatBridge
+            ? effectiveProxyPath
+            : targetUpstreamProxyPath;
         const proxyResult = canUseUniversalProxy
           ? await (async () => {
             const namespace = await universalProxyService.ensureEndpointNamespace(
@@ -428,7 +440,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             ),
             apiKey,
             endpointProtocol: endpoint.upstream_protocol,
-            proxyPath: targetUpstreamProxyPath,
+            proxyPath: directProxyPath,
             model: resolvedModel,
             timeoutSeconds: endpoint.limits?.timeout_seconds,
             requestBody: resolvedRequestBody,

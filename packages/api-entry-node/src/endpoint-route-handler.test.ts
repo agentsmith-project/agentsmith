@@ -312,6 +312,72 @@ describe('handleEndpointRoute downstream abort timing', () => {
     expect(universalProxyService.proxyJsonRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('routes OpenAI responses client requests for chat-completions endpoints through the direct bridge', async () => {
+    const req = createRequest();
+    const res = createResponse();
+    const requestBody = {
+      model: 'deepseek-chat',
+      input: 'run the task',
+      tools: [
+        { type: 'multi_agent_v1' },
+        {
+          type: 'function',
+          name: 'shell',
+          parameters: { type: 'object', properties: { cmd: { type: 'string' } } },
+        },
+      ],
+      tool_choice: { type: 'function', name: 'multi_agent_v1' },
+    };
+    const universalProxyService = {
+      supportsEndpoint: vi.fn(() => true),
+      supportsProxyPath: vi.fn(() => true),
+      ensureEndpointNamespace: vi.fn(async () => 'ns_1'),
+      proxyJsonRequest: vi.fn(),
+    };
+    const proxyJsonRequest = vi.fn(async (
+      _req: http.IncomingMessage,
+      _res: http.ServerResponse,
+      options: DirectProxyOptionsWithSignal,
+    ) => {
+      expect(options.upstreamUrl).toBe('https://provider.example/v1/chat/completions');
+      expect(options.endpointProtocol).toBe('openai_chat_completions');
+      expect(options.proxyPath).toBe('openai/responses');
+      expect(options.requestBody).toEqual(requestBody);
+      return { upstream_status: 200, tokens_total: 17 };
+    });
+
+    const handled = await handleEndpointRoute({
+      route: {
+        kind: 'endpointProxy',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        endpointId: 'ep_1',
+        proxyPath: 'openai/responses',
+      },
+      method: 'POST',
+      req,
+      res,
+      deps: createDeps({
+        endpoint: createEndpoint({
+          model: 'deepseek-chat',
+          upstream_protocol: 'openai_chat_completions',
+        }),
+        universalProxyService,
+      }),
+      user,
+      internalTicket: null,
+      json: vi.fn(),
+      readBody: vi.fn(async () => requestBody),
+      buildUpstreamUrl,
+      proxyJsonRequest,
+    });
+
+    expect(handled).toBe(true);
+    expect(universalProxyService.ensureEndpointNamespace).not.toHaveBeenCalled();
+    expect(universalProxyService.proxyJsonRequest).not.toHaveBeenCalled();
+    expect(proxyJsonRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('passes an already-aborted signal to universal proxy when response close fires immediately after body read', async () => {
     const req = createRequest();
     const res = createResponse();

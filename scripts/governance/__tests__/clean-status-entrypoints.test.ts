@@ -285,11 +285,12 @@ describe('clean status entrypoints', () => {
       expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Status: passed');
       expect(output).toContain(`Evidence: ${campaignRoot}`);
-      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(output).toContain('- dependencies: not available');
-      expect(output).toContain('- images: not available');
-      expect(output).toContain('- rollout: not available');
-      expect(output).toContain('- product flows: not available');
+      expect(output).not.toContain('Transition-only deploy diagnostics');
+      expect(output).not.toContain('- dependencies: not available');
+      expect(output).not.toContain('- images: not available');
+      expect(output).not.toContain('- rollout: not available');
+      expect(output).not.toContain('- product flows: not available');
+      expect(output).not.toContain('local-kind');
       expect(output).toContain('Lease shadow: active_run=not-known; locks=not-known');
       expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
       expect(output).not.toContain('AgentSmith Status Projection');

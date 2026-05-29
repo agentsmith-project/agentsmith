@@ -28,6 +28,7 @@ import {
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
   releaseExpiredWorkloadsViaAsbcp,
+  summarizeWorkloadPodEvents,
   resolveAgentTaskCreateTimeoutMs,
   resolveAgentTaskCreateStoragePendingRetries,
   resolveAgentTaskCreateStoragePendingRetryDelayMs,
@@ -1106,6 +1107,126 @@ describe('integration-real-helpers', () => {
       containerReadyCount: 0,
       containerCount: 1,
     });
+  });
+
+  it('parses init container readiness and failure reasons from workload pods', () => {
+    const failedPayload = JSON.stringify({
+      items: [
+        {
+          metadata: { name: 'workload-pod-init-failed', uid: 'pod-uid-init-failed' },
+          status: {
+            phase: 'Failed',
+            reason: 'PodInitializing',
+            initContainerStatuses: [
+              {
+                ready: false,
+                state: { terminated: { reason: 'Error', exitCode: 1 } },
+              },
+            ],
+            containerStatuses: [
+              {
+                ready: false,
+                state: { waiting: { reason: 'PodInitializing' } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(parseWorkloadPodSnapshot(failedPayload)).toMatchObject({
+      name: 'workload-pod-init-failed',
+      phase: 'Failed',
+      initContainerReadyCount: 0,
+      initContainerCount: 1,
+      initReason: 'Error',
+      initExitCode: 1,
+      reason: 'PodInitializing',
+    });
+
+    const waitingPayload = JSON.stringify({
+      items: [
+        {
+          metadata: { name: 'workload-pod-init-waiting', uid: 'pod-uid-init-waiting' },
+          status: {
+            phase: 'Pending',
+            initContainerStatuses: [
+              {
+                ready: false,
+                state: { terminated: { reason: 'Completed', exitCode: 0 } },
+              },
+              {
+                ready: false,
+                state: { waiting: { reason: 'ImagePullBackOff' } },
+              },
+            ],
+            containerStatuses: [
+              {
+                ready: false,
+                state: { waiting: { reason: 'PodInitializing' } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(parseWorkloadPodSnapshot(waitingPayload)).toMatchObject({
+      name: 'workload-pod-init-waiting',
+      phase: 'Pending',
+      initContainerReadyCount: 1,
+      initContainerCount: 2,
+      initReason: 'ImagePullBackOff',
+      initExitCode: 0,
+      reason: 'PodInitializing',
+    });
+  });
+
+  it('summarizes recent workload pod events with conservative secret redaction', () => {
+    const payload = JSON.stringify({
+      items: Array.from({ length: 10 }, (_, index) => ({
+        type: index % 2 === 0 ? 'Warning' : 'Normal',
+        reason: `Reason${index}`,
+        message: [
+          `event ${index}`,
+          'Authorization: Bearer abc.def.secret',
+          'OPENAI sk-testsecret123',
+          'token=plain-token-value',
+          'api_key=plain-api-key-value',
+          'password=plain-password-value',
+          'secret=plain-secret-value',
+          'MBOS_AGENT_KEY=agent-key-value',
+          'ASBCP_SERVICE_KEY=service-key-value',
+        ].join(' '),
+        count: index + 1,
+        lastTimestamp: `2026-05-12T12:${String(index).padStart(2, '0')}:00Z`,
+      })),
+    });
+
+    const summary = summarizeWorkloadPodEvents(payload);
+    const serialized = summary.join('\n');
+
+    expect(summary).toHaveLength(8);
+    expect(summary[0]).toContain('Warning/Reason2 count=3 last=2026-05-12T12:02:00Z');
+    expect(summary[7]).toContain('Normal/Reason9 count=10 last=2026-05-12T12:09:00Z');
+    expect(serialized).not.toContain('Reason0');
+    expect(serialized).not.toContain('Reason1');
+    expect(serialized).not.toContain('abc.def.secret');
+    expect(serialized).not.toContain('sk-testsecret123');
+    expect(serialized).not.toContain('plain-token-value');
+    expect(serialized).not.toContain('plain-api-key-value');
+    expect(serialized).not.toContain('plain-password-value');
+    expect(serialized).not.toContain('plain-secret-value');
+    expect(serialized).not.toContain('agent-key-value');
+    expect(serialized).not.toContain('service-key-value');
+    expect(serialized).toContain('Bearer <redacted>');
+    expect(serialized).toContain('sk-<redacted>');
+    expect(serialized).toContain('token=<redacted>');
+    expect(serialized).toContain('api_key=<redacted>');
+    expect(serialized).toContain('password=<redacted>');
+    expect(serialized).toContain('secret=<redacted>');
+    expect(serialized).toContain('MBOS_AGENT_KEY=<redacted>');
+    expect(serialized).toContain('ASBCP_SERVICE_KEY=<redacted>');
   });
 
   it('selects expired workload pods for manager-mediated release using raw annotations and expires_at', () => {

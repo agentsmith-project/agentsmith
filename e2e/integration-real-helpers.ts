@@ -4063,8 +4063,22 @@ export type WorkloadPodSnapshot = {
   readyReason?: string | null;
   containerReadyCount?: number | null;
   containerCount?: number | null;
+  initContainerReadyCount?: number | null;
+  initContainerCount?: number | null;
+  initReason?: string | null;
+  initExitCode?: number | null;
   reason?: string | null;
   exitCode?: number | null;
+};
+
+type KubernetesContainerStatusSnapshot = {
+  image?: string;
+  imageID?: string;
+  ready?: boolean;
+  state?: {
+    waiting?: { reason?: string };
+    terminated?: { exitCode?: number; reason?: string };
+  };
 };
 
 type KubernetesPodItem = {
@@ -4080,15 +4094,8 @@ type KubernetesPodItem = {
     phase?: string;
     reason?: string;
     conditions?: Array<{ type?: string; status?: string; reason?: string }>;
-    containerStatuses?: Array<{
-      image?: string;
-      imageID?: string;
-      ready?: boolean;
-      state?: {
-        waiting?: { reason?: string };
-        terminated?: { exitCode?: number; reason?: string };
-      };
-    }>;
+    containerStatuses?: KubernetesContainerStatusSnapshot[];
+    initContainerStatuses?: KubernetesContainerStatusSnapshot[];
   };
   spec?: {
     containers?: Array<{
@@ -4099,6 +4106,22 @@ type KubernetesPodItem = {
 
 type KubernetesPodListPayload = {
   items?: KubernetesPodItem[];
+};
+
+type KubernetesEventItem = {
+  type?: string;
+  reason?: string;
+  message?: string;
+  count?: number;
+  lastTimestamp?: string;
+  eventTime?: string;
+  metadata?: {
+    creationTimestamp?: string;
+  };
+};
+
+type KubernetesEventListPayload = {
+  items?: KubernetesEventItem[];
 };
 
 type ManagedWorkloadPodSelection = {
@@ -4292,11 +4315,31 @@ export function parseWorkloadPodSnapshot(
   return item ? parseWorkloadPodItemSnapshot(item) : null;
 }
 
+function readContainerStatusReason(
+  status: KubernetesContainerStatusSnapshot,
+): string | null {
+  return status.state?.waiting?.reason ?? status.state?.terminated?.reason ?? null;
+}
+
+function readTerminatedExitCode(
+  status: KubernetesContainerStatusSnapshot,
+): number | null {
+  const exitCode = status.state?.terminated?.exitCode;
+  return typeof exitCode === "number" ? exitCode : null;
+}
+
+function containerStatusCompleted(
+  status: KubernetesContainerStatusSnapshot,
+): boolean {
+  return status.ready === true || status.state?.terminated?.exitCode === 0;
+}
+
 function parseWorkloadPodItemSnapshot(
   item: KubernetesPodItem,
 ): WorkloadPodSnapshot | null {
   if (!item) return null;
   const containerStatuses = item.status?.containerStatuses ?? [];
+  const initContainerStatuses = item.status?.initContainerStatuses ?? [];
   const readyCondition =
     item.status?.conditions?.find((condition) => condition.type === "Ready") ??
     null;
@@ -4306,6 +4349,19 @@ function parseWorkloadPodItemSnapshot(
   const terminated =
     containerStatuses.find((status) => status.state?.terminated)?.state
       ?.terminated ?? null;
+  const pendingInitStatus =
+    initContainerStatuses.find((status) => !containerStatusCompleted(status)) ??
+    null;
+  const firstInitStatus = initContainerStatuses[0] ?? null;
+  const initExitCodeStatus =
+    initContainerStatuses.find((status) => {
+      const exitCode = readTerminatedExitCode(status);
+      return typeof exitCode === "number" && exitCode !== 0;
+    }) ??
+    initContainerStatuses.find(
+      (status) => readTerminatedExitCode(status) !== null,
+    ) ??
+    null;
   const ready =
     readyCondition != null
       ? readyCondition.status === "True"
@@ -4325,11 +4381,84 @@ function parseWorkloadPodItemSnapshot(
       (status) => status.ready === true,
     ).length,
     containerCount: containerStatuses.length,
+    initContainerReadyCount: initContainerStatuses.filter(containerStatusCompleted)
+      .length,
+    initContainerCount: initContainerStatuses.length,
+    initReason:
+      (pendingInitStatus ? readContainerStatusReason(pendingInitStatus) : null) ??
+      (firstInitStatus ? readContainerStatusReason(firstInitStatus) : null),
+    initExitCode: initExitCodeStatus
+      ? readTerminatedExitCode(initExitCodeStatus)
+      : null,
     reason:
       waiting?.reason ?? terminated?.reason ?? item.status?.reason ?? null,
     exitCode:
       typeof terminated?.exitCode === "number" ? terminated.exitCode : null,
   };
+}
+
+function parseKubernetesEventListPayload(
+  payloadText: string,
+): KubernetesEventListPayload {
+  return JSON.parse(payloadText || "{}") as KubernetesEventListPayload;
+}
+
+function eventTimestamp(item: KubernetesEventItem): string {
+  return item.lastTimestamp ?? item.eventTime ?? item.metadata?.creationTimestamp ?? "";
+}
+
+function eventTimestampMs(item: KubernetesEventItem): number {
+  const timestamp = eventTimestamp(item);
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeEventText(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function truncateEventMessage(value: string, maxLength = 240): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
+export function redactKubernetesEventMessage(message: string): string {
+  return message
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(/\bsk-[A-Za-z0-9][A-Za-z0-9_-]{6,}/g, "sk-<redacted>")
+    .replace(
+      /\b(ASBCP_SERVICE_KEY|MBOS_AGENT_KEY|AGENT_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|ID_TOKEN|SERVICE_TOKEN|TOKEN|API_KEY|PASSWORD|SECRET|api_key|token|password|secret)\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,;&]+)/gi,
+      (_match, key: string, separator: string) => `${key}${separator}<redacted>`,
+    );
+}
+
+export function summarizeWorkloadPodEvents(
+  payloadText: string,
+  limit = 8,
+): string[] {
+  let payload: KubernetesEventListPayload;
+  try {
+    payload = parseKubernetesEventListPayload(payloadText);
+  } catch {
+    return ["<unavailable:invalid_events_json>"];
+  }
+
+  return (payload.items ?? [])
+    .slice()
+    .sort((left, right) => eventTimestampMs(left) - eventTimestampMs(right))
+    .slice(-limit)
+    .map((item) => {
+      const type = normalizeEventText(item.type) || "Event";
+      const reason = normalizeEventText(item.reason) || "Unknown";
+      const count =
+        typeof item.count === "number" ? ` count=${item.count}` : "";
+      const timestamp = eventTimestamp(item);
+      const last = timestamp ? ` last=${timestamp}` : "";
+      const message = truncateEventMessage(
+        redactKubernetesEventMessage(normalizeEventText(item.message)),
+      );
+      return `${type}/${reason}${count}${last}: ${message || "<empty>"}`;
+    });
 }
 
 async function fetchManagedWorkloadPods(namespace: string): Promise<{
@@ -4372,6 +4501,44 @@ async function fetchWorkloadPodSnapshot(args: {
     projectId: args.projectId,
   });
   return selection ? parseWorkloadPodItemSnapshot(selection.item) : null;
+}
+
+async function fetchWorkloadPodEventSummary(args: {
+  namespace: string;
+  podName: string;
+}): Promise<string[]> {
+  try {
+    const result = await spawnAndCapture(
+      "kubectl",
+      [
+        "get",
+        "events",
+        "-n",
+        args.namespace,
+        "--field-selector",
+        `involvedObject.name=${args.podName}`,
+        "-o",
+        "json",
+      ],
+      {
+        env: withoutProxyEnv(process.env),
+        timeoutMs: 10_000,
+        timeoutLabel: "kubectl_get_workload_pod_events",
+      },
+    );
+    if (result.code !== 0) {
+      return [`<unavailable:kubectl_exit_${result.code}>`];
+    }
+    const summary = summarizeWorkloadPodEvents(result.stdout);
+    return summary.length > 0 ? summary : ["<none>"];
+  } catch (error) {
+    const message = redactKubernetesEventMessage(
+      error instanceof Error ? error.message : String(error),
+    )
+      .replace(/\s+/g, "_")
+      .slice(0, 80);
+    return [`<unavailable:kubectl_error:${message || "unknown"}>`];
+  }
 }
 
 export async function expectManagedWorkloadPodImage(args: {
@@ -4583,6 +4750,13 @@ export async function collectInternalTaskFailureContext(args: {
   );
   const traceSummary = summarizeAgentTaskTraces(traces);
   const podSummary = summarizeAgentTaskPod(pod);
+  const podEventSummary =
+    args.namespace && pod?.name
+      ? await fetchWorkloadPodEventSummary({
+          namespace: args.namespace,
+          podName: pod.name,
+        })
+      : [];
   const podDetails = [
     args.runnerOutputActivityId
       ? `runner_output_activity_id=${args.runnerOutputActivityId}`
@@ -4595,6 +4769,15 @@ export async function collectInternalTaskFailureContext(args: {
     typeof pod?.containerCount === "number"
       ? `containers_ready=${pod.containerReadyCount}/${pod.containerCount}`
       : null,
+    typeof pod?.initContainerReadyCount === "number" &&
+    typeof pod?.initContainerCount === "number" &&
+    pod.initContainerCount > 0
+      ? `init_containers_ready=${pod.initContainerReadyCount}/${pod.initContainerCount}`
+      : null,
+    pod?.initReason ? `init_reason=${pod.initReason}` : null,
+    typeof pod?.initExitCode === "number"
+      ? `init_exit_code=${pod.initExitCode}`
+      : null,
   ].filter(Boolean);
   const sections = [
     `task=${args.taskId}`,
@@ -4603,7 +4786,10 @@ export async function collectInternalTaskFailureContext(args: {
     `activity:\n${activitySummary.length > 0 ? activitySummary.join("\n") : "<none>"}`,
     `traces:\n${traceSummary.length > 0 ? traceSummary.join("\n") : "<none>"}`,
     `pod=${podDetails.length > 0 ? `${podSummary} ${podDetails.join(" ")}` : podSummary}`,
-  ];
+    podEventSummary.length > 0
+      ? `pod_events:\n${podEventSummary.join("\n")}`
+      : null,
+  ].filter(Boolean);
   return sections.join("\n\n");
 }
 

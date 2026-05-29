@@ -90,6 +90,100 @@ function renderSandboxState(env: Record<string, string>): string {
   }
 }
 
+function runPrepareRuntimeWithLegacyRunnerImage(args: {
+  legacyRef: string;
+  buildRunnerImage: '0' | '1';
+}): { stdout: string; stderr: string; status: number | null } {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-backend-real-gate-legacy-'));
+
+  try {
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -uo pipefail
+          ROOT_DIR="$REPO_ROOT"
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          calls_file="$TEMP_ROOT/calls.log"
+          : > "$calls_file"
+          record() { printf '%s\\n' "$*" >> "$calls_file"; }
+          internal_real_gate_require_host_tools() { record require_host_tools; }
+          internal_real_gate_default_kind_cluster_name() { record default_kind_cluster_name; printf 'agentsmith\\n'; }
+          internal_real_gate_ensure_kind_cluster() { record ensure_kind_cluster; }
+          internal_real_gate_runner_image_reuse_ready() { record reuse_ready; return 1; }
+          build_runner_image() { record "build_runner_image $*"; }
+          docker() { record "docker $*"; return 1; }
+          kubectl() { record "kubectl $*"; return 0; }
+          internal_real_gate_publish_local_runner_image_ref() {
+            record "publish $*"
+            printf 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:%s\\n' "$DIGEST_HEX"
+          }
+          internal_real_gate_preflight_kind_registry_runner_image() { record "preflight $*"; }
+          internal_real_gate_prepare_managed_runner_image_handoff() {
+            record child_handoff
+            managed_runner_image_handoff_reject_legacy_runner_image_ref "$RUNNER_IMAGE" "[internal-real-gate]" || return 1
+          }
+          ensure_agentsmith_owned_namespace() { record "namespace $*"; }
+          internal_real_gate_ensure_kind_image() { record "kind_image $*"; }
+          internal_real_gate_ensure_afscp_storage_csi() { record csi; }
+          internal_real_gate_resolve_kind_gateway() { record gateway; printf '172.18.0.1\\n'; }
+          k8s_external_minio_fqdn() { record "minio $*"; printf 'minio.internal\\n'; }
+          render_k8s_external_dependency_services() { record "render_deps $*"; }
+          ensure_internal_afscp_local_runtime() { record afscp; }
+          internal_real_gate_write_sandbox_config() { record write_config; }
+
+          GATE_MODE=core-composite
+          RUNNER_KIND=agent-task
+          RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local
+          RUNNER_IMAGE="$LEGACY_REF"
+          BUILD_RUNNER_IMAGE="$BUILD_RUNNER_IMAGE_VALUE"
+          DOCKER_BUILD_PROXY_VALUE=""
+          INTERNAL_REAL_DIR="$TEMP_ROOT/internal"
+          K8S_NAMESPACE=agentsmith-sandbox
+          CONFIG_PATH="$TEMP_ROOT/asbcp.yaml"
+          ASBCP_PORT=28080
+          API_PORT=20072
+          INTEGRATION_POSTGRES_PORT=25432
+          INTEGRATION_MINIO_API_PORT=29000
+          AFSCP_STORAGE_CSI_NAMESPACE=kube-system
+          mkdir -p "$INTERNAL_REAL_DIR"
+
+          set +e
+          prepare_internal_backend_real_gate_runtime
+          status=$?
+          set -e
+          printf 'status=%s\\n' "$status"
+          sed 's/^/call:/' "$calls_file"
+          exit 0
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          TEMP_ROOT: tempRoot,
+          LEGACY_REF: args.legacyRef,
+          BUILD_RUNNER_IMAGE_VALUE: args.buildRunnerImage,
+          DIGEST_HEX: 'f'.repeat(64),
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 describe('internal backend-real gate runtime contract', () => {
   it('keeps the Agent Task gate aligned on shared internal sandbox bootstrap', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
@@ -315,6 +409,130 @@ describe('internal backend-real gate runtime contract', () => {
     expect(skillsWrapper).toContain('unset them, or use --runner-projection-smoke for release-locked image coverage');
   });
 
+  it('prepares a local kind registry digest handoff for non-projection internal gates', () => {
+    const repoRoot = process.cwd();
+    const runnerDigest = `sha256:${'f'.repeat(64)}`;
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          calls_file="$(mktemp)"
+          trap 'rm -f "$calls_file"' EXIT
+          internal_real_gate_publish_local_runner_image_ref() {
+            printf 'publish %s\\n' "$1" >> "$calls_file"
+            printf 'kind-registry:5000/mbos/agentsmith-managed-runner@%s\\n' "$RUNNER_DIGEST"
+          }
+          internal_real_gate_preflight_kind_registry_runner_image() {
+            printf 'preflight %s\\n' "$1" >> "$calls_file"
+          }
+          GATE_MODE=core-composite
+          RUNNER_IMAGE=agentsmith-managed-runner:local
+          internal_real_gate_prepare_managed_runner_image_handoff
+          printf 'runner=%s\\n' "$RUNNER_IMAGE"
+          cat "$calls_file"
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          RUNNER_DIGEST: runnerDigest,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+    const helper = read('scripts/lib/internal-backend-real-gate.sh');
+    const prepareRuntime = sectionBetween(
+      helper,
+      '\nprepare_internal_backend_real_gate_runtime() {',
+      '\n}\n\nprepare_internal_backend_real_spec_runtime()',
+    );
+
+    expect(output).toContain(`runner=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(output).toContain('publish agentsmith-managed-runner:local');
+    expect(output).toContain(`preflight kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(output).not.toContain('agentsmith-agent-task-runner:local');
+    expect(prepareRuntime).toContain('internal_real_gate_prepare_managed_runner_image_handoff');
+    expect(prepareRuntime.indexOf('internal_real_gate_prepare_managed_runner_image_handoff')).toBeLessThan(
+      prepareRuntime.indexOf('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"'),
+    );
+  });
+
+  it('rejects legacy agent-task-runner digest refs before child specs inherit the image', () => {
+    const repoRoot = process.cwd();
+    const legacyDigestRef = `agentsmith-agent-task-runner@sha256:${'1'.repeat(64)}`;
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          internal_real_gate_publish_local_runner_image_ref() {
+            printf 'publish %s\\n' "$1"
+          }
+          internal_real_gate_preflight_kind_registry_runner_image() {
+            printf 'preflight %s\\n' "$1"
+          }
+          GATE_MODE=core-composite
+          RUNNER_IMAGE="$LEGACY_DIGEST_REF"
+          internal_real_gate_prepare_managed_runner_image_handoff
+          printf 'child-spec RUNNER_IMAGE=%s\\n' "$RUNNER_IMAGE"
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          LEGACY_DIGEST_REF: legacyDigestRef,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain('child-spec RUNNER_IMAGE=');
+    expect(result.stdout).not.toContain('preflight ');
+    expect(result.stdout).not.toContain('publish ');
+    expect(result.stderr).toContain('must not reference old agent-task-runner image/path');
+    expect(result.stderr).toContain(legacyDigestRef);
+  });
+
+  it('rejects legacy runner image refs before prepare runtime can reuse, build, inspect, or hand off', () => {
+    const cases = [
+      {
+        legacyRef: 'agentsmith-agent-task-runner:local',
+        buildRunnerImage: '1' as const,
+      },
+      {
+        legacyRef: `kind-registry:5000/mbos/agentsmith-agent-task-runner@sha256:${'1'.repeat(64)}`,
+        buildRunnerImage: '0' as const,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const result = runPrepareRuntimeWithLegacyRunnerImage(testCase);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('status=1');
+      expect(result.stderr).toContain('must not reference old agent-task-runner image/path');
+      expect(result.stderr).toContain(testCase.legacyRef);
+      expect(result.stdout).not.toContain('call:reuse_ready');
+      expect(result.stdout).not.toContain('call:build_runner_image');
+      expect(result.stdout).not.toContain('call:docker image inspect');
+      expect(result.stdout).not.toContain('call:publish ');
+      expect(result.stdout).not.toContain('call:preflight ');
+      expect(result.stdout).not.toContain('call:child_handoff');
+    }
+  });
+
   it('prints only the linux/amd64 local kind registry manifest digest ref on publish helper stdout', () => {
     const repoRoot = process.cwd();
     const indexDigest = `sha256:${'a'.repeat(64)}`;
@@ -461,7 +679,7 @@ describe('internal backend-real gate runtime contract', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('could not resolve linux/amd64 manifest digest for current workspace runner image after push');
+    expect(result.stderr).toContain('could not resolve linux/amd64 manifest digest for managed runner image after push');
     expect(result.stderr).not.toContain('kind-registry:5000/mbos/agentsmith-managed-runner:');
   });
 
@@ -510,11 +728,17 @@ describe('internal backend-real gate runtime contract', () => {
       '\nprepare_internal_backend_real_gate_runtime() {',
       '\n}\n\nprepare_internal_backend_real_spec_runtime()',
     );
+    const handoffFunction = sectionBetween(
+      helper,
+      '\ninternal_real_gate_prepare_managed_runner_image_handoff() {',
+      '\n}\n\ninternal_real_gate_wait_for_afscp_storage_csi_pods()',
+    );
 
     expect(output).toContain('no-proxy agentsmith-control-plane kind-registry 5000');
     expect(output).toContain(`cri-pull agentsmith-control-plane ${runnerDigestRef}`);
-    expect(prepareRuntime).toContain('internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}"');
-    expect(prepareRuntime.indexOf('internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}"')).toBeLessThan(
+    expect(handoffFunction).toContain('internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}"');
+    expect(prepareRuntime).toContain('internal_real_gate_prepare_managed_runner_image_handoff || return 1');
+    expect(prepareRuntime.indexOf('internal_real_gate_prepare_managed_runner_image_handoff || return 1')).toBeLessThan(
       prepareRuntime.indexOf('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"'),
     );
   });

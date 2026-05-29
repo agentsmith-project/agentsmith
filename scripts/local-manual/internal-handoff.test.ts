@@ -432,9 +432,9 @@ describe('local-manual internal handoff', () => {
 
     expect(lines).toEqual([
       'ensure_local_manual_ready',
-      'ensure_internal_runner_state_before_api_restart',
       'ensure_kind_cluster',
       'ensure_internal_runner_image',
+      'ensure_internal_runner_state_before_api_restart',
       'ensure_afscp_storage_csi',
       'ensure_internal_external_dependency_services',
       'ensure_afscp_local_runtime',
@@ -446,6 +446,193 @@ describe('local-manual internal handoff', () => {
     expect(lines.slice(0, restartIndex)).not.toContain('ensure_internal_runner_state');
     expect(lines.slice(0, restartIndex)).not.toContain('ensure_agent_task_diagnostics_ready');
     expect(lines[restartIndex + 1]).toBe('ensure_internal_runner_state');
+  });
+
+  it('hands off the local-manual managed runner image as a digest ref to seed and API env', () => {
+    const runnerDigest = `sha256:${'a'.repeat(64)}`;
+    const result = runInternalCommonSnippet(
+      `
+      calls_file="$SNIPPET_TEMP_ROOT/calls.log"
+      build_runner_image() {
+        printf 'build %s %s\\n' "$2" "$3" >> "$calls_file"
+      }
+      managed_runner_image_handoff_publish_local_runner_image_ref() {
+        printf 'publish %s %s %s\\n' "$1" "$2" "$3" >> "$calls_file"
+        printf 'kind-registry:5000/mbos/agentsmith-managed-runner@%s\\n' "$RUNNER_DIGEST"
+      }
+      managed_runner_image_handoff_preflight_kind_registry_runner_image() {
+        printf 'preflight %s %s\\n' "$1" "$2" >> "$calls_file"
+      }
+      ensure_kind_image() {
+        printf 'load %s\\n' "$1" >> "$calls_file"
+      }
+      bash() {
+        printf 'bash-env INTERNAL=%s INTEGRATION=%s MANAGED=%s\\n' "\${INTERNAL_AGENT_IMAGE:-}" "\${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" "\${MANAGED_RUNNER_IMAGE:-}" >> "$calls_file"
+      }
+
+      RUNNER_IMAGE=agentsmith-managed-runner:local
+      RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local
+      ensure_internal_runner_image
+      seed_managed_agent_task_diagnostics_state
+      printf 'runner=%s\\n' "$RUNNER_IMAGE"
+      printf 'env_internal=%s\\n' "\${INTERNAL_AGENT_IMAGE:-}"
+      printf 'env_integration=%s\\n' "\${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
+      printf 'env_managed=%s\\n' "\${MANAGED_RUNNER_IMAGE:-}"
+      cat "$calls_file"
+      `,
+      {
+        RUNNER_DIGEST: runnerDigest,
+      },
+    );
+    const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
+    const startApi = readFileSync('scripts/local-manual/start-api.sh', 'utf8');
+    const seedStateBody = functionBody(common, 'seed_managed_agent_task_diagnostics_state');
+    const restartApiBody = functionBody(common, 'restart_api_with_mode');
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('publish agentsmith-managed-runner:local mbos/agentsmith-managed-runner');
+    expect(result.stdout).toContain(`preflight kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest} agentsmith-control-plane`);
+    expect(result.stdout).toContain(`runner=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(result.stdout).toContain(`env_internal=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(result.stdout).toContain(`env_integration=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(result.stdout).toContain(`env_managed=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`);
+    expect(result.stdout).toContain(
+      `bash-env INTERNAL=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest} `
+      + `INTEGRATION=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest} `
+      + `MANAGED=kind-registry:5000/mbos/agentsmith-managed-runner@${runnerDigest}`,
+    );
+    expect(result.stdout).not.toContain('agentsmith-agent-task-runner:local');
+    expect(seedStateBody).toContain('INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"');
+    expect(seedStateBody).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"');
+    expect(seedStateBody).toContain('MANAGED_RUNNER_IMAGE="${RUNNER_IMAGE}"');
+    expect(restartApiBody).toContain('INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"');
+    expect(restartApiBody).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"');
+    expect(restartApiBody).toContain('MANAGED_RUNNER_IMAGE="${RUNNER_IMAGE}"');
+    expect(startApi).toContain("INTERNAL_AGENT_IMAGE='${INTERNAL_AGENT_IMAGE:-}'");
+    expect(startApi).toContain("INTEGRATION_INTERNAL_AGENT_IMAGE='${INTEGRATION_INTERNAL_AGENT_IMAGE:-}'");
+    expect(startApi).toContain("MANAGED_RUNNER_IMAGE='${MANAGED_RUNNER_IMAGE:-}'");
+  });
+
+  it('rejects legacy agent-task-runner image refs before local-manual seed or API handoff', () => {
+    const legacyRefs = [
+      'agentsmith-agent-task-runner:local',
+      `kind-registry:5000/mbos/agentsmith-agent-task-runner@sha256:${'b'.repeat(64)}`,
+    ];
+
+    for (const legacyRef of legacyRefs) {
+      const result = runInternalCommonSnippet(
+        `
+        calls_file="$SNIPPET_TEMP_ROOT/calls.log"
+        build_runner_image() {
+          printf 'build %s\\n' "$3" >> "$calls_file"
+        }
+        managed_runner_image_handoff_publish_local_runner_image_ref() {
+          printf 'publish %s\\n' "$1" >> "$calls_file"
+          printf 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:%s\\n' "${'c'.repeat(64)}"
+        }
+        managed_runner_image_handoff_preflight_kind_registry_runner_image() {
+          printf 'preflight %s\\n' "$1" >> "$calls_file"
+        }
+        bash() {
+          printf 'seed-or-api %s\\n' "$*" >> "$calls_file"
+        }
+
+        RUNNER_IMAGE="$LEGACY_REF"
+        ensure_internal_runner_image
+        seed_managed_agent_task_diagnostics_state
+        restart_api_with_mode 1
+        cat "$calls_file"
+        `,
+        {
+          LEGACY_REF: legacyRef,
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain('build ');
+      expect(result.stdout).not.toContain('publish ');
+      expect(result.stdout).not.toContain('preflight ');
+      expect(result.stdout).not.toContain('seed-or-api ');
+      expect(result.stderr).toContain('must not reference old agent-task-runner image/path');
+      expect(result.stderr).toContain(legacyRef);
+    }
+  });
+
+  it('reseeds managed runner state for the current digest even when stale state is present', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="$SNIPPET_TEMP_ROOT/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      ensure_internal_common_runtime_env() { record ensure_internal_common_runtime_env; }
+      stop_local_manual_runner_for_internal_api_restart() { record stop_local_manual_runner_for_internal_api_restart; }
+      stop_pid_file_if_running() { record "stop_pid_file_if_running:$2"; }
+      resolve_kind_gateway_ip() { record resolve_kind_gateway_ip; printf '172.18.0.1\\n'; }
+      bash() { record "bash:$*"; }
+      managed_agent_task_runner_state_is_present() { record managed_agent_task_runner_state_is_present; return 0; }
+      seed_managed_agent_task_diagnostics_state() {
+        record seed_managed_agent_task_diagnostics_state
+        LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE="$RUNNER_IMAGE"
+        export LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE
+      }
+
+      RUNNER_IMAGE="kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'d'.repeat(64)}"
+      LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0
+      ensure_internal_runner_state_before_api_restart
+      restart_api_with_mode 1
+      ensure_internal_runner_state
+      cat "$calls_file"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('managed_agent_task_runner_state_is_present');
+    expect(result.stdout.match(/seed_managed_agent_task_diagnostics_state/g) ?? []).toHaveLength(1);
+    expect(result.stdout).toContain('scripts/local-manual/start-api.sh');
+    expect(result.stdout.indexOf('seed_managed_agent_task_diagnostics_state')).toBeLessThan(
+      result.stdout.indexOf('stop_local_manual_runner_for_internal_api_restart', result.stdout.indexOf('seed_managed_agent_task_diagnostics_state')),
+    );
+  });
+
+  it('seeds the current digest before an internal API restart when no pre-restart seed marker exists', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="$SNIPPET_TEMP_ROOT/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      ensure_internal_common_runtime_env() { record ensure_internal_common_runtime_env; }
+      stop_pid_file_if_running() { record "stop_pid_file_if_running:$2"; }
+      resolve_kind_gateway_ip() { record resolve_kind_gateway_ip; printf '172.18.0.1\\n'; }
+      bash() { record "bash:$*"; }
+      seed_managed_agent_task_diagnostics_state() {
+        record seed_managed_agent_task_diagnostics_state
+        LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE="$RUNNER_IMAGE"
+        export LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE
+      }
+
+      RUNNER_IMAGE="kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'e'.repeat(64)}"
+      restart_api_with_mode 1
+      cat "$calls_file"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('seed_managed_agent_task_diagnostics_state');
+    expect(result.stdout.indexOf('seed_managed_agent_task_diagnostics_state')).toBeLessThan(
+      result.stdout.indexOf('stop_pid_file_if_running:api'),
+    );
+    expect(result.stdout).toContain('scripts/local-manual/start-api.sh');
+  });
+
+  it('runs internal smoke through internal-up before diagnostic state readiness', () => {
+    const smoke = readFileSync('scripts/local-manual/internal-smoke.sh', 'utf8');
+    const internalUpIndex = smoke.indexOf('bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh"');
+    const tokenReadIndex = smoke.indexOf('TOKEN="$(cat "$(backend_real_token_file)")"');
+    const diagnosticsReadyIndex = smoke.indexOf('ensure_agent_task_diagnostics_ready');
+
+    expect(internalUpIndex).toBeGreaterThanOrEqual(0);
+    expect(tokenReadIndex).toBeGreaterThan(internalUpIndex);
+    if (diagnosticsReadyIndex >= 0) {
+      expect(diagnosticsReadyIndex).toBeGreaterThan(internalUpIndex);
+    }
+    expect(smoke).not.toContain(
+      'ensure_agent_task_diagnostics_ready\nbash "${ROOT_DIR}/scripts/local-manual/internal-up.sh"',
+    );
   });
 
   it('does not reuse ready file libraries that are still bound to active tasks', () => {
@@ -538,7 +725,8 @@ describe('local-manual internal handoff', () => {
     expect(readyBody).toContain('ensure_agent_task_diagnostics_state_ready');
     expect(readyBody).toContain('ensure_local_manual_runner_connected');
     expect(beforeRestartBody).toContain('stop_local_manual_runner_for_internal_api_restart');
-    expect(beforeRestartBody).toContain('ensure_agent_task_diagnostics_state_ready');
+    expect(beforeRestartBody).toContain('seed_managed_agent_task_diagnostics_state');
+    expect(beforeRestartBody).not.toContain('managed_agent_task_runner_state_is_present');
     expect(beforeRestartBody).not.toContain('ensure_local_manual_runner_connected');
     expect(stateReadyBody).toContain('managed_agent_task_runner_state_is_present');
     expect(stateReadyBody).toContain('seed_managed_agent_task_diagnostics_state');

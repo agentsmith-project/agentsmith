@@ -2,6 +2,10 @@
 
 internal_real_gate_info() { echo "[internal-real-gate] $*"; }
 
+internal_real_gate_lib_root="${ROOT_DIR:-$(pwd)}"
+# shellcheck disable=SC1090
+source "${internal_real_gate_lib_root}/scripts/lib/managed-runner-image-handoff.sh"
+
 internal_real_gate_secret_fingerprint() {
   local value="${1:-}"
   local digest
@@ -160,125 +164,45 @@ internal_real_gate_configure_skills_runtime_runner_image() {
 
 internal_real_gate_publish_local_runner_image_ref() {
   local source_image="$1"
-  local registry_host registry_host_port registry_container_port image_repository image_tag host_ref cluster_repo push_output manifest_raw digest digest_status
-  registry_host="$(scenario_kind_registry_host)"
-  registry_host_port="$(scenario_kind_registry_host_port)"
-  registry_container_port="${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-5000}"
+  local image_repository image_tag
   image_repository="${INTEGRATION_INTERNAL_AGENT_LOCAL_REPOSITORY:-mbos/agentsmith-managed-runner}"
   image_tag="${INTEGRATION_INTERNAL_AGENT_LOCAL_TAG:-backend-real-$(internal_real_gate_image_tag_text "${RUNTIME_LINE_ID:-local}")}"
-  host_ref="${registry_host}:${registry_host_port}/${image_repository}:${image_tag}"
-  cluster_repo="$(scenario_kind_registry_name):${registry_container_port}/${image_repository}"
-
-  internal_real_gate_info "publishing current workspace runner image to local kind registry" >&2
-  docker tag "${source_image}" "${host_ref}"
-  if ! push_output="$(docker push "${host_ref}" 2>&1)"; then
-    echo "[internal-real-gate] failed to push current workspace runner image to local registry: ${host_ref}" >&2
-    printf '%s\n' "${push_output}" >&2
-    return 1
-  fi
-
-  if ! manifest_raw="$(docker buildx imagetools inspect --raw "${host_ref}" 2>&1)"; then
-    echo "[internal-real-gate] failed to inspect pushed current workspace runner image manifest: ${host_ref}" >&2
-    printf '%s\n' "${manifest_raw}" >&2
-    return 1
-  fi
-
-  digest_status=0
-  digest="$(
-    MANIFEST_RAW="${manifest_raw}" python3 - "${host_ref}" <<'PY'
-import hashlib
-import json
-import os
-import re
-import sys
-
-image_ref = sys.argv[1]
-raw = os.environ.get("MANIFEST_RAW", "")
-digest_pattern = re.compile(r"^sha256:[a-fA-F0-9]{64}$")
-
-try:
-    payload = json.loads(raw)
-except json.JSONDecodeError as exc:
-    print(f"[internal-real-gate] invalid raw manifest JSON for {image_ref}: {exc}", file=sys.stderr)
-    sys.exit(1)
-
-manifests = payload.get("manifests")
-if isinstance(manifests, list):
-    for descriptor in manifests:
-        if not isinstance(descriptor, dict):
-            continue
-        platform = descriptor.get("platform")
-        if not isinstance(platform, dict):
-            continue
-        if platform.get("os") != "linux" or platform.get("architecture") != "amd64":
-            continue
-        digest = descriptor.get("digest")
-        if isinstance(digest, str) and digest_pattern.match(digest):
-            print(digest.lower())
-            sys.exit(0)
-    sys.exit(2)
-
-media_type = payload.get("mediaType")
-is_single_manifest = (
-    payload.get("schemaVersion") == 2
-    and isinstance(payload.get("config"), dict)
-    and (
-        not isinstance(media_type, str)
-        or media_type in {
-            "application/vnd.oci.image.manifest.v1+json",
-            "application/vnd.docker.distribution.manifest.v2+json",
-        }
-    )
-)
-if is_single_manifest:
-    print(f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}")
-    sys.exit(0)
-
-sys.exit(3)
-PY
-  )" || digest_status=$?
-  if [[ "${digest_status}" -ne 0 || ! "${digest}" =~ ^sha256:[a-fA-F0-9]{64}$ ]]; then
-    echo "[internal-real-gate] could not resolve linux/amd64 manifest digest for current workspace runner image after push: ${host_ref}" >&2
-    echo "[internal-real-gate] docker push reported only registry upload status; image identity must come from docker buildx imagetools inspect --raw." >&2
-    return 1
-  fi
-
-  printf '%s@%s\n' "${cluster_repo}" "${digest}"
+  managed_runner_image_handoff_publish_local_runner_image_ref \
+    "${source_image}" \
+    "${image_repository}" \
+    "${image_tag}" \
+    "[internal-real-gate]"
 }
 
 internal_real_gate_runner_image_from_kind_registry() {
   local image="$1"
-  local registry_container_port="${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-5000}"
-  [[ "${image}" == "$(scenario_kind_registry_name):${registry_container_port}/"* ]]
+  managed_runner_image_handoff_from_kind_registry "${image}"
 }
 
 internal_real_gate_preflight_kind_registry_runner_image() {
   local runner_image="$1"
-  local registry_name registry_container_port pull_output
+  managed_runner_image_handoff_preflight_kind_registry_runner_image \
+    "${runner_image}" \
+    "${KIND_NODE_NAME}" \
+    "[internal-real-gate]" \
+    "${ROOT_DIR:-$(pwd)}"
+}
 
-  if ! internal_real_gate_runner_image_from_kind_registry "${runner_image}"; then
+internal_real_gate_prepare_managed_runner_image_handoff() {
+  if [[ "${GATE_MODE:-}" == "runner-projection-smoke" ]]; then
     return 0
   fi
-  if [[ ! "${runner_image}" =~ @sha256:[a-fA-F0-9]{64}$ ]]; then
-    echo "[internal-real-gate] local kind registry runner image must be a digest ref before workload start: ${runner_image}" >&2
-    return 1
+
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE}" "[internal-real-gate]" || return 1
+
+  if managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"; then
+    internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}" || return 1
+    return 0
   fi
 
-  registry_name="$(scenario_kind_registry_name)"
-  registry_container_port="${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-5000}"
-  internal_real_gate_source_kind_bootstrap || return 1
-  if ! kind_configure_registry_no_proxy_for_containerd "${KIND_NODE_NAME}" "${registry_name}" "${registry_container_port}"; then
-    echo "[internal-real-gate] failed to reconcile kind control-plane containerd NO_PROXY for ${registry_name}:${registry_container_port}" >&2
-    return 1
-  fi
-
-  internal_real_gate_info "preflighting kind containerd pull for current workspace runner image ${runner_image}" >&2
-  if ! pull_output="$(docker exec "${KIND_NODE_NAME}" crictl pull "${runner_image}" 2>&1)"; then
-    echo "[internal-real-gate] failed to pull current workspace runner image from local kind registry inside ${KIND_NODE_NAME}: ${runner_image}" >&2
-    printf '%s\n' "${pull_output}" >&2
-    echo "[internal-real-gate] check kind-registry connectivity and containerd NO_PROXY for ${registry_name}:${registry_container_port}." >&2
-    return 1
-  fi
+  RUNNER_IMAGE="$(internal_real_gate_publish_local_runner_image_ref "${RUNNER_IMAGE}")" || return 1
+  internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}" || return 1
+  internal_real_gate_info "using local managed runner digest image ${RUNNER_IMAGE}"
 }
 
 internal_real_gate_wait_for_afscp_storage_csi_pods() {
@@ -551,6 +475,7 @@ internal_real_gate_reset_runtime() {
 
 prepare_internal_backend_real_gate_runtime() {
   local rebuild_runner_base_image
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE:-}" "[internal-real-gate]" || return 1
   internal_real_gate_require_host_tools
   BUILD_RUNNER_IMAGE="${BUILD_RUNNER_IMAGE:-1}"
   rebuild_runner_base_image="${INTEGRATION_INTERNAL_AGENT_REBUILD_BASE_IMAGE:-1}"
@@ -573,11 +498,7 @@ prepare_internal_backend_real_gate_runtime() {
     return 1
   fi
 
-  if [[ "${GATE_MODE:-}" == "skills-runtime" ]]; then
-    RUNNER_IMAGE="$(internal_real_gate_publish_local_runner_image_ref "${RUNNER_IMAGE}")" || return 1
-    internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}" || return 1
-    internal_real_gate_info "using current workspace runner digest image ${RUNNER_IMAGE}"
-  fi
+  internal_real_gate_prepare_managed_runner_image_handoff || return 1
 
   ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"
 

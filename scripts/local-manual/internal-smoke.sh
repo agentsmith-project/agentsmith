@@ -4,7 +4,6 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-common.sh"
 
 ensure_local_manual_ready
-ensure_agent_task_diagnostics_ready
 bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh"
 
 TOKEN="$(cat "$(backend_real_token_file)")"

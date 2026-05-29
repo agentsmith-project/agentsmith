@@ -28,28 +28,32 @@ runner_app_dockerfile() {
 runner_default_base_image() {
   local kind="$1"
   require_runner_kind "${kind}" || return 1
-  printf 'agentsmith-agent-task-runner-base:local\n'
+  printf 'agentsmith-managed-runner-base:local\n'
 }
 
 runner_default_image() {
   local kind="$1"
   require_runner_kind "${kind}" || return 1
-  printf 'agentsmith-agent-task-runner:local\n'
+  printf 'agentsmith-managed-runner:local\n'
 }
 
 runner_release_base_image() {
   local kind="$1"
   local release_id="$2"
   require_runner_kind "${kind}" || return 1
-  printf 'agentsmith-agent-task-runner-base:%s\n' "${release_id}"
+  printf 'agentsmith-managed-runner-base:%s\n' "${release_id}"
 }
 
 runner_release_image() {
   local kind="$1"
   local release_id="$2"
-  local image_prefix="$3"
+  local image_prefix="${3:-}"
   require_runner_kind "${kind}" || return 1
-  printf '%s/agentsmith-agent-task-runner:%s\n' "${image_prefix}" "${release_id}"
+  if [[ -n "${image_prefix}" ]]; then
+    printf '%s/agentsmith-managed-runner:%s\n' "${image_prefix}" "${release_id}"
+    return 0
+  fi
+  printf 'agentsmith-managed-runner:%s\n' "${release_id}"
 }
 
 runner_default_node_base_image() {

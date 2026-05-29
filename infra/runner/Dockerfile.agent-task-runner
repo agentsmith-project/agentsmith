@@ -1,4 +1,4 @@
-ARG RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local
+ARG RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local
 
 FROM ${RUNNER_BASE_IMAGE}
 

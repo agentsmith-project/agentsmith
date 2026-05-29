@@ -467,13 +467,10 @@ describe('Agent Task terminal runtime gates', () => {
     expect(localRealReset).toContain('$(MAKE) substrate-up SUBSTRATE=local-dev');
     expect(localRealReset).toContain('$(MAKE) substrate-reseed SUBSTRATE=local-dev');
     expect(localRealReset).toContain('$(MAKE) local-manual-up');
-    expect(localRealReset).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
     expect(localRealReset).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0');
-    expect(localRealReset).toContain('$(MAKE) local-manual-seed-agent-task');
     expect(localRealReset).toContain('$(MAKE) local-manual-internal-up');
-    expect(localRealReset.indexOf('AGENT_RUNNER_SEED_MODE=managed_agent_task')).toBeLessThan(
-      localRealReset.indexOf('$(MAKE) local-manual-internal-up'),
-    );
+    expect(localRealReset).not.toContain('$(MAKE) local-manual-seed-agent-task');
+    expect(localRealReset).not.toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
     expect(ensureInternalRunnerState).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1');
     expect(ensureInternalRunnerState).toContain('ensure_local_manual_runner_connected');
     expect(ensureInternalRunnerState).toContain('skipping local Developer runner diagnostics process startup');
@@ -806,7 +803,7 @@ describe('Agent Task terminal runtime gates', () => {
     );
 
     expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-internal-up/);
-    expect(makefile).toMatch(/local-real-reset:[\s\S]*AGENT_RUNNER_SEED_MODE=managed_agent_task[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0[\s\S]*\$\(MAKE\) local-manual-seed-agent-task[\s\S]*\$\(MAKE\) local-manual-internal-up/);
+    expect(makefile).toMatch(/local-real-reset:[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \$\(MAKE\) local-manual-internal-up/);
     expect(startApi).toContain("AGENT_EXECUTION_HTTP_BASE_URL='${AGENT_EXECUTION_HTTP_BASE_URL:-http://localhost:${PORT_API}}'");
     expect(startApi).toContain("MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT='${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT}'");
   });
@@ -1042,6 +1039,23 @@ describe('Agent Task terminal runtime gates', () => {
     expect(internalCommon).toContain('restore_local_manual_external_mode()');
     expect(internalUp).toContain('trap');
     expect(internalUp).toContain('bash "${ROOT_DIR}/scripts/local-manual/internal-down.sh" --no-api-restart');
+  });
+
+  it('boots the internal terminal smoke through internal-up before diagnostics readiness', async () => {
+    const internalSmoke = await readFile(
+      path.resolve(process.cwd(), 'scripts/agent-task-terminal-internal-real-smoke.sh'),
+      'utf-8',
+    );
+    const internalUpIndex = internalSmoke.indexOf('bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh"');
+    const diagnosticsReadyIndex = internalSmoke.indexOf('ensure_agent_task_diagnostics_ready');
+
+    expect(internalUpIndex).toBeGreaterThanOrEqual(0);
+    if (diagnosticsReadyIndex >= 0) {
+      expect(diagnosticsReadyIndex).toBeGreaterThan(internalUpIndex);
+    }
+    expect(internalSmoke).not.toContain(
+      'ensure_agent_task_diagnostics_ready\nif [[ "${SKIP_INTERNAL_UP:-0}" != "1" ]]; then',
+    );
   });
 
   it('keeps local-manual web on a lane-private next output while explicitly protecting the root contract', async () => {

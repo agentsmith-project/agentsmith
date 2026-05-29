@@ -982,13 +982,13 @@ requireMatch(
 );
 requireMatch(
   runnerImageCommon,
-  /agentsmith-agent-task-runner-base/,
-  "runner image defaults must use agentsmith-agent-task-runner-base",
+  /agentsmith-managed-runner-base/,
+  "runner image defaults must use agentsmith-managed-runner-base",
 );
 requireMatch(
   runnerImageCommon,
-  /agentsmith-agent-task-runner/,
-  "runner image defaults must use agentsmith-agent-task-runner",
+  /agentsmith-managed-runner/,
+  "runner image defaults must use agentsmith-managed-runner",
 );
 requirePath(
   "packages/agent-task-runner/package.json",

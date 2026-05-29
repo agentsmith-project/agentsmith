@@ -12,9 +12,9 @@ cleanup_on_exit() {
 trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
-ensure_internal_runner_state_before_api_restart
 ensure_kind_cluster
 ensure_internal_runner_image
+ensure_internal_runner_state_before_api_restart
 ensure_afscp_storage_csi
 ensure_internal_external_dependency_services
 INTERNAL_RUNTIME_STARTED=1

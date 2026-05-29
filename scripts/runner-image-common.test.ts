@@ -57,7 +57,7 @@ exit 0
 set -euo pipefail
 ROOT_DIR="${repoRoot}"
 source "${repoRoot}/scripts/lib/runner-image-common.sh"
-build_runner_image agent-task agentsmith-agent-task-runner-base:local agentsmith-agent-task-runner:local "" 1 1 "${tempRoot}"
+build_runner_image agent-task agentsmith-managed-runner-base:local agentsmith-managed-runner:local "" 1 1 "${tempRoot}"
 `;
   const result = spawnSync('bash', ['-lc', script], {
     cwd: repoRoot,
@@ -91,6 +91,63 @@ describe('runner image build base fallback', () => {
     }
   });
 
+  it('defaults local internal runner images to the managed-runner repository names', () => {
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "${repoRoot}/scripts/lib/runner-image-common.sh"
+          runner_default_base_image agent-task
+          runner_default_image agent-task
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: { ...process.env },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('agentsmith-managed-runner-base:local\nagentsmith-managed-runner:local\n');
+    expect(result.stdout).not.toContain('agentsmith-agent-task-runner:local');
+  });
+
+  it('defaults release runner images to the managed-runner repository names', () => {
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "${repoRoot}/scripts/lib/runner-image-common.sh"
+          runner_release_base_image agent-task v2026.05.28
+          runner_release_image agent-task v2026.05.28
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: { ...process.env },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('agentsmith-managed-runner-base:v2026.05.28\nagentsmith-managed-runner:v2026.05.28\n');
+    expect(result.stdout).not.toContain('agentsmith-agent-task-runner');
+  });
+
+  it('keeps the app Dockerfile default base image on the managed-runner name', () => {
+    const dockerfile = readFileSync('infra/runner/Dockerfile.agent-task-runner', 'utf8');
+
+    expect(dockerfile).toContain('ARG RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local');
+    expect(dockerfile).not.toContain('ARG RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
+  });
+
   it('uses public ECR as the primary Node base image without probing Docker Hub first', () => {
     const result = runBuildRunnerImageFixture();
     tempRoots.push(result.tempRoot);
@@ -100,7 +157,7 @@ describe('runner image build base fallback', () => {
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
     expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=node:24.14.1-bookworm');
     expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm');
-    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
+    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local');
   });
 
   it('retries Docker Hub as the first fallback when public ECR rejects metadata', () => {
@@ -120,7 +177,7 @@ describe('runner image build base fallback', () => {
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:24.14.1-bookworm');
     expect(result.dockerLog).toContain('NODE_BASE_IMAGE=docker.io/library/node:24.14.1-bookworm');
     expect(result.dockerLog).not.toContain('NODE_BASE_IMAGE=mirror.gcr.io/library/node:24.14.1-bookworm');
-    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-agent-task-runner-base:local');
+    expect(result.dockerLog).toContain('RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local');
   });
 
   it('fails closed when fallback base images are explicitly disabled', () => {

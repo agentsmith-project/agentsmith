@@ -6,6 +6,7 @@ export LOCAL_MANUAL_ENABLE_INTERNAL=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
+source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"
 source "${ROOT_DIR}/scripts/lib/asbcp-image-lock.sh"
 
 LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED="${LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED:-0}"
@@ -212,7 +213,8 @@ stop_local_manual_runner_for_internal_api_restart() {
 ensure_internal_runner_state_before_api_restart() {
   ensure_internal_common_runtime_env
   stop_local_manual_runner_for_internal_api_restart
-  ensure_agent_task_diagnostics_state_ready
+  internal_info "preparing managed agent-task diagnostic state before internal API restart"
+  seed_managed_agent_task_diagnostics_state
   stop_local_manual_runner_for_internal_api_restart
 }
 
@@ -232,10 +234,16 @@ managed_agent_task_runner_state_is_present() {
 }
 
 seed_managed_agent_task_diagnostics_state() {
+  export_local_manual_internal_runner_image_env || exit 1
   AGENT_RUNNER_SEED_MODE=managed_agent_task \
     LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \
     LOCAL_MANUAL_ENABLE_INTERNAL=0 \
+    INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
+    INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
+    MANAGED_RUNNER_IMAGE="${RUNNER_IMAGE}" \
     bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"
+  LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE="${RUNNER_IMAGE}"
+  export LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE
 }
 
 ensure_agent_task_diagnostics_state_ready() {
@@ -288,11 +296,67 @@ ensure_kind_image() {
   )
 }
 
+local_manual_internal_runner_digest_ref() {
+  local image="$1"
+  local image_repository image_tag node_name prepared_image
+  image_repository="${LOCAL_MANUAL_INTERNAL_AGENT_LOCAL_REPOSITORY:-mbos/agentsmith-managed-runner}"
+  image_tag="${LOCAL_MANUAL_INTERNAL_AGENT_LOCAL_TAG:-local-manual-$(managed_runner_image_handoff_tag_text "${KIND_CLUSTER_NAME:-local}")}"
+  node_name="${KIND_CLUSTER_NAME}-control-plane"
+
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${image}" "[local-manual-internal]" || return 1
+
+  if managed_runner_image_handoff_is_digest_ref "${image}"; then
+    managed_runner_image_handoff_preflight_kind_registry_runner_image \
+      "${image}" \
+      "${node_name}" \
+      "[local-manual-internal]" \
+      "${ROOT_DIR}" || return 1
+    printf '%s\n' "${image}"
+    return 0
+  fi
+
+  prepared_image="$(
+    managed_runner_image_handoff_publish_local_runner_image_ref \
+      "${image}" \
+      "${image_repository}" \
+      "${image_tag}" \
+      "[local-manual-internal]"
+  )" || return 1
+  managed_runner_image_handoff_preflight_kind_registry_runner_image \
+    "${prepared_image}" \
+    "${node_name}" \
+    "[local-manual-internal]" \
+    "${ROOT_DIR}" || return 1
+  printf '%s\n' "${prepared_image}"
+}
+
+export_local_manual_internal_runner_image_env() {
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE}" "[local-manual-internal]" || return 1
+  if ! managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"; then
+    internal_err "internal managed runner image must be a digest ref before API/seed handoff: ${RUNNER_IMAGE}"
+    return 1
+  fi
+
+  export RUNNER_IMAGE
+  export LOCAL_MANUAL_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"
+  export INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"
+  export INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}"
+  export MANAGED_RUNNER_IMAGE="${RUNNER_IMAGE}"
+}
+
 ensure_internal_runner_image() {
   internal_info "ensuring internal ${RUNNER_KIND} runner image ${RUNNER_IMAGE}"
-  build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "${REBUILD_RUNNER_IMAGE}"
-  internal_info "loading ${RUNNER_IMAGE} into kind"
-  ensure_kind_image "${RUNNER_IMAGE}"
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE}" "[local-manual-internal]" || return 1
+  if ! managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"; then
+    build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "${REBUILD_RUNNER_IMAGE}"
+  fi
+  RUNNER_IMAGE="$(local_manual_internal_runner_digest_ref "${RUNNER_IMAGE}")" || return 1
+  export_local_manual_internal_runner_image_env || return 1
+  if ! managed_runner_image_handoff_from_kind_registry "${RUNNER_IMAGE}"; then
+    internal_info "loading ${RUNNER_IMAGE} into kind"
+    ensure_kind_image "${RUNNER_IMAGE}"
+  fi
+  internal_info "using internal managed runner digest image ${RUNNER_IMAGE}"
 }
 
 wait_for_afscp_storage_csi_pods() {
@@ -3121,17 +3185,28 @@ start_internal_runtime() {
 restart_api_with_mode() {
   ensure_internal_common_runtime_env
   local internal_flag="$1"
-  stop_pid_file_if_running "${API_PID_FILE}" "api"
-  rm -f "${API_READY_FILE}" "${API_PORT_FILE}" "${API_PID_FILE}"
   if [[ "${internal_flag}" == "1" ]]; then
     local kind_gateway
+    export_local_manual_internal_runner_image_env || exit 1
+    if [[ "${LOCAL_MANUAL_INTERNAL_MANAGED_RUNNER_STATE_SEEDED_FOR_IMAGE:-}" != "${RUNNER_IMAGE}" ]]; then
+      internal_info "preparing managed agent-task diagnostic state before internal API restart"
+      seed_managed_agent_task_diagnostics_state
+    fi
+    stop_pid_file_if_running "${API_PID_FILE}" "api"
+    rm -f "${API_READY_FILE}" "${API_PORT_FILE}" "${API_PID_FILE}"
     kind_gateway="$(resolve_kind_gateway_ip)"
+    export_local_manual_internal_runner_image_env || exit 1
     AGENT_EXECUTION_HTTP_BASE_URL="http://${kind_gateway}:${PORT_API}" \
       AGENT_EXECUTION_WS_BASE_URL="ws://${kind_gateway}:${PORT_API}" \
       LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" \
+      INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
+      INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
+      MANAGED_RUNNER_IMAGE="${RUNNER_IMAGE}" \
       bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
     return
   fi
+  stop_pid_file_if_running "${API_PID_FILE}" "api"
+  rm -f "${API_READY_FILE}" "${API_PORT_FILE}" "${API_PID_FILE}"
   LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
 }
 

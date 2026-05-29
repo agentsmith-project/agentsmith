@@ -602,9 +602,6 @@ local-real-reset:
 	$(MAKE) substrate-up SUBSTRATE=local-dev
 	$(MAKE) substrate-reseed SUBSTRATE=local-dev
 	$(MAKE) local-manual-up
-	AGENT_RUNNER_SEED_MODE=managed_agent_task \
-	LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \
-	$(MAKE) local-manual-seed-agent-task
 	LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 $(MAKE) local-manual-internal-up
 
 local-manual-internal-up:

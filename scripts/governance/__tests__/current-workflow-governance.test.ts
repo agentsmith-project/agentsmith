@@ -974,7 +974,7 @@ describe('current workflow governance', () => {
     expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) substrate-up[\s\S]*\$\(MAKE\) substrate-reseed[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \$\(MAKE\) local-manual-internal-up/);
     expect(makefile).toMatch(/local-real-status:[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/);
     expect(makefile).toMatch(/local-manual-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*\$\(MAKE\) local-manual-seed-agent-task/);
-    expect(makefile).toMatch(/local-real-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*AGENT_RUNNER_SEED_MODE=managed_agent_task[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0[\s\S]*\$\(MAKE\) local-manual-seed-agent-task[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \$\(MAKE\) local-manual-internal-up/);
+    expect(makefile).toMatch(/local-real-reset:[\s\S]*\$\(MAKE\) substrate-reset SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-up SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) substrate-reseed SUBSTRATE=local-dev[\s\S]*\$\(MAKE\) local-manual-up[\s\S]*LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER=0 \$\(MAKE\) local-manual-internal-up/);
     expect(runtimeManifest).not.toMatch(/id:\s*'local-real'/);
     expect(runtimeManifest).not.toMatch(/formalName:\s*'local-real'/);
   });

@@ -31,12 +31,13 @@ Active plan 读法：
 1. release-kit Operator Release Surface v0 已完成：release-kit `fa5eef5`，fail-fast cleanup `9277810`，CI success；它更新 operator surface 和 fail-fast 边界，不是 release readiness、deploy verdict 或 package readiness。
 2. runner manual image-smoke workflow 已用真实 AgentSmith `agentsmith-runner-contract-artifact` 验证成功：historical run `26657450034` success；它是已完成证据，不再作为下一步，也不代表 backend-real、真实 LLM 或 full runtime semantics。
 3. 文档/治理瘦身已完成：AgentSmith `2250bd25` 和 `d3e84196`，Contracts Check success；历史 ledger 继续保持 reference，不回到 active plan 滚动追加。
+4. release-kit `kit_installed/online` evidence parity 已完成：release-kit `ac143dd Add kit online evidence envelope parity`，CI success `26660671047`；它只是 repo-local evidence parity，不是 release readiness、deploy verdict 或 package readiness。
+5. runner real-path boundary smoke / scrubbed runner image adoption/test facts cleanup 已完成：AgentSmith `f1a6a702`、`9fd92602`、`140e9ac6`，runner publish run `26662288580` success，runner HEAD `f588d88`，published image `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0`；它仍只是 focused projection/adoption evidence，不代表 backend-real、真实 LLM、full runtime semantics 或 release readiness。
 
 当前真实下一步：
 
-1. release-kit `kit_installed/online` evidence parity 是 P2 full online adoption 的最小第一刀；目标只是在 release-kit repo-local evidence 中对齐内部机器值和 operator-facing `online` / `install_substrates` 语义，不给 release readiness、deploy verdict 或 package readiness。
-2. runner real-path boundary smoke 是后续 P5 小切片；它只验证真实路径边界 smoke，不把 AgentSmith 产品语义迁入 runner repo，也不宣称 backend-real、真实 LLM、full runtime semantics 或 release readiness。
-3. 继续 P6-lite cleanup：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
+1. 继续 P6-lite cleanup：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
+2. 等待 AgentSmith Quality Gates 后，做 P2 full online adoption 的最小真实路径 / AgentSmith handoff evidence 分离收口；release-kit 只给 repo-local deployment/operator evidence，AgentSmith 只消费链接/交接事实，不接回 `release:ready` verdict。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -100,7 +101,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前下一步已从旧三切片切换为：release-kit `kit_installed/online` evidence parity（P2 full online adoption 最小第一刀）、runner real-path boundary smoke（后续 P5 切片），以及 P6-lite cleanup。已完成的 release-kit operator surface、runner manual image-smoke 和 docs/governance slim 不再作为待办。
+当前下一步已从旧三切片继续收窄为：P6-lite cleanup，以及等待 AgentSmith Quality Gates 后做 P2 full online adoption 的最小真实路径 / AgentSmith handoff evidence 分离收口。已完成的 release-kit operator surface、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 

@@ -311,11 +311,11 @@ Agent task runs return explicit API error codes for runner bootstrap and protoco
 - `DELETE /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/keys/{keyId}`
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/execution-config`
 
-## 11. Echo Example
+## 11. Local Diagnostic Example
 
-Reference implementation:
+Transition-only local diagnostic:
 
-- `@mbos/agent-task-runner` package entrypoint
+- `@mbos/agent-task-runner` is the current monorepo migration subject and transition-only local diagnostic. It is not release proof, and the formal release identity comes from runner manifest/lock adoption.
 
 Run with:
 

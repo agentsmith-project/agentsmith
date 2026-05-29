@@ -227,12 +227,64 @@ describe("check-runner-naming contract", () => {
 
     expect(checkerSource).toContain('"packages/agent-runner"');
     expect(checkerSource).toContain("legacy @mbos/agent-runner compatibility shim");
+    expect(checkerSource).toContain('"infra/runner/Dockerfile.chat-llm-runner"');
+    expect(checkerSource).toContain('"infra/runner/Dockerfile.notebook-codex-runner"');
     expect(checkerSource).not.toContain('"packages/agent-runner/src/index.ts"');
     expect(checkerSource).not.toContain('"packages/agent-runner/src/protocol.ts"');
     expect(checkerSource).not.toContain('"packages/agent-runner/src/runner-spec.ts"');
   });
 
-  it("keeps e2e helper and command aliases on canonical Agent Task runner names", () => {
+  it("downgrades monorepo runner startup entries to transition-only diagnostics", () => {
+    const root = process.cwd();
+    const checkerSource = readFileSync(
+      path.join(root, "scripts/contracts/check-runner-naming.ts"),
+      "utf8",
+    );
+    const protocol = readFileSync(
+      path.join(root, "docs/contracts/agent-execution-protocol.md"),
+      "utf8",
+    );
+    const development = readFileSync(path.join(root, "DEVELOPMENT.md"), "utf8");
+
+    expect(
+      existsSync(path.join(root, "scripts/run-agent-task-runner-dev.sh")),
+      "the isolated formal dev-direct helper must be removed",
+    ).toBe(false);
+    expect(checkerSource).not.toContain("scripts/run-agent-task-runner-dev.sh");
+    expect(checkerSource).not.toMatch(
+      /requireScript\(\s*scripts,\s*"agent:task-runner"/,
+    );
+    expect(checkerSource).not.toMatch(
+      /requirePath\(\s*"packages\/agent-task-runner\/package\.json"/,
+    );
+    expect(checkerSource).not.toContain("Makefile must expose agent-task-runner");
+    expect(checkerSource).not.toContain(
+      "Makefile agent-task-runner must use package.json agent:task-runner",
+    );
+    expect(checkerSource).toContain("runnerTransitionOnlyActiveFiles");
+    expect(checkerSource).toContain("formal dev-direct path");
+    expect(checkerSource).toContain(
+      "requireRunnerTransitionOnlyDiagnosticConsistency",
+    );
+    expect(checkerSource).toContain(
+      "transition-only diagnostic consistency",
+    );
+    expect(checkerSource).toContain("runnerTransitionDiagnosticReferenceFiles");
+    expect(checkerSource).toContain('scripts["agent:task-runner"]');
+    expect(checkerSource).toContain("/^agent-task-runner:/m");
+    expect(checkerSource).toContain("$(NPM) run agent:task-runner");
+    expect(protocol).not.toMatch(
+      /Reference implementation:[\s\S]{0,160}@mbos\/agent-task-runner/,
+    );
+    expect(protocol).toMatch(
+      /@mbos\/agent-task-runner[\s\S]{0,160}transition-only local diagnostic/,
+    );
+    expect(development).toMatch(
+      /agent:task-runner[\s\S]{0,220}transition-only diagnostic[\s\S]{0,220}release proof/,
+    );
+  });
+
+  it("keeps e2e helper and diagnostic command aliases on Agent Task runner names", () => {
     const root = process.cwd();
     const helperSource = readFileSync(
       path.join(root, "e2e/integration-real-helpers.ts"),

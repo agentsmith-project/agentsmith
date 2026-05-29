@@ -428,13 +428,37 @@ const activeTextFiles = [
   "scripts/preprod-capture-baseline.sh",
   "scripts/internal-ownership-backend-real-gate.sh",
   "scripts/lib/runtime-verification.sh",
-  "scripts/run-agent-task-runner-dev.sh",
   "scripts/run-internal-agent-task-real-gate.sh",
   "scripts/run-integration-e2e-full.sh",
   "scripts/run-backend-real-session-shards.sh",
   "scripts/sandbox-joint-integration-smoke.sh",
   "scripts/skills-runtime-fast-gate.sh",
   "scripts/skills-runtime-backend-real-gate.sh",
+] as const;
+
+const runnerTransitionOnlyActiveFiles = uniqueSorted([
+  "DEVELOPMENT.md",
+  "Makefile",
+  "package.json",
+  ...collectTextFiles("docs", [".md"]).filter(
+    (filePath) => !filePath.startsWith("docs/archive/"),
+  ),
+  ...collectTextFiles("scripts", [".sh", ".ts"]).filter(
+    (filePath) => !filePath.startsWith("scripts/contracts/"),
+  ),
+]);
+
+const runnerTransitionDiagnosticReferenceFiles = uniqueSorted([
+  "DEVELOPMENT.md",
+  "Makefile",
+  ...collectTextFiles("docs", [".md"]).filter(
+    (filePath) => !filePath.startsWith("docs/archive/"),
+  ),
+  ...collectTextFiles("e2e", [".ts", ".tsx", ".md", ".json"]),
+]);
+
+const runnerTransitionOnlyForbiddenPatterns = [
+  [/formal dev-direct path/i, "formal dev-direct path wording"],
 ] as const;
 
 const activeRunnerWireFiles = [
@@ -834,11 +858,42 @@ const retiredDesktopAuthRuntimePatterns = [
   [/\bdsk_/u, "retired desktop bearer prefix", "dsk_"],
 ] as const;
 
-requireScript(
-  scripts,
-  "agent:task-runner",
-  "npm run dev -w @mbos/agent-task-runner",
-);
+function getRunnerTransitionDiagnosticReferences(): string[] {
+  const referencePattern =
+    /\b(?:npm run agent:task-runner|make agent-task-runner)\b|\$\(NPM\) run agent:task-runner/;
+
+  return runnerTransitionDiagnosticReferenceFiles.filter((filePath) =>
+    referencePattern.test(readText(filePath)),
+  );
+}
+
+function requireRunnerTransitionOnlyDiagnosticConsistency(): void {
+  const references = getRunnerTransitionDiagnosticReferences();
+  if (references.length === 0) return;
+
+  const sourceList = references.join(", ");
+  const consistencyScope =
+    "transition-only diagnostic consistency; not a formal path, release proof, or canonical runner requirement";
+
+  if (scripts["agent:task-runner"] !== "npm run dev -w @mbos/agent-task-runner") {
+    failures.push(
+      `package.json agent:task-runner must stay wired to "npm run dev -w @mbos/agent-task-runner" for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+  if (!/^agent-task-runner:/m.test(makefile)) {
+    failures.push(
+      `Makefile target agent-task-runner must stay present for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+  if (!/\$\(NPM\) run agent:task-runner/.test(makefile)) {
+    failures.push(
+      `Makefile target agent-task-runner must call root $(NPM) run agent:task-runner for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+}
+
+requireRunnerTransitionOnlyDiagnosticConsistency();
+
 requireScript(
   scripts,
   "test:agent-task:runner:fast",
@@ -926,16 +981,6 @@ for (const legacyScript of [
   forbidScript(scripts, legacyScript);
 }
 
-requireMatch(
-  makefile,
-  /^agent-task-runner:/m,
-  "Makefile must expose agent-task-runner",
-);
-requireMatch(
-  makefile,
-  /\$\(NPM\) run agent:task-runner/,
-  "Makefile agent-task-runner must use package.json agent:task-runner",
-);
 forbidMatch(
   makefile,
   /^notebook-runner:/m,
@@ -982,10 +1027,6 @@ requireMatch(
   runnerImageCommon,
   /agentsmith-managed-runner/,
   "runner image defaults must use agentsmith-managed-runner",
-);
-requirePath(
-  "packages/agent-task-runner/package.json",
-  "packages must expose the Agent Task runner package at packages/agent-task-runner",
 );
 forbidPath(
   "packages/agent-runner",
@@ -1362,6 +1403,19 @@ for (const filePath of activeTextFiles) {
     forbidMatch(content, pattern, `${filePath} must not expose ${label}`);
   }
 }
+
+for (const filePath of runnerTransitionOnlyActiveFiles) {
+  const content = readText(filePath);
+  for (const [pattern, label] of runnerTransitionOnlyForbiddenPatterns) {
+    forbidMatch(content, pattern, `${filePath} must not expose ${label}`);
+  }
+}
+
+forbidMatch(
+  readText("docs/contracts/agent-execution-protocol.md"),
+  /Reference implementation:[\s\S]{0,160}@mbos\/agent-task-runner/,
+  "docs/contracts/agent-execution-protocol.md must not call @mbos/agent-task-runner the reference implementation",
+);
 
 for (const filePath of activeProductSurfaceFiles) {
   const content = readText(filePath);

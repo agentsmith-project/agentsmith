@@ -34,11 +34,12 @@ Active plan 读法：
 4. release-kit `kit_installed/online` evidence parity 已完成：release-kit `ac143dd Add kit online evidence envelope parity`，CI success `26660671047`；它只是 repo-local evidence parity，不是 release readiness、deploy verdict 或 package readiness。
 5. runner real-path boundary smoke / scrubbed runner image adoption/test facts cleanup 已完成：AgentSmith `f1a6a702`、`9fd92602`、`140e9ac6`，`140e9ac6` remote Quality Gates run `26663502020`、Contracts Check run `26663502029`、Image Publish run `26663502034` success；AgentSmith HEAD `3f275e1131c0ebf76c4e07a05a0e96e4899ef690` Contracts Check run `26664204434` success；runner publish run `26662288580` success，runner HEAD `f588d88`，published image `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0`；它仍只是 focused projection/adoption evidence，不代表 backend-real、真实 LLM、full runtime semantics 或 release readiness。
 6. release-kit operator `online/use_existing` confirmed apply KISS slice 已完成：release-kit repo `/home/percy/works/mbos-v1/agentsmith-release-kit` commit `83375e335fc31c0e1515ef297fd26bd81f83a7dc` (`feat: support operator online apply confirmation`) CI run `26664968420` success；commit `361ec39df481848deddeac3c4fcf036a0fd80899` (`docs: align online evidence support wording`) CI run `26665142748` success；本地 focused checks `bash scripts/test-operator-release-surface.sh`、`bash scripts/verify-release.sh --quick`、`git diff --check` 通过。该切片支持 operator-facing `online/use_existing --mode apply --confirm-apply online/use_existing`，facade 内部映射到 `existing_kubernetes/external_declared/online`，并支持 digest/provenance-only online handoff evidence；它不代表 AgentSmith release readiness、release-kit package readiness、full deployment readiness、backend-real 或真实 LLM。
+7. release-kit P2 最小 online adoption 聚合切片已完成：release-kit commit `dc0ec224e60d128c262343cbf0d95c42851c36ed` (`feat: add online adoption aggregation gate`) 实现 `--online-adoption`，新增 `online-adoption-report.json`，要求 `online/use_existing` + `online/install_substrates` 两路 confirmed apply/evidence root，输出 digest/provenance/coverage summary 且 `readiness=false`；commit `50b8f7127260b4e7102932f2431f95f8a40ad0cc` (`ci: run online adoption focused guard`) 把 `bash scripts/test-online-adoption.sh` 接入 CI，CI run `26666469542` for `50b8f71` success，包含 `Online adoption aggregation focused guard` success。本地/worker 验证 `bash scripts/test-online-adoption.sh`、`bash scripts/test-operator-release-surface.sh`、`bash scripts/test-online-deployment-gate.sh`、`bash scripts/test-evidence.sh`、`bash scripts/verify-release.sh --quick`、`git diff --check` 通过；独立 review 无 blocker，仅建议 subject-by-path 显式比较后置。该报告是 repo-local online adoption 聚合与 handoff 输入证据，不是 release readiness、deploy/package/operator verdict 或 AgentSmith `release:ready` 结论。
 
 尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite cleanup：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. 做 P2 最小 full online adoption / handoff evidence separation 的下一小片：把 release-kit repo-local deployment/operator evidence 继续保留在 release-kit，AgentSmith 只消费 digest/provenance/link 级交接事实；不得把 release-kit verdict 接回 AgentSmith `release:ready`，也不得把 focused confirmed apply 说成 full deployment readiness。
+2. P2 online adoption / handoff evidence separation 中，release-kit repo-local online adoption aggregation 已完成；当前下一小片是 AgentSmith digest/provenance/link 级 handoff validator（可后置补 subject-by-path 显式比较），或继续 P6-lite summary/status 降噪。release-kit full verdict / formal release gate 仍未完成；不得把 `online-adoption-report.json`、release-kit verdict 或 focused confirmed apply 接回 AgentSmith `release:ready`，也不得说成 release readiness 或 full deployment readiness。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -102,7 +103,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前尚未完成事项已从旧三切片继续收窄为：P6-lite cleanup，以及 P2 最小 full online adoption / handoff evidence separation 的下一小片。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
+当前尚未完成事项已从旧三切片继续收窄为：P6-lite cleanup，以及 P2 handoff evidence separation 的 AgentSmith digest/provenance/link 级 handoff validator。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、release-kit P2 最小 online adoption 聚合、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 
@@ -206,7 +207,7 @@ Release kit 的正式部署模式由三根正交机器轴组成。三根轴是�
 | 轴 | 值 | 含义 |
 | --- | --- | --- |
 | `target_cluster` | `existing_kubernetes` | 真实 Kubernetes 目标，包括私有 Kubernetes 和云端托管 Kubernetes。 |
-| `substrate_source` | `kit_installed` | release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight；`kit_installed/online` focused composition/evidence parity 已完成，但不等于 full online adoption、release readiness 或 deployment/package/operator verdict。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是云资源 provisioning，也不是 in-cluster substrate。 |
+| `substrate_source` | `kit_installed` | release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight；`kit_installed/online` focused composition/evidence parity 已完成，但不等于 full release-kit verdict、formal release gate、release readiness 或 deployment/package/operator verdict。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是云资源 provisioning，也不是 in-cluster substrate。 |
 | `substrate_source` | `external_declared` | operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible object storage、Keycloak/OIDC 等连接真相；release kit 只校验，不创建云资源。 |
 | `distribution` | `online` | 从 GHCR 或 operator 指定 registry 拉取 digest-pinned images。 |
 | `distribution` | `airgap` | 使用离线包、OCI layout 或 image archives，不联网拉镜像、工具或模板。 |
@@ -412,6 +413,13 @@ output 值。它包含 `evidence.json`、`evidence-subject.json` 和
 若含 image-map，必须使用 canonical `image-map,registry-presence` producer
 sequence；standalone `registry-presence-report.json` 仍不能作为 accepted
 focused output。
+
+另有 P2 `--online-adoption` 聚合 producer：它消费
+`online/use_existing` 与 `online/install_substrates` 两路 confirmed apply/evidence
+root，输出 `online-adoption-report.json`，包含 digest/provenance/coverage
+summary 且 `readiness=false`。该报告只作为 release-kit repo-local online
+adoption 聚合与 AgentSmith handoff 输入事实，不是 `release:ready`、
+release readiness、deploy/package/operator verdict 或 formal release gate。
 
 其他 output，例如 `deploy-result.json#substrate`、standalone
 `render-report.json` / `apply-report.json` / `rollout-report.json` /
@@ -690,9 +698,11 @@ signoff intake 与 confirmed apply online gate report 的机器绑定。`49caf6f
 本地证据覆盖 target-registry apply 必须带 `--registry-probe`、image-map 后
 registry-presence、且 registry-presence 在 render/apply/rollout/smoke/evidence
 前完成；source-registry apply 不受影响，target-registry server-dry-run 不要求且
-不允许 probe。它们仍不等于 registry mirror/login/push/pull、deploy adoption、
-cloud provisioning、full online adoption、release-kit operator
-signature/identity/full verdict（正式签名验证/身份/完整 verdict）、AgentSmith product-flow evidence
+不允许 probe。后续 P2 最小 online adoption 聚合已由 `--online-adoption`
+切片收口，但这些 focused 证据和聚合报告仍不等于 registry mirror/login/push/pull、
+deploy adoption、cloud provisioning、full release-kit verdict、formal release
+gate、AgentSmith handoff validator、release-kit operator signature/identity/full
+verdict（正式签名验证/身份/完整 verdict）、AgentSmith product-flow evidence
 收口、airgap full offline install/package/adoption readiness、airgap ready 或
 release readiness。
 
@@ -738,11 +748,12 @@ release readiness。
     `target_cluster=existing_kubernetes, substrate_source=external_declared, distribution=online`
     与
     `target_cluster=existing_kubernetes, substrate_source=kit_installed, distribution=online`。
-    当前 `online/use_existing` confirmed apply 和 `kit_installed/online` focused
-    composition/evidence parity 都已完成，但仍只是 focused evidence；full online
-    adoption / full release-kit verdict 仍未完成，下一步是 P2 最小 full online
-    adoption / handoff evidence separation，不能据此给 deployment/package/operator
-    verdict。
+    当前 `online/use_existing` confirmed apply、`kit_installed/online` focused
+    composition/evidence parity 和 release-kit repo-local online adoption
+    aggregation 都已完成；`online-adoption-report.json` 只输出
+    digest/provenance/coverage summary 且 `readiness=false`。full release-kit
+    verdict / formal release gate 与 AgentSmith handoff validator 仍未完成，
+    不能据此给 deployment/package/operator verdict。
 13. `kind_rehearsal + kit_installed + online` 只作为本机/CI 证明工具；kind 是可选
     local option，不是生产默认，也不是用户部署前提。
 14. `existing_kubernetes + kit_installed` 不做 provider matrix，不创建云资源；只安装
@@ -762,14 +773,15 @@ release readiness。
 
 - online deploy focused spine 能从 GHCR/digest 或 operator 指定 target/adopted refs 渲染并执行 apply、rollout、smoke。
 - `online + use_existing` 的 focused path 能产出 preflight、render、render-check、apply、rollout、smoke 和 online evidence root envelope，并通过 `--evidence` revalidation；内部机器值是 `existing_kubernetes + external_declared + online`。
-- `online + install_substrates` / `existing_kubernetes + kit_installed + online` focused composition/evidence parity 已完成；它仍不是 full online adoption、full release-kit verdict 或 release readiness，缺正式 repo-local verdict/adoption 收口时不能给 deployment/package/operator verdict。
-- P2 online target-registry confirmed apply/evidence spine 已有 initial spine commit `2d4739b`、remote CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success，本地 GitHub Actions 顺序全量通过；这不是 full online adoption、release-kit operator signature/identity/full verdict（正式签名验证/身份/完整 verdict）、AgentSmith product-flow evidence 收口或 release readiness 证据。
-- release-kit operator signoff intake focused guard 已有 commit `0854eeb`、GitHub Actions CI run `26444123230` success；它只证明 intake JSON 与 confirmed apply `online-deployment-gate-report.json` 的 release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha 绑定关系；target-registry report 含 image-map 时接受 canonical `image-map,registry-presence` producer sequence。不证明 operator signature/identity/full verdict（正式签名验证、身份系统、完整 operator verdict）、registry mirror/login/push/pull、full online adoption 或 release readiness。
+- `online + install_substrates` / `existing_kubernetes + kit_installed + online` focused composition/evidence parity 已完成；它仍不是 full release-kit verdict、formal release gate 或 release readiness，缺正式 repo-local verdict/adoption 收口时不能给 deployment/package/operator verdict。
+- P2 online target-registry confirmed apply/evidence spine 已有 initial spine commit `2d4739b`、remote CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success，本地 GitHub Actions 顺序全量通过；这不是 full release-kit verdict、formal release gate、release-kit operator signature/identity/full verdict（正式签名验证/身份/完整 verdict）、AgentSmith product-flow evidence 收口或 release readiness 证据。
+- release-kit operator signoff intake focused guard 已有 commit `0854eeb`、GitHub Actions CI run `26444123230` success；它只证明 intake JSON 与 confirmed apply `online-deployment-gate-report.json` 的 release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha 绑定关系；target-registry report 含 image-map 时接受 canonical `image-map,registry-presence` producer sequence。不证明 operator signature/identity/full verdict（正式签名验证、身份系统、完整 operator verdict）、registry mirror/login/push/pull、full release-kit verdict 或 release readiness。
+- release-kit P2 最小 online adoption 聚合已完成：`dc0ec224e60d128c262343cbf0d95c42851c36ed` 新增 `--online-adoption` 和 `online-adoption-report.json`，要求 `online/use_existing` + `online/install_substrates` 两路 confirmed apply/evidence root，输出 digest/provenance/coverage summary 且 `readiness=false`；`50b8f7127260b4e7102932f2431f95f8a40ad0cc` 将 `bash scripts/test-online-adoption.sh` 接入 CI，CI run `26666469542` success 且包含 `Online adoption aggregation focused guard` success。本地/worker 验证 `bash scripts/test-online-adoption.sh`、`bash scripts/test-operator-release-surface.sh`、`bash scripts/test-online-deployment-gate.sh`、`bash scripts/test-evidence.sh`、`bash scripts/verify-release.sh --quick`、`git diff --check` 通过。它不是 release readiness、deploy/package/operator verdict 或 formal release gate；AgentSmith 侧下一步是 digest/provenance/link 级 handoff validator，或继续 P6-lite summary/status 降噪。
 - release-kit operator-preloaded registry prerequisite binding 已有 commit `49caf6f`；`--online-deployment-gate --mode apply --target-registry` 必须带 `--registry-probe`，registry-presence 必须在 image-map 后、render/apply/rollout/smoke/evidence 前完成。source-registry apply 不受影响；target-registry server-dry-run 不要求且不允许 probe。standalone `registry-presence-report.json` 仍被 `--evidence` 拒收。本地 gates 已通过，但远端 GitHub 只记录 PushEvent，GitHub Actions run 仍未创建。这里是 GitHub Actions outage/pending，不是 remote CI success。
 - 后续 release-kit mainline commit `1d35fcc` 的 remote CI run `26449565986` success 已覆盖 quick、inputs、template-package、render、render-check、image-map、registry-presence、bundle-create、airgap-bundle-check、airgap-image-archive-check、bundle-load-plan、airgap-bundle-render-check、apply、rollout、smoke、online-deployment-gate、operator-signoff-intake、evidence、target-preflight；这是最新 head 证据，不是 `49caf6f` 历史 push run success。
 - 本切片不做 registry mirror/login/push/pull，不把 probe presence 写成 deploy adoption，不做 release readiness，不做 operator signature/identity/full verdict，不做 cloud provisioning。
-- 当前 AgentSmith `existing-cluster` 诊断在 P2 full adoption 前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
-- `install_substrates` 的内部机器值是 `kit_installed`；`kit_installed/online` focused composition/evidence parity 已完成，但只做最小 substrate pack + pod-routability preflight 的 focused 证据边界；不做 provider matrix，也不能写成当前 release-ready deploy snapshot、full online adoption 或 full release-kit verdict。
+- 当前 AgentSmith `existing-cluster` 诊断在 formal release gate / AgentSmith handoff validator 收口前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
+- `install_substrates` 的内部机器值是 `kit_installed`；`kit_installed/online` focused composition/evidence parity 已完成，但只做最小 substrate pack + pod-routability preflight 的 focused 证据边界；不做 provider matrix，也不能写成当前 release-ready deploy snapshot、full release-kit verdict 或 formal release gate。
 - kind rehearsal 只是 optional local capability；当前不是 release-kit executable evidence，不产出当前 release readiness 证据，也不是用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
 - P2 过渡说明以当前边界为准：AgentSmith `release:ready` 是 product readiness / local complete / current product gate，不要求 dependencies/images/rollout/product-flow deploy evidence；这些 unified deploy outputs 只保留为过渡期专项诊断，直到 P2/P3/P6 收口时从 AgentSmith active status/workflow 删除或隐藏。这里不暗示未来 AgentSmith release campaign 会继续消费它们。
@@ -1194,7 +1206,8 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
     fail-fast guard 保持。release-kit P3 app-current image inventory closure
     和 airgap image archive materiality / image load/import focused diagnostics 已完成，但 Full P1
     adoption 仍不能宣称完成，因为
-    release-kit P2 full online adoption、AgentSmith product-flow evidence 收口、
+    release-kit full verdict / formal release gate、AgentSmith digest/provenance/link
+    handoff validator、AgentSmith product-flow evidence 收口、
     airgap full offline install/package/adoption readiness 和 P5 runtime
     migration 等后续阶段未完成；release-kit operator signature/identity/full verdict
     （正式签名验证/身份/完整 verdict）deferred，只有出现明确客户/合规/发布消费方需要时再做，
@@ -1205,13 +1218,14 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
     正式机器轴只看 `target_cluster` / `substrate_source` / `distribution`。
     任何把 `existing-cluster` 并入 AgentSmith `release:ready` 或真实 cloud/airgap evidence 的路径都失败。
 
-### P2 online spine / registry prerequisite binding / operator signoff intake / P3 focused diagnostics/inventory closure / P5.3a manifest skeleton / P5.3b boundary closure / P5 image smoke / P5 publish evidence / release-kit image closure consumption / P5 request projection env wiring / runner projection smoke lock truth 完成后的后续门禁
+### P2 online spine / online adoption aggregation / registry prerequisite binding / operator signoff intake / P3 focused diagnostics/inventory closure / P5.3a manifest skeleton / P5.3b boundary closure / P5 image smoke / P5 publish evidence / release-kit image closure consumption / P5 request projection env wiring / runner projection smoke lock truth 完成后的后续门禁
 
 必须确认：
 
 1. P2 online target-registry confirmed apply/evidence spine、
    `--registry-presence` focused diagnostic、operator-preloaded registry
-   prerequisite binding、`--operator-signoff-intake` focused guard、P3
+   prerequisite binding、`--operator-signoff-intake` focused guard、P2
+   `--online-adoption` aggregation focused guard、P3
    `--airgap-bundle-render-check` focused diagnostic、P3 app-current image
    inventory closure、P3 `--airgap-image-archive-check` materiality focused
    diagnostic、P3 `--airgap-image-load` focused diagnostic、P3
@@ -1231,7 +1245,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    is not release readiness；formal release readiness comes from the repo-local release gate。
 2. repo-local team members 只在 quick gate 后进入互不重叠的专项 workstream；
    主协调 agent 只做分发、审查和收口。
-3. P2 release-kit 正式 adoption 前，`--inputs` 仍只是 focused diagnostic，`--evidence`
+3. P2 formal release gate 前，`--inputs` 仍只是 focused diagnostic，`--evidence`
    只接受 `image-map.json`、`online-deployment-gate-report.json`、
    `airgap-bundle-check-report.json` + `airgap-bundle-manifest.json` + `image-map.json`；其中 `image-map.json` 只作为 mirror/image-map focused diagnostic 的 accepted/revalidatable output 被重校验，不是 deploy/package/operator verdict 或 release readiness，也不代表部署成功。三轴枚举、
    最小字段、`target_profiles.required` guard 已通过；当前 pre-GA focused diagnostics 中 required profiles 不能作为 readiness 开关，只有 P2/P3/P6 adoption 条件满足且 repo-local gate 拥有正式 evidence 后才能翻 required。P3
@@ -1247,7 +1261,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    report 不作为长期发布/部署契约输入；pre-GA 旧 3-image 输入只保留为负向测试线索并 fail fast。online evidence root 是 envelope/container，
    内含 `evidence.json`、`evidence-subject.json` 和
    `online-deployment-gate-report.json`，可重校验但不是 accepted output 值；online gate report 若含 image-map，必须使用 canonical `image-map,registry-presence` producer sequence。operator signoff intake 也接受该 canonical target-registry sequence。
-4. P2 release-kit 正式 adoption 前，repo-local required CI 已覆盖
+4. P2 formal release gate 前，repo-local required CI 已覆盖
    source-boundary、remote identity、provenance、digest-only、host/TLS/pull-secret/
    storage/substrate secret-ref 输入、online gate steps、target/adopted ref strict
    live check、no-op fail-fast、operator runbook，以及 operator signoff intake
@@ -1374,7 +1388,9 @@ P3 airgap image load/import focused diagnostic 已完成 ->
 P3 airgap focused deployment gate 已完成 ->
 P3 substrate routability focused producer 已完成 ->
 kit_installed/online focused composition 已完成 ->
-P2 full online adoption 与 AgentSmith product-flow evidence 分别收口 ->
+P2 release-kit repo-local online adoption aggregation 已完成 ->
+AgentSmith digest/provenance/link handoff validator 或 P6-lite summary/status 降噪 ->
+formal release gate 与 AgentSmith product-flow evidence 分别收口 ->
 airgap full offline install/package/adoption readiness 收口 -> P6-lite 清理当前并行收口 ->
 P5.1 runner start guard/CI 化
 已完成 -> P5.2 formal artifact handoff 已完成 -> P5.3a runner release
@@ -1386,4 +1402,4 @@ manifest skeleton/checker/start-guard 已完成 -> P5.3b runner runtime fast fir
 1. 当前计划 handoff-ready，主计划只保留状态、下一步和阻断项。
 2. 历史证据和逐切片 ledger 见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 3. 仍未完成 release readiness、deploy verdict 或 package readiness。
-4. 下一步继续按当前小切片推进 P2/P3 deployment/operator/adoption 与 P5/P6 收口。
+4. 下一步继续按当前小切片推进 AgentSmith digest/provenance/link handoff validator 或 P6-lite summary/status 降噪，再推进 P2/P3 formal release gate、deployment/operator/adoption 与 P5/P6 收口。

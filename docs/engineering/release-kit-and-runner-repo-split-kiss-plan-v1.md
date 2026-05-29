@@ -17,6 +17,10 @@ Active plan 读法：
 6. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 7. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
 
+## 治理克制记录
+
+本轮团队 review 不改 `docs/项目宪法.md`，只收敛当前产品计划和工程文档。功能核心优先：release/deploy 相关门禁只保留能直接证明可安装、可回滚、可排障的证据；不能证明这些结果的检查降级为 focused diagnostic 或删除。pre-GA 旧路径、旧命名、旧脚本和旧计划默认删除或标为 reference，不为旧实现增加长期心智负担。`release:ready` 的当前口径仍以 AgentSmith product-side readiness / handoff input completeness 为边界，deployment/package/operator verdict 归 release-kit repo-local gate/evidence。
+
 <details>
 <summary>Evidence log snapshot（只读交接证据，非规范）</summary>
 

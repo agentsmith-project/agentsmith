@@ -6,6 +6,9 @@ Status: `team_reviewed_handoff_ready`
 Date: 2026-05-16
 Owner: Engineering governance maintainers
 
+> Superseded/reference note（2026-05-29）:
+> 本文只作历史收敛参考；其中把 `release:ready` 与 unified deploy / product-flow deploy 绑定为发布必需证据的说法，不再作为当前 truth。当前口径见 [`release-kit-and-runner-repo-split-kiss-plan-v1.md`](./release-kit-and-runner-repo-split-kiss-plan-v1.md) 和 [`release-readiness-checklist.md`](../user-guides/release-readiness-checklist.md)：unified deploy / product-flow deploy 只保留为 deploy diagnostic / focused diagnostic，deployment/package/operator verdict 归 release-kit repo-local gate/evidence。
+
 ## 1. 目标
 
 这份计划用于下一轮治理收口开发。目标不是增加新治理体系，而是在不降低发布质量和检查证据要求的前提下，让开发、测试和部署人员更快、更少心智负担地完成检查。

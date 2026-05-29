@@ -6,6 +6,9 @@ Status: `development_handoff_ready`
 Date: 2026-05-18
 Owner: Engineering governance maintainers
 
+> Superseded/reference note（2026-05-29）:
+> 本文只作历史收敛参考；其中把 `release:ready` 与 unified deploy / product-flow deploy 绑定为发布必需证据的说法，不再作为当前 truth。当前口径见 [`release-kit-and-runner-repo-split-kiss-plan-v1.md`](./release-kit-and-runner-repo-split-kiss-plan-v1.md) 和 [`release-readiness-checklist.md`](../user-guides/release-readiness-checklist.md)：unified deploy / product-flow deploy 只保留为 deploy diagnostic / focused diagnostic，deployment/package/operator verdict 归 release-kit repo-local gate/evidence。
+
 ## 1. 目标和边界
 
 本计划只做一件事：在同一次正式验证或发布准备运行里，减少重复准备，不减少安全检查。

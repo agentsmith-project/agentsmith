@@ -72,9 +72,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${REPORT_NAME:-}" ]]; then
-            make governance-report REPORT_NAME="${REPORT_NAME}" REPORT_ARCHIVE=1
+            make governance-report REPORT_NAME="${REPORT_NAME}" REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
           else
-            make governance-report REPORT_ARCHIVE=1
+            make governance-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
           fi
 
       - name: Upload engineering artifacts

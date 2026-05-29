@@ -76,6 +76,7 @@ const RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND = [
 ].join('\n');
 const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
   'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
+const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -1242,6 +1243,14 @@ describe('current workflow governance', () => {
     expect(workflowSource).toContain('Daily UTC off-peak run for backend-real engineering regression.');
     expect(runCommands).toContain('npm run lane:backend-real:core');
     expect(runCommands).not.toContain('make verify-governance');
+    const governanceReportCommands = runCommands
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('make governance-report'));
+    expect(governanceReportCommands).toHaveLength(2);
+    expect(
+      governanceReportCommands.every((command) => command.includes(ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG)),
+    ).toBe(true);
   });
 
   it('keeps BACKEND_REAL_API_KEY only as a GitHub Actions secret rename fallback with removal triggers', () => {

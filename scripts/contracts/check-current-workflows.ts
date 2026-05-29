@@ -65,6 +65,7 @@ const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
   'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
 const RUNNER_REPO_CHECKOUT_PATH = 'agentsmith-runner';
 const RUNNER_REPO_REPOSITORY = 'agentsmith-project/agentsmith-runner';
+const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -617,6 +618,18 @@ if (!engineeringRunCommands.includes('npm run lane:backend-real:core')) {
 }
 if (engineeringRunCommands.includes('make verify-governance')) {
   failures.push('engineering-gate.yml must not claim backend-real coverage while running make verify-governance');
+}
+const engineeringGovernanceReportCommands = engineeringRunCommands
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line.startsWith('make governance-report'));
+const engineeringGovernanceReportChecksArePinned =
+  engineeringGovernanceReportCommands.length === 2
+  && engineeringGovernanceReportCommands.every((command) => command.includes(ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG));
+if (!engineeringGovernanceReportChecksArePinned) {
+  failures.push(
+    `engineering-gate.yml governance report step must pass ${ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG} in every branch`,
+  );
 }
 
 assertQualityGateJobBuildsRunnerContractBeforeColdExecution(

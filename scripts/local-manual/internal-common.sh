@@ -287,6 +287,7 @@ ensure_kind_image() {
   local image="$1"
   local node_name="${KIND_CLUSTER_NAME}-control-plane"
   local tarball
+  ensure_local_image "${image}"
   tarball="$(mktemp /tmp/kind-image.XXXXXX.tar)"
   (
     set -e

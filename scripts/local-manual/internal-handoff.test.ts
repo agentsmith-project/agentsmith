@@ -326,7 +326,12 @@ describe('local-manual internal handoff', () => {
   it('imports local-manual kind image tarballs through stdin redirection instead of a pipe', () => {
     const common = readFileSync('scripts/local-manual/internal-common.sh', 'utf8');
     const body = functionBody(common, 'ensure_kind_image');
+    const ensureLocalIndex = body.indexOf('ensure_local_image "${image}"');
+    const dockerSaveIndex = body.indexOf('docker save "${image}" -o "${tarball}"');
 
+    expect(ensureLocalIndex).toBeGreaterThanOrEqual(0);
+    expect(dockerSaveIndex).toBeGreaterThanOrEqual(0);
+    expect(ensureLocalIndex).toBeLessThan(dockerSaveIndex);
     expect(body).not.toMatch(/cat\s+"\$\{tarball\}"\s*\|\s*docker exec -i/u);
     expect(body).toMatch(/docker exec -i "\$\{node_name\}"[\s\S]*< "\$\{tarball\}"/u);
     expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');

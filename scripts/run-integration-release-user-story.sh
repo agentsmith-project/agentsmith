@@ -365,6 +365,7 @@ trap cleanup EXIT
 ensure_kind_image() {
   local image="$1"
   local tarball
+  ensure_local_image "${image}"
   tarball="$(mktemp /tmp/kind-image.XXXXXX.tar)"
   docker save "${image}" -o "${tarball}"
   cat "${tarball}" | docker exec -i "${KIND_NODE_NAME}" sh -lc 'cat > /tmp/image.tar && ctr -n k8s.io images import /tmp/image.tar && rm -f /tmp/image.tar'

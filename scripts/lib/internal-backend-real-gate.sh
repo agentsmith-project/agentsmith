@@ -77,6 +77,7 @@ internal_real_gate_ensure_kind_image() {
   local image="$1"
   local tarball
 
+  internal_real_gate_ensure_local_image "${image}"
   tarball="$(mktemp /tmp/kind-image.XXXXXX.tar)"
   (
     set -e

@@ -955,12 +955,16 @@ describe('agent-task-runner entry lifecycle', () => {
     ].join('')));
     closeCodexChild(child, 0);
 
+    let doneFrame: Record<string, unknown> | undefined;
     await vi.waitFor(() => {
-      expect(readSentFrames(socket).some((frame) => (
+      doneFrame = readSentFrames(socket).find((frame) => (
         frame.type === 'agent.response.done'
         && frame.request_id === requestId
-      ))).toBe(true);
+      ));
+      expect(doneFrame).toBeDefined();
     });
+    expect(doneFrame?.payload).toMatchObject({ finish_reason: 'stop' });
+    expect(doneFrame?.payload).not.toHaveProperty('usage_tokens');
 
     expect(readAgentDeltas(socket, requestId)).toEqual(['Standard ', 'Responses output.']);
     expect(resolveRunnerSuccessPolicyMock).toHaveBeenCalledWith(expect.objectContaining({

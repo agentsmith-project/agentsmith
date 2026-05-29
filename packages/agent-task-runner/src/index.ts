@@ -2268,7 +2268,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         });
         sendFrame('agent.response.done', requestId, {
           finish_reason: 'stop',
-          usage_tokens: Math.max(1, userPrompt.length),
         });
         clearRequestRuntimeState(requestId);
         return;

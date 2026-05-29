@@ -142,6 +142,9 @@ export type VerificationReportProducerResult = {
 };
 
 const DEFAULT_EVIDENCE_DIR = path.join(REPO_ROOT, 'artifacts', 'unified-deploy');
+const FOCUSED_PRODUCT_FLOW_SCHEMA = 'agentsmith.focused-product-flow.evidence/v1';
+const PRODUCT_FLOWS_AGGREGATE_SCHEMA = 'agentsmith.unified-deploy.product-flows.aggregate/v1';
+const PRODUCT_FLOWS_PRODUCER = 'unified-deploy-product-flows';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -288,12 +291,24 @@ async function validateProductEvidence(
 
   try {
     const evidence = await readJsonFile(resolved);
+    if (stringValue(evidence, 'schema_version') !== FOCUSED_PRODUCT_FLOW_SCHEMA) {
+      return { ok: false, diagnostic: `product evidence schema_version must be ${FOCUSED_PRODUCT_FLOW_SCHEMA}` };
+    }
+    if (stringValue(evidence, 'producer') !== PRODUCT_FLOWS_PRODUCER) {
+      return { ok: false, diagnostic: `product evidence producer must be ${PRODUCT_FLOWS_PRODUCER}` };
+    }
     if (stringValue(evidence, 'flow') !== flow || stringValue(evidence, 'status') !== 'passed') {
       return { ok: false, diagnostic: `product evidence must contain flow=${flow} and status=passed` };
     }
+    if (!stringValue(evidence, 'command').trim()) {
+      return { ok: false, diagnostic: 'product evidence command is required' };
+    }
+    if (Number.isNaN(Date.parse(stringValue(evidence, 'generated_at')))) {
+      return { ok: false, diagnostic: 'product evidence generated_at must be an ISO timestamp' };
+    }
     return {
       ok: true,
-      producer: stringValue(evidence, 'producer') || stringValue(evidence, 'command') || undefined,
+      producer: PRODUCT_FLOWS_PRODUCER,
     };
   } catch (error: unknown) {
     return { ok: false, diagnostic: `product evidence must be readable JSON: ${errorMessage(error)}` };
@@ -318,15 +333,28 @@ async function resolveProductEvidenceInput(
 
   try {
     const aggregate = await readJsonFile(resolvedAggregatePath);
-    if (stringValue(aggregate, 'schema_version') !== 'agentsmith.unified-deploy.product-flows.aggregate/v1') {
+    if (stringValue(aggregate, 'schema_version') !== PRODUCT_FLOWS_AGGREGATE_SCHEMA) {
       addFailure(failures, 'product:aggregate', 'product flows aggregate evidence has an unsupported schema_version');
+      return productEvidence;
+    }
+    if (stringValue(aggregate, 'producer') !== PRODUCT_FLOWS_PRODUCER) {
+      addFailure(failures, 'product:aggregate', `product flows aggregate evidence producer must be ${PRODUCT_FLOWS_PRODUCER}`);
       return productEvidence;
     }
     if (stringValue(aggregate, 'status') !== 'passed') {
       addFailure(failures, 'product:aggregate', 'product flows aggregate evidence status must be passed');
+      return productEvidence;
+    }
+    if (!stringValue(aggregate, 'command').trim()) {
+      addFailure(failures, 'product:aggregate', 'product flows aggregate evidence command is required');
+      return productEvidence;
+    }
+    if (Number.isNaN(Date.parse(stringValue(aggregate, 'generated_at')))) {
+      addFailure(failures, 'product:aggregate', 'product flows aggregate evidence generated_at must be an ISO timestamp');
+      return productEvidence;
     }
 
-    const flowPaths = asRecord(aggregate.flow_evidence_paths ?? aggregate.product_evidence);
+    const flowPaths = asRecord(aggregate.flow_evidence_paths);
     let mappedCount = 0;
     for (const flow of PRODUCT_VERIFICATION_FLOWS) {
       const rawPath = flowPaths[flow.id];

@@ -75,6 +75,7 @@ function writeProductEvidence(root: string, flow: ProductVerificationFlowId): st
     schema_version: 'agentsmith.focused-product-flow.evidence/v1',
     flow,
     status: 'passed',
+    producer: 'unified-deploy-product-flows',
     command: `fixture:${flow}`,
     generated_at: '2026-05-07T00:00:00.000Z',
   });
@@ -136,6 +137,42 @@ describe('unified deploy verification report producer', () => {
     }
   });
 
+  it('rejects release-kit-shaped product evidence even when flow and status look valid', async () => {
+    const root = tempDir('unified-report-release-kit-shaped-product-');
+    const reportDir = tempDir('unified-report-evidence-');
+    const smokePath = writeSmokeEvidence(root);
+    const productEvidence = Object.fromEntries(
+      PRODUCT_VERIFICATION_FLOWS.map((flow) => [flow.id, writeProductEvidence(root, flow.id)]),
+    ) as Record<ProductVerificationFlowId, string>;
+    const releaseKitShapedPath = writeJson(root, 'release-kit-shaped-product-flow.json', {
+      schema_version: 'agentsmith.release-kit-evidence/v1',
+      producer: 'agentsmith-release-kit',
+      flow: 'login_profile',
+      status: 'passed',
+      command: 'release-kit online deployment gate',
+      generated_at: '2026-05-07T00:00:00.000Z',
+    });
+    productEvidence.login_profile = releaseKitShapedPath;
+
+    const result = await runUnifiedDeployVerificationReportProducer({
+      evidenceDir: reportDir,
+      existingClusterSmokePath: smokePath,
+      productEvidence,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.evidence.product_verification_matrix.login_profile).toMatchObject({
+      status: 'required_not_passed',
+      evidence_path: releaseKitShapedPath,
+    });
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product:login_profile',
+        message: expect.stringContaining('schema_version'),
+      }),
+    ]));
+  });
+
   it('can consume aggregate product-flow evidence without repeating every focused evidence path', async () => {
     const root = tempDir('unified-report-aggregate-');
     const reportDir = tempDir('unified-report-evidence-');
@@ -147,6 +184,8 @@ describe('unified deploy verification report producer', () => {
       schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
       producer: 'unified-deploy-product-flows',
       status: 'passed',
+      command: 'npm run test:unified-deploy:product-flows:unit',
+      generated_at: '2026-05-07T00:00:00.000Z',
       flow_evidence_paths: flowEvidencePaths,
     });
 
@@ -165,6 +204,156 @@ describe('unified deploy verification report producer', () => {
     }
   });
 
+  it('rejects product-flow aggregate evidence from any producer except unified-deploy-product-flows', async () => {
+    const root = tempDir('unified-report-aggregate-producer-');
+    const reportDir = tempDir('unified-report-evidence-');
+    const smokePath = writeSmokeEvidence(root);
+    const flowEvidencePaths = Object.fromEntries(
+      PRODUCT_VERIFICATION_FLOWS.map((flow) => [flow.id, writeProductEvidence(root, flow.id)]),
+    ) as Record<ProductVerificationFlowId, string>;
+    const aggregatePath = writeJson(root, 'product-flows-release-kit.json', {
+      schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
+      producer: 'agentsmith-release-kit',
+      status: 'passed',
+      flow_evidence_paths: flowEvidencePaths,
+    });
+
+    const result = await runUnifiedDeployVerificationReportProducer({
+      evidenceDir: reportDir,
+      existingClusterSmokePath: smokePath,
+      productFlowsAggregatePath: aggregatePath,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.evidence.product_verification_matrix.login_profile).toMatchObject({
+      status: 'required_not_passed',
+    });
+    expect(result.evidence.product_verification_matrix.login_profile).not.toHaveProperty('evidence_path');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product:aggregate',
+        message: expect.stringContaining('producer'),
+      }),
+    ]));
+  });
+
+  it('rejects failed product-flow aggregate evidence without expanding its focused evidence paths', async () => {
+    const root = tempDir('unified-report-aggregate-status-');
+    const reportDir = tempDir('unified-report-evidence-');
+    const smokePath = writeSmokeEvidence(root);
+    const flowEvidencePaths = Object.fromEntries(
+      PRODUCT_VERIFICATION_FLOWS.map((flow) => [flow.id, writeProductEvidence(root, flow.id)]),
+    ) as Record<ProductVerificationFlowId, string>;
+    const aggregatePath = writeJson(root, 'product-flows-failed.json', {
+      schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
+      producer: 'unified-deploy-product-flows',
+      status: 'blocked',
+      command: 'npm run test:unified-deploy:product-flows:unit',
+      generated_at: '2026-05-07T00:00:00.000Z',
+      flow_evidence_paths: flowEvidencePaths,
+    });
+
+    const result = await runUnifiedDeployVerificationReportProducer({
+      evidenceDir: reportDir,
+      existingClusterSmokePath: smokePath,
+      productFlowsAggregatePath: aggregatePath,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.evidence.product_verification_matrix.login_profile).toMatchObject({
+      status: 'required_not_passed',
+    });
+    expect(result.evidence.product_verification_matrix.login_profile).not.toHaveProperty('evidence_path');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product:aggregate',
+        message: expect.stringContaining('status must be passed'),
+      }),
+    ]));
+  });
+
+  it('rejects legacy aggregate product_evidence fallback without expanding focused evidence paths', async () => {
+    const root = tempDir('unified-report-aggregate-product-evidence-');
+    const reportDir = tempDir('unified-report-evidence-');
+    const smokePath = writeSmokeEvidence(root);
+    const flowEvidencePaths = Object.fromEntries(
+      PRODUCT_VERIFICATION_FLOWS.map((flow) => [flow.id, writeProductEvidence(root, flow.id)]),
+    ) as Record<ProductVerificationFlowId, string>;
+    const aggregatePath = writeJson(root, 'product-flows-legacy.json', {
+      schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
+      producer: 'unified-deploy-product-flows',
+      status: 'passed',
+      command: 'npm run test:unified-deploy:product-flows:unit',
+      generated_at: '2026-05-07T00:00:00.000Z',
+      product_evidence: flowEvidencePaths,
+    });
+
+    const result = await runUnifiedDeployVerificationReportProducer({
+      evidenceDir: reportDir,
+      existingClusterSmokePath: smokePath,
+      productFlowsAggregatePath: aggregatePath,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.evidence.product_verification_matrix.login_profile).toMatchObject({
+      status: 'required_not_passed',
+    });
+    expect(result.evidence.product_verification_matrix.login_profile).not.toHaveProperty('evidence_path');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product:aggregate',
+        message: expect.stringContaining('does not map any known focused evidence paths'),
+      }),
+    ]));
+  });
+
+  it.each([
+    {
+      name: 'missing command',
+      aggregateOverrides: { command: '' },
+      message: 'command is required',
+    },
+    {
+      name: 'invalid generated_at',
+      aggregateOverrides: { generated_at: 'not-a-date' },
+      message: 'generated_at must be an ISO timestamp',
+    },
+  ])('rejects product-flow aggregate evidence with $name without expanding paths', async ({ aggregateOverrides, message }) => {
+    const root = tempDir('unified-report-aggregate-metadata-');
+    const reportDir = tempDir('unified-report-evidence-');
+    const smokePath = writeSmokeEvidence(root);
+    const flowEvidencePaths = Object.fromEntries(
+      PRODUCT_VERIFICATION_FLOWS.map((flow) => [flow.id, writeProductEvidence(root, flow.id)]),
+    ) as Record<ProductVerificationFlowId, string>;
+    const aggregatePath = writeJson(root, 'product-flows-invalid-metadata.json', {
+      schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
+      producer: 'unified-deploy-product-flows',
+      status: 'passed',
+      command: 'npm run test:unified-deploy:product-flows:unit',
+      generated_at: '2026-05-07T00:00:00.000Z',
+      ...aggregateOverrides,
+      flow_evidence_paths: flowEvidencePaths,
+    });
+
+    const result = await runUnifiedDeployVerificationReportProducer({
+      evidenceDir: reportDir,
+      existingClusterSmokePath: smokePath,
+      productFlowsAggregatePath: aggregatePath,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.evidence.product_verification_matrix.login_profile).toMatchObject({
+      status: 'required_not_passed',
+    });
+    expect(result.evidence.product_verification_matrix.login_profile).not.toHaveProperty('evidence_path');
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'product:aggregate',
+        message: expect.stringContaining(message),
+      }),
+    ]));
+  });
+
   it('rejects product evidence whose flow id or status does not match the requested matrix item', async () => {
     const root = tempDir('unified-report-invalid-product-');
     const reportDir = tempDir('unified-report-evidence-');
@@ -173,6 +362,9 @@ describe('unified deploy verification report producer', () => {
       schema_version: 'agentsmith.focused-product-flow.evidence/v1',
       flow: 'chat_via_llmup',
       status: 'passed',
+      producer: 'unified-deploy-product-flows',
+      command: 'fixture:chat_via_llmup',
+      generated_at: '2026-05-07T00:00:00.000Z',
     });
 
     const result = await runUnifiedDeployVerificationReportProducer({

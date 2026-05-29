@@ -12,9 +12,10 @@ Active plan 读法：
 1. AgentSmith 当前是 pre-GA。旧名称、旧路径、旧职责、旧 profile、旧 env、旧脚本入口和已移除字段默认不保留长期正式路径；正式路径不能接就删除或 fail fast。
 2. 旧名称和现有 AgentSmith unified deploy / runner 诊断只允许作为负向测试、失败边界、本机诊断或短期待删清单；任何短期临时兼容都必须在第 3.2 节有 owner、删除条件、删除时机/阶段和验收证据。
 3. 功能核心优先 / 治理最小化：后续只保留服务当前用户路径、当前合同边界、当前安全边界、真实发布/运行安全或 operator 低心智负担的 gate/docs/script；没有明确风险绑定的治理项不进入 active workflow。过时、低收益、只增加心智负担的治理检查/文档/脚本删除优先，其次降级为 focused diagnostic，最后才保留长期 gate。
-4. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
-5. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
-6. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
+4. 本补充不写入 `docs/项目宪法.md`：宪法已有 MVP 收敛边界；当前计划只负责 release-kit / runner 拆分的执行层收敛。
+5. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
+6. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
+7. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
 
 <details>
 <summary>Evidence log snapshot（只读交接证据，非规范）</summary>
@@ -471,8 +472,9 @@ runner digest adoption 已完成，release-kit managed runner image closure cons
 1. AgentSmith repo 负责产品代码、产品合同、产品验证、product image、managed runner image adoption truth、本地完整测试和 handoff readiness input；AgentSmith 不给 deployment/package/operator release verdict。
 2. `agentsmith-release-kit` repo 负责 online/airgap 发布、发布包校验、发布测试、repo-local gate、operator runbook 和部署证据；真实 Kubernetes / 云端托管 Kubernetes 是正式目标，kind 只作为 pre-GA/local diagnostic rehearsal，不是用户部署前提、正式 release target 或 airgap declarable target。
 3. `agentsmith-runner` repo 负责 runner 执行进程、builtin skills runtime、runner image 和 runner 侧测试；runner 协议包由 AgentSmith 合同/共享合同流程发布，runner repo 只消费。
-4. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness / local complete / current product gate，内部覆盖 full visual、backend-real release 和 terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith 产品门禁结论。online/airgap deployment、package、发布测试和 operator runbook 的 verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、product image / managed runner image handoff truth、local full test、release contract 和 thin adapter。
-5. Pre-GA 旧输入/旧路径/旧命名/旧职责不背长期正式路径：项目整体仍 pre-GA，旧命名、旧路径、旧职责、旧入口、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包或已移除字段默认不保留。正式路径不能接就删除或 fail fast；确实需要短期临时兼容时，只能作为负向测试、失败边界、过渡期专项诊断、operator 短期说明或后续删除清单存在，并按第 3.2 节写清删除条件、删除时机/阶段、owner 和验收证据，且不能成为长期发布/部署契约。
+4. `agentsmith-release-kit` / `agentsmith-runner` 长期只保留服务当前发布/运行功能、合同/安全、digest/provenance、真实 deploy/runtime 安全和 operator 低心智的 gate/docs/script；重复证明“不是 release readiness”的文档矩阵不再扩张，后续按触达范围删除、合并或降级。
+5. 当前边界已取代早期过渡语义：`npm run release:ready` 是 AgentSmith product readiness / local complete / current product gate，内部覆盖 full visual、backend-real release 和 terminal aggregate；local-kind / unified deploy / product-flow deploy commands 只保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于 AgentSmith 产品门禁结论。online/airgap deployment、package、发布测试和 operator runbook 的 verdict 归 release-kit repo-local gate/evidence，AgentSmith 只保留 product readiness、product image / managed runner image handoff truth、local full test、release contract 和 thin adapter。
+6. Pre-GA 旧输入/旧路径/旧命名/旧职责不背长期正式路径：项目整体仍 pre-GA，旧命名、旧路径、旧职责、旧入口、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包或已移除字段默认不保留。正式路径不能接就删除或 fail fast；确实需要短期临时兼容时，只能作为负向测试、失败边界、过渡期专项诊断、operator 短期说明或后续删除清单存在，并按第 3.2 节写清删除条件、删除时机/阶段、owner 和验收证据，且不能成为长期发布/部署契约。
 
 这不是新增 DevOps 发布平台，也不是新增 runner 产品面。
 

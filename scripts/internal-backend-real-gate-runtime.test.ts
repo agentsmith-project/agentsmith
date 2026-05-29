@@ -315,6 +315,26 @@ describe('internal backend-real gate runtime contract', () => {
     expect(cleanupFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
   });
 
+  it('lets internal AFSCP ensure use gate-owned deps without shared substrate connection env', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const ensureFunction = sectionBetween(
+      agentTaskGate,
+      '\nensure_internal_afscp_local_runtime() {',
+      '\n}\n\nstop_internal_afscp_local_runtime()',
+    );
+    const resetFunction = sectionBetween(
+      agentTaskGate,
+      '\nreset_internal_afscp_local_runtime() {',
+      '\n}\n\nrecord_service()',
+    );
+
+    expect(ensureFunction).toContain('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1');
+    expect(resetFunction).toContain('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1');
+    expect(ensureFunction.indexOf('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1')).toBeLessThan(
+      ensureFunction.indexOf('source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"'),
+    );
+  });
+
   it('allocates isolated ports for nested Context Store specs without cleaning unowned dev servers', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
 

@@ -371,6 +371,7 @@ ensure_internal_afscp_local_runtime() {
     export AFSCP_SERVICE_TOKEN
     export AFSCP_BOOTSTRAP_SERVICE_TOKEN
     export AFSCP_ORCHESTRATOR_SERVICE_TOKEN
+    export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
     export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null
     export DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:${INTEGRATION_POSTGRES_PORT}/mbos?sslmode=disable"
     export AFSCP_DATABASE_URL="${DATABASE_URL}"

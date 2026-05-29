@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { AgentTaskModelSettingService } from '../agent-task-model-setting-service.js';
 import {
@@ -7,6 +7,21 @@ import {
 } from '../project-member-governance-persistence.js';
 import { apiFetch, apiFetchWithToken, startServer as startBaseServer, startServerWithDeps as startBaseServerWithDeps } from './test-support.js';
 import { configureAfscpReadyFileLibraryTestDeps } from './afscp-file-library-test-support.js';
+
+const originalInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
+const PROJECT_FILE_LIBRARIES_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'b'.repeat(64)}`;
+
+beforeEach(() => {
+  process.env.INTERNAL_AGENT_IMAGE = PROJECT_FILE_LIBRARIES_MANAGED_RUNNER_IMAGE;
+});
+
+afterEach(() => {
+  if (originalInternalAgentImage === undefined) {
+    delete process.env.INTERNAL_AGENT_IMAGE;
+  } else {
+    process.env.INTERNAL_AGENT_IMAGE = originalInternalAgentImage;
+  }
+});
 
 function startServer(): ReturnType<typeof startBaseServer> {
   const started = startBaseServer();

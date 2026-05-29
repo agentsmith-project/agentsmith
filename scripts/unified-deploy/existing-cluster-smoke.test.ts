@@ -633,7 +633,9 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[6]?.input).toContain('kind: Deployment');
     expect(applyCalls[6]?.input).toContain('name: agentsmith-api');
     expect(applyCalls[6]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
-    expect(applyCalls[6]?.input).toContain('value: ghcr.io/mbos/agentsmith-managed-runner:dev');
+    expect(applyCalls[6]?.input).toContain(
+      'value: ghcr.io/mbos/agentsmith-managed-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    );
     expect(applyCalls[6]?.input).not.toContain('name: agentsmith-web-secrets');
     expect(applyCalls[6]?.input).not.toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
     expect(applyCalls[6]?.input).not.toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');

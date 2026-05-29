@@ -103,12 +103,18 @@ function resolveSourceSibling(relativePath: string): string {
   return path.resolve(process.cwd(), sourcePathname.replace(/^\/+/, ''));
 }
 
+const TASK_ROUTE_MANAGED_RUNNER_DIGEST = `sha256:${'e'.repeat(64)}`;
+const TASK_ROUTE_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@${TASK_ROUTE_MANAGED_RUNNER_DIGEST}`;
+
 describe('task-route-handler workspace access', () => {
   let previousManagedExecutionHttpBase: string | undefined;
+  let previousInternalAgentImage: string | undefined;
 
   beforeEach(() => {
     previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    previousInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
     process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    process.env.INTERNAL_AGENT_IMAGE = TASK_ROUTE_MANAGED_RUNNER_IMAGE;
     ACTIVE_RUNS_BY_TASK.clear();
     ACTIVE_RUN_CANCEL_BY_TASK.clear();
     ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.clear();
@@ -121,6 +127,8 @@ describe('task-route-handler workspace access', () => {
   afterEach(() => {
     if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
     else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
+    if (previousInternalAgentImage === undefined) delete process.env.INTERNAL_AGENT_IMAGE;
+    else process.env.INTERNAL_AGENT_IMAGE = previousInternalAgentImage;
   });
 
   it('does not keep a raw mount-access resolver in the task route module', () => {
@@ -457,6 +465,9 @@ describe('task-route-handler workspace access', () => {
     const projection = await deps.agentResourceService.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
       name: 'Deployment default managed projection',
       endpointId: endpoint.id,
+      config: {
+        image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
+      },
       status: 'enabled',
       presence: 'managed',
       runner_status: 'ready',
@@ -7023,7 +7034,7 @@ describe('task-route-handler workspace access', () => {
           artifacts: true,
         },
         config: {
-          image: 'runner:v1',
+          image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
           _internal_raw_key: 'ask_test',
         } as never,
         owner_id: 'user_test',
@@ -7253,7 +7264,7 @@ describe('task-route-handler workspace access', () => {
           artifacts: true,
         },
         config: {
-          image: 'runner:v1',
+          image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
           _internal_raw_key: 'ask_test',
         } as never,
         owner_id: 'user_test',
@@ -7434,7 +7445,7 @@ describe('task-route-handler workspace access', () => {
           artifacts: true,
         },
         config: {
-          image: 'runner:v1',
+          image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
           _internal_raw_key: 'ask_test',
         } as never,
         owner_id: 'user_test',
@@ -10664,7 +10675,7 @@ describe('task-route-handler workspace access', () => {
           artifacts: true,
         },
         config: {
-          image: 'runner:v1',
+          image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
           _internal_raw_key: 'ask_test',
         } as never,
         owner_id: 'user_test',
@@ -11069,7 +11080,7 @@ describe('task-route-handler workspace access', () => {
       interaction_kind: 'notebook',
       status: 'enabled',
       config: {
-        image: 'runner:v1',
+        image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
         _internal_raw_key: 'ask_test',
       } as never,
       owner_id: 'user_test',
@@ -11167,7 +11178,7 @@ describe('task-route-handler workspace access', () => {
       interaction_kind: 'notebook',
       status: 'enabled',
       config: {
-        image: 'runner:v1',
+        image: TASK_ROUTE_MANAGED_RUNNER_IMAGE,
         _internal_raw_key: 'ask_test',
       } as never,
       owner_id: 'user_test',

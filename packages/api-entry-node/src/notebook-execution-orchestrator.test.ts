@@ -23,6 +23,8 @@ import {
 } from './developer-runner-workspace-blocker.js';
 import { putContextEntry } from './context-store.js';
 
+const NOTEBOOK_EXECUTION_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'f'.repeat(64)}`;
+
 function createDeferred<T = void>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
@@ -2790,7 +2792,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           status: 'enabled',
           mode: 'internal',
           config: {
-            image: 'runner:v1',
+            image: NOTEBOOK_EXECUTION_MANAGED_RUNNER_IMAGE,
             _internal_raw_key: 'ask_test',
           },
           execution_preferences_json: {

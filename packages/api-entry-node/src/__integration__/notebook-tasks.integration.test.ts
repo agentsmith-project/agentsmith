@@ -40,6 +40,8 @@ import { configureAfscpReadyFileLibraryTestDeps } from './afscp-file-library-tes
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
 let previousManagedExecutionHttpBase: string | undefined;
+let previousInternalAgentImage: string | undefined;
+const NOTEBOOK_TASKS_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'a'.repeat(64)}`;
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -173,7 +175,9 @@ function createExecutionTicketGate(
 beforeEach(() => {
   __resetTaskFileLibraryBindingsForTests();
   previousManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+  previousInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
   process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+  process.env.INTERNAL_AGENT_IMAGE = NOTEBOOK_TASKS_MANAGED_RUNNER_IMAGE;
 });
 
 afterEach(async () => {
@@ -198,6 +202,8 @@ afterEach(async () => {
   upstreamServers.length = 0;
   if (previousManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   else process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousManagedExecutionHttpBase;
+  if (previousInternalAgentImage === undefined) delete process.env.INTERNAL_AGENT_IMAGE;
+  else process.env.INTERNAL_AGENT_IMAGE = previousInternalAgentImage;
 });
 
 async function startUpstreamServer(): Promise<{
@@ -1388,7 +1394,7 @@ describe('api-entry-node notebook task routes', () => {
       runner_provider: 'managed',
       status: 'enabled',
       config: {
-        image: 'runner:v1',
+        image: NOTEBOOK_TASKS_MANAGED_RUNNER_IMAGE,
         _internal_raw_key: 'ask_test',
       } as never,
       owner_id: 'user_test',

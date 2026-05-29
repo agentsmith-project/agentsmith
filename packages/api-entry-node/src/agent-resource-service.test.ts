@@ -8,6 +8,15 @@ import { AgentResourceService } from './agent-resource-service.js';
 import { listAuditEvents } from './audit-usage-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
+const RUNNER_DIGEST_A = `sha256:${'a'.repeat(64)}`;
+const RUNNER_DIGEST_B = `sha256:${'b'.repeat(64)}`;
+const DEFAULT_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`;
+const UPDATED_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`;
+
+function setDefaultManagedRunnerImage(image = DEFAULT_MANAGED_RUNNER_IMAGE): void {
+  process.env.INTERNAL_AGENT_IMAGE = image;
+}
+
 describe('AgentResourceService', () => {
   beforeEach(() => {
     resetSystemWorkspaceRegistryPersistenceForTest();
@@ -21,6 +30,7 @@ describe('AgentResourceService', () => {
     delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
     delete process.env.INTERNAL_AGENT_IMAGE;
     delete process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
+    delete process.env.MANAGED_RUNNER_IMAGE;
   });
 
   it('creates developer agent runner with expected defaults', async () => {
@@ -78,6 +88,7 @@ describe('AgentResourceService', () => {
   });
 
   it('projects deployment default managed runner endpointId into the API-visible default endpoint field', async () => {
+    setDefaultManagedRunnerImage();
     const docStore = new InMemoryJsonDocStore();
     const service = new AgentResourceService(docStore);
 
@@ -114,7 +125,35 @@ describe('AgentResourceService', () => {
     });
   });
 
+  it('fails closed instead of falling back to the legacy local runner image when deployment image env is missing', async () => {
+    delete process.env.INTERNAL_AGENT_IMAGE;
+    delete process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
+    delete process.env.MANAGED_RUNNER_IMAGE;
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    let caught: unknown;
+    try {
+      await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+        name: 'Default managed runner',
+        endpointId: 'ep_managed_default',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_UNCONFIGURED',
+      message: expect.stringContaining('managed_runner_image_unconfigured'),
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain('INTERNAL_AGENT_IMAGE');
+    expect((caught as Error).message).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE');
+    expect((caught as Error).message).toContain('MANAGED_RUNNER_IMAGE');
+    expect((caught as Error).message).not.toContain('agentsmith-agent-task-runner:local');
+  });
+
   it('merges deployment default managed runner private config updates without rotating runtime key material', async () => {
+    setDefaultManagedRunnerImage();
     const service = new AgentResourceService(new InMemoryJsonDocStore());
 
     const created = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
@@ -145,7 +184,7 @@ describe('AgentResourceService', () => {
   });
 
   it('refreshes deployment default managed runner image from deploy truth without rotating runtime key material', async () => {
-    process.env.INTERNAL_AGENT_IMAGE = 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:1111';
+    process.env.INTERNAL_AGENT_IMAGE = DEFAULT_MANAGED_RUNNER_IMAGE;
     const service = new AgentResourceService(new InMemoryJsonDocStore());
 
     const created = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
@@ -154,9 +193,9 @@ describe('AgentResourceService', () => {
       is_default: true,
     });
     const createdConfig = created.config;
-    expect(createdConfig?.image).toBe('kind-registry:5000/mbos/agentsmith-managed-runner@sha256:1111');
+    expect(createdConfig?.image).toBe(DEFAULT_MANAGED_RUNNER_IMAGE);
 
-    process.env.INTERNAL_AGENT_IMAGE = 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:2222';
+    process.env.INTERNAL_AGENT_IMAGE = UPDATED_MANAGED_RUNNER_IMAGE;
     const updated = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
       endpointId: 'ep_managed_default',
       config: {
@@ -165,11 +204,105 @@ describe('AgentResourceService', () => {
     });
 
     expect(updated.config).toEqual(expect.objectContaining({
-      image: 'kind-registry:5000/mbos/agentsmith-managed-runner@sha256:2222',
+      image: UPDATED_MANAGED_RUNNER_IMAGE,
       _internal_key_id: createdConfig?._internal_key_id,
       _internal_raw_key: createdConfig?._internal_raw_key,
       idle_timeout_sec: 180,
     }));
+  });
+
+  it('allows digest-pinned local kind registry managed runner image during the transition', async () => {
+    process.env.MANAGED_RUNNER_IMAGE = `localhost:5001/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`;
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    const created = await service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+      name: 'Default managed runner',
+      endpointId: 'ep_managed_default',
+    });
+
+    expect(created.config?.image).toBe(`localhost:5001/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`);
+    expect(created.diagnostics).toMatchObject({
+      managed_runner_projection: 'deployment_default',
+    });
+    expect(created.diagnostics).not.toHaveProperty('release_canonical');
+  });
+
+  it.each([
+    [
+      'legacy agent-task-runner image',
+      `kind-registry:5000/mbos/agentsmith-agent-task-runner@${RUNNER_DIGEST_A}`,
+      'managed_runner_image_legacy_ref_rejected',
+    ],
+    [
+      'tag-only managed runner image',
+      'kind-registry:5000/mbos/agentsmith-managed-runner:v1',
+      'managed_runner_image_digest_required',
+    ],
+    [
+      'latest managed runner image',
+      'kind-registry:5000/mbos/agentsmith-managed-runner:latest',
+      'managed_runner_image_latest_rejected',
+    ],
+    [
+      'tag-only local kind managed runner image',
+      'localhost:5001/mbos/agentsmith-managed-runner:v1',
+      'managed_runner_image_digest_required',
+    ],
+    [
+      'digest without repository',
+      `@${RUNNER_DIGEST_A}`,
+      'managed_runner_image_ref_invalid',
+    ],
+    [
+      'image ref containing whitespace',
+      `kind-registry:5000/mbos/agentsmith managed-runner@${RUNNER_DIGEST_A}`,
+      'managed_runner_image_ref_invalid',
+    ],
+    [
+      'image ref with surrounding whitespace',
+      ` kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+      'managed_runner_image_ref_invalid',
+    ],
+  ])('rejects %s for the deployment default managed runner', async (_label, image, reason) => {
+    process.env.INTERNAL_AGENT_IMAGE = image;
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    await expect(service.upsertDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1', {
+      name: 'Default managed runner',
+      endpointId: 'ep_managed_default',
+    })).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_INVALID',
+      message: expect.stringContaining(reason),
+    });
+  });
+
+  it('rejects an explicit tag-only managed runner image during service create', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    await expect(service.createAgent('ws_default', 'proj_1', {
+      name: 'Tag-only managed runner',
+      runner_provider: 'managed',
+      config: {
+        image: 'kind-registry:5000/mbos/agentsmith-managed-runner:v1',
+      },
+    })).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_INVALID',
+      message: expect.stringContaining('managed_runner_image_digest_required'),
+    });
+  });
+
+  it('persists an explicit digest-pinned managed runner image during service create', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+
+    const created = await service.createAgent('ws_default', 'proj_1', {
+      name: 'Digest-pinned managed runner',
+      runner_provider: 'managed',
+      config: {
+        image: DEFAULT_MANAGED_RUNNER_IMAGE,
+      },
+    });
+
+    expect(created.config?.image).toBe(DEFAULT_MANAGED_RUNNER_IMAGE);
   });
 
   it('keeps distinct runners when wall-clock and Math.random buckets collide', async () => {

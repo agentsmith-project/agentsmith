@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AsbcpClient, AsbcpHttpError } from './asbcp-client.js';
 
 const originalFetch = globalThis.fetch;
+const RUNNER_DIGEST_A = `sha256:${'a'.repeat(64)}`;
+const RUNNER_DIGEST_B = `sha256:${'b'.repeat(64)}`;
+const RUNNER_DIGEST_C = `sha256:${'c'.repeat(64)}`;
 
 describe('AsbcpClient', () => {
   afterEach(() => {
@@ -35,6 +38,129 @@ describe('AsbcpClient', () => {
 
     expect(result.httpStatus).toBe(201);
     expect(result.pod.phase).toBe('Running');
+  });
+
+  it('normalizes ASBCP pod live image identity from image_id, imageID, and containerStatuses imageID', async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        phase: 'Running',
+        image: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+        image_id: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        phase: 'Running',
+        image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+        imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        phase: 'Running',
+        containerStatuses: [
+          {
+            name: 'agentsmith-runner',
+            image: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_C}`,
+            imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_C}`,
+          },
+        ],
+      }), { status: 200 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+
+    await expect(client.getPodStatus('ws_1', 'proj_1', 'workload_1')).resolves.toMatchObject({
+      phase: 'Running',
+      image: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+      image_id: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`,
+    });
+    await expect(client.getPodStatus('ws_1', 'proj_1', 'workload_1')).resolves.toMatchObject({
+      phase: 'Running',
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+      image_id: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+    });
+    await expect(client.getPodStatus('ws_1', 'proj_1', 'workload_1')).resolves.toMatchObject({
+      phase: 'Running',
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_C}`,
+      image_id: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_C}`,
+    });
+  });
+
+  it('prefers a pod spec image ref over CRI status image when both are present', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      phase: 'Running',
+      spec: {
+        containers: [
+          {
+            name: 'runner',
+            image: `kind-registry:5000/mbos/agentsmith-managed-runner:locked@${RUNNER_DIGEST_A}`,
+          },
+        ],
+      },
+      status: {
+        containerStatuses: [
+          {
+            name: 'runner',
+            image: `sha256:${'d'.repeat(64)}`,
+            imageID: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+          },
+        ],
+      },
+    }), { status: 200 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+
+    await expect(client.getPodStatus('ws_1', 'proj_1', 'workload_1')).resolves.toMatchObject({
+      phase: 'Running',
+      image: `kind-registry:5000/mbos/agentsmith-managed-runner:locked@${RUNNER_DIGEST_A}`,
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner:locked@${RUNNER_DIGEST_A}`,
+      image_id: `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+    });
+  });
+
+  it('prefers Kubernetes imageID over a bare CRI status image exposed as image_id', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      phase: 'Running',
+      image: `kind-registry:5000/mbos/agentsmith-managed-runner:locked@${RUNNER_DIGEST_A}`,
+      image_id: `sha256:${'d'.repeat(64)}`,
+      status: {
+        containerStatuses: [
+          {
+            name: 'runner',
+            image: `sha256:${'d'.repeat(64)}`,
+            imageID: `ghcr.io/agentsmith-project/agentsmith-runner@${RUNNER_DIGEST_A}`,
+          },
+        ],
+      },
+    }), { status: 200 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+
+    await expect(client.getPodStatus('ws_1', 'proj_1', 'workload_1')).resolves.toMatchObject({
+      phase: 'Running',
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner:locked@${RUNNER_DIGEST_A}`,
+      image_id: `ghcr.io/agentsmith-project/agentsmith-runner@${RUNNER_DIGEST_A}`,
+    });
+  });
+
+  it('does not promote container status image into live imageID identity', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      phase: 'Running',
+      status: {
+        containerStatuses: [
+          {
+            name: 'runner',
+            image: `sha256:${'d'.repeat(64)}`,
+          },
+        ],
+      },
+    }), { status: 200 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
+
+    expect(status).toMatchObject({
+      phase: 'Running',
+      image_ref: `sha256:${'d'.repeat(64)}`,
+    });
+    expect(status).not.toHaveProperty('image_id');
   });
 
   it('accepts async ensure metadata without requiring PUT to return a Running pod', async () => {

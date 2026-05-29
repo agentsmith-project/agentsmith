@@ -11,8 +11,11 @@ import {
   type AgentPresenceStore,
   type RegisterAgentConnectionInput,
 } from './agent-presence-store.js';
+import {
+  resolveManagedRunnerImageFromEnv,
+  resolveManagedRunnerImageRef,
+} from './managed-runner-image.js';
 
-const MANAGED_AGENT_RUNNER_DEFAULT_IMAGE = 'agentsmith-agent-task-runner:local';
 const AGENT_SERVICE_KEY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEPLOYMENT_DEFAULT_MANAGED_RUNNER_DIAGNOSTIC = 'deployment_default';
 
@@ -64,12 +67,6 @@ interface NormalizeKeyExpiryResult {
 interface ConnectionAuthCheckResult {
   active: boolean;
   cleanup?: AgentRunnerKeyExpiryCleanupEvidence;
-}
-
-function resolveManagedAgentRunnerImage(env: NodeJS.ProcessEnv = process.env): string {
-  return env.INTERNAL_AGENT_IMAGE?.trim()
-    || env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim()
-    || MANAGED_AGENT_RUNNER_DEFAULT_IMAGE;
 }
 
 function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): AgentRecord {
@@ -313,11 +310,15 @@ export class AgentResourceService {
     return { record: expired, cleanup };
   }
 
-  private buildManagedAgentPrivateConfig(inputConfig: AgentRecord['config'] | undefined): AgentRecord['config'] {
+  private buildManagedAgentPrivateConfig(
+    inputConfig: AgentRecord['config'] | undefined,
+    options?: { requireImage?: boolean; imageSource?: string },
+  ): AgentRecord['config'] {
     const existing = inputConfig ?? {};
-    const image = typeof existing.image === 'string' && existing.image.trim()
-      ? existing.image.trim()
-      : resolveManagedAgentRunnerImage();
+    const { image: explicitImage, ...configWithoutImage } = existing;
+    const image = typeof explicitImage === 'string'
+      ? resolveManagedRunnerImageRef(explicitImage, options?.imageSource ?? 'agent.config.image').image
+      : (options?.requireImage ? resolveManagedRunnerImageFromEnv().image : undefined);
     const rawKey = typeof existing._internal_raw_key === 'string' && existing._internal_raw_key.trim()
       ? existing._internal_raw_key.trim()
       : this.generatePlainKey();
@@ -325,8 +326,8 @@ export class AgentResourceService {
       ? existing._internal_key_id.trim()
       : this.agentKeyId();
     return {
-      ...existing,
-      image,
+      ...configWithoutImage,
+      ...(image ? { image } : {}),
       _internal_key_id: keyId,
       _internal_raw_key: rawKey,
     };
@@ -427,11 +428,14 @@ export class AgentResourceService {
     const explicitInputImage = typeof inputConfig.image === 'string' && inputConfig.image.trim()
       ? inputConfig.image.trim()
       : undefined;
+    const resolvedImage = explicitInputImage
+      ? resolveManagedRunnerImageRef(explicitInputImage, 'input.config.image').image
+      : resolveManagedRunnerImageFromEnv().image;
     const config = this.buildManagedAgentPrivateConfig({
       ...(existingRecord?.config ?? {}),
       ...inputConfig,
-      image: explicitInputImage ?? resolveManagedAgentRunnerImage(),
-    });
+      image: resolvedImage,
+    }, { requireImage: true, imageSource: explicitInputImage ? 'input.config.image' : 'deployment_env' });
     const agent: AgentRecord = {
       id,
       workspace_id: workspaceId,

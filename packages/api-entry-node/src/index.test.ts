@@ -40,6 +40,8 @@ import {
 
 const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
 const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+const originalInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
+const INDEX_TEST_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${"7".repeat(64)}`;
 type NodeApiTestDeps = ReturnType<typeof createDefaultNodeApiDeps>;
 type GetProjectInput = Parameters<NodeApiTestDeps["getProjectUseCase"]["execute"]>[0];
 type GetProjectResult = Awaited<ReturnType<NodeApiTestDeps["getProjectUseCase"]["execute"]>>;
@@ -53,6 +55,7 @@ beforeEach(() => {
   MESSAGES_BY_TASK.clear();
   TASKS_BY_PROJECT.clear();
   __resetTaskFileLibraryBindingsForTests();
+  process.env.INTERNAL_AGENT_IMAGE = INDEX_TEST_MANAGED_RUNNER_IMAGE;
 });
 
 afterEach(async () => {
@@ -63,6 +66,8 @@ afterEach(async () => {
   else process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = originalFeishuRefreshEnabled;
   if (originalManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   else process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
+  if (originalInternalAgentImage === undefined) delete process.env.INTERNAL_AGENT_IMAGE;
+  else process.env.INTERNAL_AGENT_IMAGE = originalInternalAgentImage;
 });
 
 function ensureDefaultProjectUseCaseFallback(deps: NodeApiTestDeps): void {
@@ -1674,7 +1679,7 @@ describe("api-entry-node projects routes", () => {
           interaction_kind: "chat",
           execution_preferences: buildChatExecutionPreferences(),
           config: {
-            image: "runner:v1",
+            image: INDEX_TEST_MANAGED_RUNNER_IMAGE,
           },
         }),
       },
@@ -1707,7 +1712,7 @@ describe("api-entry-node projects routes", () => {
           interaction_kind: "chat",
           execution_preferences: buildChatExecutionPreferences(),
           config: {
-            image: "runner:v1",
+            image: INDEX_TEST_MANAGED_RUNNER_IMAGE,
             idle_timeout_sec: 120,
           },
         }),
@@ -1757,7 +1762,7 @@ describe("api-entry-node projects routes", () => {
           interaction_kind: "chat",
           execution_preferences: buildChatExecutionPreferences(),
           config: {
-            image: "runner:v1",
+            image: INDEX_TEST_MANAGED_RUNNER_IMAGE,
             idle_timeout_sec: 900,
             max_lifetime_sec: 700,
           },

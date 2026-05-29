@@ -10,6 +10,8 @@ import { listAuditEvents } from './audit-usage-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 
+const PRIVATE_TEST_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'d'.repeat(64)}`;
+
 describe('resolveAgentPresenceForApi', () => {
   it('returns online for developer runner sockets', () => {
     expect(
@@ -297,106 +299,91 @@ describe('handleAgentRoute Agent Runner target contract', () => {
   });
 
   it('keeps System managed private runtime config internal while public reads expose read-only affordances', async () => {
-    const previousInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
-    const previousIntegrationInternalAgentImage = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
-    process.env.INTERNAL_AGENT_IMAGE = 'agentsmith-agent-task-runner:test';
-    delete process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
+    const { deps, projectId } = await createProjectWithMemberPermissions([
+      'project:agent_runner:read',
+      'project:agent_runner:manage',
+    ]);
+    const json = vi.fn();
 
-    try {
-      const { deps, projectId } = await createProjectWithMemberPermissions([
-        'project:agent_runner:read',
-        'project:agent_runner:manage',
-      ]);
-      const json = vi.fn();
+    const created = await deps.agentResourceService.createAgent('ws_default', projectId, {
+      name: 'Managed private runtime runner',
+      default_endpoint_id: 'ep_default',
+      runner_status: 'ready',
+      status: 'enabled',
+      presence: 'managed',
+      is_default: true,
+      config: {
+        image: PRIVATE_TEST_RUNNER_IMAGE,
+      },
+    });
 
-      const created = await deps.agentResourceService.createAgent('ws_default', projectId, {
-        name: 'Managed private runtime runner',
-        default_endpoint_id: 'ep_default',
-        runner_status: 'ready',
-        status: 'enabled',
-        presence: 'managed',
-        is_default: true,
-      });
+    const stored = await deps.agentResourceService.getAgent(
+      'ws_default',
+      projectId,
+      created.id,
+    );
+    expect(stored?.config).toEqual(expect.objectContaining({
+      image: PRIVATE_TEST_RUNNER_IMAGE,
+      _internal_key_id: expect.stringMatching(/^agk_/),
+      _internal_raw_key: expect.stringMatching(/^ask_/),
+    }));
+    const internalRawKey = stored?.config?._internal_raw_key;
+    expect(typeof internalRawKey).toBe('string');
+    const verifiedInternalKey = await deps.agentResourceService.verifyAgentKey(
+      created.id,
+      internalRawKey ?? '',
+    );
+    expect(verifiedInternalKey).toMatchObject({
+      workspace_id: 'ws_default',
+      project_id: projectId,
+      agent_id: created.id,
+      status: 'active',
+    });
 
-      const stored = await deps.agentResourceService.getAgent(
-        'ws_default',
-        projectId,
-        created.id,
-      );
-      expect(stored?.config).toEqual(expect.objectContaining({
-        image: 'agentsmith-agent-task-runner:test',
-        _internal_key_id: expect.stringMatching(/^agk_/),
-        _internal_raw_key: expect.stringMatching(/^ask_/),
-      }));
-      const internalRawKey = stored?.config?._internal_raw_key;
-      expect(typeof internalRawKey).toBe('string');
-      const verifiedInternalKey = await deps.agentResourceService.verifyAgentKey(
-        created.id,
-        internalRawKey ?? '',
-      );
-      expect(verifiedInternalKey).toMatchObject({
-        workspace_id: 'ws_default',
-        project_id: projectId,
-        agent_id: created.id,
-        status: 'active',
-      });
+    await expect(handleAgentRoute({
+      route: { kind: 'agents', workspaceId: 'ws_default', projectId },
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_test' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    const listBody = json.mock.calls[0]?.[2] as { items?: Array<Record<string, unknown>> };
+    const listed = listBody.items?.find((item) => item.id === created.id);
+    expect(listed).toMatchObject({
+      id: created.id,
+      kind: 'system_managed',
+      source: 'system',
+      read_only: true,
+      actions: expect.objectContaining({
+        edit: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
+        delete: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
+        issue_connection_key: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
+        view_diagnostics: expect.objectContaining({ allowed: true }),
+      }),
+    });
+    expect(listed).not.toHaveProperty('config');
 
-      await expect(handleAgentRoute({
-        route: { kind: 'agents', workspaceId: 'ws_default', projectId },
-        method: 'GET',
-        req: { headers: {}, url: '' } as never,
-        res: {} as never,
-        deps,
-        user: { id: 'user_test' } as never,
-        json,
-        readBody: vi.fn(),
-      })).resolves.toBe(true);
-      const listBody = json.mock.calls[0]?.[2] as { items?: Array<Record<string, unknown>> };
-      const listed = listBody.items?.find((item) => item.id === created.id);
-      expect(listed).toMatchObject({
-        id: created.id,
-        kind: 'system_managed',
-        source: 'system',
-        read_only: true,
-        actions: expect.objectContaining({
-          edit: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
-          delete: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
-          issue_connection_key: expect.objectContaining({ allowed: false, reason_code: 'system_managed_read_only' }),
-          view_diagnostics: expect.objectContaining({ allowed: true }),
-        }),
-      });
-      expect(listed).not.toHaveProperty('config');
-
-      json.mockClear();
-      await expect(handleAgentRoute({
-        route: { kind: 'agentItem', workspaceId: 'ws_default', projectId, agentId: created.id },
-        method: 'GET',
-        req: { headers: {}, url: '' } as never,
-        res: {} as never,
-        deps,
-        user: { id: 'user_test' } as never,
-        json,
-        readBody: vi.fn(),
-      })).resolves.toBe(true);
-      const itemBody = json.mock.calls[0]?.[2] as Record<string, unknown>;
-      expect(itemBody).toMatchObject({
-        id: created.id,
-        kind: 'system_managed',
-        read_only: true,
-      });
-      expect(itemBody).not.toHaveProperty('config');
-    } finally {
-      if (previousInternalAgentImage === undefined) {
-        delete process.env.INTERNAL_AGENT_IMAGE;
-      } else {
-        process.env.INTERNAL_AGENT_IMAGE = previousInternalAgentImage;
-      }
-      if (previousIntegrationInternalAgentImage === undefined) {
-        delete process.env.INTEGRATION_INTERNAL_AGENT_IMAGE;
-      } else {
-        process.env.INTEGRATION_INTERNAL_AGENT_IMAGE = previousIntegrationInternalAgentImage;
-      }
-    }
+    json.mockClear();
+    await expect(handleAgentRoute({
+      route: { kind: 'agentItem', workspaceId: 'ws_default', projectId, agentId: created.id },
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_test' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+    const itemBody = json.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(itemBody).toMatchObject({
+      id: created.id,
+      kind: 'system_managed',
+      read_only: true,
+    });
+    expect(itemBody).not.toHaveProperty('config');
   });
 
   it('rejects private managed runtime config fields in public Agent Runner create payloads', async () => {
@@ -414,7 +401,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
       readBody: vi.fn(async () => ({
         name: 'Invalid private config',
         config: {
-          image: 'runner:v1',
+          image: PRIVATE_TEST_RUNNER_IMAGE,
           _internal_raw_key: 'ask_should_not_land',
         },
       })),
@@ -473,7 +460,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         status: 'enabled',
         runner_status: 'ready',
         config: {
-          image: 'agentsmith-private-runner:test',
+          image: PRIVATE_TEST_RUNNER_IMAGE,
           _internal_key_id: 'agk_private_should_not_leak',
           _internal_raw_key: 'ask_private_should_not_leak',
         },
@@ -505,7 +492,7 @@ describe('handleAgentRoute Agent Runner target contract', () => {
         },
       },
     });
-    expect(JSON.stringify(allowed.body)).not.toContain('agentsmith-private-runner:test');
+    expect(JSON.stringify(allowed.body)).not.toContain(PRIVATE_TEST_RUNNER_IMAGE);
     expect(JSON.stringify(allowed.body)).not.toContain('agk_private_should_not_leak');
     expect(JSON.stringify(allowed.body)).not.toContain('ask_private_should_not_leak');
     expect((allowed.body.items as Array<Record<string, unknown>> | undefined)

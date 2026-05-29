@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   mkdtempSync,
   readFileSync,
@@ -296,6 +297,226 @@ describe('internal backend-real gate runtime contract', () => {
     expect(compositeFunction).toContain('run_skills_runtime_specs "${API_PORT}" "${WEB_PORT}"');
     expect(compositeFunction).toContain('run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))"');
     expect(compositeFunction).not.toContain('run_internal_workspace_specs');
+  });
+
+  it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {
+    const helper = read('scripts/lib/internal-backend-real-gate.sh');
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const skillsWrapper = read('scripts/skills-runtime-backend-real-gate.sh');
+
+    expect(helper).toContain('[[ -n "${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" ]] && explicit_image_env+=("INTEGRATION_INTERNAL_AGENT_IMAGE")');
+    expect(helper).toContain('[[ -n "${INTERNAL_AGENT_IMAGE:-}" ]] && explicit_image_env+=("INTERNAL_AGENT_IMAGE")');
+    expect(helper).toContain('[[ -n "${MANAGED_RUNNER_IMAGE:-}" ]] && explicit_image_env+=("MANAGED_RUNNER_IMAGE")');
+    expect(helper).toContain('unset them, or use --runner-projection-smoke for release-locked image coverage');
+    expect(agentTaskGate).not.toContain('--skills-runtime ignores managed runner image env');
+    expect(agentTaskGate).not.toContain('unset INTEGRATION_INTERNAL_AGENT_IMAGE INTERNAL_AGENT_IMAGE MANAGED_RUNNER_IMAGE');
+    expect(skillsWrapper).toContain('exit 1');
+    expect(skillsWrapper).not.toContain('unset INTEGRATION_INTERNAL_AGENT_IMAGE INTERNAL_AGENT_IMAGE MANAGED_RUNNER_IMAGE');
+    expect(skillsWrapper).toContain('unset them, or use --runner-projection-smoke for release-locked image coverage');
+  });
+
+  it('prints only the linux/amd64 local kind registry manifest digest ref on publish helper stdout', () => {
+    const repoRoot = process.cwd();
+    const indexDigest = `sha256:${'a'.repeat(64)}`;
+    const amd64ManifestDigest = `sha256:${'b'.repeat(64)}`;
+    const attestationDigest = `sha256:${'c'.repeat(64)}`;
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          scenario_kind_registry_host() { printf 'localhost\\n'; }
+          scenario_kind_registry_host_port() { printf '5001\\n'; }
+          scenario_kind_registry_name() { printf 'kind-registry\\n'; }
+          docker() {
+            if [[ "$1" == "tag" ]]; then
+              return 0
+            fi
+            if [[ "$1" == "push" ]]; then
+              printf 'latest: digest: %s size: 1234\\n' "$INDEX_DIGEST"
+              return 0
+            fi
+            if [[ "$1" == "buildx" && "$2" == "imagetools" && "$3" == "inspect" && "$4" == "--raw" ]]; then
+              printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"%s","platform":{"os":"linux","architecture":"amd64"}},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"%s","platform":{"os":"unknown","architecture":"unknown"}}]}' "$AMD64_MANIFEST_DIGEST" "$ATTESTATION_DIGEST"
+              return 0
+            fi
+            return 1
+          }
+          internal_real_gate_publish_local_runner_image_ref agentsmith-managed-runner:test
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          INDEX_DIGEST: indexDigest,
+          AMD64_MANIFEST_DIGEST: amd64ManifestDigest,
+          ATTESTATION_DIGEST: attestationDigest,
+          RUNTIME_LINE_ID: 'stdout-contract',
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(output).toBe(`kind-registry:5000/mbos/agentsmith-managed-runner@${amd64ManifestDigest}\n`);
+  });
+
+  it('uses the pushed single image manifest digest instead of a tag-only fallback', () => {
+    const repoRoot = process.cwd();
+    const rawManifest = JSON.stringify({
+      schemaVersion: 2,
+      mediaType: 'application/vnd.oci.image.manifest.v1+json',
+      config: {
+        mediaType: 'application/vnd.oci.image.config.v1+json',
+        digest: `sha256:${'d'.repeat(64)}`,
+        size: 512,
+      },
+      layers: [],
+    });
+    const expectedDigest = `sha256:${createHash('sha256').update(rawManifest).digest('hex')}`;
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          scenario_kind_registry_host() { printf 'localhost\\n'; }
+          scenario_kind_registry_host_port() { printf '5001\\n'; }
+          scenario_kind_registry_name() { printf 'kind-registry\\n'; }
+          docker() {
+            if [[ "$1" == "tag" || "$1" == "push" ]]; then
+              return 0
+            fi
+            if [[ "$1" == "buildx" && "$2" == "imagetools" && "$3" == "inspect" && "$4" == "--raw" ]]; then
+              printf '%s' "$RAW_MANIFEST"
+              return 0
+            fi
+            return 1
+          }
+          internal_real_gate_publish_local_runner_image_ref agentsmith-managed-runner:test
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          RAW_MANIFEST: rawManifest,
+          RUNTIME_LINE_ID: 'single-manifest-contract',
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(output).toBe(`kind-registry:5000/mbos/agentsmith-managed-runner@${expectedDigest}\n`);
+  });
+
+  it('fails fast when the pushed local kind registry ref has no linux/amd64 manifest digest', () => {
+    const repoRoot = process.cwd();
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          scenario_kind_registry_host() { printf 'localhost\\n'; }
+          scenario_kind_registry_host_port() { printf '5001\\n'; }
+          scenario_kind_registry_name() { printf 'kind-registry\\n'; }
+          docker() {
+            if [[ "$1" == "tag" ]]; then
+              return 0
+            fi
+            if [[ "$1" == "push" ]]; then
+              printf 'latest: digest: sha256:%s size: 1234\\n' "\${INDEX_DIGEST_HEX}"
+              return 0
+            fi
+            if [[ "$1" == "buildx" && "$2" == "imagetools" && "$3" == "inspect" && "$4" == "--raw" ]]; then
+              printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","platform":{"os":"unknown","architecture":"unknown"}}]}' "\${ATTESTATION_DIGEST_HEX}"
+              return 0
+            fi
+            return 1
+          }
+          internal_real_gate_publish_local_runner_image_ref agentsmith-managed-runner:test
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          INDEX_DIGEST_HEX: 'a'.repeat(64),
+          ATTESTATION_DIGEST_HEX: 'c'.repeat(64),
+          RUNTIME_LINE_ID: 'missing-amd64-contract',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('could not resolve linux/amd64 manifest digest for current workspace runner image after push');
+    expect(result.stderr).not.toContain('kind-registry:5000/mbos/agentsmith-managed-runner:');
+  });
+
+  it('reconciles kind registry NO_PROXY and CRI-pulls the final skills-runtime digest ref before workload start', () => {
+    const repoRoot = process.cwd();
+    const runnerDigestRef = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'e'.repeat(64)}`;
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          calls_file="$(mktemp)"
+          trap 'rm -f "$calls_file"' EXIT
+          scenario_kind_registry_name() { printf 'kind-registry\\n'; }
+          kind_configure_registry_no_proxy_for_containerd() {
+            printf 'no-proxy %s %s %s\\n' "$1" "$2" "$3" >> "$calls_file"
+          }
+          docker() {
+            if [[ "$1" == "exec" && "$3" == "crictl" && "$4" == "pull" ]]; then
+              printf 'cri-pull %s %s\\n' "$2" "$5" >> "$calls_file"
+              return 0
+            fi
+            return 1
+          }
+          KIND_NODE_NAME="agentsmith-control-plane"
+          internal_real_gate_preflight_kind_registry_runner_image "$RUNNER_DIGEST_REF"
+          cat "$calls_file"
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          RUNNER_DIGEST_REF: runnerDigestRef,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+    const helper = read('scripts/lib/internal-backend-real-gate.sh');
+    const prepareRuntime = sectionBetween(
+      helper,
+      '\nprepare_internal_backend_real_gate_runtime() {',
+      '\n}\n\nprepare_internal_backend_real_spec_runtime()',
+    );
+
+    expect(output).toContain('no-proxy agentsmith-control-plane kind-registry 5000');
+    expect(output).toContain(`cri-pull agentsmith-control-plane ${runnerDigestRef}`);
+    expect(prepareRuntime).toContain('internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}"');
+    expect(prepareRuntime.indexOf('internal_real_gate_preflight_kind_registry_runner_image "${RUNNER_IMAGE}"')).toBeLessThan(
+      prepareRuntime.indexOf('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"'),
+    );
   });
 
   it('passes child integration specs through the parent-prepared deps/init/default-workspace boundary', () => {

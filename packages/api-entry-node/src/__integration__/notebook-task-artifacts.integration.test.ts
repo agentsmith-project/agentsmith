@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { AGENT_TASK_RUNNER_SPEC } from "@mbos/agent-runner-contract";
 import { apiFetch, startServer } from "./test-support.js";
@@ -12,6 +12,12 @@ const sockets: WebSocket[] = [];
 const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
 const NO_DISPATCH_SETTLE_MS = 300;
 const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+const originalInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
+const NOTEBOOK_ARTIFACTS_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${"8".repeat(64)}`;
+
+beforeEach(() => {
+  process.env.INTERNAL_AGENT_IMAGE = NOTEBOOK_ARTIFACTS_MANAGED_RUNNER_IMAGE;
+});
 
 function ensureProjectUseCaseFallback(
   deps: ReturnType<typeof startServer>["deps"],
@@ -48,6 +54,11 @@ afterEach(() => {
     delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   } else {
     process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
+  }
+  if (originalInternalAgentImage === undefined) {
+    delete process.env.INTERNAL_AGENT_IMAGE;
+  } else {
+    process.env.INTERNAL_AGENT_IMAGE = originalInternalAgentImage;
   }
 });
 

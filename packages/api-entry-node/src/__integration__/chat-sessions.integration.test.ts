@@ -9,6 +9,8 @@ import {
   startUniversalProxyChatServer,
 } from './chat-test-support.js';
 
+const CHAT_SESSIONS_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'c'.repeat(64)}`;
+
 afterEach(async () => {
   await cleanupChatUpstreamServers();
 });
@@ -84,7 +86,7 @@ describe('api-entry-node chat session routes', () => {
         interaction_kind: 'chat',
         status: 'enabled',
         config: {
-          image: 'runner:v1',
+          image: CHAT_SESSIONS_MANAGED_RUNNER_IMAGE,
           _internal_raw_key: 'ask_test',
         } as never,
         owner_id: 'user_test',

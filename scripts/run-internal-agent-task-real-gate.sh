@@ -115,6 +115,7 @@ mkdir -p "${INTERNAL_REAL_DIR}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTERNAL_REAL_DIR}")}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"
+internal_real_gate_configure_skills_runtime_runner_image
 if [[ "${GATE_MODE}" == "runner-projection-smoke" ]]; then
   export INTEGRATION_RUNNER_PROJECTION_SMOKE=1
   export INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE=1

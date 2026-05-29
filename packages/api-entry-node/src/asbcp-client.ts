@@ -54,6 +54,10 @@ function readStringField(record: Record<string, unknown>, snakeKey: string, came
   return readNonEmptyString(record[snakeKey]) ?? (camelKey ? readNonEmptyString(record[camelKey]) : undefined);
 }
 
+function isBareSha256Digest(value: string | undefined): boolean {
+  return /^sha256:[a-f0-9]{64}$/i.test(value ?? '');
+}
+
 function parseAsbcpJsonObject(responseText: string): Record<string, unknown> | undefined {
   if (!responseText.trim().startsWith('{')) {
     return undefined;
@@ -128,6 +132,9 @@ export interface PodStatusResponse {
   pod_name?: string;
   phase: string;
   ip?: string;
+  image?: string;
+  image_ref?: string;
+  image_id?: string;
   started_at?: string;
   expires_at?: string;
   message?: string;
@@ -190,11 +197,17 @@ function readPodStatusResponse(value: unknown): PodStatusResponse | undefined {
   const status: PodStatusResponse = { phase };
   const podName = readNonEmptyString(value.pod_name);
   const ip = readNonEmptyString(value.ip);
+  const image = readPodImage(value);
+  const imageRef = readPodImageRef(value, image);
+  const imageId = readPodImageId(value);
   const startedAt = readNonEmptyString(value.started_at);
   const expiresAt = readNonEmptyString(value.expires_at);
   const message = readNonEmptyString(value.message);
   if (podName) status.pod_name = podName;
   if (ip) status.ip = ip;
+  if (image) status.image = image;
+  if (imageRef) status.image_ref = imageRef;
+  if (imageId) status.image_id = imageId;
   if (startedAt) status.started_at = startedAt;
   if (expiresAt) status.expires_at = expiresAt;
   if (message) status.message = message;
@@ -205,6 +218,79 @@ function readPodStatusResponse(value: unknown): PodStatusResponse | undefined {
     status.delete_terminal_confirmed = value.delete_terminal_confirmed;
   }
   return status;
+}
+
+function readPodImage(record: Record<string, unknown>): string | undefined {
+  return readNonEmptyString(record.image) ?? readSpecContainerImage(record);
+}
+
+function readPodImageRef(record: Record<string, unknown>, image?: string): string | undefined {
+  return readStringField(record, 'image_ref', 'imageRef')
+    ?? image
+    ?? readContainerStatusesImage(record)
+    ?? (isRecord(record.status) ? readContainerStatusesImage(record.status) : undefined);
+}
+
+function readPodImageId(record: Record<string, unknown>): string | undefined {
+  const imageId = readStringField(record, 'image_id', 'imageID');
+  const containerImageId = readContainerStatusesImageId(record)
+    ?? (isRecord(record.status) ? readContainerStatusesImageId(record.status) : undefined);
+  if (imageId && !isBareSha256Digest(imageId)) {
+    return imageId;
+  }
+  return containerImageId ?? imageId;
+}
+
+function readSpecContainerImage(record: Record<string, unknown>): string | undefined {
+  const spec = isRecord(record.spec) ? record.spec : undefined;
+  const containers = spec?.containers;
+  if (!Array.isArray(containers)) {
+    return undefined;
+  }
+  for (const item of containers) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const image = readNonEmptyString(item.image);
+    if (image) {
+      return image;
+    }
+  }
+  return undefined;
+}
+
+function readContainerStatusesImage(record: Record<string, unknown>): string | undefined {
+  const statuses = record.containerStatuses;
+  if (!Array.isArray(statuses)) {
+    return undefined;
+  }
+  for (const item of statuses) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const image = readNonEmptyString(item.image);
+    if (image) {
+      return image;
+    }
+  }
+  return undefined;
+}
+
+function readContainerStatusesImageId(record: Record<string, unknown>): string | undefined {
+  const statuses = record.containerStatuses;
+  if (!Array.isArray(statuses)) {
+    return undefined;
+  }
+  for (const item of statuses) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const imageId = readStringField(item, 'image_id', 'imageID');
+    if (imageId) {
+      return imageId;
+    }
+  }
+  return undefined;
 }
 
 function parsePodEnsurePayload(httpStatus: number, payload: unknown): SandboxPodEnsureResponse {

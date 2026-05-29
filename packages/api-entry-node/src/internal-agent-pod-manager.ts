@@ -16,6 +16,7 @@ import {
   INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
   INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
 } from '@mbos/contracts';
+import { extractImageDigest, resolveManagedRunnerImageRef } from './managed-runner-image.js';
 
 interface AsbcpClientLike {
   createOrEnsurePod(
@@ -85,7 +86,7 @@ const RUNNER_HEALTH_REDACTED_VALUE = '[redacted]';
 const STANDALONE_SK_TOKEN_RE = /(^|[^A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{8,})(?=$|[^A-Za-z0-9_-])/g;
 const DEFAULT_INTERNAL_AGENT_RUNNER_HEALTH_COMMAND = [
   'set +e',
-  "runner_patterns='[a]gentsmith-runner'",
+  "runner_patterns='([a]gentsmith-runner|[a]gentsmith-agent-task-runner)'",
   'echo "runner_health_probe=agentsmith_runner"',
   'printf "runner_instance_id=%s\\n" "${MBOS_AGENT_RUNNER_INSTANCE_ID:-}"',
   'if command -v pgrep >/dev/null 2>&1; then',
@@ -466,8 +467,9 @@ export function buildSandboxStartingEvent(): {
   };
 }
 
-function readInternalConfig(agent: AgentRecord): {
+interface InternalAgentConfig {
   image: string;
+  imageDigest?: string;
   env?: Record<string, string>;
   rawKey: string;
   cpuRequest?: string;
@@ -476,15 +478,18 @@ function readInternalConfig(agent: AgentRecord): {
   memoryLimit?: string;
   idleTimeoutSec?: number;
   maxLifetimeSec?: number;
-} {
+}
+
+function readInternalConfig(agent: AgentRecord): InternalAgentConfig {
   const cfg = (agent.config ?? {}) as Record<string, unknown>;
-  const image = typeof cfg.image === 'string' ? cfg.image.trim() : '';
+  const rawImage = typeof cfg.image === 'string' ? cfg.image.trim() : '';
   const rawKey = typeof cfg._internal_raw_key === 'string' ? cfg._internal_raw_key.trim() : '';
-  if (!image) {
+  if (!rawImage) {
     throw Object.assign(new Error('agent_runner_image_unconfigured'), {
       code: 'AGENT_RUNNER_IMAGE_UNCONFIGURED',
     });
   }
+  const resolvedImage = resolveManagedRunnerImageRef(rawImage, 'agent.config.image');
   if (!rawKey) {
     throw Object.assign(new Error('internal_agent_execution_not_configured'), {
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
@@ -511,7 +516,8 @@ function readInternalConfig(agent: AgentRecord): {
   };
 
   return {
-    image,
+    image: resolvedImage.image,
+    imageDigest: resolvedImage.digest,
     rawKey,
     ...(env && Object.keys(env).length > 0 ? { env } : {}),
     ...(typeof cfg.cpu_request === 'string' ? { cpuRequest: cfg.cpu_request } : (envString('INTERNAL_AGENT_DEFAULT_CPU_REQUEST') ? { cpuRequest: envString('INTERNAL_AGENT_DEFAULT_CPU_REQUEST') } : {})),
@@ -572,14 +578,14 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       await this.waitForExistingLock(existing, signal);
       throwIfAborted(signal);
       if (await this.isReadyForSession(input.agent.id, input.sessionId)) {
-        await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.sessionId, signal);
+        await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.agent, input.sessionId, undefined, signal);
         return;
       }
     }
 
     throwIfAborted(signal);
     if (await this.isReadyForSession(agent.id, input.sessionId)) {
-      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.sessionId, signal);
+      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, input.sessionId, undefined, signal);
       return;
     }
 
@@ -685,7 +691,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     target: string,
     deadline: number,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<PodStatusResponse> {
     throwIfAborted(signal);
     while (Date.now() < deadline) {
       throwIfAborted(signal);
@@ -694,7 +700,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         signal,
       );
       throwIfAborted(signal);
-      if (status.phase === target) return;
+      if (status.phase === target) return status;
       if (status.phase === 'Failed') {
         throw Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' });
       }
@@ -837,13 +843,130 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     });
   }
 
+  private buildRunnerImageMismatchError(input: {
+    expectedImage: string;
+    expectedDigest: string;
+    actualImageRef?: string;
+    actualImageId?: string;
+    actualDigest?: string;
+    message?: 'agent_runner_image_mismatch' | 'agent_runner_image_identity_unavailable';
+  }): Error {
+    return Object.assign(new Error(input.message ?? 'agent_runner_image_mismatch'), {
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      expectedImage: input.expectedImage,
+      expectedDigest: input.expectedDigest,
+      ...(input.actualImageRef ? { actualImageRef: input.actualImageRef } : {}),
+      ...(input.actualImageId ? { actualImageId: input.actualImageId } : {}),
+      ...(input.actualDigest ? { actualDigest: input.actualDigest } : {}),
+    });
+  }
+
+  private readLiveImageRefForDiagnostics(status: PodStatusResponse): {
+    imageRef?: string;
+    digest?: string;
+  } {
+    const imageRef = status.image_ref?.trim() || status.image?.trim();
+    if (!imageRef) {
+      return {};
+    }
+    if (!imageRef.includes('@sha256:')) {
+      return { imageRef };
+    }
+    const digest = extractImageDigest(imageRef) ?? undefined;
+    return { imageRef, ...(digest ? { digest } : {}) };
+  }
+
+  private async assertLiveRunnerImageMatchesExpected(input: {
+    workspaceId: string;
+    projectId: string;
+    workloadId: string;
+    config: InternalAgentConfig;
+    status?: PodStatusResponse;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    if (!input.config.imageDigest) {
+      return;
+    }
+    let status = input.status;
+    let fetchedStatus = false;
+    if (!status) {
+      status = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.getPodStatus(
+          input.workspaceId,
+          input.projectId,
+          input.workloadId,
+          rpcSignal,
+        ),
+        input.signal,
+      );
+      fetchedStatus = true;
+    }
+    throwIfAborted(input.signal);
+    if (status.phase !== 'Running') {
+      return;
+    }
+
+    if (!status.image_id && !fetchedStatus) {
+      status = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.getPodStatus(
+          input.workspaceId,
+          input.projectId,
+          input.workloadId,
+          rpcSignal,
+        ),
+        input.signal,
+      );
+      throwIfAborted(input.signal);
+      if (status.phase !== 'Running') {
+        return;
+      }
+    }
+
+    const liveImageRef = this.readLiveImageRefForDiagnostics(status);
+    const actualImageId = status.image_id?.trim();
+    const actualDigest = actualImageId ? extractImageDigest(actualImageId) : null;
+    if (!actualImageId || !actualDigest) {
+      throw this.buildRunnerImageMismatchError({
+        expectedImage: input.config.image,
+        expectedDigest: input.config.imageDigest,
+        ...(liveImageRef.imageRef ? { actualImageRef: liveImageRef.imageRef } : {}),
+        ...(actualImageId ? { actualImageId } : {}),
+        message: 'agent_runner_image_identity_unavailable',
+      });
+    }
+    if (actualDigest !== input.config.imageDigest) {
+      throw this.buildRunnerImageMismatchError({
+        expectedImage: input.config.image,
+        expectedDigest: input.config.imageDigest,
+        ...(liveImageRef.imageRef ? { actualImageRef: liveImageRef.imageRef } : {}),
+        actualImageId,
+        actualDigest,
+      });
+    }
+  }
+
   private async assertReadySessionRunnerHealth(
     workspaceId: string,
     projectId: string,
     workloadId: string,
+    agent: AgentRecord,
     sessionId: string | undefined,
+    verified?: {
+      config: InternalAgentConfig;
+      status: PodStatusResponse;
+    },
     signal?: AbortSignal,
   ): Promise<void> {
+    const config = verified?.config ?? readInternalConfig(agent);
+    await this.assertLiveRunnerImageMatchesExpected({
+      workspaceId,
+      projectId,
+      workloadId,
+      config,
+      status: verified?.status,
+      signal,
+    });
+    throwIfAborted(signal);
     if (!sessionId) {
       return;
     }
@@ -876,7 +999,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   ): Promise<void> {
     throwIfAborted(signal);
     if (await this.isReadyForSession(agent.id, sessionId)) {
-      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, sessionId, signal);
+      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, undefined, signal);
       return;
     }
     throwIfAborted(signal);
@@ -937,8 +1060,9 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
     if (status.phase === 'offline') {
       throwIfAborted(signal);
+      let ensureResponse: SandboxPodEnsureResponse | undefined;
       try {
-        await this.runAbortableSandboxRpc(
+        ensureResponse = await this.runAbortableSandboxRpc(
           (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
             image: config.image,
             env: {
@@ -980,10 +1104,12 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         }
       }
       throwIfAborted(signal);
-      status = await this.runAbortableSandboxRpc(
-        (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
-        signal,
-      );
+      status = ensureResponse?.pod
+        ? ensureResponse.pod
+        : await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+          signal,
+        );
       throwIfAborted(signal);
     }
 
@@ -992,9 +1118,18 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     if (status.phase !== 'Running') {
-      await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
-      status = { phase: 'Running' };
+      status = await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
     }
+
+    await this.assertLiveRunnerImageMatchesExpected({
+      workspaceId,
+      projectId,
+      workloadId,
+      config,
+      status,
+      signal,
+    });
+    throwIfAborted(signal);
 
     throwIfAborted(signal);
     this.checkDeadline(deadline);
@@ -1027,7 +1162,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         ...staleCleanup,
       });
     }
-    await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, sessionId, signal);
+    await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, { config, status }, signal);
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

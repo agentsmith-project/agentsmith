@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { InternalAgentPodManagerImpl, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
@@ -6,6 +10,12 @@ import {
   INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
   INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
 } from '@mbos/contracts';
+
+const RUNNER_DIGEST_A = `sha256:${'a'.repeat(64)}`;
+const RUNNER_DIGEST_B = `sha256:${'b'.repeat(64)}`;
+const MANAGED_RUNNER_IMAGE_A = `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`;
+const LIVE_RUNNER_IMAGE_ID_A = `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_A}`;
+const LIVE_RUNNER_IMAGE_ID_B = `docker-pullable://kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`;
 
 function buildAgent(config: Record<string, unknown>): AgentRecord {
   return {
@@ -44,12 +54,123 @@ function buildWorkspaceMount(): InternalAgentWorkspaceMount {
   };
 }
 
+function buildRunningPodStatus(): { phase: 'Running'; image_id: string } {
+  return {
+    phase: 'Running',
+    image_id: LIVE_RUNNER_IMAGE_ID_A,
+  };
+}
+
 function buildRunnerHealthFoundExec() {
   return vi.fn().mockResolvedValue({
     exit_code: 0,
     stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
     stderr: '',
     duration_ms: 4,
+  });
+}
+
+async function runHealthCommandWithProcessTable(input: {
+  command: string[];
+  processTable: string;
+  timeoutSeconds: number;
+}): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}> {
+  const executable = input.command[0];
+  if (!executable) {
+    throw new Error('health_command_executable_missing');
+  }
+  const tempDir = await mkdtemp(join(tmpdir(), 'agentsmith-runner-health-'));
+  const startedAt = Date.now();
+  try {
+    const fakePgrepPath = join(tempDir, 'pgrep');
+    const fakePsPath = join(tempDir, 'ps');
+    await writeFile(fakePgrepPath, [
+      '#!/bin/sh',
+      'pattern=""',
+      'for arg in "$@"; do',
+      '  pattern="$arg"',
+      'done',
+      'printf "%s\\n" "$FAKE_PROCESS_TABLE" | grep -E "$pattern"',
+      '',
+    ].join('\n'));
+    await writeFile(fakePsPath, [
+      '#!/bin/sh',
+      'printf "%s\\n" "$FAKE_PROCESS_TABLE"',
+      '',
+    ].join('\n'));
+    await chmod(fakePgrepPath, 0o755);
+    await chmod(fakePsPath, 0o755);
+
+    return await new Promise<{
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      durationMs: number;
+    }>((resolve, reject) => {
+      const child = spawn(executable, input.command.slice(1), {
+        env: {
+          ...process.env,
+          PATH: `${tempDir}:${process.env.PATH ?? ''}`,
+          FAKE_PROCESS_TABLE: input.processTable,
+          MBOS_AGENT_RUNNER_INSTANCE_ID: 'ag_1:task_1:task_1',
+        },
+      });
+      let stdout = '';
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        child.kill('SIGKILL');
+      }, Math.max(1, input.timeoutSeconds) * 1_000);
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+      child.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      child.on('close', (code) => {
+        clearTimeout(timeout);
+        resolve({
+          exitCode: code ?? 124,
+          stdout,
+          stderr,
+          durationMs: Date.now() - startedAt,
+        });
+      });
+    });
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function buildProcessTableRunnerHealthExec(processTable: string) {
+  return vi.fn(async (
+    _workspaceId: string,
+    _projectId: string,
+    _workloadId: string,
+    command: string[],
+    timeoutSeconds = 5,
+  ) => {
+    const result = await runHealthCommandWithProcessTable({
+      command,
+      processTable,
+      timeoutSeconds,
+    });
+    return {
+      exit_code: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      duration_ms: result.durationMs,
+    };
   });
 }
 
@@ -62,8 +183,8 @@ describe('internal-agent-pod-manager', () => {
   it('creates pod with image command enabled and waits for online', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
-      .mockResolvedValueOnce({ phase: 'Running' });
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      .mockResolvedValueOnce(buildRunningPodStatus());
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const onlineStateStore = {
       getAgentOnlineState: vi.fn()
         .mockReturnValueOnce(false)
@@ -97,7 +218,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -129,11 +250,118 @@ describe('internal-agent-pod-manager', () => {
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 
+  it('rejects a just-ensured running pod when live image identity stays unavailable', async () => {
+    let sessionOnline = false;
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce({ phase: 'offline' })
+      .mockResolvedValueOnce({ phase: 'Running' });
+    const createOrEnsurePod = vi.fn().mockImplementation(async () => {
+      sessionOnline = true;
+      return { httpStatus: 201, pod: { phase: 'Running' } };
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn(() => sessionOnline),
+        getAgentSessionOnlineState: vi.fn(() => sessionOnline),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      message: 'agent_runner_image_identity_unavailable',
+      expectedImage: MANAGED_RUNNER_IMAGE_A,
+      expectedDigest: RUNNER_DIGEST_A,
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(2);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('rejects a just-ensured running pod when ASBCP only returns a bare CRI status image', async () => {
+    let sessionOnline = false;
+    let pollCount = 0;
+    const getPodStatus = vi.fn(async () => {
+      pollCount += 1;
+      if (pollCount === 1) {
+        return { phase: 'offline' };
+      }
+      sessionOnline = true;
+      return {
+        phase: 'Running',
+        image: RUNNER_DIGEST_B,
+      };
+    });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({
+      httpStatus: 202,
+      workloadId: 'task_1',
+      status: 'accepted',
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn(() => sessionOnline),
+        getAgentSessionOnlineState: vi.fn(() => sessionOnline),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      message: 'agent_runner_image_identity_unavailable',
+      expectedImage: MANAGED_RUNNER_IMAGE_A,
+      expectedDigest: RUNNER_DIGEST_A,
+      actualImageRef: RUNNER_DIGEST_B,
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).toHaveBeenCalledTimes(3);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
   it('polls GET after an async PUT ensure response instead of requiring PUT to return Running', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
       .mockResolvedValueOnce({ phase: 'Pending' })
-      .mockResolvedValueOnce({ phase: 'Running' });
+      .mockResolvedValueOnce(buildRunningPodStatus());
     const createOrEnsurePod = vi.fn().mockResolvedValue({
       httpStatus: 202,
       workloadId: 'task_1',
@@ -173,7 +401,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -187,7 +415,7 @@ describe('internal-agent-pod-manager', () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
       .mockResolvedValueOnce({ phase: 'Pending' })
-      .mockResolvedValueOnce({ phase: 'Running' });
+      .mockResolvedValueOnce(buildRunningPodStatus());
     const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
       new Error('asbcp_network_error: create_or_ensure_pod request timeout'),
       { code: 'AGENT_SANDBOX_UNAVAILABLE' },
@@ -224,7 +452,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -238,7 +466,7 @@ describe('internal-agent-pod-manager', () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
       .mockResolvedValueOnce({ phase: 'Pending' })
-      .mockResolvedValueOnce({ phase: 'Running' });
+      .mockResolvedValueOnce(buildRunningPodStatus());
     const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
       new Error('asbcp_error: create_or_ensure_pod 504'),
       {
@@ -279,7 +507,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -323,7 +551,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -356,7 +584,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
         workspaceMount: {
           ...buildWorkspaceMount(),
           libraryRootPath: 'agent-tasks/task_1' as never,
@@ -388,7 +616,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
         workspaceMount: {
           ...buildWorkspaceMount(),
           workspacePath: '/home/other/workspace',
@@ -420,7 +648,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
         workspaceMount: {
           ...buildWorkspaceMount(),
           taskHomePath: '../task_1',
@@ -433,13 +661,13 @@ describe('internal-agent-pod-manager', () => {
   });
 
   it('pins k8s managed runner pods to the canonical managed_platform runner mode env', async () => {
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
@@ -468,7 +696,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
         env: {
           MBOS_AGENT_TASK_RUNNER_MODE: 'developer',
@@ -487,13 +715,13 @@ describe('internal-agent-pod-manager', () => {
   });
 
   it('normalizes internal websocket base before appending the agent execution endpoint path', async () => {
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
@@ -522,7 +750,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -562,7 +790,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A }),
         workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
@@ -597,6 +825,41 @@ describe('internal-agent-pod-manager', () => {
     });
   });
 
+  it.each([
+    ['legacy image', `kind-registry:5000/mbos/agentsmith-agent-task-runner@${RUNNER_DIGEST_A}`, 'managed_runner_image_legacy_ref_rejected'],
+    ['tag-only image', 'kind-registry:5000/mbos/agentsmith-managed-runner:v1', 'managed_runner_image_digest_required'],
+    ['latest image', 'kind-registry:5000/mbos/agentsmith-managed-runner:latest', 'managed_runner_image_latest_rejected'],
+  ])('rejects %s before creating an internal managed runner pod', async (_label, image, reason) => {
+    const createOrEnsurePod = vi.fn();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod,
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ image, _internal_raw_key: 'ask_test' }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_INVALID',
+      message: expect.stringContaining(reason),
+    });
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
   it('fails fast when workspace binding is missing', async () => {
     const manager = new InternalAgentPodManagerImpl(
       {
@@ -617,7 +880,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
       }),
     ).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
@@ -645,7 +908,7 @@ describe('internal-agent-pod-manager', () => {
         projectId: 'proj_1',
         workloadId: 'task_1',
         sessionId: 'task_1',
-        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
         workspaceMount: buildWorkspaceMount(),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });
@@ -664,13 +927,13 @@ describe('internal-agent-pod-manager', () => {
     process.env.INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT = '4Gi';
 
     try {
-      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
       const manager = new InternalAgentPodManagerImpl(
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
             .mockResolvedValueOnce({ phase: 'offline' })
-            .mockResolvedValueOnce({ phase: 'Running' }),
+            .mockResolvedValueOnce(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod: vi.fn().mockResolvedValue(undefined),
           keepalive: vi.fn().mockResolvedValue(null),
@@ -700,7 +963,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -731,13 +994,13 @@ describe('internal-agent-pod-manager', () => {
   });
 
   it('uses normalized sandbox lifecycle defaults when agent config omits them', async () => {
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
@@ -767,7 +1030,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -787,14 +1050,14 @@ describe('internal-agent-pod-manager', () => {
 
   it('recreates completed workload pods before waiting for session online', async () => {
     const deletePod = vi.fn().mockResolvedValue(undefined);
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'Completed' })
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
         createOrEnsurePod,
         deletePod,
         keepalive: vi.fn().mockResolvedValue(null),
@@ -824,7 +1087,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -851,13 +1114,13 @@ describe('internal-agent-pod-manager', () => {
           requestId: `asbcp_req_delete_${code}`,
         },
       ));
-      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
       const manager = new InternalAgentPodManagerImpl(
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
             .mockResolvedValueOnce({ phase: 'Completed' })
-            .mockResolvedValueOnce({ phase: 'Running' }),
+            .mockResolvedValueOnce(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -886,7 +1149,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -927,13 +1190,13 @@ describe('internal-agent-pod-manager', () => {
         },
       );
       const deletePod = vi.fn().mockRejectedValue(deleteError);
-      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
       const manager = new InternalAgentPodManagerImpl(
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
             .mockResolvedValueOnce({ phase: 'Completed' })
-            .mockResolvedValueOnce({ phase: 'Running' }),
+            .mockResolvedValueOnce(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -964,7 +1227,7 @@ describe('internal-agent-pod-manager', () => {
           workloadId: 'task_1',
           sessionId: 'task_1',
           agent: buildAgent({
-            image: 'runner:v1',
+            image: MANAGED_RUNNER_IMAGE_A,
             _internal_raw_key: 'ask_xxx',
           }),
           workspaceMount: buildWorkspaceMount(),
@@ -1001,13 +1264,13 @@ describe('internal-agent-pod-manager', () => {
         requestId: 'asbcp_req_delete_normalized_without_stable_code',
       },
     ));
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'Completed' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
         createOrEnsurePod,
         deletePod,
         keepalive: vi.fn().mockResolvedValue(null),
@@ -1038,7 +1301,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1077,13 +1340,13 @@ describe('internal-agent-pod-manager', () => {
         },
       );
       const deletePod = vi.fn().mockRejectedValue(deleteError);
-      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+      const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
       const manager = new InternalAgentPodManagerImpl(
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
             .mockResolvedValueOnce({ phase: 'Completed' })
-            .mockResolvedValueOnce({ phase: 'Running' }),
+            .mockResolvedValueOnce(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -1114,7 +1377,7 @@ describe('internal-agent-pod-manager', () => {
           workloadId: 'task_1',
           sessionId: 'task_1',
           agent: buildAgent({
-            image: 'runner:v1',
+            image: MANAGED_RUNNER_IMAGE_A,
             _internal_raw_key: 'ask_xxx',
           }),
           workspaceMount: buildWorkspaceMount(),
@@ -1143,7 +1406,7 @@ describe('internal-agent-pod-manager', () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
     const deletePod = vi.fn().mockResolvedValue(undefined);
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const exec = vi.fn().mockResolvedValue({
       exit_code: 0,
       stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
@@ -1167,7 +1430,7 @@ describe('internal-agent-pod-manager', () => {
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
-            .mockResolvedValue({ phase: 'Running' }),
+            .mockResolvedValue(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -1188,7 +1451,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1219,10 +1482,11 @@ describe('internal-agent-pod-manager', () => {
       );
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('ps');
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('[a]gentsmith-runner');
+      expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('[a]gentsmith-agent-task-runner');
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain('runner_instance_id=');
       const healthCommand = String(exec.mock.calls[0]?.[3]?.[2]);
       expect(healthCommand).toContain('runner_health_probe=agentsmith_runner');
-      expect(healthCommand).toContain("runner_patterns='[a]gentsmith-runner'");
+      expect(healthCommand).toContain("runner_patterns='([a]gentsmith-runner|[a]gentsmith-agent-task-runner)'");
       expect(healthCommand).toContain('pgrep -af "$runner_patterns"');
       expect(healthCommand).toContain('grep -E "$runner_patterns"');
       expect(healthCommand).toContain('--- ps snapshot ---');
@@ -1251,7 +1515,7 @@ describe('internal-agent-pod-manager', () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
     const deletePod = vi.fn().mockResolvedValue(undefined);
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const exec = vi.fn().mockResolvedValue({
       exit_code: 1,
       stdout: 'runner_health_probe=process_scan\n--- ps snapshot ---\n1 tini\n',
@@ -1275,7 +1539,7 @@ describe('internal-agent-pod-manager', () => {
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
-            .mockResolvedValue({ phase: 'Running' }),
+            .mockResolvedValue(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -1296,7 +1560,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1330,7 +1594,7 @@ describe('internal-agent-pod-manager', () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
     const deletePod = vi.fn().mockResolvedValue(undefined);
-    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const exec = vi.fn().mockRejectedValue(Object.assign(new Error('exec transport unavailable'), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
     }));
@@ -1351,7 +1615,7 @@ describe('internal-agent-pod-manager', () => {
         {
           checkReady: vi.fn().mockResolvedValue(undefined),
           getPodStatus: vi.fn()
-            .mockResolvedValue({ phase: 'Running' }),
+            .mockResolvedValue(buildRunningPodStatus()),
           createOrEnsurePod,
           deletePod,
           keepalive: vi.fn().mockResolvedValue(null),
@@ -1372,7 +1636,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1436,7 +1700,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1477,7 +1741,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1487,9 +1751,349 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
-  it('rejects an already ready session when health exec cannot find the canonical agentsmith-runner process', async () => {
+  it('rejects a ready session when the live pod image digest differs from the expected runner image digest', async () => {
+    const rawKey = 'ask_do_not_leak_in_image_mismatch';
     const createOrEnsurePod = vi.fn();
-    const getPodStatus = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue({
+      phase: 'Running',
+      image_id: LIVE_RUNNER_IMAGE_ID_B,
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    let caught: unknown;
+    try {
+      await manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: rawKey,
+          env: {
+            MBOS_AGENT_KEY: 'env_key_should_not_leak',
+          },
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      message: 'agent_runner_image_mismatch',
+      expectedImage: MANAGED_RUNNER_IMAGE_A,
+      expectedDigest: RUNNER_DIGEST_A,
+      actualImageId: LIVE_RUNNER_IMAGE_ID_B,
+      actualDigest: RUNNER_DIGEST_B,
+    });
+    const diagnosticText = JSON.stringify(caught);
+    expect(diagnosticText).not.toContain(rawKey);
+    expect(diagnosticText).not.toContain('env_key_should_not_leak');
+    expect(diagnosticText).not.toContain('MBOS_AGENT_KEY');
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+    expect(exec).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('accepts a ready session when the live pod image digest matches the expected runner image digest', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue({
+      phase: 'Running',
+      image_id: LIVE_RUNNER_IMAGE_ID_A,
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).resolves.toBeUndefined();
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('rejects a ready session when live imageID mismatches even if desired image ref matches', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue({
+      phase: 'Running',
+      image_ref: MANAGED_RUNNER_IMAGE_A,
+      image_id: LIVE_RUNNER_IMAGE_ID_B,
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      message: 'agent_runner_image_mismatch',
+      expectedImage: MANAGED_RUNNER_IMAGE_A,
+      expectedDigest: RUNNER_DIGEST_A,
+      actualImageRef: MANAGED_RUNNER_IMAGE_A,
+      actualImageId: LIVE_RUNNER_IMAGE_ID_B,
+      actualDigest: RUNNER_DIGEST_B,
+    });
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+    expect(exec).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('accepts a ready session when live imageID matches even if desired image ref differs', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue({
+      phase: 'Running',
+      image_ref: `kind-registry:5000/mbos/agentsmith-managed-runner@${RUNNER_DIGEST_B}`,
+      image_id: LIVE_RUNNER_IMAGE_ID_A,
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).resolves.toBeUndefined();
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('rejects a bare image_id digest that does not match the expected runner image digest', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue({
+      phase: 'Running',
+      image_ref: RUNNER_DIGEST_B,
+      image_id: RUNNER_DIGEST_B,
+    });
+    const exec = buildRunnerHealthFoundExec();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_RUNNER_IMAGE_MISMATCH',
+      message: 'agent_runner_image_mismatch',
+      expectedImage: MANAGED_RUNNER_IMAGE_A,
+      expectedDigest: RUNNER_DIGEST_A,
+      actualImageRef: RUNNER_DIGEST_B,
+      actualImageId: RUNNER_DIGEST_B,
+      actualDigest: RUNNER_DIGEST_B,
+    });
+    expect(exec).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('accepts ready-session health when the current agentsmith-agent-task-runner process exists', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue(buildRunningPodStatus());
+    const exec = buildProcessTableRunnerHealthExec([
+      '1 0 S tini /usr/bin/tini -- agent-task-runner',
+      '14 1 S agentsmith-agent-task-runner agentsmith-agent-task-runner runner_instance_ag_1_task_1',
+    ].join('\n'));
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(exec).toHaveBeenCalledTimes(1);
+    const healthCommand = String(exec.mock.calls[0]?.[3]?.[2]);
+    expect(healthCommand).toContain('[a]gentsmith-agent-task-runner');
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('rejects ready-session health when only the tini agent-task-runner wrapper exists', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue(buildRunningPodStatus());
+    const exec = buildProcessTableRunnerHealthExec('1 0 S tini /usr/bin/tini -- agent-task-runner');
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec,
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      message: 'sandbox_runner_bootstrap_unhealthy',
+      sandboxOperation: 'verify_ready_session_runner_health',
+      runnerHealth: expect.objectContaining({
+        status: 'runner_process_missing',
+        exitCode: 1,
+        stdout: expect.stringContaining('/usr/bin/tini -- agent-task-runner'),
+      }),
+    });
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already ready session when health exec cannot find the managed runner process', async () => {
+    const createOrEnsurePod = vi.fn();
+    const getPodStatus = vi.fn().mockResolvedValue(buildRunningPodStatus());
     const exec = vi.fn().mockResolvedValue({
       exit_code: 1,
       stdout: [
@@ -1527,7 +2131,7 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({
-          image: 'runner:v1',
+          image: MANAGED_RUNNER_IMAGE_A,
           _internal_raw_key: 'ask_xxx',
         }),
         workspaceMount: buildWorkspaceMount(),
@@ -1556,7 +2160,7 @@ describe('internal-agent-pod-manager', () => {
       undefined,
     );
     expect(String(exec.mock.calls[0]?.[3]?.[2])).not.toContain('runner_health_error=');
-    expect(getPodStatus).not.toHaveBeenCalled();
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
     expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
@@ -1568,7 +2172,7 @@ describe('internal-agent-pod-manager', () => {
 
     try {
       const createOrEnsurePod = vi.fn();
-      const getPodStatus = vi.fn();
+      const getPodStatus = vi.fn().mockResolvedValue(buildRunningPodStatus());
       const longOutput = 'x'.repeat(9_000);
       const exec = vi.fn().mockResolvedValue({
         exit_code: 1,
@@ -1601,7 +2205,7 @@ describe('internal-agent-pod-manager', () => {
           workloadId: 'task_1',
           sessionId: 'task_1',
           agent: buildAgent({
-            image: 'runner:v1',
+            image: MANAGED_RUNNER_IMAGE_A,
             _internal_raw_key: 'ask_xxx',
           }),
           workspaceMount: buildWorkspaceMount(),
@@ -1636,7 +2240,7 @@ describe('internal-agent-pod-manager', () => {
       expect(runnerHealth?.stderr).toContain('[truncated]');
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(fakeSkToken);
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(commandSecret);
-      expect(getPodStatus).not.toHaveBeenCalled();
+      expect(getPodStatus).toHaveBeenCalledTimes(1);
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {
       if (previousHealthCommand === undefined) {
@@ -1654,7 +2258,7 @@ describe('internal-agent-pod-manager', () => {
 
     try {
       const createOrEnsurePod = vi.fn();
-      const getPodStatus = vi.fn();
+      const getPodStatus = vi.fn().mockResolvedValue(buildRunningPodStatus());
       const deletePod = vi.fn().mockResolvedValue(undefined);
       const longErrorMessage = 'x'.repeat(9_000);
       const exec = vi.fn().mockRejectedValue(Object.assign(
@@ -1686,7 +2290,7 @@ describe('internal-agent-pod-manager', () => {
           workloadId: 'task_1',
           sessionId: 'task_1',
           agent: buildAgent({
-            image: 'runner:v1',
+            image: MANAGED_RUNNER_IMAGE_A,
             _internal_raw_key: 'ask_xxx',
           }),
           workspaceMount: buildWorkspaceMount(),
@@ -1721,7 +2325,7 @@ describe('internal-agent-pod-manager', () => {
       expect(runnerHealth?.error?.message).toContain('[truncated]');
       expect(String(exec.mock.calls[0]?.[3]?.[2])).toContain(fakeSkToken);
       expect(deletePod).not.toHaveBeenCalled();
-      expect(getPodStatus).not.toHaveBeenCalled();
+      expect(getPodStatus).toHaveBeenCalledTimes(1);
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     } finally {
       if (previousHealthCommand === undefined) {
@@ -1740,8 +2344,8 @@ describe('internal-agent-pod-manager', () => {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
-        createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } }),
+          .mockResolvedValueOnce(buildRunningPodStatus()),
+        createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
         exec: buildRunnerHealthFoundExec(),
@@ -1766,7 +2370,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1792,7 +2396,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1806,7 +2410,7 @@ describe('internal-agent-pod-manager', () => {
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
-        getPodStatus: vi.fn(async () => ({ phase })),
+        getPodStatus: vi.fn(async () => (phase === 'Running' ? buildRunningPodStatus() : { phase })),
         createOrEnsurePod: vi.fn(async () => {
           phase = 'Pending';
           return { httpStatus: 201, pod: { phase } };
@@ -1835,7 +2439,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1859,7 +2463,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1886,7 +2490,7 @@ describe('internal-agent-pod-manager', () => {
             });
           }
           sessionOnline = true;
-          return { phase: 'Running' };
+          return buildRunningPodStatus();
         }),
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn().mockResolvedValue(undefined),
@@ -1912,7 +2516,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1934,7 +2538,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -1948,7 +2552,7 @@ describe('internal-agent-pod-manager', () => {
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
-        getPodStatus: vi.fn(async () => ({ phase })),
+        getPodStatus: vi.fn(async () => (phase === 'Running' ? buildRunningPodStatus() : { phase })),
         createOrEnsurePod: vi.fn(async (_workspaceId, _projectId, _workloadId, _body, signal?: AbortSignal) => {
           if (firstCreate) {
             firstCreate = false;
@@ -1987,7 +2591,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -2009,7 +2613,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -2024,8 +2628,9 @@ describe('internal-agent-pod-manager', () => {
         checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn()
           .mockResolvedValueOnce({ phase: 'offline' })
-          .mockResolvedValueOnce({ phase: 'Running' }),
-        createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } }),
+          .mockResolvedValueOnce(buildRunningPodStatus())
+          .mockResolvedValue(buildRunningPodStatus()),
+        createOrEnsurePod: vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() }),
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
         exec: buildRunnerHealthFoundExec(),
@@ -2048,7 +2653,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -2066,7 +2671,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),
@@ -2091,7 +2696,7 @@ describe('internal-agent-pod-manager', () => {
       workloadId: 'task_1',
       sessionId: 'task_1',
       agent: buildAgent({
-        image: 'runner:v1',
+        image: MANAGED_RUNNER_IMAGE_A,
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: buildWorkspaceMount(),

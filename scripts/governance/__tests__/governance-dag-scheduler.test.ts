@@ -125,10 +125,6 @@ describe('governance DAG scheduler', () => {
       ['gate-fast'],
       ['gate-default', 'lane-visual'],
       ['gate-release'],
-      ['lane-unified-deploy-substrate'],
-      ['lane-unified-deploy-local-kind-images'],
-      ['lane-unified-deploy-local-kind'],
-      ['lane-unified-deploy-product-flows'],
       ['gate-release-full'],
     ]);
     expect(topology.terminalJobIds).toEqual(['gate-release-full']);
@@ -138,13 +134,8 @@ describe('governance DAG scheduler', () => {
         { fromJobId: 'gate-fast', toJobId: 'gate-default' },
         { fromJobId: 'gate-fast', toJobId: 'lane-visual' },
         { fromJobId: 'gate-default', toJobId: 'gate-release' },
-        { fromJobId: 'gate-release', toJobId: 'lane-unified-deploy-substrate' },
-        { fromJobId: 'lane-unified-deploy-substrate', toJobId: 'lane-unified-deploy-local-kind-images' },
-        { fromJobId: 'lane-unified-deploy-local-kind-images', toJobId: 'lane-unified-deploy-local-kind' },
-        { fromJobId: 'lane-unified-deploy-local-kind', toJobId: 'lane-unified-deploy-product-flows' },
         { fromJobId: 'lane-visual', toJobId: 'gate-release-full' },
         { fromJobId: 'gate-release', toJobId: 'gate-release-full' },
-        { fromJobId: 'lane-unified-deploy-product-flows', toJobId: 'gate-release-full' },
       ]),
     );
     expect(topology.edges).not.toContainEqual({ fromJobId: 'lane-visual', toJobId: 'gate-release' });
@@ -222,26 +213,6 @@ describe('governance DAG scheduler', () => {
       },
       {
         jobId: 'gate-release',
-        reasonCode: 'dependency_failed',
-        failedJobId: 'gate-default',
-      },
-      {
-        jobId: 'lane-unified-deploy-substrate',
-        reasonCode: 'dependency_failed',
-        failedJobId: 'gate-default',
-      },
-      {
-        jobId: 'lane-unified-deploy-local-kind-images',
-        reasonCode: 'dependency_failed',
-        failedJobId: 'gate-default',
-      },
-      {
-        jobId: 'lane-unified-deploy-local-kind',
-        reasonCode: 'dependency_failed',
-        failedJobId: 'gate-default',
-      },
-      {
-        jobId: 'lane-unified-deploy-product-flows',
         reasonCode: 'dependency_failed',
         failedJobId: 'gate-default',
       },

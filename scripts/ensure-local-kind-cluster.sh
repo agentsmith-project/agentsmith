@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 CLUSTER_NAME="${1:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
 CONFIG_PATH="${2:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
@@ -137,15 +137,31 @@ ensure_kind_node_image_present() {
   if docker image inspect "${kind_node_image}" >/dev/null 2>&1; then
     return 0
   fi
+
   local archive_path="${LOCAL_KIND_NODE_IMAGE_ARCHIVE}"
-  if [[ -z "${archive_path}" && -n "${LOCAL_KIND_RELEASE_ROOT:-}" ]]; then
-    archive_path="${LOCAL_KIND_RELEASE_ROOT}/images/$(kind_image_tar_name "${kind_node_image}").tar"
+  if [[ -n "${archive_path}" ]]; then
+    [[ -f "${archive_path}" ]] || {
+      echo "[kind-bootstrap] ERROR: missing local kind node image ${kind_node_image}; expected archive at ${archive_path}" >&2
+      return 1
+    }
+    docker load -i "${archive_path}" >/dev/null
+    return 0
   fi
-  [[ -n "${archive_path}" && -f "${archive_path}" ]] || {
-    echo "[kind-bootstrap] ERROR: missing local kind node image ${kind_node_image}; expected archive at ${archive_path:-<unset>}" >&2
+
+  if [[ -n "${LOCAL_KIND_RELEASE_ROOT:-}" ]]; then
+    archive_path="${LOCAL_KIND_RELEASE_ROOT}/images/$(kind_image_tar_name "${kind_node_image}").tar"
+    [[ -f "${archive_path}" ]] || {
+      echo "[kind-bootstrap] ERROR: missing local kind node image ${kind_node_image}; expected archive at ${archive_path}" >&2
+      return 1
+    }
+    docker load -i "${archive_path}" >/dev/null
+    return 0
+  fi
+
+  docker pull "${kind_node_image}" >/dev/null || {
+    echo "[kind-bootstrap] ERROR: failed to pull kind node image ${kind_node_image}" >&2
     return 1
   }
-  docker load -i "${archive_path}" >/dev/null
 }
 
 ensure_local_kind_cluster() {
@@ -195,4 +211,6 @@ ensure_local_kind_cluster() {
   finalize_kind_cluster_bootstrap
 }
 
-ensure_local_kind_cluster
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  ensure_local_kind_cluster
+fi

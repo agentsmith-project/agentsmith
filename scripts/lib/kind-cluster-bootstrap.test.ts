@@ -462,3 +462,113 @@ EOF_COREFILE
     expect(corefile).not.toContain('/etc/resolv.conf');
   });
 });
+
+describe('ensure-local-kind-cluster node image bootstrap', () => {
+  it('pulls the kind node image online when no local archive source is configured', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'ensure-local-kind-online-'));
+    const script = path.join(process.cwd(), 'scripts/ensure-local-kind-cluster.sh');
+    const dockerLogPath = path.join(tempRoot, 'docker.log');
+
+    const output = runBash(`
+      source "${script}"
+      docker() {
+        printf '%s\\n' "$*" >> "${dockerLogPath}"
+        if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+          return 1
+        fi
+        if [[ "$1" == "pull" ]]; then
+          return 0
+        fi
+        echo "unexpected docker call: $*" >&2
+        return 2
+      }
+      unset LOCAL_KIND_RELEASE_ROOT
+      LOCAL_KIND_NODE_IMAGE_ARCHIVE=""
+      ensure_kind_node_image_present "kindest/node:v1.32.2"
+      cat "${dockerLogPath}"
+    `);
+
+    expect(output).toContain('image inspect kindest/node:v1.32.2');
+    expect(output).toContain('pull kindest/node:v1.32.2');
+    expect(output).not.toContain('load -i');
+  });
+
+  it('fails fast when an explicit kind node archive is missing', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'ensure-local-kind-explicit-archive-'));
+    const script = path.join(process.cwd(), 'scripts/ensure-local-kind-cluster.sh');
+    const dockerLogPath = path.join(tempRoot, 'docker.log');
+    const missingArchive = path.join(tempRoot, 'images', 'missing-kind-node.tar');
+
+    const result = runBashResult(`
+      source "${script}"
+      docker() {
+        printf '%s\\n' "$*" >> "${dockerLogPath}"
+        if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+          return 1
+        fi
+        if [[ "$1" == "pull" ]]; then
+          return 0
+        fi
+        echo "unexpected docker call: $*" >&2
+        return 2
+      }
+      unset LOCAL_KIND_RELEASE_ROOT
+      LOCAL_KIND_NODE_IMAGE_ARCHIVE="${missingArchive}"
+      set +e
+      ensure_kind_node_image_present "kindest/node:v1.32.2"
+      status=$?
+      set -e
+      printf 'status=%s\\n' "$status"
+      cat "${dockerLogPath}"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=1');
+    expect(result.stdout).toContain('image inspect kindest/node:v1.32.2');
+    expect(result.stdout).not.toContain('pull kindest/node:v1.32.2');
+    expect(result.stderr).toContain(
+      `[kind-bootstrap] ERROR: missing local kind node image kindest/node:v1.32.2; expected archive at ${missingArchive}`,
+    );
+  });
+
+  it('fails fast when release root is configured but the kind node archive is missing', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'ensure-local-kind-release-'));
+    const script = path.join(process.cwd(), 'scripts/ensure-local-kind-cluster.sh');
+    const dockerLogPath = path.join(tempRoot, 'docker.log');
+    const releaseRoot = path.join(tempRoot, 'release');
+    const expectedArchive = path.join(releaseRoot, 'images', 'kindest-node-v1.32.2.tar');
+
+    runBash(`mkdir -p "${path.dirname(expectedArchive)}"`);
+
+    const result = runBashResult(`
+      source "${script}"
+      docker() {
+        printf '%s\\n' "$*" >> "${dockerLogPath}"
+        if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+          return 1
+        fi
+        if [[ "$1" == "pull" ]]; then
+          return 0
+        fi
+        echo "unexpected docker call: $*" >&2
+        return 2
+      }
+      LOCAL_KIND_RELEASE_ROOT="${releaseRoot}"
+      LOCAL_KIND_NODE_IMAGE_ARCHIVE=""
+      set +e
+      ensure_kind_node_image_present "kindest/node:v1.32.2"
+      status=$?
+      set -e
+      printf 'status=%s\\n' "$status"
+      cat "${dockerLogPath}"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=1');
+    expect(result.stdout).toContain('image inspect kindest/node:v1.32.2');
+    expect(result.stdout).not.toContain('pull kindest/node:v1.32.2');
+    expect(result.stderr).toContain(
+      `[kind-bootstrap] ERROR: missing local kind node image kindest/node:v1.32.2; expected archive at ${expectedArchive}`,
+    );
+  });
+});

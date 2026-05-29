@@ -940,4 +940,5 @@ metadata:
   name: csi.juicefs.com
 spec:
   attachRequired: false
+  fsGroupPolicy: File
   podInfoOnMount: true

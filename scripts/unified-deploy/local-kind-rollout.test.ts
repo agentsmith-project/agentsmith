@@ -15,7 +15,9 @@ import {
   createRunReadinessState,
   updateRunReadinessStateField,
 } from '../governance/run-readiness-state';
+import { asRecord } from './manifest';
 import { DEFAULT_SITE_ENV_PATH } from './render';
+import { parseKubernetesDocuments } from './kubernetes';
 import {
   LEGACY_ASBCP_CHECKSUM_FRAGMENT,
   LEGACY_ASBCP_CONFIGMAP_NAME,
@@ -28,6 +30,15 @@ import {
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
 const asbcpImageLockPath = join(process.cwd(), 'infra', 'deploy', 'shared', 'asbcp-image.lock');
+const localKindJuicefsCsiManifestPath = join(
+  process.cwd(),
+  'infra',
+  'deploy',
+  'unified',
+  'local-kind',
+  'juicefs-csi',
+  'upstream-manifest.yaml',
+);
 
 type CommandCall = {
   command: string;
@@ -627,6 +638,23 @@ function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
     },
   };
 }
+
+describe('local-kind JuiceFS CSI manifest contract', () => {
+  it('requires fsGroupPolicy File for RWX JuiceFS PVs and restricted non-root workloads', () => {
+    const parsed = parseKubernetesDocuments(readFileSync(localKindJuicefsCsiManifestPath, 'utf8'));
+    const csiDriver = parsed.documents.find((document) =>
+      document.kind === 'CSIDriver' && asRecord(document.metadata).name === 'csi.juicefs.com',
+    );
+    const spec = asRecord(csiDriver?.spec);
+
+    expect(parsed.failures).toEqual([]);
+    expect(csiDriver).toBeDefined();
+    expect(
+      spec.fsGroupPolicy,
+      'local-kind JuiceFS RWX PVs must apply fsGroup to root-owned payload mounts so non-root workspace-init can create workspace/.artifacts',
+    ).toBe('File');
+  });
+});
 
 describe('unified deploy local-kind live rollout producer', () => {
   it('fails closed and writes evidence when kubeconfig is missing', async () => {

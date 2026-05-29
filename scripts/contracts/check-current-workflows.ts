@@ -599,6 +599,14 @@ const engineeringJob = engineeringWorkflow?.jobs.find((job) => job.id === 'engin
 if (engineeringWorkflow?.role !== 'backend_real_regression' || engineeringWorkflow.scheduled !== true) {
   failures.push('engineering-gate.yml must be modeled as a scheduled backend-real regression workflow');
 }
+if (
+  engineeringWorkflow?.releaseBlocking !== false
+  || engineeringWorkflow?.blockingFor.includes('release') === true
+  || engineeringJob?.releaseBlocking !== false
+  || engineeringJob?.blockingFor.includes('release') === true
+) {
+  failures.push('engineering-gate.yml must remain a scheduled/manual backend-real regression signal, not release readiness');
+}
 if (engineeringJob?.laneId !== 'lane-backend-real-core') {
   failures.push('engineering-gate.yml must bind its scheduled job to lane-backend-real-core');
 }

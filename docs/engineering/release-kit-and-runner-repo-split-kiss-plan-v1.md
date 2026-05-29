@@ -16,6 +16,7 @@ Active plan 读法：
 5. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
 6. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 7. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
+8. Active 正文从现在起不再滚动追加长历史，只保留当前状态、下一步、阻断项和 artifact/CI 链接；历史迁移到 archive/appendix 属 P6-lite 专项。
 
 ## 治理克制记录
 
@@ -1747,12 +1748,12 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    P5 request-scoped projected dependencies contract/env wiring 和 AgentSmith
    `--runner-projection-smoke` canonical lock truth 已有完成证据，
    但只解锁后续专项；
-   不等于 airgap ready 或 release readiness。后续任何 P2/P3/P5
-   implementation workstream start
-   前，仍必须经过 bootstrap-only/docs-governance-first PR；minimum bootstrap
-   pack 包含 README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、RELEASE_GATES
-   或 verify-release、contracts/runbooks/ADR entrypoints；quick gate is not
-   release readiness；formal release readiness comes from the repo-local release gate。
+   不等于 airgap ready 或 release readiness。只有新增 repo、新增 release
+   gate family 或新增职责边界时，才先做 bootstrap-only/docs-governance-first
+   PR；已 bootstrap repo 的普通功能切片走最小 contract/test/evidence，不先做仪式性治理 PR。
+   minimum bootstrap pack 包含 README.md、AGENTS.md、DEVELOPMENT/DEVELOPER guide、
+   RELEASE_GATES 或 verify-release、contracts/runbooks/ADR entrypoints；quick gate
+   is not release readiness；formal release readiness comes from the repo-local release gate。
 2. repo-local team members 只在 quick gate 后进入互不重叠的专项 workstream；
    主协调 agent 只做分发、审查和收口。
 3. P2 release-kit 正式 adoption 前，`--inputs` 仍只是 focused diagnostic，`--evidence`
@@ -1880,7 +1881,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 13. 有没有接受缺 provenance、local provenance 或 non-canonical pre-GA `agentsmith-codex-runner` producer？
 14. 有没有把明文 secret 写进 evidence、日志或 release summary？
 15. 有没有把 AFSCP/ASBCP family reference 从新 repo bootstrap 治理做法参考扩大成源码依赖、合同依赖、gate 依赖或新治理平台？
-16. 有没有跳过 bootstrap-only/docs-governance-first PR，直接迁部署工具或 runner runtime？
+16. 新增 repo、新增 release gate family 或新增职责边界时，有没有先做 bootstrap-only/docs-governance-first PR？已 bootstrap repo 的普通功能切片有没有保持最小 contract/test/evidence？
 17. 有没有把 quick gate 或 team signoff 当成 release readiness / release gate？
 18. 有没有复制 AFSCP/ASBCP gate 脚本作为权威 gate，或把 sibling repo status 当成 gate？
 19. 有没有让 `--inputs` / contract intake 的 `intake-report`、`image-digest-plan`、standalone render/apply/rollout/smoke report、P3 `airgap-bundle-render-check-report.json`、`airgap-image-archive-check-report.json`、`airgap-image-load-report.json` 或 `registry-presence-report.json` 变成 deploy/package/operator verdict 或 AgentSmith product gate，或让 `--evidence` 接受未实现/不能重新语义校验的 output？

@@ -1228,7 +1228,11 @@ describe('current workflow governance', () => {
 
     expect(engineeringWorkflow?.role).toBe('backend_real_regression');
     expect(engineeringWorkflow?.scheduled).toBe(true);
+    expect(engineeringWorkflow?.blockingFor).toEqual(['manual', 'scheduled']);
+    expect(engineeringWorkflow?.releaseBlocking).toBe(false);
     expect(engineeringJob?.laneId).toBe('lane-backend-real-core');
+    expect(engineeringJob?.blockingFor).toEqual(['manual', 'scheduled']);
+    expect(engineeringJob?.releaseBlocking).toBe(false);
     expect(engineeringJob?.requiresSecrets).toBe(true);
     expect(engineeringJob?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
     expect(engineeringJob?.evidenceRequired).toBe(true);

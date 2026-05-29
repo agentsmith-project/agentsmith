@@ -26,19 +26,17 @@ Active plan 读法：
 
 回答用户问题：治理层不写进 `docs/项目宪法.md`，也不新增宪法条款；只更新当前产品/工程计划。治理克制已经作为执行约束：能直接服务当前功能、安全、operator 低心智和真实发布/运行风险的检查保留；其余删除、合并或降级为 focused diagnostic。
 
-当前事实：
+近期完成：
 
-1. release-kit `0a4c49d feat: add airgap consume rehearsal`，CI `26655957219` success：新增 thin consume wrapper；它不是 release readiness。
-2. release-kit `803580e Tighten airgap rehearsal operator label`，CI `26656770590` success：`--rehearsal-label` 只作为 label；operator runbook 使用 `online` / `airgap` × `use_existing` / `install_substrates`。
-3. runner `9999acc Fail closed skill credential transport`，CI `26656633255` success：Feishu/Jira credential transport fail-closed，TLS verify 默认开启，token 只来自 projection。
-4. runner `f588d88 Decouple runner image smoke from default CI`，CI `26657171197` success：default CI 不再 checkout AgentSmith 或构造 artifact；image smoke 改为需要显式 artifact 的手动 workflow。
-5. 本次更新前 AgentSmith main clean at `47a50191`；本提交只做本计划文档状态更新，不改宪法、合同或代码。
+1. release-kit Operator Release Surface v0 已完成：release-kit `fa5eef5`，fail-fast cleanup `9277810`，CI success；它更新 operator surface 和 fail-fast 边界，不是 release readiness、deploy verdict 或 package readiness。
+2. runner manual image-smoke workflow 已用真实 AgentSmith `agentsmith-runner-contract-artifact` 验证成功：historical run `26657450034` success；它是已完成证据，不再作为下一步，也不代表 backend-real、真实 LLM 或 full runtime semantics。
+3. 文档/治理瘦身已完成：AgentSmith `2250bd25` 和 `d3e84196`，Contracts Check success；历史 ledger 继续保持 reference，不回到 active plan 滚动追加。
 
-下一步只保留 3 个小切片：
+当前真实下一步：
 
-1. release-kit Operator Release Surface v0：顶层 `online` / `airgap-bundle` 和 `use_existing` / `install_substrates`，内部映射机器 profile；airgap 输出单一 handoff summary，但仍不叫 release readiness。
-2. 触发一次 runner manual image-smoke workflow，用真实 AgentSmith `agentsmith-runner-contract-artifact` run id 验证新手动路径。
-3. 文档/治理瘦身：长 evidence ledger 已迁入 reference 文件；后续继续合并 contracts/runbook 重复矩阵，删除或降级不服务当前功能、安全、operator 低心智的检查。
+1. release-kit `kit_installed/online` evidence parity 是 P2 full online adoption 的最小第一刀；目标只是在 release-kit repo-local evidence 中对齐内部机器值和 operator-facing `online` / `install_substrates` 语义，不给 release readiness、deploy verdict 或 package readiness。
+2. runner real-path boundary smoke 是后续 P5 小切片；它只验证真实路径边界 smoke，不把 AgentSmith 产品语义迁入 runner repo，也不宣称 backend-real、真实 LLM、full runtime semantics 或 release readiness。
+3. 继续 P6-lite cleanup：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -102,7 +100,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-下一步仍按 KISS 小切片推进：release-kit operator release surface、runner manual image-smoke workflow、以及删除/合并/降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查。
+当前下一步已从旧三切片切换为：release-kit `kit_installed/online` evidence parity（P2 full online adoption 最小第一刀）、runner real-path boundary smoke（后续 P5 切片），以及 P6-lite cleanup。已完成的 release-kit operator surface、runner manual image-smoke 和 docs/governance slim 不再作为待办。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 

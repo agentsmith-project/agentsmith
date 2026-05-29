@@ -22,6 +22,24 @@ Active plan 读法：
 
 本轮团队 review 不改 `docs/项目宪法.md`，只收敛当前产品计划和工程文档。功能核心优先：release/deploy 相关门禁只保留能直接证明可安装、可回滚、可排障的证据；不能证明这些结果的检查降级为 focused diagnostic 或删除。pre-GA 旧路径、旧命名、旧脚本和旧计划默认删除或标为 reference，不为旧实现增加长期心智负担。`release:ready` 的当前口径仍以 AgentSmith product-side readiness / handoff input completeness 为边界，deployment/package/operator verdict 归 release-kit repo-local gate/evidence。
 
+## 当前状态 / 下一步切片
+
+回答用户问题：治理层不写进 `docs/项目宪法.md`，也不新增宪法条款；只更新当前产品/工程计划。治理克制已经作为执行约束：能直接服务当前功能、安全、operator 低心智和真实发布/运行风险的检查保留；其余删除、合并或降级为 focused diagnostic。
+
+当前事实：
+
+1. release-kit `0a4c49d feat: add airgap consume rehearsal`，CI `26655957219` success：新增 thin consume wrapper；它不是 release readiness。
+2. release-kit `803580e Tighten airgap rehearsal operator label`，CI `26656770590` success：`--rehearsal-label` 只作为 label；operator runbook 使用 `online` / `airgap` × `use_existing` / `install_substrates`。
+3. runner `9999acc Fail closed skill credential transport`，CI `26656633255` success：Feishu/Jira credential transport fail-closed，TLS verify 默认开启，token 只来自 projection。
+4. runner `f588d88 Decouple runner image smoke from default CI`，CI `26657171197` success：default CI 不再 checkout AgentSmith 或构造 artifact；image smoke 改为需要显式 artifact 的手动 workflow。
+5. 本次更新前 AgentSmith main clean at `deed49d3`；本提交只做本计划文档状态更新，不改宪法、合同或代码。
+
+下一步只保留 3 个小切片：
+
+1. release-kit Operator Release Surface v0：顶层 `online` / `airgap-bundle` 和 `use_existing` / `install_substrates`，内部映射机器 profile；airgap 输出单一 handoff summary，但仍不叫 release readiness。
+2. 触发一次 runner manual image-smoke workflow，用真实 AgentSmith `agentsmith-runner-contract-artifact` run id 验证新手动路径。
+3. 文档/治理瘦身：把长 evidence ledger 迁 archive 或折叠为 appendix，contracts/runbook 重复矩阵合并；删除或降级不服务当前功能、安全、operator 低心智的检查。
+
 <details>
 <summary>Evidence log snapshot（只读交接证据，非规范）</summary>
 

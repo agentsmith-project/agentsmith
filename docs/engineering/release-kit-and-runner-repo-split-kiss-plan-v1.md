@@ -206,7 +206,7 @@ Release kit 的正式部署模式由三根正交机器轴组成。三根轴是�
 | 轴 | 值 | 含义 |
 | --- | --- | --- |
 | `target_cluster` | `existing_kubernetes` | 真实 Kubernetes 目标，包括私有 Kubernetes 和云端托管 Kubernetes。 |
-| `substrate_source` | `kit_installed` | 后续独立 KISS slice：release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是当前 release readiness，不是云资源 provisioning，也不是 in-cluster substrate。 |
+| `substrate_source` | `kit_installed` | release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight；`kit_installed/online` focused composition/evidence parity 已完成，但不等于 full online adoption、release readiness 或 deployment/package/operator verdict。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是云资源 provisioning，也不是 in-cluster substrate。 |
 | `substrate_source` | `external_declared` | operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible object storage、Keycloak/OIDC 等连接真相；release kit 只校验，不创建云资源。 |
 | `distribution` | `online` | 从 GHCR 或 operator 指定 registry 拉取 digest-pinned images。 |
 | `distribution` | `airgap` | 使用离线包、OCI layout 或 image archives，不联网拉镜像、工具或模板。 |
@@ -359,7 +359,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 
 1. `external_declared` 允许 DNS/FQDN 和 TLS；不能 fallback 到 Docker defaults。
 2. `external_declared` 不创建或修改云资源、bucket、DB user/database、Keycloak realm/client、IAM 或网络资源；只允许连接校验、能力校验，以及在 operator 已提供的数据库内运行 AgentSmith-owned product schema/bootstrap。
-3. `kit_installed` 在后续独立 KISS slice 落地后，必须产出同一份中性 connection truth 和 pod-routability preflight，供 render/apply/smoke 消费；当前 release readiness 不依赖它。
+3. `kit_installed` 必须产出同一份中性 connection truth 和 pod-routability preflight，供 render/apply/smoke 消费；已完成的 `kit_installed/online` focused composition/evidence parity 只证明 repo-local focused path，不等于当前 release readiness 或 full release-kit verdict。
 4. 缺 endpoint、凭据、issuer、bucket、extension、TLS/sslmode 或可达性时 fail fast。
 5. `external_declared` 的产品 flow 如果需要 direct DB/admin/OIDC probe，必须依赖 operator 显式给出的 probe secret refs；缺这些 refs 时可以完成 deploy smoke，但不能声称对应 product flow release evidence 已通过。
 6. 持久化 truth、evidence 和日志只能保存 secret refs、redacted fingerprint 和能力检查结果；raw secrets 只能作为请求级/operator 输入进入进程内存，不能写盘。
@@ -738,8 +738,11 @@ release readiness。
     `target_cluster=existing_kubernetes, substrate_source=external_declared, distribution=online`
     与
     `target_cluster=existing_kubernetes, substrate_source=kit_installed, distribution=online`。
-    当前 focused evidence 只证明 `use_existing` 的 spine，`install_substrates`
-    仍需最小 substrate pack + pod-routability preflight slice 补齐后才能给 verdict。
+    当前 `online/use_existing` confirmed apply 和 `kit_installed/online` focused
+    composition/evidence parity 都已完成，但仍只是 focused evidence；full online
+    adoption / full release-kit verdict 仍未完成，下一步是 P2 最小 full online
+    adoption / handoff evidence separation，不能据此给 deployment/package/operator
+    verdict。
 13. `kind_rehearsal + kit_installed + online` 只作为本机/CI 证明工具；kind 是可选
     local option，不是生产默认，也不是用户部署前提。
 14. `existing_kubernetes + kit_installed` 不做 provider matrix，不创建云资源；只安装
@@ -759,14 +762,14 @@ release readiness。
 
 - online deploy focused spine 能从 GHCR/digest 或 operator 指定 target/adopted refs 渲染并执行 apply、rollout、smoke。
 - `online + use_existing` 的 focused path 能产出 preflight、render、render-check、apply、rollout、smoke 和 online evidence root envelope，并通过 `--evidence` revalidation；内部机器值是 `existing_kubernetes + external_declared + online`。
-- online release-kit verdict 还必须补齐 `online + install_substrates` 的 substrate install、pod-routability preflight、render/apply/smoke 和 evidence revalidation；内部机器值是 `existing_kubernetes + kit_installed + online`，缺这一路时不能给 deployment/package/operator verdict。
+- `online + install_substrates` / `existing_kubernetes + kit_installed + online` focused composition/evidence parity 已完成；它仍不是 full online adoption、full release-kit verdict 或 release readiness，缺正式 repo-local verdict/adoption 收口时不能给 deployment/package/operator verdict。
 - P2 online target-registry confirmed apply/evidence spine 已有 initial spine commit `2d4739b`、remote CI run `26439931859` success；strict live ref no-op 修正 commit `5e08da3` 已提交推送，remote CI run `26440847230` success，本地 GitHub Actions 顺序全量通过；这不是 full online adoption、release-kit operator signature/identity/full verdict（正式签名验证/身份/完整 verdict）、AgentSmith product-flow evidence 收口或 release readiness 证据。
 - release-kit operator signoff intake focused guard 已有 commit `0854eeb`、GitHub Actions CI run `26444123230` success；它只证明 intake JSON 与 confirmed apply `online-deployment-gate-report.json` 的 release id、git sha、release contract raw sha256、target profile、operator_run_id 和 raw online gate report sha 绑定关系；target-registry report 含 image-map 时接受 canonical `image-map,registry-presence` producer sequence。不证明 operator signature/identity/full verdict（正式签名验证、身份系统、完整 operator verdict）、registry mirror/login/push/pull、full online adoption 或 release readiness。
 - release-kit operator-preloaded registry prerequisite binding 已有 commit `49caf6f`；`--online-deployment-gate --mode apply --target-registry` 必须带 `--registry-probe`，registry-presence 必须在 image-map 后、render/apply/rollout/smoke/evidence 前完成。source-registry apply 不受影响；target-registry server-dry-run 不要求且不允许 probe。standalone `registry-presence-report.json` 仍被 `--evidence` 拒收。本地 gates 已通过，但远端 GitHub 只记录 PushEvent，GitHub Actions run 仍未创建。这里是 GitHub Actions outage/pending，不是 remote CI success。
 - 后续 release-kit mainline commit `1d35fcc` 的 remote CI run `26449565986` success 已覆盖 quick、inputs、template-package、render、render-check、image-map、registry-presence、bundle-create、airgap-bundle-check、airgap-image-archive-check、bundle-load-plan、airgap-bundle-render-check、apply、rollout、smoke、online-deployment-gate、operator-signoff-intake、evidence、target-preflight；这是最新 head 证据，不是 `49caf6f` 历史 push run success。
 - 本切片不做 registry mirror/login/push/pull，不把 probe presence 写成 deploy adoption，不做 release readiness，不做 operator signature/identity/full verdict，不做 cloud provisioning。
 - 当前 AgentSmith `existing-cluster` 诊断在 P2 full adoption 前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
-- `install_substrates` 是后续独立 KISS slice；内部机器值是 `kit_installed`。该 slice 只做最小 substrate pack + pod-routability preflight；不做 provider matrix，也不能写成当前 release-ready deploy snapshot。
+- `install_substrates` 的内部机器值是 `kit_installed`；`kit_installed/online` focused composition/evidence parity 已完成，但只做最小 substrate pack + pod-routability preflight 的 focused 证据边界；不做 provider matrix，也不能写成当前 release-ready deploy snapshot、full online adoption 或 full release-kit verdict。
 - kind rehearsal 只是 optional local capability；当前不是 release-kit executable evidence，不产出当前 release readiness 证据，也不是用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
 - P2 过渡说明以当前边界为准：AgentSmith `release:ready` 是 product readiness / local complete / current product gate，不要求 dependencies/images/rollout/product-flow deploy evidence；这些 unified deploy outputs 只保留为过渡期专项诊断，直到 P2/P3/P6 收口时从 AgentSmith active status/workflow 删除或隐藏。这里不暗示未来 AgentSmith release campaign 会继续消费它们。
@@ -898,7 +901,7 @@ slice 的历史证据。当前 active truth 是 dynamic release contract image c
   loader 并校验 stdout digest 与 `target_digest` 对齐，但不证明 offline
   install/apply/smoke，也不是 registry readiness、airgap ready 或 release
   readiness；`airgap-image-load-report.json` 仍被 `--evidence` 拒收。
-- `kind_rehearsal` 只在后续 `kit_installed` slice 中保留 `kit_installed + online` 作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代真实 Kubernetes 的 `use_existing` 或 `install_substrates` airgap evidence。
+- `kind_rehearsal` 在 `kit_installed/online` focused composition 中只作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代真实 Kubernetes 的 `use_existing` 或 `install_substrates` airgap evidence。
 - 正式手工 operator signoff / verdict 仍单独记录，不能被 intake 绑定自动化冒充。
 
 ### P4. AgentSmith 发布 Runner Contract 包

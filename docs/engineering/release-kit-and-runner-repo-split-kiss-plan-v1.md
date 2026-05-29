@@ -32,12 +32,13 @@ Active plan 读法：
 2. runner manual image-smoke workflow 已用真实 AgentSmith `agentsmith-runner-contract-artifact` 验证成功：historical run `26657450034` success；它是已完成证据，不再作为下一步，也不代表 backend-real、真实 LLM 或 full runtime semantics。
 3. 文档/治理瘦身已完成：AgentSmith `2250bd25` 和 `d3e84196`，Contracts Check success；历史 ledger 继续保持 reference，不回到 active plan 滚动追加。
 4. release-kit `kit_installed/online` evidence parity 已完成：release-kit `ac143dd Add kit online evidence envelope parity`，CI success `26660671047`；它只是 repo-local evidence parity，不是 release readiness、deploy verdict 或 package readiness。
-5. runner real-path boundary smoke / scrubbed runner image adoption/test facts cleanup 已完成：AgentSmith `f1a6a702`、`9fd92602`、`140e9ac6`，runner publish run `26662288580` success，runner HEAD `f588d88`，published image `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0`；它仍只是 focused projection/adoption evidence，不代表 backend-real、真实 LLM、full runtime semantics 或 release readiness。
+5. runner real-path boundary smoke / scrubbed runner image adoption/test facts cleanup 已完成：AgentSmith `f1a6a702`、`9fd92602`、`140e9ac6`，`140e9ac6` remote Quality Gates run `26663502020`、Contracts Check run `26663502029`、Image Publish run `26663502034` success；AgentSmith HEAD `3f275e1131c0ebf76c4e07a05a0e96e4899ef690` Contracts Check run `26664204434` success；runner publish run `26662288580` success，runner HEAD `f588d88`，published image `ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0`；它仍只是 focused projection/adoption evidence，不代表 backend-real、真实 LLM、full runtime semantics 或 release readiness。
+6. release-kit operator `online/use_existing` confirmed apply KISS slice 已完成：release-kit repo `/home/percy/works/mbos-v1/agentsmith-release-kit` commit `83375e335fc31c0e1515ef297fd26bd81f83a7dc` (`feat: support operator online apply confirmation`) CI run `26664968420` success；commit `361ec39df481848deddeac3c4fcf036a0fd80899` (`docs: align online evidence support wording`) CI run `26665142748` success；本地 focused checks `bash scripts/test-operator-release-surface.sh`、`bash scripts/verify-release.sh --quick`、`git diff --check` 通过。该切片支持 operator-facing `online/use_existing --mode apply --confirm-apply online/use_existing`，facade 内部映射到 `existing_kubernetes/external_declared/online`，并支持 digest/provenance-only online handoff evidence；它不代表 AgentSmith release readiness、release-kit package readiness、full deployment readiness、backend-real 或真实 LLM。
 
-当前真实下一步：
+尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite cleanup：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. 等待 AgentSmith Quality Gates 后，做 P2 full online adoption 的最小真实路径 / AgentSmith handoff evidence 分离收口；release-kit 只给 repo-local deployment/operator evidence，AgentSmith 只消费链接/交接事实，不接回 `release:ready` verdict。
+2. 做 P2 最小 full online adoption / handoff evidence separation 的下一小片：把 release-kit repo-local deployment/operator evidence 继续保留在 release-kit，AgentSmith 只消费 digest/provenance/link 级交接事实；不得把 release-kit verdict 接回 AgentSmith `release:ready`，也不得把 focused confirmed apply 说成 full deployment readiness。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -101,7 +102,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前下一步已从旧三切片继续收窄为：P6-lite cleanup，以及等待 AgentSmith Quality Gates 后做 P2 full online adoption 的最小真实路径 / AgentSmith handoff evidence 分离收口。已完成的 release-kit operator surface、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办。
+当前尚未完成事项已从旧三切片继续收窄为：P6-lite cleanup，以及 P2 最小 full online adoption / handoff evidence separation 的下一小片。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 

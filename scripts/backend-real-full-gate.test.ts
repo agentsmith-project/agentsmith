@@ -465,6 +465,8 @@ describe('backend-real full gate runtime ownership contract', () => {
     const ensureStart = script.indexOf('ensure_file_library_afscp_local_runtime()');
     const ensureEnd = script.indexOf('stop_file_library_afscp_local_runtime()', ensureStart);
     const ensureBody = script.slice(ensureStart, ensureEnd);
+    const sourceIndex = ensureBody.indexOf('source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"');
+    const ensureKindIndex = ensureBody.indexOf('\n    ensure_kind_cluster\n', sourceIndex);
     const stopIndex = ensureBody.indexOf('stop_afscp_local_runtime >/dev/null 2>&1 || true');
     const markerIndex = ensureBody.indexOf('export AFSCP_ENVIRONMENT=local-real');
     const resetIndex = ensureBody.indexOf('reset_owned_afscp_local_runtime_for_gate');
@@ -472,8 +474,11 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(ensureStart).toBeGreaterThanOrEqual(0);
     expect(ensureEnd).toBeGreaterThan(ensureStart);
+    expect(sourceIndex).toBeGreaterThanOrEqual(0);
+    expect(ensureKindIndex).toBeGreaterThan(sourceIndex);
     expect(stopIndex).toBeGreaterThanOrEqual(0);
     expect(markerIndex).toBeGreaterThan(stopIndex);
+    expect(resetIndex).toBeGreaterThan(ensureKindIndex);
     expect(resetIndex).toBeGreaterThan(markerIndex);
     expect(ensureRuntimeIndex).toBeGreaterThan(resetIndex);
   });

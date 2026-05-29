@@ -223,6 +223,7 @@ ensure_file_library_afscp_local_runtime() {
     export MINIO_BUCKET
     # shellcheck disable=SC1091
     source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+    ensure_kind_cluster
     stop_afscp_local_runtime >/dev/null 2>&1 || true
     export AFSCP_ENVIRONMENT=local-real
     reset_owned_afscp_local_runtime_for_gate

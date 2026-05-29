@@ -199,8 +199,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
     expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
     expect(agentTaskGate).toContain(
-      '\ntrap cleanup EXIT\n\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nensure_internal_default_workspace_for_afscp\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
+      '\ntrap cleanup EXIT\n\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nensure_internal_default_workspace_for_afscp\nensure_internal_kind_cluster_for_afscp_reset\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
     );
+    expect(agentTaskGate).toContain('ensure_internal_kind_cluster_for_afscp_reset()');
     expect(agentTaskGate).toContain('ensure_internal_default_workspace_for_afscp()');
     expect(agentTaskGate).toContain('export LOCAL_MANUAL_INTERNAL_ENV_FILE=/dev/null');
     expect(agentTaskGate).toContain('export AFSCP_DATABASE_URL="${DATABASE_URL}"');
@@ -287,6 +288,11 @@ describe('internal backend-real gate runtime contract', () => {
       '\nreset_internal_afscp_local_runtime() {',
       '\n}\n\nrecord_service()',
     );
+    const kindResetBootstrapFunction = sectionBetween(
+      agentTaskGate,
+      '\nensure_internal_kind_cluster_for_afscp_reset() {',
+      '\n}\n\nreset_internal_afscp_local_runtime()',
+    );
     const cleanupFunction = sectionBetween(
       agentTaskGate,
       '\ncleanup() {',
@@ -294,12 +300,18 @@ describe('internal backend-real gate runtime contract', () => {
     );
 
     expect(startupBlock).not.toContain('\nstop_internal_afscp_local_runtime\n');
+    expect(startupBlock.match(/\nensure_internal_kind_cluster_for_afscp_reset\n/g) ?? []).toHaveLength(1);
     expect(startupBlock.match(/\nreset_internal_afscp_local_runtime\n/g) ?? []).toHaveLength(1);
+    expect(startupBlock.indexOf('\nensure_internal_kind_cluster_for_afscp_reset\n')).toBeLessThan(
+      startupBlock.indexOf('\nreset_internal_afscp_local_runtime\n'),
+    );
     expect(resetFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
     expect(resetFunction).toContain('reset_owned_afscp_local_runtime_for_gate');
     expect(resetFunction.indexOf('stop_internal_afscp_local_runtime')).toBeLessThan(
       resetFunction.indexOf('reset_owned_afscp_local_runtime_for_gate'),
     );
+    expect(kindResetBootstrapFunction).toContain('internal_real_gate_require_host_tools');
+    expect(kindResetBootstrapFunction).toContain('internal_real_gate_ensure_kind_cluster');
     expect(cleanupFunction).toContain('\n  stop_internal_afscp_local_runtime\n');
   });
 
@@ -919,6 +931,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain(
       '\nwait_for_internal_integration_deps_for_afscp\n'
       + 'ensure_internal_default_workspace_for_afscp\n'
+      + 'ensure_internal_kind_cluster_for_afscp_reset\n'
       + 'reset_internal_afscp_local_runtime\n'
       + 'enable_files_restore_continuation_afscp_restore_recovery\n'
       + 'prepare_internal_backend_real_gate_runtime',

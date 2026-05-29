@@ -432,6 +432,24 @@ stop_internal_afscp_local_runtime() {
   ) >/dev/null 2>&1 || true
 }
 
+ensure_internal_kind_cluster_for_afscp_reset() {
+  local target_kubeconfig
+
+  info "ensuring local kind cluster before AFSCP local runtime reset"
+  internal_real_gate_require_host_tools
+  KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-$(internal_real_gate_default_kind_cluster_name)}"
+  KIND_CONTEXT_NAME="${KIND_CONTEXT_NAME:-kind-${KIND_CLUSTER_NAME}}"
+  if declare -F scenario_kind_kubeconfig_path >/dev/null 2>&1; then
+    target_kubeconfig="$(scenario_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")"
+  else
+    target_kubeconfig="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-${HOME}/agentsmith/local-kind/${KIND_CONTEXT_NAME}.kubeconfig}"
+  fi
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${target_kubeconfig}"
+  export LOCAL_KIND_FINAL_KUBECONFIG_PATH
+  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  internal_real_gate_ensure_kind_cluster
+}
+
 reset_internal_afscp_local_runtime() {
   info "resetting owned AFSCP local runtime before gate start"
   stop_internal_afscp_local_runtime
@@ -522,6 +540,7 @@ trap cleanup EXIT
 ensure_internal_integration_deps_for_afscp
 wait_for_internal_integration_deps_for_afscp
 ensure_internal_default_workspace_for_afscp
+ensure_internal_kind_cluster_for_afscp_reset
 reset_internal_afscp_local_runtime
 enable_files_restore_continuation_afscp_restore_recovery
 prepare_internal_backend_real_gate_runtime

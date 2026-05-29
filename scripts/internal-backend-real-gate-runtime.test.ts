@@ -330,7 +330,14 @@ describe('internal backend-real gate runtime contract', () => {
 
     expect(ensureFunction).toContain('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1');
     expect(resetFunction).toContain('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1');
+    expect(ensureFunction).toContain('export PATH="${INTERNAL_REAL_DIR}/bin:${PATH}"');
+    expect(ensureFunction).toContain('export LD_LIBRARY_PATH="${INTERNAL_REAL_DIR}/bin/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"');
+    expect(ensureFunction).toContain('AFSCP_JUICEFS_OUTPUT_PATH="${INTERNAL_REAL_DIR}/bin/juicefs"');
+    expect(ensureFunction).toContain('bash "${ROOT_DIR}/scripts/afscp-jvs-image-smoke.sh"');
     expect(ensureFunction.indexOf('export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1')).toBeLessThan(
+      ensureFunction.indexOf('source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"'),
+    );
+    expect(ensureFunction.indexOf('AFSCP_JUICEFS_OUTPUT_PATH="${INTERNAL_REAL_DIR}/bin/juicefs"')).toBeLessThan(
       ensureFunction.indexOf('source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"'),
     );
   });

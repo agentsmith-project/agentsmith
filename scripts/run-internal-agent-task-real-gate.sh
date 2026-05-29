@@ -359,6 +359,8 @@ ensure_internal_afscp_local_runtime() {
   info "ensuring AFSCP local runtime at ${AFSCP_BASE_URL}"
   (
     export INTERNAL_REAL_DIR
+    export PATH="${INTERNAL_REAL_DIR}/bin:${PATH}"
+    export LD_LIBRARY_PATH="${INTERNAL_REAL_DIR}/bin/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
     export ENV_FILE=/dev/null
     export INTERNAL_AGENT_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}"
@@ -399,6 +401,10 @@ ensure_internal_afscp_local_runtime() {
     export AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${MOUNT_SERVICE_ACCOUNT}"
     export AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
     export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE}"
+    mkdir -p "${INTERNAL_REAL_DIR}/bin"
+    AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}" \
+      AFSCP_JUICEFS_OUTPUT_PATH="${INTERNAL_REAL_DIR}/bin/juicefs" \
+      bash "${ROOT_DIR}/scripts/afscp-jvs-image-smoke.sh"
     # shellcheck disable=SC1091
     source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
     ensure_afscp_local_runtime

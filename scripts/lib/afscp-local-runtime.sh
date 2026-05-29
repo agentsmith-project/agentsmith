@@ -30,9 +30,19 @@ resolve_afscp_local_runtime_defaults() {
     AFSCP_ORCHESTRATOR_SERVICE_TOKEN
 }
 
+prepare_afscp_gate_juicefs_from_image() {
+  local runtime_dir="$1"
+  local bin_dir="${runtime_dir}/bin"
+  mkdir -p "${bin_dir}"
+  AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}" \
+    AFSCP_JUICEFS_OUTPUT_PATH="${bin_dir}/juicefs" \
+    bash "${AFSCP_LOCAL_RUNTIME_ROOT_DIR}/scripts/afscp-jvs-image-smoke.sh"
+}
+
 with_afscp_local_runtime_env() {
   local runtime_dir="$1"
   shift
+  local runtime_command="${1:-}"
 
   (
     unset AFSCP_API_PORT AFSCP_API_LISTEN_ADDR AFSCP_EXPORT_GATEWAY_PORT AFSCP_EXPORT_GATEWAY_LISTEN_ADDR
@@ -42,6 +52,8 @@ with_afscp_local_runtime_env() {
 
     export ENV_FILE=/dev/null
     export INTERNAL_REAL_DIR="${runtime_dir}"
+    export PATH="${runtime_dir}/bin:${PATH}"
+    export LD_LIBRARY_PATH="${runtime_dir}/bin/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
     export INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
     export INTERNAL_AGENT_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${KIND_CLUSTER_NAME:-agentsmith}}"
     if [[ -n "${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}" ]]; then
@@ -91,6 +103,10 @@ with_afscp_local_runtime_env() {
     export AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT="${AFSCP_STORAGE_CSI_MOUNT_SERVICE_ACCOUNT:-}"
     export AFSCP_STORAGE_CSI_MOUNT_IMAGE="${AFSCP_STORAGE_CSI_MOUNT_IMAGE:-}"
     export AFSCP_STORAGE_CSI_NAMESPACE="${AFSCP_STORAGE_CSI_NAMESPACE:-kube-system}"
+
+    if [[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "image" && "${runtime_command}" == "ensure_afscp_local_runtime" ]]; then
+      prepare_afscp_gate_juicefs_from_image "${runtime_dir}"
+    fi
 
     # shellcheck disable=SC1091
     source "${AFSCP_LOCAL_RUNTIME_ROOT_DIR}/scripts/local-manual/internal-common.sh"

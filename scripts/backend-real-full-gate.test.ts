@@ -253,6 +253,9 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helperEnd).toBeGreaterThan(helperStart);
     expect(helperBody).toContain('scripts/afscp-jvs-image-smoke.sh');
     expect(helperBody).toContain('AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}"');
+    expect(helperBody).toContain('export PATH="${FILE_LIBRARY_REAL_GATE_BIN_DIR}:${PATH}"');
+    expect(helperBody).toContain('export LD_LIBRARY_PATH="${FILE_LIBRARY_REAL_GATE_BIN_DIR}/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"');
+    expect(helperBody).toContain('AFSCP_JUICEFS_OUTPUT_PATH="${FILE_LIBRARY_REAL_GATE_BIN_DIR}/juicefs"');
   });
 
   it('treats file-library resource recovery as a required substep with dedicated reports instead of smoke-only success', () => {
@@ -837,6 +840,11 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helper).toContain('export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"');
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"');
+    expect(helper).toContain('prepare_afscp_gate_juicefs_from_image()');
+    expect(helper).toContain('AFSCP_JUICEFS_OUTPUT_PATH="${bin_dir}/juicefs"');
+    expect(helper).toContain('export PATH="${runtime_dir}/bin:${PATH}"');
+    expect(helper).toContain('export LD_LIBRARY_PATH="${runtime_dir}/bin/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"');
+    expect(helper).toContain('if [[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "image" && "${runtime_command}" == "ensure_afscp_local_runtime" ]]; then');
     expect(helper).toContain('reset_afscp_local_runtime_for_gate()');
     expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_for_gate');
   });

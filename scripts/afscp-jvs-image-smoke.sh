@@ -4,6 +4,7 @@ set -euo pipefail
 AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2}}"
 EXPECTED_JVS_SHA256="${EXPECTED_JVS_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"
 EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f762bc436f0d3dc7c7c1d60847992c3a82718}"
+AFSCP_JUICEFS_OUTPUT_PATH="${AFSCP_JUICEFS_OUTPUT_PATH:-}"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentsmith-afscp-jvs-image-smoke.XXXXXX")"
 container_id=""
@@ -55,6 +56,22 @@ fi
 
 container_id="$(docker create --network none --entrypoint /usr/local/bin/jvs "${AFSCP_IMAGE}" afscp --help)"
 docker cp "${container_id}:/usr/local/bin/jvs" "${tmp_dir}/jvs" >/dev/null
+if [[ -n "${AFSCP_JUICEFS_OUTPUT_PATH}" ]]; then
+  juicefs_output_dir="$(dirname "${AFSCP_JUICEFS_OUTPUT_PATH}")"
+  juicefs_lib_output_dir="${juicefs_output_dir}/juicefs-lib"
+  mkdir -p "${juicefs_output_dir}"
+  rm -f "${AFSCP_JUICEFS_OUTPUT_PATH}"
+  rm -rf "${juicefs_lib_output_dir}"
+  docker cp "${container_id}:/usr/local/bin/juicefs" "${AFSCP_JUICEFS_OUTPUT_PATH}" >/dev/null
+  docker cp "${container_id}:/usr/local/juicefs-lib" "${juicefs_lib_output_dir}" >/dev/null
+  chmod 0755 "${AFSCP_JUICEFS_OUTPUT_PATH}"
+  LD_LIBRARY_PATH="${juicefs_lib_output_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    "${AFSCP_JUICEFS_OUTPUT_PATH}" version > "${tmp_dir}/juicefs-export-version.txt"
+  if ! grep -q '^juicefs version ' "${tmp_dir}/juicefs-export-version.txt"; then
+    err "exported /usr/local/bin/juicefs did not report a version"
+    exit 1
+  fi
+fi
 
 actual_sha="$(sha256sum "${tmp_dir}/jvs" | awk '{print $1}')"
 if [[ "${actual_sha}" != "${EXPECTED_JVS_SHA256}" ]]; then
@@ -64,4 +81,7 @@ fi
 
 info "passed: /usr/local/bin/jvs afscp --help works and SHA-256 matches ${actual_sha}"
 info "passed: /usr/local/bin/juicefs version and clone --help work"
+if [[ -n "${AFSCP_JUICEFS_OUTPUT_PATH}" ]]; then
+  info "prepared: ${AFSCP_JUICEFS_OUTPUT_PATH}"
+fi
 info "scope: focused pinned-image smoke only; not full AFSCP runtime readiness"

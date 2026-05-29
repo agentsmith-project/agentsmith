@@ -800,6 +800,11 @@ describe('local-manual internal handoff', () => {
     expect(script).toContain('clone --help');
     expect(script).toContain('docker create --network none --entrypoint /usr/local/bin/jvs');
     expect(script).toContain('docker cp "${container_id}:/usr/local/bin/jvs"');
+    expect(script).toContain('AFSCP_JUICEFS_OUTPUT_PATH="${AFSCP_JUICEFS_OUTPUT_PATH:-}"');
+    expect(script).toContain('docker cp "${container_id}:/usr/local/bin/juicefs" "${AFSCP_JUICEFS_OUTPUT_PATH}"');
+    expect(script).toContain('docker cp "${container_id}:/usr/local/juicefs-lib" "${juicefs_lib_output_dir}"');
+    expect(script).toContain('LD_LIBRARY_PATH="${juicefs_lib_output_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"');
+    expect(script).toContain('chmod 0755 "${AFSCP_JUICEFS_OUTPUT_PATH}"');
     expect(script).toContain('sha256sum "${tmp_dir}/jvs"');
     expect(script).not.toContain('go run');
     expect(script).not.toContain('../jvs');

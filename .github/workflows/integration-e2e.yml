@@ -15,7 +15,7 @@ on:
     paths:
       - "e2e/**"
       - "packages/api-entry-node/**"
-      - "packages/agent-runner/**"
+      - "packages/agent-runner-contract/**"
       - "packages/agent-task-runner/**"
       - "scripts/run-integration-e2e-full.sh"
       - "scripts/integration-keycloak-init.ts"

@@ -23,13 +23,13 @@ const ws = new WebSocket(wsUrl, {
   headers: { Authorization: `Bearer ${key}` },
 });
 
-function sendDone(requestId: string, usage: number) {
+function sendDone(requestId: string) {
   ws.send(
     JSON.stringify({
       type: 'agent.response.done',
       request_id: requestId,
       timestamp: new Date().toISOString(),
-      payload: { finish_reason: 'stop', usage_tokens: usage },
+      payload: { finish_reason: 'stop' },
     }),
   );
 }
@@ -91,7 +91,7 @@ ws.on('message', (raw) => {
         payload: { delta: text },
       }),
     );
-    sendDone(msg.request_id, text.length);
+    sendDone(msg.request_id);
     return;
   }
 
@@ -108,7 +108,7 @@ ws.on('message', (raw) => {
       }),
     );
   }
-  sendDone(msg.request_id, response.length);
+  sendDone(msg.request_id);
 });
 
 ws.on('close', () => {

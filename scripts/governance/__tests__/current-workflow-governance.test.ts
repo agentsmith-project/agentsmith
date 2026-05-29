@@ -291,6 +291,12 @@ function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): strin
   return Object.keys(asRecord(rawOn)).sort();
 }
 
+function collectWorkflowPullRequestPaths(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  const pullRequest = asRecord(asRecord(rawOn).pull_request);
+  return asStringArray(pullRequest.paths).sort();
+}
+
 function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
   return Object.keys(asRecord(parsedWorkflow.jobs)).sort();
 }
@@ -1094,6 +1100,18 @@ describe('current workflow governance', () => {
       '.github/workflows/release-contract-artifact.yml',
       '.github/workflows/runner-contract-artifact.yml',
     ]);
+  });
+
+  it('keeps integration e2e pull request paths on active runner surfaces', () => {
+    const paths = collectWorkflowPullRequestPaths(parseWorkflow('.github/workflows/integration-e2e.yml'));
+
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'packages/agent-runner-contract/**',
+        'packages/agent-task-runner/**',
+      ]),
+    );
+    expect(paths).not.toContain('packages/agent-runner/**');
   });
 
   it('keeps CI workflow manifest jobs aligned with GitHub workflow YAML jobs and triggers', () => {

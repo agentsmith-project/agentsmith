@@ -66,7 +66,7 @@ ws.on('message', (raw) => {
     type: 'agent.response.done',
     request_id: msg.request_id,
     timestamp: new Date().toISOString(),
-    payload: { finish_reason: 'stop', usage_tokens: response.length },
+    payload: { finish_reason: 'stop' },
   }));
 });
 

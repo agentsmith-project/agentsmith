@@ -41,6 +41,23 @@ describe('current verification campaign manifest', () => {
     );
   });
 
+  it('keeps release-kit online adoption handoff out of release-full steps', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    const stepSurface = releaseFull.steps.flatMap((step) => [
+      step.id,
+      step.gateId,
+      step.npmScript,
+      step.command,
+      ...step.dependsOn,
+    ]);
+
+    expect(stepSurface.join('\n')).not.toMatch(/release-kit|online-adoption|handoff/iu);
+  });
+
   it('binds every campaign step to a current gate or lane definition', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {

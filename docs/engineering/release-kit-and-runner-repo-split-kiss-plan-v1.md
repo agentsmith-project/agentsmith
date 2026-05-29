@@ -12,7 +12,7 @@ Active plan 读法：
 1. AgentSmith 当前是 pre-GA。旧名称、旧路径、旧职责、旧 profile、旧 env、旧脚本入口和已移除字段默认不保留长期正式路径；正式路径不能接就删除或 fail fast。
 2. 旧名称和现有 AgentSmith unified deploy / runner 诊断只允许作为负向测试、失败边界、本机诊断或短期待删清单；任何短期临时兼容都必须在第 3.2 节有 owner、删除条件、删除时机/阶段和验收证据。
 3. 功能核心优先 / 治理最小化：后续只保留服务当前用户路径、当前合同边界、当前安全边界、真实发布/运行安全或 operator 低心智负担的 gate/docs/script；没有明确风险绑定的治理项不进入 active workflow。过时、低收益、只增加心智负担的治理检查/文档/脚本删除优先，其次降级为 focused diagnostic，最后才保留长期 gate。
-4. 本补充不写入 `docs/项目宪法.md`：宪法已有 MVP 收敛边界；当前计划只负责 release-kit / runner 拆分的执行层收敛。
+4. 本补充不写入 `docs/项目宪法.md`，也不新增宪法条款；宪法已有 MVP 收敛边界，当前计划只负责 release-kit / runner 拆分的执行层约束。
 5. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
 6. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 7. 下方 Evidence log snapshot 和第 3.1 节是 evidence log / 历史完成记录，不扩大正式发布目标，也不能替代 release-kit repo-local deployment/package/operator verdict。
@@ -1546,6 +1546,8 @@ P5.1 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-a
 P6-lite 清理从最后阶段提前为当前并行收口项：没有产品功能价值、合同安全价值、
 secret/redaction 价值、真实发布/运行安全价值或 operator 低心智价值的检查/文档/脚本，
 删除优先，其次降级为 focused diagnostic，最后才保留长期 gate。
+后续新增 gate/docs/script 必须绑定当前功能、安全、真实运行/发布安全或 operator 低心智；
+过时低收益治理项删除优先，其次降级 focused diagnostic，不升级为长期 gate。
 
 工作：
 
@@ -1860,7 +1862,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 32. 有没有把 P5 runner publish manifest evidence 写成 AgentSmith adoption lock、release contract runner digest adoption、release readiness、backend-real、真实 LLM、full runtime semantics、release-kit/airgap/online deployment readiness，或恢复旧别名 / latest / `agent-task-runner` / `agentsmith-codex-runner` 作为正式成功路径？
 33. 有没有把 release-kit managed runner image closure consumption 写成 release readiness、airgap ready、offline package readiness、registry mirror/login/push/pull、deploy adoption/full online adoption/operator full verdict、backend-real、真实 LLM、full runtime semantics，或把 stale six-image、旧 `${{ values.MANAGED_RUNNER_IMAGE }}`、旧 runner 名写成正式成功路径？
 34. 有没有把 P5 request-scoped projected dependencies contract/env wiring 写成 fake-Codex task-execution image smoke、release readiness、deployment/offline/airgap readiness、AgentSmith full adoption，或让 runner repo 解释 Context Store / managed credential / scope / write policy 语义、接受旧字段作为 legacy 成功路径？
-35. 有没有新增不服务功能核心、发布安全/运行安全或 operator 低心智负担的长期 gate/docs/script？
+35. 有没有新增不服务当前功能、当前安全、真实运行/发布安全或 operator 低心智的长期 gate/docs/script，或者把过时低收益治理项升级为长期 gate 而不是删除/降级 focused diagnostic？
 
 任一答案为“有”，停止并回到边界评审。
 

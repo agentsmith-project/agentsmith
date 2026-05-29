@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 
 describe('buildAgentRuntimeEnv', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('maps task execution context into task and run scoped MBOS_AGENT env vars', () => {
     const env = buildAgentRuntimeEnv({
       api_base: 'http://127.0.0.1:20000/api/v1',
@@ -27,6 +31,7 @@ describe('buildAgentRuntimeEnv', () => {
       MBOS_AGENT_MODEL: 'gpt-5-codex',
       MBOS_AGENT_WIRE_API: 'openai_responses',
       MBOS_AGENT_EXECUTION_TICKET: 'exec_123',
+      MBOS_AGENT_PROJECTED_DEPENDENCIES: '',
     });
     expect(env).not.toHaveProperty('MBOS_AGENT_SESSION_ID');
     expect(env).not.toHaveProperty('MBOS_AGENT_INTERACTION_KIND');
@@ -44,6 +49,35 @@ describe('buildAgentRuntimeEnv', () => {
       MBOS_AGENT_MODEL: '',
       MBOS_AGENT_WIRE_API: '',
       MBOS_AGENT_EXECUTION_TICKET: '',
+      MBOS_AGENT_PROJECTED_DEPENDENCIES: '',
     });
+  });
+
+  it('serializes projected dependencies into the runtime env', () => {
+    const projectedDependencies = {
+      dependencies: {
+        'jira-auth': {
+          fields: {
+            base_url: 'http://127.0.0.1:45001',
+            token: 'jira_task_token',
+          },
+        },
+      },
+    };
+
+    const env = buildAgentRuntimeEnv({
+      projected_dependencies: projectedDependencies,
+    });
+
+    expect(env.MBOS_AGENT_PROJECTED_DEPENDENCIES).toBe(JSON.stringify(projectedDependencies));
+  });
+
+  it('does not inherit projected dependencies from the parent process env', () => {
+    vi.stubEnv(
+      'MBOS_AGENT_PROJECTED_DEPENDENCIES',
+      JSON.stringify({ dependencies: { from_parent: true } }),
+    );
+
+    expect(buildAgentRuntimeEnv({}).MBOS_AGENT_PROJECTED_DEPENDENCIES).toBe('');
   });
 });

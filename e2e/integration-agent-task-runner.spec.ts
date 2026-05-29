@@ -149,16 +149,38 @@ async function createRunnerlessAgentTask(args: {
   return taskId;
 }
 
-function buildJiraProjectionEnvSmokeCommand(): string {
+function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false): string {
   const python = [
     'import json,os,sys,urllib.request',
     '[os.environ.pop(k,None) for k in ("http_proxy","https_proxy","all_proxy","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","no_proxy","NO_PROXY")]',
+    ...(includeRunnerBoundarySmoke
+      ? [
+          'home=os.environ.get("HOME","")',
+          'task_home=os.environ.get("TASK_HOME","")',
+          'workspace_path=os.environ.get("WORKSPACE_PATH","")',
+          'artifacts_path=os.environ.get("ARTIFACTS_PATH","")',
+          'if not home: sys.exit("missing_HOME")',
+          'if not task_home: sys.exit("missing_TASK_HOME")',
+          'if home != task_home: sys.exit("home_task_home_mismatch")',
+          'if not (task_home.startswith("/home/") and task_home.count("/") == 2 and len(task_home) > len("/home/")): sys.exit("invalid_TASK_HOME")',
+          'if os.getcwd() != workspace_path: sys.exit("cwd_workspace_mismatch")',
+          'if workspace_path != task_home + "/workspace": sys.exit("workspace_path_mismatch")',
+          'if artifacts_path != workspace_path + "/.artifacts": sys.exit("artifacts_path_mismatch")',
+          'if "MBOS_AGENT_KEY" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_KEY")',
+          'if "MBOS_AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_WS_URL")',
+        ]
+      : []),
     'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',
     'raw or sys.exit("missing_MBOS_AGENT_PROJECTED_DEPENDENCIES")',
     'data=json.loads(raw)',
     'deps=data.get("dependencies") if isinstance(data,dict) else None',
     'dep=deps.get("jira-auth") if isinstance(deps,dict) else None',
     'fields=dep.get("fields") if isinstance(dep,dict) else None',
+    ...(includeRunnerBoundarySmoke
+      ? [
+          'isinstance(fields,dict) or sys.exit("missing_jira_auth_fields")',
+        ]
+      : []),
     'base_url=fields.get("base_url") if isinstance(fields,dict) and isinstance(fields.get("base_url"),str) else None',
     'token=fields.get("token") if isinstance(fields,dict) and isinstance(fields.get("token"),str) else None',
     'base_url or sys.exit("missing_jira_base_url")',
@@ -168,10 +190,47 @@ function buildJiraProjectionEnvSmokeCommand(): string {
     'profile=json.loads(urllib.request.urlopen(request,timeout=10).read().decode("utf-8"))',
     'display_name=profile.get("displayName") if isinstance(profile,dict) and isinstance(profile.get("displayName"),str) else None',
     'display_name or sys.exit("missing_jira_displayName")',
-    'print("JIRA_PROJECTION::"+display_name)',
-  ].join('; ');
+    ...(includeRunnerBoundarySmoke
+      ? [
+          'token_bytes=token.encode("utf-8")',
+          'leak_path=None',
+          'checked_files=0',
+          'checked_bytes=0',
+          'max_files=200',
+          'max_bytes=1048576',
+          'for root, dirs, files in os.walk(task_home):',
+          '    dirs[:]=[name for name in dirs if name not in (".git","node_modules",".next",".cache",".codex")]',
+          '    for name in files:',
+          '        if checked_files >= max_files or checked_bytes >= max_bytes:',
+          '            break',
+          '        file_path=os.path.join(root,name)',
+          '        try:',
+          '            if os.path.islink(file_path):',
+          '                continue',
+          '            read_size=min(os.path.getsize(file_path),65536,max_bytes-checked_bytes)',
+          '            if read_size <= 0:',
+          '                break',
+          '            with open(file_path,"rb") as handle:',
+          '                chunk=handle.read(read_size)',
+          '            checked_files+=1',
+          '            checked_bytes+=read_size',
+          '        except OSError:',
+          '            continue',
+          '        if token_bytes in chunk:',
+          '            leak_path=os.path.relpath(file_path,task_home)',
+          '            break',
+          '    if leak_path or checked_files >= max_files or checked_bytes >= max_bytes:',
+          '        break',
+          'if leak_path:',
+          '    sys.exit("task_token_persisted:"+leak_path)',
+          'print("JIRA_PROJECTION::"+display_name+" RUNNER_PROJECTION_BOUNDARY::ok")',
+        ]
+      : [
+          'print("JIRA_PROJECTION::"+display_name)',
+        ]),
+  ].join('\n');
 
-  return `python3 -c '${python}'`;
+  return `python3 -c 'exec(${JSON.stringify(python)})'`;
 }
 
 test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
@@ -497,8 +556,11 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       });
 
       stage = 'start_task_run';
-      const jiraProjectionCommand = buildJiraProjectionEnvSmokeCommand();
+      const jiraProjectionCommand = buildJiraProjectionEnvSmokeCommand(Boolean(projectionSmokeImage));
       expect(jiraProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+      if (projectionSmokeImage) {
+        expect(jiraProjectionCommand).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+      }
       const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
         page,
         workspaceId: WORKSPACE_ID,
@@ -553,6 +615,9 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         .map((item) => item.content ?? '')
         .join('\n');
       expect(runnerOutputContent).toContain(`JIRA_PROJECTION::${taskDisplayName}`);
+      if (projectionSmokeImage) {
+        expect(runnerOutputContent).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+      }
       expect(runnerOutputContent).not.toContain(`JIRA_PROJECTION::${memberDisplayName}`);
       expectRunnerOutputNotToLeakSecret(runnerOutputContent, taskToken, 'redacted task Jira token');
       expectRunnerOutputNotToLeakSecret(runnerOutputContent, memberToken, 'redacted member Jira token');

@@ -577,9 +577,9 @@ substrate 安装/部署结论、cloud provisioning、DB/bucket/realm 创建、ba
 5. Runner 迁移结论：旧 `@mbos/agent-runner` shim 不能成为长期共享路径、正式路径或 release proof；projected dependencies 已由 runner repo `buildAgentRuntimeEnv` 输出 `MBOS_AGENT_PROJECTED_DEPENDENCIES` opaque bulk env，fake-Codex focused task-execution image smoke 已完成，AgentSmith `--runner-projection-smoke` 现在只接受 canonical `agentsmith-runner-image.lock` digest image 且默认不 build，但 broader runtime semantics、HOME/TASK_HOME、credential non-persistence、backend-real、真实 LLM 和 adoption 串联仍待后续 P5 小切片收口。P5 image smoke 不是正式 runner image/adoption；P5 publish manifest evidence 本身也不是 AgentSmith manifest/lock adoption 或 release readiness，不能单独作为 release proof；AgentSmith release contract runner digest adoption 后，release-kit managed runner image closure consumption 已完成，但这仍不是 release readiness、airgap/offline package readiness、backend-real、真实 LLM 或 full runtime semantics。
 6. 旧输入复审结论：项目仍 pre-GA，旧命名、旧路径、旧职责、旧入口、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包和已移除字段默认删除或 fail fast，不作为长期可用路径或长期发布/部署契约。只有负向测试、失败边界、过渡期专项诊断或 operator 短期说明确实需要临时兼容时才短期保留；任何短期待删项都必须挂 owner、删除条件、删除时机/阶段和验收证据，并在 P2/P5/P6 删除或归位。
 
-## Detailed Closure Questions Reference
+## 历史详细问题原文 / 当时使用的防漂移问题
 
-阶段收口必须回答：
+以下内容是历史 reference，用于还原当时使用的防漂移问题原文；不是当前每次切片默认必答 gate。
 
 1. 这次改动有没有新增用户概念？
 2. 有没有把产品证据搬出 AgentSmith？
@@ -617,4 +617,4 @@ substrate 安装/部署结论、cloud provisioning、DB/bucket/realm 创建、ba
 34. 有没有把 P5 request-scoped projected dependencies contract/env wiring 或 AgentSmith `--runner-projection-smoke` lock truth 写成 fake-Codex task-execution image smoke、release readiness、deployment/offline/airgap readiness、deploy verdict、package readiness、AgentSmith full adoption，或让 runner repo 解释 Context Store / managed credential / scope / write policy 语义、接受旧字段/旧 image/build 路径作为 legacy 成功路径，或引入第二 runner image lock path？
 35. 有没有新增不服务当前功能、当前安全、真实运行/发布安全或 operator 低心智的长期 gate/docs/script，或者把过时低收益治理项升级为长期 gate 而不是删除/降级 focused diagnostic？
 
-任一答案为“有”，停止并回到边界评审。
+当时若任一答案为“有”，则回到边界评审；当前 active 审查以主计划 invariant 为准。

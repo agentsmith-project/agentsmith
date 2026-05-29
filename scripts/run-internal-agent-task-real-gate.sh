@@ -97,7 +97,11 @@ EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
 RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock}"
 RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
-BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
+if [[ "${GATE_MODE}" == "runner-projection-smoke" ]]; then
+  BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-0}"
+else
+  BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
+fi
 DOCKER_BUILD_PROXY_VALUE="${INTEGRATION_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-}}"
 STORAGE_CAPACITY="${AFSCP_STORAGE_CAPACITY:-1Pi}"
 STORAGE_CLASS_NAME="${AFSCP_STORAGE_CLASS_NAME:-}"
@@ -215,45 +219,42 @@ ensure_runner_projection_smoke_image_preconditions() {
     echo "[internal-real-gate] --runner-projection-smoke requires image= in ${RUNNER_IMAGE_LOCK_PATH} to be a digest ref; actual=${locked_image}" >&2
     exit 1
   fi
-  if [[ -z "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" ]]; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE is required"
-    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to be set to the locked digest image: ${locked_image}" >&2
-    exit 1
-  fi
   if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" == *agent-task-runner* ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path"
     echo "[internal-real-gate] --runner-projection-smoke requires a canonical agentsmith-runner image; old agent-task-runner image/path is rejected: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
     exit 1
   fi
-  if [[ "${BUILD_RUNNER_IMAGE}" != "0" ]]; then
-    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required"
-    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 so it cannot fall back to the old monorepo runner image build." >&2
-    exit 1
-  fi
-  if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then
+  if [[ -n "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" && "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image_lock" "INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock"
     echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to exactly match image= from ${RUNNER_IMAGE_LOCK_PATH}; tag-only or local non-digest images are not accepted." >&2
     echo "[internal-real-gate] expected=${locked_image}" >&2
     echo "[internal-real-gate] actual=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
     exit 1
   fi
+  BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${BUILD_RUNNER_IMAGE:-0}}"
+  if [[ "${BUILD_RUNNER_IMAGE}" != "0" ]]; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required"
+    echo "[internal-real-gate] --runner-projection-smoke requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 so it cannot fall back to the old monorepo runner image build." >&2
+    exit 1
+  fi
   RUNNER_IMAGE="${locked_image}"
   EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"
   export INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"
+  export INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE="${BUILD_RUNNER_IMAGE}"
   if ! command -v docker >/dev/null 2>&1; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE"
     echo "[internal-real-gate] --runner-projection-smoke requires docker to inspect INTEGRATION_INTERNAL_AGENT_IMAGE before running." >&2
     exit 1
   fi
-  if ! docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1; then
+  if ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "local docker image not found"
-    echo "[internal-real-gate] --runner-projection-smoke requires the local docker image to exist: INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    echo "[internal-real-gate] --runner-projection-smoke requires the local docker image to exist: INTEGRATION_INTERNAL_AGENT_IMAGE=${RUNNER_IMAGE}" >&2
     exit 1
   fi
-  image_id="$(docker image inspect --format '{{.Id}}' "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" 2>/dev/null | head -n1)"
+  image_id="$(docker image inspect --format '{{.Id}}' "${RUNNER_IMAGE}" 2>/dev/null | head -n1)"
   if [[ -z "${image_id}" ]]; then
     gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "runner_projection_smoke_image" "docker image id not found"
-    echo "[internal-real-gate] --runner-projection-smoke could not read docker image id for INTEGRATION_INTERNAL_AGENT_IMAGE=${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >&2
+    echo "[internal-real-gate] --runner-projection-smoke could not read docker image id for INTEGRATION_INTERNAL_AGENT_IMAGE=${RUNNER_IMAGE}" >&2
     exit 1
   fi
   export INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID="${image_id}"

@@ -4,11 +4,18 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX } from './governance/current-release-boundary-schema';
+
+const RUNNER_IMAGE_LOCK_TRUTH_PATH =
+  'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock';
+const NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH = 'infra/deploy/shared/agentsmith-runner-image.lock';
 
 function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
@@ -25,6 +32,10 @@ function shellFunctionBody(source: string, functionName: string): string {
   return source.slice(start, end);
 }
 
+function shellFunctionBefore(source: string, startNeedle: string, nextNeedle: string): string {
+  return `${sectionBetween(source, startNeedle, `\n}\n\n${nextNeedle}`)}\n}`;
+}
+
 function sectionBetween(source: string, startNeedle: string, endNeedle: string): string {
   const start = source.indexOf(startNeedle);
   expect(start, `${startNeedle} start`).toBeGreaterThanOrEqual(0);
@@ -32,6 +43,98 @@ function sectionBetween(source: string, startNeedle: string, endNeedle: string):
   expect(end, `${endNeedle} end`).toBeGreaterThan(start);
 
   return source.slice(start, end);
+}
+
+function runRunnerProjectionSmokeImagePreconditions(args: {
+  explicitImage?: string;
+  buildImage?: string;
+} = {}): { stdout: string; stderr: string; status: number | null } {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runner-projection-smoke-image-'));
+  const lockPath = path.join(tempRoot, 'agentsmith-runner-image.lock');
+  const scriptPath = path.join(tempRoot, 'image-preconditions.sh');
+  const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+  const lockFunction = shellFunctionBefore(
+    agentTaskGate,
+    '\nrunner_image_lock_value() {',
+    'deepseek_openai_host',
+  );
+  const imagePreconditionFunction = shellFunctionBefore(
+    agentTaskGate,
+    '\nensure_runner_projection_smoke_image_preconditions() {',
+    'ensure_runner_projection_smoke_deepseek_preconditions',
+  );
+
+  writeFileSync(
+    lockPath,
+    read(RUNNER_IMAGE_LOCK_TRUTH_PATH),
+    'utf8',
+  );
+  writeFileSync(
+    scriptPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="${repoRoot}"
+GATE_MODE="runner-projection-smoke"
+RUNNER_IMAGE_LOCK_PATH="${lockPath}"
+INTERNAL_REAL_DIR="${tempRoot}/internal"
+RUNNER_IMAGE="agentsmith-managed-runner:local"
+EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="\${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
+mkdir -p "\${INTERNAL_REAL_DIR}"
+
+gate_record_failure() {
+  printf 'failure:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+}
+
+gate_record_preflight_check() {
+  printf 'preflight:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+}
+
+docker() {
+  if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" && "\${3:-}" == "--format" ]]; then
+    printf 'sha256:runner-projection-smoke-image-id\\n'
+    return 0
+  fi
+  if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+    return 0
+  fi
+  printf 'unexpected docker call: %s\\n' "$*" >&2
+  return 1
+}
+
+${lockFunction}
+${imagePreconditionFunction}
+
+ensure_runner_projection_smoke_image_preconditions
+printf 'resolved_runner=%s\\n' "\${RUNNER_IMAGE}"
+printf 'exported_image=%s\\n' "\${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
+printf 'build_runner_image=%s\\n' "\${BUILD_RUNNER_IMAGE:-}"
+printf 'exported_build=%s\\n' "\${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-}"
+printf 'image_id=%s\\n' "\${INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID:-}"
+`,
+    'utf8',
+  );
+
+  try {
+    const result = spawnSync('bash', [scriptPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        ...(args.explicitImage === undefined ? {} : { INTEGRATION_INTERNAL_AGENT_IMAGE: args.explicitImage }),
+        ...(args.buildImage === undefined ? {} : { INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE: args.buildImage }),
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function renderSandboxState(env: Record<string, string>): string {
@@ -899,12 +1002,80 @@ describe('internal backend-real gate runtime contract', () => {
     expect(backendRealRun).not.toContain('e2e/integration-files-user-stories.spec.ts');
   });
 
+  it('defaults runner projection smoke to the locked digest image and disables image builds', () => {
+    const lock = read(RUNNER_IMAGE_LOCK_TRUTH_PATH);
+    const lockedImage = lock.match(/^image=(.+)$/m)?.[1] ?? '';
+    const lockedDigest = lock.match(/^image_digest=(.+)$/m)?.[1] ?? '';
+    const result = runRunnerProjectionSmokeImagePreconditions();
+
+    expect(lockedImage).toContain(`@${lockedDigest}`);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(`resolved_runner=${lockedImage}`);
+    expect(result.stdout).toContain(`exported_image=${lockedImage}`);
+    expect(result.stdout).toContain('build_runner_image=0');
+    expect(result.stdout).toContain('exported_build=0');
+    expect(result.stdout).toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(result.stdout).toContain('preflight:runner_projection_smoke_image_lock|passed|');
+    expect(result.stdout).not.toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
+  });
+
+  it('rejects explicit runner projection smoke image drift before docker inspect', () => {
+    const lock = read(RUNNER_IMAGE_LOCK_TRUTH_PATH);
+    const lockedImage = lock.match(/^image=(.+)$/m)?.[1] ?? '';
+    const driftedImage = lockedImage.replace(/sha256:[0-9a-f]{64}/u, `sha256:${'0'.repeat(64)}`);
+    const result = runRunnerProjectionSmokeImagePreconditions({
+      explicitImage: driftedImage,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('failure:infra_dependency_unready|runner_projection_smoke_image_lock|');
+    expect(result.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(result.stdout).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock');
+    expect(result.stderr).toContain('requires INTEGRATION_INTERNAL_AGENT_IMAGE to exactly match image=');
+    expect(result.stderr).toContain(`expected=${lockedImage}`);
+    expect(result.stderr).toContain(`actual=${driftedImage}`);
+  });
+
+  it('rejects explicit runner projection smoke legacy aliases before docker inspect', () => {
+    const legacyImage = 'agentsmith-agent-task-runner:local';
+    const result = runRunnerProjectionSmokeImagePreconditions({
+      explicitImage: legacyImage,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('failure:infra_dependency_unready|runner_projection_smoke_image|');
+    expect(result.stdout).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
+    expect(result.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(result.stderr).toContain('old agent-task-runner image/path is rejected');
+    expect(result.stderr).toContain(legacyImage);
+  });
+
+  it('rejects explicit runner projection smoke build requests without falling back to local build', () => {
+    const result = runRunnerProjectionSmokeImagePreconditions({
+      buildImage: '1',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('failure:infra_dependency_unready|runner_projection_smoke_image|');
+    expect(result.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(result.stdout).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
+    expect(result.stderr).toContain('requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0');
+    expect(result.stderr).toContain('old monorepo runner image build');
+  });
+
   it('keeps runner projection smoke focused and fail-fast on a canonical runner image', () => {
     const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const runnerImageLockChecker = read('scripts/contracts/check-runner-image-lock.ts');
+    const releaseBoundaryChecker = read('scripts/contracts/check-release-boundary-contract.ts');
+    const releaseContractArtifact = read('scripts/governance/release-contract-artifact.ts');
     const backendRealRun = read('scripts/backend-real-run.sh');
     const agentTaskRunnerSpec = read('e2e/integration-agent-task-runner.spec.ts');
     const realHelpers = read('e2e/integration-real-helpers.ts');
+    const runnerImageLockTruth = CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX.find(
+      (entry) => entry.truth === 'runner_image_lock',
+    );
     const deepseekPrecondition = sectionBetween(
       agentTaskGate,
       '\nensure_runner_projection_smoke_deepseek_preconditions() {',
@@ -931,24 +1102,37 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_PROJECTION_SMOKE=1');
     expect(agentTaskGate).toContain('export INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE=1');
     expect(agentTaskGate).toContain('EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"');
-    expect(agentTaskGate).toContain('RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock}"');
-    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
+    expect(agentTaskGate).toContain(
+      `RUNNER_IMAGE_LOCK_PATH="\${RUNNER_IMAGE_LOCK_PATH:-\${ROOT_DIR}/${RUNNER_IMAGE_LOCK_TRUTH_PATH}}"`,
+    );
+    expect(runnerImageLockChecker).toContain(`'${RUNNER_IMAGE_LOCK_TRUTH_PATH}'`);
+    expect(runnerImageLockTruth?.physical_source).toBe(RUNNER_IMAGE_LOCK_TRUTH_PATH);
+    expect(releaseBoundaryChecker).toContain(`const FIXTURE_ROOT = '${path.dirname(RUNNER_IMAGE_LOCK_TRUTH_PATH)}';`);
+    expect(releaseBoundaryChecker).toContain("join(FIXTURE_ROOT, 'agentsmith-runner-image.lock')");
+    expect(releaseContractArtifact).toContain(`'${RUNNER_IMAGE_LOCK_TRUTH_PATH}' as const`);
+    expect(agentTaskGate).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
+    expect(runnerImageLockChecker).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
+    expect(releaseBoundaryChecker).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
+    expect(releaseContractArtifact).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
+    expect(agentTaskGate).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-0}"');
+    expect(agentTaskGate).not.toContain('INTEGRATION_INTERNAL_AGENT_IMAGE is required');
     expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
     expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
     expect(agentTaskGate).toContain('old monorepo runner image build');
     expect(imagePrecondition).toContain('locked_image="$(runner_image_lock_value image)"');
     expect(imagePrecondition).toContain('locked_digest="$(runner_image_lock_value image_digest)"');
     expect(imagePrecondition).toContain('if [[ "${locked_image}" != *@sha256:* ]]; then');
-    expect(imagePrecondition).toContain('if [[ "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then');
+    expect(imagePrecondition).toContain('if [[ -n "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" && "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" != "${locked_image}" ]]; then');
     expect(imagePrecondition).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock');
     expect(imagePrecondition).toContain('tag-only or local non-digest images are not accepted');
     expect(imagePrecondition).toContain('RUNNER_IMAGE="${locked_image}"');
     expect(imagePrecondition).toContain('export INTEGRATION_INTERNAL_AGENT_IMAGE="${locked_image}"');
+    expect(imagePrecondition).toContain('export INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE="${BUILD_RUNNER_IMAGE}"');
     expect(imagePrecondition).not.toContain('repo_digests');
     expect(imagePrecondition).not.toContain('lock_pending');
     expect(agentTaskGate).toContain('command -v docker >/dev/null 2>&1');
-    expect(agentTaskGate).toContain('docker image inspect "${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}" >/dev/null 2>&1');
-    expect(agentTaskGate).toContain("docker image inspect --format '{{.Id}}' \"${EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE}\"");
+    expect(agentTaskGate).toContain('docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1');
+    expect(agentTaskGate).toContain("docker image inspect --format '{{.Id}}' \"${RUNNER_IMAGE}\"");
     expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID="${image_id}"');
     expect(agentTaskGate).toContain('scripts/contracts/check-runner-image-lock.ts');
     expect(agentTaskGate).toContain('BACKEND_REAL_OPENAI_BASE_URL must resolve to DeepSeek');

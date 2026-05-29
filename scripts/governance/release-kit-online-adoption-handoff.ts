@@ -546,10 +546,19 @@ function validateReleaseContractBinding(
     return invalid('release_contract_file', 'supplied release contract must be an object.');
   }
 
-  if (typeof value.release_id === 'string' && value.release_id !== releaseId) {
+  const releaseIdResult = requireNonEmptyString(value.release_id, 'release_contract_file.release_id');
+  if (!releaseIdResult.ok) {
+    return releaseIdResult;
+  }
+  const gitShaResult = validateGitShaValue(value.git_sha, 'release_contract_file.git_sha');
+  if (!gitShaResult.ok) {
+    return gitShaResult;
+  }
+
+  if (releaseIdResult.value !== releaseId) {
     return invalid('release_id', 'release_id must match supplied release contract release_id.');
   }
-  if (typeof value.git_sha === 'string' && value.git_sha !== gitSha) {
+  if (gitShaResult.value !== gitSha) {
     return invalid('git_sha', 'git_sha must match supplied release contract git_sha.');
   }
 

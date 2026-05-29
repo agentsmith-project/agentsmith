@@ -127,6 +127,16 @@ describe('release-kit online adoption handoff validator', () => {
     }, 'release_contract.input_sha256 must match supplied release contract raw digest');
   });
 
+  it.each([
+    ['release_id', 'release_contract_file.release_id must be a non-empty string.'],
+    ['git_sha', 'release_contract_file.git_sha must be a non-empty string.'],
+  ])('rejects a supplied release contract missing %s', (key, expectedReason) => {
+    expectInvalidReleaseContract((releaseContract) => {
+      delete releaseContract[key];
+      return releaseContract;
+    }, expectedReason);
+  });
+
   it('rejects a canonical repo identity mismatch', () => {
     expectInvalid((descriptor) => {
       getRecord(descriptor, 'provenance').normalized_remote = 'github.com/agentsmith-project/not-release-kit';
@@ -186,6 +196,20 @@ function expectInvalid(
   expect(failureText(result)).toContain(expectedReason);
 }
 
+function expectInvalidReleaseContract(
+  buildReleaseContract: (releaseContract: Record<string, unknown>) => Record<string, unknown>,
+  expectedReason: string,
+): void {
+  const fixture = writeFixture((descriptor) => descriptor, buildReleaseContract);
+  const result = validateReleaseKitOnlineAdoptionHandoffFiles({
+    inputPath: fixture.inputPath,
+    releaseContractPath: fixture.releaseContractPath,
+  });
+
+  expect(result.ok).toBe(false);
+  expect(failureText(result)).toContain(expectedReason);
+}
+
 function failureText(result: ValidationResult): string {
   if (result.ok) {
     return '';
@@ -196,16 +220,21 @@ function failureText(result: ValidationResult): string {
 
 function writeFixture(
   buildInput: (descriptor: Record<string, unknown>) => unknown = (descriptor) => descriptor,
+  buildReleaseContract: (releaseContract: Record<string, unknown>) => Record<string, unknown> = (
+    releaseContract,
+  ) => releaseContract,
 ): FixturePaths {
   const root = mkdtempSync(join(tmpdir(), 'agentsmith-handoff-'));
   tempRoots.push(root);
 
-  const releaseContractRaw = readFileSync(RELEASE_CONTRACT_FIXTURE);
+  const sourceReleaseContractRaw = readFileSync(RELEASE_CONTRACT_FIXTURE);
+  const sourceReleaseContract = parseRecord(sourceReleaseContractRaw.toString('utf8'));
+  const releaseContract = buildReleaseContract(structuredClone(sourceReleaseContract) as Record<string, unknown>);
+  const releaseContractRaw = Buffer.from(`${JSON.stringify(releaseContract, null, 2)}\n`);
   const releaseContractPath = join(root, 'release-contract.json');
   writeFileSync(releaseContractPath, releaseContractRaw);
 
-  const releaseContract = parseRecord(releaseContractRaw.toString('utf8'));
-  const descriptor = validDescriptor(releaseContractRaw, releaseContract);
+  const descriptor = validDescriptor(releaseContractRaw, releaseContract, sourceReleaseContract);
   const inputPath = join(root, 'handoff.json');
   writeFileSync(inputPath, `${JSON.stringify(buildInput(descriptor), null, 2)}\n`);
 
@@ -218,14 +247,15 @@ function writeFixture(
 function validDescriptor(
   releaseContractRaw: Buffer,
   releaseContract: Record<string, unknown>,
+  bindingContract: Record<string, unknown> = releaseContract,
 ): Record<string, unknown> {
   const subject = structuredClone(releaseContract) as Record<string, unknown>;
   delete subject.artifact_provenance;
 
   return {
     schema_version: RELEASE_KIT_ONLINE_ADOPTION_HANDOFF_SCHEMA_VERSION,
-    release_id: requireString(releaseContract.release_id, 'release_contract.release_id'),
-    git_sha: requireString(releaseContract.git_sha, 'release_contract.git_sha'),
+    release_id: requireString(bindingContract.release_id, 'release_contract.release_id'),
+    git_sha: requireString(bindingContract.git_sha, 'release_contract.git_sha'),
     release_contract: {
       input_sha256: sha256BufferDigest(releaseContractRaw),
       subject_sha256: sha256Digest(canonicalReleaseBoundaryJson(subject)),

@@ -225,31 +225,6 @@ function writeTerminalResult(campaignRoot: string, overrides: Partial<{
   });
 }
 
-function writeDeployResult(campaignRoot: string, stepId: string, status: 'passed' | 'failed'): void {
-  writeJson(join(campaignRoot, stepId, 'result.json'), {
-    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
-    gate_id: stepId,
-    gate_adapter: {
-      npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'),
-      ci_job: null,
-    },
-    status,
-    failure_class: status === 'passed' ? 'none' : 'product_regression',
-    stage: 'verify',
-    line_kind: 'release_campaign_step',
-    evidence_dir: join(campaignRoot, stepId),
-    summary: `${stepId} ${status}.`,
-    generated_at: '2026-04-25T12:00:00.000Z',
-  });
-}
-
-function writeDeployResults(campaignRoot: string): void {
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-substrate', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind-images', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-product-flows', 'passed');
-}
-
 function writeSummaryCache(campaignRoot: string, overrides: Partial<Record<string, unknown>> = {}): void {
   writeJson(join(campaignRoot, 'summary.json'), {
     schema: 'agentsmith_release_summary/v1',
@@ -476,7 +451,6 @@ describe('release readiness human entrypoints', () => {
         failure_class: 'evidence_missing',
         summary: 'Campaign step lane-visual did not pass.',
       });
-      writeDeployResults(root);
 
       const summary = writeReleaseSummaryForCampaign({
         campaignRoot: root,
@@ -488,20 +462,12 @@ describe('release readiness human entrypoints', () => {
       expect(summary.failure_class).toBe('evidence_missing');
       expect(summary.blocked_step).toBe('lane-visual');
       expect(summary.terminal_result_path).toBe(join(root, 'gate-release-full', 'result.json'));
-      expect(summary.deploy_check_snapshot?.items).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'lane-unified-deploy-product-flows',
-            status: 'passed',
-          }),
-        ]),
-      );
+      expect(summary).not.toHaveProperty('deploy_check_snapshot');
       expect(existsSync(join(root, 'summary.json'))).toBe(true);
       expect(existsSync(join(root, 'summary.md'))).toBe(true);
       const summaryMarkdown = readFileSync(join(root, 'summary.md'), 'utf8');
-      expect(summaryMarkdown).toContain('- Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(summaryMarkdown).toContain('- dependencies: passed');
-      expect(summaryMarkdown).not.toContain('- - dependencies');
+      expect(summaryMarkdown).not.toContain('Transition-only deploy diagnostics');
+      expect(summaryMarkdown).not.toContain('local-kind');
       const latest = JSON.parse(readFileSync(latestPath, 'utf8')) as Record<string, unknown>;
       expect(latest).toMatchObject({
         campaign_root: root,
@@ -780,7 +746,8 @@ describe('release readiness human entrypoints', () => {
       expect(rendered).toContain('Inspect:');
       expect(rendered).toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${root}`);
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
+      expect(rendered).not.toContain('Transition-only deploy diagnostics');
+      expect(rendered).not.toContain('local-kind');
       expect(rendered).not.toContain('lane-unified-deploy-product-flows');
       expect(rendered).not.toContain('npm run lane:');
     } finally {

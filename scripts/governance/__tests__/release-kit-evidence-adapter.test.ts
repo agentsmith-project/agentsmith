@@ -130,14 +130,12 @@ describe('release kit raw evidence adapter', () => {
       canonical_writer: {
         gate_id: 'release-kit-online-deployment-gate',
         line_kind: 'release_kit_online_deployment_gate',
-        summary_section: 'rollout',
       },
     });
     expect(validateReleaseKitEvidenceForAggregate(result.value)).toMatchObject({
       ok: true,
       value: {
         target: 'rollout',
-        summary_section: 'rollout',
       },
     });
     const files = result.value.evidence_subject.files as Record<string, unknown>[];
@@ -203,7 +201,6 @@ describe('release kit raw evidence adapter', () => {
         ok: true,
         value: {
           target: 'images',
-          summary_section: 'images',
         },
       });
     }
@@ -252,7 +249,6 @@ describe('release kit raw evidence adapter', () => {
         ok: true,
         value: {
           target: 'images',
-          summary_section: 'images',
         },
       });
     }

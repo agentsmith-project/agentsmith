@@ -116,7 +116,6 @@ function writeReleaseSummaryWithObservability(campaignRoot: string): void {
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
     generated_at: GENERATED_AT,
-    deploy_check_snapshot: releaseDeployCheckSnapshot(campaignRoot),
     run_observability: {
       total_duration_ms: 5_432_100,
       top_slow_stages: [
@@ -133,8 +132,8 @@ function writeReleaseSummaryWithObservability(campaignRoot: string): void {
           status: 'passed',
         },
         {
-          id: 'lane-unified-deploy-product-flows',
-          label: 'Deploy product flows',
+          id: 'gate-default',
+          label: 'Default verification',
           duration_ms: 165_000,
           status: 'passed',
         },
@@ -170,24 +169,6 @@ function writeFailedCampaignStepResult(campaignRoot: string, stepId = 'gate-defa
     generated_at: GENERATED_AT,
   });
   return path;
-}
-
-function writeDeployStepResult(campaignRoot: string, stepId: string, status: 'passed' | 'failed'): void {
-  writeJson(join(campaignRoot, stepId, 'result.json'), {
-    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
-    gate_id: stepId,
-    gate_adapter: {
-      npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'),
-      ci_job: null,
-    },
-    status,
-    failure_class: status === 'passed' ? 'none' : 'product_regression',
-    stage: 'verify',
-    line_kind: 'release_campaign_step',
-    evidence_dir: join(campaignRoot, stepId),
-    summary: `${stepId} ${status}.`,
-    generated_at: GENERATED_AT,
-  });
 }
 
 function releaseDeployCheckSnapshot(
@@ -385,11 +366,8 @@ describe('current status projection', () => {
       expect(rendered).toContain('Why: Backend-real check did not pass.');
       expect(rendered).toContain(`Evidence: ${campaignRoot}`);
       expect(rendered).toContain('Rerun: npm run release:ready');
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(rendered).toContain('- dependencies: passed');
-      expect(rendered).toContain('- images: passed');
-      expect(rendered).toContain('- rollout: passed');
-      expect(rendered).toContain('- product flows: passed');
+      expect(rendered).not.toContain('Transition-only deploy diagnostics');
+      expect(rendered).not.toContain('local-kind');
       expect(rendered).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
       expect(rendered).not.toContain('Blocker: NO_COLOR');
       expect(rendered).not.toContain('Blocker: Postgres already exists');
@@ -429,17 +407,15 @@ describe('current status projection', () => {
       expect(projection.run_observability?.top_slow_stages.map((stage) => stage.id)).toEqual([
         'gate-release',
         'lane-visual',
-        'lane-unified-deploy-product-flows',
+        'gate-default',
       ]);
+      expect(projection).not.toHaveProperty('deploy_check_snapshot');
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
       expect(rendered).toContain('Total duration: 1h 30m 32s');
-      expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Transition-only deploy diagnostic product flows 2m 45s');
+      expect(rendered).toContain('Slowest steps: Backend real release check 46m 5s; Full visual check 16m 51s; Default verification 2m 45s');
       expect(rendered).not.toContain('Slowest stages: gate-release');
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(rendered).toContain('- dependencies: passed');
-      expect(rendered).toContain('- images: passed');
-      expect(rendered).toContain('- rollout: passed');
-      expect(rendered).toContain('- product flows: passed');
+      expect(rendered).not.toContain('Transition-only deploy diagnostics');
+      expect(rendered).not.toContain('local-kind');
       expect(rendered).toContain('Real service starts: 1');
       expect(rendered).toContain('API/Web starts: 1');
       expect(rendered).toContain('Backend real sessions: 2');
@@ -452,11 +428,18 @@ describe('current status projection', () => {
     });
   });
 
-  it('renders deploy check from the release summary snapshot instead of mutable step result files', () => {
+  it('keeps legacy deploy check snapshots out of the default status summary', () => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot);
       writeReleaseSummaryWithObservability(campaignRoot);
-      writeDeployStepResult(campaignRoot, 'lane-unified-deploy-product-flows', 'failed');
+      const summaryPath = join(campaignRoot, 'summary.json');
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as Record<string, unknown>;
+      writeJson(summaryPath, {
+        ...summary,
+        deploy_check_snapshot: releaseDeployCheckSnapshot(campaignRoot, {
+          'lane-unified-deploy-product-flows': 'failed',
+        }),
+      });
 
       const projection = buildStatusProjection({
         goal: 'release-ready',
@@ -467,9 +450,10 @@ describe('current status projection', () => {
       });
       const rendered = renderStatusProjectionSummary(projection);
 
-      expect(rendered).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(rendered).toContain('- product flows: passed');
+      expect(projection).not.toHaveProperty('deploy_check_snapshot');
+      expect(rendered).not.toContain('Transition-only deploy diagnostics');
       expect(rendered).not.toContain('- product flows: failed');
+      expect(rendered).not.toContain('- product flows: passed');
     });
   });
 

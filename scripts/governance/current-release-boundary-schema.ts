@@ -275,7 +275,6 @@ export interface CurrentReleaseKitCanonicalWriter {
   npm_script?: string;
   native_result_path?: string;
   evidence_root?: string;
-  summary_section?: string;
 }
 
 export type CurrentReleaseKitEvidenceTargetProfileTuple = Pick<
@@ -322,7 +321,6 @@ export interface CurrentReleaseKitEvidenceAggregateCanonicalShape {
   git_sha: string;
   release_kit_version: string;
   target: CurrentReleaseKitEvidenceTarget;
-  summary_section: string;
   target_cluster: CurrentDeploymentTargetCluster;
   substrate_source: CurrentDeploymentSubstrateSource;
   distribution: CurrentDeploymentDistribution;
@@ -331,7 +329,7 @@ export interface CurrentReleaseKitEvidenceAggregateCanonicalShape {
   evidence_root: string;
   canonical_writer: Required<Pick<
     CurrentReleaseKitCanonicalWriter,
-    'gate_id' | 'line_kind' | 'npm_script' | 'native_result_path' | 'evidence_root' | 'summary_section'
+    'gate_id' | 'line_kind' | 'npm_script' | 'native_result_path' | 'evidence_root'
   >>;
   artifact_provenance: Pick<
     CurrentArtifactProvenance,
@@ -515,7 +513,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     owner: 'agentsmith',
     physical_source: 'AgentSmith CI artifact',
     generator: 'AgentSmith release contract generator',
-    validators: ['release kit', 'AgentSmith release summary adapter'],
+    validators: ['release kit', 'AgentSmith release contract validator'],
     consumers: ['agentsmith-release-kit'],
     fail_fast: [
       'missing_digest',
@@ -578,7 +576,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
     physical_source: 'release kit evidence root',
     generator: 'release kit commands',
     validators: ['AgentSmith release kit evidence adapter'],
-    consumers: ['AgentSmith release summary adapter', 'operator runbook'],
+    consumers: ['AgentSmith handoff reference', 'operator runbook'],
     fail_fast: [
       'missing_input_digest',
       'missing_provenance',
@@ -647,7 +645,6 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       npm_script: 'bash scripts/verify-release.sh --image-map',
       native_result_path: '<release-kit-evidence-root>/image-map.json',
       evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'images',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
     current_campaign_target_clusters: ['existing_kubernetes'],
@@ -665,7 +662,6 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       npm_script: 'bash scripts/verify-release.sh --airgap-bundle-check',
       native_result_path: '<release-kit-evidence-root>/airgap-bundle-check-report.json',
       evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'images',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
     current_campaign_target_clusters: ['existing_kubernetes'],
@@ -692,7 +688,6 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       npm_script: 'bash scripts/verify-release.sh --online-deployment-gate',
       native_result_path: '<release-kit-evidence-root>/online-deployment-gate-report.json',
       evidence_root: '<release-kit-evidence-root>',
-      summary_section: 'rollout',
     },
     canonical_evidence_owner: 'agentsmith-release-kit',
     current_campaign_target_clusters: ['existing_kubernetes'],
@@ -718,7 +713,6 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       npm_script: 'lane:unified-deploy:product-flows',
       native_result_path: '<campaign-root>/lane-unified-deploy-product-flows/native/result.json',
       evidence_root: '<campaign-root>/unified-deploy/product-flows',
-      summary_section: 'product flows',
     },
     canonical_evidence_owner: 'agentsmith',
     current_campaign_target_clusters: ['kind_rehearsal', 'existing_kubernetes'],
@@ -4310,7 +4304,6 @@ function buildReleaseKitEvidenceAggregateCanonicalShape(
     writer.npm_script === undefined
     || writer.native_result_path === undefined
     || writer.evidence_root === undefined
-    || writer.summary_section === undefined
   ) {
     return null;
   }
@@ -4322,7 +4315,6 @@ function buildReleaseKitEvidenceAggregateCanonicalShape(
     git_sha: evidence.git_sha,
     release_kit_version: evidence.release_kit_version,
     target: evidence.target,
-    summary_section: writer.summary_section,
     target_cluster: evidence.target_cluster,
     substrate_source: evidence.substrate_source,
     distribution: evidence.distribution,
@@ -4335,7 +4327,6 @@ function buildReleaseKitEvidenceAggregateCanonicalShape(
       npm_script: writer.npm_script,
       native_result_path: writer.native_result_path,
       evidence_root: writer.evidence_root,
-      summary_section: writer.summary_section,
     },
     artifact_provenance: {
       provenance_kind: evidence.artifact_provenance.provenance_kind,

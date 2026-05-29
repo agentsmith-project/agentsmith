@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -22,16 +21,11 @@ import {
 } from './release-campaign-io';
 import {
   RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
-  RELEASE_DEPLOY_CHECK_STEPS,
   RELEASE_HUMAN_LOG_NOTE,
-  renderDeployCheckLines,
   renderHumanReleaseStageLabel,
   renderHumanReleaseStepLabel,
   renderHumanReleaseText,
   renderShortFailureProjection,
-  type ReleaseDeployCheckSnapshot,
-  type ReleaseDeployCheckSnapshotItem,
-  type ReleaseDeployCheckSnapshotStatus,
 } from './status-projection';
 import { redactSensitiveText } from './redaction';
 
@@ -76,7 +70,6 @@ export interface ReleaseSummary {
   evidence_package: string;
   manual_operator_signoff: 'not_covered';
   release_contract?: ReleaseContractSummary;
-  deploy_check_snapshot?: ReleaseDeployCheckSnapshot;
   run_observability?: ReleaseRunObservability;
   generated_at: string;
 }
@@ -206,10 +199,6 @@ function terminalResultPath(campaignRoot: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -493,51 +482,6 @@ function readTerminalResult(campaignRoot: string): ParsedTerminalResult {
   return result;
 }
 
-function readDeployCheckSnapshotItem(input: {
-  campaignRoot: string;
-  step: (typeof RELEASE_DEPLOY_CHECK_STEPS)[number];
-}): ReleaseDeployCheckSnapshotItem {
-  const resultPath = join(input.campaignRoot, input.step.id, 'result.json');
-  let status: ReleaseDeployCheckSnapshotStatus = 'not_available';
-  let resultDigest: string | null = null;
-
-  if (existsSync(resultPath)) {
-    try {
-      const content = readFileSync(resultPath, 'utf8');
-      resultDigest = sha256(content);
-      const parsed = JSON.parse(content) as unknown;
-      status = isRecord(parsed)
-        && parsed.schema_version === CURRENT_GATE_RESULT_SCHEMA_VERSION
-        && parsed.gate_id === input.step.id
-        && (parsed.status === 'passed' || parsed.status === 'failed')
-        ? parsed.status
-        : 'unknown';
-    } catch {
-      status = 'unknown';
-    }
-  }
-
-  return {
-    id: input.step.id,
-    label: input.step.label,
-    status,
-    evidence_path: join(input.campaignRoot, 'unified-deploy', input.step.evidenceSegment),
-    result_path: resultPath,
-    result_digest: resultDigest,
-  };
-}
-
-function buildDeployCheckSnapshot(campaignRoot: string, generatedAt: string): ReleaseDeployCheckSnapshot {
-  return {
-    schema: RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
-    generated_at: generatedAt,
-    items: RELEASE_DEPLOY_CHECK_STEPS.map((step) => readDeployCheckSnapshotItem({
-      campaignRoot,
-      step,
-    })),
-  };
-}
-
 function resolveSummaryGitSha(resolveGitSha: (() => string) | undefined): string {
   const gitSha = (resolveGitSha ?? resolveCurrentGitSha)().trim();
   if (!GIT_COMMIT_HASH_PATTERN.test(gitSha)) {
@@ -642,8 +586,6 @@ function nextActionForFailure(
 }
 
 function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
-  const deployCheckLines = renderDeployCheckLines(summary.deploy_check_snapshot)
-    .map((line) => (line.startsWith('- ') ? `  ${line}` : `- ${line}`));
   const releaseContractReference = renderReleaseContractReference(summary.release_contract);
   return [
     '# AgentSmith Product Readiness Summary',
@@ -655,7 +597,6 @@ function renderReleaseSummaryMarkdown(summary: ReleaseSummary): string {
     `- manual_operator_signoff: ${summary.manual_operator_signoff}`,
     ...(releaseContractReference ? [`- release_contract: ${releaseContractReference}`] : []),
     ...renderReleaseObservabilityLines(summary.run_observability).map((line) => `- ${line}`),
-    ...deployCheckLines,
     '',
     '## Why',
     '',
@@ -679,7 +620,6 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
   const summaryJsonPath = join(campaignRoot, 'summary.json');
   const summaryMdPath = join(campaignRoot, 'summary.md');
   const generatedAt = new Date().toISOString();
-  const deployCheckSnapshot = buildDeployCheckSnapshot(campaignRoot, generatedAt);
   const initialObservability = normalizeReleaseRunObservability({
     campaignRoot,
     observability: options.observability,
@@ -709,7 +649,6 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
     ...(releaseContractSummary ? { release_contract: releaseContractSummary } : {}),
-    deploy_check_snapshot: deployCheckSnapshot,
     run_observability: initialObservability,
     generated_at: generatedAt,
   };
@@ -1317,7 +1256,6 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       `Summary: ${summary.summary_md_path}`,
       ...(releaseContractReference ? [`Release contract: ${releaseContractReference}`] : []),
       ...renderReleaseObservabilityLines(summary.run_observability),
-      ...renderDeployCheckLines(summary.deploy_check_snapshot),
       `Next: ${renderHumanReleaseText(summary.next_action)}`,
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
       '',
@@ -1334,7 +1272,6 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
     `Evidence: ${summary.evidence_package}`,
     ...(releaseContractReference ? [`Release contract: ${releaseContractReference}`] : []),
     ...renderReleaseObservabilityLines(summary.run_observability),
-    ...renderDeployCheckLines(summary.deploy_check_snapshot),
     `Next: ${renderHumanReleaseText(summary.next_action)}`,
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
     '',

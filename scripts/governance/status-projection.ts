@@ -132,46 +132,6 @@ const HUMAN_RELEASE_STEP_LABELS: Record<string, string> = {
 
 export const RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA = 'agentsmith_release_deploy_check_snapshot/v1' as const;
 
-export type ReleaseDeployCheckSnapshotStatus = 'passed' | 'failed' | 'not_available' | 'unknown';
-
-export interface ReleaseDeployCheckSnapshotItem {
-  id: string;
-  label: string;
-  status: ReleaseDeployCheckSnapshotStatus;
-  evidence_path: string;
-  result_path: string;
-  result_digest: string | null;
-}
-
-export interface ReleaseDeployCheckSnapshot {
-  schema: typeof RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA;
-  generated_at: string;
-  items: readonly ReleaseDeployCheckSnapshotItem[];
-}
-
-export const RELEASE_DEPLOY_CHECK_STEPS = [
-  {
-    id: 'lane-unified-deploy-substrate',
-    label: 'dependencies',
-    evidenceSegment: 'substrate',
-  },
-  {
-    id: 'lane-unified-deploy-local-kind-images',
-    label: 'images',
-    evidenceSegment: 'local-kind-images',
-  },
-  {
-    id: 'lane-unified-deploy-local-kind',
-    label: 'rollout',
-    evidenceSegment: 'local-kind',
-  },
-  {
-    id: 'lane-unified-deploy-product-flows',
-    label: 'product flows',
-    evidenceSegment: 'product-flows',
-  },
-] as const;
-
 function humanReleaseStepLabel(value: string | null | undefined): string {
   if (!value) {
     return 'Release check';
@@ -253,69 +213,6 @@ function campaignRootFromAggregatePath(path: string | null | undefined): string 
     return null;
   }
   return dirname(dirname(path));
-}
-
-function normalizeDeployCheckSnapshot(value: unknown): ReleaseDeployCheckSnapshot | null {
-  if (!isRecord(value) || value.schema !== RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA || !Array.isArray(value.items)) {
-    return null;
-  }
-  const items = value.items
-    .filter(isRecord)
-    .map((item): ReleaseDeployCheckSnapshotItem | null => {
-      if (
-        typeof item.id !== 'string'
-        || typeof item.label !== 'string'
-        || typeof item.evidence_path !== 'string'
-        || typeof item.result_path !== 'string'
-        || (item.result_digest !== null && typeof item.result_digest !== 'string')
-      ) {
-        return null;
-      }
-      if (
-        item.status !== 'passed'
-        && item.status !== 'failed'
-        && item.status !== 'not_available'
-        && item.status !== 'unknown'
-      ) {
-        return null;
-      }
-      return {
-        id: item.id,
-        label: item.label,
-        status: item.status,
-        evidence_path: item.evidence_path,
-        result_path: item.result_path,
-        result_digest: item.result_digest,
-      };
-    })
-    .filter((item): item is ReleaseDeployCheckSnapshotItem => item !== null);
-
-  if (items.length === 0) {
-    return null;
-  }
-  return {
-    schema: RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
-    generated_at: typeof value.generated_at === 'string' ? value.generated_at : DEFAULT_GENERATED_AT,
-    items,
-  };
-}
-
-function renderDeployStatus(status: ReleaseDeployCheckSnapshotStatus): string {
-  return status === 'not_available' ? 'not available' : status;
-}
-
-export function renderDeployCheckLines(
-  snapshot: ReleaseDeployCheckSnapshot | null | undefined,
-): readonly string[] {
-  if (!snapshot || snapshot.items.length === 0) {
-    return [];
-  }
-  return [
-    'Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):',
-    ...snapshot.items.map((item) => (
-      `- ${item.label}: ${renderDeployStatus(item.status)} (evidence: ${redactProjectionPath(item.evidence_path)})`
-    )),
-  ];
 }
 
 function isCleanRerunCommand(command: string): boolean {
@@ -558,22 +455,6 @@ function readReleaseSummaryObservability(campaignRoot?: string | null): CurrentS
     poll_retry_coverage: 'not_covered',
     report_size_bytes: nonNegativeInteger(observability.report_size_bytes) ?? 0,
   };
-}
-
-function readReleaseSummaryDeployCheckSnapshot(campaignRoot?: string | null): ReleaseDeployCheckSnapshot | null {
-  if (!campaignRoot) {
-    return null;
-  }
-  const path = join(resolve(campaignRoot), 'summary.json');
-  if (!existsSync(path)) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
-    return isRecord(parsed) ? normalizeDeployCheckSnapshot(parsed.deploy_check_snapshot) : null;
-  } catch {
-    return null;
-  }
 }
 
 function aggregateStatusRef(result: ParsedAggregateResult): CurrentStatusProjectionAggregateStatusRef {
@@ -1020,7 +901,6 @@ function buildMissingAggregateProjection(input: {
     lock_owner: lockOwnerForInput(input.options),
     lease_status_shadow: leaseStatusShadowForInput(input.options),
     run_observability: readReleaseSummaryObservability(input.options.campaignRoot),
-    deploy_check_snapshot: readReleaseSummaryDeployCheckSnapshot(input.options.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: [],
     authority_paths: {
@@ -1103,7 +983,6 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     lock_owner: lockOwnerForInput(input),
     lease_status_shadow: leaseStatusShadowForInput(input),
     run_observability: readReleaseSummaryObservability(input.campaignRoot),
-    deploy_check_snapshot: readReleaseSummaryDeployCheckSnapshot(input.campaignRoot),
     manual_signoff_status: 'not-covered',
     evidence_paths: evidencePathsForAggregate(aggregate),
     authority_paths: {
@@ -1384,7 +1263,6 @@ export function renderStatusProjectionSummary(projection: CurrentStatusProjectio
     ...(blocker ? [blocker] : []),
     `Evidence: ${renderOptionalPath(evidenceRoot)}`,
     ...renderRunObservabilityLines(projection.run_observability),
-    ...renderDeployCheckLines(projection.deploy_check_snapshot),
     `Next: ${renderOptionalPublicCommand(releaseReadyRerunCommand(projection))}`,
     renderCompactLeaseShadow(projection),
     `Note: ${RELEASE_HUMAN_LOG_NOTE}`,

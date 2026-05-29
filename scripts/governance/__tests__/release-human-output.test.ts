@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { renderReleaseStatus, type ReleaseSummary } from '../release-summary';
-import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
 import { CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION } from '../current-release-boundary-schema';
 
 function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary {
@@ -27,44 +26,6 @@ function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary
     evidence_package: campaignRoot,
     manual_operator_signoff: 'not_covered',
     generated_at: '2026-04-25T12:00:00.000Z',
-    deploy_check_snapshot: {
-      schema: 'agentsmith_release_deploy_check_snapshot/v1',
-      generated_at: '2026-04-25T12:00:00.000Z',
-      items: [
-        {
-          id: 'lane-unified-deploy-substrate',
-          label: 'dependencies',
-          status: 'passed',
-          evidence_path: join(campaignRoot, 'unified-deploy', 'substrate'),
-          result_path: join(campaignRoot, 'lane-unified-deploy-substrate', 'result.json'),
-          result_digest: null,
-        },
-        {
-          id: 'lane-unified-deploy-local-kind-images',
-          label: 'images',
-          status: 'passed',
-          evidence_path: join(campaignRoot, 'unified-deploy', 'local-kind-images'),
-          result_path: join(campaignRoot, 'lane-unified-deploy-local-kind-images', 'result.json'),
-          result_digest: null,
-        },
-        {
-          id: 'lane-unified-deploy-local-kind',
-          label: 'rollout',
-          status: 'passed',
-          evidence_path: join(campaignRoot, 'unified-deploy', 'local-kind'),
-          result_path: join(campaignRoot, 'lane-unified-deploy-local-kind', 'result.json'),
-          result_digest: null,
-        },
-        {
-          id: 'lane-unified-deploy-product-flows',
-          label: 'product flows',
-          status: 'passed',
-          evidence_path: join(campaignRoot, 'unified-deploy', 'product-flows'),
-          result_path: join(campaignRoot, 'lane-unified-deploy-product-flows', 'result.json'),
-          result_digest: null,
-        },
-      ],
-    },
     run_observability: {
       total_duration_ms: 3_720_000,
       top_slow_stages: [
@@ -95,33 +56,6 @@ function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary
   };
 }
 
-function writeDeployResult(campaignRoot: string, stepId: string, status: 'passed' | 'failed'): void {
-  const resultPath = join(campaignRoot, stepId, 'result.json');
-  mkdirSync(dirname(resultPath), { recursive: true });
-  writeFileSync(resultPath, `${JSON.stringify({
-    schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
-    gate_id: stepId,
-    gate_adapter: {
-      npm_script: stepId.replace(/^lane-/, 'lane:').replaceAll('-', ':'),
-      ci_job: null,
-    },
-    status,
-    failure_class: status === 'passed' ? 'none' : 'product_regression',
-    stage: 'verify',
-    line_kind: 'release_campaign_step',
-    evidence_dir: join(campaignRoot, stepId),
-    summary: `${stepId} ${status}.`,
-    generated_at: '2026-04-25T12:00:00.000Z',
-  }, null, 2)}\n`);
-}
-
-function writeDeployResults(campaignRoot: string): void {
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-substrate', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind-images', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-local-kind', 'passed');
-  writeDeployResult(campaignRoot, 'lane-unified-deploy-product-flows', 'passed');
-}
-
 function expectCleanDefaultHumanOutput(output: string): void {
   expect(output).not.toContain('Automated release verdict');
   expect(output).not.toMatch(/\bGoal:/);
@@ -147,11 +81,8 @@ describe('release human output', () => {
       expect(output).toContain(`Evidence: ${campaignRoot}`);
       expect(output).toContain('Total duration: 1h 2m 0s');
       expect(output).toContain('Slowest steps: Backend real release check 40m 0s; Full visual check 16m 30s');
-      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(output).toContain('- dependencies: passed');
-      expect(output).toContain('- images: passed');
-      expect(output).toContain('- rollout: passed');
-      expect(output).toContain('- product flows: passed');
+      expect(output).not.toContain('Transition-only deploy diagnostics');
+      expect(output).not.toContain('local-kind');
       expect(output).toContain('Real service starts: 1');
       expect(output).toContain('API/Web starts: 1');
       expect(output).toContain('Backend real sessions: 1');
@@ -239,16 +170,17 @@ describe('release human output', () => {
     }
   });
 
-  it('renders deploy check from the frozen summary snapshot instead of live step files', () => {
+  it('keeps legacy deploy check snapshots out of default release status output', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'agentsmith-release-human-snapshot-'));
     try {
-      writeDeployResult(campaignRoot, 'lane-unified-deploy-product-flows', 'passed');
       const output = renderReleaseStatus({
         kind: 'ready',
         latestPath: 'artifacts/release-runs/latest.json',
-        summary: releaseSummary({
-          campaign_root: campaignRoot,
-          evidence_package: campaignRoot,
+        summary: {
+          ...releaseSummary({
+            campaign_root: campaignRoot,
+            evidence_package: campaignRoot,
+          }),
           deploy_check_snapshot: {
             schema: 'agentsmith_release_deploy_check_snapshot/v1',
             generated_at: '2026-04-25T12:00:00.000Z',
@@ -263,11 +195,11 @@ describe('release human output', () => {
               },
             ],
           },
-        }),
+        } as ReleaseSummary,
       });
 
-      expect(output).toContain('Transition-only deploy diagnostics / 过渡期专项诊断 (not part of AgentSmith product readiness required evidence):');
-      expect(output).toContain('- product flows: failed');
+      expect(output).not.toContain('Transition-only deploy diagnostics');
+      expect(output).not.toContain('- product flows: failed');
       expect(output).not.toContain('- product flows: passed');
     } finally {
       rmSync(campaignRoot, { recursive: true, force: true });

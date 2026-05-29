@@ -208,7 +208,6 @@ describe('current release boundary schema', () => {
       value: {
         schema_version: 'agentsmith.release-kit-evidence.aggregate-canonical/v1',
         target: 'rollout',
-        summary_section: 'rollout',
         canonical_writer: {
           gate_id: 'release-kit-online-deployment-gate',
           line_kind: 'release_kit_online_deployment_gate',
@@ -222,7 +221,6 @@ describe('current release boundary schema', () => {
       ok: true,
       canonical_shape: {
         target: 'rollout',
-        summary_section: 'rollout',
       },
       failures: [],
     });

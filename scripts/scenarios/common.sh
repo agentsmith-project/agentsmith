@@ -548,13 +548,26 @@ ensure_local_kind_registry() {
   kubectl_bin="$(scenario_release_tool_path kubectl)"
 
   if ! docker image inspect "${registry_image}" >/dev/null 2>&1; then
-    local registry_archive=""
-    registry_archive="$(scenario_release_image_archive "${registry_image}" || true)"
-    [[ -n "${registry_archive}" ]] || {
-      echo "[scenario-kind] ERROR: missing bundled registry image ${registry_image}" >&2
-      return 1
-    }
-    docker load -i "${registry_archive}" >/dev/null
+    if [[ -n "${LOCAL_KIND_REGISTRY_IMAGE_ARCHIVE:-}" ]]; then
+      [[ -f "${LOCAL_KIND_REGISTRY_IMAGE_ARCHIVE}" ]] || {
+        echo "[scenario-kind] ERROR: missing explicit registry image archive ${LOCAL_KIND_REGISTRY_IMAGE_ARCHIVE} for ${registry_image}" >&2
+        return 1
+      }
+      docker load -i "${LOCAL_KIND_REGISTRY_IMAGE_ARCHIVE}" >/dev/null
+    elif [[ -n "${RELEASE_ROOT:-}" ]]; then
+      local registry_archive=""
+      registry_archive="$(scenario_release_image_archive "${registry_image}" || true)"
+      [[ -n "${registry_archive}" ]] || {
+        echo "[scenario-kind] ERROR: missing bundled registry image ${registry_image}" >&2
+        return 1
+      }
+      docker load -i "${registry_archive}" >/dev/null
+    else
+      docker pull "${registry_image}" >/dev/null || {
+        echo "[scenario-kind] ERROR: failed to pull registry image ${registry_image}" >&2
+        return 1
+      }
+    fi
   fi
 
   if ! docker ps -a --format '{{.Names}}' | grep -qx "${registry_name}"; then

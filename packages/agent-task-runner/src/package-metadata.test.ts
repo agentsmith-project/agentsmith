@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const packageDir = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = join(packageDir, '..', 'package.json');
+const agentRuntimeEnvPath = join(packageDir, 'agent-runtime-env.ts');
 const repoRoot = join(packageDir, '..', '..', '..');
 const packageLockPath = join(repoRoot, 'package-lock.json');
 const runnerContractPackageJsonPath = join(repoRoot, 'packages', 'agent-runner-contract', 'package.json');
@@ -19,8 +20,16 @@ describe('agent-task-runner package metadata', () => {
     };
 
     expect(packageJson.name).toBe('@mbos/agent-task-runner');
-    expect(packageJson.dependencies?.['@mbos/agent-runner']).toBe('0.1.0');
+    expect(packageJson.dependencies?.['@mbos/agent-runner']).toBeUndefined();
     expect(packageJson.dependencies?.['@mbos/agent-runner-contract']).toBe('0.1.0');
+  });
+
+  it('keeps the task runner runtime env helper local instead of re-exporting the legacy shim', () => {
+    const source = readFileSync(agentRuntimeEnvPath, 'utf8');
+
+    expect(source).not.toMatch(/from\s+['"]@mbos\/agent-runner['"]/);
+    expect(source).toContain('@mbos/agent-runner-contract');
+    expect(source).toContain('function buildAgentRuntimeEnv');
   });
 
   it('keeps the managed runner image on the built single-process Node entrypoint', () => {
@@ -54,16 +63,23 @@ describe('agent-task-runner package metadata', () => {
     };
     const packageLock = JSON.parse(readFileSync(packageLockPath, 'utf8')) as {
       packages?: Record<string, {
+        dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
       }>;
     };
     const runnerBaseDockerfile = readFileSync(runnerBaseDockerfilePath, 'utf8');
     const runnerContractLockDevDependencies =
       packageLock.packages?.['packages/agent-runner-contract']?.devDependencies;
+    const taskRunnerLockDependencies =
+      packageLock.packages?.['packages/agent-task-runner']?.dependencies;
 
+    expect(packageLock.packages?.['packages/agent-runner']).toBeUndefined();
+    expect(packageLock.packages?.['node_modules/@mbos/agent-runner']).toBeUndefined();
     expect(packageJson.scripts?.prebuild).toBe('npm run build -w @mbos/agent-runner-contract');
     expect(packageJson.scripts?.build).toContain('esbuild src/index.ts');
     expect(packageJson.devDependencies?.esbuild).toBe('^0.25.12');
+    expect(taskRunnerLockDependencies?.['@mbos/agent-runner']).toBeUndefined();
+    expect(taskRunnerLockDependencies?.['@mbos/agent-runner-contract']).toBe('0.1.0');
 
     expect(runnerContractPackageJson.scripts?.build).toBe('npm run clean && tsc -p tsconfig.json');
     expect(runnerContractPackageJson.devDependencies?.typescript).toBe('^5.9.3');
@@ -74,7 +90,10 @@ describe('agent-task-runner package metadata', () => {
     });
 
     expect(runnerBaseDockerfile).toContain(
-      'npm ci --workspace @mbos/agent-runner-contract --workspace @mbos/agent-runner --workspace @mbos/agent-task-runner --include-workspace-root=false --include=dev --no-audit --no-fund',
+      'npm ci --workspace @mbos/agent-runner-contract --workspace @mbos/agent-task-runner --include-workspace-root=false --include=dev --no-audit --no-fund',
+    );
+    expect(`${runnerBaseDockerfile}\n${readFileSync(runnerDockerfilePath, 'utf8')}`).not.toMatch(
+      /packages\/agent-runner(?!-contract)(?:\/|\s|$)/,
     );
     expect(runnerBaseDockerfile).toContain('./node_modules/.bin/tsc --version');
     expect(runnerBaseDockerfile).toContain('./node_modules/.bin/esbuild --version');

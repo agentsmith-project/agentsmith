@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAgentRuntimeEnv } from './runtime-env.js';
+import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 
 describe('buildAgentRuntimeEnv', () => {
   it('maps task execution context into task and run scoped MBOS_AGENT env vars', () => {

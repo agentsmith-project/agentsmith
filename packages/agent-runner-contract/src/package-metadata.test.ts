@@ -226,7 +226,6 @@ describe('agent-runner-contract package metadata', () => {
     const directConsumers = findDirectWorkspaceConsumers();
 
     expect(directConsumers.map((consumer) => consumer.name)).toEqual([
-      '@mbos/agent-runner',
       '@mbos/agent-task-runner',
       '@mbos/api-entry-node',
     ]);

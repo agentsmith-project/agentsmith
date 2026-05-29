@@ -25,6 +25,7 @@ run_cmd "npx tsx scripts/contracts/check-runner-naming.ts"
 
 run_cmd "npm run test:run -- \
   packages/agent-task-runner/src/builtin-skills.test.ts \
+  packages/agent-task-runner/src/agent-runtime-env.test.ts \
   packages/agent-task-runner/src/package-metadata.test.ts \
   packages/agent-task-runner/src/terminal-runtime.test.ts \
   packages/agent-task-runner/src/task-assets.test.ts \
@@ -32,8 +33,6 @@ run_cmd "npm run test:run -- \
   packages/agent-runner-contract/src/protocol.test.ts \
   packages/agent-runner-contract/src/contract-schema.test.ts \
   packages/agent-runner-contract/src/package-metadata.test.ts \
-  packages/agent-runner/src/compat-shim.test.ts \
-  packages/agent-runner/src/runtime-env.test.ts \
   packages/api-entry-node/src/context-store.test.ts \
   packages/api-entry-node/src/context-route-handler.test.ts \
   packages/api-entry-node/src/__integration__/context-store.integration.test.ts"

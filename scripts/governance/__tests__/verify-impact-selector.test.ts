@@ -727,12 +727,11 @@ describe('verify impact selector', () => {
     });
   });
 
-  it('maps runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
+  it('maps active runner and notebook execution package sources to runner owner review instead of unmapped triage', () => {
     const changedFiles = [
       'packages/agent-runner-contract/src/contract-schema.ts',
       'packages/agent-runner-contract/src/protocol.ts',
       'packages/agent-runner-contract/src/runner-spec.ts',
-      'packages/agent-runner/src/index.ts',
       'packages/agent-task-runner/src/runner.ts',
       'packages/api-entry-node/src/notebook-execution-orchestrator.ts',
     ];
@@ -755,6 +754,22 @@ describe('verify impact selector', () => {
       })),
     ));
     expect(plan.storyCards[0]?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('does not map the legacy agent-runner shim package as an active runner owner source', () => {
+    const changedFile = 'packages/agent-runner/src/index.ts';
+    const plan = buildVerificationPlan({ changedFiles: [changedFile] });
+
+    expect(plan.affectedSurfaces).toEqual(['unmapped-source']);
+    expect(plan.affectedSurfaces).not.toContain('runner/context-store/credentials');
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile,
+        matchedRules: ['unmapped_source'],
+        affectedSurfaces: ['unmapped-source'],
+        broadImpact: true,
+      }),
+    ]);
   });
 
   it('maps runner support API projection package test to the runner contract owner surface', () => {
@@ -1518,22 +1533,6 @@ export * from './artifact.js';
     const contractBuildScript = 'npm run build -w @mbos/agent-runner-contract';
     const cases = [
       {
-        path: 'packages/agent-runner/package.json',
-        base: {
-          name: '@mbos/agent-runner',
-          scripts: {
-            typecheck: 'tsc -p tsconfig.json --noEmit',
-          },
-        },
-        current: {
-          name: '@mbos/agent-runner',
-          scripts: {
-            pretypecheck: contractBuildScript,
-            typecheck: 'tsc -p tsconfig.json --noEmit',
-          },
-        },
-      },
-      {
         path: 'packages/agent-task-runner/package.json',
         base: {
           name: '@mbos/agent-task-runner',
@@ -1611,13 +1610,13 @@ export * from './artifact.js';
 
   it('keeps non-exact consumer package scripts fail-closed', () => {
     const basePackageJson = {
-      name: '@mbos/agent-runner',
+      name: '@mbos/agent-task-runner',
       scripts: {
         typecheck: 'tsc -p tsconfig.json --noEmit',
       },
     };
     const currentPackageJson = {
-      name: '@mbos/agent-runner',
+      name: '@mbos/agent-task-runner',
       scripts: {
         pretypecheck: 'npm run build -w @mbos/agent-runner-contract && echo unsafe',
         typecheck: 'tsc -p tsconfig.json --noEmit',
@@ -1625,19 +1624,19 @@ export * from './artifact.js';
     };
 
     withPackageFileGitFixture(
-      'packages/agent-runner/package.json',
+      'packages/agent-task-runner/package.json',
       basePackageJson,
       currentPackageJson,
       ({ catalog }) => {
         const plan = buildVerificationPlan({
-          changedFiles: ['packages/agent-runner/package.json'],
+          changedFiles: ['packages/agent-task-runner/package.json'],
           catalog,
         });
 
         expect(plan.affectedSurfaces).toContain('unmapped-source');
         expect(plan.changedFileImpacts).toEqual([
           expect.objectContaining({
-            changedFile: 'packages/agent-runner/package.json',
+            changedFile: 'packages/agent-task-runner/package.json',
             matchedRules: ['unmapped_source'],
             affectedSurfaces: ['unmapped-source'],
             broadImpact: true,
@@ -1651,21 +1650,21 @@ export * from './artifact.js';
     const basePackageJson = {
       name: '@mbos/api-entry-node',
       dependencies: {
-        '@mbos/agent-runner': '0.1.0',
+        '@mbos/agent-runner-contract': '0.1.0',
         pg: '^8.16.3',
       },
     };
     const runnerContractPackageJson = {
       name: '@mbos/api-entry-node',
       dependencies: {
-        '@mbos/agent-runner-contract': '0.1.0',
+        '@mbos/agent-runner-contract': '0.1.1',
         pg: '^8.16.3',
       },
     };
     const unrelatedPackageJson = {
       name: '@mbos/api-entry-node',
       dependencies: {
-        '@mbos/agent-runner': '0.1.0',
+        '@mbos/agent-runner-contract': '0.1.0',
         pg: '^8.17.0',
       },
     };

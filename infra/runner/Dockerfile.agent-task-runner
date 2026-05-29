@@ -2,7 +2,6 @@ ARG RUNNER_BASE_IMAGE=agentsmith-managed-runner-base:local
 
 FROM ${RUNNER_BASE_IMAGE}
 
-COPY packages/agent-runner/src ./packages/agent-runner/src
 COPY packages/agent-runner-contract/src ./packages/agent-runner-contract/src
 COPY packages/agent-task-runner/src ./packages/agent-task-runner/src
 COPY packages/agent-task-runner/builtin-skills /etc/codex/skills

@@ -100,7 +100,6 @@ describe("check-runner-naming contract", () => {
       "packages/agent-runner-contract/src/index.ts",
       "packages/agent-runner-contract/src/protocol.ts",
       "packages/agent-runner-contract/src/runner-spec.ts",
-      "packages/agent-runner/src/index.ts",
       "docs/contracts/unified-deploy-contract.md",
       "docs/agent-task-runner-runbook.md",
       "package-lock.json",
@@ -218,6 +217,19 @@ describe("check-runner-naming contract", () => {
       checkerSource,
       "negative proof lines must be recognized explicitly",
     ).toContain("isRunnerWireNegativeProofLine");
+  });
+
+  it("forbids the legacy agent-runner compatibility shim as an active workspace package", () => {
+    const checkerSource = readFileSync(
+      path.join(process.cwd(), "scripts/contracts/check-runner-naming.ts"),
+      "utf8",
+    );
+
+    expect(checkerSource).toContain('"packages/agent-runner"');
+    expect(checkerSource).toContain("legacy @mbos/agent-runner compatibility shim");
+    expect(checkerSource).not.toContain('"packages/agent-runner/src/index.ts"');
+    expect(checkerSource).not.toContain('"packages/agent-runner/src/protocol.ts"');
+    expect(checkerSource).not.toContain('"packages/agent-runner/src/runner-spec.ts"');
   });
 
   it("keeps e2e helper and command aliases on canonical Agent Task runner names", () => {

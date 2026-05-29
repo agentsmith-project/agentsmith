@@ -36,8 +36,6 @@ RUN --mount=type=cache,target=/root/.npm \
 WORKDIR /opt/agentsmith
 
 COPY package.json package-lock.json ./
-COPY packages/agent-runner/package.json packages/agent-runner/package.json
-COPY packages/agent-runner/tsconfig.json packages/agent-runner/tsconfig.json
 COPY packages/agent-runner-contract/package.json packages/agent-runner-contract/package.json
 COPY packages/agent-runner-contract/tsconfig.json packages/agent-runner-contract/tsconfig.json
 COPY packages/agent-task-runner/package.json packages/agent-task-runner/package.json
@@ -45,7 +43,7 @@ COPY packages/agent-task-runner/tsconfig.json packages/agent-task-runner/tsconfi
 
 RUN --mount=type=cache,target=/root/.npm \
   set -eux; \
-  npm ci --workspace @mbos/agent-runner-contract --workspace @mbos/agent-runner --workspace @mbos/agent-task-runner --include-workspace-root=false --include=dev --no-audit --no-fund; \
+  npm ci --workspace @mbos/agent-runner-contract --workspace @mbos/agent-task-runner --include-workspace-root=false --include=dev --no-audit --no-fund; \
   ./node_modules/.bin/tsc --version >/dev/null; \
   ./node_modules/.bin/esbuild --version >/dev/null; \
   printf '%s\n' \

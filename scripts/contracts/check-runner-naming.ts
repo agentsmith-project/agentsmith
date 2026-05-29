@@ -215,10 +215,7 @@ function isAllowedLegacyProductLine(filePath: string, line: string): boolean {
       line,
     );
   }
-  if (
-    filePath.startsWith("packages/agent-runner/src/") ||
-    filePath.startsWith("packages/agent-runner-contract/src/")
-  ) {
+  if (filePath.startsWith("packages/agent-runner-contract/src/")) {
     return /unsupported|reject|not\.toHaveProperty|interaction_kind|chat|notebook|external_agent_id|chat_runner|notebook_runner/.test(
       line,
     );
@@ -454,7 +451,6 @@ const activeRunnerWireFiles = [
   "packages/api-entry-node/src/internal-agent-pod-manager.ts",
   "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
   "packages/agent-runner-contract/src/protocol.ts",
-  "packages/agent-runner/src/protocol.ts",
   "scripts/local-manual/start-api.sh",
   "scripts/run-integration-e2e-full.sh",
   "scripts/run-integration-release-user-story.sh",
@@ -634,9 +630,6 @@ const activeProductSurfaceFiles = [
   "packages/agent-runner-contract/src/index.ts",
   "packages/agent-runner-contract/src/protocol.ts",
   "packages/agent-runner-contract/src/runner-spec.ts",
-  "packages/agent-runner/src/index.ts",
-  "packages/agent-runner/src/protocol.ts",
-  "packages/agent-runner/src/runner-spec.ts",
   "infra/deploy/unified/deployment.manifest.json",
 ] as const;
 
@@ -993,6 +986,10 @@ requireMatch(
 requirePath(
   "packages/agent-task-runner/package.json",
   "packages must expose the Agent Task runner package at packages/agent-task-runner",
+);
+forbidPath(
+  "packages/agent-runner",
+  "packages must not keep the legacy @mbos/agent-runner compatibility shim as an active workspace package",
 );
 forbidPath(
   "packages/notebook-codex-runner",
@@ -1423,11 +1420,10 @@ forbidPath(
 );
 
 const agentRunnerContractPublicSdk = readText("packages/agent-runner-contract/src/index.ts");
-const agentRunnerCompatSdk = readText("packages/agent-runner/src/index.ts");
 forbidMatch(
-  `${agentRunnerContractPublicSdk}\n${agentRunnerCompatSdk}`,
+  agentRunnerContractPublicSdk,
   /ChatExecutionContext|NotebookExecutionContext|CHAT_RUNNER_SPEC|NOTEBOOK_RUNNER_SPEC|AgentInteractionKind/,
-  "Agent Runner contract and compatibility SDKs must not export retired chat/notebook concepts",
+  "Agent Runner contract SDK must not export retired chat/notebook concepts",
 );
 
 if (failures.length > 0) {

@@ -428,7 +428,6 @@ const RUNNER_CONTEXT_CREDENTIAL_PATH_PATTERNS: readonly RegExp[] = [
   /^scripts\/integration-real-helpers\.test\.ts$/,
   /^docs\/contracts\/specs\/openapi\.(?:json|ya?ml)$/,
   /^packages\/agent-runner-contract\/src\/(?:contract-schema|protocol|runner-spec|support-api-projections)(?:\.test)?\.ts$/,
-  /^packages\/agent-runner\/src\//,
   /^packages\/agent-task-runner\/src\//,
   /^packages\/api-entry-node\/src\/(notebook-execution-orchestrator|context-store|context-route-handler|managed-credential-resolver|agent-execution-service|agent-runner-profile)\.[^/]+$/,
   /^packages\/api-entry-node\/src\/task-route-handler(?:\.test)?\.ts$/,
@@ -929,7 +928,6 @@ const EXPECTED_RUNNER_CONTRACT_ARTIFACT_JSON: JsonObject = {
 };
 
 const RUNNER_CONTRACT_CONSUMER_PACKAGE_PATHS = new Set([
-  'packages/agent-runner/package.json',
   'packages/agent-task-runner/package.json',
   'packages/api-entry-node/package.json',
 ]);
@@ -1178,7 +1176,6 @@ function isSafeGovernedArtifactGitignoreChange(filePath: string, baseRefs: reado
 }
 
 const RUNNER_CONTRACT_PACKAGE_DEPENDENCY_NAMES = new Set([
-  '@mbos/agent-runner',
   '@mbos/agent-runner-contract',
 ]);
 

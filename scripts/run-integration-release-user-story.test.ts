@@ -106,6 +106,13 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).not.toContain('http://127.0.0.1:28090');
   });
 
+  it('generates ASBCP sandbox config with the ASBCP main container contract', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+
+    expect(script).toContain('containerName: main');
+    expect(script).not.toContain('containerName: runner');
+  });
+
   it('ensures a usable standalone Kubernetes context before CSI without empty kind names', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const resetIndex = script.indexOf('bash "${ROOT_DIR}/scripts/backend-real-reset.sh"');

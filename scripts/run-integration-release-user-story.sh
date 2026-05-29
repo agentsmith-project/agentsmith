@@ -499,7 +499,7 @@ sandbox:
     podReadyWait: 30s
     podPollInterval: 500ms
     terminationGraceSeconds: 1
-    containerName: runner
+    containerName: main
     workdir: /workspace
     volumes:
       workspace:

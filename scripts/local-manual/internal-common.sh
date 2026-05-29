@@ -3040,7 +3040,7 @@ sandbox:
     podPollInterval: 500ms
     terminationGraceSeconds: 1
     activeDeadlineSeconds: 0
-    containerName: runner
+    containerName: main
     workdir: /workspace
     volumes:
       workspace:

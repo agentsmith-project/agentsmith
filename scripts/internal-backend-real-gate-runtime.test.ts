@@ -90,6 +90,44 @@ function renderSandboxState(env: Record<string, string>): string {
   }
 }
 
+function renderInternalBackendSandboxConfig(): string {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-backend-real-gate-config-'));
+  const configPath = path.join(tempRoot, 'asbcp.yaml');
+
+  try {
+    return execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          ROOT_DIR="$REPO_ROOT"
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+          CONFIG_PATH="$CONFIG_PATH_VALUE"
+          ASBCP_PORT="28080"
+          K8S_NAMESPACE="agentsmith-sandbox"
+          RUNNER_IMAGE="runner:test"
+          internal_real_gate_write_sandbox_config
+          cat "$CONFIG_PATH"
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          REPO_ROOT: repoRoot,
+          CONFIG_PATH_VALUE: configPath,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function runPrepareRuntimeWithLegacyRunnerImage(args: {
   legacyRef: string;
   buildRunnerImage: '0' | '1';
@@ -185,6 +223,14 @@ function runPrepareRuntimeWithLegacyRunnerImage(args: {
 }
 
 describe('internal backend-real gate runtime contract', () => {
+  it('writes ASBCP sandbox config with the ASBCP main container contract', () => {
+    const config = renderInternalBackendSandboxConfig();
+
+    expect(config).toContain('runnerImage: runner:test');
+    expect(config).toContain('containerName: main');
+    expect(config).not.toContain('containerName: runner');
+  });
+
   it('keeps the Agent Task gate aligned on shared internal sandbox bootstrap', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');

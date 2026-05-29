@@ -309,6 +309,8 @@ describe('local-manual internal handoff', () => {
 
     expect(config).toContain('httpPort: 29080');
     expect(config).toContain('namespace: agentsmith-sandbox');
+    expect(config).toContain('containerName: main');
+    expect(config).not.toContain('containerName: runner');
     expect(config).not.toMatch(/^afscp:\s*$/mu);
     expect(config).not.toContain('http://yaml-afscp.invalid');
     expect(config).not.toContain('yaml-token');

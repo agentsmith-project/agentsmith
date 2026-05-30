@@ -53,6 +53,23 @@ function parseProjectedJsonContent(responseBody: Record<string, unknown>): Recor
   return expectJsonObject(parsed);
 }
 
+function expectManagedCredentialHelperFields(responseBody: unknown): Record<string, unknown> {
+  const body = expectJsonObject(responseBody);
+  const content = parseProjectedJsonContent(body);
+  expectRequiredKeys(content, MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required);
+  expect(Object.keys(content)).toEqual(['fields']);
+  return expectJsonObject(content.fields);
+}
+
+function expectSerializedContentToExclude(responseBody: unknown, forbidden: readonly string[]): void {
+  const body = expectJsonObject(responseBody);
+  expect(typeof body.content).toBe('string');
+  const serializedContent = body.content as string;
+  for (const item of forbidden) {
+    expect(serializedContent).not.toContain(item);
+  }
+}
+
 async function executeContextRoute(params: {
   deps: NodeApiDeps;
   method: string;
@@ -492,7 +509,17 @@ describe('context-route-handler', () => {
       kind: 'oauth_account',
       display_name: 'workspace feishu',
       status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
+      fields: [
+        { key: 'access_token', value: 'workspace_token', secret: true },
+        { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
+        { key: 'uat', value: 'workspace_uat', secret: true },
+        { key: 'token', value: 'workspace_compat_token', secret: true },
+        { key: 'refresh_token', value: 'workspace_refresh_token', secret: true },
+        { key: 'app_secret', value: 'workspace_app_secret', secret: true },
+        { key: 'client_secret', value: 'workspace_client_secret', secret: true },
+        { key: 'context_store', value: 'workspace_context_store', secret: true },
+        { key: 'managed_credential_refresh', value: 'workspace_refresh_control', secret: true },
+      ],
       scopes: ['search:docs:read'],
       reauth_reason: 'missing_scopes',
     });
@@ -523,16 +550,63 @@ describe('context-route-handler', () => {
 
     const content = parseProjectedJsonContent(responseBody);
     expectRequiredKeys(content, MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required);
-    expect(Object.keys(content).sort()).toEqual(
-      [...MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required].sort(),
-    );
-    const fields = expectJsonObject(content.fields);
-    const provenance = expectJsonObject(content.provenance);
-    expect(content.display_name).toBe('workspace feishu');
-    expect(content.status).toBe('reauth_required');
-    expect(fields.access_token).toBe('workspace_token');
-    expect(provenance.source).toBe('workspace_active_connection');
+    expect(Object.keys(content)).toEqual(['fields']);
+    expect(content.fields).toEqual({
+      access_token: 'workspace_token',
+      feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
+      token: 'workspace_compat_token',
+      uat: 'workspace_uat',
+    });
+    expectSerializedContentToExclude(response.body, [
+      'refresh_token',
+      'workspace_refresh_token',
+      'app_secret',
+      'workspace_app_secret',
+      'client_secret',
+      'workspace_client_secret',
+      'scopes',
+      'search:docs:read',
+      'updated_at',
+      'provenance',
+      'context_store',
+      'workspace_context_store',
+      'managed_credential_refresh',
+      'workspace_refresh_control',
+    ]);
     expectNoRejectedSupportProjectionSemantics({ response: response.body, content });
+  });
+
+  it('does not expose legacy large managed credential projections for unsupported providers', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      provider: 'jira',
+      kind: 'oauth_account',
+      display_name: 'workspace jira',
+      status: 'active',
+      fields: [
+        { key: 'access_token', value: 'jira_access_token', secret: true },
+        { key: 'refresh_token', value: 'jira_refresh_token', secret: true },
+        { key: 'client_secret', value: 'jira_client_secret', secret: true },
+      ],
+      scopes: ['read:jira-work'],
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.jira&workspace_id=ws_default',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({
+      error_code: 'NOT_FOUND',
+      message: 'context_not_found',
+    });
+    expect(JSON.stringify(response.body)).not.toContain('jira_access_token');
+    expect(JSON.stringify(response.body)).not.toContain('jira_refresh_token');
+    expect(JSON.stringify(response.body)).not.toContain('jira_client_secret');
   });
 
   it('falls back to the global active managed credential projection when the workspace has no match', async () => {
@@ -569,16 +643,8 @@ describe('context-route-handler', () => {
       scope: 'member',
       key: 'managed_credentials.feishu',
     }));
-    const content = JSON.parse((response.body as { content: string }).content) as {
-      display_name: string;
-      workspace_id: string | null;
-      provenance?: { source?: string };
-      fields: { access_token: string };
-    };
-    expect(content.display_name).toBe('global feishu');
-    expect(content.workspace_id).toBeNull();
-    expect(content.provenance?.source).toBe('workspace_active_connection');
-    expect(content.fields.access_token).toBe('global_token');
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields.access_token).toBe('global_token');
   });
 
   it('prefers project-member managed credential bindings over member defaults', async () => {
@@ -643,14 +709,8 @@ describe('context-route-handler', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const content = JSON.parse((response.body as { content: string }).content) as {
-      display_name: string;
-      provenance?: { source?: string };
-      fields: { access_token: string };
-    };
-    expect(content.display_name).toBe('project binding');
-    expect(content.provenance?.source).toBe('project_member_binding');
-    expect(content.fields.access_token).toBe('project_token');
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields.access_token).toBe('project_token');
   });
 
   it('ignores project-member managed credential bindings on reads when membership is not active', async () => {
@@ -718,12 +778,8 @@ describe('context-route-handler', () => {
       scope: 'member',
       key: 'managed_credentials.feishu',
     }));
-    const content = JSON.parse((response.body as { content: string }).content) as {
-      display_name: string;
-      provenance?: { source?: string };
-    };
-    expect(content.display_name).toBe('member default');
-    expect(content.provenance?.source).toBe('member_binding');
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields.access_token).toBe('member_token');
   });
 
   it('refreshes the workspace-scoped managed credential instead of a fallback active one', async () => {
@@ -735,7 +791,14 @@ describe('context-route-handler', () => {
       kind: 'oauth_account',
       display_name: 'workspace feishu',
       status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
+      fields: [
+        { key: 'access_token', value: 'workspace_token', secret: true },
+        { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
+        { key: 'refresh_token', value: 'workspace_refresh_token', secret: true },
+        { key: 'app_secret', value: 'workspace_app_secret', secret: true },
+        { key: 'client_secret', value: 'workspace_client_secret', secret: true },
+        { key: 'provenance', value: 'workspace_provenance', secret: true },
+      ],
       scopes: ['search:docs:read'],
       reauth_reason: 'missing_scopes',
     });
@@ -767,6 +830,24 @@ describe('context-route-handler', () => {
       connectionId: workspaceConnection.id,
     }));
     expect(response.statusCode).toBe(200);
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields).toEqual({
+      access_token: 'workspace_token',
+      feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
+    });
+    expectSerializedContentToExclude(response.body, [
+      'refresh_token',
+      'workspace_refresh_token',
+      'app_secret',
+      'workspace_app_secret',
+      'client_secret',
+      'workspace_client_secret',
+      'scopes',
+      'search:docs:read',
+      'updated_at',
+      'provenance',
+      'workspace_provenance',
+    ]);
   });
 
   it('refreshes project-member managed credentials using the project binding first', async () => {
@@ -841,12 +922,8 @@ describe('context-route-handler', () => {
       connectionId: projectConnection.id,
     }));
     expect(response.statusCode).toBe(200);
-    const content = JSON.parse((response.body as { content: string }).content) as {
-      display_name: string;
-      provenance?: { source?: string };
-    };
-    expect(content.display_name).toBe('project binding');
-    expect(content.provenance?.source).toBe('project_member_binding');
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields.access_token).toBe('project_token');
   });
 
   it('ignores project-member bindings on refresh when membership is not active', async () => {
@@ -919,12 +996,8 @@ describe('context-route-handler', () => {
       connectionId: memberConnection.id,
     }));
     expect(response.statusCode).toBe(200);
-    const content = JSON.parse((response.body as { content: string }).content) as {
-      display_name: string;
-      provenance?: { source?: string };
-    };
-    expect(content.display_name).toBe('member default');
-    expect(content.provenance?.source).toBe('member_binding');
+    const fields = expectManagedCredentialHelperFields(response.body);
+    expect(fields.access_token).toBe('member_token');
   });
 
   it('rejects project-scoped managed credential refresh when an agent ticket project id mismatches', async () => {

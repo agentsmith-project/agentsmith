@@ -482,19 +482,17 @@ describe('check-runner-support-api-projections', () => {
     expect(MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      required: [
-        'connection_id',
-        'provider',
-        'kind',
-        'display_name',
-        'workspace_id',
-        'status',
-        'fields',
-        'scopes',
-        'expires_at',
-        'updated_at',
-        'provenance',
-      ],
+      required: ['fields'],
+      properties: {
+        fields: {
+          type: 'object',
+          minProperties: 1,
+          propertyNames: {
+            type: 'string',
+            enum: ['access_token', 'feishu_mcp_endpoint', 'uat', 'token'],
+          },
+        },
+      },
     });
   });
 

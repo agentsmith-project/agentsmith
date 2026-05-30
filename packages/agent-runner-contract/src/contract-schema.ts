@@ -493,59 +493,16 @@ export const CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA = {
 export const MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: [
-    'connection_id',
-    'provider',
-    'kind',
-    'display_name',
-    'workspace_id',
-    'status',
-    'fields',
-    'scopes',
-    'expires_at',
-    'updated_at',
-    'provenance',
-  ],
+  required: ['fields'],
   properties: {
-    connection_id: nonEmptyStringJsonSchema,
-    provider: nonEmptyStringJsonSchema,
-    kind: nonEmptyStringJsonSchema,
-    display_name: { type: 'string' },
-    workspace_id: nullableStringJsonSchema,
-    status: {
-      type: 'string',
-      enum: ['active', 'expired', 'reauth_required', 'error'],
-    },
     fields: {
       type: 'object',
-      additionalProperties: { type: 'string' },
-    },
-    scopes: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    expires_at: nullableStringJsonSchema,
-    updated_at: dateTimeStringJsonSchema,
-    provenance: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['source', 'binding_scope', 'binding_key'],
-      properties: {
-        source: {
-          type: 'string',
-          enum: ['project_member_binding', 'member_binding', 'workspace_active_connection'],
-        },
-        binding_scope: {
-          oneOf: [
-            {
-              type: 'string',
-              enum: ['member', 'project_member'],
-            },
-            { type: 'null' },
-          ],
-        },
-        binding_key: nonEmptyStringJsonSchema,
+      minProperties: 1,
+      propertyNames: {
+        type: 'string',
+        enum: ['access_token', 'feishu_mcp_endpoint', 'uat', 'token'],
       },
+      additionalProperties: nonEmptyStringJsonSchema,
     },
   },
 } as const satisfies JsonSchema;

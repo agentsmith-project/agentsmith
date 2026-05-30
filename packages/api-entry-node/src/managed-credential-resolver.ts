@@ -31,6 +31,13 @@ export type ManagedCredentialResolution = {
   binding_scope?: ManagedCredentialBindingScope | null;
 };
 
+export const FEISHU_MANAGED_CREDENTIAL_HELPER_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'access_token',
+  'feishu_mcp_endpoint',
+  'uat',
+  'token',
+]);
+
 function bindingKey(provider: UserExternalConnectionProvider): string {
   return `managed_credential_bindings.${provider}`;
 }
@@ -190,28 +197,21 @@ export async function resolveManagedCredentialConnection(args: {
   };
 }
 
-function buildProjectionContent(args: {
-  connection: UserExternalConnectionRecord;
-  source: ManagedCredentialResolutionSource;
-  bindingScope?: ManagedCredentialBindingScope | null;
-}): string {
-  return `${JSON.stringify({
-    connection_id: args.connection.id,
-    provider: args.connection.provider,
-    kind: args.connection.kind,
-    display_name: args.connection.display_name,
-    workspace_id: args.connection.workspace_id ?? null,
-    status: args.connection.status,
-    fields: Object.fromEntries(args.connection.fields.map((field) => [field.key, field.value])),
-    scopes: args.connection.scopes ?? [],
-    expires_at: args.connection.expires_at ?? null,
-    updated_at: args.connection.updated_at,
-    provenance: {
-      source: args.source,
-      binding_scope: args.bindingScope ?? null,
-      binding_key: bindingKey(args.connection.provider),
-    },
-  }, null, 2)}\n`;
+function buildFeishuHelperProjectionContent(connection: UserExternalConnectionRecord): string | null {
+  const fields: Record<string, string> = {};
+  for (const field of connection.fields) {
+    const key = field.key.trim();
+    if (key && field.value && FEISHU_MANAGED_CREDENTIAL_HELPER_FIELD_KEYS.has(key)) {
+      fields[key] = field.value;
+    }
+  }
+  if (Object.keys(fields).length === 0) return null;
+  return `${JSON.stringify({ fields }, null, 2)}\n`;
+}
+
+function buildProjectionContent(connection: UserExternalConnectionRecord): string | null {
+  if (connection.provider !== 'feishu') return null;
+  return buildFeishuHelperProjectionContent(connection);
 }
 
 export async function buildManagedCredentialProjection(args: {
@@ -223,15 +223,13 @@ export async function buildManagedCredentialProjection(args: {
 }): Promise<ContextEntryRecord | null> {
   const resolved = await resolveManagedCredentialConnection(args);
   if (!resolved) return null;
+  const content = buildProjectionContent(resolved.connection);
+  if (!content) return null;
   return {
     id: `ctx_managed_${resolved.connection.provider}_${resolved.connection.id}`,
     scope: 'member',
     key: `managed_credentials.${resolved.connection.provider}`,
-    content: buildProjectionContent({
-      connection: resolved.connection,
-      source: resolved.source,
-      bindingScope: resolved.binding_scope ?? null,
-    }),
+    content,
     content_type: 'json',
     user_id: resolved.connection.user_id,
     workspace_id: resolved.connection.workspace_id ?? null,

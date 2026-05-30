@@ -43,7 +43,10 @@ import {
   isDeveloperRunnerTaskHomeBindingAvailable,
 } from './developer-runner-workspace-blocker.js';
 import { getContextEntry, type ContextScope } from './context-store.js';
-import { resolveManagedCredentialConnection } from './managed-credential-resolver.js';
+import {
+  FEISHU_MANAGED_CREDENTIAL_HELPER_FIELD_KEYS,
+  resolveManagedCredentialConnection,
+} from './managed-credential-resolver.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -339,13 +342,6 @@ async function readJiraAuthProjectionFields(input: {
   };
 }
 
-const FEISHU_MANAGED_USER_RUNNER_PROJECTION_FIELDS: ReadonlySet<string> = new Set([
-  'access_token',
-  'feishu_mcp_endpoint',
-  'uat',
-  'token',
-]);
-
 async function readFeishuManagedUserProjectionFields(input: {
   deps: NodeApiDeps;
   userId: string;
@@ -364,7 +360,7 @@ async function readFeishuManagedUserProjectionFields(input: {
   const fields: Record<string, string> = {};
   for (const field of resolved.connection.fields) {
     const key = field.key.trim();
-    if (key && field.value && FEISHU_MANAGED_USER_RUNNER_PROJECTION_FIELDS.has(key)) {
+    if (key && field.value && FEISHU_MANAGED_CREDENTIAL_HELPER_FIELD_KEYS.has(key)) {
       fields[key] = field.value;
     }
   }

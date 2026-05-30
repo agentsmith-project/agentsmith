@@ -411,9 +411,12 @@ describe('api-entry-node context store integration', () => {
     );
     expect(projectionRes.status).toBe(200);
     const projectionPayload = await projectionRes.json() as { content: string };
-    const projectionContent = JSON.parse(projectionPayload.content) as { display_name: string; status: string };
-    expect(projectionContent.display_name).toBe('Workspace Feishu');
-    expect(projectionContent.status).toBe('reauth_required');
+    const projectionContent = JSON.parse(projectionPayload.content) as { fields: { access_token: string } };
+    expect(projectionContent).toEqual({
+      fields: {
+        access_token: 'workspace_token',
+      },
+    });
 
     const executionTicket = await issueInternalTicket(deps.cache, {
       purpose: 'agent_execution',

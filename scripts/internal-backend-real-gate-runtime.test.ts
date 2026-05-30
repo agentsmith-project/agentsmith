@@ -1251,6 +1251,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskRunnerSpec).toContain('artifacts_path != workspace_path + "/.artifacts"');
     expect(agentTaskRunnerSpec).toContain('control_env_leak:MBOS_AGENT_KEY');
     expect(agentTaskRunnerSpec).toContain('control_env_leak:MBOS_AGENT_WS_URL');
+    expect(agentTaskRunnerSpec).toContain('control_env_leak:AGENT_KEY');
+    expect(agentTaskRunnerSpec).toContain('control_env_leak:AGENT_WS_URL');
     expect(agentTaskRunnerSpec).toContain('missing_jira_auth_fields');
     expect(agentTaskRunnerSpec).toContain('task_token_persisted:');
     expect(agentTaskRunnerSpec).toContain('jira-auth');

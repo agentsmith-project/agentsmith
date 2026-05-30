@@ -16,4 +16,12 @@ describe('skills runtime fast gate', () => {
     expect(tscIndex).toBeGreaterThanOrEqual(0);
     expect(prepareIndex).toBeLessThan(tscIndex);
   });
+
+  it('includes focused runner env scrub coverage in the fast gate', () => {
+    const script = readFileSync('scripts/skills-runtime-fast-gate.sh', 'utf8');
+
+    expect(script).toContain('packages/agent-task-runner/src/user-install-env.test.ts');
+    expect(script).toContain('packages/agent-task-runner/src/child-launcher.test.ts');
+    expect(script).toContain('packages/agent-task-runner/src/index.test.ts');
+  });
 });

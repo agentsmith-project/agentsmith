@@ -104,6 +104,8 @@ const {
     const scrubbed = { ...env };
     delete scrubbed.MBOS_AGENT_WS_URL;
     delete scrubbed.MBOS_AGENT_KEY;
+    delete scrubbed.AGENT_WS_URL;
+    delete scrubbed.AGENT_KEY;
     return scrubbed;
   };
   return {
@@ -354,6 +356,8 @@ function readSentFrames(socket: EventEmitter & { send: ReturnType<typeof vi.fn> 
 }
 
 describe('agent-task-runner entry lifecycle', () => {
+  const originalAgentWsUrlAlias = process.env.AGENT_WS_URL;
+  const originalAgentKeyAlias = process.env.AGENT_KEY;
   let exitSpy: ReturnType<typeof vi.spyOn>;
   let baselineSigintListeners: ProcessSignalListener[];
   let baselineSigtermListeners: ProcessSignalListener[];
@@ -366,6 +370,8 @@ describe('agent-task-runner entry lifecycle', () => {
     baselineSigtermListeners = process.listeners('SIGTERM') as ProcessSignalListener[];
     process.env.MBOS_AGENT_WS_URL = 'ws://127.0.0.1:12345';
     process.env.MBOS_AGENT_KEY = 'ask_test';
+    process.env.AGENT_WS_URL = 'ws://127.0.0.1:12345/alias';
+    process.env.AGENT_KEY = 'ask_alias_test';
     process.env.MBOS_AGENT_RUNNER_DEBUG = '0';
     resolveRunnerSuccessPolicyMock.mockImplementation(() => ({ ok: true as const }));
     terminateTerminalProcessTreeMock.mockImplementation(async (
@@ -433,6 +439,16 @@ describe('agent-task-runner entry lifecycle', () => {
     exitSpy.mockRestore();
     delete process.env.MBOS_AGENT_WS_URL;
     delete process.env.MBOS_AGENT_KEY;
+    if (originalAgentWsUrlAlias === undefined) {
+      delete process.env.AGENT_WS_URL;
+    } else {
+      process.env.AGENT_WS_URL = originalAgentWsUrlAlias;
+    }
+    if (originalAgentKeyAlias === undefined) {
+      delete process.env.AGENT_KEY;
+    } else {
+      process.env.AGENT_KEY = originalAgentKeyAlias;
+    }
     delete process.env.MBOS_AGENT_RUNNER_DEBUG;
     delete process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS;
     delete process.env.MBOS_AGENT_RECONNECT_BASE_MS;
@@ -1946,6 +1962,8 @@ describe('agent-task-runner entry lifecycle', () => {
     const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
     expect(launchEnv?.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(launchEnv?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(launchEnv?.AGENT_WS_URL).toBeUndefined();
+    expect(launchEnv?.AGENT_KEY).toBeUndefined();
     expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBe('ticket_1');
     expect(launchEnv?.WORKSPACE_PATH).toBe(TASK_WORKSPACE);
 

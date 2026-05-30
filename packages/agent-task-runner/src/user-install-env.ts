@@ -19,6 +19,8 @@ const TASK_HOME_PATH_DEFAULTS = {
 const TASK_USER_CONTROL_ENV_DENYLIST = [
   'MBOS_AGENT_WS_URL',
   'MBOS_AGENT_KEY',
+  'AGENT_WS_URL',
+  'AGENT_KEY',
 ] as const;
 
 export function scrubTaskUserControlEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -26,6 +26,9 @@ run_cmd "npx tsx scripts/contracts/check-runner-naming.ts"
 run_cmd "npm run test:run -- \
   packages/agent-task-runner/src/builtin-skills.test.ts \
   packages/agent-task-runner/src/agent-runtime-env.test.ts \
+  packages/agent-task-runner/src/user-install-env.test.ts \
+  packages/agent-task-runner/src/child-launcher.test.ts \
+  packages/agent-task-runner/src/index.test.ts \
   packages/agent-task-runner/src/package-metadata.test.ts \
   packages/agent-task-runner/src/terminal-runtime.test.ts \
   packages/agent-task-runner/src/task-assets.test.ts \

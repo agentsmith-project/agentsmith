@@ -180,6 +180,8 @@ describe('terminal-runtime', () => {
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
   const originalAgentWsUrl = process.env.MBOS_AGENT_WS_URL;
   const originalAgentKey = process.env.MBOS_AGENT_KEY;
+  const originalAgentWsUrlAlias = process.env.AGENT_WS_URL;
+  const originalAgentKeyAlias = process.env.AGENT_KEY;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -279,6 +281,16 @@ describe('terminal-runtime', () => {
       delete process.env.MBOS_AGENT_KEY;
     } else {
       process.env.MBOS_AGENT_KEY = originalAgentKey;
+    }
+    if (originalAgentWsUrlAlias === undefined) {
+      delete process.env.AGENT_WS_URL;
+    } else {
+      process.env.AGENT_WS_URL = originalAgentWsUrlAlias;
+    }
+    if (originalAgentKeyAlias === undefined) {
+      delete process.env.AGENT_KEY;
+    } else {
+      process.env.AGENT_KEY = originalAgentKeyAlias;
     }
   });
 
@@ -437,6 +449,8 @@ describe('terminal-runtime', () => {
   it('does not expose runner control credentials to terminal launch env', async () => {
     process.env.MBOS_AGENT_WS_URL = 'ws://runner-control.example/ws';
     process.env.MBOS_AGENT_KEY = 'ask_control_secret';
+    process.env.AGENT_WS_URL = 'ws://runner-control.example/alias-ws';
+    process.env.AGENT_KEY = 'ask_alias_control_secret';
 
     await startTerminalProcess({
       executionContext: terminalExecutionContext({
@@ -452,8 +466,12 @@ describe('terminal-runtime', () => {
 
     expect(launchEnv?.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(launchEnv?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(launchEnv?.AGENT_WS_URL).toBeUndefined();
+    expect(launchEnv?.AGENT_KEY).toBeUndefined();
     expect(spawnOptions?.env?.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(spawnOptions?.env?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(spawnOptions?.env?.AGENT_WS_URL).toBeUndefined();
+    expect(spawnOptions?.env?.AGENT_KEY).toBeUndefined();
     expect(spawnOptions?.env?.MBOS_AGENT_API_BASE).toBe('http://localhost:20000');
     expect(spawnOptions?.env?.MBOS_AGENT_EXECUTION_TICKET).toBe('ticket_123');
   });

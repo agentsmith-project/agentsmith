@@ -21,6 +21,13 @@ DEFAULT_ALLOWED_TOOLS = (
     "fetch-doc,update-doc,list-docs,get-comments,add-comments"
 )
 OAUTH_TOKEN_ENDPOINT = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+MANAGED_REFRESH_SUMMARY_FIELDS = (
+    "access_token",
+    "uat",
+    "token",
+    "refresh_token",
+    "feishu_mcp_endpoint",
+)
 
 
 def load_managed_connection_from_context() -> dict[str, Any] | None:
@@ -331,6 +338,23 @@ def refresh_token(credential_dir: Path) -> dict:
     return output
 
 
+def summarize_managed_refresh_projection(refreshed: dict[str, Any]) -> dict[str, Any]:
+    fields = refreshed.get("fields")
+    if not isinstance(fields, dict):
+        raise RuntimeError("Managed Feishu refresh projection is missing fields.")
+    available_fields = {
+        key: True
+        for key in MANAGED_REFRESH_SUMMARY_FIELDS
+        if isinstance(fields.get(key), str) and fields[key].strip()
+    }
+    if not available_fields:
+        raise RuntimeError("Managed Feishu refresh projection did not include usable fields.")
+    return {
+        "mode": "managed_context",
+        "fields": available_fields,
+    }
+
+
 def cmd_initialize(args: argparse.Namespace) -> int:
     result = rpc_call(
         "initialize",
@@ -369,13 +393,7 @@ def cmd_call_tool(args: argparse.Namespace) -> int:
 
 def cmd_refresh_token(args: argparse.Namespace) -> int:
     refreshed = refresh_managed_connection_from_context()
-    summary = {
-        "provider": refreshed.get("provider"),
-        "status": refreshed.get("status"),
-        "expires_at": refreshed.get("expires_at"),
-        "scopes": refreshed.get("scopes"),
-        "mode": "managed_context",
-    }
+    summary = summarize_managed_refresh_projection(refreshed)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

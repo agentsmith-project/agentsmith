@@ -182,6 +182,8 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
           'if artifacts_path != workspace_path + "/.artifacts": sys.exit("artifacts_path_mismatch")',
           'if "MBOS_AGENT_KEY" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_KEY")',
           'if "MBOS_AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_WS_URL")',
+          'if "AGENT_KEY" in os.environ: sys.exit("control_env_leak:AGENT_KEY")',
+          'if "AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:AGENT_WS_URL")',
         ]
       : []),
     'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',

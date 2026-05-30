@@ -23,6 +23,8 @@ describe('child-launcher', () => {
   const previousRequireBwrap = process.env.MBOS_AGENT_TASK_RUNNER_REQUIRE_BWRAP;
   const previousAgentWsUrl = process.env.MBOS_AGENT_WS_URL;
   const previousAgentKey = process.env.MBOS_AGENT_KEY;
+  const previousAgentWsUrlAlias = process.env.AGENT_WS_URL;
+  const previousAgentKeyAlias = process.env.AGENT_KEY;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,6 +52,16 @@ describe('child-launcher', () => {
       delete process.env.MBOS_AGENT_KEY;
     } else {
       process.env.MBOS_AGENT_KEY = previousAgentKey;
+    }
+    if (previousAgentWsUrlAlias === undefined) {
+      delete process.env.AGENT_WS_URL;
+    } else {
+      process.env.AGENT_WS_URL = previousAgentWsUrlAlias;
+    }
+    if (previousAgentKeyAlias === undefined) {
+      delete process.env.AGENT_KEY;
+    } else {
+      process.env.AGENT_KEY = previousAgentKeyAlias;
     }
   });
 
@@ -88,6 +100,8 @@ describe('child-launcher', () => {
         WORKSPACE_PATH: '/home/task_1/workspace',
         MBOS_AGENT_WS_URL: 'ws://runner-control.example/ws',
         MBOS_AGENT_KEY: 'ask_control_secret',
+        AGENT_WS_URL: 'ws://runner-control.example/alias-ws',
+        AGENT_KEY: 'ask_alias_control_secret',
         MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',
         MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
       },
@@ -95,6 +109,8 @@ describe('child-launcher', () => {
 
     expect(result.env.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(result.env.MBOS_AGENT_KEY).toBeUndefined();
+    expect(result.env.AGENT_WS_URL).toBeUndefined();
+    expect(result.env.AGENT_KEY).toBeUndefined();
     expect(result.env.MBOS_AGENT_API_BASE).toBe('http://localhost:20000/api/v1');
     expect(result.env.MBOS_AGENT_EXECUTION_TICKET).toBe('ticket_123');
   });
@@ -103,6 +119,8 @@ describe('child-launcher', () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
     process.env.MBOS_AGENT_WS_URL = 'ws://runner-control.example/ws';
     process.env.MBOS_AGENT_KEY = 'ask_control_secret';
+    process.env.AGENT_WS_URL = 'ws://runner-control.example/alias-ws';
+    process.env.AGENT_KEY = 'ask_alias_control_secret';
     const result = await prepareLaunchCommand({
       file: 'codex',
       args: ['exec', 'hello'],
@@ -119,12 +137,16 @@ describe('child-launcher', () => {
         RUSTUP_HOME: '/home/task_1/.rustup',
         MBOS_AGENT_WS_URL: 'ws://runner-control.example/input',
         MBOS_AGENT_KEY: 'ask_input_control_secret',
+        AGENT_WS_URL: 'ws://runner-control.example/alias-input',
+        AGENT_KEY: 'ask_alias_input_control_secret',
         MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
       },
     });
     expect(result.file).toBe('/usr/bin/bwrap');
     expect(result.env.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(result.env.MBOS_AGENT_KEY).toBeUndefined();
+    expect(result.env.AGENT_WS_URL).toBeUndefined();
+    expect(result.env.AGENT_KEY).toBeUndefined();
     expect(result.args).toEqual(expect.arrayContaining([
       '--clearenv',
       '--ro-bind', '/', '/',
@@ -147,6 +169,8 @@ describe('child-launcher', () => {
     ]));
     expect(result.args).not.toContain('MBOS_AGENT_WS_URL');
     expect(result.args).not.toContain('MBOS_AGENT_KEY');
+    expect(result.args).not.toContain('AGENT_WS_URL');
+    expect(result.args).not.toContain('AGENT_KEY');
   });
 
   it('falls back to direct launch for developer when bwrap is unavailable', async () => {

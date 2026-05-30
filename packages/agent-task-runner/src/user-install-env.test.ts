@@ -69,6 +69,8 @@ describe('user-install-env', () => {
       SHELL: '/bin/zsh',
       MBOS_AGENT_WS_URL: 'ws://runner-control.example/ws',
       MBOS_AGENT_KEY: 'ask_control_secret',
+      AGENT_WS_URL: 'ws://runner-control.example/alias-ws',
+      AGENT_KEY: 'ask_alias_control_secret',
       MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',
       MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
       MBOS_AGENT_WORKSPACE_ID: 'ws_1',
@@ -80,6 +82,8 @@ describe('user-install-env', () => {
 
     expect(env.MBOS_AGENT_WS_URL).toBeUndefined();
     expect(env.MBOS_AGENT_KEY).toBeUndefined();
+    expect(env.AGENT_WS_URL).toBeUndefined();
+    expect(env.AGENT_KEY).toBeUndefined();
     expect(env).toMatchObject({
       SHELL: '/bin/zsh',
       MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',

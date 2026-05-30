@@ -1,7 +1,9 @@
+import io
 import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -41,6 +43,44 @@ class FeishuMcpTests(unittest.TestCase):
 
         self.assertEqual(connection["fields"]["access_token"], "token_refreshed")
         self.assertEqual(mock_refresh.call_args.args[1], "feishu-managed-user")
+
+    @patch("feishu_mcp.refresh_managed_connection_from_context")
+    def test_refresh_token_command_outputs_managed_projection_summary(self, mock_refresh: MagicMock) -> None:
+        mock_refresh.return_value = {
+            "provider": "feishu",
+            "status": "active",
+            "expires_at": "2026-05-30T00:00:00Z",
+            "scopes": ["docs"],
+            "fields": {
+                "access_token": "token_refreshed",
+                "refresh_token": "refresh_refreshed",
+                "feishu_mcp_endpoint": "https://mcp.feishu.cn/mcp",
+            },
+        }
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = feishu_mcp.cmd_refresh_token(feishu_mcp.argparse.Namespace())
+
+        self.assertEqual(result, 0)
+        summary = json.loads(output.getvalue())
+        self.assertEqual(
+            summary,
+            {
+                "mode": "managed_context",
+                "fields": {
+                    "access_token": True,
+                    "refresh_token": True,
+                    "feishu_mcp_endpoint": True,
+                },
+            },
+        )
+        self.assertNotIn("token_refreshed", output.getvalue())
+        self.assertNotIn("refresh_refreshed", output.getvalue())
+        self.assertNotIn("provider", summary)
+        self.assertNotIn("status", summary)
+        self.assertNotIn("expires_at", summary)
+        self.assertNotIn("scopes", summary)
 
     def test_uses_single_active_connection_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

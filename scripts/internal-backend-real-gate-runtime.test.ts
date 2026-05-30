@@ -1350,6 +1350,11 @@ describe('internal backend-real gate runtime contract', () => {
       'function buildProviderNeutralProjectionSmokeCommand',
       'test.describe',
     );
+    const lockedRuntimeCommandBuilder = sectionBetween(
+      agentTaskRunnerSpec,
+      'function buildLockedRuntimeProjectionBoundarySmokeCommand',
+      'test.describe',
+    );
     const removedFeishuProjection = ['feishu', 'managed', 'user'].join('-');
     const removedJiraProjection = ['jira', 'auth'].join('-');
     const removedFeishuMcpField = ['feishu', 'mcp', 'endpoint'].join('_');
@@ -1390,12 +1395,38 @@ describe('internal backend-real gate runtime contract', () => {
     expect(lockedRuntimeCase).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
     expect(lockedRuntimeCase).toContain('diagnosticsPrefix: \'runner_locked_runtime_smoke\'');
     expect(lockedRuntimeCase).toContain('expectManagedWorkloadPodImage');
-    expect(lockedRuntimeCase).toContain('buildProviderNeutralProjectionSmokeCommand');
-    expect(lockedRuntimeCase).toContain('includeRunnerBoundarySmoke: true');
+    expect(lockedRuntimeCase).not.toContain('putContextEntryViaApi');
+    expect(lockedRuntimeCase).not.toContain('context_cli.py"), "get", "--scope", "task", "--key"');
+    expect(lockedRuntimeCase).not.toContain('context_cli.py get --scope task --key');
+    expect(lockedRuntimeCase).not.toContain('PROJECTION_SMOKE::${contextValue}');
+    expect(lockedRuntimeCase).toContain('buildLockedRuntimeProjectionBoundarySmokeCommand');
+    expect(lockedRuntimeCase).toContain('const lockedRuntimeTaskToken = `LOCKED_RUNTIME_TASK::${taskId}`');
+    expect(lockedRuntimeCase).toContain('const lockedRuntimeRunToken = `LOCKED_RUNTIME_RUN::${expectedRunId}`');
+    expect(lockedRuntimeCase).toContain(
+      'const lockedRuntimeBoundaryToken = `RUNNER_PROJECTION_BOUNDARY::ok::${taskId}::${expectedRunId}`',
+    );
+    expect(lockedRuntimeCase).toContain('token: lockedRuntimeTaskToken');
+    expect(lockedRuntimeCase).toContain('token: lockedRuntimeRunToken');
+    expect(lockedRuntimeCase).not.toContain('token: `LOCKED_RUNTIME_SMOKE::');
+    expect(lockedRuntimeCase).not.toContain('marker: smokeMarker');
     expect(lockedRuntimeCase).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
     expect(projectionCommandBuilder).toContain('data=json.loads(raw)');
     expect(projectionCommandBuilder).toContain('unexpected_projected_dependencies');
-    expect(lockedRuntimeCase).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+    expect(lockedRuntimeCommandBuilder).toContain('function buildLockedRuntimeProjectionBoundarySmokeCommand(): string');
+    expect(lockedRuntimeCommandBuilder).not.toContain('marker: string');
+    expect(lockedRuntimeCommandBuilder).not.toContain('args.marker');
+    expect(lockedRuntimeCommandBuilder).not.toContain('LOCKED_RUNTIME_SMOKE::');
+    expect(lockedRuntimeCommandBuilder).not.toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+    expect(lockedRuntimeCommandBuilder).toContain('runtime_task_id=os.environ.get("MBOS_AGENT_TASK_ID","").strip()');
+    expect(lockedRuntimeCommandBuilder).toContain('runtime_run_id=os.environ.get("MBOS_AGENT_RUN_ID","").strip()');
+    expect(lockedRuntimeCommandBuilder).toContain('missing_MBOS_AGENT_TASK_ID');
+    expect(lockedRuntimeCommandBuilder).toContain('missing_MBOS_AGENT_RUN_ID');
+    expect(lockedRuntimeCommandBuilder).toContain('"LOCKED_RUNTIME_TASK::"+runtime_task_id');
+    expect(lockedRuntimeCommandBuilder).toContain('"LOCKED_RUNTIME_RUN::"+runtime_run_id');
+    expect(lockedRuntimeCommandBuilder).toContain('mbos-context","list"');
+    expect(lockedRuntimeCommandBuilder).toContain('empty_context_projection');
+    expect(lockedRuntimeCommandBuilder).toContain('unexpected_projected_dependencies');
+    expect(lockedRuntimeCommandBuilder).toContain('control_env_leak:MBOS_AGENT_KEY');
     expect(lockedRuntimeCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey()');
     expect(lockedRuntimeCase).not.toContain('createExternalConnectionViaApi');
     expect(lockedRuntimeCase).not.toContain(removedFeishuProjection);

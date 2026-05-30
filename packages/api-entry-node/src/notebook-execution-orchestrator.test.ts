@@ -843,6 +843,19 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     );
   });
 
+  it('does not synthesize projected dependencies from ordinary task notes context', async () => {
+    const noteValue = 'LOCKED_PROJECTION_CTX_UNIT_TEST_VALUE';
+    const executionContext = await runManagedProjectionDispatchForTest({
+      caseId: 'projected_task_notes_omitted',
+      contextEntries: [
+        { scope: 'task', key: 'notes.locked_projection_smoke_unit', content: noteValue },
+      ],
+    });
+
+    expect(executionContext).not.toHaveProperty('projected_dependencies');
+    expect(JSON.stringify(executionContext)).not.toContain(noteValue);
+  });
+
   it('does not synthesize provider-specific projected dependencies from managed external connections', async () => {
     const executionContext = await runManagedProjectionDispatchForTest({
       caseId: 'projected_managed_connection_omitted',

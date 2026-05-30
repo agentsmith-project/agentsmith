@@ -235,6 +235,72 @@ function buildProviderNeutralProjectionSmokeCommand(args: {
   return `python3 -c 'exec(${JSON.stringify(python)})'`;
 }
 
+function buildLockedRuntimeProjectionBoundarySmokeCommand(): string {
+  const python = [
+    'import json,os,shutil,subprocess,sys',
+    '[os.environ.pop(k,None) for k in ("http_proxy","https_proxy","all_proxy","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","no_proxy","NO_PROXY")]',
+    'home=os.environ.get("HOME","")',
+    'task_home=os.environ.get("TASK_HOME","")',
+    'workspace_path=os.environ.get("WORKSPACE_PATH","")',
+    'artifacts_path=os.environ.get("ARTIFACTS_PATH","")',
+    'runtime_task_id=os.environ.get("MBOS_AGENT_TASK_ID","").strip()',
+    'runtime_run_id=os.environ.get("MBOS_AGENT_RUN_ID","").strip()',
+    'if not home: sys.exit("missing_HOME")',
+    'if not task_home: sys.exit("missing_TASK_HOME")',
+    'if not runtime_task_id: sys.exit("missing_MBOS_AGENT_TASK_ID")',
+    'if not runtime_run_id: sys.exit("missing_MBOS_AGENT_RUN_ID")',
+    'if home != task_home: sys.exit("home_task_home_mismatch")',
+    'if not (task_home.startswith("/home/") and task_home.count("/") == 2 and len(task_home) > len("/home/")): sys.exit("invalid_TASK_HOME")',
+    'if os.getcwd() != workspace_path: sys.exit("cwd_workspace_mismatch")',
+    'if workspace_path != task_home + "/workspace": sys.exit("workspace_path_mismatch")',
+    'if artifacts_path != workspace_path + "/.artifacts": sys.exit("artifacts_path_mismatch")',
+    'if "MBOS_AGENT_KEY" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_KEY")',
+    'if "MBOS_AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:MBOS_AGENT_WS_URL")',
+    'if "AGENT_KEY" in os.environ: sys.exit("control_env_leak:AGENT_KEY")',
+    'if "AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:AGENT_WS_URL")',
+    'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","").strip()',
+    'if raw:',
+    '    try:',
+    '        data=json.loads(raw)',
+    '    except Exception as exc:',
+    '        sys.exit("invalid_projected_dependencies:"+str(exc))',
+    '    if not isinstance(data,dict):',
+    '        sys.exit("invalid_projected_dependencies_shape")',
+    '    deps=data.get("dependencies")',
+    '    if isinstance(deps,dict) and len(deps) > 0:',
+    '        sys.exit("unexpected_projected_dependencies:"+",".join(sorted(str(k) for k in deps.keys())))',
+    '    if isinstance(deps,list) and len(deps) > 0:',
+    '        sys.exit("unexpected_projected_dependencies:"+",".join(sorted(str(k) for k in deps)))',
+    '    if deps not in (None, {}, []):',
+    '        sys.exit("invalid_projected_dependencies_dependencies_shape")',
+    '    projection_json=json.dumps(data,sort_keys=True)',
+    '    for forbidden in ("credential_files","managed_credential_refresh","user_bearer_token","feishu","jira"):',
+    '        if forbidden in projection_json:',
+    '            sys.exit("provider_specific_projected_dependency:"+forbidden)',
+    'list_command=["mbos-context","list"] if shutil.which("mbos-context") else ["python3", os.path.expanduser("~/.agents/skills/mbos-context/scripts/context_cli.py"), "list"]',
+    'list_output=subprocess.check_output(list_command, text=True, stderr=subprocess.STDOUT).strip()',
+    'empty_context_projection=False',
+    'if not list_output or list_output in ("[]","{}"):',
+    '    empty_context_projection=True',
+    'else:',
+    '    try:',
+    '        payload=json.loads(list_output)',
+    '        if isinstance(payload,dict):',
+    '            listed=payload.get("dependencies",[])',
+    '        else:',
+    '            listed=payload',
+    '        empty_context_projection=(listed in (None, {}, []) or (isinstance(listed,dict) and len(listed) == 0) or (isinstance(listed,list) and len(listed) == 0))',
+    '    except Exception:',
+    '        empty_context_projection=list_output.strip().lower() in ("no projected dependencies","no dependencies")',
+    'if not empty_context_projection:',
+    '    sys.exit("unexpected_context_projection:"+list_output[:200])',
+    'boundary_marker=("RUNNER_"+"PROJECTION_"+"BOUNDARY::"+"ok::"+runtime_task_id+"::"+runtime_run_id)',
+    'print(" ".join(("LOCKED_RUNTIME_TASK::"+runtime_task_id,"LOCKED_RUNTIME_RUN::"+runtime_run_id,boundary_marker,"empty_context_projection")))',
+  ].join('\n');
+
+  return `python3 -c 'exec(${JSON.stringify(python)})'`;
+}
+
 test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
   test('reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
     test.setTimeout(720_000);
@@ -534,24 +600,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       projectId: prepared.projectId,
       title: `Agent Task Locked Runtime Projection ${Date.now()}`,
     });
-    const contextKey = `notes.locked_projection_smoke_${Date.now()}`;
-    const contextValue = `LOCKED_PROJECTION_CTX_${Date.now()}`;
-    await putContextEntryViaApi({
-      page,
-      scope: 'task',
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      key: contextKey,
-      content: contextValue,
-    });
-
-    const projectionCommand = buildProviderNeutralProjectionSmokeCommand({
-      contextKey,
-      includeRunnerBoundarySmoke: true,
-    });
+    const projectionCommand = buildLockedRuntimeProjectionBoundarySmokeCommand();
     expect(projectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
-    expect(projectionCommand).toContain('PROJECTION_SMOKE::');
+    expect(projectionCommand).toContain('MBOS_AGENT_TASK_ID');
+    expect(projectionCommand).toContain('MBOS_AGENT_RUN_ID');
+    expect(projectionCommand).not.toContain('LOCKED_RUNTIME_SMOKE::');
+    expect(projectionCommand).not.toContain('RUNNER_PROJECTION_BOUNDARY::ok');
     const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
       page,
       workspaceId: WORKSPACE_ID,
@@ -563,6 +617,11 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         'Reply with exactly one line and no extra text.',
       ].join(' '),
     });
+    expect(runId).toBeTruthy();
+    const expectedRunId = runId!;
+    const lockedRuntimeTaskToken = `LOCKED_RUNTIME_TASK::${taskId}`;
+    const lockedRuntimeRunToken = `LOCKED_RUNTIME_RUN::${expectedRunId}`;
+    const lockedRuntimeBoundaryToken = `RUNNER_PROJECTION_BOUNDARY::ok::${taskId}::${expectedRunId}`;
 
     await expectAgentTaskRunnerEvidenceViaApi({
       page,
@@ -583,9 +642,27 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       workspaceId: WORKSPACE_ID,
       projectId: prepared.projectId,
       taskId,
-      token: `PROJECTION_SMOKE::${contextValue}`,
+      token: lockedRuntimeTaskToken,
       runnerOutputActivityId,
-      runId,
+      runId: expectedRunId,
+    });
+    await waitForRunnerOutputToken({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      token: lockedRuntimeRunToken,
+      runnerOutputActivityId,
+      runId: expectedRunId,
+    });
+    await waitForRunnerOutputToken({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      token: lockedRuntimeBoundaryToken,
+      runnerOutputActivityId,
+      runId: expectedRunId,
     });
 
     const authToken = await readStoredAuthToken(page);
@@ -599,8 +676,9 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
       .map((item) => item.content ?? '')
       .join('\n');
-    expect(runnerOutputContent).toContain(`PROJECTION_SMOKE::${contextValue}`);
-    expect(runnerOutputContent).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+    expect(runnerOutputContent).toContain(lockedRuntimeTaskToken);
+    expect(runnerOutputContent).toContain(lockedRuntimeRunToken);
+    expect(runnerOutputContent).toContain(lockedRuntimeBoundaryToken);
     expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
   });
 

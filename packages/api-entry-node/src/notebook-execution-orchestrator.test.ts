@@ -22,6 +22,7 @@ import {
   DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
 } from './developer-runner-workspace-blocker.js';
 import { putContextEntry } from './context-store.js';
+import { createUserExternalConnection } from './user-external-connections-store.js';
 
 const NOTEBOOK_EXECUTION_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'f'.repeat(64)}`;
 
@@ -211,6 +212,11 @@ async function runManagedJiraProjectionDispatchForTest(input: {
     key: 'credentials.jira_base_url' | 'credentials.jira_token';
     content: string;
   }>;
+  externalConnections?: Array<{
+    provider: 'feishu';
+    status?: 'active' | 'expired' | 'reauth_required' | 'error';
+    fields: Array<{ key: string; value: string; secret: boolean }>;
+  }>;
 }): Promise<Record<string, unknown>> {
   const restoreInternalApiBase = setManagedExecutionApiBaseForTest('http://api:20000');
   const docStore = new InMemoryJsonDocStore();
@@ -280,6 +286,18 @@ async function runManagedJiraProjectionDispatchForTest(input: {
         scope: 'member',
       });
     }
+  }
+  for (const connection of input.externalConnections ?? []) {
+    await createUserExternalConnection(docStore, {
+      user_id: task.owner_user_id,
+      workspace_id: task.workspace_id,
+      provider: connection.provider,
+      kind: 'oauth_account',
+      display_name: `managed ${connection.provider} ${input.caseId}`,
+      status: connection.status ?? 'active',
+      fields: connection.fields,
+      scopes: ['search:docs:read'],
+    });
   }
 
   try {
@@ -835,6 +853,85 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     );
     expect(serializedProjection).not.toContain('jira-member.example.com');
     expect(serializedProjection).not.toContain('member-token');
+  });
+
+  it('projects active Feishu external connection fields as feishu-managed-user without product semantics', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_feishu',
+      contextEntries: [],
+      externalConnections: [{
+        provider: 'feishu',
+        fields: [
+          { key: 'access_token', value: 'feishu-access-token', secret: true },
+          { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
+        ],
+      }],
+    });
+
+    expect(executionContext.projected_dependencies).toEqual({
+      dependencies: {
+        'feishu-managed-user': {
+          fields: {
+            access_token: 'feishu-access-token',
+            feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(executionContext.projected_dependencies)).not.toMatch(
+      /context_store|writable_scopes|refresh|credential_files|user_bearer_token/,
+    );
+  });
+
+  it('omits feishu-managed-user when there is no active Feishu external connection', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_feishu_inactive',
+      contextEntries: [],
+      externalConnections: [{
+        provider: 'feishu',
+        status: 'expired',
+        fields: [
+          { key: 'access_token', value: 'expired-feishu-token', secret: true },
+        ],
+      }],
+    });
+
+    expect(executionContext).not.toHaveProperty('projected_dependencies');
+  });
+
+  it('projects feishu-managed-user beside jira-auth without adding credential control semantics', async () => {
+    const executionContext = await runManagedJiraProjectionDispatchForTest({
+      caseId: 'projected_feishu_and_jira',
+      contextEntries: [
+        { scope: 'task', key: 'credentials.jira_base_url', content: 'https://jira-task.example.com/' },
+        { scope: 'task', key: 'credentials.jira_token', content: 'task-token' },
+      ],
+      externalConnections: [{
+        provider: 'feishu',
+        fields: [
+          { key: 'access_token', value: 'coexisting-feishu-token', secret: true },
+        ],
+      }],
+    });
+
+    expect(executionContext.projected_dependencies).toEqual({
+      dependencies: {
+        'feishu-managed-user': {
+          fields: {
+            access_token: 'coexisting-feishu-token',
+          },
+        },
+        'jira-auth': {
+          fields: {
+            base_url: 'https://jira-task.example.com',
+            token: 'task-token',
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(executionContext.projected_dependencies)).not.toMatch(
+      /context_store|writable_scopes|refresh|credential_files|user_bearer_token/,
+    );
   });
 
   it('omits jira-auth projection when task scope is incomplete even if member scope is complete', async () => {

@@ -2374,6 +2374,7 @@ export async function expectManagedAgentRunnerImageEvidenceViaApi(args: {
   runnerId: string;
   expectedImage: string;
   expectedImageId?: string | null;
+  diagnosticsPrefix?: "runner_projection_smoke" | "runner_locked_runtime_smoke";
 }): Promise<ManagedAgentRunnerApiPayload> {
   const payload = await readManagedAgentRunnerById({
     page: args.page,
@@ -2386,11 +2387,12 @@ export async function expectManagedAgentRunnerImageEvidenceViaApi(args: {
   }
   expect(payload.id).toBe(args.runnerId);
   expect(payload.kind).toBe("system_managed");
-  expect(readRecordString(payload.diagnostics, "runner_projection_smoke_expected_image"))
+  const diagnosticsPrefix = args.diagnosticsPrefix ?? "runner_projection_smoke";
+  expect(readRecordString(payload.diagnostics, `${diagnosticsPrefix}_expected_image`))
     .toBe(args.expectedImage);
   const expectedImageId = args.expectedImageId?.trim();
   if (expectedImageId) {
-    expect(readRecordString(payload.diagnostics, "runner_projection_smoke_image_id"))
+    expect(readRecordString(payload.diagnostics, `${diagnosticsPrefix}_image_id`))
       .toBe(expectedImageId);
   }
   return payload;

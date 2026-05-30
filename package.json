@@ -56,6 +56,7 @@
     "test:agent-task:runner:fast": "bash scripts/skills-runtime-fast-gate.sh",
     "test:agent-task:runner:backend-real": "bash scripts/skills-runtime-backend-real-gate.sh",
     "test:agent-task:runner:projection-smoke": "bash scripts/run-internal-agent-task-real-gate.sh --runner-projection-smoke",
+    "test:agent-task:runner:locked-runtime": "bash scripts/run-internal-agent-task-real-gate.sh --runner-locked-runtime-smoke",
     "test:agent-runners:lifecycle:evidence": "bash scripts/agent-runner-lifecycle-evidence-gate.sh",
     "test:internal:backend-real:ownership": "bash scripts/internal-ownership-backend-real-gate.sh",
     "test:feishu:real:credential": "bash scripts/feishu-real-credential-gate.sh",

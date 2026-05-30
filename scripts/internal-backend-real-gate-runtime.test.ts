@@ -48,6 +48,7 @@ function sectionBetween(source: string, startNeedle: string, endNeedle: string):
 function runRunnerProjectionSmokeImagePreconditions(args: {
   explicitImage?: string;
   buildImage?: string;
+  gateMode?: 'runner-projection-smoke' | 'runner-locked-runtime-smoke';
 } = {}): { stdout: string; stderr: string; status: number | null } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runner-projection-smoke-image-'));
@@ -75,7 +76,7 @@ function runRunnerProjectionSmokeImagePreconditions(args: {
     `#!/usr/bin/env bash
 set -euo pipefail
 ROOT_DIR="${repoRoot}"
-GATE_MODE="runner-projection-smoke"
+GATE_MODE="${args.gateMode ?? 'runner-projection-smoke'}"
 RUNNER_IMAGE_LOCK_PATH="${lockPath}"
 INTERNAL_REAL_DIR="${tempRoot}/internal"
 RUNNER_IMAGE="agentsmith-managed-runner:local"
@@ -106,11 +107,12 @@ ${lockFunction}
 ${imagePreconditionFunction}
 
 ensure_runner_projection_smoke_image_preconditions
+resolved_image_id="\${INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID:-\${INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID:-}}"
 printf 'resolved_runner=%s\\n' "\${RUNNER_IMAGE}"
 printf 'exported_image=%s\\n' "\${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
 printf 'build_runner_image=%s\\n' "\${BUILD_RUNNER_IMAGE:-}"
 printf 'exported_build=%s\\n' "\${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-}"
-printf 'image_id=%s\\n' "\${INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID:-}"
+printf 'image_id=%s\\n' "\${resolved_image_id}"
 `,
     'utf8',
   );
@@ -1316,5 +1318,125 @@ describe('internal backend-real gate runtime contract', () => {
     expect(spec).not.toContain('expected_library_id =');
     expect(spec).not.toContain('expected_evidence =');
     expect(story).toContain('runner-observed task metadata');
+  });
+
+  it('keeps locked runner runtime smoke focused on Feishu managed credential projection with the canonical locked image', () => {
+    const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const backendRealRun = read('scripts/backend-real-run.sh');
+    const agentTaskRunnerSpec = read('e2e/integration-agent-task-runner.spec.ts');
+    const realHelpers = read('e2e/integration-real-helpers.ts');
+    const orchestrator = read('packages/api-entry-node/src/notebook-execution-orchestrator.ts');
+    const orchestratorTest = read('packages/api-entry-node/src/notebook-execution-orchestrator.test.ts');
+    const lockedRuntimeFunction = shellFunctionBody(agentTaskGate, 'run_runner_locked_runtime_smoke_spec');
+    const lockedRuntimeCase = sectionBetween(
+      agentTaskRunnerSpec,
+      "test('reads feishu-managed-user projected dependency through locked agentsmith-runner image",
+      "test('uses feishu-docs managed credential projection",
+    );
+
+    expect(packageJson.scripts?.['test:agent-task:runner:locked-runtime'])
+      .toBe('bash scripts/run-internal-agent-task-real-gate.sh --runner-locked-runtime-smoke');
+    expect(agentTaskGate).toContain('elif [[ "${1:-}" == "--runner-locked-runtime-smoke" ]]');
+    expect(agentTaskGate).toContain('running focused locked runtime smoke with canonical agentsmith-runner image');
+    expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE=1');
+    expect(agentTaskGate).toContain('export INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE=1');
+    expect(agentTaskGate).toContain('INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE="${INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE:-0}" \\');
+    expect(agentTaskGate).toContain('INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID="${INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID:-}" \\');
+    expect(agentTaskGate).toContain(
+      `RUNNER_IMAGE_LOCK_PATH="\${RUNNER_IMAGE_LOCK_PATH:-\${ROOT_DIR}/${RUNNER_IMAGE_LOCK_TRUTH_PATH}}"`,
+    );
+    expect(agentTaskGate).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-0}"');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must not reference old agent-task-runner image/path');
+    expect(agentTaskGate).toContain('INTEGRATION_INTERNAL_AGENT_IMAGE must match locked digest image ref from agentsmith-runner-image.lock');
+    expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
+    expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID="${image_id}"');
+    expect(lockedRuntimeFunction).toContain(
+      'reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run',
+    );
+    expect(lockedRuntimeFunction).not.toContain('reads task context through mbos-context');
+    expect(lockedRuntimeFunction).not.toContain('writes task context through mbos-context');
+    expect(lockedRuntimeFunction).not.toContain('uses request-scoped projected dependencies');
+    expect(lockedRuntimeFunction).not.toContain('run_skills_runtime_specs');
+    expect(agentTaskGate).toContain('focused locked runner runtime smoke passed');
+    expect(backendRealRun).not.toContain('--runner-locked-runtime-smoke');
+    expect(backendRealRun).not.toContain('test:agent-task:runner:locked-runtime');
+    expect(lockedRuntimeCase).toContain('readRunnerLockedRuntimeSmokeImage');
+    expect(lockedRuntimeCase).toContain('runnerImage: lockedRuntimeSmokeImage');
+    expect(lockedRuntimeCase).toContain('forceManagedRunnerUpsert: true');
+    expect(lockedRuntimeCase).toContain('runner_locked_runtime_smoke_expected_image: lockedRuntimeSmokeImage');
+    expect(lockedRuntimeCase).toContain('expect(prepared.runnerConfiguredImage).toBe(lockedRuntimeSmokeImage)');
+    expect(lockedRuntimeCase).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
+    expect(lockedRuntimeCase).toContain('diagnosticsPrefix: \'runner_locked_runtime_smoke\'');
+    expect(lockedRuntimeCase).toContain('expectManagedWorkloadPodImage');
+    expect(lockedRuntimeCase).toContain('createExternalConnectionViaApi');
+    expect(lockedRuntimeCase).toContain('provider: \'feishu\'');
+    expect(lockedRuntimeCase).toContain('feishu-managed-user');
+    expect(lockedRuntimeCase).toContain('--dependency feishu-managed-user --field access_token');
+    expect(lockedRuntimeCase).toContain('--dependency feishu-managed-user --field feishu_mcp_endpoint');
+    expect(lockedRuntimeCase).toContain('FEISHU_MANAGED_USER_PROJECTION::');
+    expect(lockedRuntimeCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, feishuToken');
+    expect(lockedRuntimeCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey()');
+    expect(lockedRuntimeCase).not.toContain('startMockFeishuMcpServer');
+    expect(lockedRuntimeCase).not.toContain('feishu_mcp.py');
+    expect(lockedRuntimeCase).not.toContain('jira_ops.py');
+    expect(lockedRuntimeCase).not.toContain('context_cli.py get --scope');
+    expect(orchestrator).toContain("'feishu-managed-user'");
+    expect(orchestratorTest).toContain('projects active Feishu external connection fields as feishu-managed-user');
+    expect(orchestratorTest).toContain('omits feishu-managed-user when there is no active Feishu external connection');
+    expect(orchestratorTest).toContain('projects feishu-managed-user beside jira-auth');
+    expect(realHelpers).toContain('diagnosticsPrefix?: "runner_projection_smoke" | "runner_locked_runtime_smoke"');
+  });
+
+  it('defaults locked runner runtime smoke to the locked digest image and disables image builds', () => {
+    const lock = read(RUNNER_IMAGE_LOCK_TRUTH_PATH);
+    const lockedImage = lock.match(/^image=(.+)$/m)?.[1] ?? '';
+    const lockedDigest = lock.match(/^image_digest=(.+)$/m)?.[1] ?? '';
+    const result = runRunnerProjectionSmokeImagePreconditions({
+      gateMode: 'runner-locked-runtime-smoke',
+    });
+
+    expect(lockedImage).toContain(`@${lockedDigest}`);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(`resolved_runner=${lockedImage}`);
+    expect(result.stdout).toContain(`exported_image=${lockedImage}`);
+    expect(result.stdout).toContain('build_runner_image=0');
+    expect(result.stdout).toContain('exported_build=0');
+    expect(result.stdout).toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(result.stdout).toContain('preflight:runner_locked_runtime_smoke_image_lock|passed|');
+  });
+
+  it('rejects locked runner runtime smoke image drift and build fallback before docker inspect', () => {
+    const lock = read(RUNNER_IMAGE_LOCK_TRUTH_PATH);
+    const lockedImage = lock.match(/^image=(.+)$/m)?.[1] ?? '';
+    const driftedImage = lockedImage.replace(/sha256:[0-9a-f]{64}/u, `sha256:${'0'.repeat(64)}`);
+    const driftResult = runRunnerProjectionSmokeImagePreconditions({
+      gateMode: 'runner-locked-runtime-smoke',
+      explicitImage: driftedImage,
+    });
+    const legacyResult = runRunnerProjectionSmokeImagePreconditions({
+      gateMode: 'runner-locked-runtime-smoke',
+      explicitImage: 'agentsmith-agent-task-runner:local',
+    });
+    const buildResult = runRunnerProjectionSmokeImagePreconditions({
+      gateMode: 'runner-locked-runtime-smoke',
+      buildImage: '1',
+    });
+
+    expect(driftResult.status).toBe(1);
+    expect(driftResult.stdout).toContain('failure:infra_dependency_unready|runner_locked_runtime_smoke_image_lock|');
+    expect(driftResult.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(driftResult.stderr).toContain('--runner-locked-runtime-smoke requires INTEGRATION_INTERNAL_AGENT_IMAGE to exactly match image=');
+
+    expect(legacyResult.status).toBe(1);
+    expect(legacyResult.stdout).toContain('failure:infra_dependency_unready|runner_locked_runtime_smoke_image|');
+    expect(legacyResult.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(legacyResult.stderr).toContain('--runner-locked-runtime-smoke requires a canonical agentsmith-runner image');
+
+    expect(buildResult.status).toBe(1);
+    expect(buildResult.stdout).toContain('failure:infra_dependency_unready|runner_locked_runtime_smoke_image|');
+    expect(buildResult.stdout).not.toContain('image_id=sha256:runner-projection-smoke-image-id');
+    expect(buildResult.stderr).toContain('--runner-locked-runtime-smoke requires INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0');
   });
 });

@@ -43,6 +43,7 @@ import {
   isDeveloperRunnerTaskHomeBindingAvailable,
 } from './developer-runner-workspace-blocker.js';
 import { getContextEntry, type ContextScope } from './context-store.js';
+import { resolveManagedCredentialConnection } from './managed-credential-resolver.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -338,6 +339,31 @@ async function readJiraAuthProjectionFields(input: {
   };
 }
 
+async function readFeishuManagedUserProjectionFields(input: {
+  deps: NodeApiDeps;
+  userId: string;
+  workspaceId: string;
+  projectId: string;
+}): Promise<Record<string, string> | null> {
+  const resolved = await resolveManagedCredentialConnection({
+    docStore: input.deps.docStore,
+    userId: input.userId,
+    provider: 'feishu',
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+  });
+  if (!resolved || resolved.connection.status !== 'active') return null;
+
+  const fields: Record<string, string> = {};
+  for (const field of resolved.connection.fields) {
+    const key = field.key.trim();
+    if (key && field.value) {
+      fields[key] = field.value;
+    }
+  }
+  return Object.keys(fields).length > 0 ? fields : null;
+}
+
 async function buildRequestScopedProjectedDependencies(input: {
   deps: NodeApiDeps;
   task: NotebookTaskRecord;
@@ -350,15 +376,29 @@ async function buildRequestScopedProjectedDependencies(input: {
     projectId: input.task.project_id,
     taskId: input.task.id,
   };
-  const jiraAuthFields = await readJiraAuthProjectionFields(common);
-  if (!jiraAuthFields) return undefined;
-  return {
-    dependencies: {
-      'jira-auth': {
-        fields: jiraAuthFields,
-      },
-    },
-  };
+  const [
+    feishuManagedUserFields,
+    jiraAuthFields,
+  ] = await Promise.all([
+    readFeishuManagedUserProjectionFields(common),
+    readJiraAuthProjectionFields(common),
+  ]);
+  const dependencies: ProjectedDependenciesEnv['dependencies'] = {};
+  if (feishuManagedUserFields) {
+    dependencies['feishu-managed-user'] = {
+      fields: feishuManagedUserFields,
+    };
+  }
+  if (jiraAuthFields) {
+    dependencies['jira-auth'] = {
+      fields: jiraAuthFields,
+    };
+  }
+  return Object.keys(dependencies).length > 0
+    ? {
+        dependencies,
+      }
+    : undefined;
 }
 
 function requireNotebookModelContextWindow(contextWindow: number | undefined): number {

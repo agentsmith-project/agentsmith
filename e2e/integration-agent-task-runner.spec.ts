@@ -126,6 +126,20 @@ function readRunnerProjectionSmokeImage(): string | null {
   return image;
 }
 
+function readRunnerLockedRuntimeSmokeImage(): string | null {
+  if (process.env.INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE !== '1') {
+    return null;
+  }
+  const image = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim();
+  if (!image) {
+    throw new Error('runner_locked_runtime_smoke_missing_INTEGRATION_INTERNAL_AGENT_IMAGE');
+  }
+  if (image.includes('agent-task-runner') || !image.includes('agentsmith-runner')) {
+    throw new Error(`runner_locked_runtime_smoke_non_canonical_image:${image}`);
+  }
+  return image;
+}
+
 async function createRunnerlessAgentTask(args: {
   page: Page;
   projectId: string;
@@ -228,6 +242,27 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
       : [
           'print("JIRA_PROJECTION::"+display_name)',
         ]),
+  ].join('\n');
+
+  return `python3 -c 'exec(${JSON.stringify(python)})'`;
+}
+
+function buildFeishuManagedUserProjectionSmokeCommand(): string {
+  const accessTokenCommand =
+    'python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --dependency feishu-managed-user --field access_token';
+  const endpointCommand =
+    'python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --dependency feishu-managed-user --field feishu_mcp_endpoint';
+  const python = [
+    'import subprocess,sys',
+    `access_token_cmd=${JSON.stringify(accessTokenCommand)}`,
+    `endpoint_cmd=${JSON.stringify(endpointCommand)}`,
+    'token=subprocess.check_output(access_token_cmd, shell=True, text=True, stderr=subprocess.STDOUT, timeout=30).strip()',
+    'endpoint=subprocess.check_output(endpoint_cmd, shell=True, text=True, stderr=subprocess.STDOUT, timeout=30).strip()',
+    'token or sys.exit("missing_feishu_access_token")',
+    'endpoint or sys.exit("missing_feishu_mcp_endpoint")',
+    'marker=endpoint.rstrip("/").rsplit("/",1)[-1]',
+    'marker.startswith("locked-runtime-") or sys.exit("unexpected_feishu_marker")',
+    'print("FEISHU_MANAGED_USER_PROJECTION::"+marker)',
   ].join('\n');
 
   return `python3 -c 'exec(${JSON.stringify(python)})'`;
@@ -648,6 +683,113 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       await memberServer.stop();
       await taskServer.stop();
     }
+  });
+
+  test('reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run', async ({ page }) => {
+    test.setTimeout(720_000);
+    const lockedRuntimeSmokeImage = readRunnerLockedRuntimeSmokeImage();
+    test.skip(!lockedRuntimeSmokeImage, 'locked runtime smoke runs only under INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE=1');
+    if (!lockedRuntimeSmokeImage) return;
+    const lockedRuntimeSmokeImageId =
+      process.env.INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID?.trim() || null;
+    const prepared = await prepareAgentTaskProject(page, {
+      projectPrefix: 'Agentsmith Locked Runtime Projection',
+      runnerTitle: 'agentsmith-runner-locked-runtime',
+      runnerImage: lockedRuntimeSmokeImage,
+      forceManagedRunnerUpsert: true,
+      runnerDiagnostics: {
+        runner_locked_runtime_smoke: true,
+        runner_locked_runtime_smoke_expected_image: lockedRuntimeSmokeImage,
+        ...(lockedRuntimeSmokeImageId
+          ? { runner_locked_runtime_smoke_image_id: lockedRuntimeSmokeImageId }
+          : {}),
+      },
+    });
+    expect(prepared.runnerConfiguredImage).toBe(lockedRuntimeSmokeImage);
+    await expectManagedAgentRunnerImageEvidenceViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      runnerId: prepared.runnerId,
+      expectedImage: lockedRuntimeSmokeImage,
+      expectedImageId: lockedRuntimeSmokeImageId,
+      diagnosticsPrefix: 'runner_locked_runtime_smoke',
+    });
+
+    const taskId = await createRunnerlessAgentTask({
+      page,
+      projectId: prepared.projectId,
+      title: `Agent Task Locked Runtime Projection ${Date.now()}`,
+    });
+    const feishuMarker = `locked-runtime-${Date.now()}`;
+    const feishuToken = `feishu_locked_runtime_token_${Date.now()}`;
+    const authToken = await readStoredAuthToken(page);
+    expect(authToken).toBeTruthy();
+    await createExternalConnectionViaApi({
+      request: page.request,
+      token: authToken!,
+      provider: 'feishu',
+      kind: 'oauth_account',
+      displayName: `locked-runtime-feishu-${Date.now()}`,
+      fields: [
+        { key: 'access_token', value: feishuToken, secret: true },
+        { key: 'feishu_mcp_endpoint', value: `https://feishu.example.test/${feishuMarker}`, secret: false },
+      ],
+      scopes: ['search:docs:read'],
+    });
+
+    const feishuProjectionCommand = buildFeishuManagedUserProjectionSmokeCommand();
+    expect(feishuProjectionCommand).toContain('--dependency feishu-managed-user --field access_token');
+    expect(feishuProjectionCommand).toContain('--dependency feishu-managed-user --field feishu_mcp_endpoint');
+    const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      intent: [
+        'Run this exact shell command and use its stdout value in your final reply:',
+        `\`${feishuProjectionCommand}\``,
+        'Reply with exactly one line and no extra text.',
+      ].join(' '),
+    });
+
+    await expectAgentTaskRunnerEvidenceViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      runnerId: prepared.runnerId,
+    });
+    await expectManagedWorkloadPodImage({
+      namespace: INTERNAL_AGENT_K8S_NAMESPACE,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      workloadId: taskId,
+      expectedImage: lockedRuntimeSmokeImage,
+    });
+    await waitForRunnerOutputToken({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      token: `FEISHU_MANAGED_USER_PROJECTION::${feishuMarker}`,
+      runnerOutputActivityId,
+      runId,
+    });
+
+    const activityResponse = await page.request.get(
+      `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    );
+    expect(activityResponse.ok()).toBeTruthy();
+    const activity = (await activityResponse.json()) as Array<{ content?: string; actor?: string; kind?: string }>;
+    const runnerOutputContent = activity
+      .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
+      .map((item) => item.content ?? '')
+      .join('\n');
+    expect(runnerOutputContent).toContain(`FEISHU_MANAGED_USER_PROJECTION::${feishuMarker}`);
+    expectRunnerOutputNotToLeakSecret(runnerOutputContent, feishuToken, 'redacted Feishu managed credential token');
+    expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
   });
 
   test('uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {

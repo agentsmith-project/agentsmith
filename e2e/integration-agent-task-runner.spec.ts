@@ -248,16 +248,33 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
 }
 
 function buildFeishuManagedUserProjectionSmokeCommand(): string {
-  const accessTokenCommand =
-    'python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --dependency feishu-managed-user --field access_token';
-  const endpointCommand =
-    'python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --dependency feishu-managed-user --field feishu_mcp_endpoint';
   const python = [
-    'import subprocess,sys',
-    `access_token_cmd=${JSON.stringify(accessTokenCommand)}`,
-    `endpoint_cmd=${JSON.stringify(endpointCommand)}`,
-    'token=subprocess.check_output(access_token_cmd, shell=True, text=True, stderr=subprocess.STDOUT, timeout=30).strip()',
-    'endpoint=subprocess.check_output(endpoint_cmd, shell=True, text=True, stderr=subprocess.STDOUT, timeout=30).strip()',
+    'import json,os,sys',
+    'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',
+    'raw or sys.exit("missing_MBOS_AGENT_PROJECTED_DEPENDENCIES")',
+    'try:',
+    '    data=json.loads(raw)',
+    'except ValueError:',
+    '    sys.exit("invalid_MBOS_AGENT_PROJECTED_DEPENDENCIES_json")',
+    'CONTROL_FIELDS=("context_store","writable_scopes","credential_files","user_bearer_token","provenance")',
+    'def reject_forbidden_projection_fields(value):',
+    '    if isinstance(value,dict):',
+    '        for key, child in value.items():',
+    '            if key == "refresh_token":',
+    '                sys.exit("forbidden_refresh_token")',
+    '            if key in CONTROL_FIELDS:',
+    '                sys.exit("forbidden_control_field:"+key)',
+    '            reject_forbidden_projection_fields(child)',
+    '    elif isinstance(value,list):',
+    '        for child in value:',
+    '            reject_forbidden_projection_fields(child)',
+    'reject_forbidden_projection_fields(data)',
+    'deps=data.get("dependencies") if isinstance(data,dict) else None',
+    'dep=deps.get("feishu-managed-user") if isinstance(deps,dict) else None',
+    'fields=dep.get("fields") if isinstance(dep,dict) else None',
+    'isinstance(fields,dict) or sys.exit("missing_feishu_managed_user_fields")',
+    'token=fields.get("access_token") if isinstance(fields.get("access_token"),str) else None',
+    'endpoint=fields.get("feishu_mcp_endpoint") if isinstance(fields.get("feishu_mcp_endpoint"),str) else None',
     'token or sys.exit("missing_feishu_access_token")',
     'endpoint or sys.exit("missing_feishu_mcp_endpoint")',
     'marker=endpoint.rstrip("/").rsplit("/",1)[-1]',
@@ -739,8 +756,18 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
     });
 
     const feishuProjectionCommand = buildFeishuManagedUserProjectionSmokeCommand();
-    expect(feishuProjectionCommand).toContain('--dependency feishu-managed-user --field access_token');
-    expect(feishuProjectionCommand).toContain('--dependency feishu-managed-user --field feishu_mcp_endpoint');
+    const expectFeishuProjectionCommandPython = (source: string) => {
+      expect(feishuProjectionCommand).toContain(JSON.stringify(source).slice(1, -1));
+    };
+    expect(feishuProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+    expect(feishuProjectionCommand).toContain('data=json.loads(raw)');
+    expect(feishuProjectionCommand).toContain('feishu-managed-user');
+    expectFeishuProjectionCommandPython('dep=deps.get("feishu-managed-user")');
+    expectFeishuProjectionCommandPython('fields.get("access_token")');
+    expectFeishuProjectionCommandPython('fields.get("feishu_mcp_endpoint")');
+    expect(feishuProjectionCommand).toContain('forbidden_refresh_token');
+    expect(feishuProjectionCommand).toContain('forbidden_control_field:');
+    expectFeishuProjectionCommandPython('"context_store","writable_scopes","credential_files","user_bearer_token","provenance"');
     const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
       page,
       workspaceId: WORKSPACE_ID,

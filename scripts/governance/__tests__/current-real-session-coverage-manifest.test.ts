@@ -233,6 +233,11 @@ describe('current real session coverage manifest', () => {
       }),
       expect.objectContaining({
         source_kind: 'playwright_grep',
+        spec: 'e2e/integration-agent-task-runner.spec.ts',
+        grep: 'reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run',
+      }),
+      expect.objectContaining({
+        source_kind: 'playwright_grep',
         spec: 'e2e/integration-chat.spec.ts',
         grep: 'real deepseek',
       }),
@@ -265,6 +270,17 @@ describe('current real session coverage manifest', () => {
     expectValidationFailure(
       missingGrep,
       'missing current real session coverage source: playwright_grep:e2e/integration-chat.spec.ts',
+    );
+
+    const missingLockedRuntimeGrep = cloneManifest();
+    missingLockedRuntimeGrep.coverage = missingLockedRuntimeGrep.coverage.filter((entry) => !(
+      entry.source_kind === 'playwright_grep'
+      && entry.spec === 'e2e/integration-agent-task-runner.spec.ts'
+      && entry.grep === 'reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run'
+    ));
+    expectValidationFailure(
+      missingLockedRuntimeGrep,
+      'missing current real session coverage source: playwright_grep:e2e/integration-agent-task-runner.spec.ts --grep reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run',
     );
 
     for (const spec of RELEASE_BROWSER_TRACE_SPECS) {

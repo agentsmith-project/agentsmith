@@ -1319,6 +1319,24 @@ const SPEC_COVERAGE = [
   }),
   grepCoverage({
     spec: "e2e/integration-agent-task-runner.spec.ts",
+    grep: "reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run",
+    proposed_shard_id: "provider-credential",
+    evidence_owner: "backend-real-provider:credential",
+    isolation_level: "serialized",
+    mutable_resources: [
+      "workspace",
+      "project",
+      "runner_task",
+      "context_store",
+      "managed_credentials",
+      "runner_mount",
+    ],
+    lock_ids: BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Locked runner managed credential projection crosses the secret profile boundary and must stay serialized.",
+  }),
+  grepCoverage({
+    spec: "e2e/integration-agent-task-runner.spec.ts",
     grep: "reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner",
     proposed_shard_id: "terminal-runtime",
     evidence_owner: "backend-real-runner:terminal",

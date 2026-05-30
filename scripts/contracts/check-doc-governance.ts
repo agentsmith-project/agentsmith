@@ -470,6 +470,13 @@ function normalizeBlock(content: string): string {
   return content.replaceAll('`', '').replace(/\s+/gu, ' ').trim();
 }
 
+function splitTextClauses(content: string): string[] {
+  return content
+    .split(/[；;。.]+/u)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0);
+}
+
 function splitMarkdownBlocks(content: string): TextBlock[] {
   const blocks: TextBlock[] = [];
   const lines = content.split('\n');
@@ -536,6 +543,29 @@ function isAllowedP6ReleaseReadyReference(block: string): boolean {
   );
 }
 
+function isNegatedP6ReleaseReadyReference(block: string): boolean {
+  const normalized = normalizeBlock(block);
+
+  return /(?:(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不把|不给|不属于|不跑|不执行|不使用).{0,100}release:ready|release:ready.{0,100}(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不给|不属于|不跑|不执行|不使用))/u.test(normalized);
+}
+
+function hasP6ReleaseReadyDefaultTrigger(block: string): boolean {
+  const normalized = normalizeBlock(block);
+  return /(?:默认|收口|验收|跑).{0,80}release:ready|release:ready.{0,80}(?:默认|收口|验收|跑)/u.test(normalized);
+}
+
+function hasDisallowedP6ReleaseReadyReference(block: string): boolean {
+  return splitTextClauses(block).some((clause) => {
+    if (!/release:ready/u.test(clause)) {
+      return false;
+    }
+    if (hasP6ReleaseReadyDefaultTrigger(clause) && !isNegatedP6ReleaseReadyReference(clause)) {
+      return true;
+    }
+    return !isAllowedP6ReleaseReadyReference(clause);
+  });
+}
+
 function isAllowedFormalOperatorReference(block: string): boolean {
   const normalized = normalizeBlock(block);
   const formalTerm = '(?:formal operator adoption verdict|formal release engineering verdict|offline release engineering gate)';
@@ -546,6 +576,32 @@ function isAllowedFormalOperatorReference(block: string): boolean {
     || new RegExp(`(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求).{0,120}${formalTerm}`, 'u').test(normalized)
     || new RegExp(`${formalTerm}.{0,120}(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求)`, 'u').test(normalized)
   );
+}
+
+function isNegatedFormalOperatorReference(block: string): boolean {
+  const normalized = normalizeBlock(block);
+  const formalTerm = '(?:formal operator adoption verdict|formal release engineering verdict|offline release engineering gate)';
+
+  return (
+    new RegExp(`(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|不把|不能据此宣称).{0,120}${formalTerm}`, 'u').test(normalized)
+    || new RegExp(`${formalTerm}.{0,120}(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|只输出|not_issued)`, 'u').test(normalized)
+  );
+}
+
+function hasDisallowedFormalOperatorDefaultReference(
+  block: string,
+  formalOperatorTermRegex: RegExp,
+  formalOperatorDefaultRegex: RegExp,
+): boolean {
+  return splitTextClauses(block).some((clause) => {
+    if (!formalOperatorTermRegex.test(clause) || !formalOperatorDefaultRegex.test(clause)) {
+      return false;
+    }
+    if (!isNegatedFormalOperatorReference(clause)) {
+      return true;
+    }
+    return !isAllowedFormalOperatorReference(clause);
+  });
 }
 
 export function findReleaseKitSplitKissPlanViolations(
@@ -570,7 +626,7 @@ export function findReleaseKitSplitKissPlanViolations(
   }
 
   for (const block of splitMarkdownBlocks(p6Section.content)) {
-    if (!/release:ready/u.test(block.content) || isAllowedP6ReleaseReadyReference(block.content)) {
+    if (!/release:ready/u.test(block.content) || !hasDisallowedP6ReleaseReadyReference(block.content)) {
       continue;
     }
     violations.push({
@@ -589,7 +645,11 @@ export function findReleaseKitSplitKissPlanViolations(
     if (
       !formalOperatorTermRegex.test(block.content)
       || !formalOperatorDefaultRegex.test(block.content)
-      || isAllowedFormalOperatorReference(block.content)
+      || !hasDisallowedFormalOperatorDefaultReference(
+        block.content,
+        formalOperatorTermRegex,
+        formalOperatorDefaultRegex,
+      )
     ) {
       continue;
     }

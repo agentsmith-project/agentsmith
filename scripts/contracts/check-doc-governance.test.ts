@@ -254,6 +254,26 @@ describe('check-doc-governance historical document detection', () => {
     );
   });
 
+  it('flags P6-lite release:ready default when the same bullet also has an allowed escalation exception', () => {
+    const violations = findReleaseKitSplitKissPlanViolations(
+      [
+        '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+        '',
+        '### P6. 清理和防回流',
+        '',
+        '- P6-lite 默认收口跑 `npm run release:ready`；只有改 release/runtime/product readiness 才升级到 `npm run release:ready`。',
+        '',
+        '## 9. 发布模式',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'p6-lite-heavy-release-ready-default' }),
+      ]),
+    );
+  });
+
   it('flags formal operator adoption verdict defaults even when the GA trigger sentence is present', () => {
     const violations = findReleaseKitSplitKissPlanViolations(
       [
@@ -266,6 +286,29 @@ describe('check-doc-governance historical document detection', () => {
         '',
         '当前真实下一步：',
         '- 推进 formal operator adoption verdict，作为 P6-lite 之后的默认收口项。',
+        '',
+        '### P6. 清理和防回流',
+        '',
+        'P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。',
+        '',
+        '## 9. 发布模式',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'heavy-formal-operator-verdict-default' }),
+      ]),
+    );
+  });
+
+  it('flags formal operator adoption verdict default when the same bullet also has an allowed GA trigger', () => {
+    const violations = findReleaseKitSplitKissPlanViolations(
+      [
+        '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+        '',
+        '当前真实下一步：',
+        '- 推进 `formal operator adoption verdict` 作为默认收口项；只有客户/合规/GA 要求才进入。',
         '',
         '### P6. 清理和防回流',
         '',

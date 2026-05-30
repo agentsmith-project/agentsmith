@@ -572,7 +572,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
           `\`${jiraProjectionCommand}\``,
           ...(projectionSmokeImage
             ? [
-                'Your final reply must preserve the stdout JIRA_PROJECTION marker and transform RUNNER_SEMANTIC_SOURCE::blue into RUNNER_LLM_SEMANTIC::BLUE.',
+                'Your final reply must preserve the stdout JIRA_PROJECTION marker. Find the color value after RUNNER_SEMANTIC_SOURCE:: in stdout, uppercase that value, and append a marker using prefix RUNNER_LLM_SEMANTIC:: followed by the uppercased value.',
               ]
             : []),
           'Reply with exactly one line and no extra text.',

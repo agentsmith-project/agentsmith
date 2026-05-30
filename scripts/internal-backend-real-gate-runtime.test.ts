@@ -1157,6 +1157,11 @@ describe('internal backend-real gate runtime contract', () => {
       "test('uses request-scoped projected dependencies through agentsmith-runner",
       "test('uses feishu-docs managed credential projection",
     );
+    const projectionIntent = sectionBetween(
+      projectionCase,
+      'intent: [',
+      "].join(' ')",
+    );
 
     expect(packageJson.scripts?.['test:agent-task:runner:projection-smoke'])
       .toBe('bash scripts/run-internal-agent-task-real-gate.sh --runner-projection-smoke');
@@ -1229,7 +1234,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand(Boolean(projectionSmokeImage))');
     expect(projectionCase).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
     expect(projectionCase).toContain('RUNNER_SEMANTIC_SOURCE::blue');
-    expect(projectionCase).toContain('RUNNER_LLM_SEMANTIC::BLUE');
+    expect(projectionCase).toContain("token: 'RUNNER_LLM_SEMANTIC::BLUE'");
+    expect(projectionIntent).toContain('RUNNER_LLM_SEMANTIC::');
+    expect(projectionIntent).toContain('uppercase');
+    expect(projectionIntent).not.toContain('RUNNER_LLM_SEMANTIC::BLUE');
     expect(projectionCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(),');
     expect(projectionCase).toContain('redacted provider endpoint api key');
     expect(agentTaskRunnerSpec).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');

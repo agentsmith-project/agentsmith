@@ -856,6 +856,17 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   });
 
   it('projects active Feishu external connection fields as feishu-managed-user without product semantics', async () => {
+    const blockedProjectionFields = [
+      'refresh_token',
+      'expires_at',
+      'updated_at',
+      'scopes',
+      'provenance',
+      'context_store',
+      'writable_scopes',
+      'credential_files',
+      'user_bearer_token',
+    ];
     const executionContext = await runManagedJiraProjectionDispatchForTest({
       caseId: 'projected_feishu',
       contextEntries: [],
@@ -864,6 +875,13 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         fields: [
           { key: 'access_token', value: 'feishu-access-token', secret: true },
           { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
+          { key: 'uat', value: 'feishu-uat-token', secret: true },
+          { key: 'token', value: 'feishu-compat-token', secret: true },
+          ...blockedProjectionFields.map((key) => ({
+            key,
+            value: `blocked-${key}`,
+            secret: true,
+          })),
         ],
       }],
     });
@@ -874,13 +892,17 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           fields: {
             access_token: 'feishu-access-token',
             feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
+            token: 'feishu-compat-token',
+            uat: 'feishu-uat-token',
           },
         },
       },
     });
-    expect(JSON.stringify(executionContext.projected_dependencies)).not.toMatch(
-      /context_store|writable_scopes|refresh|credential_files|user_bearer_token/,
-    );
+    const serializedProjection = JSON.stringify(executionContext.projected_dependencies);
+    for (const blockedField of blockedProjectionFields) {
+      expect(serializedProjection).not.toContain(blockedField);
+      expect(serializedProjection).not.toContain(`blocked-${blockedField}`);
+    }
   });
 
   it('omits feishu-managed-user when there is no active Feishu external connection', async () => {

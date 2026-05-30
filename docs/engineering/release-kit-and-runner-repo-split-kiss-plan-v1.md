@@ -33,11 +33,13 @@ Active plan 读法：
 3. P6-lite summary/status 降噪已完成：AgentSmith commits `d2e38da3` / `6b72a8f3`。Focused test 结论：默认 `release:ready` / `release:status` human output 不再展示 transition-only unified deploy diagnostics，release-kit focused evidence 不再像 product readiness summary item。
 4. release-kit repo 已完成 operator-facing `airgap/use_existing` surface：映射到 `--airgap-consume-rehearsal`，覆盖 apply 链 image-load / render-check / apply / rollout / smoke；report 仍是 `readiness=false`。custom `--bundle-manifest` summary 校验问题已修复。release-kit commits `f3976a2` / `dcd30bc`，CI run `26670049863` success。
 5. release-kit `--airgap-adoption` repo-local aggregation 已完成：消费 `airgap-bundle/use_existing` 和 confirmed-apply `airgap/use_existing` operator surface reports，绑定 release contract、bundle manifest、nested bundle-check/deployment/consume report digests；report 仍是 `readiness=false`。release-kit commits `8fd4e9a` / `ba3975d` / `b58b097`，CI run `26671321070` success。它不是 formal release gate、release readiness、package/operator verdict，也不接 AgentSmith `release:ready`。
+6. release-kit `airgap/install_substrates` repo-local focused surface 已完成：bundle packaging、substrate pack validation、consume/deployment chain、operator airgap profile mismatch fail-fast、duplicate operator singleton args fail-fast。release-kit commits `48a62f9` / `1d4483d` / `eea72f4` / `3738507` / `243b868`，CI run `26673592790` success。它仍不等于 release engineering gate、formal operator verdict、package verdict 或 release readiness。
+7. llmup v0.2.44 image lock 已同步；这是 image lock truth 更新，不是 release-kit readiness。
 
 尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. release-kit formal release gate、offline formal release gate / formal operator adoption verdict 仍未完成；`airgap/install_substrates` 仍未实现并应 fail fast；不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report、`airgap-adoption-report.json` 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict 或 operator verdict。
+2. release-kit release engineering gate、offline release engineering gate / formal operator adoption verdict 仍未完成；`airgap/install_substrates` 已是 repo-local focused surface，不再写成“未实现/fail fast”，但不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report、`airgap/install_substrates` focused reports、`airgap-adoption-report.json` 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict 或 operator verdict。
 3. runner backend-real / full runtime semantics 仍未完成；现有 runner focused image/task-execution 证据不代表真实 LLM、backend-real 或 full runtime semantics。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
@@ -102,7 +104,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前尚未完成事项已从旧三切片继续收窄为：P6-lite 文档/旧引用归档清理、release-kit formal release gate / offline formal release gate / operator adoption、`airgap/install_substrates` fail-fast 保持，以及 runner backend-real / full runtime semantics。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、operator-facing `airgap/use_existing` rehearsal surface、release-kit P2 最小 online adoption 聚合、AgentSmith link-level handoff validator、P6-lite summary/status 降噪、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
+当前尚未完成事项已从旧三切片继续收窄为：P6-lite 文档/旧引用归档清理、release-kit release engineering gate / offline release engineering gate / formal operator adoption verdict，以及 runner backend-real / full runtime semantics。`airgap/install_substrates` repo-local focused surface 已完成 bundle packaging、substrate pack validation、consume/deployment chain、operator airgap profile mismatch fail-fast 和 duplicate singleton fail-fast；它不再是“未实现/fail fast”待办，但仍不是 release engineering gate、operator verdict 或 release readiness。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、operator-facing `airgap/use_existing` rehearsal surface、release-kit P2 最小 online adoption 聚合、AgentSmith link-level handoff validator、P6-lite summary/status 降噪、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 
@@ -852,10 +854,17 @@ operator-owned executable；release-kit 不选择 Docker/skopeo/oras/kubectl 或
 registry credentials，只校验 loader stdout digest 与 `target_digest` 对齐。
 它不是 offline install/deploy/package/registry/release readiness，也不是
 airgap ready。
+P3 `airgap/install_substrates` repo-local focused surface 已完成：release-kit
+commits `48a62f9` / `1d4483d` / `eea72f4` / `3738507` / `243b868`，remote
+CI run `26673592790` success。当前已覆盖 bundle packaging、substrate pack
+manifest validation、consume/deployment chain、operator airgap profile mismatch
+fail-fast 和 duplicate operator singleton args fail-fast；仍不等于 release
+engineering gate、formal operator adoption verdict、package verdict 或 release
+readiness。
 
 工作：
 
-1. 先实现 `bundle verify` 覆盖 online deploy 产物，再实现 `bundle create`、`bundle load`、`bundle apply`、`bundle smoke`。
+1. repo-local focused surface 已完成 bundle packaging、substrate pack validation 和 consume/deployment chain；后续只补 offline release engineering gate / formal operator adoption verdict，不把 focused reports 写成 readiness。
 2. 离线包包含所有实际会被安装触达的 images、deploy templates、profile-specific env/schema、scripts、runbook、checksums。
 3. image bundle 使用统一 manifest，记录 source image、archive sha256、target registry digest。
 4. 增加 target registry mirror map，支持真实集群使用 operator 指定的离线 registry。
@@ -1385,6 +1394,7 @@ operator signoff intake focused guard 已完成 -> P3 app-current image inventor
 closure 已完成 -> P3 airgap image archive materiality focused diagnostic 已完成 ->
 P3 airgap image load/import focused diagnostic 已完成 ->
 P3 airgap focused deployment gate 已完成 ->
+P3 airgap/install_substrates repo-local focused surface 已完成 ->
 P3 substrate routability focused producer 已完成 ->
 kit_installed/online focused composition 已完成 ->
 P2 release-kit repo-local online adoption aggregation 已完成 ->
@@ -1403,4 +1413,4 @@ manifest skeleton/checker/start-guard 已完成 -> P5.3b runner runtime fast fir
 1. 当前计划 handoff-ready，主计划只保留状态、下一步和阻断项。
 2. 历史证据和逐切片 ledger 见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 3. 仍未完成 release readiness、deploy verdict 或 package readiness。
-4. 下一步继续 P6-lite 文档/旧引用归档清理，并推进 release-kit formal release gate、offline install-deploy smoke、operator adoption，以及 runner backend-real / full runtime semantics；这些都不是 AgentSmith `release:ready` 结论。
+4. 下一步继续 P6-lite 文档/旧引用归档清理，并推进 release-kit release engineering gate / offline release engineering gate / formal operator adoption verdict，以及 runner backend-real / full runtime semantics；这些都不是 AgentSmith `release:ready` 结论。

@@ -364,9 +364,9 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
 
 ### 7.3 Release Kit Evidence v1
 
-Release kit 产出部署证据，AgentSmith adapter 在 pre-GA 只把 focused diagnostic 映射回当前 release summary。这个 adapter 是唯一允许 release kit evidence 进入 AgentSmith release summary 的入口；release-kit functional repo ready 后，deployment/package/operator verdict 属于 release-kit repo-local gate/evidence，而不是由 AgentSmith `release:ready` 长期拥有。
+Release kit evidence 是 repo-local deployment/package/operator evidence。AgentSmith 只保留 release contract、product readiness summary 和 link-level handoff descriptor validation，不把 release-kit focused evidence 写入 `release:ready`、release summary 或 product readiness；pre-GA 历史 adapter / transition diagnostic 已不属于 active readiness path。
 
-所有 evidence 都必须绑定本次输入制品，至少包含 `release_contract_digest`、`release_id`、`git_sha`、`release_kit_version`、`target_cluster`、`substrate_source`、`distribution`、`target`、`status`、`failure_class`、`artifact_provenance` 和 evidence root。缺这些字段时 AgentSmith adapter 必须拒绝映射，避免 stale evidence 混入当前 release summary。
+所有 evidence 都必须绑定本次输入制品，至少包含 `release_contract_digest`、`release_id`、`git_sha`、`release_kit_version`、`target_cluster`、`substrate_source`、`distribution`、`target`、`status`、`failure_class`、`artifact_provenance` 和 evidence root。缺这些字段时 release-kit repo-local gate 或 AgentSmith handoff/link validator 必须拒绝接受，避免 stale evidence 进入 handoff/link validation。
 
 `artifact_provenance` 至少包含：
 
@@ -598,7 +598,7 @@ evidence/provenance 生产与 adoption 在对应阶段落地。
 13. 定义 deterministic provenance subject：release contract body without provenance、release kit `evidence-subject.json`、runner manifest body without provenance；禁止 hash 包含自身 provenance 的 JSON。
 14. 增加 truth matrix：release contract、deploy image inventory、substrate truth、release kit evidence、runner contract、runner release manifest、runner image lock 分别列 owner、物理来源、生成器、校验器、消费者、fail-fast 条件。
 15. 增加 P0 handoff fixtures：release contract example、`external_declared` truth example、`kit_installed` truth example、release kit evidence example、runner manifest example。
-16. 增加 release kit evidence adapter mapping，明确 release kit outputs 如何进入当前 `lane-unified-deploy-*` native `result.json`、`<campaign-root>/unified-deploy/*` 目录和 release summary 四段。
+16. 定义历史 transition diagnostic 边界和 handoff/link validation；不得把 release-kit outputs 写回 release summary/readiness；如需 operator evidence，归 release-kit repo-local runbook/gate。
 17. 增加 provenance/redaction schema 和 tests。
 18. 增加 fail-fast contract tests：tag-only image、缺 digest、缺 required flow、deploy template `required_image_ids` 与 image inventory 不一致、`site.env.example` 被当作正式 image truth、已移除旧 runner field、release kit 误 import AgentSmith 产品源码、kind 被当成必需部署目标、`existing-cluster` 诊断被当成真实 cloud/airgap substrate 或 AgentSmith `release:ready` verdict、non-canonical pre-GA profile name 与新轴值混写、同义词漂移、`target_profiles.required` 缺失、或 formal adoption 翻 required 后被当成 optional、`--inputs` focused diagnostic 被当成 readiness、`--evidence` 接受未实现或不能重新语义校验的 output、external substrate 使用 Docker truth、local-kind evidence 冒充 existing Kubernetes evidence、明文 secret 泄露、缺 provenance、runner contract 与 AsyncAPI 漂移、provenance hash subject 自引用。
 

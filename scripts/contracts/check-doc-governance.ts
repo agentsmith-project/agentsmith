@@ -8,6 +8,8 @@ const SCAN_ROOTS = ['README.md', 'AGENTS.md', 'DESIGN.md', 'DEVELOPMENT.md', 'do
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']);
 
+const RELEASE_KIT_SPLIT_PLAN = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
+
 const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   {
     file: 'docs/README.md',
@@ -435,6 +437,112 @@ function checkEngineeringIndexCurrentSection(): Violation[] {
   );
 }
 
+function findLineNumber(content: string, matcher: string | RegExp): number {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (typeof matcher === 'string' ? line.includes(matcher) : matcher.test(line)) {
+      return i + 1;
+    }
+  }
+  return 1;
+}
+
+function extractSection(content: string, startRegex: RegExp, endRegex: RegExp): { content: string; startLine: number } {
+  const lines = content.split('\n');
+  const startIndex = lines.findIndex((line) => startRegex.test(line.trim()));
+  if (startIndex === -1) {
+    return { content: '', startLine: 1 };
+  }
+  const endIndex = lines.findIndex((line, index) => index > startIndex && endRegex.test(line.trim()));
+  return {
+    content: lines.slice(startIndex, endIndex === -1 ? lines.length : endIndex).join('\n'),
+    startLine: startIndex + 1,
+  };
+}
+
+export function findReleaseKitSplitKissPlanViolations(
+  content: string,
+  file = RELEASE_KIT_SPLIT_PLAN,
+): Violation[] {
+  const violations: Violation[] = [];
+
+  const requireText = (needle: string, rule: string, detail: string): void => {
+    if (content.includes(needle)) {
+      return;
+    }
+    violations.push({
+      file,
+      line: 1,
+      rule,
+      detail,
+    });
+  };
+
+  requireText(
+    '当前 active 正文只维护当前边界、下一步、阻断项和验收',
+    'missing-active-plan-kiss-scope',
+    'Release-kit split plan must keep active content to boundary, next steps, blockers, and acceptance.',
+  );
+  requireText(
+    '历史 evidence 应进入 archive/reference',
+    'missing-evidence-archive-reference-scope',
+    'Historical evidence must be archived or referenced, not appended as active plan scope.',
+  );
+  requireText(
+    '本补充不写入 `docs/项目宪法.md`',
+    'missing-constitution-non-goal',
+    'This execution constraint belongs in the active split plan, not the project constitution.',
+  );
+  requireText(
+    '主协调 agent 只分配/验收，实际修改由 worker TDD 完成',
+    'missing-worker-tdd-execution-model',
+    'The split plan must keep coordination and implementation roles separate for this KISS slice.',
+  );
+  requireText(
+    'pre-GA 默认先做 scoped operator runbook acceptance / unsigned scoped evidence',
+    'missing-scoped-operator-acceptance-default',
+    'Pre-GA operator acceptance must default to scoped runbook acceptance or unsigned scoped evidence.',
+  );
+  requireText(
+    '签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入',
+    'missing-ga-operator-verdict-trigger',
+    'Operator signature identity or all-quadrant GA verdict must require explicit customer, compliance, or GA release need.',
+  );
+
+  const p6Section = extractSection(content, /^### P6\./u, /^## 9\./u);
+  if (
+    /P6-lite|文档\/旧引用/u.test(p6Section.content)
+    && /release:ready/u.test(p6Section.content)
+    && !/只有改 release\/runtime\/product readiness 路径才升级/u.test(p6Section.content)
+  ) {
+    violations.push({
+      file,
+      line: p6Section.startLine + findLineNumber(p6Section.content, 'release:ready') - 1,
+      rule: 'p6-lite-heavy-release-ready-default',
+      detail:
+        'P6-lite docs/old-reference cleanup must use doc/static guards and targeted contracts; release:ready is only for release/runtime/product readiness path changes.',
+    });
+  }
+
+  const formalOperatorDefaultRegex =
+    /formal operator adoption verdict\s*(仍未完成|后续|下一步|推进)|推进 formal release engineering verdict\s*\/\s*offline release engineering gate\s*\/\s*formal operator adoption verdict/u;
+  if (
+    formalOperatorDefaultRegex.test(content)
+    && !content.includes('签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入')
+  ) {
+    violations.push({
+      file,
+      line: findLineNumber(content, /formal operator adoption verdict/u),
+      rule: 'heavy-formal-operator-verdict-default',
+      detail:
+        'Pre-GA split plan must not make formal operator adoption verdict the default next step without the explicit customer/compliance/GA trigger.',
+    });
+  }
+
+  return violations;
+}
+
 function main(): void {
   const files = SCAN_ROOTS.flatMap((target) => collectMarkdownFiles(target)).sort();
   const violations: Violation[] = [];
@@ -446,6 +554,9 @@ function main(): void {
     violations.push(...checkHistoricalAsbcpReferenceNotice(file, content));
     violations.push(...checkMarkdownLinks(file, content));
     violations.push(...checkHistoricalDocsPlacement(file, content));
+    if (toRel(file) === RELEASE_KIT_SPLIT_PLAN) {
+      violations.push(...findReleaseKitSplitKissPlanViolations(content));
+    }
   }
 
   violations.push(...checkIndexExpectations());

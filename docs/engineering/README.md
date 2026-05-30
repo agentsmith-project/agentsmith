@@ -27,7 +27,7 @@ Current active plan:
 
 Current next blocker:
 
-- Current work is P6-lite active docs / old-reference noise cleanup, release-kit formal release gate plus offline install-deploy smoke and operator adoption, and runner backend-real / full runtime semantics.
+- Current work is P6-lite active docs / old-reference noise cleanup, release-kit scoped operator runbook acceptance / unsigned scoped evidence only when tied to real deploy/package risk, and runner backend-real / full runtime semantics.
 - This is not release readiness: completed P3/P5 focused diagnostics, AgentSmith handoff validation, and summary/status cleanup remain focused evidence or presentation cleanup, not deployment/package/operator verdict, airgap readiness, or sibling-repo runtime handoff readiness.
 
 Historical/reference note:

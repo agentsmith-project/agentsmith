@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { findEngineeringIndexCurrentSectionViolations, isHistoricalDoc } from './check-doc-governance';
+import {
+  findEngineeringIndexCurrentSectionViolations,
+  findReleaseKitSplitKissPlanViolations,
+  isHistoricalDoc,
+} from './check-doc-governance';
 
 describe('check-doc-governance historical document detection', () => {
   it('allows active Agent task product docs in titles and paths', () => {
@@ -191,5 +195,43 @@ describe('check-doc-governance historical document detection', () => {
     );
 
     expect(findEngineeringIndexCurrentSectionViolations(index)).toEqual([]);
+  });
+
+  it('flags release-kit split plan text that upgrades P6-lite docs cleanup to heavy sign-off', () => {
+    const violations = findReleaseKitSplitKissPlanViolations(
+      [
+        '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+        '',
+        '当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 进入 archive/reference。',
+        '本补充不写入 `docs/项目宪法.md`。',
+        '主协调 agent 只分配/验收，实际修改由 worker TDD 完成。',
+        'formal operator adoption verdict 仍未完成。',
+        '',
+        '### P6. 清理和防回流',
+        '',
+        'P6-lite 文档/旧引用归档清理继续推进。',
+        '',
+        '验收：',
+        '- AgentSmith product readiness 收口跑 `npm run release:ready`。',
+        '',
+        '## 9. 发布模式',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'p6-lite-heavy-release-ready-default' }),
+        expect.objectContaining({ rule: 'heavy-formal-operator-verdict-default' }),
+      ]),
+    );
+  });
+
+  it('keeps the active release-kit split plan aligned with P6-lite KISS constraints', () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md'),
+      'utf8',
+    );
+
+    expect(findReleaseKitSplitKissPlanViolations(plan)).toEqual([]);
   });
 });

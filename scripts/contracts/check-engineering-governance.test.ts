@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -99,18 +98,6 @@ describe('check-engineering-governance contract', () => {
         command: 'npm run test:unified-deploy:local-kind',
       }),
     ]);
-  });
-
-  it('guards the v3 release simplification plan against precheck API/Web cross-stage handoff', () => {
-    const plan = readFileSync('docs/engineering/governance-release-flow-simplification-plan-v3.md', 'utf8');
-
-    expect(plan).toContain('本轮不做 precheck API/Web 到 `gate-release` 的跨阶段 handoff/复用');
-    expect(plan).toContain('precheck 成功后仍停止 API/Web');
-    expect(plan).toContain('`gate-release` 内 backend-real 父流程启动 release-owned API/Web/deps');
-    expect(plan).toContain('Browser trace 子检查符合 ownership truth 时不得重复启动 API/Web/deps');
-    expect(plan).toContain('不对 Agent Task、Files、AFSCP 等重状态路径宣称复用');
-    expect(plan).not.toContain('同一次发布前总检查中，API/Web 启动次数不超过 1');
-    expect(plan).not.toContain('后续步骤可以读取同一次命令内的运行状态描述以避免重复启动');
   });
 
   it('passes against the active governance and product terminology docs', () => {

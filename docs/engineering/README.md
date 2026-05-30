@@ -27,8 +27,8 @@ Current active plan:
 
 Current next blocker:
 
-- P3 airgap image load/import focused diagnostic, P3 substrate pack focused gate, AgentSmith runner support API / projection contract consistency, and P5 request-scoped projected dependencies contract/env wiring are complete. `--substrate-pack-check` only validates minimal substrate pack manifest + matching kit-installed substrate truth for `existing_kubernetes/kit_installed/online|airgap`; projected dependency env wiring only passes opaque request projections to runner helpers and does not move Context Store / managed credential / scope / write policy semantics into runner repo.
-- Remaining work is offline install/deploy smoke, operator/deployment adoption, and runner runtime/backend-real/task execution/Codex smoke; this is still not release readiness, airgap readiness, or sibling-repo runtime handoff readiness.
+- Current work is P6-lite active docs / old-reference noise cleanup, release-kit formal release gate plus offline install-deploy smoke and operator adoption, and runner backend-real / full runtime semantics.
+- This is not release readiness: completed P3/P5 focused diagnostics, AgentSmith handoff validation, and summary/status cleanup remain focused evidence or presentation cleanup, not deployment/package/operator verdict, airgap readiness, or sibling-repo runtime handoff readiness.
 
 Historical/reference note:
 

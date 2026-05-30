@@ -577,6 +577,13 @@ substrate 安装/部署结论、cloud provisioning、DB/bucket/realm 创建、ba
 5. Runner 迁移结论：旧 `@mbos/agent-runner` shim 不能成为长期共享路径、正式路径或 release proof；projected dependencies 已由 runner repo `buildAgentRuntimeEnv` 输出 `MBOS_AGENT_PROJECTED_DEPENDENCIES` opaque bulk env，fake-Codex focused task-execution image smoke 已完成，AgentSmith `--runner-projection-smoke` 现在只接受 canonical `agentsmith-runner-image.lock` digest image 且默认不 build，但 broader runtime semantics、HOME/TASK_HOME、credential non-persistence、backend-real、真实 LLM 和 adoption 串联仍待后续 P5 小切片收口。P5 image smoke 不是正式 runner image/adoption；P5 publish manifest evidence 本身也不是 AgentSmith manifest/lock adoption 或 release readiness，不能单独作为 release proof；AgentSmith release contract runner digest adoption 后，release-kit managed runner image closure consumption 已完成，但这仍不是 release readiness、airgap/offline package readiness、backend-real、真实 LLM 或 full runtime semantics。
 6. 旧输入复审结论：项目仍 pre-GA，旧命名、旧路径、旧职责、旧入口、旧文档/旧脚本引用、旧 env/profile 别名、已移除旧包和已移除字段默认删除或 fail fast，不作为长期可用路径或长期发布/部署契约。只有负向测试、失败边界、过渡期专项诊断或 operator 短期说明确实需要临时兼容时才短期保留；任何短期待删项都必须挂 owner、删除条件、删除时机/阶段和验收证据，并在 P2/P5/P6 删除或归位。
 
+## P6-lite 最新降噪证据 / 2026-05-29
+
+以下内容是 latest handoff evidence reference，不是 active plan 或 release readiness。
+
+1. AgentSmith link-level `release-kit-online-adoption-handoff` validator 已完成：commits `9fa11298 feat: validate online adoption handoff links` 和 `914244a5 test: fail fast malformed online handoff contract`。Focused test 结论：覆盖 digest/provenance/link 级 handoff happy path、malformed contract fail fast、且 current verification campaign 不把该 validator 接入 `release:ready` / `contracts:check`。
+2. P6-lite summary/status 降噪已完成：commits `d2e38da3 test: hide transition deploy diagnostics from release status` 和 `6b72a8f3 test: align clean release status diagnostics`。Focused test 结论：默认 `release:ready` / `release:status` human output 不再展示 transition-only unified deploy diagnostics，release-kit focused evidence 不再作为 product readiness summary item 展示。
+
 ## 历史详细问题原文 / 当时使用的防漂移问题
 
 以下内容是历史 reference，用于还原当时使用的防漂移问题原文；不是当前每次切片默认必答 gate。

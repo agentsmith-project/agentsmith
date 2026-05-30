@@ -461,79 +461,141 @@ function extractSection(content: string, startRegex: RegExp, endRegex: RegExp): 
   };
 }
 
+type TextBlock = {
+  content: string;
+  startLine: number;
+};
+
+function normalizeBlock(content: string): string {
+  return content.replaceAll('`', '').replace(/\s+/gu, ' ').trim();
+}
+
+function splitMarkdownBlocks(content: string): TextBlock[] {
+  const blocks: TextBlock[] = [];
+  const lines = content.split('\n');
+  let current: string[] = [];
+  let startLine = 1;
+
+  const flush = (): void => {
+    if (current.length === 0) {
+      return;
+    }
+    blocks.push({
+      content: current.join('\n'),
+      startLine,
+    });
+    current = [];
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      flush();
+      continue;
+    }
+
+    const startsStandaloneBlock =
+      /^#{1,6}\s/u.test(trimmed)
+      || /^[-*]\s/u.test(trimmed)
+      || /^\d+\.\s/u.test(trimmed);
+
+    if (current.length > 0 && startsStandaloneBlock) {
+      flush();
+    }
+
+    if (current.length === 0) {
+      startLine = i + 1;
+    }
+    current.push(line);
+  }
+
+  flush();
+  return blocks;
+}
+
+function isPositiveConstitutionWrite(line: string): boolean {
+  const normalized = normalizeBlock(line);
+  if (!/(?:docs\/项目宪法\.md|宪法条款)/u.test(normalized)) {
+    return false;
+  }
+  if (!/(?:写入|写进|新增|加入|纳入|补充|修改|更新|改到|落到)/u.test(normalized)) {
+    return false;
+  }
+
+  return !/(?:(?:不|不应|不要|不得|不能|未|没有|无需|不再).{0,100}(?:写入|写进|新增|加入|纳入|补充|修改|更新|改到|落到)|(?:写入|写进|新增|加入|纳入|补充|修改|更新|改到|落到).{0,100}(?:不|不应|不要|不得|不能|未|没有|无需|不再))/u.test(normalized);
+}
+
+function isAllowedP6ReleaseReadyReference(block: string): boolean {
+  const normalized = normalizeBlock(block);
+
+  return (
+    /(?:(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不把|不给|不属于).{0,100}release:ready|release:ready.{0,100}(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不给|不属于))/u.test(normalized)
+    || /(?:只有|仅当|只在|仅限|只限).{0,120}(?:release\/runtime\/product readiness|release.{0,30}runtime.{0,30}product readiness|release.{0,30}runtime|product readiness).{0,120}(?:release:ready|发布级重门禁|重门禁)/u.test(normalized)
+    || /release:ready.{0,80}(?:仅限|只限|only when|only for).{0,100}(?:release|runtime|product readiness).{0,80}(?:路径|变更|改动|changes?)/iu.test(normalized)
+  );
+}
+
+function isAllowedFormalOperatorReference(block: string): boolean {
+  const normalized = normalizeBlock(block);
+  const formalTerm = '(?:formal operator adoption verdict|formal release engineering verdict|offline release engineering gate)';
+
+  return (
+    new RegExp(`(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|不把|不能据此宣称).{0,120}${formalTerm}`, 'u').test(normalized)
+    || new RegExp(`${formalTerm}.{0,120}(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|只输出|not_issued)`, 'u').test(normalized)
+    || new RegExp(`(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求).{0,120}${formalTerm}`, 'u').test(normalized)
+    || new RegExp(`${formalTerm}.{0,120}(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求)`, 'u').test(normalized)
+  );
+}
+
 export function findReleaseKitSplitKissPlanViolations(
   content: string,
   file = RELEASE_KIT_SPLIT_PLAN,
 ): Violation[] {
   const violations: Violation[] = [];
 
-  const requireText = (needle: string, rule: string, detail: string): void => {
-    if (content.includes(needle)) {
-      return;
+  const p6Section = extractSection(content, /^### P6\./u, /^## 9\./u);
+  const constitutionLines = content.split('\n');
+  for (let i = 0; i < constitutionLines.length; i += 1) {
+    if (!isPositiveConstitutionWrite(constitutionLines[i])) {
+      continue;
     }
     violations.push({
       file,
-      line: 1,
-      rule,
-      detail,
+      line: i + 1,
+      rule: 'constitution-governance-expansion',
+      detail:
+        'Release-kit split plan must not turn this slice into a project constitution update.',
     });
-  };
+  }
 
-  requireText(
-    '当前 active 正文只维护当前边界、下一步、阻断项和验收',
-    'missing-active-plan-kiss-scope',
-    'Release-kit split plan must keep active content to boundary, next steps, blockers, and acceptance.',
-  );
-  requireText(
-    '历史 evidence 应进入 archive/reference',
-    'missing-evidence-archive-reference-scope',
-    'Historical evidence must be archived or referenced, not appended as active plan scope.',
-  );
-  requireText(
-    '本补充不写入 `docs/项目宪法.md`',
-    'missing-constitution-non-goal',
-    'This execution constraint belongs in the active split plan, not the project constitution.',
-  );
-  requireText(
-    '主协调 agent 只分配/验收，实际修改由 worker TDD 完成',
-    'missing-worker-tdd-execution-model',
-    'The split plan must keep coordination and implementation roles separate for this KISS slice.',
-  );
-  requireText(
-    'pre-GA 默认先做 scoped operator runbook acceptance / unsigned scoped evidence',
-    'missing-scoped-operator-acceptance-default',
-    'Pre-GA operator acceptance must default to scoped runbook acceptance or unsigned scoped evidence.',
-  );
-  requireText(
-    '签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入',
-    'missing-ga-operator-verdict-trigger',
-    'Operator signature identity or all-quadrant GA verdict must require explicit customer, compliance, or GA release need.',
-  );
-
-  const p6Section = extractSection(content, /^### P6\./u, /^## 9\./u);
-  if (
-    /P6-lite|文档\/旧引用/u.test(p6Section.content)
-    && /release:ready/u.test(p6Section.content)
-    && !/只有改 release\/runtime\/product readiness 路径才升级/u.test(p6Section.content)
-  ) {
+  for (const block of splitMarkdownBlocks(p6Section.content)) {
+    if (!/release:ready/u.test(block.content) || isAllowedP6ReleaseReadyReference(block.content)) {
+      continue;
+    }
     violations.push({
       file,
-      line: p6Section.startLine + findLineNumber(p6Section.content, 'release:ready') - 1,
+      line: p6Section.startLine + block.startLine + findLineNumber(block.content, 'release:ready') - 2,
       rule: 'p6-lite-heavy-release-ready-default',
       detail:
         'P6-lite docs/old-reference cleanup must use doc/static guards and targeted contracts; release:ready is only for release/runtime/product readiness path changes.',
     });
   }
 
+  const formalOperatorTermRegex = /formal operator adoption verdict|formal release engineering verdict|offline release engineering gate/u;
   const formalOperatorDefaultRegex =
-    /formal operator adoption verdict\s*(仍未完成|后续|下一步|推进)|推进 formal release engineering verdict\s*\/\s*offline release engineering gate\s*\/\s*formal operator adoption verdict/u;
-  if (
-    formalOperatorDefaultRegex.test(content)
-    && !content.includes('签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入')
-  ) {
+    /仍未完成|未完成|后续|下一步|推进|待办|todo|blocker|阻断|默认|收口|验收|必须|要做|应当/u;
+  for (const block of splitMarkdownBlocks(content)) {
+    if (
+      !formalOperatorTermRegex.test(block.content)
+      || !formalOperatorDefaultRegex.test(block.content)
+      || isAllowedFormalOperatorReference(block.content)
+    ) {
+      continue;
+    }
     violations.push({
       file,
-      line: findLineNumber(content, /formal operator adoption verdict/u),
+      line: block.startLine + findLineNumber(block.content, formalOperatorTermRegex) - 1,
       rule: 'heavy-formal-operator-verdict-default',
       detail:
         'Pre-GA split plan must not make formal operator adoption verdict the default next step without the explicit customer/compliance/GA trigger.',

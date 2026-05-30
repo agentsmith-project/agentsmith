@@ -226,6 +226,91 @@ describe('check-doc-governance historical document detection', () => {
     );
   });
 
+  it('flags P6-lite release:ready default even when the section includes the allowed escalation exception', () => {
+    const violations = findReleaseKitSplitKissPlanViolations(
+      [
+        '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+        '',
+        '当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 应进入 archive/reference。',
+        '本补充不写入 `docs/项目宪法.md`。',
+        '主协调 agent 只分配/验收，实际修改由 worker TDD 完成。',
+        'pre-GA 默认先做 scoped operator runbook acceptance / unsigned scoped evidence；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入。',
+        '',
+        '### P6. 清理和防回流',
+        '',
+        'P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。',
+        '',
+        '验收：',
+        '- P6-lite 文档/旧引用归档清理收口跑 `npm run release:ready`。',
+        '',
+        '## 9. 发布模式',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'p6-lite-heavy-release-ready-default' }),
+      ]),
+    );
+  });
+
+  it('flags formal operator adoption verdict defaults even when the GA trigger sentence is present', () => {
+    const violations = findReleaseKitSplitKissPlanViolations(
+      [
+        '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+        '',
+        '当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 应进入 archive/reference。',
+        '本补充不写入 `docs/项目宪法.md`。',
+        '主协调 agent 只分配/验收，实际修改由 worker TDD 完成。',
+        'pre-GA 默认先做 scoped operator runbook acceptance / unsigned scoped evidence；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入。',
+        '',
+        '当前真实下一步：',
+        '- 推进 formal operator adoption verdict，作为 P6-lite 之后的默认收口项。',
+        '',
+        '### P6. 清理和防回流',
+        '',
+        'P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。',
+        '',
+        '## 9. 发布模式',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'heavy-formal-operator-verdict-default' }),
+      ]),
+    );
+  });
+
+  it('allows semantically equivalent KISS wording without pinning exact prose', () => {
+    const plan = [
+      '# Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1',
+      '',
+      'Active plan 读法：',
+      '',
+      '1. 当前正文只放当前边界、后续动作、阻断项与验收口径；旧证据统一转为 archive/reference 链接，不在 active plan 里继续堆矩阵。',
+      '2. 本轮只在本计划记录治理克制，不把 release-kit / runner split 的执行约束新增到 `docs/项目宪法.md`。',
+      '3. 协调者负责拆分任务和验收结果，具体改动由 worker 用先测后改的方式完成。',
+      '4. pre-GA operator acceptance 先采用 scoped runbook acceptance 或 unsigned scoped evidence；只有客户、合规或 GA 发布明确要求时，才进入签名身份或全四象限正式 verdict。',
+      '5. P6-lite 文档和旧引用归档只跑 doc/static guard 与 targeted contracts；`npm run release:ready` 仅限 release、runtime 或 product readiness 路径发生变更时升级使用。',
+      '',
+      '## 治理克制记录',
+      '',
+      '本计划没有把治理克制要求写入或新增到 `docs/项目宪法.md`。',
+      '',
+      '### P6. 清理和防回流',
+      '',
+      'P6-lite 文档/旧引用归档清理继续推进。',
+      '',
+      '验收：',
+      '- 使用 `npm run contracts:check-doc-governance` 和 targeted contracts 收口文档/静态边界。',
+      '',
+      '## 9. 发布模式',
+    ].join('\n');
+
+    expect(findReleaseKitSplitKissPlanViolations(plan)).toEqual([]);
+  });
+
   it('keeps the active release-kit split plan aligned with P6-lite KISS constraints', () => {
     const plan = readFileSync(
       resolve(process.cwd(), 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md'),

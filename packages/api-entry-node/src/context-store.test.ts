@@ -14,27 +14,27 @@ describe('context-store', () => {
 
     const saved = await putContextEntry(docStore, {
       scope: 'member',
-      key: 'credentials.github_token',
+      key: 'credentials.sample_token',
       user_id: 'user_1',
       workspace_id: 'ws_default',
-      content: 'ghp_secret_123',
+      content: 'sample_secret_123',
       content_type: 'text',
       updated_by: 'user_1',
     });
 
-    expect(saved.content).toBe('ghp_secret_123');
+    expect(saved.content).toBe('sample_secret_123');
 
     const raw = await docStore.get<{ content: string }>('context_store_entries', saved.id);
     expect(raw?.content).toBeTruthy();
-    expect(raw?.content).not.toContain('ghp_secret_123');
+    expect(raw?.content).not.toContain('sample_secret_123');
 
     const loaded = await getContextEntry(docStore, {
       scope: 'member',
-      key: 'credentials.github_token',
+      key: 'credentials.sample_token',
       user_id: 'user_1',
       workspace_id: 'ws_default',
     });
-    expect(loaded?.content).toBe('ghp_secret_123');
+    expect(loaded?.content).toBe('sample_secret_123');
 
     const listed = await listContextEntries(docStore, {
       scope: 'member',
@@ -42,11 +42,11 @@ describe('context-store', () => {
       workspace_id: 'ws_default',
     });
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.key).toBe('credentials.github_token');
+    expect(listed[0]?.key).toBe('credentials.sample_token');
 
     const deleted = await deleteContextEntry(docStore, {
       scope: 'member',
-      key: 'credentials.github_token',
+      key: 'credentials.sample_token',
       user_id: 'user_1',
       workspace_id: 'ws_default',
     });
@@ -54,7 +54,7 @@ describe('context-store', () => {
     expect(
       await getContextEntry(docStore, {
         scope: 'member',
-        key: 'credentials.github_token',
+        key: 'credentials.sample_token',
         user_id: 'user_1',
         workspace_id: 'ws_default',
       }),

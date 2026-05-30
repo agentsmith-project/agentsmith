@@ -2,7 +2,6 @@ import { afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import http, { type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createDefaultNodeApiDeps, createNodeApiServer } from '../index.js';
 import {
   resetSystemWorkspaceRegistryPersistenceForTest,

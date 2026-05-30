@@ -4,7 +4,8 @@ FROM ${RUNNER_BASE_IMAGE}
 
 COPY packages/agent-runner-contract/src ./packages/agent-runner-contract/src
 COPY packages/agent-task-runner/src ./packages/agent-task-runner/src
-COPY packages/agent-task-runner/builtin-skills /etc/codex/skills
+COPY packages/agent-task-runner/builtin-skills/mbos-context /etc/codex/skills/mbos-context
+COPY packages/agent-task-runner/builtin-skills/.mbos-runtime /etc/codex/skills/.mbos-runtime
 
 RUN set -eux; \
   npm run build -w @mbos/agent-task-runner

@@ -5,7 +5,7 @@
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-task-local-api e2e-int-chat-real-local-api \
 	e2e-int-chat-auto e2e-int-agent-task-auto e2e-int-chat-ux-auto \
 	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
-	agent-task-runner agent-runner-refresh-token agent-task-smoke-task agent-task-credential-sync-smoke \
+	agent-task-runner agent-runner-refresh-token agent-task-smoke-task agent-task-credential-file-safety-smoke \
 	agent-task-engineering-smoke agent-task-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	substrate-up substrate-down substrate-reset substrate-reseed substrate-status \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
@@ -623,9 +623,9 @@ agent-task-smoke-task:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/agent-task-smoke-task.sh
 
-agent-task-credential-sync-smoke:
+agent-task-credential-file-safety-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/agent-task-credential-sync-smoke.sh
+	./scripts/agent-task-credential-file-safety-smoke.sh
 
 agent-task-engineering-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

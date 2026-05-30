@@ -37,6 +37,7 @@ Managed runner is the current executable task HOME binding chain.
 - 可复用工具配置、用户态安装产物和缓存可以写入当前 `HOME`
 - 短期 execution ticket、Project secrets、外部连接 credential material 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；运行时只通过请求级环境变量暴露
 - 共享上下文和用户显式写入的简单自定义值可以通过普通 Context Store keys 读取；不要依赖 `managed_credentials.*` projection 或 provider-specific credential route 的成功路径
+- `agent-task-credential-file-safety-smoke` 只作为负向安全检查，证明外部连接不会生成 credential files，也不会投影 managed/provider credentials；默认 backend-real / engineering smoke 不执行这条 focused diagnostic。
 
 ### Developer runner Slice 5 blocker posture
 

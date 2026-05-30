@@ -178,6 +178,8 @@ const workspaceDefaultGate = read('scripts/workspace-project-default-gate.sh');
 const governanceDefaultGate = read('scripts/governance-default-gate.sh');
 const backendRealRun = read('scripts/backend-real-run.sh');
 const backendRealFullGate = read('scripts/backend-real-full-gate.sh');
+const agentTaskEngineeringSmoke = read('scripts/agent-task-engineering-smoke.sh');
+const agentTaskCredentialFileSafetySmoke = read('scripts/agent-task-credential-file-safety-smoke.sh');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 const releaseFullAggregateGate = read('scripts/release-full-aggregate-gate.sh');
 const releaseFullCampaign = read('scripts/release-full-campaign.sh');
@@ -329,6 +331,17 @@ requireMatch(workspaceDefaultGate, /cleanup_gate_ports "\$\{real_api_port\}" "\$
 
 forbidMatch(backendRealFullGate, /npm run gate:default/, 'backend-real product readiness lane must not rerun gate:default; product readiness campaign owns that ordering', failures);
 requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'backend-real full gate must keep backend-real visual review as a product readiness evidence step', failures);
+forbidMatch(agentTaskEngineeringSmoke, /agent-task-credential-sync-smoke|RUN_CREDENTIAL_SYNC_SMOKE/, 'agent-task engineering smoke must not run the retired positive credential file sync smoke by default', failures);
+forbidMatch(agentTaskCredentialFileSafetySmoke, /missing \$\{INDEX_PATH\}|missing \$\{CUSTOM_PATH\}|custom connection file does not contain|HAS_NAME/, 'agent-task credential file safety smoke must not assert positive credential file generation', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /CREDENTIAL_FILE_SAFETY::ok/, 'agent-task credential file safety smoke must assert the negative credential file safety marker', failures);
+forbidMatch(agentTaskCredentialFileSafetySmoke, /^PROMPT=.*CREDENTIAL_FILE_SAFETY::ok/m, 'agent-task credential file safety smoke prompt text must not contain the bare success marker', failures);
+forbidMatch(agentTaskCredentialFileSafetySmoke, /^PROMPT=.*SAFETY_MARKER/m, 'agent-task credential file safety smoke prompt text must not contain the expected full marker variable', failures);
+forbidMatch(agentTaskCredentialFileSafetySmoke, /print\("CREDENTIAL_FILE_SAFETY::ok"\)|rg -q ['"]CREDENTIAL_FILE_SAFETY::ok['"]/, 'agent-task credential file safety smoke must not let prompt echo satisfy the bare success marker', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /SAFETY_NONCE=/, 'agent-task credential file safety smoke must generate a success nonce', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /CREDENTIAL_FILE_SAFETY_NONCE/, 'agent-task credential file safety smoke must pass the success nonce to the task command', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /SAFETY_MARKER="\$\{SAFETY_MARKER_PREFIX\}\$\{SAFETY_NONCE\}"/, 'agent-task credential file safety smoke must compose the expected marker from the nonce', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /rg -q --fixed-strings -- "\$\{SAFETY_MARKER\}"/, 'agent-task credential file safety smoke must match the full nonce marker in the task log', failures);
+requireMatch(agentTaskCredentialFileSafetySmoke, /forbidden_projection_field:|unexpected_projected_dependencies|credential_file_projection:/, 'agent-task credential file safety smoke must fail on managed/provider credential projection or credential files', failures);
 requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts/, 'gate:release:full adapter must be aggregate-only and execute run-release-full-aggregate.ts', failures);
 requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts "\$@"/, 'gate:release:full adapter must pass operator flags through to the aggregate readiness verifier', failures);
 requireMatch(releaseFullCampaign, /run-current-verification-campaign\.ts release-full/, 'release:campaign:full adapter must execute the release-full campaign runner', failures);

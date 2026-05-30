@@ -52,6 +52,21 @@ describe('agent-task-runner package metadata', () => {
     expect(combinedDockerfiles).not.toMatch(/npm run dev -w @mbos\/agent-task-runner|tsx src\/index\.ts/u);
   });
 
+  it('keeps the managed runner image builtin skill surface provider-neutral', () => {
+    const runnerDockerfile = readFileSync(runnerDockerfilePath, 'utf8');
+
+    expect(runnerDockerfile).toContain(
+      'COPY packages/agent-task-runner/builtin-skills/mbos-context /etc/codex/skills/mbos-context',
+    );
+    expect(runnerDockerfile).toContain(
+      'COPY packages/agent-task-runner/builtin-skills/.mbos-runtime /etc/codex/skills/.mbos-runtime',
+    );
+    expect(runnerDockerfile).not.toContain(
+      'COPY packages/agent-task-runner/builtin-skills /etc/codex/skills',
+    );
+    expect(runnerDockerfile).not.toMatch(/builtin-skills\/\.system|skill-installer|skill-creator/u);
+  });
+
   it('keeps runner image build tools inside the workspace-scoped Docker install', () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
       devDependencies?: Record<string, string>;

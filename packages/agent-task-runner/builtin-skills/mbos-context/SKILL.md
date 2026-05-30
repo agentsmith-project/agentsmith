@@ -36,7 +36,7 @@ python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope member
 Read one entry:
 
 ```bash
-python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key credentials.github_token
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key credentials.sample_token
 ```
 
 Write one entry:

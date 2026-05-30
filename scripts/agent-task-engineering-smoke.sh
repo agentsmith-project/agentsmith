@@ -14,7 +14,6 @@ API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
 BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-$(state_get endpoint.model)}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
-RUN_CREDENTIAL_SYNC_SMOKE="${RUN_CREDENTIAL_SYNC_SMOKE:-1}"
 RUN_MATPLOTLIB_SMOKE="${RUN_MATPLOTLIB_SMOKE:-0}"
 MATPLOTLIB_TIMEOUT_SEC="${MATPLOTLIB_TIMEOUT_SEC:-180}"
 
@@ -151,11 +150,6 @@ run_basic_smoke() {
   run_make_target_with_token_retry agent-task-smoke-task agent-task-smoke-task
 }
 
-run_credential_sync_smoke() {
-  info "running agent-task-credential-sync-smoke"
-  run_make_target_with_token_retry agent-task-credential-sync-smoke agent-task-credential-sync-smoke
-}
-
 run_matplotlib_smoke() {
   info "running matplotlib artifact smoke (manual API calls)"
   local token project_id api_base ws
@@ -209,9 +203,6 @@ main() {
   local failures=0
   if [[ "${RUN_BASIC_SMOKE}" == "1" ]]; then
     run_basic_smoke || failures=$((failures + 1))
-  fi
-  if [[ "${RUN_CREDENTIAL_SYNC_SMOKE}" == "1" ]]; then
-    run_credential_sync_smoke || failures=$((failures + 1))
   fi
   if [[ "${RUN_MATPLOTLIB_SMOKE}" == "1" ]]; then
     run_matplotlib_smoke || failures=$((failures + 1))

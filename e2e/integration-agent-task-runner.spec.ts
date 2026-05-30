@@ -223,7 +223,7 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
           '        break',
           'if leak_path:',
           '    sys.exit("task_token_persisted:"+leak_path)',
-          'print("JIRA_PROJECTION::"+display_name+" RUNNER_PROJECTION_BOUNDARY::ok")',
+          'print("JIRA_PROJECTION::"+display_name+" RUNNER_PROJECTION_BOUNDARY::ok RUNNER_SEMANTIC_SOURCE::blue")',
         ]
       : [
           'print("JIRA_PROJECTION::"+display_name)',
@@ -560,6 +560,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       expect(jiraProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
       if (projectionSmokeImage) {
         expect(jiraProjectionCommand).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+        expect(jiraProjectionCommand).toContain('RUNNER_SEMANTIC_SOURCE::blue');
       }
       const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
         page,
@@ -569,6 +570,11 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         intent: [
           'Run this exact shell command and use its stdout value in your final reply:',
           `\`${jiraProjectionCommand}\``,
+          ...(projectionSmokeImage
+            ? [
+                'Your final reply must preserve the stdout JIRA_PROJECTION marker and transform RUNNER_SEMANTIC_SOURCE::blue into RUNNER_LLM_SEMANTIC::BLUE.',
+              ]
+            : []),
           'Reply with exactly one line and no extra text.',
         ].join(' '),
       });
@@ -601,6 +607,18 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         runnerOutputActivityId,
         runId,
       });
+      if (projectionSmokeImage) {
+        stage = 'wait_for_llm_semantic_marker';
+        await waitForRunnerOutputToken({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId: prepared.projectId,
+          taskId,
+          token: 'RUNNER_LLM_SEMANTIC::BLUE',
+          runnerOutputActivityId,
+          runId,
+        });
+      }
 
       stage = 'verify_task_projection_won';
       const authToken = await readStoredAuthToken(page);
@@ -617,10 +635,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       expect(runnerOutputContent).toContain(`JIRA_PROJECTION::${taskDisplayName}`);
       if (projectionSmokeImage) {
         expect(runnerOutputContent).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+        expect(runnerOutputContent).toContain('RUNNER_LLM_SEMANTIC::BLUE');
       }
       expect(runnerOutputContent).not.toContain(`JIRA_PROJECTION::${memberDisplayName}`);
       expectRunnerOutputNotToLeakSecret(runnerOutputContent, taskToken, 'redacted task Jira token');
       expectRunnerOutputNotToLeakSecret(runnerOutputContent, memberToken, 'redacted member Jira token');
+      expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
       stage = 'done';
     } catch (error) {
       throw new Error(`jira_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);

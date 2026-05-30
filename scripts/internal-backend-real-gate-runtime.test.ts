@@ -137,6 +137,71 @@ printf 'image_id=%s\\n' "\${INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID:-}"
   }
 }
 
+function runRunnerProjectionSmokeDeepseekPreconditions(args: {
+  openaiBaseUrl: string;
+}): { stdout: string; stderr: string; status: number | null } {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'runner-projection-smoke-deepseek-'));
+  const scriptPath = path.join(tempRoot, 'deepseek-preconditions.sh');
+  const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+  const hostFunction = shellFunctionBefore(
+    agentTaskGate,
+    '\ndeepseek_openai_host() {',
+    'ensure_runner_projection_smoke_deepseek_preconditions',
+  );
+  const deepseekPreconditionFunction = shellFunctionBefore(
+    agentTaskGate,
+    '\nensure_runner_projection_smoke_deepseek_preconditions() {',
+    'ensure_runner_projection_smoke_image_preconditions',
+  );
+
+  writeFileSync(
+    scriptPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+GATE_MODE="runner-projection-smoke"
+INTERNAL_REAL_DIR="${tempRoot}/internal"
+mkdir -p "\${INTERNAL_REAL_DIR}"
+
+gate_record_failure() {
+  printf 'failure:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+}
+
+gate_record_preflight_check() {
+  printf 'preflight:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+}
+
+${hostFunction}
+${deepseekPreconditionFunction}
+
+ensure_runner_projection_smoke_deepseek_preconditions
+`,
+    'utf8',
+  );
+
+  try {
+    const result = spawnSync('bash', [scriptPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        BACKEND_REAL_OPENAI_BASE_URL: args.openaiBaseUrl,
+        BACKEND_REAL_OPENAI_BASE_URL_VALUE: '',
+        PRESET_OPENAI_ENDPOINT_BASE_URL: '',
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function renderSandboxState(env: Record<string, string>): string {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-backend-real-gate-'));
@@ -1163,6 +1228,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(projectionCase).toContain('expectManagedWorkloadPodImage');
     expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand(Boolean(projectionSmokeImage))');
     expect(projectionCase).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+    expect(projectionCase).toContain('RUNNER_SEMANTIC_SOURCE::blue');
+    expect(projectionCase).toContain('RUNNER_LLM_SEMANTIC::BLUE');
+    expect(projectionCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(),');
+    expect(projectionCase).toContain('redacted provider endpoint api key');
     expect(agentTaskRunnerSpec).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
     expect(agentTaskRunnerSpec).toContain('includeRunnerBoundarySmoke');
     expect(agentTaskRunnerSpec).toContain('home != task_home');
@@ -1186,6 +1255,23 @@ describe('internal backend-real gate runtime contract', () => {
     expect(projectionCase).not.toContain('context_cli.py');
     expect(projectionFunction).not.toContain('reads task context through mbos-context');
     expect(backendRealRun).not.toContain('--runner-projection-smoke');
+  });
+
+  it('redacts raw DeepSeek precondition URLs and secrets on runner projection smoke failure', () => {
+    const rawUrl =
+      'https://provider.example.test/v1/chat/completions?api_key=sk-test-deepseek-query-secret&token=secret-token';
+    const result = runRunnerProjectionSmokeDeepseekPreconditions({ openaiBaseUrl: rawUrl });
+    const combinedOutput = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('failure:infra_dependency_unready|runner_projection_smoke_deepseek|');
+    expect(result.stderr).toContain('resolved_host=provider.example.test');
+    expect(combinedOutput).not.toContain(rawUrl);
+    expect(combinedOutput).not.toContain('/v1/chat/completions');
+    expect(combinedOutput).not.toContain('api_key=');
+    expect(combinedOutput).not.toContain('sk-test-deepseek-query-secret');
+    expect(combinedOutput).not.toContain('secret-token');
+    expect(combinedOutput).not.toContain('token=');
   });
 
   it('enables AFSCP direct restore recovery only for the focused Files restore continuation gate', () => {

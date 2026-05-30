@@ -32,23 +32,17 @@ Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做
 
 回答用户问题：治理克制进入 `docs/项目宪法.md` 的只是原则层，执行细节仍留在当前 release-kit / runner split 计划。治理克制已经作为执行约束：能直接服务当前功能、安全、operator 低心智和真实发布/运行风险的检查保留；其余删除、合并或降级为 focused diagnostic，不把“反过度治理”写成新的治理体系。
 
-近期完成（active plan 只留摘要，历史细节见 evidence log）：
+近期完成摘要（细节、commit 和 CI run 见 evidence log）：
 
-1. release-kit P2 最小 online adoption 聚合已完成；它只是 repo-local aggregation / handoff input，`online-adoption-report.json` 仍是 `readiness=false`，不是 release readiness、deploy/package/operator verdict 或 AgentSmith `release:ready` 结论。
-2. AgentSmith link-level `release-kit-online-adoption-handoff` validator 已完成：AgentSmith commits `9fa11298` / `914244a5`。Focused test 结论：validator 覆盖 digest/provenance/link 级 happy path，malformed handoff contract fail fast；它未接入 `release:ready` 或 `contracts:check`，不产生 release-kit verdict。
-3. P6-lite summary/status 降噪已完成：AgentSmith commits `d2e38da3` / `6b72a8f3`。Focused test 结论：默认 `release:ready` / `release:status` human output 不再展示 transition-only unified deploy diagnostics，release-kit focused evidence 不再像 product readiness summary item。
-4. release-kit repo 已完成 operator-facing `airgap/use_existing` surface：映射到 `--airgap-consume-rehearsal`，覆盖 apply 链 image-load / render-check / apply / rollout / smoke；report 仍是 `readiness=false`。custom `--bundle-manifest` summary 校验问题已修复。release-kit commits `f3976a2` / `dcd30bc`，CI run `26670049863` success。
-5. release-kit `--airgap-adoption` repo-local aggregation 已完成：消费 `airgap-bundle/use_existing` 和 confirmed-apply `airgap/use_existing` operator surface reports，绑定 release contract、bundle manifest、nested bundle-check/deployment/consume report digests；report 仍是 `readiness=false`。release-kit commits `8fd4e9a` / `ba3975d` / `b58b097`，CI run `26671321070` success。它不是 formal release gate、release readiness、package/operator verdict，也不接 AgentSmith `release:ready`。
-6. release-kit `airgap/install_substrates` repo-local focused surface 已完成并补齐后续修复：bundle packaging、substrate pack validation、consume/deployment chain、airgap adoption aggregation 覆盖 `airgap/install_substrates`、bundle-root/local manifest/symlink 边界强制校验、operator airgap profile mismatch fail-fast、duplicate / equals singleton args fail-fast、`--allow-http=true` / `--allow-localhost=true` 等 no-value control flag forms 在 producer 输出前 fail-fast。release-kit commits `48a62f9` / `1d4483d` / `eea72f4` / `3738507` / `243b868`，CI run `26673592790` success；后续修复 commits `4180483` / `a3fa5a8`，CI runs `26674111985` / `26674361357` success。它仍不等于 release engineering gate、formal operator verdict、package verdict 或 release readiness。
-7. release-kit repo-local `release-engineering-gate-intake` focused/candidate 边界已完成（release-kit `a4bd26e5` 到 `a5f39a0`，对应 CI 均 success）：验证 `online/use_existing`、`online/install_substrates`、`airgap/use_existing`、`airgap/install_substrates` 四象限 adoption inputs，输出 `readiness=false` / `formal_verdict=not_issued`。它仍不是 formal release engineering gate、operator verdict、package verdict 或 release readiness；最终 review 无发现，已覆盖 bounded fixed-point percent decode、malformed/over-depth fail closed、7-layer encoded unsafe `/home` URI 字段拒绝、stale cleanup 保留和 GitHub Actions / gh-artifact 安全 provenance 通过。
-8. llmup v0.2.44 image lock 已同步；远端已核查本地 main 与 origin/main 对齐，最新发布仍是 `v0.2.44`，main 上 `0.2.45` 只是发布后 next identity / housekeeping，不需要为了当前 HEAD 新发 release。这是 image lock truth 更新，不是 release-kit readiness。
-9. AgentSmith locked runner projection semantic smoke with real LLM provider 已完成：AgentSmith commits `f3d6901f` / `8ad4ad01`；本地 `npm run test:agent-task:runner:projection-smoke` 在两次提交后各跑通一次，`8ad4ad01` 强化为 prompt 不直接包含完整 expected marker。`8ad4ad01` 后本地 `npm run test:run -- scripts/internal-backend-real-gate-runtime.test.ts`、`npm run contracts:check-runner-image-lock`、`npm run contracts:check-release-boundary`、`git diff --check` 通过；远端 Contracts Check 和 Image Publish success，Quality Gates run `26677533967` 在写入时仍不是 completed success，因此不作为 success evidence。这是 focused semantic smoke，不是 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict。
+1. release-kit online/airgap focused surfaces、adoption aggregation 和 `release-engineering-gate-intake` 已完成到 repo-local focused/candidate 边界，输出仍保持 `readiness=false` / `formal_verdict=not_issued`。
+2. AgentSmith link-level handoff validator 与 P6-lite summary/status 降噪已完成；`release:ready` / `release:status` 默认不展示 transition-only unified deploy diagnostics。
+3. llmup v0.2.44 lock truth 与 locked runner projection semantic smoke 已完成；runner backend-real / full runtime semantics 仍未完成。
 
 尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. release-kit 下一步只做与真实 deploy/package 风险绑定的 scoped operator runbook acceptance / unsigned scoped evidence；formal release engineering verdict、offline release engineering gate 或 formal operator adoption verdict 不作为 pre-GA 默认下一步。`airgap/install_substrates` 和 `release-engineering-gate-intake` 已是 repo-local focused/candidate 完成项，不再写成“未实现/fail fast”或待办，但不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report、`airgap/install_substrates` focused reports、`airgap-adoption-report.json`、`release-engineering-gate-intake` output 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict、operator verdict 或 formal release engineering verdict。
-3. locked runner projection semantic smoke with real LLM provider / llmup image-lock truth 已完成；runner backend-real / full runtime semantics 仍未完成。现有 runner focused image/task-execution/projection semantic smoke 证据不代表 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict。
+2. release-kit 下一步只做与真实 deploy/package 风险绑定的 scoped operator runbook acceptance / unsigned scoped evidence；formal release engineering verdict、offline release engineering gate 或 formal operator adoption verdict 不作为 pre-GA 默认下一步。
+3. locked runner projection semantic smoke with real LLM provider / llmup image-lock truth 已完成；runner backend-real / full runtime semantics 仍未完成。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -1439,5 +1433,5 @@ manifest skeleton/checker/start-guard 已完成 -> P5.3b runner runtime fast fir
 
 1. 当前计划 handoff-ready，主计划只保留状态、下一步和阻断项。
 2. 历史证据和逐切片 ledger 见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
-3. 仍未完成 release readiness、deploy verdict 或 package readiness。
-4. 下一步继续 P6-lite 文档/旧引用归档清理，并按真实 deploy/package 风险推进 scoped operator runbook acceptance / unsigned scoped evidence，以及 runner backend-real / full runtime semantics；locked runner projection semantic smoke with real LLM provider / llmup image-lock truth 已完成，但不是 AgentSmith `release:ready`、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict。`release-engineering-gate-intake` 已完成但只输出 `readiness=false` / `formal_verdict=not_issued`，这些都不是 AgentSmith `release:ready` 结论。
+3. 未完成项只保留三类：P6-lite 文档/旧引用归档清理、与真实 deploy/package 风险绑定的 scoped operator runbook acceptance / unsigned scoped evidence、runner backend-real / full runtime semantics。
+4. 高信号边界继续由 static guard 兜底：`kind` / `local-kind` 不能写成正式 release target/prerequisite；release-kit focused evidence 不能写成 AgentSmith `release:ready`；deployment/operator verdict 不能接回 AgentSmith `release:ready`。

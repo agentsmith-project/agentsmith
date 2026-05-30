@@ -58,7 +58,6 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
 ] as const;
 
 const P0_HANDOFF_BOUNDARY_FILES = new Set<string>([
-  RELEASE_KIT_SPLIT_PLAN_PATH,
   'docs/engineering/README.md',
   DEPLOY_CONTRACT_PATH,
   'docs/contracts/README.md',
@@ -141,7 +140,22 @@ const FORBIDDEN_CURRENT_DEPLOY_CLAIMS = [
   },
 ] as const;
 
-const NEGATED_CLAIM_WORDS = /\b(no|not|without|must not|should not|does not|do not|forbidden|rejects?|out of scope|does not include|not include|not included|separate architecture plan)\b/iu;
+const FORBIDDEN_RELEASE_KIT_SPLIT_PLAN_CLAIMS = [
+  {
+    label: 'kind/local-kind formal release target or prerequisite',
+    pattern: /\b(?:local-kind|kind|kind_rehearsal)\b[\s\S]{0,100}\b(?:(?:formal|official|production)\s+(?:release\s+)?targets?|(?:operator|deployment|release)\s+prerequisites?|required\s+(?:operator|deployment|release|production)\s+(?:targets?|prerequisites?)|production\s+defaults?|airgap\s+declarable\s+targets?)\b|\b(?:(?:formal|official|production)\s+(?:release\s+)?targets?|(?:operator|deployment|release)\s+prerequisites?|required\s+(?:operator|deployment|release|production)\s+(?:targets?|prerequisites?)|production\s+defaults?|airgap\s+declarable\s+targets?)\b[\s\S]{0,100}\b(?:local-kind|kind|kind_rehearsal)\b|\b(?:local-kind|kind|kind_rehearsal)\b[\s\S]{0,100}(?:正式\s*release\s*target|正式目标|用户部署前提|生产默认|必需部署目标)/iu,
+  },
+  {
+    label: 'release-kit focused evidence as AgentSmith release readiness',
+    pattern: /\b(?:release[- ]kit|online-adoption-report|airgap-adoption-report|release-engineering-gate-intake|focused evidence|focused diagnostics?)\b[\s\S]{0,160}\b(?:becomes?|is|equals?|counts?\s+as|feeds?|maps?\s+into|writes?\s+into|connects?\s+to)\b[\s\S]{0,120}\b(?:AgentSmith\s+)?(?:release:ready|release readiness|product readiness|product gate)\b|\b(?:AgentSmith\s+)?(?:release:ready|release readiness|product readiness|product gate)\b[\s\S]{0,160}\b(?:uses?|requires?|consumes?|accepts?|includes?|is|equals?)\b[\s\S]{0,120}\b(?:release[- ]kit|online-adoption-report|airgap-adoption-report|release-engineering-gate-intake|focused evidence|focused diagnostics?)\b/iu,
+  },
+  {
+    label: 'deployment/operator verdict connected to release:ready',
+    pattern: /\brelease:ready\b[\s\S]{0,160}\b(?:owns?|produces?|issues?|gives?|includes?|requires?|consumes?|accepts?|uses?|writes?|maps?|feeds?|connects?|adopts?|is|becomes?|equals?)\b[\s\S]{0,120}\b(?:deployment|deploy|package|operator)\b[\s\S]{0,80}\b(?:verdict|readiness|gate|evidence)\b|\b(?:deployment|deploy|package|operator)\b[\s\S]{0,80}\b(?:verdict|readiness|gate|evidence)\b[\s\S]{0,160}\b(?:feeds?|maps?|connects?|writes?|belongs?\s+to|is|becomes?|equals?)\b[\s\S]{0,120}\brelease:ready\b/iu,
+  },
+] as const;
+
+const NEGATED_CLAIM_WORDS = /\b(no|not|without|must not|should not|does not|do not|forbidden|rejects?|out of scope|does not include|not include|not included|separate architecture plan|fail-fast contract tests?)\b|(?:不是|不属于|不在|不得|不能|不应|不要|无需|不进入|不等于|不作为|不代表|不再|未|没有|只作为|只允许)/iu;
 
 const REQUIRED_DEPLOY_DECISIONS = [
   {
@@ -465,11 +479,34 @@ function hasNearbyTextWithPatterns(
   });
 }
 
-const TOTAL_OR_BASE_CONTRACTS_CHECK_PATTERN = /(?:\b(?:total|base)\b|总|基础)[\s\S]{0,40}(?:npm\s+run\s+)?contracts:check(?![-:\w])|(?:npm\s+run\s+)?contracts:check(?![-:\w])[\s\S]{0,40}(?:\b(?:total|base)\b|总|基础)/iu;
-const NOT_WIRED_INTO_CONTRACTS_CHECK_PATTERN = /\bnot\s+(?:wired\s+into|included\s+in|part\s+of)\b|暂不接入|不接入|不纳入|不属于/iu;
-const SOURCE_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bsource dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}源码依赖|源码依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
-const CONTRACT_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bcontract dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}合同依赖|合同依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
-const GATE_DEPENDENCY_EXCLUSION_PATTERN = /\b(?:not|no|never|must not|cannot|can't)\b[\s\S]{0,200}\bgate dependenc(?:y|ies)\b|(?:不能|不得|不作为|不成为|不是|不变成)[\s\S]{0,120}(?:gate|门禁)\s*依赖|(?:gate|门禁)\s*依赖[\s\S]{0,120}(?:不能|不得|不作为|不成为|不是|不变成)/iu;
+function splitClaimSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?;。！？；])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function isNegatedClaimMatch(sentence: string, matchIndex: number, matchText: string): boolean {
+  const sameSentencePrefix = sentence.slice(0, matchIndex);
+
+  return NEGATED_CLAIM_WORDS.test(`${sameSentencePrefix} ${matchText}`);
+}
+
+function findPositiveForbiddenClaim(text: string, pattern: RegExp): string | null {
+  for (const sentence of splitClaimSentences(text)) {
+    const globalPattern = asGlobalRegExp(pattern);
+    for (const match of sentence.matchAll(globalPattern)) {
+      const matchText = match[0];
+      if (isNegatedClaimMatch(sentence, match.index ?? 0, matchText)) {
+        continue;
+      }
+
+      return matchText;
+    }
+  }
+
+  return null;
+}
 
 function validateP0HandoffBoundary(
   path: string,
@@ -562,130 +599,21 @@ function validateReleaseKitSplitPlan(
 ): void {
   const blocks = parseMarkdownBlocks(parseMarkdownLines(content));
 
-  if (
-    !hasBlockWithPatterns(blocks, [
-      /\bdeploy[-_ ]template[-_ ]package\b/u,
-      /\b(required|must)\b|必填|必须/u,
-    ])
-  ) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must document deploy_template_package as a required release contract field.',
-    );
-  }
+  for (const block of blocks) {
+    for (const forbidden of FORBIDDEN_RELEASE_KIT_SPLIT_PLAN_CLAIMS) {
+      const forbiddenClaim = findPositiveForbiddenClaim(block.text, forbidden.pattern);
+      if (forbiddenClaim === null) {
+        continue;
+      }
 
-  if (
-    !/\bcontracts:check-release-kit-source-boundary\b/u.test(content)
-    || !/--scan-root\s+<repo>/u.test(content)
-    || !/\bdefaults?\b[\s\S]{0,120}\bfixtures?\b|\bfixtures?\b[\s\S]{0,120}\bdefaults?\b/iu.test(content)
-  ) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must document contracts:check-release-kit-source-boundary default fixture scan and explicit --scan-root <repo> handoff.',
-    );
-  }
-
-  if (
-    !hasBlockWithPatterns(blocks, [
-      /\bcontracts:check-repo-split-bootstrap\b/u,
-      TOTAL_OR_BASE_CONTRACTS_CHECK_PATTERN,
-      NOT_WIRED_INTO_CONTRACTS_CHECK_PATTERN,
-    ])
-  ) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must document contracts:check-repo-split-bootstrap as an explicit new repo/CI handoff check that is not wired into total contracts:check.',
-    );
-  }
-
-  const familyReference = hasBlockWithPatterns(blocks, [
-    /\bAFSCP\b/u,
-    /\bASBCP\b/u,
-    /\bASBCP[- ]lite\b|\bnon[- ]normative(?:\s+reference)?\b|非规范性参考/u,
-    SOURCE_DEPENDENCY_EXCLUSION_PATTERN,
-    CONTRACT_DEPENDENCY_EXCLUSION_PATTERN,
-    GATE_DEPENDENCY_EXCLUSION_PATTERN,
-  ]);
-  if (!familyReference) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must state AFSCP/ASBCP family reference is ASBCP-lite/non-normative only and not a source dependency, contract dependency, or gate dependency.',
-    );
-  }
-
-  const bootstrapOnlyPr = /(?:bootstrap[- ]only|docs[-/]governance[- ]first)[\s\S]{0,120}\bPR\b/iu.test(content);
-  const repoLocalSpecialtyWork = /(?:then|再|之后|后)[\s\S]{0,220}(?:repo[- ]local|team|owners?|专项工作)/iu.test(content);
-  if (!bootstrapOnlyPr || !repoLocalSpecialtyWork) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must state new repos start with a bootstrap-only/docs-governance-first PR before repo-local team/owners start specialty work.',
-    );
-  }
-
-  const minimumBootstrapPack = hasBlockWithPatterns(blocks, [
-    /\bminimum bootstrap pack\b|最小(?:bootstrap\s*)?(?:治理)?骨架|最小\s*bootstrap\s*pack/iu,
-    /\bREADME\.md\b/u,
-    /\bAGENTS\.md\b/u,
-    /\bDEVELOPMENT(?:\.md)?\b|\bDEVELOPER(?:\.md)?\b|\bDEVELOPMENT\/DEVELOPER\b|developer guide/iu,
-    /\bRELEASE[_ ]GATES?\b|\bverify[- ]release\b/iu,
-    /\bcontracts?\b/iu,
-    /\brunbooks?\b/iu,
-    /\bADR\b/u,
-  ]);
-  if (!minimumBootstrapPack) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must list the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT/DEVELOPER guide, RELEASE_GATES/verify-release, and contracts/runbooks/ADR entrypoints.',
-    );
-  }
-
-  const p2P5StartBootstrapBoundary = hasNearbyTextWithPatterns(blocks, [
-    /\bP2\b/u,
-    /\bP5\b/u,
-    /\bstart\b|前/u,
-    /\bbootstrap[-/]only\b|\bdocs[-/]governance[- ]first\b/iu,
-    /\bminimum bootstrap pack\b|最小(?:bootstrap\s*)?(?:治理)?骨架|最小\s*bootstrap\s*pack/iu,
-    /\bREADME\.md\b/u,
-    /\bAGENTS\.md\b/u,
-    /\bDEVELOPMENT(?:\.md)?\b|\bDEVELOPER(?:\.md)?\b|\bDEVELOPMENT\/DEVELOPER\b|developer guide/iu,
-    /\bRELEASE[_ ]GATES?\b|\bverify[- ]release\b/iu,
-    /\bcontracts?\b/iu,
-    /\brunbooks?\b/iu,
-    /\bADR\b/u,
-    /\bquick gate\b/iu,
-    /\bnot\b[\s\S]{0,80}\brelease readiness\b|不是[\s\S]{0,80}\brelease readiness\b/iu,
-    /\brepo[- ]local\b[\s\S]{0,120}\brelease gate\b/iu,
-  ]);
-  if (!p2P5StartBootstrapBoundary) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must state the P2/P5 start explicit check: new repos need bootstrap-only/docs-governance-first PR with the minimum bootstrap pack before implementation, quick gate is not release readiness, and formal readiness is repo-local.',
-    );
-  }
-
-  const quickGateBoundary = /\bquick gate\b/iu.test(content)
-    && (
-      /\bquick gate\b[\s\S]{0,120}\bnot\b[\s\S]{0,80}\brelease readiness\b/iu.test(content)
-      || /\bquick gate\b[\s\S]{0,120}不是[\s\S]{0,80}\brelease readiness\b/iu.test(content)
-    )
-    && (
-      /\brepo[- ]local\b[\s\S]{0,120}\brelease gate\b/iu.test(content)
-      || /\bformal\s+release readiness\b[\s\S]{0,160}\brepo[- ]local\s+release gate\b/iu.test(content)
-      || /正式\s*release readiness[\s\S]{0,160}repo[- ]local\s*release gate/u.test(content)
-    );
-  if (!quickGateBoundary) {
-    addFailure(
-      failures,
-      RELEASE_KIT_SPLIT_PLAN_PATH,
-      'release kit split plan must state quick gate is not release readiness; formal release readiness comes from the repo-local release gate.',
-    );
+      addFailure(
+        failures,
+        RELEASE_KIT_SPLIT_PLAN_PATH,
+        `release kit split plan must not state ${forbidden.label}.`,
+        block.startLine,
+        forbiddenClaim,
+      );
+    }
   }
 }
 

@@ -53,39 +53,14 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 AgentSmith release:ready is product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
-const releaseKitSplitPlanWithoutNewRepoBootstrapDoc = `# Release Kit Split Plan
+const minimalReleaseKitSplitPlanDoc = `# Release Kit Split Plan
 
 Status: team_reviewed_p0_start_ready
 
-## Current vs P0 Handoff Boundary
+## Current Boundary
 
-The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
-\`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
-It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
-
-## Release Contract Fields
-
-\`deploy_template_package\` is a required AgentSmith release contract field.
-
-## Source Boundary Handoff
-
-\`contracts:check-release-kit-source-boundary\` defaults to the committed fixture only.
-Run \`contracts:check-release-kit-source-boundary -- --scan-root <repo>\` for a real release-kit repo.
-\`contracts:check-repo-split-bootstrap\` is not wired into total \`contracts:check\`; run it explicitly when creating a new repo or CI handoff.
-`;
-
-const validReleaseKitSplitPlanDoc = `${releaseKitSplitPlanWithoutNewRepoBootstrapDoc}
-## New Repo Governance Bootstrap
-
-AFSCP/ASBCP family reference is ASBCP-lite and non-normative reference only.
-It is not a source dependency, contract dependency, or gate dependency.
-New repos must start with a bootstrap-only/docs-governance-first PR, then repo-local team/owners start specialty work.
-Minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints.
-Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.
-
-## P2 / P5 Start Handoff
-
-Before P2/P5 start, the new repo must have a bootstrap-only/docs-governance-first PR with the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints. Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.
+This active plan keeps the current repo boundary, next slice, blockers, and short-term deletion list.
+Historical evidence belongs in the evidence log reference.
 `;
 
 type FixtureOptions = {
@@ -164,7 +139,7 @@ ${validReleaseHandoffBoundaryDoc}`;
   }
 
   if (path === RELEASE_KIT_SPLIT_PLAN_PATH) {
-    return validReleaseKitSplitPlanDoc;
+    return minimalReleaseKitSplitPlanDoc;
   }
 
   return cleanActiveDoc;
@@ -401,74 +376,113 @@ This intentionally omits the concrete deployment decisions.
     expect(text).toContain('deployment/package/operator verdict');
   });
 
-  it('requires the split plan to document release-kit handoff-only checks', () => {
+  it('does not require release-kit split plan positive governance narrative', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validP0BoundaryDoc,
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: minimalReleaseKitSplitPlanDoc,
       },
     });
 
-    const text = failureText(root);
-
-    expect(text).toContain('deploy_template_package');
-    expect(text).toContain('--scan-root <repo>');
-    expect(text).toContain('contracts:check-repo-split-bootstrap');
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
   });
 
-  it('requires deploy_template_package to be marked required near the field', () => {
+  it('rejects split plan wording that makes kind or local-kind a formal target', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
-          .replace('`deploy_template_package` is a required AgentSmith release contract field.', '`deploy_template_package` is an AgentSmith release contract field.')
-          .replace('New repos must start with', 'This unrelated section must stay documented. New repos must start with'),
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${minimalReleaseKitSplitPlanDoc}
+## Drift
+
+local-kind is a formal release target and required operator prerequisite.
+`,
       },
     });
 
     const text = failureText(root);
 
-    expect(text).toContain('deploy_template_package');
+    expect(text).toContain('kind/local-kind formal release target or prerequisite');
   });
 
-  it('requires repo split bootstrap to say it is not wired into base contracts:check', () => {
+  it('rejects split plan wording that treats release-kit focused evidence as AgentSmith readiness', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
-          .replace('`contracts:check-repo-split-bootstrap` is not wired into total `contracts:check`;', '`contracts:check-repo-split-bootstrap` is not wired into the aggregate check;'),
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${minimalReleaseKitSplitPlanDoc}
+## Drift
+
+release-kit focused evidence becomes AgentSmith release readiness and product gate evidence.
+`,
       },
     });
 
     const text = failureText(root);
 
-    expect(text).toContain('contracts:check-repo-split-bootstrap');
+    expect(text).toContain('release-kit focused evidence as AgentSmith release readiness');
   });
 
-  it('rejects repo split bootstrap wording that says it is not optional while wired into total contracts:check', () => {
+  it('rejects split plan wording that connects deployment or operator verdicts back to release:ready', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
-          .replace('`contracts:check-repo-split-bootstrap` is not wired into total `contracts:check`;', '`contracts:check-repo-split-bootstrap` is not optional and wired into total `contracts:check`;'),
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${minimalReleaseKitSplitPlanDoc}
+## Drift
+
+\`npm run release:ready\` owns the deployment package operator verdict for release-kit.
+`,
       },
     });
 
     const text = failureText(root);
 
-    expect(text).toContain('contracts:check-repo-split-bootstrap');
+    expect(text).toContain('deployment/operator verdict connected to release:ready');
   });
 
-  it('requires AFSCP/ASBCP family reference to be ASBCP-lite or non-normative and not a source dependency', () => {
+  it.each([
+    [
+      'kind/local-kind formal release target or prerequisite',
+      'local-kind is a formal release target. It is not an operator prerequisite.',
+    ],
+    [
+      'release-kit focused evidence as AgentSmith release readiness',
+      'release-kit focused evidence becomes AgentSmith release readiness. It does not create an operator verdict.',
+    ],
+    [
+      'deployment/operator verdict connected to release:ready',
+      'The deployment operator verdict feeds AgentSmith release:ready. It is not the product readiness gate.',
+    ],
+  ])('rejects split plan mixed false-negative wording for %s', (label, content) => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc
-          .replace(
-            'AFSCP/ASBCP family reference is ASBCP-lite and non-normative reference only.\nIt is not a source dependency, contract dependency, or gate dependency.',
-            'AFSCP/ASBCP family reference is reference only.\nIt is not a contract dependency or gate dependency.',
-          ),
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${minimalReleaseKitSplitPlanDoc}
+## Drift
+
+${content}
+`,
       },
     });
 
-    const text = failureText(root);
+    expect(failureText(root)).toContain(label);
+  });
 
-    expect(text).toContain('AFSCP/ASBCP family reference');
+  it('allows split plan wording that only states the forbidden claims as negated boundaries', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${minimalReleaseKitSplitPlanDoc}
+## Boundary
+
+local-kind is not a formal release target or required operator prerequisite.
+local-kind / kind 不在正式 release target 层。
+release-kit focused evidence does not become AgentSmith release readiness.
+\`npm run release:ready\` is not a deployment package operator verdict.
+增加 fail-fast contract tests: tag-only image、缺 digest、缺 required flow、deploy template required_image_ids 与 image inventory 不一致、kind 被当成必需部署目标。
+`,
+      },
+    });
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
   });
 
   it('requires the complete P0 handoff boundary in one markdown block', () => {
@@ -488,61 +502,6 @@ P2/P3 real Kubernetes, cloud, or airgap handoff is not complete.
     const text = failureText(root);
 
     expect(text).toContain('P0/vNext handoff boundary');
-  });
-
-  it('requires the split plan to document new repo docs/governance-first bootstrap discipline', () => {
-    const root = writeFixtureRoot({
-      activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: releaseKitSplitPlanWithoutNewRepoBootstrapDoc,
-      },
-    });
-
-    const text = failureText(root);
-
-    expect(text).toContain('AFSCP/ASBCP family reference');
-    expect(text).toContain('bootstrap-only/docs-governance-first PR');
-    expect(text).toContain('minimum bootstrap pack');
-    expect(text).toContain('quick gate is not release readiness');
-  });
-
-  it('requires the minimum bootstrap pack contents near the minimum bootstrap pack', () => {
-    const root = writeFixtureRoot({
-      activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: `${releaseKitSplitPlanWithoutNewRepoBootstrapDoc}
-## New Repo Governance Bootstrap
-
-AFSCP/ASBCP family reference is ASBCP-lite and non-normative reference only.
-It is not a source dependency, contract dependency, or gate dependency.
-New repos must start with a bootstrap-only/docs-governance-first PR, then repo-local team/owners start specialty work.
-Minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint.
-Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.
-
-## Other Future Work
-
-contracts, runbooks, and ADR notes may be expanded later.
-`,
-      },
-    });
-
-    const text = failureText(root);
-
-    expect(text).toContain('minimum bootstrap pack');
-  });
-
-  it('requires the split plan P2/P5 start handoff to explicitly check the minimum bootstrap pack', () => {
-    const root = writeFixtureRoot({
-      activeDocOverrides: {
-        [RELEASE_KIT_SPLIT_PLAN_PATH]: validReleaseKitSplitPlanDoc.replace(
-          '## P2 / P5 Start Handoff\n\nBefore P2/P5 start, the new repo must have a bootstrap-only/docs-governance-first PR with the minimum bootstrap pack: README.md, AGENTS.md, DEVELOPMENT.md or DEVELOPER.md guide, RELEASE_GATES or verify-release entrypoint, contracts/runbooks/ADR entrypoints. Quick gate is not release readiness; formal release readiness is decided by the repo-local release gate.',
-          '## Implementation Start Handoff\n\nBefore implementation start, the new repo can begin implementation after team review.',
-        ),
-      },
-    });
-
-    const text = failureText(root);
-
-    expect(text).toContain('P2/P5 start');
-    expect(text).toContain('minimum bootstrap pack');
   });
 
   it.each([

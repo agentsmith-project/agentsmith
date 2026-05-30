@@ -1,29 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type http from 'node:http';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
-import {
-  CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
-  RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
-} from '@mbos/agent-runner-contract';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { createUserExternalConnection } from './user-external-connections-store.js';
 import { handleContextRoute } from './context-route-handler.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 import { putContextEntry } from './context-store.js';
 import { upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
 
-const { refreshFeishuOAuthMock } = vi.hoisted(() => ({
-  refreshFeishuOAuthMock: vi.fn(),
-}));
-
-vi.mock('./feishu-oauth.js', () => ({
-  refreshFeishuOAuth: refreshFeishuOAuthMock,
-}));
-
 type TestResponse = {
   statusCode: number;
   ended: boolean;
+  handled: boolean;
   body?: unknown;
 };
 
@@ -34,42 +21,6 @@ function expectJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function expectRequiredKeys(value: Record<string, unknown>, required: readonly string[]): void {
-  for (const key of required) {
-    expect(value).toHaveProperty(key);
-  }
-}
-
-function expectNoRejectedSupportProjectionSemantics(value: unknown): void {
-  const serialized = JSON.stringify(value);
-  for (const rejected of RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS) {
-    expect(serialized).not.toContain(rejected);
-  }
-}
-
-function parseProjectedJsonContent(responseBody: Record<string, unknown>): Record<string, unknown> {
-  expect(typeof responseBody.content).toBe('string');
-  const parsed = JSON.parse(responseBody.content as string) as unknown;
-  return expectJsonObject(parsed);
-}
-
-function expectManagedCredentialHelperFields(responseBody: unknown): Record<string, unknown> {
-  const body = expectJsonObject(responseBody);
-  const content = parseProjectedJsonContent(body);
-  expectRequiredKeys(content, MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required);
-  expect(Object.keys(content)).toEqual(['fields']);
-  return expectJsonObject(content.fields);
-}
-
-function expectSerializedContentToExclude(responseBody: unknown, forbidden: readonly string[]): void {
-  const body = expectJsonObject(responseBody);
-  expect(typeof body.content).toBe('string');
-  const serializedContent = body.content as string;
-  for (const item of forbidden) {
-    expect(serializedContent).not.toContain(item);
-  }
-}
-
 async function executeContextRoute(params: {
   deps: NodeApiDeps;
   method: string;
@@ -78,7 +29,7 @@ async function executeContextRoute(params: {
   body?: unknown;
   user?: { id: string; email: string; name: string };
 }): Promise<TestResponse> {
-  const response: TestResponse = { statusCode: 200, ended: false };
+  const response: TestResponse = { statusCode: 200, ended: false, handled: false };
   const deps = 'getProjectUseCase' in params.deps
     ? params.deps
     : {
@@ -107,7 +58,7 @@ async function executeContextRoute(params: {
     },
   } as unknown as http.ServerResponse;
 
-  await handleContextRoute({
+  response.handled = await handleContextRoute({
     req: { headers: {}, url: params.reqUrl } as http.IncomingMessage,
     res,
     method: params.method,
@@ -126,10 +77,6 @@ async function executeContextRoute(params: {
 }
 
 describe('context-route-handler', () => {
-  beforeEach(() => {
-    refreshFeishuOAuthMock.mockReset();
-  });
-
   it('rejects deprecated user scope for reads', async () => {
     const response = await executeContextRoute({
       deps: {
@@ -350,7 +297,7 @@ describe('context-route-handler', () => {
       reqUrl: '/api/v1/context',
       body: {
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         content: 'uec_project_1',
@@ -360,7 +307,7 @@ describe('context-route-handler', () => {
     expect(saveResponse.statusCode).toBe(200);
     expect(saveResponse.body).toEqual(expect.objectContaining({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -369,12 +316,12 @@ describe('context-route-handler', () => {
     const readResponse = await executeContextRoute({
       deps: { docStore, getProjectUseCase } as unknown as NodeApiDeps,
       method: 'GET',
-      reqUrl: '/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=proj_1',
+      reqUrl: '/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=proj_1',
     });
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.body).toEqual(expect.objectContaining({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -384,7 +331,7 @@ describe('context-route-handler', () => {
     const otherUserReadResponse = await executeContextRoute({
       deps: { docStore, getProjectUseCase } as unknown as NodeApiDeps,
       method: 'GET',
-      reqUrl: '/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=proj_1',
+      reqUrl: '/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=proj_1',
       user: { id: 'user_2', email: 'other@example.com', name: 'User Two' },
     });
     expect(otherUserReadResponse.statusCode).toBe(404);
@@ -398,7 +345,7 @@ describe('context-route-handler', () => {
     const docStore = new InMemoryJsonDocStore();
     await putContextEntry(docStore, {
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       content: 'uec_project_1',
       content_type: 'text',
       user_id: 'user_1',
@@ -410,7 +357,7 @@ describe('context-route-handler', () => {
     const readResponse = await executeContextRoute({
       deps: { docStore } as unknown as NodeApiDeps,
       method: 'GET',
-      reqUrl: '/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=proj_1',
+      reqUrl: '/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=proj_1',
       internalTicket: {
         ticket: 'int_test',
         purpose: 'agent_execution',
@@ -430,7 +377,7 @@ describe('context-route-handler', () => {
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.body).toEqual(expect.objectContaining({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       content: 'uec_project_1',
       user_id: 'user_1',
     }));
@@ -441,7 +388,7 @@ describe('context-route-handler', () => {
       reqUrl: '/api/v1/context',
       body: {
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         content: 'uec_project_2',
@@ -470,7 +417,7 @@ describe('context-route-handler', () => {
     });
   });
 
-  it('stores project-member Feishu bindings through the context API', async () => {
+  it('rejects writes to retired managed credential projection keys', async () => {
     const docStore = new InMemoryJsonDocStore();
 
     const response = await executeContextRoute({
@@ -478,610 +425,65 @@ describe('context-route-handler', () => {
       method: 'PUT',
       reqUrl: '/api/v1/context',
       body: {
-        scope: 'project_member',
-        key: 'managed_credential_bindings.feishu',
+        scope: 'member',
+        key: 'managed_credentials.sample_provider',
         workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        content: JSON.stringify({
-          provider: 'feishu',
-          connection_id: 'uec_project_member',
-        }),
+        content: '{"fields":{"access_token":"legacy"}}',
         content_type: 'json',
       },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual(expect.objectContaining({
-      scope: 'project_member',
-      key: 'managed_credential_bindings.feishu',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-    }));
-  });
-
-  it('prefers workspace-scoped managed credentials even when reauth is required', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'workspace feishu',
-      status: 'reauth_required',
-      fields: [
-        { key: 'access_token', value: 'workspace_token', secret: true },
-        { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
-        { key: 'uat', value: 'workspace_uat', secret: true },
-        { key: 'token', value: 'workspace_compat_token', secret: true },
-        { key: 'refresh_token', value: 'workspace_refresh_token', secret: true },
-        { key: 'app_secret', value: 'workspace_app_secret', secret: true },
-        { key: 'client_secret', value: 'workspace_client_secret', secret: true },
-        { key: 'context_store', value: 'workspace_context_store', secret: true },
-        { key: 'managed_credential_refresh', value: 'workspace_refresh_control', secret: true },
-      ],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: null,
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'global feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default',
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual(expect.objectContaining({
-      scope: 'member',
-      key: 'managed_credentials.feishu',
-    }));
-    const responseBody = expectJsonObject(response.body);
-    expectRequiredKeys(responseBody, CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA.required);
-
-    const content = parseProjectedJsonContent(responseBody);
-    expectRequiredKeys(content, MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA.required);
-    expect(Object.keys(content)).toEqual(['fields']);
-    expect(content.fields).toEqual({
-      access_token: 'workspace_token',
-      feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
-      token: 'workspace_compat_token',
-      uat: 'workspace_uat',
-    });
-    expectSerializedContentToExclude(response.body, [
-      'refresh_token',
-      'workspace_refresh_token',
-      'app_secret',
-      'workspace_app_secret',
-      'client_secret',
-      'workspace_client_secret',
-      'scopes',
-      'search:docs:read',
-      'updated_at',
-      'provenance',
-      'context_store',
-      'workspace_context_store',
-      'managed_credential_refresh',
-      'workspace_refresh_control',
-    ]);
-    expectNoRejectedSupportProjectionSemantics({ response: response.body, content });
-  });
-
-  it('does not expose legacy large managed credential projections for unsupported providers', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'jira',
-      kind: 'oauth_account',
-      display_name: 'workspace jira',
-      status: 'active',
-      fields: [
-        { key: 'access_token', value: 'jira_access_token', secret: true },
-        { key: 'refresh_token', value: 'jira_refresh_token', secret: true },
-        { key: 'client_secret', value: 'jira_client_secret', secret: true },
-      ],
-      scopes: ['read:jira-work'],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.jira&workspace_id=ws_default',
-    });
-
-    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).toBe(403);
     expect(response.body).toEqual({
+      error_code: 'FORBIDDEN',
+      message: 'context_managed_credentials_read_only',
+    });
+  });
+
+  it('does not expose retired managed credential projections or legacy stored projection entries', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await putContextEntry(docStore, {
+      scope: 'member',
+      key: 'managed_credentials.sample_provider',
+      content: '{"fields":{"access_token":"legacy_sample_token"}}',
+      content_type: 'json',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      updated_by: 'user_1',
+    });
+
+    const getResponse = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.sample_provider&workspace_id=ws_default',
+    });
+
+    expect(getResponse.statusCode).toBe(404);
+    expect(getResponse.body).toEqual({
       error_code: 'NOT_FOUND',
       message: 'context_not_found',
     });
-    expect(JSON.stringify(response.body)).not.toContain('jira_access_token');
-    expect(JSON.stringify(response.body)).not.toContain('jira_refresh_token');
-    expect(JSON.stringify(response.body)).not.toContain('jira_client_secret');
-  });
 
-  it('falls back to the global active managed credential projection when the workspace has no match', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_other',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'other workspace feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'other_workspace_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: null,
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'global feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-
-    const response = await executeContextRoute({
+    const listResponse = await executeContextRoute({
       deps: { docStore } as unknown as NodeApiDeps,
       method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default',
+      reqUrl: '/api/v1/context/list?scope=member&workspace_id=ws_default',
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual(expect.objectContaining({
-      scope: 'member',
-      key: 'managed_credentials.feishu',
-    }));
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields.access_token).toBe('global_token');
+    expect(listResponse.statusCode).toBe(200);
+    const body = expectJsonObject(listResponse.body);
+    expect(body.items).toEqual([]);
+    expect(JSON.stringify(listResponse.body)).not.toContain('legacy_sample_token');
   });
 
-  it('prefers project-member managed credential bindings over member defaults', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const memberConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'member default',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'member_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    const projectConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'project binding',
-      status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'project_token', secret: true }],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-    await upsertProjectMembershipRecord(docStore, 'ws_default', 'proj_1', {
-      project_id: 'proj_1',
-      user_id: 'user_1',
-      status: 'active',
-      joined_at: new Date().toISOString(),
-    });
-    await putContextEntry(docStore, {
-      scope: 'member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: memberConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      updated_by: 'user_1',
-    });
-    await putContextEntry(docStore, {
-      scope: 'project_member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: projectConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      updated_by: 'user_1',
-    });
-
+  it('does not handle retired managed credential refresh routes', async () => {
     const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default&project_id=proj_1',
-    });
-
-    expect(response.statusCode).toBe(200);
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields.access_token).toBe('project_token');
-  });
-
-  it('ignores project-member managed credential bindings on reads when membership is not active', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const memberConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'member default',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'member_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    const projectConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'project binding',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'project_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    await upsertProjectMembershipRecord(docStore, 'ws_default', 'proj_1', {
-      project_id: 'proj_1',
-      user_id: 'user_1',
-      status: 'pending',
-      joined_at: new Date().toISOString(),
-    });
-    await putContextEntry(docStore, {
-      scope: 'member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: memberConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      updated_by: 'user_1',
-    });
-    await putContextEntry(docStore, {
-      scope: 'project_member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: projectConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      updated_by: 'user_1',
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default&project_id=proj_1',
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual(expect.objectContaining({
-      scope: 'member',
-      key: 'managed_credentials.feishu',
-    }));
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields.access_token).toBe('member_token');
-  });
-
-  it('refreshes the workspace-scoped managed credential instead of a fallback active one', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const workspaceConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'workspace feishu',
-      status: 'reauth_required',
-      fields: [
-        { key: 'access_token', value: 'workspace_token', secret: true },
-        { key: 'feishu_mcp_endpoint', value: 'https://feishu.example.test/mcp', secret: false },
-        { key: 'refresh_token', value: 'workspace_refresh_token', secret: true },
-        { key: 'app_secret', value: 'workspace_app_secret', secret: true },
-        { key: 'client_secret', value: 'workspace_client_secret', secret: true },
-        { key: 'provenance', value: 'workspace_provenance', secret: true },
-      ],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: null,
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'global feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    refreshFeishuOAuthMock.mockResolvedValueOnce({
-      ...workspaceConnection,
-      status: 'active',
-      updated_at: '2026-04-08T00:00:00.000Z',
-      fields: [{ key: 'access_token', value: 'workspace_refreshed', secret: true }],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
+      deps: { docStore: new InMemoryJsonDocStore() } as unknown as NodeApiDeps,
       method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default',
+      reqUrl: '/api/v1/context/managed-credentials/sample_provider/refresh?workspace_id=ws_default&project_id=proj_1',
     });
 
-    expect(refreshFeishuOAuthMock).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'user_1',
-      connectionId: workspaceConnection.id,
-    }));
-    expect(response.statusCode).toBe(200);
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields).toEqual({
-      access_token: 'workspace_token',
-      feishu_mcp_endpoint: 'https://feishu.example.test/mcp',
-    });
-    expectSerializedContentToExclude(response.body, [
-      'refresh_token',
-      'workspace_refresh_token',
-      'app_secret',
-      'workspace_app_secret',
-      'client_secret',
-      'workspace_client_secret',
-      'scopes',
-      'search:docs:read',
-      'updated_at',
-      'provenance',
-      'workspace_provenance',
-    ]);
-  });
-
-  it('refreshes project-member managed credentials using the project binding first', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const memberConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'member default',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'member_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    const projectConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'project binding',
-      status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'project_token', secret: true }],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-    await upsertProjectMembershipRecord(docStore, 'ws_default', 'proj_1', {
-      project_id: 'proj_1',
-      user_id: 'user_1',
-      status: 'active',
-      joined_at: new Date().toISOString(),
-    });
-    await putContextEntry(docStore, {
-      scope: 'member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: memberConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      updated_by: 'user_1',
-    });
-    await putContextEntry(docStore, {
-      scope: 'project_member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: projectConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      updated_by: 'user_1',
-    });
-    refreshFeishuOAuthMock.mockResolvedValueOnce({
-      ...projectConnection,
-      status: 'active',
-      updated_at: '2026-04-08T00:00:00.000Z',
-      fields: [{ key: 'access_token', value: 'project_refreshed', secret: true }],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default&project_id=proj_1',
-    });
-
-    expect(refreshFeishuOAuthMock).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'user_1',
-      connectionId: projectConnection.id,
-    }));
-    expect(response.statusCode).toBe(200);
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields.access_token).toBe('project_token');
-  });
-
-  it('ignores project-member bindings on refresh when membership is not active', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const memberConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'member default',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'member_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    const projectConnection = await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'project binding',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'project_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-    await upsertProjectMembershipRecord(docStore, 'ws_default', 'proj_1', {
-      project_id: 'proj_1',
-      user_id: 'user_1',
-      status: 'suspended',
-      joined_at: new Date().toISOString(),
-    });
-    await putContextEntry(docStore, {
-      scope: 'member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: memberConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      updated_by: 'user_1',
-    });
-    await putContextEntry(docStore, {
-      scope: 'project_member',
-      key: 'managed_credential_bindings.feishu',
-      content: JSON.stringify({
-        provider: 'feishu',
-        connection_id: projectConnection.id,
-      }),
-      content_type: 'json',
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      updated_by: 'user_1',
-    });
-    refreshFeishuOAuthMock.mockResolvedValueOnce({
-      ...memberConnection,
-      updated_at: '2026-04-08T00:00:00.000Z',
-      fields: [{ key: 'access_token', value: 'member_refreshed', secret: true }],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default&project_id=proj_1',
-    });
-
-    expect(refreshFeishuOAuthMock).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'user_1',
-      connectionId: memberConnection.id,
-    }));
-    expect(response.statusCode).toBe(200);
-    const fields = expectManagedCredentialHelperFields(response.body);
-    expect(fields.access_token).toBe('member_token');
-  });
-
-  it('rejects project-scoped managed credential refresh when an agent ticket project id mismatches', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'workspace feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default&project_id=proj_1',
-      internalTicket: {
-        ticket: 'int_test',
-        purpose: 'agent_execution',
-        user_id: 'user_1',
-        workspace_id: 'ws_default',
-        project_id: 'proj_other',
-        expires_at: '2099-01-01T00:00:00.000Z',
-        max_uses: 1,
-        remaining_uses: 1,
-        payload: {
-          endpoint_id: 'ep_1',
-          task_id: 'task_1',
-          mode: 'chat',
-        },
-      },
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.body).toEqual({
-      error_code: 'FORBIDDEN',
-      message: 'context_project_scope_mismatch',
-    });
-    expect(refreshFeishuOAuthMock).not.toHaveBeenCalled();
-  });
-
-  it('rejects cross-workspace managed credential refresh for agent tickets', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    await createUserExternalConnection(docStore, {
-      user_id: 'user_1',
-      workspace_id: 'ws_other',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'other workspace feishu',
-      status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'other_token', secret: true }],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-
-    const response = await executeContextRoute({
-      deps: { docStore } as unknown as NodeApiDeps,
-      method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_other',
-      internalTicket: {
-        ticket: 'int_test',
-        purpose: 'agent_execution',
-        user_id: 'user_1',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        expires_at: '2099-01-01T00:00:00.000Z',
-        max_uses: 1,
-        remaining_uses: 1,
-        payload: {
-          endpoint_id: 'ep_1',
-          task_id: 'task_1',
-          mode: 'chat',
-        },
-      },
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.body).toEqual({
-      error_code: 'FORBIDDEN',
-      message: 'context_workspace_scope_mismatch',
-    });
-    expect(refreshFeishuOAuthMock).not.toHaveBeenCalled();
+    expect(response.handled).toBe(false);
+    expect(response.body).toBeUndefined();
   });
 });

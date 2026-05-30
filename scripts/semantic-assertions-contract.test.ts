@@ -95,7 +95,7 @@ describe('visual semantic viewport assertions', () => {
 
   it('accepts scenes that stay within the prominent action limit', () => {
     expect(() => assertProminentActionCountFits({
-      scenarioId: 'workspace-connections-feishu-connected',
+      scenarioId: 'third-party-accounts',
       prominentActionCount: 0,
       maxProminentActions: 0,
     })).not.toThrow();
@@ -108,7 +108,7 @@ describe('visual semantic viewport assertions', () => {
     });
 
     expect(() => assertProminentActionsUseDesignSystemMetadata({
-      scenarioId: 'workspace-connections-feishu-connected',
+      scenarioId: 'third-party-accounts',
       candidates: [prominentAction],
     })).toThrow(/without design-system prominence metadata/);
   });
@@ -155,7 +155,7 @@ describe('visual semantic viewport assertions', () => {
 
   it('requires viewer-local datetime metadata to carry a machine-readable dateTime value', () => {
     expect(() => assertViewerLocalDateTimeMetadata({
-      testId: 'workspace-connections__last-refresh-value',
+      testId: 'agent-tasks__task-last-activity',
       dateTime: null,
       policy: 'viewer_local',
     })).toThrow(/machine-readable dateTime metadata/);
@@ -163,7 +163,7 @@ describe('visual semantic viewport assertions', () => {
 
   it('requires viewer-local datetime metadata to declare the viewer_local policy', () => {
     expect(() => assertViewerLocalDateTimeMetadata({
-      testId: 'workspace-connections__last-refresh-value',
+      testId: 'agent-tasks__task-last-activity',
       dateTime: '2026-03-19T00:00:00.000Z',
       policy: 'utc',
     })).toThrow(/viewer_local policy/);
@@ -171,7 +171,7 @@ describe('visual semantic viewport assertions', () => {
 
   it('accepts viewer-local datetime metadata when both dateTime and viewer_local policy are present', () => {
     expect(() => assertViewerLocalDateTimeMetadata({
-      testId: 'workspace-connections__last-refresh-value',
+      testId: 'agent-tasks__task-last-activity',
       dateTime: '2026-03-19T00:00:00.000Z',
       policy: 'viewer_local',
     })).not.toThrow();

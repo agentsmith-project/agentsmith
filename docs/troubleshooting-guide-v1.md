@@ -92,7 +92,7 @@ npm run verify -- --goal=real --run
 
 Common symptoms:
 - visual / e2e 停在 loading 或 skeleton。
-- Feishu callback、terminal truth、runner status 长时间未收敛。
+- login callback、terminal truth、runner status 长时间未收敛。
 - retry 后偶发恢复，但 evidence 没有记录最终状态。
 
 Recommended checks:

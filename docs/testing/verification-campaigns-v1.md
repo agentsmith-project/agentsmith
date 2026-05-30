@@ -208,8 +208,6 @@ local-kind / product-flow deploy evidence 作为 product readiness 必需证据�
 
 `npm run release:ready` 是 AgentSmith product-side readiness / handoff input completeness 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 readiness 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
 
-手工 Feishu 操作位于 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md) 的 operator 流程中，不属于这份文档定义的 automated campaign 默认范围。
-
 ## 6. 证据完整性和命令通过同等重要
 
 对 evidence-owning gate 和 lane 来说，`command passed` 不等于“真的通过”。

@@ -14,7 +14,7 @@
 - managed runner / sandbox k8s 的可执行 task HOME 诊断模式
 - Developer runner 的连接/存在状态诊断，以及 Slice 5 blocked 时的 fail-closed 证据要求
 - task workspace / HOME / CODEX_HOME 的路径合同
-- builtin skills / Context Store / managed credentials 的当前运行时约定
+- builtin skills / Context Store / request-scoped credential inputs 的当前运行时约定
 - 当前推荐验证命令与 evidence 路径
 
 不再保留：
@@ -35,8 +35,8 @@ Managed runner is the current executable task HOME binding chain.
 - builtin skills 安装到 `$HOME/.agents/skills`
 - 用户可见 deliverables 写到 `$TASK_HOME/workspace/.artifacts/`
 - 可复用工具配置、用户态安装产物和缓存可以写入当前 `HOME`
-- 短期 execution ticket、Project secrets、managed OAuth credentials 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；它们只通过请求级环境变量或 AgentSmith Context Store 只读投影暴露
-- 共享上下文、简单 credentials、managed OAuth credentials 通过 AgentSmith Context Store 暴露，不应假设存在于 workspace 文件树
+- 短期 execution ticket、Project secrets、外部连接 credential material 不得持久化到 `HOME`、workspace、Codex config 或可复用工具配置；运行时只通过请求级环境变量暴露
+- 共享上下文和用户显式写入的简单自定义值可以通过普通 Context Store keys 读取；不要依赖 `managed_credentials.*` projection 或 provider-specific credential route 的成功路径
 
 ### Developer runner Slice 5 blocker posture
 
@@ -202,7 +202,7 @@ npm run test:agent-task:backend-real:terminal:matrix
 npm run test:e2e:integration:agent-task:terminal:ux
 ```
 
-7. 如果问题落在 Context Store / skills / managed credentials：
+7. 如果问题落在 Context Store / skills / request-scoped credential env：
 ```bash
 npm run test:skills:fast
 npm run test:skills:backend-real

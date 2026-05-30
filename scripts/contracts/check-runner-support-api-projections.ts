@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import {
   CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
   PROJECTED_DEPENDENCIES_ENV_FIXTURE,
   PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
   PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
@@ -26,8 +25,6 @@ const WORKSPACE_ACCESS_PATH =
 const WORKSPACE_ACCESS_RELEASE_PATH = `${WORKSPACE_ACCESS_PATH}/release`;
 const CONTEXT_PATH = '/api/v1/context';
 const CONTEXT_LIST_PATH = '/api/v1/context/list';
-const MANAGED_CREDENTIAL_REFRESH_PATH =
-  '/api/v1/context/managed-credentials/{provider}/refresh';
 const RETIRED_CONTEXT_SCOPE = 'user';
 
 export type RunnerSupportApiProjectionErrorCode =
@@ -36,13 +33,11 @@ export type RunnerSupportApiProjectionErrorCode =
   | 'missing_workspace_access_release_schema'
   | 'missing_context_schema'
   | 'missing_context_list_schema'
-  | 'missing_managed_credential_refresh_schema'
   | 'context_scope_parameter_mismatch'
   | 'workspace_access_schema_mismatch'
   | 'workspace_access_release_schema_mismatch'
   | 'context_schema_mismatch'
   | 'context_list_schema_mismatch'
-  | 'managed_credential_refresh_schema_mismatch'
   | 'support_projection_forbidden_product_semantics';
 
 export type RunnerSupportApiProjectionError = {
@@ -247,14 +242,6 @@ function readContextListItemSchema(openApi: unknown): Record<string, unknown> | 
   return readRecord(items, 'items');
 }
 
-function readManagedCredentialRefreshResponseSchema(openApi: unknown): Record<string, unknown> | null {
-  return readResponseJsonSchema({
-    openApi,
-    apiPath: MANAGED_CREDENTIAL_REFRESH_PATH,
-    method: 'post',
-  });
-}
-
 function findForbiddenSchemaPropertyNames(schema: Record<string, unknown>): string[] {
   const properties = readRecord(schema, 'properties') ?? {};
   return Object.keys(properties)
@@ -334,7 +321,6 @@ type SchemaMismatchErrorCode = Extract<
   | 'workspace_access_release_schema_mismatch'
   | 'context_schema_mismatch'
   | 'context_list_schema_mismatch'
-  | 'managed_credential_refresh_schema_mismatch'
 >;
 
 function validateSchemaSync(input: {
@@ -416,7 +402,6 @@ function defaultSupportProjectionArtifact(): Record<string, unknown> {
     TASK_WORKSPACE_ACCESS_FIXTURE,
     TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
     TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIXTURE,
-    MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
     CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
     PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
     PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
@@ -430,7 +415,6 @@ type MissingSchemaErrorCode = Extract<
   | 'missing_workspace_access_release_schema'
   | 'missing_context_schema'
   | 'missing_context_list_schema'
-  | 'missing_managed_credential_refresh_schema'
 >;
 
 function validateSupportProjectionSchema(input: {
@@ -595,19 +579,6 @@ export function checkRunnerSupportApiProjections(openApi: unknown): RunnerSuppor
       errors,
     });
   }
-
-  const managedCredentialRefreshSchemaPath =
-    `paths.${MANAGED_CREDENTIAL_REFRESH_PATH}.post.responses.200.content.application/json.schema`;
-  validateSupportProjectionSchema({
-    actual: readManagedCredentialRefreshResponseSchema(openApi),
-    expected: CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-    missingCode: 'missing_managed_credential_refresh_schema',
-    mismatchCode: 'managed_credential_refresh_schema_mismatch',
-    label: 'managed credential refresh response',
-    path: managedCredentialRefreshSchemaPath,
-    missingMessage: 'OpenAPI must expose the managed credential refresh response schema.',
-    errors,
-  });
 
   return { errors };
 }

@@ -2,15 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import { decryptSecretValue, encryptSecretValue } from './secret-crypto.js';
 
-export type UserExternalConnectionProvider = 'feishu' | 'jira' | 'github' | 'gitee' | 'custom';
-export type UserExternalConnectionKind = 'oauth_account' | 'secret_bundle' | 'ssh_keypair';
+export type UserExternalConnectionProvider = 'custom';
+export type UserExternalConnectionKind = 'secret_bundle';
 export type UserExternalConnectionStatus = 'active' | 'expired' | 'reauth_required' | 'error';
-export type UserExternalConnectionReauthReason =
-  | 'missing_scopes'
-  | 'refresh_failed'
-  | 'refresh_token_missing'
-  | 'oauth_not_configured'
-  | 'unknown';
 
 export type UserExternalConnectionFieldRecord = {
   key: string;
@@ -26,17 +20,9 @@ type PersistedUserExternalConnectionFieldRecord = {
   secret: boolean;
 };
 
-export type UserExternalConnectionAccountIdentity = {
-  external_user_id?: string | null;
-  external_name?: string | null;
-  external_email?: string | null;
-  tenant_id?: string | null;
-};
-
 export type UserExternalConnectionRecord = {
   id: string;
   user_id: string;
-  workspace_id?: string | null;
   provider: UserExternalConnectionProvider;
   custom_domain?: string | null;
   kind: UserExternalConnectionKind;
@@ -44,14 +30,8 @@ export type UserExternalConnectionRecord = {
   note?: string | null;
   status: UserExternalConnectionStatus;
   fields: UserExternalConnectionFieldRecord[];
-  account_identity?: UserExternalConnectionAccountIdentity | null;
-  scopes?: string[] | null;
-  expires_at?: string | null;
-  last_refreshed_at?: string | null;
   last_used_at?: string | null;
   last_error?: string | null;
-  reauth_reason?: UserExternalConnectionReauthReason | null;
-  missing_scopes?: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -60,20 +40,23 @@ type PersistedUserExternalConnectionRecord = Omit<UserExternalConnectionRecord, 
   fields: PersistedUserExternalConnectionFieldRecord[];
 };
 
+type StoredUserExternalConnectionRecord = Omit<
+  Partial<PersistedUserExternalConnectionRecord>,
+  'provider' | 'kind' | 'fields'
+> & {
+  provider?: unknown;
+  kind?: unknown;
+  fields?: unknown;
+};
+
 const COLLECTION = 'user_external_connections';
 
 export function isUserExternalConnectionProvider(value: unknown): value is UserExternalConnectionProvider {
-  return value === 'feishu'
-    || value === 'jira'
-    || value === 'github'
-    || value === 'gitee'
-    || value === 'custom';
+  return value === 'custom';
 }
 
 export function isUserExternalConnectionKind(value: unknown): value is UserExternalConnectionKind {
-  return value === 'oauth_account'
-    || value === 'secret_bundle'
-    || value === 'ssh_keypair';
+  return value === 'secret_bundle';
 }
 
 export function isUserExternalConnectionStatus(value: unknown): value is UserExternalConnectionStatus {
@@ -81,23 +64,6 @@ export function isUserExternalConnectionStatus(value: unknown): value is UserExt
     || value === 'expired'
     || value === 'reauth_required'
     || value === 'error';
-}
-
-export function isUserExternalConnectionReauthReason(value: unknown): value is UserExternalConnectionReauthReason {
-  return value === 'missing_scopes'
-    || value === 'refresh_failed'
-    || value === 'refresh_token_missing'
-    || value === 'oauth_not_configured'
-    || value === 'unknown';
-}
-
-export function normalizeStringArray(value: unknown): string[] | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (!Array.isArray(value)) return undefined;
-  return value
-    .map((item) => typeof item === 'string' ? item.trim() : '')
-    .filter(Boolean);
 }
 
 export function normalizeExternalConnectionFields(value: unknown): UserExternalConnectionFieldRecord[] | undefined {
@@ -117,24 +83,6 @@ export function normalizeExternalConnectionFields(value: unknown): UserExternalC
     }];
   });
   return next;
-}
-
-export function selectUserExternalConnectionForProvider(
-  connections: UserExternalConnectionRecord[],
-  provider: UserExternalConnectionProvider,
-  workspaceId?: string | null,
-): UserExternalConnectionRecord | null {
-  const candidates = connections.filter((item) => item.provider === provider);
-  if (candidates.length === 0) return null;
-  if (workspaceId) {
-    const activeInWorkspace = candidates.find((item) => item.workspace_id === workspaceId && item.status === 'active');
-    if (activeInWorkspace) return activeInWorkspace;
-    const scoped = candidates.find((item) => item.workspace_id === workspaceId);
-    if (scoped) return scoped;
-  }
-  return candidates.find((item) => item.status === 'active')
-    ?? candidates[0]
-    ?? null;
 }
 
 export function mergeExternalConnectionFields(
@@ -202,6 +150,15 @@ function decryptFields(fields: PersistedUserExternalConnectionFieldRecord[]): Us
   }));
 }
 
+function isSupportedPersistedRecord(
+  record: StoredUserExternalConnectionRecord | null,
+): record is PersistedUserExternalConnectionRecord {
+  return record !== null
+    && record.provider === 'custom'
+    && record.kind === 'secret_bundle'
+    && Array.isArray(record.fields);
+}
+
 function hydrateRecord(record: PersistedUserExternalConnectionRecord): UserExternalConnectionRecord {
   return {
     ...record,
@@ -220,8 +177,11 @@ export async function listUserExternalConnections(
   docStore: JsonDocStorePort,
   userId: string,
 ): Promise<UserExternalConnectionRecord[]> {
-  const items = await docStore.list<PersistedUserExternalConnectionRecord>(COLLECTION);
-  const filtered = items.filter((item) => item.user_id === userId).map(hydrateRecord);
+  const items = await docStore.list<StoredUserExternalConnectionRecord>(COLLECTION);
+  const filtered = items
+    .filter(isSupportedPersistedRecord)
+    .filter((item) => item.user_id === userId)
+    .map(hydrateRecord);
   return filtered.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
 
@@ -230,8 +190,8 @@ export async function getUserExternalConnection(
   userId: string,
   connectionId: string,
 ): Promise<UserExternalConnectionRecord | null> {
-  const record = await docStore.get<PersistedUserExternalConnectionRecord>(COLLECTION, connectionId);
-  if (!record || record.user_id !== userId) {
+  const record = await docStore.get<StoredUserExternalConnectionRecord>(COLLECTION, connectionId);
+  if (!record || record.user_id !== userId || !isSupportedPersistedRecord(record)) {
     return null;
   }
   return hydrateRecord(record);
@@ -278,28 +238,4 @@ export async function deleteUserExternalConnection(
   if (!existing) return false;
   await docStore.delete(COLLECTION, connectionId);
   return true;
-}
-
-export async function upsertUserExternalConnectionByProvider(
-  docStore: JsonDocStorePort,
-  input: Omit<UserExternalConnectionRecord, 'id' | 'created_at' | 'updated_at'>,
-): Promise<UserExternalConnectionRecord> {
-  const existing = (await listUserExternalConnections(docStore, input.user_id)).find(
-    (item) =>
-      item.provider === input.provider
-      && item.kind === input.kind
-      && (item.workspace_id ?? null) === (input.workspace_id ?? null),
-  );
-  if (!existing) {
-    return createUserExternalConnection(docStore, input);
-  }
-  const next: UserExternalConnectionRecord = {
-    ...existing,
-    ...input,
-    id: existing.id,
-    created_at: existing.created_at,
-    updated_at: new Date().toISOString(),
-  };
-  await docStore.upsert(COLLECTION, next.id, persistRecord(next));
-  return next;
 }

@@ -55,7 +55,6 @@ describe('story product surface coverage', () => {
     ]);
 
     expect(MAJOR_PRODUCT_SURFACE_COVERAGE.find((entry) => entry.surfaceId === 'connections_and_runtime_use')?.storyIds).toEqual([
-      'workspace-connections-to-project-use',
       'api-key-to-endpoint-consumption',
       'ai-runtime-failure-and-recovery',
       'chat-agent-task-target-model-continuity',

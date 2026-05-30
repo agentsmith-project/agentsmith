@@ -24,9 +24,9 @@ describe('me handlers', () => {
       seedMockExternalConnection('user_001', {
         id: 'uec_stored',
         user_id: 'user_001',
-        provider: 'jira',
+        provider: 'custom',
         kind: 'secret_bundle',
-        display_name: 'Stored Jira',
+        display_name: 'Stored Custom Bundle',
         status: 'active',
         fields: [],
       }),
@@ -49,7 +49,7 @@ describe('me handlers', () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]?.id).toBe('uec_stored');
-    expect(items[0]?.display_name).toBe('Stored Jira');
+    expect(items[0]?.display_name).toBe('Stored Custom Bundle');
   });
 
   it('reads visual custom-domain seed data from the current request without referencing an undefined identifier', () => {
@@ -71,6 +71,57 @@ describe('me handlers', () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]?.custom_domain).toBe('api.visual.example.com');
+  });
+
+  it('filters stored legacy external connection provider and kind records before UI-facing mock lists', () => {
+    seedMockExternalConnection('user_007', {
+      provider: 'sample_provider',
+      kind: 'secret_bundle',
+      display_name: 'Legacy Provider Bundle',
+      fields: [],
+    } as never);
+    seedMockExternalConnection('user_007', {
+      provider: 'custom',
+      kind: 'oauth_account',
+      display_name: 'Legacy Kind Account',
+      fields: [],
+    } as never);
+    seedMockExternalConnection('user_007', {
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Supported Custom Bundle',
+      fields: [],
+    });
+    const request = buildRequest({
+      authorization: 'Bearer mock_token_user_007_12345',
+    });
+
+    const items = resolveMockExternalConnectionsForRequest({
+      request,
+      storedConnections: listMockExternalConnections('user_007'),
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.display_name).toBe('Supported Custom Bundle');
+  });
+
+  it('ignores visual seed headers for legacy external connection kinds', () => {
+    const request = buildRequest({
+      authorization: 'Bearer mock_token_user_008_12345',
+      'x-mock-connection-provider': 'custom',
+      'x-mock-connection-kind': 'oauth_account',
+      'x-mock-connection-display-name': 'Legacy Visual Account',
+      'x-mock-connection-fields': JSON.stringify([
+        { key: 'token', value: 'legacy-token', description: 'Token', secret: true },
+      ]),
+    });
+
+    const items = resolveMockExternalConnectionsForRequest({
+      request,
+      storedConnections: [],
+    });
+
+    expect(items).toEqual([]);
   });
 
   it('keeps non-secret field values and secret placeholders stable when seeding from request-shaped fields', () => {

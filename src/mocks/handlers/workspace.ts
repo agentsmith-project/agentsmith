@@ -202,21 +202,6 @@ export function mapWorkspaceToPublicSummary(workspace: WorkspaceSummaryRecord): 
   };
 }
 
-function readCookieValue(request: Request, key: string): string | null {
-  const cookieHeader = request.headers.get('cookie');
-  if (!cookieHeader) return null;
-  const value = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${key}=`));
-  if (!value) return null;
-  return decodeURIComponent(value.slice(key.length + 1));
-}
-
-function readMockValue(request: Request, header: string, cookie: string): string | null {
-  return request.headers.get(header) ?? readCookieValue(request, cookie);
-}
-
 async function readSystemWorkspaces(request: Request): Promise<SystemWorkspaceRecord[]> {
   try {
     const url = new URL('/api/test/system/workspaces/seed', request.url);
@@ -421,28 +406,5 @@ export const workspaceHandlers = [
         })),
     );
     return HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length });
-  }),
-  http.get('/api/v1/workspaces/:ws/integrations/feishu', ({ params, request }) => {
-    const workspaceId = String(params.ws ?? '');
-    const status = readMockValue(request, 'x-mock-feishu-status', 'ags_mock_feishu_status') ?? 'not_configured';
-    const verifiedByEmail = readMockValue(request, 'x-mock-feishu-verified-email', 'ags_mock_feishu_verified_email');
-    const appId = readMockValue(request, 'x-mock-feishu-app-id', 'ags_mock_feishu_app_id') ?? '';
-    const redirectUri = readMockValue(request, 'x-mock-feishu-redirect-uri', 'ags_mock_feishu_redirect_uri') ?? '';
-
-    return HttpResponse.json({
-      id: `workspace_feishu:${workspaceId}`,
-      workspace_id: workspaceId,
-      provider: 'feishu',
-      status,
-      app_id: appId,
-      redirect_uri: redirectUri,
-      verified_at: verifiedByEmail ? '2026-03-19T08:00:00.000Z' : null,
-      verified_by_user_id: verifiedByEmail ? 'u_visual' : null,
-      verified_by_email: verifiedByEmail,
-      last_error: status === 'error' ? 'visual_mock_feishu_error' : null,
-      created_at: '2026-03-19T00:00:00.000Z',
-      updated_at: '2026-03-19T08:00:00.000Z',
-      has_app_secret: status !== 'not_configured',
-    });
   }),
 ];

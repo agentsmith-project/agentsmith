@@ -11,22 +11,15 @@ import {
 } from './me-notifications-store.js';
 import { listGovernanceIncidents } from './governance-incident-store.js';
 import {
-  getFeishuOAuthConfig,
-  refreshFeishuOAuth,
-} from './feishu-oauth.js';
-import {
   createUserExternalConnection,
   deleteUserExternalConnection,
   getUserExternalConnection,
   isUserExternalConnectionKind,
-  type UserExternalConnectionAccountIdentity,
-  isUserExternalConnectionReauthReason,
   isUserExternalConnectionProvider,
   isUserExternalConnectionStatus,
   listUserExternalConnections,
   mergeExternalConnectionFields,
   normalizeExternalConnectionFields,
-  normalizeStringArray,
   presentUserExternalConnection,
   updateUserExternalConnection,
 } from './user-external-connections-store.js';
@@ -44,33 +37,6 @@ interface UserProfileRecord {
 }
 
 const USER_PROFILE_COLLECTION = 'user_profiles';
-function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'custom') {
-  if (provider === 'feishu') {
-    const feishu = getFeishuOAuthConfig();
-    return {
-      provider,
-      interactive_login_required: true,
-      refresh_supported: true,
-      callback_uri: feishu.redirectUri,
-      auth_url: feishu.authorizeUrl,
-      auth_configured: feishu.configured,
-      scope_policy: feishu.scopePolicy,
-      requested_scopes: feishu.scopes,
-      required_scopes: feishu.requiredScopes,
-    };
-  }
-  return {
-    provider,
-    interactive_login_required: false,
-    refresh_supported: false,
-    callback_uri: null,
-    auth_url: null,
-    auth_configured: false,
-    scope_policy: undefined,
-    requested_scopes: [],
-    required_scopes: [],
-  };
-}
 
 async function getUserProfile(docStore: JsonDocStorePort, user: AuthenticatedUser): Promise<UserProfileRecord> {
   const stored = await docStore.get<UserProfileRecord>(USER_PROFILE_COLLECTION, user.id);
@@ -200,37 +166,14 @@ export async function handleMeRoute(args: {
         note: typeof body.note === 'string' ? body.note.trim() || null : null,
         status: isUserExternalConnectionStatus(body.status) ? body.status : 'active',
         fields: normalizeExternalConnectionFields(body.fields) ?? [],
-        account_identity: body.account_identity && typeof body.account_identity === 'object'
-          ? body.account_identity as UserExternalConnectionAccountIdentity
-          : null,
-        scopes: normalizeStringArray(body.scopes) ?? null,
-        expires_at: typeof body.expires_at === 'string' ? body.expires_at : null,
-        last_refreshed_at: null,
         last_used_at: null,
         last_error: typeof body.last_error === 'string' ? body.last_error : null,
-        reauth_reason: isUserExternalConnectionReauthReason(body.reauth_reason) ? body.reauth_reason : null,
-        missing_scopes: normalizeStringArray(body.missing_scopes) ?? null,
       });
       json(res, 201, presentUserExternalConnection(record));
       return true;
     }
 
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-    return true;
-  }
-
-  const providerMatch = pathname.match(/^\/api\/v1\/me\/external-connections\/providers\/([^/]+)$/);
-  if (providerMatch) {
-    if (method !== 'GET') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const provider = decodeURIComponent(providerMatch[1] ?? '');
-    if (!isUserExternalConnectionProvider(provider)) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'provider_not_found' });
-      return true;
-    }
-    json(res, 200, getProviderConfig(provider));
     return true;
   }
 
@@ -261,30 +204,11 @@ export async function handleMeRoute(args: {
             : null,
         status: isUserExternalConnectionStatus(body?.status) ? body.status : existing.status,
         fields: mergeExternalConnectionFields(existing.fields, body?.fields) ?? existing.fields,
-        account_identity: body?.account_identity === undefined
-          ? existing.account_identity
-          : body.account_identity && typeof body.account_identity === 'object'
-            ? body.account_identity as UserExternalConnectionAccountIdentity
-            : null,
-        scopes: body?.scopes === undefined ? existing.scopes : normalizeStringArray(body.scopes) ?? null,
-        expires_at: body?.expires_at === undefined
-          ? existing.expires_at
-          : typeof body.expires_at === 'string'
-            ? body.expires_at
-            : null,
         last_error: body?.last_error === undefined
           ? existing.last_error
           : typeof body.last_error === 'string'
             ? body.last_error
             : null,
-        reauth_reason: body?.reauth_reason === undefined
-          ? existing.reauth_reason
-          : isUserExternalConnectionReauthReason(body.reauth_reason)
-            ? body.reauth_reason
-            : null,
-        missing_scopes: body?.missing_scopes === undefined
-          ? existing.missing_scopes
-          : normalizeStringArray(body.missing_scopes) ?? null,
       });
       json(res, 200, presentUserExternalConnection(nextRecord ?? existing));
       return true;
@@ -298,27 +222,6 @@ export async function handleMeRoute(args: {
     }
 
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-    return true;
-  }
-
-  const refreshMatch = pathname.match(/^\/api\/v1\/me\/external-connections\/([^/]+)\/refresh$/);
-  if (refreshMatch) {
-    if (method !== 'POST') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const connectionId = decodeURIComponent(refreshMatch[1] ?? '');
-    try {
-      const updated = await refreshFeishuOAuth({
-        docStore,
-        userId: user.id,
-        connectionId,
-      });
-      json(res, 200, presentUserExternalConnection(updated));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'external_connection_refresh_failed';
-      json(res, 400, { error_code: 'INVALID_REQUEST', message });
-    }
     return true;
   }
 

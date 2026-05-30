@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import {
   CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
   PROJECTED_DEPENDENCIES_ENV_FIXTURE,
   PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
   PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
@@ -118,7 +117,6 @@ function createOpenApiFixture(options: {
   releaseRequestSchema?: Record<string, unknown>;
   contextSchema?: Record<string, unknown>;
   contextListItemSchema?: Record<string, unknown>;
-  managedCredentialRefreshSchema?: Record<string, unknown>;
 } = {}): Record<string, unknown> {
   return {
     openapi: '3.1.0',
@@ -159,20 +157,6 @@ function createOpenApiFixture(options: {
               content: {
                 'application/json': {
                   schema: createContextListResponseSchema(options.contextListItemSchema),
-                },
-              },
-            },
-          },
-        },
-      },
-      '/api/v1/context/managed-credentials/{provider}/refresh': {
-        post: {
-          responses: {
-            '200': {
-              content: {
-                'application/json': {
-                  schema: options.managedCredentialRefreshSchema
-                    ?? cloneJson(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA),
                 },
               },
             },
@@ -242,11 +226,7 @@ describe('check-runner-support-api-projections', () => {
         path: '/api/v1/context/list',
         method: 'get',
       });
-      const credentialRefreshSchema = readResponseJsonSchema({
-        openApi: spec.openApi,
-        path: '/api/v1/context/managed-credentials/{provider}/refresh',
-        method: 'post',
-      });
+      const paths = readRecord(spec.openApi, 'paths');
 
       expect(contextSchema, `${spec.label} /api/v1/context GET 200 schema`).toEqual(
         CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
@@ -257,14 +237,10 @@ describe('check-runner-support-api-projections', () => {
         contextListItems?.items,
         `${spec.label} /api/v1/context/list GET 200 items.items`,
       ).toEqual(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA);
-      expect(
-        credentialRefreshSchema,
-        `${spec.label} /api/v1/context/managed-credentials/{provider}/refresh POST 200 schema`,
-      ).toEqual(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA);
+      expect(paths).not.toHaveProperty('/api/v1/context/managed-credentials/{provider}/refresh');
 
       expectNoForbiddenSupportProjectionFields(contextSchema);
       expectNoForbiddenSupportProjectionFields(contextListSchema);
-      expectNoForbiddenSupportProjectionFields(credentialRefreshSchema);
     }
   });
 
@@ -325,7 +301,6 @@ describe('check-runner-support-api-projections', () => {
     const paths = openApi.paths as Record<string, unknown>;
     delete paths['/api/v1/context'];
     delete paths['/api/v1/context/list'];
-    delete paths['/api/v1/context/managed-credentials/{provider}/refresh'];
 
     const result = checkRunnerSupportApiProjections(openApi);
 
@@ -339,11 +314,6 @@ describe('check-runner-support-api-projections', () => {
         code: 'missing_context_list_schema',
         path: 'paths./api/v1/context/list.get.responses.200.content.application/json.schema.properties.items.items',
         message: 'OpenAPI must expose the Context Store list item response schema.',
-      },
-      {
-        code: 'missing_managed_credential_refresh_schema',
-        path: 'paths./api/v1/context/managed-credentials/{provider}/refresh.post.responses.200.content.application/json.schema',
-        message: 'OpenAPI must expose the managed credential refresh response schema.',
       },
     ]);
   });
@@ -479,21 +449,6 @@ describe('check-runner-support-api-projections', () => {
       minLength: 1,
     });
     expect(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA.properties.scope).not.toHaveProperty('enum');
-    expect(MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA).toMatchObject({
-      type: 'object',
-      additionalProperties: false,
-      required: ['fields'],
-      properties: {
-        fields: {
-          type: 'object',
-          minProperties: 1,
-          propertyNames: {
-            type: 'string',
-            pattern: expect.stringContaining('context[_]store'),
-          },
-        },
-      },
-    });
   });
 
   it('rejects workspace-access response schema drift and retired raw secret fields', () => {
@@ -596,6 +551,10 @@ describe('check-runner-support-api-projections', () => {
         writable_scopes: ['member'],
       },
       stale: {
+        managed_credentials: {
+          provider: 'sample',
+        },
+        managed_credential: true,
         managed_credential_refresh: true,
       },
     });
@@ -613,6 +572,16 @@ describe('check-runner-support-api-projections', () => {
       },
       {
         code: 'support_projection_forbidden_product_semantics',
+        path: 'stale.managed_credentials',
+        message: 'runner support projection artifact must not expose product semantics: managed_credentials',
+      },
+      {
+        code: 'support_projection_forbidden_product_semantics',
+        path: 'stale.managed_credential',
+        message: 'runner support projection artifact must not expose product semantics: managed_credential',
+      },
+      {
+        code: 'support_projection_forbidden_product_semantics',
         path: 'stale.managed_credential_refresh',
         message: 'runner support projection artifact must not expose product semantics: managed_credential_refresh',
       },
@@ -624,7 +593,6 @@ describe('check-runner-support-api-projections', () => {
       TASK_WORKSPACE_ACCESS_JSON_SCHEMA,
       TASK_WORKSPACE_ACCESS_FIXTURE,
       TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
-      MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
       CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
       PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
       PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,

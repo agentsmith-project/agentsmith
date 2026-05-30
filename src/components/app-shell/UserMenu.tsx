@@ -25,7 +25,6 @@ interface UserMenuItem {
     | 'profile'
     | 'workspace_personal_context'
     | 'project_personal_context'
-    | 'workspace_integrations'
     | 'personal_connections'
     | 'api_keys';
   icon: LucideIcon;
@@ -48,7 +47,6 @@ interface UserMenuProps {
   onProfile?: () => void;
   onWorkspacePersonalContext?: () => void;
   onProjectPersonalContext?: () => void;
-  onWorkspaceIntegrations?: () => void;
   onPersonalConnections?: () => void;
   onApiKeys?: () => void;
   onLanguageSwitch?: (locale: string) => void;
@@ -62,7 +60,6 @@ export function UserMenu({
   onProfile,
   onWorkspacePersonalContext,
   onProjectPersonalContext,
-  onWorkspaceIntegrations,
   onPersonalConnections,
   onApiKeys,
   onLanguageSwitch,
@@ -85,9 +82,6 @@ export function UserMenu({
       ...(onProjectPersonalContext
         ? [{ id: 'project_personal_context', labelKey: 'project_personal_context', icon: BookText, onClick: onProjectPersonalContext }] satisfies UserMenuItem[]
         : []),
-      ...(onWorkspaceIntegrations
-        ? [{ id: 'workspace_integrations', labelKey: 'workspace_integrations', icon: Settings, onClick: onWorkspaceIntegrations }] satisfies UserMenuItem[]
-        : []),
       ...(onPersonalConnections
         ? [{ id: 'personal_connections', labelKey: 'personal_connections', icon: Settings, onClick: onPersonalConnections }] satisfies UserMenuItem[]
         : []),
@@ -95,7 +89,7 @@ export function UserMenu({
         ? [{ id: 'api_keys', labelKey: 'api_keys', icon: Settings, onClick: onApiKeys }] satisfies UserMenuItem[]
         : []),
     ],
-    [onApiKeys, onPersonalConnections, onProfile, onProjectPersonalContext, onWorkspaceIntegrations, onWorkspacePersonalContext],
+    [onApiKeys, onPersonalConnections, onProfile, onProjectPersonalContext, onWorkspacePersonalContext],
   );
 
   const handleClick = (itemId: string) => {
@@ -108,9 +102,6 @@ export function UserMenu({
         break;
       case 'project_personal_context':
         onProjectPersonalContext?.();
-        break;
-      case 'workspace_integrations':
-        onWorkspaceIntegrations?.();
         break;
       case 'personal_connections':
         onPersonalConnections?.();

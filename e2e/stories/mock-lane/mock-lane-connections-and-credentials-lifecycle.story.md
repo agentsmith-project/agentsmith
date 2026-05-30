@@ -1,12 +1,12 @@
 ---
 {
   "storyId": "mock-lane-connections-and-credentials-lifecycle",
-  "title": "Mock lane connections and credentials lifecycle scenes",
+  "title": "Mock lane personal connections and credentials lifecycle scenes",
   "actor": "workspace member / workspace admin / project owner",
   "lane": "mock-lane",
   "entryRoute": "/en-US/user/third-party-accounts",
-  "goal": "统一描述个人连接、工作区集成状态和项目凭据生命周期的 mock-lane visual scene 真相。",
-  "narrative": "Lifecycle scenes cover personal third-party accounts, workspace Feishu connection states, and project credential management surfaces so credential setup can be reviewed as one user-visible capability chain.",
+  "goal": "统一描述个人 custom secret bundle 和项目凭据生命周期的 mock-lane visual scene 真相。",
+  "narrative": "Lifecycle scenes cover personal custom secret bundles and project credential management surfaces so credential setup can be reviewed without provider-specific workspace integration assumptions.",
   "scenes": [
     {
       "sceneId": "third-party-accounts",
@@ -34,55 +34,6 @@
       "authLane": "mock_auth",
       "stableMarkers": [
         "third-party-accounts__sheet"
-      ]
-    },
-    {
-      "sceneId": "workspace-settings-feishu-enabled",
-      "route": "/en-US/workspaces/ws_default/settings",
-      "recipeFamily": "settings_sheet",
-      "authLane": "authed",
-      "stableMarkers": [
-        "ws-settings__integration-feishu"
-      ]
-    },
-    {
-      "sceneId": "workspace-feishu-setup-credentials",
-      "route": "/en-US/workspaces/ws_default/settings/feishu?step=credentials",
-      "recipeFamily": "settings_sheet",
-      "authLane": "authed",
-      "stableMarkers": [
-        "ws-feishu__save-draft"
-      ]
-    },
-    {
-      "sceneId": "workspace-feishu-locked",
-      "route": "/en-US/workspaces/ws_default/settings/feishu",
-      "recipeFamily": "settings_sheet",
-      "authLane": "authed",
-      "stableMarkers": [
-        "ws-feishu__locked"
-      ]
-    },
-    {
-      "sceneId": "workspace-connections-feishu-disabled",
-      "route": "/en-US/workspaces/ws_default/connections",
-      "recipeFamily": "settings_sheet",
-      "authLane": "authed",
-      "stableMarkers": [
-        "workspace-connections__feishu-connect",
-        "workspace-connections__capability-note",
-        "workspace-connections__personal-state"
-      ]
-    },
-    {
-      "sceneId": "workspace-connections-feishu-connected",
-      "route": "/en-US/workspaces/ws_default/connections",
-      "recipeFamily": "settings_sheet",
-      "authLane": "authed",
-      "stableMarkers": [
-        "workspace-connections__feishu-connect",
-        "workspace-connections__capability-note",
-        "workspace-connections__personal-state"
       ]
     },
     {
@@ -115,18 +66,6 @@
       "target": "third-party-accounts__list-section",
       "expectedFeedback": "个人第三方连接清单可见。",
       "note": "个人连接页应保持 settings_sheet recipe，而不是回到 dashboard 总览。",
-      "evidence": [
-        "trace"
-      ]
-    },
-    {
-      "stepId": "open-workspace-connections",
-      "sceneId": "workspace-connections-feishu-connected",
-      "intent": "Open the workspace connections page after integration setup.",
-      "action": "Open workspace connections",
-      "target": "workspace-connections__workspace-state",
-      "expectedFeedback": "工作区连接状态可见。",
-      "note": "工作区集成状态应与个人连接和项目凭据形成连续 lifecycle，而不是分散在无关联页面里。",
       "evidence": [
         "trace"
       ]
@@ -194,98 +133,6 @@
             "light",
             "dark"
           ]
-        },
-        {
-          "sceneId": "workspace-settings-feishu-enabled",
-          "scenarioId": "workspace-settings-feishu-enabled",
-          "scenario": "Workspace settings with Feishu integration already enabled.",
-          "group": "workspace_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/settings/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ]
-        },
-        {
-          "sceneId": "workspace-feishu-setup-credentials",
-          "scenarioId": "workspace-feishu-setup-credentials",
-          "scenario": "Workspace Feishu settings on the credentials step.",
-          "group": "workspace_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/settings/feishu/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ]
-        },
-        {
-          "sceneId": "workspace-feishu-locked",
-          "scenarioId": "workspace-feishu-locked",
-          "scenario": "Feishu integration locked after enablement.",
-          "group": "workspace_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/settings/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ]
-        },
-        {
-          "sceneId": "workspace-connections-feishu-disabled",
-          "scenarioId": "workspace-connections-feishu-disabled",
-          "scenario": "Workspace connections index with Feishu disabled.",
-          "group": "workspace_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/connections/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ],
-          "semanticAssertions": {
-            "primaryActionTestIds": [],
-            "maxProminentActions": 0,
-            "forbiddenVisibleTextPatterns": [
-              "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z\\b"
-            ]
-          }
-        },
-        {
-          "sceneId": "workspace-connections-feishu-connected",
-          "scenarioId": "workspace-connections-feishu-connected",
-          "scenario": "Workspace connections index with Feishu connected.",
-          "group": "workspace_pages",
-          "codeRefs": [
-            "e2e/visual.spec.ts",
-            "src/app/[locale]/workspaces/[workspace]/connections/page.tsx"
-          ],
-          "capture": "full_page",
-          "authLane": "authed",
-          "themes": [
-            "default"
-          ],
-          "semanticAssertions": {
-            "primaryActionTestIds": [],
-            "maxProminentActions": 0,
-            "requiredViewerLocalDateTimeTestIds": [
-              "workspace-connections__last-refresh-value"
-            ],
-            "forbiddenVisibleTextPatterns": [
-              "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z\\b"
-            ]
-          }
         },
         {
           "sceneId": "credentials",

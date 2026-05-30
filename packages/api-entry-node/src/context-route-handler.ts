@@ -22,12 +22,6 @@ import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 import { isAgentExecutionTicket } from './internal-ticket-store.js';
 import { loadProjectTasks } from './notebook-task/task-store.js';
 import { findTaskById } from './notebook-task/task-runtime-state.js';
-import {
-  buildManagedCredentialEntries,
-  buildManagedCredentialProjection,
-  resolveManagedCredentialConnection,
-} from './managed-credential-resolver.js';
-import type { UserExternalConnectionProvider } from './user-external-connections-store.js';
 
 type ContextRouteHandlerArgs = {
   req: http.IncomingMessage;
@@ -44,7 +38,6 @@ type ContextRouteHandlerArgs = {
 type ResolvedContextAccess = {
   target: ContextTarget;
   writeAllowed: boolean;
-  includeManagedCredentialProjections: boolean;
 };
 
 function presentContextEntry(record: ContextEntryRecord) {
@@ -57,6 +50,10 @@ function errorCodeForStatus(status: number): string {
   if (status === 403) return 'FORBIDDEN';
   if (status === 404) return 'NOT_FOUND';
   return 'INVALID_REQUEST';
+}
+
+function isRetiredManagedCredentialKey(key: string): boolean {
+  return key.startsWith('managed_credentials.');
 }
 
 async function findOwnedTask(args: {
@@ -109,7 +106,7 @@ async function resolveContextAccess(args: {
   writeIntent: boolean;
 }): Promise<ResolvedContextAccess | { error: { status: number; message: string } }> {
   const { deps, user, internalTicket, scope, key, identifiers, writeIntent } = args;
-  const isManagedCredentialKey = key.startsWith('managed_credentials.');
+  const isManagedCredentialKey = isRetiredManagedCredentialKey(key);
   if (writeIntent && isManagedCredentialKey) {
     return { error: { status: 403, message: 'context_managed_credentials_read_only' } };
   }
@@ -162,7 +159,6 @@ async function resolveContextAccess(args: {
         task_id: scope === 'task' ? ticketTaskId : null,
       }),
       writeAllowed: canAgentWriteContextScope(scope),
-      includeManagedCredentialProjections: scope === 'member',
     };
   }
 
@@ -179,7 +175,6 @@ async function resolveContextAccess(args: {
         workspace_id: workspaceId,
       }),
       writeAllowed: true,
-      includeManagedCredentialProjections: true,
     };
   }
 
@@ -210,7 +205,6 @@ async function resolveContextAccess(args: {
         project_id: projectId,
       }),
       writeAllowed: true,
-      includeManagedCredentialProjections: false,
     };
   }
 
@@ -241,7 +235,6 @@ async function resolveContextAccess(args: {
         task_id: taskId,
       }),
       writeAllowed: true,
-      includeManagedCredentialProjections: false,
     };
   }
 
@@ -272,7 +265,6 @@ async function resolveContextAccess(args: {
         project_id: projectId,
       }),
       writeAllowed: true,
-      includeManagedCredentialProjections: false,
     };
   }
 
@@ -295,7 +287,6 @@ async function resolveContextAccess(args: {
       workspace_id: workspaceId,
     }),
     writeAllowed: true,
-    includeManagedCredentialProjections: false,
   };
 }
 
@@ -309,59 +300,6 @@ function parseScopeAndKey(input: URLSearchParams | Record<string, unknown>): {
     scope: isContextScope(rawScope) ? rawScope : null,
     key: normalizeContextKey(rawKey),
   };
-}
-
-async function handleManagedCredentialRefresh(args: {
-  deps: NodeApiDeps;
-  user: AuthenticatedUser;
-  internalTicket?: ResolvedInternalTicket | null;
-  provider: string;
-  workspaceId?: string | null;
-  projectId?: string | null;
-}): Promise<ContextEntryRecord | { error: { status: number; message: string } }> {
-  if (isAgentExecutionTicket(args.internalTicket)) {
-    const ticketWorkspaceId = args.internalTicket.workspace_id ?? null;
-    const ticketProjectId = args.internalTicket.project_id ?? null;
-    if (args.workspaceId && ticketWorkspaceId && args.workspaceId !== ticketWorkspaceId) {
-      return { error: { status: 403, message: 'context_workspace_scope_mismatch' } };
-    }
-    if (args.projectId && !ticketProjectId) {
-      return { error: { status: 403, message: 'context_project_member_scope_not_available' } };
-    }
-    if (args.projectId && ticketProjectId && args.projectId !== ticketProjectId) {
-      return { error: { status: 403, message: 'context_project_scope_mismatch' } };
-    }
-  }
-  if (args.provider !== 'feishu') {
-    return { error: { status: 422, message: 'context_managed_credential_refresh_not_supported' } };
-  }
-  const resolved = await resolveManagedCredentialConnection({
-    docStore: args.deps.docStore,
-    userId: args.user.id,
-    provider: 'feishu',
-    workspaceId: args.workspaceId ?? null,
-    projectId: args.projectId ?? null,
-  });
-  if (!resolved) {
-    return { error: { status: 404, message: 'context_managed_credential_not_found' } };
-  }
-  const { refreshFeishuOAuth } = await import('./feishu-oauth.js');
-  await refreshFeishuOAuth({
-    docStore: args.deps.docStore,
-    userId: args.user.id,
-    connectionId: resolved.connection.id,
-  });
-  const projected = await buildManagedCredentialProjection({
-    docStore: args.deps.docStore,
-    userId: args.user.id,
-    provider: 'feishu',
-    workspaceId: args.workspaceId ?? null,
-    projectId: args.projectId ?? null,
-  });
-  if (!projected) {
-    return { error: { status: 404, message: 'context_managed_credential_not_found' } };
-  }
-  return projected;
 }
 
 export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise<boolean> {
@@ -397,17 +335,9 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       project_id: resolved.target.project_id,
       workspace_id: resolved.target.workspace_id,
     });
-    const items = stored.map(presentContextEntry);
-    if (resolved.includeManagedCredentialProjections) {
-      const projections = await buildManagedCredentialEntries({
-        docStore: deps.docStore,
-        userId: user.id,
-        workspaceId: resolved.target.workspace_id ?? identifiers.workspaceId ?? null,
-        projectId: identifiers.projectId ?? resolved.target.project_id ?? null,
-      });
-      items.push(...projections.map(presentContextEntry));
-      items.sort((left, right) => left.key.localeCompare(right.key));
-    }
+    const items = stored
+      .filter((item) => !isRetiredManagedCredentialKey(item.key))
+      .map(presentContextEntry);
     json(res, 200, { items, total: items.length });
     return true;
   }
@@ -433,20 +363,8 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
         return true;
       }
-      if (scope === 'member' && key.startsWith('managed_credentials.')) {
-        const provider = key.slice('managed_credentials.'.length);
-        const projected = await buildManagedCredentialProjection({
-          docStore: deps.docStore,
-          userId: user.id,
-          provider: provider as UserExternalConnectionProvider,
-          workspaceId: identifiers.workspaceId ?? resolved.target.workspace_id ?? null,
-          projectId: identifiers.projectId ?? resolved.target.project_id ?? null,
-        });
-        if (!projected) {
-          json(res, 404, { error_code: 'NOT_FOUND', message: 'context_not_found' });
-          return true;
-        }
-        json(res, 200, presentContextEntry(projected));
+      if (scope === 'member' && isRetiredManagedCredentialKey(key)) {
+        json(res, 404, { error_code: 'NOT_FOUND', message: 'context_not_found' });
         return true;
       }
       const entry = await getContextEntry(deps.docStore, resolved.target);
@@ -530,30 +448,6 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
     }
 
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-    return true;
-  }
-
-  const refreshMatch = requestUrl.pathname.match(/^\/api\/v1\/context\/managed-credentials\/([^/]+)\/refresh$/);
-  if (refreshMatch) {
-    if (method !== 'POST') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const provider = decodeURIComponent(refreshMatch[1] ?? '');
-    const identifiers = readRequestIdentifiers(requestUrl.searchParams);
-    const refreshed = await handleManagedCredentialRefresh({
-      deps,
-      user,
-      internalTicket,
-      provider,
-      workspaceId: identifiers.workspaceId ?? internalTicket?.workspace_id ?? null,
-      projectId: identifiers.projectId ?? internalTicket?.project_id ?? null,
-    });
-    if ('error' in refreshed) {
-      json(res, refreshed.error.status, { error_code: errorCodeForStatus(refreshed.error.status), message: refreshed.error.message });
-      return true;
-    }
-    json(res, 200, presentContextEntry(refreshed));
     return true;
   }
 

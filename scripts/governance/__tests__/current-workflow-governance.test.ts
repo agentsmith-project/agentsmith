@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -216,7 +216,7 @@ function readTrackedScriptFiles(): string[] {
   return stdout
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.endsWith('.sh'))
+    .filter((line) => line.endsWith('.sh') && existsSync(path.join(rootDir, line)))
     .sort();
 }
 

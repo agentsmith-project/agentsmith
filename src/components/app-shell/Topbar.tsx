@@ -169,11 +169,6 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
     router.push(`/workspaces/${workspaceId}/projects/${projectId}/my-context`);
   };
 
-  const handleWorkspaceIntegrations = () => {
-    if (!workspaceId) return;
-    router.push(`/workspaces/${workspaceId}/connections`);
-  };
-
   const handlePersonalConnections = () => {
     router.push('/user/third-party-accounts');
   };
@@ -297,7 +292,6 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
           onProfile={handleProfile}
           onWorkspacePersonalContext={workspaceId ? handleWorkspacePersonalContext : undefined}
           onProjectPersonalContext={workspaceId && projectId ? handleProjectPersonalContext : undefined}
-          onWorkspaceIntegrations={workspaceId ? handleWorkspaceIntegrations : undefined}
           onPersonalConnections={handlePersonalConnections}
           onApiKeys={handleApiKeys}
           onLanguageSwitch={handleLanguageSwitch}

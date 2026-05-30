@@ -222,7 +222,7 @@ describe('ContextManager', () => {
     const existing = createEntry({
       id: 'ctx_project_member_1',
       scope: 'project_member',
-      key: 'personal.bindings.feishu',
+      key: 'personal.bindings.tools',
       content: 'uec_project_123',
       content_type: 'text',
       user_id: 'user_123',
@@ -244,7 +244,7 @@ describe('ContextManager', () => {
       />,
     );
 
-    await screen.findByTestId('context-store__item--personal.bindings.feishu');
+    await screen.findByTestId('context-store__item--personal.bindings.tools');
 
     expect(mockList).toHaveBeenCalledWith({
       scope: 'project_member',
@@ -257,7 +257,7 @@ describe('ContextManager', () => {
     await waitFor(() => {
       expect(mockPut).toHaveBeenCalledWith({
         scope: 'project_member',
-        key: 'personal.bindings.feishu',
+        key: 'personal.bindings.tools',
         content: 'uec_project_123',
         content_type: 'text',
         workspace_id: 'ws_default',
@@ -270,7 +270,7 @@ describe('ContextManager', () => {
     await waitFor(() => {
       expect(mockRemove).toHaveBeenCalledWith({
         scope: 'project_member',
-        key: 'personal.bindings.feishu',
+        key: 'personal.bindings.tools',
         workspace_id: 'ws_default',
         project_id: 'proj_001',
       });

@@ -595,23 +595,13 @@ export const CURRENT_RESOURCE_LOCK_MANIFEST: readonly CurrentResourceLockDefinit
     reason: 'Provider secret profiles are credential boundaries; evidence from one secret profile must not validate another profile.',
     owners: {
       gateIds: ['test-backend-real-core', 'lane-backend-real-release'],
-      npmScripts: [
-        'manual:feishu:admin',
-        'manual:feishu:user',
-        'manual:feishu:check',
-      ],
-      commandSurfaces: ['managed credential checks', 'manual provider credential checks'],
+      npmScripts: ['test:backend-real:core', 'lane:backend-real:release'],
+      commandSurfaces: ['backend-real secret profile checks'],
     },
     appliesTo: {
       gateIds: ['test-backend-real-core', 'lane-backend-real-release'],
-      npmScripts: [
-        'manual:feishu:admin',
-        'manual:feishu:user',
-        'manual:feishu:check',
-        'test:backend-real:core',
-        'lane:backend-real:release',
-      ],
-      providerProfiles: ['feishu-admin', 'feishu-user', 'backend-real-managed-secret'],
+      npmScripts: ['test:backend-real:core', 'lane:backend-real:release'],
+      providerProfiles: ['backend-real-managed-secret'],
     },
     enforcement: 'modeled_only',
     profileReuse: {

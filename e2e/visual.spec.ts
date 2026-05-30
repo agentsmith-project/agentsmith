@@ -230,28 +230,6 @@ async function seedVisualMswHeaders(page: Page, headers: Record<string, string>)
   }, headers).catch(() => {});
 }
 
-async function seedVisualFeishuState(
-  page: Page,
-  options: {
-    status?: 'not_configured' | 'verification_required' | 'verified' | 'enabled' | 'error';
-    verifiedByEmail?: string;
-    appId?: string;
-    redirectUri?: string;
-    connectedEmail?: string;
-  } = {},
-) {
-  const headers = {
-    'x-mock-feishu-status': options.status ?? 'not_configured',
-    'x-mock-feishu-verified-email': options.verifiedByEmail ?? '',
-    'x-mock-feishu-app-id': options.appId ?? '',
-    'x-mock-feishu-redirect-uri': options.redirectUri ?? '',
-    'x-mock-connection-provider': options.connectedEmail ? 'feishu' : '',
-    'x-mock-connection-workspace': WS_ID,
-    'x-mock-connection-email': options.connectedEmail ?? '',
-  };
-  await seedVisualMswHeaders(page, headers);
-}
-
 async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO) {
   await page.addInitScript((nextNow) => {
     (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = nextNow;
@@ -469,7 +447,6 @@ async function createThirdPartyVisualConnection(page: Page) {
   await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
   await page.getByTestId('third-party-accounts__create-btn').click();
   await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
-  await page.getByTestId('third-party-accounts__provider-select').selectOption('custom');
   await page.getByTestId('third-party-accounts__custom-domain').fill('api.visual.example.com');
   await page.getByTestId('third-party-accounts__display-name').fill('Visual Custom Integration');
   await page.getByTestId('third-party-accounts__note').fill('Visual seed');
@@ -2318,58 +2295,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await page.waitForTimeout(400);
     },
   },
-  'workspace-connections-feishu-connected': {
-    beforeNavigate: async ({ page }) => {
-      await seedVisualFeishuState(page, {
-        status: 'enabled',
-        appId: 'cli_visual_demo',
-        redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
-        verifiedByEmail: 'visual.admin@example.com',
-        connectedEmail: 'visual.tester@example.com',
-      });
-    },
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
-      await expect(page.getByTestId('workspace-connections__capability-note')).toBeVisible();
-      await expect(page.getByTestId('workspace-connections__personal-state')).toContainText('workspace default connection');
-      await expect(page.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
-    },
-    screenshotOptions: {
-      maxDiffPixelRatio: 0.000005,
-    },
-  },
-  'workspace-connections-feishu-disabled': {
-    beforeNavigate: async ({ page }) => {
-      await seedVisualFeishuState(page, { status: 'not_configured' });
-    },
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
-      await expect(page.getByTestId('workspace-connections__capability-note')).toBeVisible();
-      await expect(page.getByTestId('workspace-connections__personal-state')).toContainText('workspace default connection');
-      await expect(page.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
-    },
-    screenshotOptions: {
-      maxDiffPixelRatio: 0.000005,
-    },
-  },
-  'workspace-feishu-locked': {
-    beforeNavigate: async ({ page }) => {
-      await seedVisualFeishuState(page, {
-        status: 'enabled',
-        appId: 'cli_visual_demo',
-        redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
-        verifiedByEmail: 'visual.admin@example.com',
-      });
-    },
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('ws-feishu__locked')).toBeVisible();
-    },
-  },
-  'workspace-feishu-setup-credentials': {
-    beforeNavigate: async ({ page }) => {
-      await seedVisualFeishuState(page, { status: 'not_configured' });
-    },
-  },
   'workspace-home': {
     afterNavigate: async ({ page }) => {
       await expect(page.getByTestId('projects__page')).toBeVisible();
@@ -2400,19 +2325,6 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     afterNavigate: async ({ page }) => {
       await page.getByTestId('ws-settings__create-project').click();
       await expect(page.getByRole('heading', { name: /Create Project/i })).toBeVisible();
-    },
-  },
-  'workspace-settings-feishu-enabled': {
-    beforeNavigate: async ({ page }) => {
-      await seedVisualFeishuState(page, {
-        status: 'enabled',
-        appId: 'cli_visual_demo',
-        redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
-        verifiedByEmail: 'visual.admin@example.com',
-      });
-    },
-    afterNavigate: async ({ page }) => {
-      await expect(page.getByTestId('ws-settings__integration-feishu')).toBeVisible();
     },
   },
 };

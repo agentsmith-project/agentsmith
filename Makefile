@@ -24,8 +24,7 @@
 	mvp-freeze-check preprod-acceptance-check \
 	preprod-ensure-pgvector preprod-capture-baseline \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke \
-	ensure-default-workspace real-stack-ready \
-	manual-feishu-admin manual-feishu-user manual-feishu-check
+	ensure-default-workspace real-stack-ready
 
 NPM ?= npm
 
@@ -279,15 +278,6 @@ real-stack-ready:
 	BASE_URL=http://localhost:$(PORT_WEB) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	bash scripts/wait-real-stack-ready.sh
-
-manual-feishu-admin:
-	npm run manual:feishu:admin
-
-manual-feishu-user:
-	npm run manual:feishu:user
-
-manual-feishu-check:
-	npm run manual:feishu:check
 
 check-api-port:
 	@PORT="$(PORT_API)"; \

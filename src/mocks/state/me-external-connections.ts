@@ -78,10 +78,11 @@ function cloneConnection(connection: UserExternalConnection): UserExternalConnec
   return {
     ...connection,
     fields: connection.fields.map((field) => ({ ...field })),
-    account_identity: connection.account_identity ? { ...connection.account_identity } : connection.account_identity,
-    scopes: connection.scopes ? [...connection.scopes] : connection.scopes,
-    missing_scopes: connection.missing_scopes ? [...connection.missing_scopes] : connection.missing_scopes,
   };
+}
+
+function isSupportedExternalConnection(connection: UserExternalConnection): boolean {
+  return connection.provider === 'custom' && connection.kind === 'secret_bundle';
 }
 
 function getBucket(userId: string): UserExternalConnection[] {
@@ -98,7 +99,7 @@ export function clearMockExternalConnections(userId: string): void {
 }
 
 export function listMockExternalConnections(userId: string): UserExternalConnection[] {
-  return getBucket(userId).map(cloneConnection);
+  return getBucket(userId).filter(isSupportedExternalConnection).map(cloneConnection);
 }
 
 export function seedMockExternalConnection(userId: string, seed: ExternalConnectionSeed): UserExternalConnection {
@@ -111,14 +112,8 @@ export function seedMockExternalConnection(userId: string, seed: ExternalConnect
     custom_domain: seed.custom_domain ?? null,
     note: seed.note ?? null,
     status: seed.status ?? 'active',
-    account_identity: seed.account_identity ?? null,
-    scopes: seed.scopes ?? null,
-    expires_at: seed.expires_at ?? null,
-    last_refreshed_at: seed.last_refreshed_at ?? null,
     last_used_at: seed.last_used_at ?? null,
     last_error: seed.last_error ?? null,
-    reauth_reason: seed.reauth_reason ?? null,
-    missing_scopes: seed.missing_scopes ?? null,
     fields: seed.fields.map((field) => toStoredExternalConnectionField(field)),
   };
   getBucket(userId).push(connection);
@@ -143,14 +138,8 @@ export function createMockExternalConnection(
     note: request.note ?? null,
     status: request.status ?? 'active',
     fields: request.fields ?? [],
-    account_identity: request.account_identity ?? null,
-    scopes: request.scopes ?? null,
-    expires_at: request.expires_at ?? null,
-    last_refreshed_at: null,
     last_used_at: null,
     last_error: request.last_error ?? null,
-    reauth_reason: request.reauth_reason ?? null,
-    missing_scopes: request.missing_scopes ?? null,
   });
   return connection;
 }
@@ -184,23 +173,8 @@ export function updateMockExternalConnection(
       )
     );
   }
-  if (request.account_identity !== undefined) {
-    connection.account_identity = request.account_identity ?? null;
-  }
-  if (request.scopes !== undefined) {
-    connection.scopes = request.scopes ?? null;
-  }
-  if (request.expires_at !== undefined) {
-    connection.expires_at = request.expires_at ?? null;
-  }
   if (request.last_error !== undefined) {
     connection.last_error = request.last_error ?? null;
-  }
-  if (request.reauth_reason !== undefined) {
-    connection.reauth_reason = request.reauth_reason ?? null;
-  }
-  if (request.missing_scopes !== undefined) {
-    connection.missing_scopes = request.missing_scopes ?? null;
   }
   connection.updated_at = nowIso();
   return cloneConnection(connection);

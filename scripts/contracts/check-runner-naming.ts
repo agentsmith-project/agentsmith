@@ -410,7 +410,6 @@ const activeTextFiles = [
   "scripts/backend-real-run.sh",
   "scripts/build-reliability-smoke.sh",
   "scripts/check-preset-agent-task-file-library.sh",
-  "scripts/feishu-real-manual-step.sh",
   "scripts/file-library-real-smoke.sh",
   "scripts/governance-config-audit-effect-smoke.sh",
   "scripts/governance-member-lifecycle-effect-smoke.sh",

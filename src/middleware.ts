@@ -16,9 +16,9 @@ const intlMiddleware = createMiddleware(routing);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Keep technical OAuth/callback routes locale-neutral so external providers
-  // can whitelist a single stable redirect URI without being rewritten by i18n.
-  if (/^\/workspaces\/[^/]+\/(?:login|feishu)\/callback$/.test(pathname)) {
+  // Keep the workspace login callback locale-neutral so the identity provider
+  // can whitelist one stable redirect URI without being rewritten by i18n.
+  if (/^\/workspaces\/[^/]+\/login\/callback$/.test(pathname)) {
     return NextResponse.next();
   }
 

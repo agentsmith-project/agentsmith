@@ -15,8 +15,6 @@ import type {
   UserExternalConnectionField,
   UserExternalConnection,
   UserExternalConnectionFieldInput,
-  UserExternalConnectionKind,
-  UserExternalConnectionProvider,
 } from '@/lib/api';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -32,10 +30,9 @@ import {
   readVisualThirdPartyAccountsSeed,
 } from './third-party-accounts-visual-seed';
 import {
-  allowedKindsForProvider,
+  CUSTOM_CONNECTION_KIND,
+  CUSTOM_CONNECTION_PROVIDER,
   createEmptyField,
-  defaultKindForProvider,
-  fieldValue,
 } from './third-party-accounts-utils';
 
 export default function ThirdPartyAccountsPage() {
@@ -59,19 +56,10 @@ export default function ThirdPartyAccountsPage() {
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<UserExternalConnection | null>(null);
 
-  const [provider, setProvider] = React.useState<UserExternalConnectionProvider>('jira');
-  const [kind, setKind] = React.useState<UserExternalConnectionKind>('secret_bundle');
   const [displayName, setDisplayName] = React.useState('');
   const [note, setNote] = React.useState('');
   const [customDomain, setCustomDomain] = React.useState('');
   const [fields, setFields] = React.useState<UserExternalConnectionFieldInput[]>([createEmptyField()]);
-  const [jiraBaseUrl, setJiraBaseUrl] = React.useState('');
-  const [jiraApiToken, setJiraApiToken] = React.useState('');
-  const [githubApiBaseUrl, setGithubApiBaseUrl] = React.useState('https://api.github.com');
-  const [githubToken, setGithubToken] = React.useState('');
-  const [gitHost, setGitHost] = React.useState('github.com');
-  const [sshPublicKey, setSshPublicKey] = React.useState('');
-  const [sshPrivateKey, setSshPrivateKey] = React.useState('');
 
   React.useEffect(() => {
     if (mswReady) return;
@@ -115,28 +103,12 @@ export default function ThirdPartyAccountsPage() {
   }, [queryClient]);
 
   const resetForm = React.useCallback(() => {
-    setProvider('jira');
-    setKind(defaultKindForProvider('jira'));
     setDisplayName('');
     setNote('');
     setCustomDomain('');
     setFields([createEmptyField()]);
-    setJiraBaseUrl('');
-    setJiraApiToken('');
-    setGithubApiBaseUrl('https://api.github.com');
-    setGithubToken('');
-    setGitHost('github.com');
-    setSshPublicKey('');
-    setSshPrivateKey('');
     setEditing(null);
   }, []);
-
-  React.useEffect(() => {
-    const allowed = allowedKindsForProvider(provider);
-    if (!allowed.includes(kind)) {
-      setKind(defaultKindForProvider(provider));
-    }
-  }, [provider, kind]);
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateUserExternalConnectionRequest) => api.create(payload),
@@ -168,18 +140,6 @@ export default function ThirdPartyAccountsPage() {
     onError: (error) => handleErrorForToast(error),
   });
 
-  const refreshMutation = useMutation({
-    mutationFn: (connectionId: string) => api.refresh(connectionId),
-    onSuccess: () => {
-      invalidate();
-    },
-    onError: (error) => handleErrorForToast(error),
-  });
-
-  const handleRefresh = React.useCallback((connectionId: string) => {
-    refreshMutation.mutate(connectionId);
-  }, [refreshMutation]);
-
   const openCreateDialog = () => {
     resetForm();
     setCreateOpen(true);
@@ -187,18 +147,9 @@ export default function ThirdPartyAccountsPage() {
 
   const openEditDialog = (item: UserExternalConnection) => {
     setEditing(item);
-    setProvider(item.provider);
-    setKind(item.kind);
     setDisplayName(item.display_name);
     setNote(item.note ?? '');
     setCustomDomain(item.custom_domain ?? '');
-    setJiraBaseUrl(fieldValue(item, 'base_url'));
-    setJiraApiToken('');
-    setGithubApiBaseUrl(fieldValue(item, 'api_base_url') || 'https://api.github.com');
-    setGithubToken('');
-    setGitHost(fieldValue(item, 'git_host') || (item.provider === 'gitee' ? 'gitee.com' : 'github.com'));
-    setSshPublicKey(fieldValue(item, 'public_key'));
-    setSshPrivateKey('');
     setFields(
       item.fields.length > 0
         ? item.fields.map((field: UserExternalConnectionField) => ({
@@ -220,54 +171,25 @@ export default function ThirdPartyAccountsPage() {
   }, [resetForm]);
 
   const saveConnection = () => {
-    const sanitizedFields = (() => {
-      if (provider === 'jira') {
-        return [
-          { key: 'base_url', value: jiraBaseUrl.trim(), description: 'Jira base URL', secret: false },
-          { key: 'api_token', value: jiraApiToken, description: 'Jira API token', secret: true },
-        ].filter((field) => field.key && (field.value || (editing && field.secret)));
-      }
-      if (provider === 'github' && kind === 'secret_bundle') {
-        return [
-          { key: 'api_base_url', value: githubApiBaseUrl.trim(), description: 'GitHub API base URL', secret: false },
-          { key: 'token', value: githubToken, description: 'GitHub token', secret: true },
-        ].filter((field) => field.key && (field.value || (editing && field.secret)));
-      }
-      if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair') {
-        const normalizedGitHost = gitHost.trim() || (provider === 'gitee' ? 'gitee.com' : 'github.com');
-        return [
-          { key: 'git_host', value: normalizedGitHost, description: 'Git host', secret: false },
-          { key: 'public_key', value: sshPublicKey.trim(), description: 'SSH public key', secret: false },
-          { key: 'private_key', value: sshPrivateKey, description: 'SSH private key', secret: true },
-        ].filter((field) => field.key && (field.value || (editing && field.secret)));
-      }
-      return fields
-        .map((field: UserExternalConnectionFieldInput) => ({
-          key: field.key.trim(),
-          value: field.value,
-          description: field.description?.trim() || undefined,
-          secret: field.secret !== false,
-        }))
-        .filter((field) => field.key && (field.value || (editing && field.secret)));
-    })();
+    const sanitizedFields = fields
+      .map((field: UserExternalConnectionFieldInput) => ({
+        key: field.key.trim(),
+        value: field.value,
+        description: field.description?.trim() || undefined,
+        secret: field.secret !== false,
+      }))
+      .filter((field) => field.key && (field.value || (editing && field.secret)));
 
     const payloadBase = {
-      custom_domain: provider === 'custom' ? customDomain.trim() || undefined : undefined,
+      custom_domain: customDomain.trim() || undefined,
       display_name: displayName.trim(),
       note: note.trim() || null,
       status: 'active' as const,
       fields: sanitizedFields,
-      account_identity: undefined,
-      scopes: undefined,
-      expires_at: undefined,
-      last_error: undefined,
     };
 
     if (!payloadBase.display_name) return;
-    if (provider === 'custom' && !payloadBase.custom_domain) return;
-    if (provider === 'jira' && (!jiraBaseUrl.trim() || (!editing && !jiraApiToken))) return;
-    if (provider === 'github' && kind === 'secret_bundle' && (!githubApiBaseUrl.trim() || (!editing && !githubToken))) return;
-    if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' && (!sshPublicKey.trim() || (!editing && !sshPrivateKey))) return;
+    if (!payloadBase.custom_domain) return;
 
     if (editing) {
       updateMutation.mutate({ id: editing.id, payload: payloadBase });
@@ -275,8 +197,8 @@ export default function ThirdPartyAccountsPage() {
     }
 
     createMutation.mutate({
-      provider,
-      kind,
+      provider: CUSTOM_CONNECTION_PROVIDER,
+      kind: CUSTOM_CONNECTION_KIND,
       ...payloadBase,
     });
   };
@@ -284,13 +206,7 @@ export default function ThirdPartyAccountsPage() {
   const isPending = createMutation.isPending || updateMutation.isPending;
   const canSubmit = (() => {
     if (!displayName.trim()) return false;
-    if (provider === 'custom') return Boolean(customDomain.trim());
-    if (provider === 'jira') return Boolean(jiraBaseUrl.trim() && (editing || jiraApiToken));
-    if (provider === 'github' && kind === 'secret_bundle') return Boolean(githubApiBaseUrl.trim() && (editing || githubToken));
-    if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair') {
-      return Boolean(sshPublicKey.trim() && (editing || sshPrivateKey));
-    }
-    return true;
+    return Boolean(customDomain.trim());
   })();
   return (
     <PageState state="success">
@@ -343,7 +259,6 @@ export default function ThirdPartyAccountsPage() {
                   items={items}
                   onDelete={setDeleteId}
                   onEdit={openEditDialog}
-                  onRefresh={handleRefresh}
                   t={t}
                 />
               )}
@@ -370,30 +285,12 @@ export default function ThirdPartyAccountsPage() {
                   displayName={displayName}
                   editing={Boolean(editing)}
                   fields={fields}
-                  gitHost={gitHost}
-                  githubApiBaseUrl={githubApiBaseUrl}
-                  githubToken={githubToken}
-                  jiraApiToken={jiraApiToken}
-                  jiraBaseUrl={jiraBaseUrl}
-                  kind={kind}
                   note={note}
-                  provider={provider}
-                  sshPrivateKey={sshPrivateKey}
-                  sshPublicKey={sshPublicKey}
                   t={t}
                   onCustomDomainChange={setCustomDomain}
                   onDisplayNameChange={setDisplayName}
                   onFieldsChange={setFields}
-                  onGitHostChange={setGitHost}
-                  onGithubApiBaseUrlChange={setGithubApiBaseUrl}
-                  onGithubTokenChange={setGithubToken}
-                  onJiraApiTokenChange={setJiraApiToken}
-                  onJiraBaseUrlChange={setJiraBaseUrl}
-                  onKindChange={setKind}
                   onNoteChange={setNote}
-                  onProviderChange={setProvider}
-                  onSshPrivateKeyChange={setSshPrivateKey}
-                  onSshPublicKeyChange={setSshPublicKey}
                 />
               </div>
 

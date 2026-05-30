@@ -40,9 +40,7 @@ def build_query(args: argparse.Namespace) -> dict[str, str]:
     task_id = getattr(args, "task_id", None) or read_env_default("MBOS_AGENT_TASK_ID")
     if workspace_id and scope in ("member", "task", "project_member", "project", "workspace"):
         query["workspace_id"] = workspace_id
-    include_project_id = scope in ("task", "project_member", "project") or (
-        scope == "member" and isinstance(key, str) and key.startswith("managed_credentials.")
-    )
+    include_project_id = scope in ("task", "project_member", "project")
     if project_id and include_project_id:
         query["project_id"] = project_id
     if task_id and scope == "task":

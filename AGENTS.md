@@ -168,7 +168,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 - builtin skills 的运行时可见路径是 `~/.agents/skills`。
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。
-- 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 或 HOME 中查找或持久化这类凭据文件。
+- 外部连接凭据只通过请求级环境变量或 AgentSmith Context Store 只读投影使用；不要尝试在 workspace 或 HOME 中查找或持久化 provider-specific 凭据文件。
 - skill runtime 的正式主链覆盖 Agent task / terminal 执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
 - Codex 运行时状态位于 `$HOME/.codex`；runner 自己的 task 元数据位于 `$HOME/.mbos`；builtin skills 位于 `$HOME/.agents/skills`。
 - 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：

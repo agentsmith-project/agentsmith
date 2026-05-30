@@ -310,7 +310,7 @@ components:
                       minProperties: 1
                       propertyNames:
                         type: string
-                        pattern: '^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*'
+                        pattern: '^(?!(?:context[_]store|writable[_]scopes|managed[_]credentials|managed[_]credential|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*'
                       additionalProperties:
                         type: string
                         minLength: 1

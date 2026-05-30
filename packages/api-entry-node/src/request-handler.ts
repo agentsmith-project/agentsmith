@@ -78,8 +78,7 @@ function isAgentExecutionRouteAllowed(
     )
   )
     || pathname === '/api/v1/context'
-    || pathname === '/api/v1/context/list'
-    || /^\/api\/v1\/context\/managed-credentials\/[^/]+\/refresh$/.test(pathname);
+    || pathname === '/api/v1/context/list';
 }
 
 export async function handleRequest(

@@ -107,10 +107,11 @@ describe('builtin-skills', () => {
           dependencies: [
             {
               name: 'sample-runtime-dependency',
-              kind: 'managed_credential',
-              provider: 'sample-provider',
-              scope: 'member',
-              refresh_supported: true,
+              kind: 'simple_credential_bundle',
+              scopes: ['member'],
+              fields: [
+                { name: 'token', keys: ['credentials.sample_runtime_token'], required: true },
+              ],
             },
           ],
         }),
@@ -210,10 +211,11 @@ describe('builtin-skills', () => {
           dependencies: [
             {
               name: 'sample-runtime-dependency',
-              kind: 'managed_credential',
-              provider: 'sample-provider',
-              scope: 'member',
-              refresh_supported: true,
+              kind: 'simple_credential_bundle',
+              scopes: ['member'],
+              fields: [
+                { name: 'token', keys: ['credentials.sample_runtime_token'], required: true },
+              ],
             },
           ],
         }),
@@ -420,10 +422,11 @@ describe('builtin-skills', () => {
       dependencies: [
         {
           name: 'project-personal-sample',
-          kind: 'managed_credential',
-          provider: 'sample-provider',
-          scope: 'project_member',
-          refresh_supported: true,
+          kind: 'simple_credential_bundle',
+          scopes: ['project_member'],
+          fields: [
+            { name: 'token', keys: ['credentials.project_personal_token'], required: true },
+          ],
         },
       ],
       provides: [
@@ -438,11 +441,28 @@ describe('builtin-skills', () => {
 
     expect(contract.dependencies[0]).toMatchObject({
       name: 'project-personal-sample',
-      scope: 'project_member',
+      kind: 'simple_credential_bundle',
+      scopes: ['project_member'],
     });
     expect(contract.provides?.[0]).toMatchObject({
       scopes: ['member', 'task', 'project_member', 'project', 'workspace'],
     });
+  });
+
+  it('rejects retired managed credential skill dependencies', () => {
+    expect(() => parseBuiltinSkillCapabilityContract({
+      version: 1,
+      skill_name: 'sample-tool',
+      dependencies: [
+        {
+          name: 'retired-provider-dependency',
+          kind: 'managed_credential',
+          provider: 'sample-provider',
+          scope: 'member',
+          refresh_supported: true,
+        },
+      ],
+    })).toThrow('skill_contract_invalid:dependencies[0]');
   });
 
   it('ships mbos-context with project_member readable but not agent-writable', async () => {

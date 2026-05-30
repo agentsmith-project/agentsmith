@@ -128,7 +128,6 @@ Audience: 后端、前端、测试、发布负责人
 
 ### 已收敛到共享运行态
 
-- Feishu OAuth state
 - agent presence
 - resource policy `requests_per_minute` minute bucket
 

@@ -67,6 +67,7 @@ describe('prepareTaskWorkspaceAssets', () => {
       expect(agents).not.toContain('outside `cwd`');
       expect(agents).not.toContain('auth material');
       expect(agents).not.toContain('mutable auth');
+      expect(agents).not.toContain('managed_credentials');
       expect(agents).toContain('The current working directory is `$HOME/workspace`');
       expect(agents).toContain('capability-aware builtin skills');
       expect(agents).toContain('member/task context');
@@ -76,6 +77,7 @@ describe('prepareTaskWorkspaceAssets', () => {
       expect(runtime).not.toContain('separate from `cwd`');
       expect(runtime).not.toContain('auth material');
       expect(runtime).not.toContain('mutable auth');
+      expect(runtime).not.toContain('managed_credentials');
       expect(runtime).toContain('persistent task HOME');
       expect(runtime).toContain('project_member');
       expect(runtime).toContain('machine-readable capability contracts');

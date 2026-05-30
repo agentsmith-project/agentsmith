@@ -6,8 +6,6 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '../../src/lib/mock-time';
 const VISUAL_SEED_STORAGE_KEY = '__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__';
 
 export type VisualThirdPartyConnectionSeed = {
-  provider: 'jira' | 'feishu' | 'github' | 'gitee' | 'custom';
-  kind: 'oauth_account' | 'secret_bundle' | 'ssh_keypair';
   displayName: string;
   note?: string | null;
   customDomain?: string | null;
@@ -18,16 +16,15 @@ export type VisualThirdPartyConnectionSeed = {
     secret?: boolean;
     description?: string | null;
   }>;
-  scopes?: string[] | null;
 };
 
 function buildVisualThirdPartyAccountRecord(seed: VisualThirdPartyConnectionSeed, userId: string): UserExternalConnection {
-  const id = buildMockExternalConnectionId(seed.displayName, seed.provider);
+  const id = buildMockExternalConnectionId(seed.displayName, 'custom');
   return {
     id,
     user_id: userId,
-    provider: seed.provider,
-    kind: seed.kind,
+    provider: 'custom',
+    kind: 'secret_bundle',
     display_name: seed.displayName,
     note: seed.note ?? null,
     custom_domain: seed.customDomain ?? null,
@@ -38,15 +35,8 @@ function buildVisualThirdPartyAccountRecord(seed: VisualThirdPartyConnectionSeed
       secret: field.secret !== false,
       masked_value: field.secret === false ? field.value : '••••••••',
     })),
-    account_identity: null,
-    scopes: seed.scopes ?? null,
-    expires_at: null,
-    last_refreshed_at: null,
     last_used_at: null,
     last_error: null,
-    reauth_reason: null,
-    missing_scopes: null,
-    workspace_id: null,
     created_at: VISUAL_TEST_REFERENCE_NOW_ISO,
     updated_at: VISUAL_TEST_REFERENCE_NOW_ISO,
   };

@@ -36,8 +36,6 @@ product readiness 验证前，先确认：
 
 1. 本文里的自动化 product readiness campaign，指当前 machine-readable gates、lanes 与 backend-real product readiness 证据链。
 2. `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 都是 internal adapter / evidence producer surface，保留给 CI、`npm run release:ready` 和 owner runbook，不作为普通发布人员的 copyable command 目录。
-3. `make manual-feishu-*` 属于 release operator 手工联调步骤，不属于 automated gate identity，也不会改变 canonical gate-result schema。
-4. 如果当前 release scope 需要 Feishu 联调，手工步骤仍然可能影响 handoff 判断；但它们必须与 automated readiness evidence 分层记录，不能伪装成“某个 gate 已经覆盖”。
 
 ## 验证顺序
 
@@ -95,22 +93,6 @@ CI green 不是完整 product-side readiness sign-off：
 2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
 4. 当前 AgentSmith product-side readiness 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real product readiness、aggregate readiness check 与 `summary.md`。
-
-### 5. 手工 Feishu 联调步骤
-
-当当前 release scope 明确包含 Feishu 联调或 Feishu 访问入口验收时，再执行：
-
-```bash
-make manual-feishu-admin
-make manual-feishu-check
-make manual-feishu-user
-make manual-feishu-check
-```
-
-说明：
-1. 这组步骤属于 operator 手工联调，不属于 automated gate。
-2. 它们可以作为 handoff 判断的补充条件，但不能替代 `npm run release:ready`。
-3. 如果这里失败，应在 handoff 结论中单独记录为手工集成阻塞，而不是改写 automated gate truth。
 
 ## 当前证据路径
 

@@ -38,7 +38,6 @@ import {
   upsertProjectMembershipRecord,
 } from "./project-member-governance-persistence.js";
 
-const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
 const originalManagedExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
 const originalInternalAgentImage = process.env.INTERNAL_AGENT_IMAGE;
 const INDEX_TEST_MANAGED_RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${"7".repeat(64)}`;
@@ -62,8 +61,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await cleanupChatUpstreamServers();
   __resetTaskFileLibraryBindingsForTests();
-  if (originalFeishuRefreshEnabled === undefined) delete process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
-  else process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = originalFeishuRefreshEnabled;
   if (originalManagedExecutionHttpBase === undefined) delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   else process.env.AGENT_EXECUTION_HTTP_BASE_URL = originalManagedExecutionHttpBase;
   if (originalInternalAgentImage === undefined) delete process.env.INTERNAL_AGENT_IMAGE;
@@ -739,9 +736,7 @@ async function openNotebookRunnerSocket(input: {
 }
 
 describe("api-entry-node me routes", () => {
-  it("does not start or shut down the retired file library gateway runtime", async () => {
-    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
-
+  it("does not start retired background refresh intervals", async () => {
     const deps = createDefaultNodeApiDeps();
     const reconcile = vi.fn(async () => undefined);
     const shutdown = vi.fn(async () => undefined);

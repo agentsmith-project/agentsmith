@@ -31,9 +31,9 @@ describe('me-external-connections state helpers', () => {
       {
         id: 'uec_seed_2',
         user_id: 'user_seed_2',
-        provider: 'jira',
+        provider: 'custom',
         kind: 'secret_bundle',
-        display_name: 'Jira Seed',
+        display_name: 'Custom Seed A',
         status: 'active',
         fields: [],
       },
@@ -95,9 +95,9 @@ describe('me-external-connections state helpers', () => {
     seedMockExternalConnection('user_seed_4', {
       id: 'uec_seed_5',
       user_id: 'user_seed_4',
-      provider: 'jira',
+      provider: 'custom',
       kind: 'secret_bundle',
-      display_name: 'Stored Jira',
+      display_name: 'Stored Custom Bundle',
       status: 'active',
       fields: [],
     });

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
   PROJECTED_DEPENDENCIES_ENV_FIXTURE,
   PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
   PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
@@ -11,9 +10,9 @@ import {
   TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIXTURE,
   TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
 } from './contract-schema.js';
+import * as publicContract from './index.js';
 import {
   CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA as PUBLIC_CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-  MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA as PUBLIC_MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
   PROJECTED_DEPENDENCIES_ENV_FIXTURE as PUBLIC_PROJECTED_DEPENDENCIES_ENV_FIXTURE,
   PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA as PUBLIC_PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
   PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA as PUBLIC_PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
@@ -153,21 +152,6 @@ describe('runner projected dependency env contract truth', () => {
       required: ['id', 'scope', 'key', 'content', 'content_type', 'read_only', 'updated_at', 'updated_by'],
     });
     expect(CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA.properties.scope).not.toHaveProperty('enum');
-    expect(MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA).toMatchObject({
-      type: 'object',
-      additionalProperties: false,
-      required: ['fields'],
-      properties: {
-        fields: {
-          type: 'object',
-          minProperties: 1,
-          propertyNames: {
-            type: 'string',
-            pattern: expect.stringContaining('context[_]store'),
-          },
-        },
-      },
-    });
   });
 
   it('keeps rejected product semantics and retired raw secret fields out of the support API projection contract', () => {
@@ -177,7 +161,6 @@ describe('runner projected dependency env contract truth', () => {
       TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_SCHEMA,
       TASK_WORKSPACE_ACCESS_RELEASE_REQUEST_FIXTURE,
       CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
-      MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
       PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA,
       PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA,
       PROJECTED_DEPENDENCIES_ENV_FIXTURE,
@@ -209,9 +192,7 @@ describe('runner projected dependency env contract truth', () => {
     expect(PUBLIC_CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA).toBe(
       CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA,
     );
-    expect(PUBLIC_MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA).toBe(
-      MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA,
-    );
+    expect(publicContract).not.toHaveProperty('MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA');
     expect(PUBLIC_RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS).toBe(
       RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS,
     );

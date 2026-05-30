@@ -243,16 +243,6 @@ describe('visual baseline support', () => {
       start: "  'agent-task-provider-upstream-error': {",
       end: "  'agent-task-running': {",
     });
-    const connectedConnectionsSetupSource = extractSourceSection({
-      source: visualSpec,
-      start: "  'workspace-connections-feishu-connected': {",
-      end: "  'workspace-connections-feishu-disabled': {",
-    });
-    const disabledConnectionsSetupSource = extractSourceSection({
-      source: visualSpec,
-      start: "  'workspace-connections-feishu-disabled': {",
-      end: "  'workspace-feishu-locked': {",
-    });
     const systemInfoSetupSource = extractSourceSection({
       source: visualSpec,
       start: "  'system-info': {",
@@ -261,13 +251,9 @@ describe('visual baseline support', () => {
 
     expect(hiddenTerminalBlockedSetupSource).toContain('maxDiffPixelRatio: 0.0002');
     expect(providerUpstreamErrorSetupSource).toContain('maxDiffPixelRatio: 0.0002');
-    expect(connectedConnectionsSetupSource).toContain('maxDiffPixelRatio: 0.000005');
-    expect(disabledConnectionsSetupSource).toContain('maxDiffPixelRatio: 0.000005');
     expect(hiddenTerminalBlockedSetupSource).not.toContain('maxDiffPixelRatio: 0.002');
     expect(providerUpstreamErrorSetupSource).not.toContain('maxDiffPixelRatio: 0.002');
     expect(providerUpstreamErrorSetupSource).not.toContain('maxDiffPixelRatio: 0.008');
-    expect(connectedConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
-    expect(disabledConnectionsSetupSource).not.toContain('maxDiffPixelRatio: 0,');
     expect(systemInfoSetupSource).toContain('screenshotOptions:');
     expect(systemInfoSetupSource).toContain('maxDiffPixels: 40000');
     expect(systemInfoSetupSource).not.toContain('maxDiffPixelRatio');
@@ -394,8 +380,6 @@ describe('visual baseline support', () => {
     const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
     const systemWorkspacesDeleteConfirmation = groupVisualBaselineCatalogByScenario().get('system-workspaces-delete-confirmation');
     const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
-    const disabledConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-disabled');
-    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
 
     expect(systemWorkspacesEmpty?.semanticAssertions.primaryActionTestIds).toEqual([
       'system-workspaces__empty::system-workspaces__empty-create',
@@ -443,36 +427,15 @@ describe('visual baseline support', () => {
       'system-workspaces__delete-dialog',
     ]);
     expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.maxProminentActions).toBe(1);
-    expect(disabledConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
-    expect(disabledConnections?.semanticAssertions.prominentActionScopeTestIds).toEqual([]);
-    expect(disabledConnections?.semanticAssertions.maxProminentActions).toBe(0);
-    expect(connectedConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
-    expect(connectedConnections?.semanticAssertions.prominentActionScopeTestIds).toEqual([]);
-    expect(connectedConnections?.semanticAssertions.maxProminentActions).toBe(0);
-  });
-
-  it('forbids raw backend ISO timestamps in workspace connections visual semantics', () => {
-    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
-    expect(connectedConnections).toBeDefined();
-
-    expect(connectedConnections?.semanticAssertions.forbiddenVisibleTextPatterns).toEqual(expect.arrayContaining([
-      String.raw`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z\b`,
-    ]));
-    expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').forbiddenVisibleTextPatterns)
-      .toContain(String.raw`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z\b`);
   });
 
   it('declares required viewer-local datetime metadata for scenes that expose user-facing timestamps', () => {
-    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
     const agentTaskLifecycleList = groupVisualBaselineCatalogByScenario().get('agent-task-lifecycle-list');
     const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
     const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
     const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
     const systemWorkspacesDeleteConfirmation = groupVisualBaselineCatalogByScenario().get('system-workspaces-delete-confirmation');
 
-    expect(connectedConnections?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
-      'workspace-connections__last-refresh-value',
-    ]);
     expect(agentTaskLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'agent-tasks__task-card--task_001::agent-tasks__task-last-activity',
       'agent-tasks__task-card--task_001::agent-tasks__task-created-at',
@@ -495,8 +458,8 @@ describe('visual baseline support', () => {
       'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
       'system-workspaces__editor::system-workspaces__detail-facts-initialized-at',
     ]);
-    expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').requiredViewerLocalDateTimeTestIds)
-      .toContain('workspace-connections__last-refresh-value');
+    expect(resolveVisualBaselineSemanticAssertions('agent-task-lifecycle-list').requiredViewerLocalDateTimeTestIds)
+      .toContain('agent-tasks__task-card--task_001::agent-tasks__task-last-activity');
   });
 
   it('rejects invalid story-owned forbidden visible text regex patterns before visual runtime', () => {
@@ -516,24 +479,24 @@ describe('visual baseline support', () => {
     "requiredEvidence": ["visual"]
   },
   "externalDependencies": [],
-  "entryRoute": "/en-US/workspaces/ws_default/connections",
+  "entryRoute": "/en-US/user/third-party-accounts",
   "goal": "Verify visual semantic patterns fail before runtime.",
   "narrative": "Regex semantic rules must be valid and reviewable before the screenshot lane runs.",
   "scenes": [
     {
-      "sceneId": "workspace-connections",
-      "route": "/en-US/workspaces/ws_default/connections",
-      "stableMarkers": ["workspace-connections__capability-note"]
+      "sceneId": "third-party-accounts",
+      "route": "/en-US/user/third-party-accounts",
+      "stableMarkers": ["third-party-accounts__list-section"]
     }
   ],
   "steps": [
     {
-      "stepId": "open-workspace-connections",
-      "sceneId": "workspace-connections",
-      "intent": "Open workspace connections",
-      "action": "Open workspace connections",
-      "target": "workspace-connections__capability-note",
-      "expectedFeedback": "Workspace connections are ready for review",
+      "stepId": "open-personal-connections",
+      "sceneId": "third-party-accounts",
+      "intent": "Open personal connections",
+      "action": "Open personal connections",
+      "target": "third-party-accounts__list-section",
+      "expectedFeedback": "Personal connections are ready for review",
       "evidence": ["visual"]
     }
   ],
@@ -541,10 +504,10 @@ describe('visual baseline support', () => {
     "visualReview": {
       "scenes": [
         {
-          "sceneId": "workspace-connections",
-          "scenarioId": "workspace-connections",
-          "scenario": "Workspace connections visual review.",
-          "group": "workspace_pages",
+          "sceneId": "third-party-accounts",
+          "scenarioId": "third-party-accounts-invalid-pattern",
+          "scenario": "Personal connections visual review.",
+          "group": "user_pages",
           "codeRefs": ["e2e/visual.spec.ts"],
           "capture": "full_page",
           "semanticAssertions": {
@@ -577,24 +540,24 @@ describe('visual baseline support', () => {
     "requiredEvidence": ["visual"]
   },
   "externalDependencies": [],
-  "entryRoute": "/en-US/workspaces/ws_default/connections",
+  "entryRoute": "/en-US/user/third-party-accounts",
   "goal": "Verify viewer-local datetime semantic contracts fail before runtime.",
   "narrative": "Viewer-local datetime rules must be structurally valid before the screenshot lane runs.",
   "scenes": [
     {
-      "sceneId": "workspace-connections",
-      "route": "/en-US/workspaces/ws_default/connections",
-      "stableMarkers": ["workspace-connections__capability-note"]
+      "sceneId": "third-party-accounts",
+      "route": "/en-US/user/third-party-accounts",
+      "stableMarkers": ["third-party-accounts__list-section"]
     }
   ],
   "steps": [
     {
-      "stepId": "open-workspace-connections",
-      "sceneId": "workspace-connections",
-      "intent": "Open workspace connections",
-      "action": "Open workspace connections",
-      "target": "workspace-connections__capability-note",
-      "expectedFeedback": "Workspace connections are ready for review",
+      "stepId": "open-personal-connections",
+      "sceneId": "third-party-accounts",
+      "intent": "Open personal connections",
+      "action": "Open personal connections",
+      "target": "third-party-accounts__list-section",
+      "expectedFeedback": "Personal connections are ready for review",
       "evidence": ["visual"]
     }
   ],
@@ -602,14 +565,14 @@ describe('visual baseline support', () => {
     "visualReview": {
       "scenes": [
         {
-          "sceneId": "workspace-connections",
-          "scenarioId": "workspace-connections",
-          "scenario": "Workspace connections visual review.",
-          "group": "workspace_pages",
+          "sceneId": "third-party-accounts",
+          "scenarioId": "third-party-accounts-invalid-datetime",
+          "scenario": "Personal connections visual review.",
+          "group": "user_pages",
           "codeRefs": ["e2e/visual.spec.ts"],
           "capture": "full_page",
           "semanticAssertions": {
-            "requiredViewerLocalDateTimeTestIds": "workspace-connections__last-refresh-value"
+            "requiredViewerLocalDateTimeTestIds": "agent-tasks__task-last-activity"
           }
         }
       ]
@@ -779,9 +742,6 @@ describe('visual baseline support', () => {
     expect(grouped.get('api-keys-key-created-dialog')?.stableMarkers).toEqual([
       'api-keys__key-created-dialog',
     ]);
-    expect(grouped.get('workspace-feishu-setup-credentials')?.stableMarkers).toEqual([
-      'ws-feishu__save-draft',
-    ]);
     expect(grouped.get('third-party-accounts')?.stableMarkers).toEqual([
       'third-party-accounts__list-section',
       'third-party-accounts__create-btn',
@@ -921,9 +881,6 @@ describe('visual baseline support', () => {
 
     expect(grouped.get('third-party-accounts')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
     expect(grouped.get('third-party-accounts-edit-sheet')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
-    expect(grouped.get('workspace-connections-feishu-disabled')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
-    expect(grouped.get('workspace-connections-feishu-connected')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
-    expect(grouped.get('workspace-feishu-setup-credentials')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
     expect(grouped.get('credentials')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
     expect(grouped.get('dialog-create-credential')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
   });
@@ -1096,10 +1053,6 @@ describe('visual baseline support', () => {
       'system-workspaces__list',
       'system-workspaces__editor',
       'system-workspaces__read-only-notice',
-    ]);
-
-    expect(resolveVisualBaselineStableMarkers('workspace-feishu-setup-credentials')).toEqual([
-      'ws-feishu__save-draft',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('overview')).toEqual([

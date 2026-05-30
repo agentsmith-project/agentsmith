@@ -3,7 +3,6 @@ import {
   handleWorkspaceProjectCreatorsRoute,
 } from './project-workspace-governance-routes.js';
 import type { ProjectRouteContext } from './project-route-types.js';
-import { handleWorkspaceFeishuRoute } from './workspace-feishu-routes.js';
 import { buildWorkspaceMembersFromConfig } from './workspace-permissions.js';
 
 export async function handleWorkspaceRoutes(context: ProjectRouteContext): Promise<boolean> {
@@ -82,31 +81,6 @@ export async function handleWorkspaceRoutes(context: ProjectRouteContext): Promi
       defaultWorkspace,
       workspaceId: route.workspaceId,
       json,
-    });
-  }
-
-  if (
-    (
-      route.kind === 'workspaceFeishuSettings'
-      || route.kind === 'workspaceFeishuVerifyStart'
-      || route.kind === 'workspaceFeishuEnable'
-      || route.kind === 'workspaceFeishuOAuthComplete'
-      || route.kind === 'workspaceFeishuUserAuthStart'
-    )
-    && route.workspaceId
-  ) {
-    return handleWorkspaceFeishuRoute({
-      method,
-      req,
-      res,
-      deps,
-      user,
-      workspaces,
-      defaultWorkspace,
-      workspaceId: route.workspaceId,
-      json,
-      readBody,
-      routeKind: route.kind,
     });
   }
 

@@ -7,11 +7,6 @@ export type ProjectsRoute =
   | { kind: 'workspaceProjectCreators'; workspaceId: string }
   | { kind: 'workspaceDirectoryUsers'; workspaceId: string }
   | { kind: 'workspaceGovernableProjects'; workspaceId: string }
-  | { kind: 'workspaceFeishuSettings'; workspaceId: string }
-  | { kind: 'workspaceFeishuVerifyStart'; workspaceId: string }
-  | { kind: 'workspaceFeishuEnable'; workspaceId: string }
-  | { kind: 'workspaceFeishuOAuthComplete'; workspaceId: string }
-  | { kind: 'workspaceFeishuUserAuthStart'; workspaceId: string }
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
@@ -178,46 +173,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     return {
       kind: 'workspaceGovernableProjects',
       workspaceId: decodeURIComponent(workspaceGovernableProjectsMatched[1]),
-    };
-  }
-
-  const workspaceFeishuSettingsMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/integrations\/feishu\/?$/);
-  if (workspaceFeishuSettingsMatched) {
-    return {
-      kind: 'workspaceFeishuSettings',
-      workspaceId: decodeURIComponent(workspaceFeishuSettingsMatched[1]),
-    };
-  }
-
-  const workspaceFeishuVerifyStartMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/integrations\/feishu\/verify\/start\/?$/);
-  if (workspaceFeishuVerifyStartMatched) {
-    return {
-      kind: 'workspaceFeishuVerifyStart',
-      workspaceId: decodeURIComponent(workspaceFeishuVerifyStartMatched[1]),
-    };
-  }
-
-  const workspaceFeishuEnableMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/integrations\/feishu\/enable\/?$/);
-  if (workspaceFeishuEnableMatched) {
-    return {
-      kind: 'workspaceFeishuEnable',
-      workspaceId: decodeURIComponent(workspaceFeishuEnableMatched[1]),
-    };
-  }
-
-  const workspaceFeishuOAuthCompleteMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/feishu\/oauth\/complete\/?$/);
-  if (workspaceFeishuOAuthCompleteMatched) {
-    return {
-      kind: 'workspaceFeishuOAuthComplete',
-      workspaceId: decodeURIComponent(workspaceFeishuOAuthCompleteMatched[1]),
-    };
-  }
-
-  const workspaceFeishuUserAuthStartMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/me\/feishu\/auth\/start\/?$/);
-  if (workspaceFeishuUserAuthStartMatched) {
-    return {
-      kind: 'workspaceFeishuUserAuthStart',
-      workspaceId: decodeURIComponent(workspaceFeishuUserAuthStartMatched[1]),
     };
   }
 

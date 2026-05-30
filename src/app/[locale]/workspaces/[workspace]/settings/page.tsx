@@ -4,7 +4,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderOpen, Link2, Loader2, Plus, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
+import { FolderOpen, Loader2, Plus, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -23,7 +23,7 @@ import {
   resolveWorkspaceProjectEntryPath,
   resolveWorkspaceGovernanceProjectActions,
 } from '@/lib/projects/project-surface-access';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { getApiClient, ProjectAPI, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
 import type { WorkspaceDirectoryUser } from '@/lib/api/types';
@@ -47,11 +47,6 @@ export default function WorkspaceSettingsPage() {
     data: currentWorkspace,
     isFetched: isWorkspaceFetched,
   } = useWorkspace(workspaceId ?? '');
-  const { data: feishuIntegration } = useQuery({
-    queryKey: ['workspace', workspaceId, 'feishu-integration'],
-    queryFn: () => workspaceAPI.getFeishuIntegration(workspaceId ?? ''),
-    enabled: Boolean(workspaceId && canManageWorkspaceGovernance),
-  });
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
   const {
     data: discoverableProjects = [],
@@ -316,8 +311,6 @@ export default function WorkspaceSettingsPage() {
             <span>{t('workspace_projects_count')}: {projects.length}</span>
             <span aria-hidden="true">·</span>
             <span>{t('workspace_active_projects_count')}: {activeProjects.length}</span>
-            <span aria-hidden="true">·</span>
-            <span>{t(`feishu_status_${feishuIntegration?.status ?? 'not_configured'}`)}</span>
           </div>
 
           <section className="space-y-4 py-5" data-testid="ws-settings__workspace">
@@ -340,42 +333,6 @@ export default function WorkspaceSettingsPage() {
                 data-testid="ws-settings__open-context"
               >
                 {t('workspace_open_context')}
-              </Link>
-            </div>
-          </section>
-
-          <section className="space-y-4 py-5" data-testid="ws-settings__integrations">
-            <SectionHeading
-              title={t('workspace_integrations_title')}
-              subtitle={t('workspace_integrations_description')}
-            />
-            <div className="space-y-3" data-testid="ws-settings__integration-feishu">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-tertiary">
-                  <Link2 className="h-4 w-4 text-icon-default" />
-                  {t('workspace_integration_feishu_label')}
-                </div>
-                <p className="text-sm font-medium text-foreground">
-                  {t(`feishu_status_${feishuIntegration?.status ?? 'not_configured'}`)}
-                </p>
-                <p className="max-w-2xl text-sm text-secondary">
-                  {t('workspace_integration_feishu_scope')}
-                </p>
-                <p className="text-xs text-tertiary">
-                  {feishuIntegration?.verified_by_email
-                    ? t('workspace_integration_feishu_verified_by', { email: feishuIntegration.verified_by_email })
-                    : t('workspace_integration_feishu_verified_pending')}
-                </p>
-              </div>
-              <Link
-                href={`${workspaceBasePath}/settings/feishu`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="ws-settings__open-feishu"
-              >
-                <Link2 className="mr-2 h-4 w-4" />
-                {feishuIntegration?.status === 'enabled'
-                  ? t('workspace_open_feishu_review')
-                  : t('workspace_open_feishu_setup')}
               </Link>
             </div>
           </section>

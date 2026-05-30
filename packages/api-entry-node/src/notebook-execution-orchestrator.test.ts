@@ -213,7 +213,7 @@ async function runManagedProjectionDispatchForTest(input: {
     content: string;
   }>;
   externalConnections?: Array<{
-    provider: string;
+    customDomain: string;
     status?: 'active' | 'expired' | 'reauth_required' | 'error';
     fields: Array<{ key: string; value: string; secret: boolean }>;
   }>;
@@ -290,13 +290,12 @@ async function runManagedProjectionDispatchForTest(input: {
   for (const connection of input.externalConnections ?? []) {
     await createUserExternalConnection(docStore, {
       user_id: task.owner_user_id,
-      workspace_id: task.workspace_id,
-      provider: connection.provider,
-      kind: 'oauth_account',
-      display_name: `managed ${connection.provider} ${input.caseId}`,
+      provider: 'custom',
+      custom_domain: connection.customDomain,
+      kind: 'secret_bundle',
+      display_name: `custom bundle ${input.caseId}`,
       status: connection.status ?? 'active',
       fields: connection.fields,
-      scopes: ['sample:read'],
     });
   }
 
@@ -849,7 +848,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       caseId: 'projected_managed_connection_omitted',
       contextEntries: [],
       externalConnections: [{
-        provider: 'sample-provider',
+        customDomain: 'runtime-dependency.example.test',
         fields: [
           { key: 'access_token', value: 'sample-access-token', secret: true },
           { key: 'endpoint', value: 'https://runtime-dependency.example.test/mcp', secret: false },

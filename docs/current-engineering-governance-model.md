@@ -66,7 +66,7 @@ Verification governance rules:
 - `lane:visual` authority artifact is producer-owned `run-manifest.json` plus run-scoped actual captures under the same review root; committed baselines remain comparison input, not release authority.
 - backend-real UX trace authority is producer-owned `ux-trace-index.json` plus per-bundle `contract-snapshot.json`; aggregate verification must consume those snapshots instead of reloading current repo story definitions.
 - `failure_class` in canonical `result.json` is a gate-verdict taxonomy only. It must not be treated as the same thing as troubleshooting categories produced by local diagnosis tools or incident notes.
-- Automated product-side readiness verification and operator-only checks must stay separated. Current manual Feishu steps belong in operator guidance, not in machine-readable gate identity or gate-result truth.
+- Automated product-side readiness verification and operator-only checks must stay separated. Manual operator checks belong in operator guidance, not in machine-readable gate identity or gate-result truth.
 - Human-oriented campaign guidance lives in [Verification Campaigns v1](./testing/verification-campaigns-v1.md); if it conflicts with manifests or contracts, machine-readable governance truth wins.
 
 <!-- current-runtime-lines:governance-model:start -->

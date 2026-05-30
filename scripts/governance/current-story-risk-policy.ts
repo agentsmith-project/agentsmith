@@ -205,9 +205,6 @@ export const CURRENT_STORY_RISK_POLICY = {
     'workspace-admin-boundary-and-project-creator': {
       policy_refs: ['identity_access_boundary'],
     },
-    'workspace-connections-to-project-use': {
-      policy_refs: ['identity_access_boundary'],
-    },
     'workspace-entry-and-project-discovery': {
       policy_refs: ['identity_access_boundary'],
     },

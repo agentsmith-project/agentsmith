@@ -8,8 +8,6 @@ const mockList = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockRemove = vi.fn();
-const mockRefresh = vi.fn();
-
 vi.mock('next-intl', () => ({
   useTranslations: vi.fn(() => (key: string) => key),
 }));
@@ -22,7 +20,6 @@ vi.mock('@/lib/api', () => ({
       create: mockCreate,
       update: mockUpdate,
       remove: mockRemove,
-      refresh: mockRefresh,
     };
   }),
   handleErrorForToast: vi.fn(),
@@ -59,7 +56,6 @@ describe('ThirdPartyAccountsPage', () => {
     mockCreate.mockResolvedValue({ id: 'uec_1' });
     mockUpdate.mockResolvedValue({ id: 'uec_1' });
     mockRemove.mockResolvedValue(undefined);
-    mockRefresh.mockResolvedValue({ id: 'uec_3' });
   });
 
   it('renders personal connections as a quiet settings sheet without dashboard-style chrome', async () => {
@@ -74,7 +70,6 @@ describe('ThirdPartyAccountsPage', () => {
     expect(screen.getByText('personal_scope_note')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__capability-note')).toHaveTextContent('agent_capability_note');
     expect(screen.getByRole('button', { name: 'create_personal_connection' })).toBeInTheDocument();
-    expect(screen.queryByTestId('third-party-accounts__feishu-connect')).not.toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__summary-strip')).not.toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__list-section')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__list-section').className).not.toMatch(/rounded-lg|shadow-card/);
@@ -90,74 +85,57 @@ describe('ThirdPartyAccountsPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__sheet')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__sheet').className).toMatch(/sm:w-\[640px\]/);
-    expect(screen.getByTestId('third-party-accounts__provider-select')).toBeInTheDocument();
+    expect(screen.queryByTestId('third-party-accounts__provider-select')).not.toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__submit-btn')).toBeInTheDocument();
     expect(screen.getByText('create_title')).toBeInTheDocument();
     expect(screen.queryByText('personal_scope_badge')).not.toBeInTheDocument();
     expect(screen.queryByText('personal_scope_dialog_note')).not.toBeInTheDocument();
   });
 
-  it('creates a Jira secret bundle with provider-specific fields', async () => {
+  it('creates a custom secret bundle with generic fields', async () => {
     render(<ThirdPartyAccountsPage />, { wrapper });
 
     await user.click(await screen.findByTestId('third-party-accounts__create-btn'));
 
-    await user.type(screen.getByLabelText('display_name_label'), 'Team Jira');
+    await user.type(screen.getByLabelText('display_name_label'), 'Issue Tracker Bundle');
+    await user.type(screen.getByLabelText('custom_domain_label'), 'issues.internal.example');
     await user.type(screen.getByLabelText('note_label'), 'Used for team issue sync');
-    await user.type(screen.getByLabelText('jira_base_url_label'), 'https://company.atlassian.net');
-    await user.type(screen.getByLabelText('jira_token_label'), 'jira-secret');
+    await user.click(screen.getByTestId('third-party-accounts__field-secret-0'));
+    await user.type(screen.getByTestId('third-party-accounts__field-key-0'), 'base_url');
+    await user.type(screen.getByTestId('third-party-accounts__field-value-0'), 'https://issues.internal.example');
+    await user.type(screen.getByTestId('third-party-accounts__field-description-0'), 'Base URL');
+    await user.click(screen.getByTestId('third-party-accounts__add-field'));
+    await user.type(screen.getByTestId('third-party-accounts__field-key-1'), 'token');
+    await user.type(screen.getByTestId('third-party-accounts__field-value-1'), 'secret-token');
+    await user.type(screen.getByTestId('third-party-accounts__field-description-1'), 'API token');
 
     await user.click(screen.getByRole('button', { name: 'create' }));
 
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalledWith({
-        provider: 'jira',
+        provider: 'custom',
         kind: 'secret_bundle',
-        display_name: 'Team Jira',
+        custom_domain: 'issues.internal.example',
+        display_name: 'Issue Tracker Bundle',
         note: 'Used for team issue sync',
         status: 'active',
         fields: [
-          { key: 'base_url', value: 'https://company.atlassian.net', description: 'Jira base URL', secret: false },
-          { key: 'api_token', value: 'jira-secret', description: 'Jira API token', secret: true },
+          { key: 'base_url', value: 'https://issues.internal.example', description: 'Base URL', secret: false },
+          { key: 'token', value: 'secret-token', description: 'API token', secret: true },
         ],
-        account_identity: undefined,
-        scopes: undefined,
-        expires_at: undefined,
-        last_error: undefined,
-        custom_domain: undefined,
       });
     });
   });
 
-  it('creates a GitHub ssh keypair with provider-specific fields', async () => {
+  it('keeps the create form custom-only without provider templates', async () => {
     render(<ThirdPartyAccountsPage />, { wrapper });
 
     await user.click(await screen.findByTestId('third-party-accounts__create-btn'));
 
-    await user.selectOptions(screen.getByLabelText('provider_label'), 'github');
-    await user.selectOptions(screen.getByLabelText('kind_label'), 'ssh_keypair');
-    await user.type(screen.getByLabelText('display_name_label'), 'GitHub Deploy Key');
-    await user.type(screen.getByLabelText('note_label'), 'Repo deploy key');
-    await user.clear(screen.getByLabelText('git_host_optional_label'));
-    await user.type(screen.getByLabelText('git_host_optional_label'), 'github.enterprise.local');
-    await user.type(screen.getByLabelText('ssh_public_key_label'), 'ssh-ed25519 AAAA');
-    await user.type(screen.getByLabelText('ssh_private_key_label'), '-----BEGIN PRIVATE KEY-----');
-
-    await user.click(screen.getByRole('button', { name: 'create' }));
-
-    await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
-        provider: 'github',
-        kind: 'ssh_keypair',
-        display_name: 'GitHub Deploy Key',
-        note: 'Repo deploy key',
-        fields: [
-          { key: 'git_host', value: 'github.enterprise.local', description: 'Git host', secret: false },
-          { key: 'public_key', value: 'ssh-ed25519 AAAA', description: 'SSH public key', secret: false },
-          { key: 'private_key', value: '-----BEGIN PRIVATE KEY-----', description: 'SSH private key', secret: true },
-        ],
-      }));
-    });
+    expect(screen.queryByTestId('third-party-accounts__provider-select')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('third-party-accounts__kind-select')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('provider_label')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('kind_label')).not.toBeInTheDocument();
   });
 
   it('preserves existing secret on edit when secret input is left blank', async () => {
@@ -165,19 +143,16 @@ describe('ThirdPartyAccountsPage', () => {
       {
         id: 'uec_existing',
         user_id: 'user_1',
-        provider: 'github',
+        provider: 'custom',
         kind: 'secret_bundle',
-        display_name: 'GitHub Token',
+        display_name: 'Tool Token',
+        custom_domain: 'tools.internal.example',
         note: null,
         status: 'active',
         fields: [
-          { key: 'api_base_url', description: 'GitHub API base URL', secret: false, masked_value: 'https://api.github.com' },
-          { key: 'token', description: 'GitHub token', secret: true, masked_value: 'gh••••en' },
+          { key: 'base_url', description: 'Base URL', secret: false, masked_value: 'https://tools.internal.example' },
+          { key: 'token', description: 'API token', secret: true, masked_value: 'to••••en' },
         ],
-        account_identity: null,
-        scopes: null,
-        expires_at: null,
-        last_refreshed_at: null,
         last_used_at: null,
         last_error: null,
         created_at: '2026-03-05T00:00:00Z',
@@ -189,7 +164,7 @@ describe('ThirdPartyAccountsPage', () => {
 
     await user.click(await screen.findByTestId('third-party-accounts__row-uec_existing'));
     await user.clear(screen.getByLabelText('display_name_label'));
-    await user.type(screen.getByLabelText('display_name_label'), 'GitHub Token Updated');
+    await user.type(screen.getByLabelText('display_name_label'), 'Tool Token Updated');
 
     await user.click(screen.getByRole('button', { name: 'save' }));
 
@@ -197,18 +172,14 @@ describe('ThirdPartyAccountsPage', () => {
       expect(mockUpdate).toHaveBeenCalledWith(
         'uec_existing',
         {
-          custom_domain: undefined,
-          display_name: 'GitHub Token Updated',
+          custom_domain: 'tools.internal.example',
+          display_name: 'Tool Token Updated',
           note: null,
           status: 'active',
           fields: [
-            { key: 'api_base_url', value: 'https://api.github.com', description: 'GitHub API base URL', secret: false },
-            { key: 'token', value: '', description: 'GitHub token', secret: true },
+            { key: 'base_url', value: 'https://tools.internal.example', description: 'Base URL', secret: false },
+            { key: 'token', value: '', description: 'API token', secret: true },
           ],
-          account_identity: undefined,
-          scopes: undefined,
-          expires_at: undefined,
-          last_error: undefined,
         },
       );
     });
@@ -229,10 +200,6 @@ describe('ThirdPartyAccountsPage', () => {
           { key: 'base_url', description: 'Base URL', secret: false, masked_value: 'https://api.custom.example.com' },
           { key: 'token', description: 'API token', secret: true, masked_value: 'tok••••redacted' },
         ],
-        account_identity: null,
-        scopes: null,
-        expires_at: null,
-        last_refreshed_at: null,
         last_used_at: null,
         last_error: null,
         created_at: '2026-03-05T00:00:00Z',
@@ -291,10 +258,6 @@ describe('ThirdPartyAccountsPage', () => {
               masked_value: 'https://api.visual.example.com',
             },
           ],
-          account_identity: null,
-          scopes: null,
-          expires_at: null,
-          last_refreshed_at: null,
           last_used_at: null,
           last_error: null,
           created_at: '2026-03-05T00:00:00Z',
@@ -362,10 +325,6 @@ describe('ThirdPartyAccountsPage', () => {
             masked_value: 'https://api.visual.example.com',
           },
         ],
-        account_identity: null,
-        scopes: null,
-        expires_at: null,
-        last_refreshed_at: null,
         last_used_at: null,
         last_error: null,
         created_at: '2026-03-05T00:00:00Z',
@@ -443,10 +402,6 @@ describe('ThirdPartyAccountsPage', () => {
           masked_value: 'https://api.visual.example.com',
         },
       ],
-      account_identity: null,
-      scopes: null,
-      expires_at: null,
-      last_refreshed_at: null,
       last_used_at: null,
       last_error: null,
       created_at: '2026-03-05T00:00:00Z',
@@ -486,10 +441,6 @@ describe('ThirdPartyAccountsPage', () => {
           masked_value: 'https://api.visual.example.com',
         },
       ],
-      account_identity: null,
-      scopes: null,
-      expires_at: null,
-      last_refreshed_at: null,
       last_used_at: null,
       last_error: null,
       created_at: '2026-03-05T00:00:00Z',
@@ -543,10 +494,6 @@ describe('ThirdPartyAccountsPage', () => {
           masked_value: 'https://api.visual.example.com',
         },
       ],
-      account_identity: null,
-      scopes: null,
-      expires_at: null,
-      last_refreshed_at: null,
       last_used_at: null,
       last_error: null,
       created_at: '2026-03-05T00:00:00Z',
@@ -591,10 +538,6 @@ describe('ThirdPartyAccountsPage', () => {
           masked_value: 'https://api.visual.example.com',
         },
       ],
-      account_identity: null,
-      scopes: null,
-      expires_at: null,
-      last_refreshed_at: null,
       last_used_at: null,
       last_error: null,
       created_at: '2026-03-05T00:00:00Z',

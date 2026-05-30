@@ -41,8 +41,8 @@ import {
   runTerminalCommandViaWs,
   spawnAndCapture,
   startAgentTaskRunViaApi,
-  startMockFeishuMcpServer,
-  startMockJiraServer,
+  startMockExternalHttpService,
+  startMockExternalMcpService,
   waitForExpiredWorkloadReleasedViaAsbcp,
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
@@ -928,6 +928,7 @@ describe('integration-real-helpers', () => {
       token: 'mock_token_user_001_12345',
       provider: 'custom',
       kind: 'secret_bundle',
+      customDomain: 'custom.local',
       displayName: 'Seeded Connection',
       note: 'seeded via api',
       fields: [
@@ -941,6 +942,9 @@ describe('integration-real-helpers', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer mock_token_user_001_12345',
+        }),
+        data: expect.objectContaining({
+          custom_domain: 'custom.local',
         }),
       }),
     );
@@ -1703,14 +1707,13 @@ describe('integration-real-helpers', () => {
     ).toThrow('task_id_required_for_task_bound_agent_task_runner');
   });
 
-  it('returns pod-reachable mock Jira URLs derived from the Agent execution websocket host', async () => {
+  it('returns pod-reachable mock external HTTP service URLs derived from the Agent execution websocket host', async () => {
     const previousWsBaseUrl = process.env.AGENT_EXECUTION_WS_BASE_URL;
     const previousGateway = process.env.INTEGRATION_POD_HOST_GATEWAY;
     process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://172.19.0.1:20075';
     delete process.env.INTEGRATION_POD_HOST_GATEWAY;
-    const server = await startMockJiraServer({
-      displayName: 'Pod Jira',
-      expectedToken: 'jira-token',
+    const server = await startMockExternalHttpService({
+      expectedToken: 'external-service-token',
     });
     try {
       expect(server.baseUrl).toMatch(/^http:\/\/172\.19\.0\.1:\d+$/);
@@ -1729,13 +1732,13 @@ describe('integration-real-helpers', () => {
     }
   });
 
-  it('uses the explicit pod host gateway override for mock Feishu MCP endpoints', async () => {
+  it('uses the explicit pod host gateway override for mock external MCP endpoints', async () => {
     const previousWsBaseUrl = process.env.AGENT_EXECUTION_WS_BASE_URL;
     const previousGateway = process.env.INTEGRATION_POD_HOST_GATEWAY;
     process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://127.0.0.1:20076';
     process.env.INTEGRATION_POD_HOST_GATEWAY = '10.88.0.1';
-    const server = await startMockFeishuMcpServer({
-      expectedToken: 'feishu-token',
+    const server = await startMockExternalMcpService({
+      expectedToken: 'external-mcp-token',
       toolName: 'mock_tool',
     });
     try {

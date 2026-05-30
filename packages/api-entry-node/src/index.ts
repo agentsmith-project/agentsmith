@@ -8,7 +8,6 @@ import {
 import { handleRequest } from './request-handler.js';
 import { createGovernanceRunner } from './governance-runner.js';
 import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
-import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
 export {
   createWorkspaceFoundationStoreResourceFromEnv,
   getWorkspaceFoundationBaseCollections,
@@ -61,7 +60,6 @@ export function createNodeApiServer(
   const shutdownServerResources = async (): Promise<void> => {
     if (shutdownPerformed) return;
     shutdownPerformed = true;
-    if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
     ACTIVE_CHAT_STREAMS.clear();
     await deps.notebookTerminalService.shutdown?.();
     await deps.agentExecutionService.shutdown?.();
@@ -76,17 +74,6 @@ export function createNodeApiServer(
     }
     return shutdownPromise;
   };
-
-  const feishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED !== 'false';
-  const feishuRefreshIntervalMs = Number.parseInt(process.env.FEISHU_OAUTH_REFRESH_RUNNER_INTERVAL_MS ?? '300000', 10);
-  const feishuRefreshInterval = feishuRefreshEnabled
-    ? setInterval(() => {
-      void refreshExpiringFeishuConnections(deps.docStore).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : 'unknown_error';
-        process.stderr.write(`[api-entry-node] feishu refresh failed: ${message}\n`);
-      });
-    }, Number.isFinite(feishuRefreshIntervalMs) && feishuRefreshIntervalMs > 0 ? feishuRefreshIntervalMs : 300000)
-    : null;
 
   server.close = ((callback?: (error?: Error) => void) => {
     const resolveClose = (closeError?: Error) => {

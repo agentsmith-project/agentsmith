@@ -49,12 +49,12 @@ class ContextCliTests(unittest.TestCase):
         clear=False,
     )
     def test_build_query_uses_project_member_scope_contract(self) -> None:
-        args = MagicMock(scope="project_member", key="bindings.sample_provider.connection_id", workspace_id=None, project_id=None, task_id=None)
+        args = MagicMock(scope="project_member", key="bindings.default.connection_id", workspace_id=None, project_id=None, task_id=None)
         self.assertEqual(
             context_cli.build_query(args),
             {
                 "scope": "project_member",
-                "key": "bindings.sample_provider.connection_id",
+                "key": "bindings.default.connection_id",
                 "workspace_id": "ws_default",
                 "project_id": "proj_1",
             },
@@ -71,15 +71,14 @@ class ContextCliTests(unittest.TestCase):
         },
         clear=False,
     )
-    def test_build_query_keeps_project_context_for_member_managed_credential_projection(self) -> None:
-        args = MagicMock(scope="member", key="managed_credentials.sample_provider", workspace_id=None, project_id=None, task_id=None)
+    def test_build_query_keeps_member_context_provider_neutral(self) -> None:
+        args = MagicMock(scope="member", key="credentials.sample_token", workspace_id=None, project_id=None, task_id=None)
         self.assertEqual(
             context_cli.build_query(args),
             {
                 "scope": "member",
-                "key": "managed_credentials.sample_provider",
+                "key": "credentials.sample_token",
                 "workspace_id": "ws_default",
-                "project_id": "proj_1",
             },
         )
 
@@ -174,15 +173,14 @@ class ContextCliTests(unittest.TestCase):
         },
         clear=False,
     )
-    def test_runtime_helper_keeps_project_context_for_member_managed_projection(self) -> None:
+    def test_runtime_helper_keeps_member_context_provider_neutral(self) -> None:
         client = capability_runtime.ContextStoreClient(api_base="http://localhost:20000/api/v1", execution_ticket="ticket_123")
         self.assertEqual(
-            client.build_query(scope="member", key="managed_credentials.sample_provider"),
+            client.build_query(scope="member", key="credentials.sample_token"),
             {
                 "scope": "member",
-                "key": "managed_credentials.sample_provider",
+                "key": "credentials.sample_token",
                 "workspace_id": "ws_default",
-                "project_id": "proj_1",
             },
         )
 

@@ -107,11 +107,7 @@ Gate adapter fidelity notes:
 - 如果需要理解 wave、证据、rerun 策略与常见误区，再看 [`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)。
 - Diagnostic catalog 里的 internal adapters、unified deploy producers 与 `test:*` owner commands 是维护者诊断，不是普通流程的默认命令目录；诊断变绿后要回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
 
-4. 手工 Feishu 操作与自动化 gate 分层
-- `make manual-feishu-*` 属于 release operator 手工联调/验收说明，不属于 machine-readable gate identity。
-- 是否需要执行这些手工步骤，看当前 release scope；不要把它们写成“自动化门禁已经覆盖”的替代说法。
-
-5. `failure_class` 是 gate verdict，不是 troubleshooting 标签
+4. `failure_class` 是 gate verdict，不是 troubleshooting 标签
 - `result.json` 里的 `failure_class` 只用于 canonical gate verdict。
 - 本地排障脚本、incident note、人工 triage 可以有更细的分类，但不能拿来替代 canonical gate result，也不能把二者混写成同一套真相。
 

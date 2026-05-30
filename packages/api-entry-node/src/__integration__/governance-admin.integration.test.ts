@@ -316,14 +316,14 @@ describe('governance admin integration', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'jira',
+        provider: 'custom',
+        custom_domain: 'issues.internal.example',
         kind: 'secret_bundle',
-        display_name: 'Team Jira',
+        display_name: 'Issue Tracker Bundle',
         fields: [
-          { key: 'base_url', value: 'https://jira.example.com', secret: false },
-          { key: 'api_token', value: 'secret-token', secret: true },
+          { key: 'base_url', value: 'https://issues.internal.example', secret: false },
+          { key: 'token', value: 'secret-token', secret: true },
         ],
-        scopes: ['read:jira-work'],
       }),
     });
     expect(createRes.status).toBe(201);
@@ -332,14 +332,14 @@ describe('governance admin integration', () => {
       fields: Array<{ key: string; masked_value?: string | null }>;
       display_name: string;
     };
-    expect(created.display_name).toBe('Team Jira');
-    expect(created.fields.find((field) => field.key === 'api_token')?.masked_value).not.toBe('secret-token');
+    expect(created.display_name).toBe('Issue Tracker Bundle');
+    expect(created.fields.find((field) => field.key === 'token')?.masked_value).not.toBe('secret-token');
 
     const listRes = await apiFetch(baseUrl, '/api/v1/me/external-connections');
     expect(listRes.status).toBe(200);
     const listPayload = (await listRes.json()) as { items: Array<{ id: string; display_name: string }> };
     expect(listPayload.items).toHaveLength(1);
-    expect(listPayload.items.some((item) => item.display_name === 'Team Jira')).toBe(true);
+    expect(listPayload.items.some((item) => item.display_name === 'Issue Tracker Bundle')).toBe(true);
 
     const updateRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${created.id}`, {
       method: 'PATCH',

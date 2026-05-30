@@ -46,7 +46,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 - [Workspace Isolation Model](./workspace-isolation-model.md)
 - [Audit & Usage](./audit-usage-reports.md)
 - [Alert Center](./alert-center.md) - project operational signals and notifications support surface
-- [Personal Connections & Workspace Integrations](./third-party-accounts-feishu.md)
+- [Personal Connections](./personal-connections.md)
 
 ### Files / libraries
 - [File Library Access Model](./file-library-access-model.md)

@@ -49,8 +49,6 @@ export type {
   UserExternalConnectionStatus,
   UserExternalConnectionField,
   UserExternalConnectionFieldInput,
-  UserExternalConnectionProviderConfig,
-  UserExternalConnectionOAuthStartResponse,
 } from '../types';
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';
 export type {

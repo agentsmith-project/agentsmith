@@ -1378,8 +1378,9 @@ export async function createCredentialViaUi(
 export async function createExternalConnectionViaApi(args: {
   request: APIRequestContext;
   token: string;
-  provider: "jira" | "feishu" | "github" | "gitee" | "custom";
-  kind: "oauth_account" | "secret_bundle" | "ssh_keypair";
+  provider: "custom";
+  kind: "secret_bundle";
+  customDomain?: string;
   displayName: string;
   fields: Array<{
     key: string;
@@ -1405,6 +1406,7 @@ export async function createExternalConnectionViaApi(args: {
       data: {
         provider: args.provider,
         kind: args.kind,
+        custom_domain: args.customDomain?.trim() || "custom.local",
         display_name: args.displayName,
         note: args.note ?? null,
         status: args.status ?? "active",
@@ -1434,13 +1436,19 @@ export async function createExternalConnectionViaApi(args: {
   return connectionId;
 }
 
-export async function startMockJiraServer(args: {
-  displayName: string;
+export async function startMockExternalHttpService(args: {
   expectedToken: string;
+  responsePath?: string;
+  responseBody?: Record<string, unknown>;
 }): Promise<{
   baseUrl: string;
   stop: () => Promise<void>;
 }> {
+  const responsePath = args.responsePath ?? "/identity";
+  const responseBody = args.responseBody ?? {
+    ok: true,
+    service: "mock-external-http",
+  };
   const server = http.createServer((req, res) => {
     const auth = req.headers.authorization ?? "";
     if (auth !== `Bearer ${args.expectedToken}`) {
@@ -1449,16 +1457,10 @@ export async function startMockJiraServer(args: {
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
     }
-    if (req.method === "GET" && req.url === "/rest/api/2/myself") {
+    if (req.method === "GET" && req.url === responsePath) {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
-      res.end(
-        JSON.stringify({
-          self: "mock",
-          displayName: args.displayName,
-          emailAddress: `${args.displayName.replace(/\s+/g, ".").toLowerCase()}@example.com`,
-        }),
-      );
+      res.end(JSON.stringify(responseBody));
       return;
     }
     res.statusCode = 404;
@@ -1479,7 +1481,7 @@ export async function startMockJiraServer(args: {
   });
   const address = server.address();
   if (!address || typeof address === "string") {
-    throw new Error("mock_jira_server_address_unavailable");
+    throw new Error("mock_external_http_service_address_unavailable");
   }
 
   return {
@@ -1492,16 +1494,18 @@ export async function startMockJiraServer(args: {
   };
 }
 
-export async function startMockFeishuMcpServer(args: {
+export async function startMockExternalMcpService(args: {
   expectedToken: string;
   toolName: string;
+  authHeaderName?: string;
 }): Promise<{
   endpoint: string;
   stop: () => Promise<void>;
 }> {
+  const authHeaderName = args.authHeaderName ?? "x-mock-mcp-token";
   const server = http.createServer((req, res) => {
     void (async () => {
-      const auth = req.headers["x-lark-mcp-uat"];
+      const auth = req.headers[authHeaderName];
       if (auth !== args.expectedToken) {
         res.statusCode = 401;
         res.setHeader("content-type", "application/json");
@@ -1528,7 +1532,7 @@ export async function startMockFeishuMcpServer(args: {
             result: {
               protocolVersion: "2025-03-26",
               capabilities: {},
-              serverInfo: { name: "mock-feishu-mcp", version: "1.0.0" },
+              serverInfo: { name: "mock-external-mcp", version: "1.0.0" },
             },
           }),
         );
@@ -1545,7 +1549,7 @@ export async function startMockFeishuMcpServer(args: {
               tools: [
                 {
                   name: args.toolName,
-                  description: "Mock Feishu MCP tool",
+                  description: "Mock external MCP tool",
                   inputSchema: { type: "object", properties: {} },
                 },
               ],
@@ -1577,7 +1581,7 @@ export async function startMockFeishuMcpServer(args: {
   });
   const address = server.address();
   if (!address || typeof address === "string") {
-    throw new Error("mock_feishu_server_address_unavailable");
+    throw new Error("mock_external_mcp_service_address_unavailable");
   }
 
   return {

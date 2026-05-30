@@ -96,7 +96,6 @@ const mockProjectUpdate = vi.fn();
 const mockListProjectCreators = vi.fn();
 const mockUpdateProjectCreators = vi.fn();
 const mockSearchDirectoryUsers = vi.fn();
-const mockGetFeishuIntegration = vi.fn();
 const mockUseWorkspace = vi.fn<
   () => {
     data: { id: string; name: string } | undefined;
@@ -168,7 +167,6 @@ vi.mock('@/lib/api', () => ({
     listProjectCreators = mockListProjectCreators;
     updateProjectCreators = mockUpdateProjectCreators;
     searchDirectoryUsers = mockSearchDirectoryUsers;
-    getFeishuIntegration = mockGetFeishuIntegration;
   },
 }));
 
@@ -219,21 +217,6 @@ describe('WorkspaceSettingsPage', () => {
       }
       return [];
     });
-    mockGetFeishuIntegration.mockResolvedValue({
-      id: 'workspace_feishu:ws_1',
-      workspace_id: 'ws_1',
-      provider: 'feishu',
-      status: 'enabled',
-      app_id: 'cli_demo',
-      redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
-      verified_at: '2026-03-19T00:00:00.000Z',
-      verified_by_user_id: 'u_1',
-      verified_by_email: 'dev1@example.com',
-      last_error: null,
-      created_at: '2026-03-19T00:00:00.000Z',
-      updated_at: '2026-03-19T00:00:00.000Z',
-      has_app_secret: true,
-    });
     mockUseWorkspace.mockReturnValue({
       data: STABLE_WORKSPACE,
       isFetched: true,
@@ -268,14 +251,8 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects',
     );
-    expect(screen.getByTestId('ws-settings__open-feishu')).toHaveAttribute(
-      'href',
-      '/en/workspaces/ws_1/settings/feishu',
-    );
-    expect(screen.getByTestId('ws-settings__integration-feishu')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__sections')).toHaveClass('divide-y');
     expect(screen.getByTestId('ws-settings__workspace').className).not.toMatch(/border-t|rounded-|shadow-/);
-    expect(screen.getByTestId('ws-settings__integrations').className).not.toMatch(/border-t|rounded-|shadow-/);
     expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('ws_1');
     expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('workspace_projects_count');

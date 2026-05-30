@@ -18,17 +18,7 @@ export type SimpleCredentialBundleDependency = {
   fields: SimpleCredentialFieldDependency[];
 };
 
-export type ManagedCredentialDependency = {
-  name: string;
-  kind: 'managed_credential';
-  provider: string;
-  scope: Extract<SkillContextScope, 'member' | 'project_member'>;
-  refresh_supported: boolean;
-};
-
-export type BuiltinSkillDependency =
-  | SimpleCredentialBundleDependency
-  | ManagedCredentialDependency;
+export type BuiltinSkillDependency = SimpleCredentialBundleDependency;
 
 export type ContextStoreProviderCapability = {
   kind: 'context_store';
@@ -108,20 +98,6 @@ function parseDependency(input: unknown, index: number): BuiltinSkillDependency 
       scopes,
       fields: input.fields.map((item, itemIndex) =>
         parseSimpleCredentialFieldDependency(item, `dependencies[${index}].fields[${itemIndex}]`)),
-    };
-  }
-  if (kind === 'managed_credential') {
-    const provider = readTrimmedString(input.provider);
-    const scope = readTrimmedString(input.scope);
-    if (!provider || (scope !== 'member' && scope !== 'project_member')) {
-      throw new Error(`skill_contract_invalid:dependencies[${index}]`);
-    }
-    return {
-      name,
-      kind,
-      provider,
-      scope,
-      refresh_supported: input.refresh_supported !== false,
     };
   }
   throw new Error(`skill_contract_invalid:dependencies[${index}]`);

@@ -7,9 +7,6 @@
 import type {
   Workspace,
   WorkspaceDirectoryUser,
-  WorkspaceFeishuIntegration,
-  WorkspaceFeishuOAuthCompleteResponse,
-  WorkspaceFeishuOAuthStartResponse,
   WorkspaceMember,
 } from '../types';
 import type { ApiClient } from '../client';
@@ -73,59 +70,6 @@ export class WorkspaceAPI {
       { project_creator_user_ids: projectCreatorUserIds },
     );
     return response.items;
-  }
-
-  async getFeishuIntegration(workspaceId: string): Promise<WorkspaceFeishuIntegration> {
-    return this.client.get<WorkspaceFeishuIntegration>(
-      `/workspaces/${workspaceId}/integrations/feishu`,
-    );
-  }
-
-  async updateFeishuIntegration(
-    workspaceId: string,
-    data: { app_id: string; app_secret?: string; redirect_uri: string },
-  ): Promise<WorkspaceFeishuIntegration> {
-    return this.client.put<WorkspaceFeishuIntegration>(
-      `/workspaces/${workspaceId}/integrations/feishu`,
-      data,
-    );
-  }
-
-  async startFeishuVerification(
-    workspaceId: string,
-    postRedirectPath: string,
-  ): Promise<WorkspaceFeishuOAuthStartResponse> {
-    return this.client.post<WorkspaceFeishuOAuthStartResponse>(
-      `/workspaces/${workspaceId}/integrations/feishu/verify/start`,
-      { post_redirect_path: postRedirectPath },
-    );
-  }
-
-  async enableFeishuIntegration(workspaceId: string): Promise<WorkspaceFeishuIntegration> {
-    return this.client.post<WorkspaceFeishuIntegration>(
-      `/workspaces/${workspaceId}/integrations/feishu/enable`,
-      {},
-    );
-  }
-
-  async startWorkspaceFeishuAuth(
-    workspaceId: string,
-    postRedirectPath: string,
-  ): Promise<WorkspaceFeishuOAuthStartResponse> {
-    return this.client.post<WorkspaceFeishuOAuthStartResponse>(
-      `/workspaces/${workspaceId}/me/feishu/auth/start`,
-      { post_redirect_path: postRedirectPath },
-    );
-  }
-
-  async completeWorkspaceFeishuAuth(
-    workspaceId: string,
-    data: { code?: string; state?: string },
-  ): Promise<WorkspaceFeishuOAuthCompleteResponse> {
-    return this.client.post<WorkspaceFeishuOAuthCompleteResponse>(
-      `/workspaces/${workspaceId}/feishu/oauth/complete`,
-      data,
-    );
   }
 
 }

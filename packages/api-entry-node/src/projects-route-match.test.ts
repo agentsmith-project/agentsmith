@@ -710,4 +710,12 @@ describe('matchProjectsRoute', () => {
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });
+
+  it('does not match retired workspace Feishu routes', () => {
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/integrations/feishu')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/integrations/feishu/verify/start')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/integrations/feishu/enable')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/feishu/oauth/complete')).toBeNull();
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/me/feishu/auth/start')).toBeNull();
+  });
 });

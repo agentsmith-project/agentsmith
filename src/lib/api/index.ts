@@ -77,8 +77,6 @@ export type {
   UserExternalConnectionStatus,
   UserExternalConnectionField,
   UserExternalConnectionFieldInput,
-  UserExternalConnectionProviderConfig,
-  UserExternalConnectionOAuthStartResponse,
   CreateUserExternalConnectionRequest,
   UpdateUserExternalConnectionRequest,
   CreateSessionRequest,

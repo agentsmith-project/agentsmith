@@ -146,7 +146,7 @@ const absoluteTaskPathJsonSchema = {
 
 const projectedDependencyFieldNameJsonSchema = {
   type: 'string',
-  pattern: '^(?!(?:context[_]store|writable[_]scopes|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*',
+  pattern: '^(?!(?:context[_]store|writable[_]scopes|managed[_]credentials|managed[_]credential|managed[_]credential[_]refresh|credential[_]files|user[_]bearer[_]token)$).*',
 } as const satisfies JsonSchema;
 
 export const PROJECTED_DEPENDENCY_PAYLOAD_JSON_SCHEMA = {
@@ -302,6 +302,8 @@ export const TASK_EXECUTION_CONTEXT_JSON_SCHEMA = {
 export const RUNNER_SUPPORT_API_PROJECTION_REJECTED_PRODUCT_SEMANTICS = [
   'context_store',
   'writable_scopes',
+  'managed_credentials',
+  'managed_credential',
   'managed_credential_refresh',
   'credential_files',
   'user_bearer_token',
@@ -487,20 +489,6 @@ export const CONTEXT_ENTRY_PROJECTION_JSON_SCHEMA = {
     read_only: { type: 'boolean' },
     updated_at: dateTimeStringJsonSchema,
     updated_by: nonEmptyStringJsonSchema,
-  },
-} as const satisfies JsonSchema;
-
-export const MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['fields'],
-  properties: {
-    fields: {
-      type: 'object',
-      minProperties: 1,
-      propertyNames: projectedDependencyFieldNameJsonSchema,
-      additionalProperties: nonEmptyStringJsonSchema,
-    },
   },
 } as const satisfies JsonSchema;
 

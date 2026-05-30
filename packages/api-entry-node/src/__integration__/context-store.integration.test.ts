@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { issueInternalTicket } from '../internal-ticket-store.js';
-import { createUserExternalConnection } from '../user-external-connections-store.js';
 import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { notebookTasksCollection } from '../notebook-task/task-store.js';
@@ -83,7 +82,7 @@ describe('api-entry-node context store integration', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         workspace_id: 'ws_default',
         project_id: project.id,
         content: 'uec_project_1',
@@ -94,13 +93,13 @@ describe('api-entry-node context store integration', () => {
 
     const getRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      `/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=${project.id}`,
       'test-token',
     );
     expect(getRes.status).toBe(200);
     await expect(getRes.json()).resolves.toMatchObject({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       content: 'uec_project_1',
       workspace_id: 'ws_default',
       project_id: project.id,
@@ -125,7 +124,7 @@ describe('api-entry-node context store integration', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         workspace_id: 'ws_default',
         project_id: project.id,
         content: 'uec_project_1',
@@ -136,7 +135,7 @@ describe('api-entry-node context store integration', () => {
 
     const otherUserGetRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      `/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=${project.id}`,
       'alt-token',
     );
     expect(otherUserGetRes.status).toBe(404);
@@ -231,7 +230,7 @@ describe('api-entry-node context store integration', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         workspace_id: 'ws_default',
         project_id: project.id,
         content: 'uec_project_1',
@@ -257,7 +256,7 @@ describe('api-entry-node context store integration', () => {
     });
 
     const getRes = await fetch(
-      `${baseUrl}/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      `${baseUrl}/api/v1/context?scope=project_member&key=bindings.sample.connection_id&workspace_id=ws_default&project_id=${project.id}`,
       {
         headers: {
           Authorization: `Bearer ${executionTicket.ticket}`,
@@ -267,7 +266,7 @@ describe('api-entry-node context store integration', () => {
     expect(getRes.status).toBe(200);
     await expect(getRes.json()).resolves.toMatchObject({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       content: 'uec_project_1',
       user_id: 'user_test',
     });
@@ -282,7 +281,7 @@ describe('api-entry-node context store integration', () => {
         },
         body: JSON.stringify({
           scope: 'project_member',
-          key: 'bindings.feishu.connection_id',
+          key: 'bindings.sample.connection_id',
           workspace_id: 'ws_default',
           project_id: project.id,
           content: 'uec_project_2',
@@ -379,74 +378,30 @@ describe('api-entry-node context store integration', () => {
     });
   });
 
-  it('returns the workspace-scoped managed credential projection and blocks cross-workspace refresh for tickets', async () => {
-    const { baseUrl, deps } = startServer();
-
-    await createUserExternalConnection(deps.docStore, {
-      user_id: 'user_test',
-      workspace_id: 'ws_default',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'Workspace Feishu',
-      status: 'reauth_required',
-      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
-      scopes: ['search:docs:read'],
-      reauth_reason: 'missing_scopes',
-    });
-    await createUserExternalConnection(deps.docStore, {
-      user_id: 'user_test',
-      workspace_id: 'ws_other',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      display_name: 'Other Workspace Feishu',
-      status: 'active',
-      fields: [{ key: 'access_token', value: 'other_token', secret: true }],
-      scopes: ['search:docs:read'],
-    });
+  it('does not expose retired managed credential projection or refresh routes', async () => {
+    const { baseUrl } = startServer();
 
     const projectionRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default',
+      '/api/v1/context?scope=member&key=managed_credentials.sample_provider&workspace_id=ws_default',
       'test-token',
     );
-    expect(projectionRes.status).toBe(200);
-    const projectionPayload = await projectionRes.json() as { content: string };
-    const projectionContent = JSON.parse(projectionPayload.content) as { fields: { access_token: string } };
-    expect(projectionContent).toEqual({
-      fields: {
-        access_token: 'workspace_token',
-      },
+    expect(projectionRes.status).toBe(404);
+    await expect(projectionRes.json()).resolves.toMatchObject({
+      error_code: 'NOT_FOUND',
+      message: 'context_not_found',
     });
 
-    const executionTicket = await issueInternalTicket(deps.cache, {
-      purpose: 'agent_execution',
-      userId: 'user_test',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      prefix: 'exec',
-      maxUses: 5,
-      payload: {
-        endpoint_id: 'ep_1',
-        task_id: 'task_1',
-        session_id: 'task_1',
-        agent_id: 'agent_1',
-        mode: 'chat',
-      },
-    });
-
-    const refreshRes = await fetch(
-      `${baseUrl}/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_other`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${executionTicket.ticket}`,
-        },
-      },
+    const refreshRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/context/managed-credentials/sample_provider/refresh?workspace_id=ws_default',
+      'test-token',
+      { method: 'POST' },
     );
-    expect(refreshRes.status).toBe(403);
+    expect(refreshRes.status).toBe(404);
     await expect(refreshRes.json()).resolves.toMatchObject({
-      error_code: 'FORBIDDEN',
-      message: 'context_workspace_scope_mismatch',
+      error_code: 'NOT_FOUND',
+      message: 'Route not found',
     });
   });
 });

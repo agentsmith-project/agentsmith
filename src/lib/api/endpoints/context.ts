@@ -30,16 +30,4 @@ export class ContextAPI {
   async remove(query: ContextQuery & { key: string }): Promise<void> {
     return this.client.delete<void>(`/context?${buildSearch(query)}`);
   }
-
-  async refreshManagedCredential(
-    provider: string,
-    workspaceId?: string | null,
-    projectId?: string | null,
-  ): Promise<ContextEntry> {
-    const params = new URLSearchParams();
-    if (workspaceId) params.set('workspace_id', workspaceId);
-    if (projectId) params.set('project_id', projectId);
-    const search = params.toString() ? `?${params.toString()}` : '';
-    return this.client.post<ContextEntry>(`/context/managed-credentials/${encodeURIComponent(provider)}/refresh${search}`);
-  }
 }

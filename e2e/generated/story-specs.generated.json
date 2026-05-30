@@ -1168,7 +1168,7 @@
   },
   {
     "storyId": "mock-lane-connections-and-credentials-lifecycle",
-    "title": "Mock lane connections and credentials lifecycle scenes",
+    "title": "Mock lane personal connections and credentials lifecycle scenes",
     "actor": "workspace member / workspace admin / project owner",
     "family": "mock-lane-connections-and-credentials-lifecycle",
     "personas": [
@@ -1186,31 +1186,24 @@
     "externalDependencies": [],
     "lane": "mock-lane",
     "entryRoute": "/en-US/user/third-party-accounts",
-    "goal": "统一描述个人连接、工作区集成状态和项目凭据生命周期的 mock-lane visual scene 真相。",
+    "goal": "统一描述个人 custom secret bundle 和项目凭据生命周期的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-connections-and-credentials-lifecycle.story.md#mock-lane-connections-and-credentials-lifecycle",
-    "sourceFingerprint": "e355c7cd72dda9edad98b662678aa5e09ea327909621e318d131c5db67d06242",
-    "storyFingerprint": "09192bf2d6acef7cc033d33d7567617c626ef684b290a5aa1f689e2bb4ebdc2b",
-    "stepMapFingerprint": "f3b344c50bbcdd5d545c92964cdadbab84c4f5052063d02ef1987e97c2319bbc",
+    "sourceFingerprint": "78240623c25007a7aaee312e71b55a8c6f8cd4c01e7b3d0dd38df8c93a938ff8",
+    "storyFingerprint": "5dc7835cc4356f956514ec9e52a7e71e4864cc8b2d6c0df8ca437cc1c56082f2",
+    "stepMapFingerprint": "257e726dd5a9e9ff0725c9bd6f690a5b08d1a60f407bffb80b086561749ecf4f",
     "sceneIds": [
       "third-party-accounts",
       "third-party-accounts-create-sheet",
       "third-party-accounts-edit-sheet",
-      "workspace-settings-feishu-enabled",
-      "workspace-feishu-setup-credentials",
-      "workspace-feishu-locked",
-      "workspace-connections-feishu-disabled",
-      "workspace-connections-feishu-connected",
       "credentials",
       "dialog-create-credential"
     ],
     "stepIds": [
       "open-personal-connections",
-      "open-workspace-connections",
       "open-project-credentials"
     ],
     "traceStepIds": [
       "open-personal-connections",
-      "open-workspace-connections",
       "open-project-credentials"
     ],
     "visualStepIds": []
@@ -2313,53 +2306,6 @@
       "creator-project-entry",
       "creator-workspace-boundary",
       "creator-create-project"
-    ],
-    "visualStepIds": []
-  },
-  {
-    "storyId": "workspace-connections-to-project-use",
-    "title": "Workspace connections to project use",
-    "actor": "workspace admin / project member",
-    "family": "workspace-connections-to-project-use",
-    "personas": [
-      "workspace admin",
-      "project member"
-    ],
-    "kind": "journey",
-    "gatePolicy": {
-      "tier": "default",
-      "requiredEvidence": [
-        "trace"
-      ]
-    },
-    "externalDependencies": [],
-    "lane": "backend-real",
-    "entryRoute": "/en-US/workspaces/{workspaceId}/connections",
-    "goal": "成员在工作区连接页确认共享集成状态后，能够清楚地继续到项目使用的项目列表并打开 use-guide，最后真的完成第一次 endpoint 消费，而不是把连接页当成一个停住不动的设置页。",
-    "sourceRef": "e2e/stories/backend-real/workspace-connections-to-project-use.story.md#workspace-connections-to-project-use",
-    "sourceFingerprint": "76442b61627cf04f3780beccbc8fc8083e1f55364713c8eec178603e0a579489",
-    "storyFingerprint": "a478f4c07abbf00e3658e224f506c9f8f26b02d1f1fde31a28b78aff4ea03994",
-    "stepMapFingerprint": "fdb0a392b968c6e92b7e7c8b45a1b0947f38a30201039cd92af03c3ac8b40d57",
-    "sceneIds": [
-      "workspace-connections",
-      "project-use-guide",
-      "personal-api-keys"
-    ],
-    "stepIds": [
-      "review-workspace-connections",
-      "open-project-use-guide",
-      "verify-project-use-ready",
-      "create-personal-api-key",
-      "consume-project-endpoint",
-      "verify-first-consumption"
-    ],
-    "traceStepIds": [
-      "review-workspace-connections",
-      "open-project-use-guide",
-      "verify-project-use-ready",
-      "create-personal-api-key",
-      "consume-project-endpoint",
-      "verify-first-consumption"
     ],
     "visualStepIds": []
   },

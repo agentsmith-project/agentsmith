@@ -66,7 +66,7 @@ describe('context-store', () => {
 
     const saved = await putContextEntry(docStore, {
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -79,7 +79,7 @@ describe('context-store', () => {
 
     const loaded = await getContextEntry(docStore, {
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -94,11 +94,11 @@ describe('context-store', () => {
       project_id: 'proj_1',
     });
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.key).toBe('bindings.feishu.connection_id');
+    expect(listed[0]?.key).toBe('bindings.sample.connection_id');
 
     const deleted = await deleteContextEntry(docStore, {
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.sample.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -107,7 +107,7 @@ describe('context-store', () => {
     expect(
       await getContextEntry(docStore, {
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.sample.connection_id',
         user_id: 'user_1',
         workspace_id: 'ws_default',
         project_id: 'proj_1',

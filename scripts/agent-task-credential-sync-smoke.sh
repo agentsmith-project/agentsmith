@@ -13,7 +13,7 @@ BASE_URL="${BASE_URL:-http://localhost:${PORT_WEB:-3101}}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
-PROMPT="${PROMPT:-check credential sync}"
+PROMPT="${PROMPT:-check custom secret bundle sync}"
 RUNNER_LOG="${RUNNER_LOG:-$(local_manual_runtime_path runner.log)}"
 TASK_LOG="${TASK_LOG:-$(backend_real_state_root)/credential-sync-smoke-task.log}"
 
@@ -40,16 +40,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[credential-sync-smoke] creating user external connection: ${UNIQ_NAME}"
+echo "[credential-sync-smoke] creating custom secret bundle: ${UNIQ_NAME}"
 CREATE_PAYLOAD="$(
   jq -nc --arg name "${UNIQ_NAME}" '{
-    provider:"jira",
+    provider:"custom",
+    custom_domain:"custom.local",
     kind:"secret_bundle",
     display_name:$name,
     note:"credential-sync-smoke",
     fields:[
-      {key:"base_url", value:"https://jira.example.com", description:"Jira base URL", secret:false},
-      {key:"api_token", value:($name + "_token"), description:"Jira API token", secret:true}
+      {key:"service_url", value:"https://service.example.com", description:"Service URL", secret:false},
+      {key:"access_token", value:($name + "_token"), description:"Access token", secret:true}
     ]
   }'
 )"
@@ -113,16 +114,16 @@ if [[ -z "${CWD}" || -z "${CREDENTIAL_DIR}" ]]; then
   exit 1
 fi
 INDEX_PATH="${CREDENTIAL_DIR}/index.json"
-PROVIDER_PATH="${CREDENTIAL_DIR}/jira/connections.json"
+CUSTOM_PATH="${CREDENTIAL_DIR}/custom/connections.json"
 
 echo "[credential-sync-smoke] checking generated files in ${CREDENTIAL_DIR} (cwd=${CWD})"
 [[ -f "${INDEX_PATH}" ]] || { echo "[credential-sync-smoke] missing ${INDEX_PATH}" >&2; exit 1; }
-[[ -f "${PROVIDER_PATH}" ]] || { echo "[credential-sync-smoke] missing ${PROVIDER_PATH}" >&2; exit 1; }
+[[ -f "${CUSTOM_PATH}" ]] || { echo "[credential-sync-smoke] missing ${CUSTOM_PATH}" >&2; exit 1; }
 
-HAS_NAME="$(jq -r --arg n "${UNIQ_NAME}" '.connections | map(.display_name) | index($n) != null' "${PROVIDER_PATH}")"
+HAS_NAME="$(jq -r --arg n "${UNIQ_NAME}" '.connections | map(.display_name) | index($n) != null' "${CUSTOM_PATH}")"
 if [[ "${HAS_NAME}" != "true" ]]; then
-  echo "[credential-sync-smoke] provider file does not contain ${UNIQ_NAME}" >&2
-  jq . "${PROVIDER_PATH}" >&2 || true
+  echo "[credential-sync-smoke] custom connection file does not contain ${UNIQ_NAME}" >&2
+  jq . "${CUSTOM_PATH}" >&2 || true
   exit 1
 fi
 

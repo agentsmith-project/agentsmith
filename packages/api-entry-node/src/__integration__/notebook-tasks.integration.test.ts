@@ -2884,13 +2884,14 @@ describe('api-entry-node notebook task routes', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          provider: 'jira',
+          provider: 'custom',
+          custom_domain: 'execution-sync.example',
           kind: 'secret_bundle',
-          display_name: 'execution-jira',
+          display_name: 'execution-sync-bundle',
           note: 'execution sync test',
           fields: [
-            { key: 'base_url', value: 'https://jira.example.com', secret: false },
-            { key: 'api_token', value: 'jira-test-token', secret: true },
+            { key: 'base_url', value: 'https://execution-sync.example', secret: false },
+            { key: 'token', value: 'execution-test-token', secret: true },
           ],
         }),
       },

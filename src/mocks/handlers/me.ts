@@ -60,58 +60,20 @@ export function resolveMockExternalConnectionsForRequest(args: {
   }
 
   const provider = readMockValue(args.request, 'x-mock-connection-provider', 'ags_mock_connection_provider');
-  const workspaceId = readMockValue(args.request, 'x-mock-connection-workspace', 'ags_mock_connection_workspace') ?? 'ws_default';
-  const connectedEmail = readMockValue(args.request, 'x-mock-connection-email', 'ags_mock_connection_email');
+  const kind = readMockValue(args.request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
   const connectionDisplayName = readMockValue(args.request, 'x-mock-connection-display-name', 'ags_mock_connection_display_name');
-  const connectionKind = readMockValue(args.request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
   const connectionStatus = readMockValue(args.request, 'x-mock-connection-status', 'ags_mock_connection_status');
   const connectionNote = readMockValue(args.request, 'x-mock-connection-note', 'ags_mock_connection_note');
   const connectionCustomDomain = readMockValue(args.request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
   const connectionFields = readMockJsonArray(args.request, 'x-mock-connection-fields');
-  const connectionScopesRaw = readMockValue(args.request, 'x-mock-connection-scopes', 'ags_mock_connection_scopes');
-  const connectionScopes = connectionScopesRaw ? (() => {
-    try {
-      const parsed = JSON.parse(connectionScopesRaw) as unknown;
-      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : null;
-    } catch {
-      return null;
-    }
-  })() : null;
 
-  if (provider === 'feishu' && connectedEmail) {
-    return [{
-      id: 'conn_feishu_visual',
-      provider: 'feishu',
-      kind: 'oauth_account',
-      status: 'active',
-      display_name: 'Visual Feishu Connection',
-      note: null,
-      custom_domain: null,
-      fields: [],
-      account_identity: {
-        external_id: 'ou_visual_user',
-        external_name: connectedEmail.split('@')[0],
-        external_email: connectedEmail,
-      },
-      scopes: ['offline_access'],
-      expires_at: null,
-      last_refreshed_at: '2026-03-19T08:00:00.000Z',
-      last_error: null,
-      workspace_id: workspaceId,
-      created_at: '2026-03-19T08:00:00.000Z',
-      updated_at: '2026-03-19T08:00:00.000Z',
-    }];
-  }
-
-  if (provider === 'custom' && connectionDisplayName && connectionFields) {
+  if (provider === 'custom' && (kind === null || kind === 'secret_bundle') && connectionDisplayName && connectionFields) {
     const displayName = connectionDisplayName.trim();
     const customDomain = connectionCustomDomain?.trim() || null;
     return [{
       id: buildMockExternalConnectionId(displayName, 'custom'),
       provider: 'custom',
-      kind: (connectionKind === 'ssh_keypair' || connectionKind === 'oauth_account' || connectionKind === 'secret_bundle')
-        ? connectionKind
-        : 'secret_bundle',
+      kind: 'secret_bundle',
       status: connectionStatus === 'expired' || connectionStatus === 'reauth_required' || connectionStatus === 'error'
         ? connectionStatus
         : 'active',
@@ -126,12 +88,7 @@ export function resolveMockExternalConnectionsForRequest(args: {
           secret: field.secret !== false,
         })
       ).filter((field) => field.key.length > 0),
-      account_identity: null,
-      scopes: connectionScopes,
-      expires_at: null,
-      last_refreshed_at: null,
       last_error: null,
-      workspace_id: null,
       created_at: '2026-03-19T08:00:00.000Z',
       updated_at: '2026-03-19T08:00:00.000Z',
     }];
@@ -151,15 +108,8 @@ export function normalizeMockExternalConnectionSeed(
     note: connection.note ?? null,
     status: connection.status ?? 'active',
     fields: (connection.fields ?? []).map((field) => toStoredExternalConnectionField(field)),
-    account_identity: connection.account_identity ?? null,
-    scopes: connection.scopes ?? null,
-    expires_at: connection.expires_at ?? null,
-    last_refreshed_at: connection.last_refreshed_at ?? null,
     last_used_at: connection.last_used_at ?? null,
     last_error: connection.last_error ?? null,
-    reauth_reason: connection.reauth_reason ?? null,
-    missing_scopes: connection.missing_scopes ?? null,
-    workspace_id: connection.workspace_id ?? null,
   };
 }
 

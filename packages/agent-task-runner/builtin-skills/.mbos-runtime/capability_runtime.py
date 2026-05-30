@@ -44,9 +44,7 @@ class ContextStoreClient:
         next_task_id = task_id or read_env_default("MBOS_AGENT_TASK_ID")
         if next_workspace_id and scope in ("member", "task", "project_member", "project", "workspace"):
             query["workspace_id"] = next_workspace_id
-        include_project_id = scope in ("task", "project_member", "project") or (
-            scope == "member" and isinstance(key, str) and key.startswith("managed_credentials.")
-        )
+        include_project_id = scope in ("task", "project_member", "project")
         if next_project_id and include_project_id:
             query["project_id"] = next_project_id
         if next_task_id and scope == "task":
@@ -174,49 +172,3 @@ def resolve_simple_credential_dependency(script_file: str | Path, dependency_nam
             if field_name in resolved:
                 break
     return resolved
-
-
-def _parse_projected_content(payload: dict[str, Any], *, empty_message: str, invalid_message: str) -> dict[str, Any]:
-    content = payload.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError(empty_message)
-    projected = json.loads(content)
-    if not isinstance(projected, dict):
-        raise RuntimeError(invalid_message)
-    return projected
-
-
-def resolve_managed_credential_dependency(script_file: str | Path, dependency_name: str) -> dict[str, Any]:
-    contract = load_skill_capability_contract(script_file)
-    dependency = find_dependency(contract, dependency_name)
-    if dependency.get("kind") != "managed_credential":
-        raise RuntimeError(f"Dependency '{dependency_name}' is not a managed credential dependency.")
-    provider = dependency.get("provider")
-    scope = dependency.get("scope")
-    if not isinstance(provider, str) or scope not in ("member", "project_member"):
-        raise RuntimeError(f"Dependency '{dependency_name}' is missing provider or supported scope.")
-    client = ContextStoreClient.from_runner_env(
-        required=True,
-        unavailable_message="Managed credentials are unavailable. This skill requires AgentSmith runtime context access in notebook or terminal sessions.",
-    )
-    if client is None:
-        raise RuntimeError("Managed credentials are unavailable.")
-    project_id = read_env_default("MBOS_AGENT_PROJECT_ID") if scope == "project_member" else None
-    if scope == "project_member" and not project_id:
-        raise RuntimeError(f"Managed credential dependency '{dependency_name}' requires project scope.")
-    response = client.request_json(
-        "GET",
-        "/context",
-        query=client.build_query(
-            scope="member",
-            key=f"managed_credentials.{provider}",
-            project_id=project_id,
-        ),
-    )
-    if response is None:
-        raise RuntimeError(f"Managed credential dependency '{dependency_name}' returned empty response.")
-    return _parse_projected_content(
-        response,
-        empty_message=f"Managed credential dependency '{dependency_name}' is empty.",
-        invalid_message=f"Managed credential dependency '{dependency_name}' is invalid.",
-    )

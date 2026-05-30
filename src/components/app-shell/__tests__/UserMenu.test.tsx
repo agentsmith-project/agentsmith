@@ -15,7 +15,6 @@ vi.mock('next-intl', () => ({
         profile: 'Profile',
         workspace_personal_context: 'My Workspace Context',
         project_personal_context: 'My Project Context',
-        workspace_integrations: 'Workspace integrations',
         personal_connections: 'Personal connections',
         api_keys: 'API Keys',
         language: 'Language',
@@ -45,7 +44,6 @@ describe('UserMenu', () => {
           onProfile={() => undefined}
           onWorkspacePersonalContext={() => undefined}
           onProjectPersonalContext={() => undefined}
-          onWorkspaceIntegrations={() => undefined}
           onPersonalConnections={() => undefined}
           onApiKeys={() => undefined}
         />
@@ -64,7 +62,7 @@ describe('UserMenu', () => {
     expect(screen.getByTestId('topbar__user-menu')).toHaveAttribute('type', 'button');
   });
 
-  it('renders profile, integration, and theme controls without permission tokens', async () => {
+  it('renders profile, personal connection, and theme controls without permission tokens', async () => {
     renderMenu();
 
     openUserMenu();
@@ -72,7 +70,6 @@ describe('UserMenu', () => {
     expect(await screen.findByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('My Workspace Context')).toBeInTheDocument();
     expect(screen.getByText('My Project Context')).toBeInTheDocument();
-    expect(screen.getByText('Workspace integrations')).toBeInTheDocument();
     expect(screen.getByText('Personal connections')).toBeInTheDocument();
     expect(screen.getByText('API Keys')).toBeInTheDocument();
     expect(screen.getByText('Appearance')).toBeInTheDocument();

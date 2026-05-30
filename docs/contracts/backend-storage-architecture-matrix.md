@@ -79,7 +79,6 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 | Agent Runners 主数据 | `packages/api-entry-node/src/agent-resource-service.ts` | runner records / keys | `docStore` / Mongo | 主数据 | 通过 | 与 presence 分层 |
 | Agent Runner 在线状态 | `packages/api-entry-node/src/agent-resource-service.ts` | heartbeat / presence | shared cache / Redis + 本地 socket 镜像 | 共享运行态 | 通过 | 当前实现适合多实例 presence 投影 |
 | 用户外部连接 | `packages/api-entry-node/src/user-external-connections-store.ts` | external connections | `docStore` / Mongo | 主数据 | 通过 | 外部账号绑定真相已持久化 |
-| Feishu OAuth state | `packages/api-entry-node/src/feishu-oauth.ts` | OAuth callback state | shared cache / Redis TTL | 共享运行态 | 通过 | API 重启后回调可继续完成 |
 | 文件库 catalog / AFSCP repo mapping | `packages/api-entry-node/src/file-library-persistence.ts`, `packages/api-entry-node/src/file-library-afscp-storage.ts`, `packages/api-entry-node/src/project-file-library-routes.ts` | catalog / AFSCP repo mapping | `docStore` / Mongo + AFSCP | 主数据 | 通过 | 已收敛到 Files API 与 AFSCP repo mapping |
 | Files API / AFSCP 适配运行态 | `packages/api-entry-node/src/file-library-afscp-storage.ts`、`packages/api-entry-node/src/project-storage-bootstrap-service.ts` | AFSCP repo mapping / project storage readiness / short-lived export session state when used | AFSCP + catalog mapping | 后端基础初始化与文件库访问真相 | 通过 | 文件访问经 AgentSmith Files adapter 调用 AFSCP；不维护 per-file-library gateway 进程真相 |
 | Chat 主数据 | `packages/api-entry-node/src/chat-resource-service.ts` | sessions / messages / attachments | `docStore` / Mongo | 主数据 | 通过 | 当前真相清晰 |
@@ -114,7 +113,6 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 - external connections
 - audit / usage
 - agent presence
-- Feishu OAuth state
 - resource policy minute counters
 
 结论：

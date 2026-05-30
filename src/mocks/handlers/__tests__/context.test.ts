@@ -22,7 +22,7 @@ describe('context mock handlers', () => {
       headers: authHeaders('mock_token_user_1_scope'),
       body: JSON.stringify({
         scope: 'project_member',
-        key: 'bindings.feishu.connection_id',
+        key: 'bindings.tools.connection_id',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         content: 'uec_project_1',
@@ -33,24 +33,24 @@ describe('context mock handlers', () => {
     expect(putRes.status).toBe(200);
     await expect(putRes.json()).resolves.toMatchObject({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.tools.connection_id',
       user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
     });
 
-    const getRes = await fetch('http://localhost/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=proj_1', {
+    const getRes = await fetch('http://localhost/api/v1/context?scope=project_member&key=bindings.tools.connection_id&workspace_id=ws_default&project_id=proj_1', {
       headers: authHeaders('mock_token_user_1_scope'),
     });
     expect(getRes.status).toBe(200);
     await expect(getRes.json()).resolves.toMatchObject({
       scope: 'project_member',
-      key: 'bindings.feishu.connection_id',
+      key: 'bindings.tools.connection_id',
       content: 'uec_project_1',
       user_id: 'user_1',
     });
 
-    const otherUserGetRes = await fetch('http://localhost/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=proj_1', {
+    const otherUserGetRes = await fetch('http://localhost/api/v1/context?scope=project_member&key=bindings.tools.connection_id&workspace_id=ws_default&project_id=proj_1', {
       headers: authHeaders('mock_token_user_2_scope'),
     });
     expect(otherUserGetRes.status).toBe(404);

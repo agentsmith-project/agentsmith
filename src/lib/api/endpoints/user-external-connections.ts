@@ -3,7 +3,6 @@ import type {
   CreateUserExternalConnectionRequest,
   UpdateUserExternalConnectionRequest,
   UserExternalConnection,
-  UserExternalConnectionProviderConfig,
 } from '../types';
 
 export type {
@@ -34,17 +33,5 @@ export class UserExternalConnectionsAPI {
 
   async remove(connectionId: string): Promise<void> {
     return this.client.delete<void>(`/me/external-connections/${connectionId}`);
-  }
-
-  async getProviderConfig(provider: string): Promise<UserExternalConnectionProviderConfig> {
-    return this.client.get<UserExternalConnectionProviderConfig>(
-      `/me/external-connections/providers/${encodeURIComponent(provider)}`
-    );
-  }
-
-  async refresh(connectionId: string): Promise<UserExternalConnection> {
-    return this.client.post<UserExternalConnection>(
-      `/me/external-connections/${connectionId}/refresh`
-    );
   }
 }

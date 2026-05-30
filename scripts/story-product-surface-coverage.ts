@@ -218,7 +218,6 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     surfaceId: 'connections_and_runtime_use',
     label: 'Connections and runtime use',
     storyIds: [
-      'workspace-connections-to-project-use',
       'api-key-to-endpoint-consumption',
       'ai-runtime-failure-and-recovery',
       'chat-agent-task-target-model-continuity',

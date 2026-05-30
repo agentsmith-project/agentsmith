@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 type EndpointCapabilityType =
@@ -44,6 +44,7 @@ const MODELS_DEV_LOGO_URL = 'https://models.dev/logos';
 const OUTPUT_ROOT = resolve(process.cwd(), 'assets/models-catalog');
 const RUNTIME_OUTPUT_PATH = resolve(process.cwd(), 'src/lib/endpoints/models-catalog.config.json');
 const PUBLIC_LOGO_ROOT = resolve(process.cwd(), 'public/models-catalog/logos');
+const DENIED_MODEL_CATALOG_PROVIDER_IDS = new Set(['github-copilot', 'github-models']);
 
 type CatalogProviderKey =
   | 'openai'
@@ -107,6 +108,15 @@ function byProviderAliases<T extends { key: string }>(providers: T[], aliases: s
   return providers.filter((provider) => aliases.includes(provider.key));
 }
 
+function isDeniedModelCatalogProviderId(value?: string): boolean {
+  if (!value) return false;
+  return DENIED_MODEL_CATALOG_PROVIDER_IDS.has(value.trim().toLowerCase());
+}
+
+function shouldIncludeModelCatalogProvider(...providerIds: Array<string | undefined>): boolean {
+  return !providerIds.some(isDeniedModelCatalogProviderId);
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -125,32 +135,34 @@ async function fetchLogo(providerId: string): Promise<string | null> {
 
 async function run(): Promise<void> {
   const rawCatalog = await fetchJson<RawCatalog>(MODELS_DEV_API_URL);
-  const providers = Object.entries(rawCatalog).map(([providerId, provider]) => {
-    const models = Object.entries(provider.models ?? {}).map(([modelId, model]) => {
+  const providers = Object.entries(rawCatalog)
+    .filter(([providerId, provider]) => shouldIncludeModelCatalogProvider(providerId, provider.id))
+    .map(([providerId, provider]) => {
+      const models = Object.entries(provider.models ?? {}).map(([modelId, model]) => {
+        return {
+          id: model.id ?? modelId,
+          model_id: modelId,
+          name: model.name ?? modelId,
+          family: model.family,
+          capabilities: inferCapabilities(modelId, model),
+          modalities: model.modalities ?? { input: [], output: [] },
+          limits: model.limit ?? {},
+          pricing: model.cost ?? {},
+        };
+      });
+
       return {
-        id: model.id ?? modelId,
-        model_id: modelId,
-        name: model.name ?? modelId,
-        family: model.family,
-        capabilities: inferCapabilities(modelId, model),
-        modalities: model.modalities ?? { input: [], output: [] },
-        limits: model.limit ?? {},
-        pricing: model.cost ?? {},
+        provider_id: provider.id ?? providerId,
+        key: providerId,
+        name: provider.name ?? providerId,
+        api: provider.api,
+        doc: provider.doc,
+        npm: provider.npm,
+        env: provider.env ?? [],
+        model_count: models.length,
+        models,
       };
     });
-
-    return {
-      provider_id: provider.id ?? providerId,
-      key: providerId,
-      name: provider.name ?? providerId,
-      api: provider.api,
-      doc: provider.doc,
-      npm: provider.npm,
-      env: provider.env ?? [],
-      model_count: models.length,
-      models,
-    };
-  });
 
   const normalized = {
     source: MODELS_DEV_API_URL,
@@ -162,6 +174,10 @@ async function run(): Promise<void> {
   await mkdir(OUTPUT_ROOT, { recursive: true });
   await mkdir(resolve(OUTPUT_ROOT, 'logos'), { recursive: true });
   await mkdir(PUBLIC_LOGO_ROOT, { recursive: true });
+  for (const providerId of DENIED_MODEL_CATALOG_PROVIDER_IDS) {
+    await rm(resolve(OUTPUT_ROOT, 'logos', `${providerId}.svg`), { force: true });
+    await rm(resolve(PUBLIC_LOGO_ROOT, `${providerId}.svg`), { force: true });
+  }
 
   await writeFile(
     resolve(OUTPUT_ROOT, 'catalog.normalized.json'),

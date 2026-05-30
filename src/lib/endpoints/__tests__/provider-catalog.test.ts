@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import modelCatalogConfig from '@/lib/endpoints/models-catalog.config.json';
 import {
   ENDPOINT_PROVIDER_OPTIONS,
   getModelsByCapability,
@@ -9,6 +12,8 @@ import {
   getCustomProtocolByIndex,
 } from '@/lib/endpoints/provider-catalog';
 import type { CustomEndpointUpstreamProtocol } from '@/lib/api/types';
+
+const deniedProviderIds = ['github-copilot', 'github-models'];
 
 describe('provider-catalog', () => {
   it('contains default provider set for endpoint creation', () => {
@@ -25,6 +30,26 @@ describe('provider-catalog', () => {
         'alibaba',
       ]),
     );
+  });
+
+  it('does not ship denied GitHub model providers in static catalog assets', () => {
+    const runtimeProviders = modelCatalogConfig.providers as Array<{ key: string; logo_path?: string }>;
+    const normalizedCatalog = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'assets/models-catalog/catalog.normalized.json'), 'utf-8'),
+    ) as { providers?: Array<{ provider_id?: string; key?: string }> };
+    const normalizedProviderIds = (normalizedCatalog.providers ?? []).flatMap((provider) => [
+      provider.provider_id,
+      provider.key,
+    ]);
+    const runtimeProviderIds = runtimeProviders.flatMap((provider) => [provider.key, provider.logo_path]);
+
+    for (const providerId of deniedProviderIds) {
+      expect(normalizedProviderIds).not.toContain(providerId);
+      expect(runtimeProviderIds).not.toContain(providerId);
+      expect(runtimeProviderIds).not.toContain(`/models-catalog/logos/${providerId}.svg`);
+      expect(existsSync(resolve(process.cwd(), 'assets/models-catalog/logos', `${providerId}.svg`))).toBe(false);
+      expect(existsSync(resolve(process.cwd(), 'public/models-catalog/logos', `${providerId}.svg`))).toBe(false);
+    }
   });
 
   it('supports multimodal capability filtering', () => {

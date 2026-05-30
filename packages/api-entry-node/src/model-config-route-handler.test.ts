@@ -11,6 +11,8 @@ type TestResponse = {
   headers?: Record<string, string>;
 };
 
+const deniedProviderIds = ['github-copilot', 'github-models'];
+
 function createDeps(): NodeApiDeps {
   return {
     docStore: new InMemoryJsonDocStore(),
@@ -91,6 +93,30 @@ describe('model-config-route-handler', () => {
               },
             },
           },
+          'github-copilot': {
+            id: 'github-copilot',
+            name: 'GitHub Copilot',
+            models: {
+              'gpt-4o-copilot': {
+                id: 'gpt-4o-copilot',
+                name: 'GPT-4o Copilot',
+                reasoning: true,
+                modalities: { input: ['text'], output: ['text'] },
+              },
+            },
+          },
+          'github-models': {
+            id: 'github-models',
+            name: 'GitHub Models',
+            models: {
+              'gpt-4o-mini-github': {
+                id: 'gpt-4o-mini-github',
+                name: 'GPT-4o mini GitHub',
+                reasoning: true,
+                modalities: { input: ['text'], output: ['text'] },
+              },
+            },
+          },
         }),
         { status: 200 },
       )) as typeof fetch;
@@ -110,7 +136,10 @@ describe('model-config-route-handler', () => {
       });
       expect(providersRes.statusCode).toBe(200);
       const providersPayload = providersRes.body as { items: Array<{ provider_key: string }> };
-      expect(providersPayload.items[0]?.provider_key).toBe('openai');
+      expect(providersPayload.items.map((item) => item.provider_key)).toEqual(['openai']);
+      for (const providerId of deniedProviderIds) {
+        expect(providersPayload.items.map((item) => item.provider_key)).not.toContain(providerId);
+      }
 
       const modelsRes = await executeRoute({
         deps,
@@ -119,9 +148,12 @@ describe('model-config-route-handler', () => {
         reqUrl: `/api/v1/workspaces/${workspaceId}/projects/${projectId}/model-catalog/models?capability=reasoning`,
       });
       expect(modelsRes.statusCode).toBe(200);
-      const modelsPayload = modelsRes.body as { items: Array<{ model_id: string }> };
+      const modelsPayload = modelsRes.body as { items: Array<{ model_id: string; provider_key: string }> };
       expect(modelsPayload.items).toHaveLength(1);
       expect(modelsPayload.items[0]?.model_id).toBe('gpt-4o');
+      for (const providerId of deniedProviderIds) {
+        expect(modelsPayload.items.map((item) => item.provider_key)).not.toContain(providerId);
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }

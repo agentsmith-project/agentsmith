@@ -45,6 +45,8 @@ type ModelsDevRawPayload = Record<string, ModelsDevRawProvider>;
 type NormalizedCatalogPayload = {
   source?: string;
   synced_at?: string;
+  provider_count?: number;
+  model_count?: number;
   providers?: Array<{
     provider_id?: string;
     key?: string;
@@ -73,6 +75,8 @@ type MaterializedCatalog = {
   rawPayload: Record<string, unknown>;
 };
 
+const DENIED_MODEL_CATALOG_PROVIDER_IDS = new Set(['github-copilot', 'github-models']);
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -84,6 +88,46 @@ function hashPayload(payload: unknown): string {
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function isDeniedModelCatalogProviderId(value?: string): boolean {
+  if (!value) return false;
+  return DENIED_MODEL_CATALOG_PROVIDER_IDS.has(value.trim().toLowerCase());
+}
+
+function shouldExposeModelCatalogProvider(...providerIds: Array<string | undefined>): boolean {
+  return !providerIds.some(isDeniedModelCatalogProviderId);
+}
+
+function filterRawCatalogPayload(raw: ModelsDevRawPayload): ModelsDevRawPayload {
+  const filtered: ModelsDevRawPayload = {};
+  for (const [providerKey, provider] of Object.entries(raw)) {
+    if (!shouldExposeModelCatalogProvider(providerKey, provider.id)) continue;
+    filtered[providerKey] = provider;
+  }
+  return filtered;
+}
+
+function filterNormalizedCatalogPayload(raw: NormalizedCatalogPayload): NormalizedCatalogPayload {
+  const providers = (raw.providers ?? []).filter((provider) => {
+    const providerKey = (provider.key ?? provider.provider_id ?? '').trim();
+    const providerId = (provider.provider_id ?? providerKey).trim();
+    return shouldExposeModelCatalogProvider(providerKey, providerId);
+  });
+  const filtered: NormalizedCatalogPayload = {
+    ...raw,
+    providers,
+  };
+  if (Object.prototype.hasOwnProperty.call(raw, 'provider_count')) {
+    filtered.provider_count = providers.length;
+  }
+  if (Object.prototype.hasOwnProperty.call(raw, 'model_count')) {
+    filtered.model_count = providers.reduce(
+      (sum, provider) => sum + (provider.models?.length ?? 0),
+      0,
+    );
+  }
+  return filtered;
 }
 
 function inferCapabilities(model: ModelsDevRawModel): string[] {
@@ -121,9 +165,10 @@ function inferProviderProtocol(api?: string, providerKey?: string): string {
 }
 
 function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
+  const filteredRaw = filterRawCatalogPayload(raw);
   const providers: ModelCatalogProviderProjectionRecord[] = [];
   const models: ModelCatalogModelProjectionRecord[] = [];
-  for (const [providerKey, provider] of Object.entries(raw)) {
+  for (const [providerKey, provider] of Object.entries(filteredRaw)) {
     const providerId = (provider.id ?? providerKey).trim();
     const providerName = (provider.name ?? providerKey).trim();
     const providerModels = provider.models ?? {};
@@ -179,14 +224,15 @@ function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
     schema_kind: 'models.dev.raw',
     providers,
     models,
-    rawPayload: raw as Record<string, unknown>,
+    rawPayload: filteredRaw as Record<string, unknown>,
   };
 }
 
 function materializeNormalizedPayload(raw: NormalizedCatalogPayload): MaterializedCatalog {
+  const filteredRaw = filterNormalizedCatalogPayload(raw);
   const providers: ModelCatalogProviderProjectionRecord[] = [];
   const models: ModelCatalogModelProjectionRecord[] = [];
-  for (const provider of raw.providers ?? []) {
+  for (const provider of filteredRaw.providers ?? []) {
     const providerKey = (provider.key ?? provider.provider_id ?? '').trim();
     if (!providerKey) continue;
     const providerId = (provider.provider_id ?? providerKey).trim();
@@ -235,8 +281,22 @@ function materializeNormalizedPayload(raw: NormalizedCatalogPayload): Materializ
     schema_kind: 'models.dev.normalized',
     providers,
     models,
-    rawPayload: raw as unknown as Record<string, unknown>,
+    rawPayload: filteredRaw as unknown as Record<string, unknown>,
   };
+}
+
+function filterCatalogProviders(
+  providers: ModelCatalogProviderProjectionRecord[],
+): ModelCatalogProviderProjectionRecord[] {
+  return providers.filter((provider) =>
+    shouldExposeModelCatalogProvider(provider.provider_key, provider.provider_id, provider.provider),
+  );
+}
+
+function filterCatalogModels(models: ModelCatalogModelProjectionRecord[]): ModelCatalogModelProjectionRecord[] {
+  return models.filter((model) =>
+    shouldExposeModelCatalogProvider(model.provider_key, model.provider_id, model.provider),
+  );
 }
 
 function materializeCatalogPayload(payload: unknown): MaterializedCatalog {
@@ -404,7 +464,17 @@ export async function readActiveModelCatalogSnapshot(docStore: JsonDocStorePort)
     store.listModelCatalogProviders(active.id),
     store.listModelCatalogModels(active.id),
   ]);
-  return { version: active, providers, models };
+  const filteredProviders = filterCatalogProviders(providers);
+  const filteredModels = filterCatalogModels(models);
+  return {
+    version: {
+      ...active,
+      provider_count: filteredProviders.length,
+      model_count: filteredModels.length,
+    },
+    providers: filteredProviders,
+    models: filteredModels,
+  };
 }
 
 export async function listModelCatalogJobs(docStore: JsonDocStorePort): Promise<ModelCatalogSyncJobRecord[]> {

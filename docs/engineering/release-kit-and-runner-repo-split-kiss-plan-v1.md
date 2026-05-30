@@ -31,11 +31,12 @@ Active plan 读法：
 1. release-kit P2 最小 online adoption 聚合已完成；它只是 repo-local aggregation / handoff input，`online-adoption-report.json` 仍是 `readiness=false`，不是 release readiness、deploy/package/operator verdict 或 AgentSmith `release:ready` 结论。
 2. AgentSmith link-level `release-kit-online-adoption-handoff` validator 已完成：AgentSmith commits `9fa11298` / `914244a5`。Focused test 结论：validator 覆盖 digest/provenance/link 级 happy path，malformed handoff contract fail fast；它未接入 `release:ready` 或 `contracts:check`，不产生 release-kit verdict。
 3. P6-lite summary/status 降噪已完成：AgentSmith commits `d2e38da3` / `6b72a8f3`。Focused test 结论：默认 `release:ready` / `release:status` human output 不再展示 transition-only unified deploy diagnostics，release-kit focused evidence 不再像 product readiness summary item。
+4. release-kit repo 已完成 operator-facing `airgap/use_existing` surface：映射到 `--airgap-consume-rehearsal`，覆盖 apply 链 image-load / render-check / apply / rollout / smoke；report 仍是 `readiness=false`。custom `--bundle-manifest` summary 校验问题已修复。release-kit commits `f3976a2` / `dcd30bc`，CI run `26670049863` success。
 
 尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. release-kit formal release gate、offline install-deploy smoke 和 operator adoption 仍未完成；不得把 release-kit focused evidence、`online-adoption-report.json` 或未来 repo-local verdict 接回 AgentSmith `release:ready`。
+2. release-kit formal release gate、offline formal release gate / operator adoption 仍未完成；`airgap/install_substrates` 仍未实现并应 fail fast；不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict 或 operator verdict。
 3. runner backend-real / full runtime semantics 仍未完成；现有 runner focused image/task-execution 证据不代表真实 LLM、backend-real 或 full runtime semantics。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
@@ -100,7 +101,7 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前尚未完成事项已从旧三切片继续收窄为：P6-lite 文档/旧引用归档清理、release-kit formal release gate / offline install-deploy smoke / operator adoption，以及 runner backend-real / full runtime semantics。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、release-kit P2 最小 online adoption 聚合、AgentSmith link-level handoff validator、P6-lite summary/status 降噪、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
+当前尚未完成事项已从旧三切片继续收窄为：P6-lite 文档/旧引用归档清理、release-kit formal release gate / offline formal release gate / operator adoption、`airgap/install_substrates` fail-fast 保持，以及 runner backend-real / full runtime semantics。已完成的 release-kit operator surface、operator `online/use_existing` confirmed apply、operator-facing `airgap/use_existing` rehearsal surface、release-kit P2 最小 online adoption 聚合、AgentSmith link-level handoff validator、P6-lite summary/status 降噪、runner manual image-smoke、docs/governance slim、release-kit `kit_installed/online` evidence parity 和 runner real-path boundary smoke 不再作为待办；release-kit verdict 也不能接回 AgentSmith `release:ready`。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 

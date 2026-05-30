@@ -105,6 +105,19 @@ function forbidRunnerWireMatches(
   }
 }
 
+function forbidRunnerPathMatches(
+  filePath: string,
+  patterns: readonly (readonly [RegExp, string, string])[],
+): void {
+  for (const [pattern, label, source] of patterns) {
+    if (pattern.test(filePath)) {
+      failures.push(
+        `${filePath} must not expose ${label} in runner/projection path (${source})`,
+      );
+    }
+  }
+}
+
 function isRunnerWireNegativeProofLine(line: string): boolean {
   return /not\.toContain\(|release_check_forbid_pattern/.test(line);
 }
@@ -479,6 +492,70 @@ const activeRunnerWireFiles = [
   "scripts/run-integration-e2e-full.sh",
   "scripts/run-integration-release-user-story.sh",
   "scripts/run-release-local-precheck.sh",
+] as const;
+
+const providerNeutralRunnerProjectionFiles = uniqueSorted([
+  "Makefile",
+  "e2e/integration-agent-task-runner.spec.ts",
+  "e2e/integration-real-helpers.ts",
+  "package.json",
+  "packages/agent-runner-contract/contract-artifact.json",
+  ...collectTextFiles("packages/agent-runner-contract/src", [".ts"]),
+  ...collectTextFiles("packages/agent-task-runner/src", [".ts"]),
+  ...collectTextFiles("packages/agent-task-runner/builtin-skills", [
+    ".json",
+    ".md",
+    ".py",
+    ".yaml",
+    ".yml",
+  ]),
+  "packages/api-entry-node/src/internal-agent-pod-manager.ts",
+  "packages/api-entry-node/src/internal-agent-pod-manager.test.ts",
+  "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
+  "packages/api-entry-node/src/notebook-execution-orchestrator.test.ts",
+  "scripts/governance/__tests__/current-real-session-coverage-manifest.test.ts",
+  "scripts/governance/current-real-session-coverage-manifest.ts",
+  "scripts/governance/current-resource-lock-manifest.ts",
+  "scripts/internal-backend-real-gate-runtime.test.ts",
+  "scripts/run-internal-agent-task-real-gate.sh",
+  "scripts/run-integration-e2e-full.sh",
+  "scripts/run-integration-e2e-full.test.ts",
+  "scripts/skills-runtime-fast-gate.sh",
+]);
+
+const providerBoundRunnerProjectionRetiredFiles = [
+  "scripts/feishu-real-credential-gate.sh",
+] as const;
+
+const providerBoundRunnerProjectionPatterns = [
+  [/feishu-docs/, "provider-bound Feishu builtin skill", "feishu-docs"],
+  [/jira-ops/, "provider-bound Jira builtin skill", "jira-ops"],
+  [
+    /feishu-managed-user/,
+    "provider-bound Feishu projected dependency",
+    "feishu-managed-user",
+  ],
+  [/jira-auth/, "provider-bound Jira projected dependency", "jira-auth"],
+  [
+    /credentials\.jira/,
+    "provider-bound Jira credential key",
+    "credentials.jira",
+  ],
+  [
+    /feishu_mcp_endpoint/,
+    "provider-bound Feishu MCP field",
+    "feishu_mcp_endpoint",
+  ],
+  [
+    /feishu-real-credential-gate/,
+    "provider-bound Feishu real credential gate",
+    "feishu-real-credential-gate",
+  ],
+  [
+    /test:feishu:real:credential/,
+    "provider-bound Feishu real credential npm script",
+    "test:feishu:real:credential",
+  ],
 ] as const;
 
 const runnerWireForbiddenPatterns = [
@@ -1341,6 +1418,28 @@ forbidMatch(
 for (const filePath of activeRunnerWireFiles) {
   const content = readText(filePath);
   forbidRunnerWireMatches(filePath, content, runnerWireForbiddenPatterns);
+}
+
+for (const filePath of providerNeutralRunnerProjectionFiles) {
+  forbidRunnerPathMatches(filePath, providerBoundRunnerProjectionPatterns);
+  const content = readText(filePath);
+  forbidRunnerWireMatches(
+    filePath,
+    content,
+    providerBoundRunnerProjectionPatterns,
+  );
+}
+
+for (const filePath of providerBoundRunnerProjectionRetiredFiles) {
+  if (existsSync(path.join(rootDir, filePath))) {
+    forbidRunnerPathMatches(filePath, providerBoundRunnerProjectionPatterns);
+    const content = readText(filePath);
+    forbidRunnerWireMatches(
+      filePath,
+      content,
+      providerBoundRunnerProjectionPatterns,
+    );
+  }
 }
 
 for (const filePath of runnerWireNegativeProofFiles) {

@@ -41,8 +41,6 @@ run_cmd "npm run test:run -- \
   packages/api-entry-node/src/__integration__/context-store.integration.test.ts"
 
 run_cmd "python3 -m unittest \
-  packages/agent-task-runner/builtin-skills/mbos-context/scripts/context_cli_test.py \
-  packages/agent-task-runner/builtin-skills/jira-ops/scripts/jira_ops_test.py \
-  packages/agent-task-runner/builtin-skills/feishu-docs/scripts/feishu_mcp_test.py"
+  packages/agent-task-runner/builtin-skills/mbos-context/scripts/context_cli_test.py"
 
 info "skill runtime fast gate passed"

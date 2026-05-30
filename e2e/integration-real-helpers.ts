@@ -5424,13 +5424,13 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
           'config="$task_home/.codex/config.toml"',
           'catalog="$task_home/.codex/catalog.json"',
           'manifest="$task_home/.mbos/builtin-skills-manifest.json"',
-          'skill="$task_home/.agents/skills/feishu-docs/SKILL.md"',
+          'skill="$task_home/.agents/skills/mbos-context/SKILL.md"',
           'task_home_ready=0; [ -d "$task_home" ] && task_home_ready=1',
           'workspace_ready=0; [ -d "$workspace" ] && workspace_ready=1',
           'config_ready=0; [ -f "$config" ] && grep -q "model = " "$config" && config_ready=1',
           'catalog_ready=0; [ -f "$catalog" ] && grep -q "\\"models\\"" "$catalog" && catalog_ready=1',
-          'manifest_ready=0; [ -f "$manifest" ] && grep -q "\\"feishu-docs\\"" "$manifest" && manifest_ready=1',
-          'skill_ready=0; [ -f "$skill" ] && grep -qi "feishu" "$skill" && skill_ready=1',
+          'manifest_ready=0; [ -f "$manifest" ] && grep -q "\\"mbos-context\\"" "$manifest" && manifest_ready=1',
+          'skill_ready=0; [ -f "$skill" ] && grep -qi "mbos context" "$skill" && skill_ready=1',
           'printf "task_home=%s\\ntask_home_ready=%s\\nworkspace_ready=%s\\nconfig_ready=%s\\ncatalog_ready=%s\\nmanifest_ready=%s\\nskill_ready=%s\\n" "$task_home" "$task_home_ready" "$workspace_ready" "$config_ready" "$catalog_ready" "$manifest_ready" "$skill_ready"',
         ].join("\n");
         const result = await spawnAndCapture(
@@ -5460,7 +5460,7 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
           codexConfigReady: output.includes("config_ready=1"),
           modelCatalogReady: output.includes("catalog_ready=1"),
           skillsManifestReady: output.includes("manifest_ready=1"),
-          feishuSkillReady: output.includes("skill_ready=1"),
+          mbosContextSkillReady: output.includes("skill_ready=1"),
         };
       },
       { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
@@ -5471,7 +5471,7 @@ export async function expectInternalTaskRuntimeStateInPod(args: {
       codexConfigReady: true,
       modelCatalogReady: true,
       skillsManifestReady: true,
-      feishuSkillReady: true,
+      mbosContextSkillReady: true,
     });
 }
 
@@ -5687,7 +5687,7 @@ async function startAgentTaskRunnerProcessInternal(
         MBOS_AGENT_TASK_RUNNER_MODE: "managed_local",
         MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
         MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
-        MBOS_AGENT_BUILTIN_SKILLS: "mbos-context,feishu-docs,jira-ops",
+        MBOS_AGENT_BUILTIN_SKILLS: "mbos-context",
         MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: "1",
         ...(args.codeBin ? { CODEX_BIN: args.codeBin } : {}),
       },
@@ -5863,7 +5863,7 @@ async function startAgentTaskRunnerDockerProcessInternal(
   );
   const builtinSkillsList =
     process.env.INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS?.trim() ??
-    "mbos-context,feishu-docs,jira-ops";
+    "mbos-context";
   const builtinSkillsRequired =
     process.env.INTEGRATION_AGENT_TASK_RUNNER_BUILTIN_SKILLS_REQUIRED?.trim() ??
     "1";

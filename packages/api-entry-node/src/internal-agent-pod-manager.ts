@@ -78,7 +78,7 @@ interface InternalAgentPodManagerOptions {
 }
 
 const INTERNAL_AGENT_BUILTIN_SKILLS_DIR = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills';
-const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?.trim() || 'mbos-context,feishu-docs,jira-ops';
+const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?.trim() || 'mbos-context';
 const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED?.trim() || '1';
 const INTERNAL_AGENT_TASK_RUNNER_MODE = 'managed_platform';
 const INTERNAL_AGENT_RUNNER_HEALTH_OUTPUT_MAX_CHARS = 8_000;

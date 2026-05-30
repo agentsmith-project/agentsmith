@@ -76,15 +76,15 @@ describe('runner projected dependency env contract truth', () => {
     });
     expect(PROJECTED_DEPENDENCIES_ENV_FIXTURE).toMatchObject({
       dependencies: {
-        'feishu-managed-user': {
+        'sample-runtime-dependency': {
           fields: {
             access_token: 'projected_access_token',
+            endpoint: 'https://runtime-dependency.example.test',
           },
         },
-        'jira-auth': {
+        'sample-secret': {
           fields: {
-            base_url: 'https://jira.example.com',
-            token: 'projected_jira_token',
+            token: 'projected_sample_token',
           },
         },
       },
@@ -93,12 +93,13 @@ describe('runner projected dependency env contract truth', () => {
     const bulkEnv = parseJsonObject(JSON.stringify(PROJECTED_DEPENDENCIES_ENV_FIXTURE));
     expect(bulkEnv.dependencies).toEqual(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies);
 
-    const feishuPayload = parseJsonObject(
-      JSON.stringify(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['feishu-managed-user']),
+    const runtimeDependencyPayload = parseJsonObject(
+      JSON.stringify(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['sample-runtime-dependency']),
     );
-    expect(feishuPayload).toEqual({
+    expect(runtimeDependencyPayload).toEqual({
       fields: {
         access_token: 'projected_access_token',
+        endpoint: 'https://runtime-dependency.example.test',
       },
     });
   });
@@ -162,7 +163,7 @@ describe('runner projected dependency env contract truth', () => {
           minProperties: 1,
           propertyNames: {
             type: 'string',
-            enum: ['access_token', 'feishu_mcp_endpoint', 'uat', 'token'],
+            pattern: expect.stringContaining('context[_]store'),
           },
         },
       },

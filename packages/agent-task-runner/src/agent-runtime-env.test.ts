@@ -56,10 +56,10 @@ describe('buildAgentRuntimeEnv', () => {
   it('serializes projected dependencies into the runtime env', () => {
     const projectedDependencies = {
       dependencies: {
-        'jira-auth': {
+        'sample-secret': {
           fields: {
             base_url: 'http://127.0.0.1:45001',
-            token: 'jira_task_token',
+            token: 'sample_task_token',
           },
         },
       },

@@ -596,7 +596,6 @@ export const CURRENT_RESOURCE_LOCK_MANIFEST: readonly CurrentResourceLockDefinit
     owners: {
       gateIds: ['test-backend-real-core', 'lane-backend-real-release'],
       npmScripts: [
-        'test:feishu:real:credential',
         'manual:feishu:admin',
         'manual:feishu:user',
         'manual:feishu:check',
@@ -606,7 +605,6 @@ export const CURRENT_RESOURCE_LOCK_MANIFEST: readonly CurrentResourceLockDefinit
     appliesTo: {
       gateIds: ['test-backend-real-core', 'lane-backend-real-release'],
       npmScripts: [
-        'test:feishu:real:credential',
         'manual:feishu:admin',
         'manual:feishu:user',
         'manual:feishu:check',

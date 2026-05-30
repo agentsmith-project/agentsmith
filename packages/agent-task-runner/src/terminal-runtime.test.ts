@@ -83,7 +83,7 @@ vi.mock('./builtin-skills.js', () => ({
   resolveBuiltinSkillsConfig: vi.fn(() => ({
     sourceDir: '/seed-skills',
     required: true,
-    skills: ['feishu-docs'],
+    skills: ['mbos-context'],
   })),
   inspectBuiltinSkills: inspectBuiltinSkillsMock,
   seedBuiltinSkills: seedBuiltinSkillsMock,
@@ -217,12 +217,12 @@ describe('terminal-runtime', () => {
     prepareTaskWorkspaceAssetsMock.mockResolvedValue(undefined);
     inspectBuiltinSkillsMock.mockResolvedValue({
       sourceDir: '/seed-skills',
-      available: ['feishu-docs'],
+      available: ['mbos-context'],
       missing: [],
     });
     seedBuiltinSkillsMock.mockResolvedValue({
       targetDir: `${TASK_HOME}/.agents/skills`,
-      seeded: ['feishu-docs'],
+      seeded: ['mbos-context'],
       manifestPath: `${TASK_HOME}/.mbos/builtin-skills-manifest.json`,
     });
     prepareLaunchCommandMock.mockImplementation(async (input: { file: string; args: string[]; env: NodeJS.ProcessEnv }) => ({

@@ -7,7 +7,7 @@ import { readBuiltinSkillCapabilityContract, type BuiltinSkillCapabilityContract
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
 const PACKAGED_IMAGE_SKILLS_DIR = '/etc/codex/skills';
-const DEFAULT_BUILTIN_SKILLS = ['mbos-context', 'feishu-docs', 'jira-ops'];
+const DEFAULT_BUILTIN_SKILLS = ['mbos-context'];
 const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
 const BUILTIN_SKILLS_LOCK_DIRNAME = '.builtin-skills-seed.lock';
 const SHARED_RUNTIME_DIRNAME = '.mbos-runtime';

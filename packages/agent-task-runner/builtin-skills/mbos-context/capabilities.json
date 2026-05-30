@@ -8,10 +8,6 @@
       "scopes": ["member", "task", "project_member", "project", "workspace"],
       "direct_access": true,
       "writable_scopes": ["member", "task"]
-    },
-    {
-      "kind": "managed_credential_refresh",
-      "providers": ["feishu"]
     }
   ]
 }

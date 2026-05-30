@@ -127,9 +127,9 @@ describe('agent-runner task execution context guards', () => {
         ...requiredTaskPaths,
         projected_dependencies: {
           dependencies: {
-            'jira-auth': {
+            'sample-secret': {
               fields: {
-                token: 'projected_jira_token',
+                token: 'projected_sample_token',
                 [field]: 'disabled_product_semantic',
               },
             },
@@ -156,9 +156,9 @@ describe('agent-runner task execution context guards', () => {
         ...requiredTaskPaths,
         projected_dependencies: {
           dependencies: {
-            'jira-auth': {
+            'sample-secret': {
               fields: {
-                token: 'projected_jira_token',
+                token: 'projected_sample_token',
               },
             },
           },
@@ -170,7 +170,7 @@ describe('agent-runner task execution context guards', () => {
         ...requiredTaskPaths,
         projected_dependencies: {
           dependencies: {
-            'jira-auth': {
+            'sample-secret': {
               fields: {},
             },
           },
@@ -181,7 +181,7 @@ describe('agent-runner task execution context guards', () => {
         ...requiredTaskPaths,
         projected_dependencies: {
           dependencies: {
-            'jira-auth': {
+            'sample-secret': {
               fields: {
                 token: 42,
               },
@@ -194,9 +194,9 @@ describe('agent-runner task execution context guards', () => {
         ...requiredTaskPaths,
         projected_dependencies: {
           dependencies: {
-            'jira-auth': {
+            'sample-secret': {
               fields: {
-                token: 'projected_jira_token',
+                token: 'projected_sample_token',
               },
               credential_files: ['legacy-secret'],
             },

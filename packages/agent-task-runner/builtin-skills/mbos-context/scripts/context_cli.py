@@ -109,11 +109,6 @@ def parse_args() -> argparse.Namespace:
     delete_parser = sub.add_parser("delete")
     add_scope_args(delete_parser, needs_key=True)
 
-    refresh_parser = sub.add_parser("refresh-managed-credential")
-    refresh_parser.add_argument("--provider", required=True)
-    refresh_parser.add_argument("--workspace-id")
-    refresh_parser.add_argument("--project-id")
-
     return parser.parse_args()
 
 
@@ -154,19 +149,6 @@ def main() -> int:
         return 0
     if args.command == "delete":
         api_request("DELETE", "/context", query=build_query(args))
-        return 0
-    if args.command == "refresh-managed-credential":
-        query = {}
-        if args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID"):
-            query["workspace_id"] = args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID")
-        if args.project_id or read_env_default("MBOS_AGENT_PROJECT_ID"):
-            query["project_id"] = args.project_id or read_env_default("MBOS_AGENT_PROJECT_ID")
-        response = api_request(
-            "POST",
-            f"/context/managed-credentials/{args.provider}/refresh",
-            query=query or None,
-        )
-        print(json.dumps(response, ensure_ascii=False, indent=2))
         return 0
     raise RuntimeError(f"unsupported command: {args.command}")
 

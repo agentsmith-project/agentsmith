@@ -5,8 +5,6 @@ This directory is the repository-managed source for the builtin Codex skills tha
 Current builtin set:
 
 - `mbos-context`
-- `feishu-docs`
-- `jira-ops`
 
 Runtime dependency contract:
 

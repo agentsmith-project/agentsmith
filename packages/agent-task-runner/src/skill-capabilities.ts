@@ -37,14 +37,7 @@ export type ContextStoreProviderCapability = {
   writable_scopes: Array<Extract<SkillContextScope, 'member' | 'task' | 'project_member'>>;
 };
 
-export type ManagedCredentialRefreshCapability = {
-  kind: 'managed_credential_refresh';
-  providers: string[];
-};
-
-export type BuiltinSkillProvidedCapability =
-  | ContextStoreProviderCapability
-  | ManagedCredentialRefreshCapability;
+export type BuiltinSkillProvidedCapability = ContextStoreProviderCapability;
 
 export type BuiltinSkillCapabilityContract = {
   version: 1;
@@ -149,18 +142,6 @@ function parseProvidedCapability(input: unknown, index: number): BuiltinSkillPro
         `provides[${index}].writable_scopes`,
       ).filter((scope): scope is 'member' | 'task' | 'project_member' =>
         scope === 'member' || scope === 'task' || scope === 'project_member'),
-    };
-  }
-  if (kind === 'managed_credential_refresh') {
-    const providers = Array.isArray(input.providers)
-      ? input.providers.map((item) => readTrimmedString(item)).filter((item): item is string => item !== null)
-      : [];
-    if (providers.length === 0) {
-      throw new Error(`skill_contract_invalid:provides[${index}]`);
-    }
-    return {
-      kind,
-      providers: Array.from(new Set(providers)),
     };
   }
   throw new Error(`skill_contract_invalid:provides[${index}]`);

@@ -1075,15 +1075,6 @@ const NPM_SCRIPT_COVERAGE = [
         "Files real checks mutate AFSCP-backed file libraries, Files API objects, and task HOME binding evidence, so they remain serialized.",
     },
   ),
-  ...npmScriptCoverageGroup(["test:feishu:real:credential"], {
-    proposed_shard_id: "provider-credential",
-    evidence_owner: "backend-real-provider:credential",
-    isolation_level: "serialized",
-    mutable_resources: ["managed_credentials", "provider_quota"],
-    lock_ids: PROVIDER_CREDENTIAL_LOCK_IDS,
-    reason:
-      "Managed credential checks cross the provider secret boundary and are not mergeable with session shards.",
-  }),
   ...npmScriptCoverageGroup(["test:api-key-endpoint-access"], {
     proposed_shard_id: "api-key-endpoint",
     evidence_owner: "backend-real-provider:api-key-endpoint",
@@ -1267,7 +1258,7 @@ const SPEC_COVERAGE = [
   }),
   grepCoverage({
     spec: "e2e/integration-agent-task-runner.spec.ts",
-    grep: "uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner",
+    grep: "keeps provider-neutral projection smoke on mbos-context without projected dependencies",
     proposed_shard_id: "agent-task-runner",
     evidence_owner: "backend-real-runner:agent-task",
     isolation_level: "serialized",
@@ -1280,11 +1271,11 @@ const SPEC_COVERAGE = [
     ],
     lock_ids: BACKEND_REAL_LOCK_IDS,
     reason:
-      "Context precedence coverage mutates shared task/member context ordering.",
+      "Provider-neutral projection absence smoke mutates task context and asserts the runner does not synthesize provider-specific projected dependencies.",
   }),
   grepCoverage({
     spec: "e2e/integration-agent-task-runner.spec.ts",
-    grep: "uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner",
+    grep: "keeps locked agentsmith-runner image provider-neutral for projection smoke in a real Agent Task run",
     proposed_shard_id: "agent-task-runner",
     evidence_owner: "backend-real-runner:agent-task",
     isolation_level: "serialized",
@@ -1294,46 +1285,11 @@ const SPEC_COVERAGE = [
       "runner_task",
       "context_store",
       "runner_mount",
+      "runner_image",
     ],
     lock_ids: BACKEND_REAL_LOCK_IDS,
     reason:
-      "Request-scoped projected dependency coverage mutates task/member context and runner mount projection state.",
-  }),
-  grepCoverage({
-    spec: "e2e/integration-agent-task-runner.spec.ts",
-    grep: "uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner",
-    proposed_shard_id: "provider-credential",
-    evidence_owner: "backend-real-provider:credential",
-    isolation_level: "serialized",
-    mutable_resources: [
-      "workspace",
-      "project",
-      "runner_task",
-      "context_store",
-      "managed_credentials",
-      "runner_mount",
-    ],
-    lock_ids: BACKEND_REAL_LOCK_IDS,
-    reason:
-      "Managed credential projection crosses the secret profile boundary and must stay serialized.",
-  }),
-  grepCoverage({
-    spec: "e2e/integration-agent-task-runner.spec.ts",
-    grep: "reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run",
-    proposed_shard_id: "provider-credential",
-    evidence_owner: "backend-real-provider:credential",
-    isolation_level: "serialized",
-    mutable_resources: [
-      "workspace",
-      "project",
-      "runner_task",
-      "context_store",
-      "managed_credentials",
-      "runner_mount",
-    ],
-    lock_ids: BACKEND_REAL_LOCK_IDS,
-    reason:
-      "Locked runner managed credential projection crosses the secret profile boundary and must stay serialized.",
+      "Locked runner image projection absence smoke keeps canonical image evidence while confirming no provider-specific projected dependencies are produced in this cut.",
   }),
   grepCoverage({
     spec: "e2e/integration-agent-task-runner.spec.ts",

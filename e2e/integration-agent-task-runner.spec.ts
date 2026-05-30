@@ -5,16 +5,12 @@ import {
   BACKEND_REAL_OPENAI_BASE_URL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
-  KEYCLOAK_INTEGRATION_USER_PASSWORD,
-  KEYCLOAK_INTEGRATION_USER_USERNAME,
   createAgentTaskViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalConnectionViaApi,
   createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   createTerminalSessionViaApi,
-  ensureIntegrationKeycloakUsers,
   expectAgentTaskRunnerEvidenceViaApi,
   expectManagedAgentRunnerImageEvidenceViaApi,
   expectManagedWorkloadPodImage,
@@ -25,8 +21,6 @@ import {
   readAgentTaskViaApi,
   runTerminalCommandInSession,
   startAgentTaskRunViaApi,
-  startMockFeishuMcpServer,
-  startMockJiraServer,
   waitForRunnerOutputToken,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -163,11 +157,14 @@ async function createRunnerlessAgentTask(args: {
   return taskId;
 }
 
-function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false): string {
+function buildProviderNeutralProjectionSmokeCommand(args: {
+  contextKey: string;
+  includeRunnerBoundarySmoke?: boolean;
+}): string {
   const python = [
-    'import json,os,sys,urllib.request',
+    'import json,os,subprocess,sys',
     '[os.environ.pop(k,None) for k in ("http_proxy","https_proxy","all_proxy","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","no_proxy","NO_PROXY")]',
-    ...(includeRunnerBoundarySmoke
+    ...(args.includeRunnerBoundarySmoke
       ? [
           'home=os.environ.get("HOME","")',
           'task_home=os.environ.get("TASK_HOME","")',
@@ -186,29 +183,18 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
           'if "AGENT_WS_URL" in os.environ: sys.exit("control_env_leak:AGENT_WS_URL")',
         ]
       : []),
+    `context_key=${JSON.stringify(args.contextKey)}`,
+    'context_value=subprocess.check_output(["python3", os.path.expanduser("~/.agents/skills/mbos-context/scripts/context_cli.py"), "get", "--scope", "task", "--key", context_key], text=True).strip()',
+    'context_value or sys.exit("missing_context_value")',
     'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',
-    'raw or sys.exit("missing_MBOS_AGENT_PROJECTED_DEPENDENCIES")',
-    'data=json.loads(raw)',
-    'deps=data.get("dependencies") if isinstance(data,dict) else None',
-    'dep=deps.get("jira-auth") if isinstance(deps,dict) else None',
-    'fields=dep.get("fields") if isinstance(dep,dict) else None',
-    ...(includeRunnerBoundarySmoke
+    'if raw:',
+    '    data=json.loads(raw)',
+    '    deps=data.get("dependencies") if isinstance(data,dict) else None',
+    '    if isinstance(deps,dict) and len(deps) > 0:',
+    '        sys.exit("unexpected_projected_dependencies:"+",".join(sorted(str(k) for k in deps.keys())))',
+    ...(args.includeRunnerBoundarySmoke
       ? [
-          'isinstance(fields,dict) or sys.exit("missing_jira_auth_fields")',
-        ]
-      : []),
-    'base_url=fields.get("base_url") if isinstance(fields,dict) and isinstance(fields.get("base_url"),str) else None',
-    'token=fields.get("token") if isinstance(fields,dict) and isinstance(fields.get("token"),str) else None',
-    'base_url or sys.exit("missing_jira_base_url")',
-    'token or sys.exit("missing_jira_token")',
-    'url=base_url.rstrip("/")+"/rest/api/2/myself"',
-    'request=urllib.request.Request(url,headers={"Authorization":"Bearer "+token})',
-    'profile=json.loads(urllib.request.urlopen(request,timeout=10).read().decode("utf-8"))',
-    'display_name=profile.get("displayName") if isinstance(profile,dict) and isinstance(profile.get("displayName"),str) else None',
-    'display_name or sys.exit("missing_jira_displayName")',
-    ...(includeRunnerBoundarySmoke
-      ? [
-          'token_bytes=token.encode("utf-8")',
+          'context_bytes=context_value.encode("utf-8")',
           'leak_path=None',
           'checked_files=0',
           'checked_bytes=0',
@@ -232,56 +218,18 @@ function buildJiraProjectionEnvSmokeCommand(includeRunnerBoundarySmoke = false):
           '            checked_bytes+=read_size',
           '        except OSError:',
           '            continue',
-          '        if token_bytes in chunk:',
+          '        if context_bytes in chunk:',
           '            leak_path=os.path.relpath(file_path,task_home)',
           '            break',
           '    if leak_path or checked_files >= max_files or checked_bytes >= max_bytes:',
           '        break',
           'if leak_path:',
-          '    sys.exit("task_token_persisted:"+leak_path)',
-          'print("JIRA_PROJECTION::"+display_name+" RUNNER_PROJECTION_BOUNDARY::ok RUNNER_SEMANTIC_SOURCE::blue")',
+          '    sys.exit("context_value_persisted:"+leak_path)',
+          'print("PROJECTION_SMOKE::"+context_value+" RUNNER_PROJECTION_BOUNDARY::ok RUNNER_SEMANTIC_SOURCE::blue")',
         ]
       : [
-          'print("JIRA_PROJECTION::"+display_name)',
+          'print("PROJECTION_SMOKE::"+context_value)',
         ]),
-  ].join('\n');
-
-  return `python3 -c 'exec(${JSON.stringify(python)})'`;
-}
-
-function buildFeishuManagedUserProjectionSmokeCommand(): string {
-  const python = [
-    'import json,os,sys',
-    'raw=os.environ.get("MBOS_AGENT_PROJECTED_DEPENDENCIES","")',
-    'raw or sys.exit("missing_MBOS_AGENT_PROJECTED_DEPENDENCIES")',
-    'try:',
-    '    data=json.loads(raw)',
-    'except ValueError:',
-    '    sys.exit("invalid_MBOS_AGENT_PROJECTED_DEPENDENCIES_json")',
-    'CONTROL_FIELDS=("context_store","writable_scopes","credential_files","user_bearer_token","provenance")',
-    'def reject_forbidden_projection_fields(value):',
-    '    if isinstance(value,dict):',
-    '        for key, child in value.items():',
-    '            if key == "refresh_token":',
-    '                sys.exit("forbidden_refresh_token")',
-    '            if key in CONTROL_FIELDS:',
-    '                sys.exit("forbidden_control_field:"+key)',
-    '            reject_forbidden_projection_fields(child)',
-    '    elif isinstance(value,list):',
-    '        for child in value:',
-    '            reject_forbidden_projection_fields(child)',
-    'reject_forbidden_projection_fields(data)',
-    'deps=data.get("dependencies") if isinstance(data,dict) else None',
-    'dep=deps.get("feishu-managed-user") if isinstance(deps,dict) else None',
-    'fields=dep.get("fields") if isinstance(dep,dict) else None',
-    'isinstance(fields,dict) or sys.exit("missing_feishu_managed_user_fields")',
-    'token=fields.get("access_token") if isinstance(fields.get("access_token"),str) else None',
-    'endpoint=fields.get("feishu_mcp_endpoint") if isinstance(fields.get("feishu_mcp_endpoint"),str) else None',
-    'token or sys.exit("missing_feishu_access_token")',
-    'endpoint or sys.exit("missing_feishu_mcp_endpoint")',
-    'marker=endpoint.rstrip("/").rsplit("/",1)[-1]',
-    'marker.startswith("locked-runtime-") or sys.exit("unexpected_feishu_marker")',
-    'print("FEISHU_MANAGED_USER_PROJECTION::"+marker)',
   ].join('\n');
 
   return `python3 -c 'exec(${JSON.stringify(python)})'`;
@@ -403,140 +351,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
     }));
   });
 
-  test('uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
+  test('keeps provider-neutral projection smoke on mbos-context without projected dependencies', async ({ page }) => {
     test.setTimeout(720_000);
     let stage = 'init';
-    const memberToken = `jira_member_${Date.now()}`;
-    const taskToken = `jira_task_${Date.now()}`;
-    const memberServer = await startMockJiraServer({
-      displayName: `jira-member-${Date.now()}`,
-      expectedToken: memberToken,
-    });
-    const taskServer = await startMockJiraServer({
-      displayName: `jira-task-${Date.now()}`,
-      expectedToken: taskToken,
-    });
-
-    try {
-      const prepared = await prepareAgentTaskProject(page, {
-        projectPrefix: 'Agent Task Jira Skill',
-        runnerTitle: 'agent-task-jira-runner',
-      });
-      const taskId = await createRunnerlessAgentTask({
-        page,
-        projectId: prepared.projectId,
-        title: `Agent Task Jira ${Date.now()}`,
-      });
-
-      stage = 'put_member_jira_base_url';
-      await putContextEntryViaApi({
-        page,
-        scope: 'member',
-        workspaceId: WORKSPACE_ID,
-        key: 'credentials.jira_base_url',
-        content: memberServer.baseUrl,
-      });
-      stage = 'put_member_jira_token';
-      await putContextEntryViaApi({
-        page,
-        scope: 'member',
-        workspaceId: WORKSPACE_ID,
-        key: 'credentials.jira_token',
-        content: memberToken,
-      });
-
-      stage = 'put_task_jira_base_url';
-      await putContextEntryViaApi({
-        page,
-        scope: 'task',
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        key: 'credentials.jira_base_url',
-        content: taskServer.baseUrl,
-      });
-      stage = 'put_task_jira_token';
-      await putContextEntryViaApi({
-        page,
-        scope: 'task',
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        key: 'credentials.jira_token',
-        content: taskToken,
-      });
-
-      stage = 'start_task_run';
-      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        intent: [
-          'Run this exact shell command and use its stdout value in your final reply:',
-          '`python3 ~/.agents/skills/jira-ops/scripts/jira_ops.py myself | python3 -c "import json,sys; print(\\\'JIRA_TASK_SCOPE::\\\' + json.load(sys.stdin)[\\\'displayName\\\'])"`',
-          'Reply with exactly one line and no extra text.',
-        ].join(' '),
-      });
-      stage = 'verify_runner_evidence';
-      await expectAgentTaskRunnerEvidenceViaApi({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        runnerId: prepared.runnerId,
-      });
-      stage = 'wait_for_jira_task_scope';
-      await waitForRunnerOutputToken({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        token: 'JIRA_TASK_SCOPE::jira-task-',
-        runnerOutputActivityId,
-        runId,
-      });
-      stage = 'verify_not_member_token';
-      const authToken = await readStoredAuthToken(page);
-      const activityResponse = await page.request.get(
-        `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
-        { headers: { Authorization: `Bearer ${authToken}` } },
-      );
-      expect(activityResponse.ok()).toBeTruthy();
-      const activity = (await activityResponse.json()) as Array<{ content?: string; actor?: string; kind?: string }>;
-      const runnerOutputContent = activity
-        .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
-        .map((item) => item.content ?? '')
-        .join('\n');
-      expect(runnerOutputContent).toContain('JIRA_TASK_SCOPE::jira-task-');
-      expect(runnerOutputContent).not.toContain('JIRA_TASK_SCOPE::jira-member-');
-      stage = 'done';
-    } catch (error) {
-      throw new Error(`jira_task_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      await memberServer.stop();
-      await taskServer.stop();
-    }
-  });
-
-  test('uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
-    test.setTimeout(720_000);
-    let stage = 'init';
-    const memberToken = `jira_projection_member_${Date.now()}`;
-    const taskToken = `jira_projection_task_${Date.now()}`;
-    const memberDisplayName = `jira-projection-member-${Date.now()}`;
-    const taskDisplayName = `jira-projection-task-${Date.now()}`;
     const projectionSmokeImage = readRunnerProjectionSmokeImage();
     const projectionSmokeImageId =
       process.env.INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID?.trim() || null;
-    const memberServer = await startMockJiraServer({
-      displayName: memberDisplayName,
-      expectedToken: memberToken,
-    });
-    const taskServer = await startMockJiraServer({
-      displayName: taskDisplayName,
-      expectedToken: taskToken,
-    });
 
     try {
       const prepared = await prepareAgentTaskProject(page, {
@@ -573,48 +393,28 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         title: `Agent Task Projection ${Date.now()}`,
       });
 
-      stage = 'put_member_projection_context';
-      await putContextEntryViaApi({
-        page,
-        scope: 'member',
-        workspaceId: WORKSPACE_ID,
-        key: 'credentials.jira_base_url',
-        content: memberServer.baseUrl,
-      });
-      await putContextEntryViaApi({
-        page,
-        scope: 'member',
-        workspaceId: WORKSPACE_ID,
-        key: 'credentials.jira_token',
-        content: memberToken,
-      });
-
       stage = 'put_task_projection_context';
+      const contextKey = `notes.projection_smoke_${Date.now()}`;
+      const contextValue = `PROJECTION_CTX_${Date.now()}`;
       await putContextEntryViaApi({
         page,
         scope: 'task',
         workspaceId: WORKSPACE_ID,
         projectId: prepared.projectId,
         taskId,
-        key: 'credentials.jira_base_url',
-        content: taskServer.baseUrl,
-      });
-      await putContextEntryViaApi({
-        page,
-        scope: 'task',
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        key: 'credentials.jira_token',
-        content: taskToken,
+        key: contextKey,
+        content: contextValue,
       });
 
       stage = 'start_task_run';
-      const jiraProjectionCommand = buildJiraProjectionEnvSmokeCommand(Boolean(projectionSmokeImage));
-      expect(jiraProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+      const projectionCommand = buildProviderNeutralProjectionSmokeCommand({
+        contextKey,
+        includeRunnerBoundarySmoke: Boolean(projectionSmokeImage),
+      });
+      expect(projectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
       if (projectionSmokeImage) {
-        expect(jiraProjectionCommand).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
-        expect(jiraProjectionCommand).toContain('RUNNER_SEMANTIC_SOURCE::blue');
+        expect(projectionCommand).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+        expect(projectionCommand).toContain('RUNNER_SEMANTIC_SOURCE::blue');
       }
       const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
         page,
@@ -623,10 +423,10 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         taskId,
         intent: [
           'Run this exact shell command and use its stdout value in your final reply:',
-          `\`${jiraProjectionCommand}\``,
+          `\`${projectionCommand}\``,
           ...(projectionSmokeImage
             ? [
-                'Your final reply must preserve the stdout JIRA_PROJECTION marker. Find the color value after RUNNER_SEMANTIC_SOURCE:: in stdout, uppercase that value, and append a marker using prefix RUNNER_LLM_SEMANTIC:: followed by the uppercased value.',
+                'Your final reply must preserve the stdout PROJECTION_SMOKE marker. Find the color value after RUNNER_SEMANTIC_SOURCE:: in stdout, uppercase that value, and append a marker using prefix RUNNER_LLM_SEMANTIC:: followed by the uppercased value.',
               ]
             : []),
           'Reply with exactly one line and no extra text.',
@@ -657,7 +457,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         workspaceId: WORKSPACE_ID,
         projectId: prepared.projectId,
         taskId,
-        token: `JIRA_PROJECTION::${taskDisplayName}`,
+        token: `PROJECTION_SMOKE::${contextValue}`,
         runnerOutputActivityId,
         runId,
       });
@@ -686,25 +486,19 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
         .map((item) => item.content ?? '')
         .join('\n');
-      expect(runnerOutputContent).toContain(`JIRA_PROJECTION::${taskDisplayName}`);
+      expect(runnerOutputContent).toContain(`PROJECTION_SMOKE::${contextValue}`);
       if (projectionSmokeImage) {
         expect(runnerOutputContent).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
         expect(runnerOutputContent).toContain('RUNNER_LLM_SEMANTIC::BLUE');
       }
-      expect(runnerOutputContent).not.toContain(`JIRA_PROJECTION::${memberDisplayName}`);
-      expectRunnerOutputNotToLeakSecret(runnerOutputContent, taskToken, 'redacted task Jira token');
-      expectRunnerOutputNotToLeakSecret(runnerOutputContent, memberToken, 'redacted member Jira token');
       expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
       stage = 'done';
     } catch (error) {
-      throw new Error(`jira_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      await memberServer.stop();
-      await taskServer.stop();
+      throw new Error(`provider_neutral_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
     }
   });
 
-  test('reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run', async ({ page }) => {
+  test('keeps locked agentsmith-runner image provider-neutral for projection smoke in a real Agent Task run', async ({ page }) => {
     test.setTimeout(720_000);
     const lockedRuntimeSmokeImage = readRunnerLockedRuntimeSmokeImage();
     test.skip(!lockedRuntimeSmokeImage, 'locked runtime smoke runs only under INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE=1');
@@ -740,36 +534,24 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       projectId: prepared.projectId,
       title: `Agent Task Locked Runtime Projection ${Date.now()}`,
     });
-    const feishuMarker = `locked-runtime-${Date.now()}`;
-    const feishuToken = `feishu_locked_runtime_token_${Date.now()}`;
-    const authToken = await readStoredAuthToken(page);
-    expect(authToken).toBeTruthy();
-    await createExternalConnectionViaApi({
-      request: page.request,
-      token: authToken!,
-      provider: 'feishu',
-      kind: 'oauth_account',
-      displayName: `locked-runtime-feishu-${Date.now()}`,
-      fields: [
-        { key: 'access_token', value: feishuToken, secret: true },
-        { key: 'feishu_mcp_endpoint', value: `https://feishu.example.test/${feishuMarker}`, secret: false },
-      ],
-      scopes: ['search:docs:read'],
+    const contextKey = `notes.locked_projection_smoke_${Date.now()}`;
+    const contextValue = `LOCKED_PROJECTION_CTX_${Date.now()}`;
+    await putContextEntryViaApi({
+      page,
+      scope: 'task',
+      workspaceId: WORKSPACE_ID,
+      projectId: prepared.projectId,
+      taskId,
+      key: contextKey,
+      content: contextValue,
     });
 
-    const feishuProjectionCommand = buildFeishuManagedUserProjectionSmokeCommand();
-    const expectFeishuProjectionCommandPython = (source: string) => {
-      expect(feishuProjectionCommand).toContain(JSON.stringify(source).slice(1, -1));
-    };
-    expect(feishuProjectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
-    expect(feishuProjectionCommand).toContain('data=json.loads(raw)');
-    expect(feishuProjectionCommand).toContain('feishu-managed-user');
-    expectFeishuProjectionCommandPython('dep=deps.get("feishu-managed-user")');
-    expectFeishuProjectionCommandPython('fields.get("access_token")');
-    expectFeishuProjectionCommandPython('fields.get("feishu_mcp_endpoint")');
-    expect(feishuProjectionCommand).toContain('forbidden_refresh_token');
-    expect(feishuProjectionCommand).toContain('forbidden_control_field:');
-    expectFeishuProjectionCommandPython('"context_store","writable_scopes","credential_files","user_bearer_token","provenance"');
+    const projectionCommand = buildProviderNeutralProjectionSmokeCommand({
+      contextKey,
+      includeRunnerBoundarySmoke: true,
+    });
+    expect(projectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+    expect(projectionCommand).toContain('PROJECTION_SMOKE::');
     const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
       page,
       workspaceId: WORKSPACE_ID,
@@ -777,7 +559,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       taskId,
       intent: [
         'Run this exact shell command and use its stdout value in your final reply:',
-        `\`${feishuProjectionCommand}\``,
+        `\`${projectionCommand}\``,
         'Reply with exactly one line and no extra text.',
       ].join(' '),
     });
@@ -801,11 +583,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       workspaceId: WORKSPACE_ID,
       projectId: prepared.projectId,
       taskId,
-      token: `FEISHU_MANAGED_USER_PROJECTION::${feishuMarker}`,
+      token: `PROJECTION_SMOKE::${contextValue}`,
       runnerOutputActivityId,
       runId,
     });
 
+    const authToken = await readStoredAuthToken(page);
     const activityResponse = await page.request.get(
       `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
       { headers: { Authorization: `Bearer ${authToken}` } },
@@ -816,78 +599,9 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
       .map((item) => item.content ?? '')
       .join('\n');
-    expect(runnerOutputContent).toContain(`FEISHU_MANAGED_USER_PROJECTION::${feishuMarker}`);
-    expectRunnerOutputNotToLeakSecret(runnerOutputContent, feishuToken, 'redacted Feishu managed credential token');
+    expect(runnerOutputContent).toContain(`PROJECTION_SMOKE::${contextValue}`);
+    expect(runnerOutputContent).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
     expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
-  });
-
-  test('uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner', async ({ page }) => {
-    test.setTimeout(720_000);
-    const feishuToken = `feishu_mock_token_${Date.now()}`;
-    const toolName = `mock_feishu_tool_${Date.now()}`;
-    const feishuServer = await startMockFeishuMcpServer({
-      expectedToken: feishuToken,
-      toolName,
-    });
-
-    try {
-      await ensureIntegrationKeycloakUsers();
-      const prepared = await prepareAgentTaskProject(page, {
-        projectPrefix: 'Agent Task Feishu Skill',
-        runnerTitle: 'agent-task-feishu-runner',
-        username: KEYCLOAK_INTEGRATION_USER_USERNAME,
-        password: KEYCLOAK_INTEGRATION_USER_PASSWORD,
-      });
-      const taskId = await createRunnerlessAgentTask({
-        page,
-        projectId: prepared.projectId,
-        title: `Agent Task Feishu ${Date.now()}`,
-      });
-
-      const authToken = await readStoredAuthToken(page);
-      expect(authToken).toBeTruthy();
-      await createExternalConnectionViaApi({
-        request: page.request,
-        token: authToken!,
-        provider: 'feishu',
-        kind: 'oauth_account',
-        displayName: `member-feishu-${Date.now()}`,
-        fields: [
-          { key: 'access_token', value: feishuToken, secret: true },
-          { key: 'feishu_mcp_endpoint', value: feishuServer.endpoint, secret: false },
-        ],
-      });
-
-      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        intent: [
-          'Run this exact shell command and use its stdout value in your final reply:',
-          '`python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py tools-list | python3 -c "import json,sys; payload=json.load(sys.stdin); print(\\\'FEISHU_TOOLS::\\\' + payload[\\\'result\\\'][\\\'tools\\\'][0][\\\'name\\\'])"`',
-          'Reply with exactly one line and no extra text.',
-        ].join(' '),
-      });
-      await expectAgentTaskRunnerEvidenceViaApi({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        runnerId: prepared.runnerId,
-      });
-      await waitForRunnerOutputToken({
-        page,
-        workspaceId: WORKSPACE_ID,
-        projectId: prepared.projectId,
-        taskId,
-        token: `FEISHU_TOOLS::${toolName}`,
-        runnerOutputActivityId,
-        runId,
-      });
-    } finally {
-      await feishuServer.stop();
-    }
   });
 
   test('reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner', async ({ page }) => {

@@ -102,20 +102,6 @@ class ContextStoreClient:
         content = response.get("content")
         return content if isinstance(content, str) and content.strip() else None
 
-    def refresh_managed_credential(self, *, provider: str, workspace_id: str | None = None) -> dict[str, Any]:
-        query: dict[str, str] | None = None
-        if workspace_id:
-            query = {"workspace_id": workspace_id}
-        response = self.request_json(
-            "POST",
-            f"/context/managed-credentials/{provider}/refresh",
-            query=query,
-        )
-        if response is None:
-            raise RuntimeError("Managed credential refresh returned empty response.")
-        return response
-
-
 def _read_json_file(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -233,42 +219,4 @@ def resolve_managed_credential_dependency(script_file: str | Path, dependency_na
         response,
         empty_message=f"Managed credential dependency '{dependency_name}' is empty.",
         invalid_message=f"Managed credential dependency '{dependency_name}' is invalid.",
-    )
-
-
-def refresh_managed_credential_dependency(script_file: str | Path, dependency_name: str) -> dict[str, Any]:
-    contract = load_skill_capability_contract(script_file)
-    dependency = find_dependency(contract, dependency_name)
-    if dependency.get("kind") != "managed_credential":
-        raise RuntimeError(f"Dependency '{dependency_name}' is not a managed credential dependency.")
-    if dependency.get("refresh_supported") is False:
-        raise RuntimeError(f"Dependency '{dependency_name}' does not support refresh.")
-    provider = dependency.get("provider")
-    scope = dependency.get("scope")
-    if not isinstance(provider, str):
-        raise RuntimeError(f"Dependency '{dependency_name}' is missing provider.")
-    if scope not in ("member", "project_member"):
-        raise RuntimeError(f"Dependency '{dependency_name}' is missing supported scope.")
-    client = ContextStoreClient.from_runner_env(
-        required=True,
-        unavailable_message="Managed credentials are unavailable. This skill requires AgentSmith runtime context access in notebook or terminal sessions.",
-    )
-    if client is None:
-        raise RuntimeError("Managed credentials are unavailable.")
-    workspace_id = read_env_default("MBOS_AGENT_WORKSPACE_ID")
-    project_id = read_env_default("MBOS_AGENT_PROJECT_ID") if scope == "project_member" else None
-    if scope == "project_member" and not project_id:
-        raise RuntimeError(f"Managed credential dependency '{dependency_name}' requires project scope.")
-    response = client.request_json(
-        "POST",
-        f"/context/managed-credentials/{provider}/refresh",
-        query={
-            **({"workspace_id": workspace_id} if workspace_id else {}),
-            **({"project_id": project_id} if project_id else {}),
-        } or None,
-    )
-    return _parse_projected_content(
-        response,
-        empty_message=f"Managed credential refresh for '{dependency_name}' returned empty content.",
-        invalid_message=f"Managed credential refresh for '{dependency_name}' returned invalid content.",
     )

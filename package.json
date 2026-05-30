@@ -59,7 +59,6 @@
     "test:agent-task:runner:locked-runtime": "bash scripts/run-internal-agent-task-real-gate.sh --runner-locked-runtime-smoke",
     "test:agent-runners:lifecycle:evidence": "bash scripts/agent-runner-lifecycle-evidence-gate.sh",
     "test:internal:backend-real:ownership": "bash scripts/internal-ownership-backend-real-gate.sh",
-    "test:feishu:real:credential": "bash scripts/feishu-real-credential-gate.sh",
     "test:api-key-endpoint-access": "bash scripts/api-key-endpoint-access-gate.sh",
     "test:e2e:integration:workspace-governance-switch": "bash scripts/workspace-governance-switch-gate.sh",
     "test:governance": "bash scripts/governance-default-gate.sh",

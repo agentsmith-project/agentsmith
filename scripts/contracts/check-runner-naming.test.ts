@@ -219,6 +219,55 @@ describe("check-runner-naming contract", () => {
     ).toContain("isRunnerWireNegativeProofLine");
   });
 
+  it("forbids provider-bound runner skill and projection names in the focused runner/projection slice", () => {
+    const checkerSource = readFileSync(
+      path.join(process.cwd(), "scripts/contracts/check-runner-naming.ts"),
+      "utf8",
+    );
+
+    for (const expectedSurface of [
+      "providerNeutralRunnerProjectionFiles",
+      "providerBoundRunnerProjectionRetiredFiles",
+      "providerBoundRunnerProjectionPatterns",
+      "forbidRunnerPathMatches",
+      "package.json",
+      "packages/agent-task-runner/builtin-skills",
+      "packages/agent-task-runner/src",
+      "packages/agent-runner-contract/src",
+      "packages/api-entry-node/src/internal-agent-pod-manager.ts",
+      "packages/api-entry-node/src/internal-agent-pod-manager.test.ts",
+      "packages/api-entry-node/src/notebook-execution-orchestrator.ts",
+      "packages/api-entry-node/src/notebook-execution-orchestrator.test.ts",
+      "e2e/integration-agent-task-runner.spec.ts",
+      "e2e/integration-real-helpers.ts",
+      "scripts/feishu-real-credential-gate.sh",
+      "scripts/governance/__tests__/current-real-session-coverage-manifest.test.ts",
+      "scripts/governance/current-real-session-coverage-manifest.ts",
+      "scripts/governance/current-resource-lock-manifest.ts",
+      "scripts/internal-backend-real-gate-runtime.test.ts",
+      "scripts/skills-runtime-fast-gate.sh",
+      "scripts/run-internal-agent-task-real-gate.sh",
+      "scripts/run-integration-e2e-full.sh",
+      "scripts/run-integration-e2e-full.test.ts",
+      "Makefile",
+    ]) {
+      expect(checkerSource).toContain(expectedSurface);
+    }
+
+    for (const forbiddenProviderBoundName of [
+      "feishu-docs",
+      "jira-ops",
+      "feishu-managed-user",
+      "jira-auth",
+      "credentials.jira",
+      "feishu_mcp_endpoint",
+      "feishu-real-credential-gate",
+      "test:feishu:real:credential",
+    ]) {
+      expect(checkerSource).toContain(forbiddenProviderBoundName);
+    }
+  });
+
   it("forbids the legacy agent-runner compatibility shim as an active workspace package", () => {
     const checkerSource = readFileSync(
       path.join(process.cwd(), "scripts/contracts/check-runner-naming.ts"),

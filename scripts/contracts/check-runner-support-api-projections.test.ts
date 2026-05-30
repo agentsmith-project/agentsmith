@@ -489,7 +489,7 @@ describe('check-runner-support-api-projections', () => {
           minProperties: 1,
           propertyNames: {
             type: 'string',
-            enum: ['access_token', 'feishu_mcp_endpoint', 'uat', 'token'],
+            pattern: expect.stringContaining('context[_]store'),
           },
         },
       },
@@ -575,15 +575,15 @@ describe('check-runner-support-api-projections', () => {
       additionalProperties: false,
       required: ['dependencies'],
     });
-    expect(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['feishu-managed-user']).toEqual({
+    expect(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['sample-runtime-dependency']).toEqual({
       fields: {
         access_token: 'projected_access_token',
+        endpoint: 'https://runtime-dependency.example.test',
       },
     });
-    expect(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['jira-auth']).toEqual({
+    expect(PROJECTED_DEPENDENCIES_ENV_FIXTURE.dependencies['sample-secret']).toEqual({
       fields: {
-        base_url: 'https://jira.example.com',
-        token: 'projected_jira_token',
+        token: 'projected_sample_token',
       },
     });
   });

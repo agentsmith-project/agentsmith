@@ -24,7 +24,7 @@ describe('builtin-skills', () => {
       const config = resolveBuiltinSkillsConfig();
       expect(config.sourceDir).toMatch(/packages\/[^/]+\/builtin-skills$/);
       expect(config.required).toBe(true);
-      expect(config.skills).toEqual(['mbos-context', 'feishu-docs', 'jira-ops']);
+      expect(config.skills).toEqual(['mbos-context']);
     } finally {
       if (previousDir === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
       else process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR = previousDir;
@@ -48,7 +48,7 @@ describe('builtin-skills', () => {
       });
       expect(config.sourceDir).toBe('/etc/codex/skills');
       expect(config.required).toBe(true);
-      expect(config.skills).toEqual(['mbos-context', 'feishu-docs', 'jira-ops']);
+      expect(config.skills).toEqual(['mbos-context']);
     } finally {
       if (previousDir === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
       else process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR = previousDir;
@@ -97,39 +97,39 @@ describe('builtin-skills', () => {
   it('inspects builtin skills from a configured source dir', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      mkdirSync(join(sourceRoot, 'sample-tool'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'sample-tool', 'SKILL.md'), 'sample skill');
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
         JSON.stringify({
           version: 1,
-          skill_name: 'feishu-docs',
+          skill_name: 'sample-tool',
           dependencies: [
             {
-              name: 'feishu-managed-user',
+              name: 'sample-runtime-dependency',
               kind: 'managed_credential',
-              provider: 'feishu',
+              provider: 'sample-provider',
               scope: 'member',
               refresh_supported: true,
             },
           ],
         }),
       );
-      mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      mkdirSync(join(sourceRoot, 'optional-tool'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'optional-tool', 'SKILL.md'), 'optional skill');
       writeFileSync(
-        join(sourceRoot, 'jira-ops', 'capabilities.json'),
+        join(sourceRoot, 'optional-tool', 'capabilities.json'),
         JSON.stringify({
           version: 1,
-          skill_name: 'jira-ops',
+          skill_name: 'optional-tool',
           dependencies: [
             {
-              name: 'jira-auth',
+              name: 'sample-secret',
               kind: 'simple_credential_bundle',
               scopes: ['task', 'member'],
               fields: [
-                { name: 'base_url', keys: ['credentials.jira_base_url', 'credentials.jira_url'], required: true },
-                { name: 'token', keys: ['credentials.jira_token', 'credentials.jira_api_token'], required: true },
+                { name: 'base_url', keys: ['credentials.sample_base_url', 'credentials.sample_url'], required: true },
+                { name: 'token', keys: ['credentials.sample_token', 'credentials.sample_api_token'], required: true },
               ],
             },
           ],
@@ -137,13 +137,13 @@ describe('builtin-skills', () => {
       );
       const result = await inspectBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs', 'jira-ops'],
+        skills: ['sample-tool', 'optional-tool'],
         required: true,
       });
-      expect(result.available).toEqual(['feishu-docs', 'jira-ops']);
+      expect(result.available).toEqual(['sample-tool', 'optional-tool']);
       expect(result.missing).toEqual([]);
-      expect(result.skillContracts['jira-ops']?.dependencies?.[0]).toMatchObject({
-        name: 'jira-auth',
+      expect(result.skillContracts['optional-tool']?.dependencies?.[0]).toMatchObject({
+        name: 'sample-secret',
         kind: 'simple_credential_bundle',
       });
     } finally {
@@ -154,17 +154,17 @@ describe('builtin-skills', () => {
   it('throws when required skills are missing', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      mkdirSync(join(sourceRoot, 'sample-tool'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'sample-tool', 'SKILL.md'), 'sample skill');
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
-        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'sample-tool', dependencies: [] }),
       );
       await expect(inspectBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs', 'jira-ops'],
+        skills: ['sample-tool', 'optional-tool'],
         required: true,
-      })).rejects.toThrow('builtin_skills_missing:jira-ops');
+      })).rejects.toThrow('builtin_skills_missing:optional-tool');
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
     }
@@ -173,19 +173,19 @@ describe('builtin-skills', () => {
   it('supports optional skill sets without failing when missing', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     try {
-      mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      mkdirSync(join(sourceRoot, 'optional-tool'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'optional-tool', 'SKILL.md'), 'optional skill');
       writeFileSync(
-        join(sourceRoot, 'jira-ops', 'capabilities.json'),
-        JSON.stringify({ version: 1, skill_name: 'jira-ops', dependencies: [] }),
+        join(sourceRoot, 'optional-tool', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'optional-tool', dependencies: [] }),
       );
       const result = await inspectBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs', 'jira-ops'],
+        skills: ['sample-tool', 'optional-tool'],
         required: false,
       });
-      expect(result.available).toEqual(['jira-ops']);
-      expect(result.missing).toEqual(['feishu-docs']);
+      expect(result.available).toEqual(['optional-tool']);
+      expect(result.missing).toEqual(['sample-tool']);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
     }
@@ -196,22 +196,22 @@ describe('builtin-skills', () => {
     const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
     const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
+      mkdirSync(join(sourceRoot, 'sample-tool'), { recursive: true });
       mkdirSync(join(sourceRoot, '.mbos-runtime'), { recursive: true });
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'SKILL.md'),
-        'python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list',
+        join(sourceRoot, 'sample-tool', 'SKILL.md'),
+        'python3 /etc/codex/skills/sample-tool/scripts/sample_tool.py tools-list',
       );
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
         JSON.stringify({
           version: 1,
-          skill_name: 'feishu-docs',
+          skill_name: 'sample-tool',
           dependencies: [
             {
-              name: 'feishu-managed-user',
+              name: 'sample-runtime-dependency',
               kind: 'managed_credential',
-              provider: 'feishu',
+              provider: 'sample-provider',
               scope: 'member',
               refresh_supported: true,
             },
@@ -221,13 +221,13 @@ describe('builtin-skills', () => {
       writeFileSync(join(sourceRoot, '.mbos-runtime', 'capability_runtime.py'), 'RUNTIME = True\n');
       const result = await seedBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs'],
+        skills: ['sample-tool'],
         targetDir: targetRoot,
         manifestDir: manifestRoot,
       });
-      expect(result.seeded).toEqual(['feishu-docs']);
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf-8')).toContain(
-        `${targetRoot}/feishu-docs/scripts/feishu_mcp.py`,
+      expect(result.seeded).toEqual(['sample-tool']);
+      expect(readFileSync(join(targetRoot, 'sample-tool', 'SKILL.md'), 'utf-8')).toContain(
+        `${targetRoot}/sample-tool/scripts/sample_tool.py`,
       );
       expect(readFileSync(join(targetRoot, '.mbos-runtime', 'capability_runtime.py'), 'utf-8')).toContain('RUNTIME');
       const manifest = JSON.parse(readFileSync(result.manifestPath, 'utf-8')) as {
@@ -235,9 +235,9 @@ describe('builtin-skills', () => {
         runtime_helpers?: string[];
         skill_contracts?: Record<string, { dependencies?: Array<{ name?: string }> }>;
       };
-      expect(manifest.installed_skills).toEqual(['feishu-docs']);
+      expect(manifest.installed_skills).toEqual(['sample-tool']);
       expect(manifest.runtime_helpers).toContain('.mbos-runtime');
-      expect(manifest.skill_contracts?.['feishu-docs']?.dependencies?.[0]?.name).toBe('feishu-managed-user');
+      expect(manifest.skill_contracts?.['sample-tool']?.dependencies?.[0]?.name).toBe('sample-runtime-dependency');
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(targetRoot, { recursive: true, force: true });
@@ -248,13 +248,13 @@ describe('builtin-skills', () => {
   it('fails inspection when a selected skill is missing its machine-readable capability contract', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     try {
-      mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      mkdirSync(join(sourceRoot, 'optional-tool'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'optional-tool', 'SKILL.md'), 'optional skill');
       await expect(inspectBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['jira-ops'],
+        skills: ['optional-tool'],
         required: true,
-      })).rejects.toThrow('builtin_skill_contract_missing:jira-ops');
+      })).rejects.toThrow('builtin_skill_contract_missing:optional-tool');
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
     }
@@ -265,23 +265,23 @@ describe('builtin-skills', () => {
     const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
     const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
+      mkdirSync(join(sourceRoot, 'sample-tool', 'scripts'), { recursive: true });
       mkdirSync(join(sourceRoot, '.mbos-runtime', 'scripts'), { recursive: true });
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'SKILL.md'),
-        'python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list',
+        join(sourceRoot, 'sample-tool', 'SKILL.md'),
+        'python3 /etc/codex/skills/sample-tool/scripts/sample_tool.py tools-list',
       );
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
-        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'sample-tool', dependencies: [] }),
       );
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'feishu_mcp.py'), 'print("feishu")\n');
+      writeFileSync(join(sourceRoot, 'sample-tool', 'scripts', 'sample_tool.py'), 'print("sample")\n');
       writeFileSync(join(sourceRoot, '.mbos-runtime', 'scripts', 'capability_runtime.py'), 'RUNTIME = True\n');
 
       const results = await Promise.all(
         Array.from({ length: 12 }, () => seedBuiltinSkills({
           sourceDir: sourceRoot,
-          skills: ['feishu-docs'],
+          skills: ['sample-tool'],
           targetDir: targetRoot,
           manifestDir: manifestRoot,
         })),
@@ -289,11 +289,11 @@ describe('builtin-skills', () => {
 
       expect(results).toHaveLength(12);
       for (const result of results) {
-        expect(result.seeded).toEqual(['feishu-docs']);
+        expect(result.seeded).toEqual(['sample-tool']);
         expect(result.manifestPath).toBe(join(manifestRoot, 'builtin-skills-manifest.json'));
       }
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toContain(
-        `${targetRoot}/feishu-docs/scripts/feishu_mcp.py`,
+      expect(readFileSync(join(targetRoot, 'sample-tool', 'SKILL.md'), 'utf8')).toContain(
+        `${targetRoot}/sample-tool/scripts/sample_tool.py`,
       );
       expect(readFileSync(join(targetRoot, '.mbos-runtime', 'scripts', 'capability_runtime.py'), 'utf8')).toContain(
         'RUNTIME = True',
@@ -342,24 +342,24 @@ describe('builtin-skills', () => {
     });
 
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      mkdirSync(join(sourceRoot, 'sample-tool', 'scripts'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'sample-tool', 'SKILL.md'), 'sample skill');
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
-        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'sample-tool', dependencies: [] }),
       );
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'feishu_mcp.py'), 'print("feishu")\n');
+      writeFileSync(join(sourceRoot, 'sample-tool', 'scripts', 'sample_tool.py'), 'print("sample")\n');
 
       const { seedBuiltinSkills: seedBuiltinSkillsWithMockedFs } = await import('./builtin-skills.js');
       const result = await seedBuiltinSkillsWithMockedFs({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs'],
+        skills: ['sample-tool'],
         targetDir: targetRoot,
         manifestDir: manifestRoot,
       });
 
-      expect(result.seeded).toEqual(['feishu-docs']);
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toBe('feishu');
+      expect(result.seeded).toEqual(['sample-tool']);
+      expect(readFileSync(join(targetRoot, 'sample-tool', 'SKILL.md'), 'utf8')).toBe('sample skill');
       expect(lockEnoentFailures).toBe(1);
       expect(lockMkdirOptions).toEqual([undefined, undefined]);
       expect(existsSync(lockDir)).toBe(false);
@@ -377,35 +377,35 @@ describe('builtin-skills', () => {
     const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
     const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
     try {
-      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'seeded-skill-v1');
+      mkdirSync(join(sourceRoot, 'sample-tool', 'scripts'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'sample-tool', 'SKILL.md'), 'seeded-skill-v1');
       writeFileSync(
-        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
-        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+        join(sourceRoot, 'sample-tool', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'sample-tool', dependencies: [] }),
       );
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'seeded-tool.py'), 'print("v1")\n');
+      writeFileSync(join(sourceRoot, 'sample-tool', 'scripts', 'seeded-tool.py'), 'print("v1")\n');
 
       await seedBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs'],
+        skills: ['sample-tool'],
         targetDir: targetRoot,
         manifestDir: manifestRoot,
       });
 
-      writeFileSync(join(targetRoot, 'feishu-docs', 'local-state.txt'), 'keep-me');
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'seeded-skill-v2');
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'new-tool.py'), 'print("v2")\n');
+      writeFileSync(join(targetRoot, 'sample-tool', 'local-state.txt'), 'keep-me');
+      writeFileSync(join(sourceRoot, 'sample-tool', 'SKILL.md'), 'seeded-skill-v2');
+      writeFileSync(join(sourceRoot, 'sample-tool', 'scripts', 'new-tool.py'), 'print("v2")\n');
 
       await seedBuiltinSkills({
         sourceDir: sourceRoot,
-        skills: ['feishu-docs'],
+        skills: ['sample-tool'],
         targetDir: targetRoot,
         manifestDir: manifestRoot,
       });
 
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'local-state.txt'), 'utf8')).toBe('keep-me');
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toBe('seeded-skill-v1');
-      expect(existsSync(join(targetRoot, 'feishu-docs', 'scripts', 'new-tool.py'))).toBe(false);
+      expect(readFileSync(join(targetRoot, 'sample-tool', 'local-state.txt'), 'utf8')).toBe('keep-me');
+      expect(readFileSync(join(targetRoot, 'sample-tool', 'SKILL.md'), 'utf8')).toBe('seeded-skill-v1');
+      expect(existsSync(join(targetRoot, 'sample-tool', 'scripts', 'new-tool.py'))).toBe(false);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(targetRoot, { recursive: true, force: true });
@@ -419,9 +419,9 @@ describe('builtin-skills', () => {
       skill_name: 'mbos-context',
       dependencies: [
         {
-          name: 'project-personal-feishu',
+          name: 'project-personal-sample',
           kind: 'managed_credential',
-          provider: 'feishu',
+          provider: 'sample-provider',
           scope: 'project_member',
           refresh_supported: true,
         },
@@ -437,7 +437,7 @@ describe('builtin-skills', () => {
     });
 
     expect(contract.dependencies[0]).toMatchObject({
-      name: 'project-personal-feishu',
+      name: 'project-personal-sample',
       scope: 'project_member',
     });
     expect(contract.provides?.[0]).toMatchObject({

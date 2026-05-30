@@ -631,8 +631,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(skillsFunction).toContain(
       'reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner'
       + '|writes task context through mbos-context and persists it for the task owner'
-      + '|uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner'
-      + '|uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner'
+      + '|keeps provider-neutral projection smoke on mbos-context without projected dependencies'
       + '|reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner'
       + '|rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner',
     );
@@ -1156,14 +1155,23 @@ describe('internal backend-real gate runtime contract', () => {
     const projectionFunction = shellFunctionBody(agentTaskGate, 'run_runner_projection_smoke_spec');
     const projectionCase = sectionBetween(
       agentTaskRunnerSpec,
-      "test('uses request-scoped projected dependencies through agentsmith-runner",
-      "test('uses feishu-docs managed credential projection",
+      "test('keeps provider-neutral projection smoke on mbos-context without projected dependencies",
+      "test('keeps locked agentsmith-runner image provider-neutral for projection smoke",
     );
     const projectionIntent = sectionBetween(
       projectionCase,
       'intent: [',
       "].join(' ')",
     );
+    const projectionCommandBuilder = sectionBetween(
+      agentTaskRunnerSpec,
+      'function buildProviderNeutralProjectionSmokeCommand',
+      'test.describe',
+    );
+    const removedProjectionBuilder = ['build', 'JiraProjectionEnvSmokeCommand'].join('');
+    const removedJiraProjection = ['jira', 'auth'].join('-');
+    const removedJiraMissingFields = ['missing', 'jira', 'auth', 'fields'].join('_');
+    const removedJiraSkillScript = ['jira', 'ops.py'].join('_');
 
     expect(packageJson.scripts?.['test:agent-task:runner:projection-smoke'])
       .toBe('bash scripts/run-internal-agent-task-real-gate.sh --runner-projection-smoke');
@@ -1223,9 +1231,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('docker is required to inspect INTEGRATION_INTERNAL_AGENT_IMAGE');
     expect(agentTaskGate).toContain('local docker image not found');
     expect(projectionFunction).toContain(
-      'uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner',
+      'keeps provider-neutral projection smoke on mbos-context without projected dependencies',
     );
-    expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand');
+    expect(projectionCase).toContain('buildProviderNeutralProjectionSmokeCommand');
     expect(projectionCase).toContain('readRunnerProjectionSmokeImage');
     expect(projectionCase).toContain('runnerImage: projectionSmokeImage');
     expect(projectionCase).toContain('forceManagedRunnerUpsert: true');
@@ -1233,7 +1241,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(projectionCase).toContain('expect(prepared.runnerConfiguredImage).toBe(projectionSmokeImage)');
     expect(projectionCase).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
     expect(projectionCase).toContain('expectManagedWorkloadPodImage');
-    expect(projectionCase).toContain('buildJiraProjectionEnvSmokeCommand(Boolean(projectionSmokeImage))');
+    expect(projectionCase).toContain('includeRunnerBoundarySmoke: Boolean(projectionSmokeImage)');
+    expect(projectionCommandBuilder).toContain('unexpected_projected_dependencies');
     expect(projectionCase).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
     expect(projectionCase).toContain('RUNNER_SEMANTIC_SOURCE::blue');
     expect(projectionCase).toContain("token: 'RUNNER_LLM_SEMANTIC::BLUE'");
@@ -1253,18 +1262,18 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskRunnerSpec).toContain('control_env_leak:MBOS_AGENT_WS_URL');
     expect(agentTaskRunnerSpec).toContain('control_env_leak:AGENT_KEY');
     expect(agentTaskRunnerSpec).toContain('control_env_leak:AGENT_WS_URL');
-    expect(agentTaskRunnerSpec).toContain('missing_jira_auth_fields');
-    expect(agentTaskRunnerSpec).toContain('task_token_persisted:');
-    expect(agentTaskRunnerSpec).toContain('jira-auth');
-    expect(agentTaskRunnerSpec).toContain('/rest/api/2/myself');
+    expect(projectionCommandBuilder).toContain('context_value_persisted:');
+    expect(agentTaskRunnerSpec).not.toContain(removedProjectionBuilder);
+    expect(agentTaskRunnerSpec).not.toContain(removedJiraProjection);
+    expect(agentTaskRunnerSpec).not.toContain(removedJiraMissingFields);
+    expect(agentTaskRunnerSpec).not.toContain('/rest/api/2/myself');
     expect(agentTaskRunnerSpec).toContain('runner_projection_smoke_non_canonical_image');
     expect(realHelpers).toContain('INTEGRATION_DISABLE_SEEDED_MANAGED_RUNNER_REUSE');
     expect(realHelpers).toContain('managed_runner_projection_smoke_image_required');
     expect(realHelpers).toContain('configuredImage: seededDefault.configuredImage');
     expect(realHelpers).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
     expect(realHelpers).toContain('expectManagedWorkloadPodImage');
-    expect(projectionCase).not.toContain('jira_ops.py');
-    expect(projectionCase).not.toContain('context_cli.py');
+    expect(projectionCase).not.toContain(removedJiraSkillScript);
     expect(projectionFunction).not.toContain('reads task context through mbos-context');
     expect(backendRealRun).not.toContain('--runner-projection-smoke');
   });
@@ -1322,7 +1331,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(story).toContain('runner-observed task metadata');
   });
 
-  it('keeps locked runner runtime smoke focused on Feishu managed credential projection with the canonical locked image', () => {
+  it('keeps locked runner runtime smoke focused on provider-neutral projection absence with the canonical locked image', () => {
     const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const backendRealRun = read('scripts/backend-real-run.sh');
@@ -1333,9 +1342,19 @@ describe('internal backend-real gate runtime contract', () => {
     const lockedRuntimeFunction = shellFunctionBody(agentTaskGate, 'run_runner_locked_runtime_smoke_spec');
     const lockedRuntimeCase = sectionBetween(
       agentTaskRunnerSpec,
-      "test('reads feishu-managed-user projected dependency through locked agentsmith-runner image",
-      "test('uses feishu-docs managed credential projection",
+      "test('keeps locked agentsmith-runner image provider-neutral for projection smoke",
+      "test('reads task context through mbos-context inside",
     );
+    const projectionCommandBuilder = sectionBetween(
+      agentTaskRunnerSpec,
+      'function buildProviderNeutralProjectionSmokeCommand',
+      'test.describe',
+    );
+    const removedFeishuProjection = ['feishu', 'managed', 'user'].join('-');
+    const removedJiraProjection = ['jira', 'auth'].join('-');
+    const removedFeishuMcpField = ['feishu', 'mcp', 'endpoint'].join('_');
+    const removedFeishuSkillScript = ['feishu', 'mcp.py'].join('_');
+    const removedJiraSkillScript = ['jira', 'ops.py'].join('_');
 
     expect(packageJson.scripts?.['test:agent-task:runner:locked-runtime'])
       .toBe('bash scripts/run-internal-agent-task-real-gate.sh --runner-locked-runtime-smoke');
@@ -1354,11 +1373,11 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=0 is required');
     expect(agentTaskGate).toContain('export INTEGRATION_RUNNER_LOCKED_RUNTIME_SMOKE_IMAGE_ID="${image_id}"');
     expect(lockedRuntimeFunction).toContain(
-      'reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run',
+      'keeps locked agentsmith-runner image provider-neutral for projection smoke in a real Agent Task run',
     );
     expect(lockedRuntimeFunction).not.toContain('reads task context through mbos-context');
     expect(lockedRuntimeFunction).not.toContain('writes task context through mbos-context');
-    expect(lockedRuntimeFunction).not.toContain('uses request-scoped projected dependencies');
+    expect(lockedRuntimeFunction).not.toContain('keeps provider-neutral projection smoke on mbos-context without projected dependencies');
     expect(lockedRuntimeFunction).not.toContain('run_skills_runtime_specs');
     expect(agentTaskGate).toContain('focused locked runner runtime smoke passed');
     expect(backendRealRun).not.toContain('--runner-locked-runtime-smoke');
@@ -1371,28 +1390,25 @@ describe('internal backend-real gate runtime contract', () => {
     expect(lockedRuntimeCase).toContain('expectManagedAgentRunnerImageEvidenceViaApi');
     expect(lockedRuntimeCase).toContain('diagnosticsPrefix: \'runner_locked_runtime_smoke\'');
     expect(lockedRuntimeCase).toContain('expectManagedWorkloadPodImage');
-    expect(lockedRuntimeCase).toContain('createExternalConnectionViaApi');
-    expect(lockedRuntimeCase).toContain('provider: \'feishu\'');
-    expect(lockedRuntimeCase).toContain('feishu-managed-user');
+    expect(lockedRuntimeCase).toContain('buildProviderNeutralProjectionSmokeCommand');
+    expect(lockedRuntimeCase).toContain('includeRunnerBoundarySmoke: true');
     expect(lockedRuntimeCase).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
-    expect(lockedRuntimeCase).toContain('data=json.loads(raw)');
-    expect(lockedRuntimeCase).toContain('dep=deps.get("feishu-managed-user")');
-    expect(lockedRuntimeCase).toContain('fields.get("access_token")');
-    expect(lockedRuntimeCase).toContain('fields.get("feishu_mcp_endpoint")');
-    expect(lockedRuntimeCase).toContain('forbidden_refresh_token');
-    expect(lockedRuntimeCase).toContain('forbidden_control_field:');
-    expect(lockedRuntimeCase).toContain('"context_store","writable_scopes","credential_files","user_bearer_token","provenance"');
-    expect(lockedRuntimeCase).toContain('FEISHU_MANAGED_USER_PROJECTION::');
-    expect(lockedRuntimeCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, feishuToken');
+    expect(projectionCommandBuilder).toContain('data=json.loads(raw)');
+    expect(projectionCommandBuilder).toContain('unexpected_projected_dependencies');
+    expect(lockedRuntimeCase).toContain('RUNNER_PROJECTION_BOUNDARY::ok');
     expect(lockedRuntimeCase).toContain('expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey()');
-    expect(lockedRuntimeCase).not.toContain('startMockFeishuMcpServer');
-    expect(lockedRuntimeCase).not.toContain('feishu_mcp.py');
-    expect(lockedRuntimeCase).not.toContain('jira_ops.py');
-    expect(lockedRuntimeCase).not.toContain('context_cli.py');
-    expect(orchestrator).toContain("'feishu-managed-user'");
-    expect(orchestratorTest).toContain('projects active Feishu external connection fields as feishu-managed-user');
-    expect(orchestratorTest).toContain('omits feishu-managed-user when there is no active Feishu external connection');
-    expect(orchestratorTest).toContain('projects feishu-managed-user beside jira-auth');
+    expect(lockedRuntimeCase).not.toContain('createExternalConnectionViaApi');
+    expect(lockedRuntimeCase).not.toContain(removedFeishuProjection);
+    expect(lockedRuntimeCase).not.toContain(removedJiraProjection);
+    expect(lockedRuntimeCase).not.toContain(removedFeishuMcpField);
+    expect(lockedRuntimeCase).not.toContain(removedFeishuSkillScript);
+    expect(lockedRuntimeCase).not.toContain(removedJiraSkillScript);
+    expect(orchestrator).not.toContain(removedFeishuProjection);
+    expect(orchestrator).not.toContain(removedJiraProjection);
+    expect(orchestratorTest).toContain('does not synthesize provider-specific projected dependencies from simple Context Store credentials');
+    expect(orchestratorTest).toContain('does not synthesize provider-specific projected dependencies from managed external connections');
+    expect(orchestratorTest).not.toContain(removedFeishuProjection);
+    expect(orchestratorTest).not.toContain(removedJiraProjection);
     expect(realHelpers).toContain('diagnosticsPrefix?: "runner_projection_smoke" | "runner_locked_runtime_smoke"');
   });
 

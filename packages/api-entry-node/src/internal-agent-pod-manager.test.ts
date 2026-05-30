@@ -237,7 +237,7 @@ describe('internal-agent-pod-manager', () => {
           WORKSPACE_PATH: '/home/task_1/workspace',
           ARTIFACTS_PATH: '/home/task_1/workspace/.artifacts',
           MBOS_AGENT_BUILTIN_SKILLS_DIR: '/etc/codex/skills',
-          MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
+          MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
           MBOS_AGENT_RUNNER_INSTANCE_ID: 'ag_1:task_1:task_1',
         }),

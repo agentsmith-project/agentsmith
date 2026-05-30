@@ -183,15 +183,15 @@ export const PROJECTED_DEPENDENCIES_ENV_JSON_SCHEMA = {
 
 export const PROJECTED_DEPENDENCIES_ENV_FIXTURE = {
   dependencies: {
-    'feishu-managed-user': {
+    'sample-runtime-dependency': {
       fields: {
         access_token: 'projected_access_token',
+        endpoint: 'https://runtime-dependency.example.test',
       },
     },
-    'jira-auth': {
+    'sample-secret': {
       fields: {
-        base_url: 'https://jira.example.com',
-        token: 'projected_jira_token',
+        token: 'projected_sample_token',
       },
     },
   },
@@ -498,10 +498,7 @@ export const MANAGED_CREDENTIAL_PROJECTION_JSON_SCHEMA = {
     fields: {
       type: 'object',
       minProperties: 1,
-      propertyNames: {
-        type: 'string',
-        enum: ['access_token', 'feishu_mcp_endpoint', 'uat', 'token'],
-      },
+      propertyNames: projectedDependencyFieldNameJsonSchema,
       additionalProperties: nonEmptyStringJsonSchema,
     },
   },

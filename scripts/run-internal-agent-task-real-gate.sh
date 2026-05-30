@@ -719,7 +719,7 @@ run_skills_runtime_specs() {
   local runner_web_port="${2:-3066}"
   local skills_status=0
 
-  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner|writes task context through mbos-context and persists it for the task owner|uses jira-ops task context before member context in a real Agent Task run resolved by the default Agent Runner|uses feishu-docs managed credential projection in a real Agent Task run resolved by the default Agent Runner|reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner|rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner" "${runner_api_port}" "${runner_web_port}" || skills_status=$?
+  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner|writes task context through mbos-context and persists it for the task owner|keeps provider-neutral projection smoke on mbos-context without projected dependencies|reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner|rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner" "${runner_api_port}" "${runner_web_port}" || skills_status=$?
   if [[ "${skills_status}" -eq 0 ]]; then
     run_internal_spec_grep e2e/integration-context-store-isolation.spec.ts "member context stays private between workspace members|task context stays private to the task owner within the same workspace" 23079 33079 || skills_status=$?
   fi
@@ -732,7 +732,7 @@ run_runner_projection_smoke_spec() {
   local runner_web_port="${2:-3074}"
   local projection_status=0
 
-  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "uses request-scoped projected dependencies through agentsmith-runner in a real Agent Task run resolved by the default Agent Runner" "${runner_api_port}" "${runner_web_port}" "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || projection_status=$?
+  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "keeps provider-neutral projection smoke on mbos-context without projected dependencies" "${runner_api_port}" "${runner_web_port}" "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || projection_status=$?
   return "${projection_status}"
 }
 
@@ -741,7 +741,7 @@ run_runner_locked_runtime_smoke_spec() {
   local runner_web_port="${2:-3075}"
   local locked_runtime_status=0
 
-  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "reads feishu-managed-user projected dependency through locked agentsmith-runner image in a real Agent Task run" "${runner_api_port}" "${runner_web_port}" "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || locked_runtime_status=$?
+  run_internal_spec_grep e2e/integration-agent-task-runner.spec.ts "keeps locked agentsmith-runner image provider-neutral for projection smoke in a real Agent Task run" "${runner_api_port}" "${runner_web_port}" "${PLAYWRIGHT_PASSTHROUGH_ARGS[@]}" || locked_runtime_status=$?
   return "${locked_runtime_status}"
 }
 

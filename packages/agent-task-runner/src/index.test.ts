@@ -100,6 +100,12 @@ const {
     CLOSED: 3,
   });
   const releaseTaskWorkspaceMock = vi.fn(async () => undefined);
+  const scrubTaskUserControlEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+    const scrubbed = { ...env };
+    delete scrubbed.MBOS_AGENT_WS_URL;
+    delete scrubbed.MBOS_AGENT_KEY;
+    return scrubbed;
+  };
   return {
     assertTaskExecutionContextMock: vi.fn((value: unknown) => value),
     buildCodexExecArgsMock: vi.fn(() => ['--exec']),
@@ -107,7 +113,7 @@ const {
     buildTaskCodexModelCatalogMock: vi.fn(() => 'model-catalog'),
     buildTaskHeadlessPreambleMock: vi.fn(() => 'PREAMBLE'),
     buildTaskUserInstallEnvMock: vi.fn((homeDir: string, env: NodeJS.ProcessEnv) => ({
-      ...env,
+      ...scrubTaskUserControlEnv(env),
       HOME: homeDir,
       TASK_HOME: homeDir,
     })),
@@ -1925,6 +1931,25 @@ describe('agent-task-runner entry lifecycle', () => {
     const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
     expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBe('ticket_1');
     expect(launchEnv?.MBOS_CODEX_PROXY_AUTH_HEADER).toBeUndefined();
+  });
+
+  it('does not carry runner control credentials into Codex launch env', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_control_env_scrub');
+
+    const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
+    expect(launchEnv?.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(launchEnv?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBe('ticket_1');
+    expect(launchEnv?.WORKSPACE_PATH).toBe(TASK_WORKSPACE);
+
+    closeCodexChild(child, 0);
   });
 
   it('runs Codex from the visible workspace while HOME and artifact scans use explicit runtime paths', async () => {

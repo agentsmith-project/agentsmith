@@ -21,6 +21,8 @@ import { prepareLaunchCommand, resetChildLauncherForTests } from './child-launch
 describe('child-launcher', () => {
   const previousMode = process.env.MBOS_AGENT_TASK_RUNNER_MODE;
   const previousRequireBwrap = process.env.MBOS_AGENT_TASK_RUNNER_REQUIRE_BWRAP;
+  const previousAgentWsUrl = process.env.MBOS_AGENT_WS_URL;
+  const previousAgentKey = process.env.MBOS_AGENT_KEY;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,6 +40,16 @@ describe('child-launcher', () => {
       delete process.env.MBOS_AGENT_TASK_RUNNER_REQUIRE_BWRAP;
     } else {
       process.env.MBOS_AGENT_TASK_RUNNER_REQUIRE_BWRAP = previousRequireBwrap;
+    }
+    if (previousAgentWsUrl === undefined) {
+      delete process.env.MBOS_AGENT_WS_URL;
+    } else {
+      process.env.MBOS_AGENT_WS_URL = previousAgentWsUrl;
+    }
+    if (previousAgentKey === undefined) {
+      delete process.env.MBOS_AGENT_KEY;
+    } else {
+      process.env.MBOS_AGENT_KEY = previousAgentKey;
     }
   });
 
@@ -64,8 +76,33 @@ describe('child-launcher', () => {
     });
   });
 
+  it('scrubs runner control credentials from direct child env', async () => {
+    process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_platform';
+    const result = await prepareLaunchCommand({
+      file: 'bash',
+      args: ['-i'],
+      cwd: '/home/task_1/workspace',
+      env: {
+        HOME: '/home/task_1',
+        TASK_HOME: '/home/task_1',
+        WORKSPACE_PATH: '/home/task_1/workspace',
+        MBOS_AGENT_WS_URL: 'ws://runner-control.example/ws',
+        MBOS_AGENT_KEY: 'ask_control_secret',
+        MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',
+        MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
+      },
+    });
+
+    expect(result.env.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(result.env.MBOS_AGENT_KEY).toBeUndefined();
+    expect(result.env.MBOS_AGENT_API_BASE).toBe('http://localhost:20000/api/v1');
+    expect(result.env.MBOS_AGENT_EXECUTION_TICKET).toBe('ticket_123');
+  });
+
   it('wraps managed local children with bwrap, preserves env HOME, and binds cwd plus HOME writable', async () => {
     process.env.MBOS_AGENT_TASK_RUNNER_MODE = 'managed_local';
+    process.env.MBOS_AGENT_WS_URL = 'ws://runner-control.example/ws';
+    process.env.MBOS_AGENT_KEY = 'ask_control_secret';
     const result = await prepareLaunchCommand({
       file: 'codex',
       args: ['exec', 'hello'],
@@ -80,9 +117,14 @@ describe('child-launcher', () => {
         npm_config_prefix: '/home/task_1/.local',
         CARGO_HOME: '/home/task_1/.cargo',
         RUSTUP_HOME: '/home/task_1/.rustup',
+        MBOS_AGENT_WS_URL: 'ws://runner-control.example/input',
+        MBOS_AGENT_KEY: 'ask_input_control_secret',
+        MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
       },
     });
     expect(result.file).toBe('/usr/bin/bwrap');
+    expect(result.env.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(result.env.MBOS_AGENT_KEY).toBeUndefined();
     expect(result.args).toEqual(expect.arrayContaining([
       '--clearenv',
       '--ro-bind', '/', '/',
@@ -97,11 +139,14 @@ describe('child-launcher', () => {
       '--setenv', 'npm_config_prefix', '/home/task_1/.local',
       '--setenv', 'CARGO_HOME', '/home/task_1/.cargo',
       '--setenv', 'RUSTUP_HOME', '/home/task_1/.rustup',
+      '--setenv', 'MBOS_AGENT_EXECUTION_TICKET', 'ticket_123',
       '--',
       'codex',
       'exec',
       'hello',
     ]));
+    expect(result.args).not.toContain('MBOS_AGENT_WS_URL');
+    expect(result.args).not.toContain('MBOS_AGENT_KEY');
   });
 
   it('falls back to direct launch for developer when bwrap is unavailable', async () => {

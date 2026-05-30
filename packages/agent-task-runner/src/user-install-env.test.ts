@@ -62,4 +62,33 @@ describe('user-install-env', () => {
     expect(env.ZDOTDIR).toBe('/home/task_1/.config/zsh');
     expect(env.XDG_STATE_HOME).toBe('/home/task_1/.local/custom-state');
   });
+
+  it('scrubs runner control credentials while preserving request-scoped runtime env', () => {
+    const env = buildTaskUserInstallEnv('/home/task_1', {
+      PATH: '/usr/bin:/bin',
+      SHELL: '/bin/zsh',
+      MBOS_AGENT_WS_URL: 'ws://runner-control.example/ws',
+      MBOS_AGENT_KEY: 'ask_control_secret',
+      MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',
+      MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
+      MBOS_AGENT_WORKSPACE_ID: 'ws_1',
+      MBOS_AGENT_PROJECT_ID: 'proj_1',
+      MBOS_AGENT_TASK_ID: 'task_1',
+      MBOS_AGENT_RUN_ID: 'run_1',
+      MBOS_AGENT_PROJECTED_DEPENDENCIES: '{"dependencies":{}}',
+    });
+
+    expect(env.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(env.MBOS_AGENT_KEY).toBeUndefined();
+    expect(env).toMatchObject({
+      SHELL: '/bin/zsh',
+      MBOS_AGENT_API_BASE: 'http://localhost:20000/api/v1',
+      MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
+      MBOS_AGENT_WORKSPACE_ID: 'ws_1',
+      MBOS_AGENT_PROJECT_ID: 'proj_1',
+      MBOS_AGENT_TASK_ID: 'task_1',
+      MBOS_AGENT_RUN_ID: 'run_1',
+      MBOS_AGENT_PROJECTED_DEPENDENCIES: '{"dependencies":{}}',
+    });
+  });
 });

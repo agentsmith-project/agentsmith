@@ -178,6 +178,8 @@ describe('terminal-runtime', () => {
   const originalXdgStateHome = process.env.XDG_STATE_HOME;
   const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalAgentWsUrl = process.env.MBOS_AGENT_WS_URL;
+  const originalAgentKey = process.env.MBOS_AGENT_KEY;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -267,6 +269,16 @@ describe('terminal-runtime', () => {
       delete process.env.XDG_DATA_HOME;
     } else {
       process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
+    if (originalAgentWsUrl === undefined) {
+      delete process.env.MBOS_AGENT_WS_URL;
+    } else {
+      process.env.MBOS_AGENT_WS_URL = originalAgentWsUrl;
+    }
+    if (originalAgentKey === undefined) {
+      delete process.env.MBOS_AGENT_KEY;
+    } else {
+      process.env.MBOS_AGENT_KEY = originalAgentKey;
     }
   });
 
@@ -420,6 +432,30 @@ describe('terminal-runtime', () => {
     expect(nodePtyWriteMock).toHaveBeenCalledWith('echo hi\n');
     expect(nodePtyResizeMock).toHaveBeenCalledWith(120, 30);
     expect(nodePtyKillMock).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('does not expose runner control credentials to terminal launch env', async () => {
+    process.env.MBOS_AGENT_WS_URL = 'ws://runner-control.example/ws';
+    process.env.MBOS_AGENT_KEY = 'ask_control_secret';
+
+    await startTerminalProcess({
+      executionContext: terminalExecutionContext({
+        run_id: 'run_1',
+        api_base: 'http://localhost:20000',
+        execution_ticket: 'ticket_123',
+      }),
+      shell: '/usr/bin/bash',
+    });
+
+    const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
+    const spawnOptions = nodePtySpawnMock.mock.calls.at(-1)?.[2] as { env?: NodeJS.ProcessEnv } | undefined;
+
+    expect(launchEnv?.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(launchEnv?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(spawnOptions?.env?.MBOS_AGENT_WS_URL).toBeUndefined();
+    expect(spawnOptions?.env?.MBOS_AGENT_KEY).toBeUndefined();
+    expect(spawnOptions?.env?.MBOS_AGENT_API_BASE).toBe('http://localhost:20000');
+    expect(spawnOptions?.env?.MBOS_AGENT_EXECUTION_TICKET).toBe('ticket_123');
   });
 
   it('exposes terminal pid metadata from the spawned pty process', async () => {

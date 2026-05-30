@@ -16,6 +16,21 @@ const TASK_HOME_PATH_DEFAULTS = {
   IPYTHONDIR: '.ipython',
 } as const;
 
+const TASK_USER_CONTROL_ENV_DENYLIST = [
+  'MBOS_AGENT_WS_URL',
+  'MBOS_AGENT_KEY',
+] as const;
+
+export function scrubTaskUserControlEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = {
+    ...baseEnv,
+  };
+  for (const key of TASK_USER_CONTROL_ENV_DENYLIST) {
+    delete env[key];
+  }
+  return env;
+}
+
 function prependPath(rawCurrentPath: string | undefined, entries: string[]): string {
   const ordered: string[] = [];
   const seen = new Set<string>();
@@ -63,7 +78,7 @@ export function buildTaskUserInstallEnv(homeDir: string, baseEnv: NodeJS.Process
   const cargoHome = `${homeDir}/.cargo`;
   const rustupHome = `${homeDir}/.rustup`;
   const env = normalizeTaskHomePathEnv(homeDir, {
-    ...baseEnv,
+    ...scrubTaskUserControlEnv(baseEnv),
     HOME: homeDir,
     TASK_HOME: homeDir,
     PYTHONUSERBASE: localRoot,

@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { resolveAgentTaskRunnerMode, type AgentTaskRunnerMode } from './task-workspace.js';
+import { scrubTaskUserControlEnv } from './user-install-env.js';
 
 type LaunchCommand = {
   file: string;
@@ -83,10 +84,10 @@ function buildBwrapCommand(input: {
   return {
     file: input.bwrapPath,
     args,
-    env: {
+    env: scrubTaskUserControlEnv({
       ...process.env,
       ...input.env,
-    },
+    }),
   };
 }
 
@@ -100,12 +101,13 @@ export async function prepareLaunchCommand(input: {
   cwd: string;
   env: NodeJS.ProcessEnv;
 }): Promise<LaunchCommand> {
+  const env = scrubTaskUserControlEnv(input.env);
   const mode = resolveAgentTaskRunnerMode();
   if (!shouldUseBwrap(mode)) {
     return {
       file: input.file,
       args: input.args,
-      env: input.env,
+      env,
     };
   }
   const bwrapPath = await resolveBwrapPath();
@@ -118,13 +120,16 @@ export async function prepareLaunchCommand(input: {
       return {
         file: input.file,
         args: input.args,
-        env: input.env,
+        env,
       };
     }
     throw new Error('bwrap_missing_for_agent_task_runner');
   }
   return buildBwrapCommand({
-    ...input,
+    file: input.file,
+    args: input.args,
+    cwd: input.cwd,
+    env,
     bwrapPath,
   });
 }

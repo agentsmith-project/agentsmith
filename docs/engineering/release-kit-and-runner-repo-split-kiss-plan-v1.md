@@ -41,7 +41,7 @@ Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做
 6. release-kit `airgap/install_substrates` repo-local focused surface 已完成并补齐后续修复：bundle packaging、substrate pack validation、consume/deployment chain、airgap adoption aggregation 覆盖 `airgap/install_substrates`、bundle-root/local manifest/symlink 边界强制校验、operator airgap profile mismatch fail-fast、duplicate / equals singleton args fail-fast、`--allow-http=true` / `--allow-localhost=true` 等 no-value control flag forms 在 producer 输出前 fail-fast。release-kit commits `48a62f9` / `1d4483d` / `eea72f4` / `3738507` / `243b868`，CI run `26673592790` success；后续修复 commits `4180483` / `a3fa5a8`，CI runs `26674111985` / `26674361357` success。它仍不等于 release engineering gate、formal operator verdict、package verdict 或 release readiness。
 7. release-kit repo-local `release-engineering-gate-intake` focused/candidate 边界已完成（release-kit `a4bd26e5` 到 `a5f39a0`，对应 CI 均 success）：验证 `online/use_existing`、`online/install_substrates`、`airgap/use_existing`、`airgap/install_substrates` 四象限 adoption inputs，输出 `readiness=false` / `formal_verdict=not_issued`。它仍不是 formal release engineering gate、operator verdict、package verdict 或 release readiness；最终 review 无发现，已覆盖 bounded fixed-point percent decode、malformed/over-depth fail closed、7-layer encoded unsafe `/home` URI 字段拒绝、stale cleanup 保留和 GitHub Actions / gh-artifact 安全 provenance 通过。
 8. llmup v0.2.44 image lock 已同步；远端已核查本地 main 与 origin/main 对齐，最新发布仍是 `v0.2.44`，main 上 `0.2.45` 只是发布后 next identity / housekeeping，不需要为了当前 HEAD 新发 release。这是 image lock truth 更新，不是 release-kit readiness。
-9. AgentSmith locked runner projection semantic smoke with real LLM provider 已完成：AgentSmith commits `f3d6901f` / `8ad4ad01`；本地 `npm run test:agent-task:runner:projection-smoke` 在两次提交后各跑通一次，`8ad4ad01` 强化为 prompt 不直接包含完整 expected marker。`8ad4ad01` 后本地 `npm run test:run -- scripts/internal-backend-real-gate-runtime.test.ts`、`npm run contracts:check-runner-image-lock`、`npm run contracts:check-release-boundary`、`git diff --check` 通过；远端 Contracts Check 和 Image Publish success，Quality Gates run `26677533967` 仍只记录为 running / in-progress（gate-fast success，lane-backend-real-core skipped，gate-default / lane-visual in_progress）。这是 focused semantic smoke，不是 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict。
+9. AgentSmith locked runner projection semantic smoke with real LLM provider 已完成：AgentSmith commits `f3d6901f` / `8ad4ad01`；本地 `npm run test:agent-task:runner:projection-smoke` 在两次提交后各跑通一次，`8ad4ad01` 强化为 prompt 不直接包含完整 expected marker。`8ad4ad01` 后本地 `npm run test:run -- scripts/internal-backend-real-gate-runtime.test.ts`、`npm run contracts:check-runner-image-lock`、`npm run contracts:check-release-boundary`、`git diff --check` 通过；远端 Contracts Check 和 Image Publish success，Quality Gates run `26677533967` 在写入时仍不是 completed success，因此不作为 success evidence。这是 focused semantic smoke，不是 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict。
 
 尚未完成事项 / 当前真实下一步：
 
@@ -1367,8 +1367,8 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
    marker。`8ad4ad01` 后本地 `npm run test:run -- scripts/internal-backend-real-gate-runtime.test.ts`、
    `npm run contracts:check-runner-image-lock`、`npm run contracts:check-release-boundary`
    和 `git diff --check` 通过；远端 Contracts Check 和 Image Publish success，
-   Quality Gates run `26677533967` 仍只记录为 running / in-progress，不作为 success
-   证据。
+   Quality Gates run `26677533967` 在写入时仍不是 completed success，因此不作为
+   success evidence。
    runner release manifest adoption 仍必须比对 image digest、`contract_artifact.package_uri` /
    `contract_artifact.package_sha256` / `contract_artifact.package_integrity` /
    `contract_artifact.descriptor_subject_sha256`、由 `artifact_provenance` 承载的 provenance 和 lock。

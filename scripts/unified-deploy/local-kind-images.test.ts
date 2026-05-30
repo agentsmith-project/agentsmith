@@ -244,14 +244,14 @@ function afscpCommandContractRunner(calls: CommandCall[]): LocalKindImageCommand
 describe('unified deploy local-kind image truth producer', () => {
   it('parses the locked llmup source image and version', () => {
     const lock = parseLlmupImageLock(`\
-llmup_version=v0.2.39
-llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.39@sha256:c9de8dd036b1f5c3ff1280e61a8041b91e5e3dc6ed806bcfb7d983bde33ffeec
+llmup_version=v0.2.44
+llmup_source_image=ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:187394a51950148d696edd5e2d558d835d4238415060b2d5f6a23ea58e620976
 `);
 
-    expect(lock.version).toBe('v0.2.39');
-    expect(lock.source_image).toContain('llm-universal-proxy:v0.2.39@sha256:');
-    expect(lock.host_image).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.39');
-    expect(lock.k8s_image).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.39');
+    expect(lock.version).toBe('v0.2.44');
+    expect(lock.source_image).toContain('llm-universal-proxy:v0.2.44@sha256:');
+    expect(lock.host_image).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.44');
+    expect(lock.k8s_image).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.44');
   });
 
   it('parses the locked ASBCP source image and requires canonical release provenance', () => {
@@ -359,8 +359,8 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(result.evidence.images.afscp.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(result.evidence.images.afscp.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(result.evidence.images.llmup.source_ref).toContain('@sha256:');
-    expect(result.evidence.images.llmup.host_ref).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.39');
-    expect(result.evidence.images.llmup.k8s_tag_ref).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.39');
+    expect(result.evidence.images.llmup.host_ref).toBe('localhost:5001/mbos/llm-universal-proxy:v0.2.44');
+    expect(result.evidence.images.llmup.k8s_tag_ref).toBe('kind-registry:5000/mbos/llm-universal-proxy:v0.2.44');
     expect(result.evidence.images.llmup.host_digest_ref).toBe(`localhost:5001/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
     expect(result.evidence.images.llmup.k8s_ref).toBe(`kind-registry:5000/mbos/llm-universal-proxy@${LLMUP_DIGEST}`);
     expect(result.evidence.images.ingress_nginx_controller.source_ref).toContain('registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:');
@@ -464,9 +464,9 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:');
     expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:');
     expect(commandText).toContain('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.7');
-    expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.39@sha256:');
-    expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.39@sha256:');
-    expect(commandText).toContain('localhost:5001/mbos/llm-universal-proxy:v0.2.39');
+    expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:');
+    expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:');
+    expect(commandText).toContain('localhost:5001/mbos/llm-universal-proxy:v0.2.44');
     expect(commandText).toContain('docker image inspect registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:');
     expect(commandText).toContain('docker image inspect registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:');
     expect(commandText).toContain('docker tag registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:');
@@ -477,7 +477,7 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-managed-runner:order-tag');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.7');
-    expect(commandText).toContain('docker push localhost:5001/mbos/llm-universal-proxy:v0.2.39');
+    expect(commandText).toContain('docker push localhost:5001/mbos/llm-universal-proxy:v0.2.44');
     expect(commandText).toContain('docker push localhost:5001/mbos/ingress-nginx-controller:v1.15.1');
     expect(commandText).toContain('docker push localhost:5001/mbos/ingress-nginx-kube-webhook-certgen:v1.6.9');
     expect(commandText).toContain('bash -lc source scripts/lib/kind-cluster-bootstrap.sh');
@@ -557,7 +557,7 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     });
 
     expect(result.status).toBe('passed');
-    expect(calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n')).toContain('docker pull --platform linux/amd64 ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.39@sha256:');
+    expect(calls.map((call) => `${call.command} ${call.args.join(' ')}`).join('\n')).toContain('docker pull --platform linux/amd64 ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:');
   });
 
   it('passes when docker exec curl sees proxy 503 but CRI/containerd pull succeeds', async () => {

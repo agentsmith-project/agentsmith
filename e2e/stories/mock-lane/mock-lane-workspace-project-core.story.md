@@ -109,7 +109,6 @@
       "stableMarkers": [
         "ws-settings__summary-line",
         "ws-settings__workspace",
-        "ws-settings__integrations",
         "ws-settings__projects"
       ]
     },

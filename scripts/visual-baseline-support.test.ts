@@ -809,7 +809,6 @@ describe('visual baseline support', () => {
     expect(grouped.get('workspace-settings')?.stableMarkers).toEqual([
       'ws-settings__summary-line',
       'ws-settings__workspace',
-      'ws-settings__integrations',
       'ws-settings__projects',
     ]);
     expect(grouped.get('workspace-personal-context')?.stableMarkers).toEqual([
@@ -1176,7 +1175,6 @@ describe('visual baseline support', () => {
     expect(resolveVisualBaselineStableMarkers('workspace-settings')).toEqual([
       'ws-settings__summary-line',
       'ws-settings__workspace',
-      'ws-settings__integrations',
       'ws-settings__projects',
     ]);
 

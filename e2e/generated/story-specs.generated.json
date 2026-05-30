@@ -1409,8 +1409,8 @@
     "entryRoute": "/en-US/workspaces/ws_default",
     "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md#mock-lane-workspace-project-core",
-    "sourceFingerprint": "63a9520eba79c5b2dba2ef0d2c33adb511c262b61dfcc80b53c33e43e061b4e9",
-    "storyFingerprint": "b1442a0fe65ec3b346bee8fecf263b4a4436d8fa5a3b1d70061a7ec3b7cfd8d8",
+    "sourceFingerprint": "58dd64d012102693fcbd9a9f87469ee56f1cd0614b1c7095d035701eb8a51f3a",
+    "storyFingerprint": "c3c3771027f1572c8ade6e320d7272c2b53fb8cedb656aeb104a665dd373296b",
     "stepMapFingerprint": "fc217664c231e04f7a2d5f64c6dea4fad526df3315c22b642acc893f36901b93",
     "sceneIds": [
       "workspace-home-project-creator",

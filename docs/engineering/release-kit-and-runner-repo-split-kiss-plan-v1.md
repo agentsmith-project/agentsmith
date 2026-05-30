@@ -32,11 +32,12 @@ Active plan 读法：
 2. AgentSmith link-level `release-kit-online-adoption-handoff` validator 已完成：AgentSmith commits `9fa11298` / `914244a5`。Focused test 结论：validator 覆盖 digest/provenance/link 级 happy path，malformed handoff contract fail fast；它未接入 `release:ready` 或 `contracts:check`，不产生 release-kit verdict。
 3. P6-lite summary/status 降噪已完成：AgentSmith commits `d2e38da3` / `6b72a8f3`。Focused test 结论：默认 `release:ready` / `release:status` human output 不再展示 transition-only unified deploy diagnostics，release-kit focused evidence 不再像 product readiness summary item。
 4. release-kit repo 已完成 operator-facing `airgap/use_existing` surface：映射到 `--airgap-consume-rehearsal`，覆盖 apply 链 image-load / render-check / apply / rollout / smoke；report 仍是 `readiness=false`。custom `--bundle-manifest` summary 校验问题已修复。release-kit commits `f3976a2` / `dcd30bc`，CI run `26670049863` success。
+5. release-kit `--airgap-adoption` repo-local aggregation 已完成：消费 `airgap-bundle/use_existing` 和 confirmed-apply `airgap/use_existing` operator surface reports，绑定 release contract、bundle manifest、nested bundle-check/deployment/consume report digests；report 仍是 `readiness=false`。release-kit commits `8fd4e9a` / `ba3975d` / `b58b097`，CI run `26671321070` success。它不是 formal release gate、release readiness、package/operator verdict，也不接 AgentSmith `release:ready`。
 
 尚未完成事项 / 当前真实下一步：
 
 1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. release-kit formal release gate、offline formal release gate / operator adoption 仍未完成；`airgap/install_substrates` 仍未实现并应 fail fast；不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict 或 operator verdict。
+2. release-kit formal release gate、offline formal release gate / formal operator adoption verdict 仍未完成；`airgap/install_substrates` 仍未实现并应 fail fast；不得把 release-kit focused evidence、`online-adoption-report.json`、`airgap/use_existing` rehearsal report、`airgap-adoption-report.json` 或未来 repo-local verdict 接回 AgentSmith `release:ready`，也不得写成 release readiness、package verdict 或 operator verdict。
 3. runner backend-real / full runtime semantics 仍未完成；现有 runner focused image/task-execution 证据不代表真实 LLM、backend-real 或 full runtime semantics。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。

@@ -25,6 +25,8 @@ Active plan 读法：
 
 本轮团队 review 不改 `docs/项目宪法.md`，只收敛当前产品计划和工程文档。原因：宪法已经规定产品范围、MVP 收敛和后端权威，不应记录某一轮 release-kit / runner split 的执行口径；把它放进当前 active 计划，才能随 pre-GA 工程事实继续收敛并最终归档。功能核心优先：release/deploy 相关门禁只保留能直接证明可安装、可回滚、可排障的证据；不能证明这些结果的检查降级为 focused diagnostic 或删除。pre-GA 旧路径、旧命名、旧脚本和旧计划默认删除或标为 reference，不为旧实现增加长期心智负担。`release:ready` 的当前口径仍以 AgentSmith product-side readiness / handoff input completeness 为边界，deployment/package/operator verdict 归 release-kit repo-local gate/evidence。
 
+Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做自然语言 policy parser。
+
 ## 当前状态 / 下一步切片
 
 回答用户问题：治理层不写进 `docs/项目宪法.md`，也不新增宪法条款；治理克制只记录在当前 release-kit / runner split 计划。治理克制已经作为执行约束：能直接服务当前功能、安全、operator 低心智和真实发布/运行风险的检查保留；其余删除、合并或降级为 focused diagnostic。

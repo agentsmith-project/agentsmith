@@ -437,88 +437,8 @@ function checkEngineeringIndexCurrentSection(): Violation[] {
   );
 }
 
-function findLineNumber(content: string, matcher: string | RegExp): number {
-  const lines = content.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (typeof matcher === 'string' ? line.includes(matcher) : matcher.test(line)) {
-      return i + 1;
-    }
-  }
-  return 1;
-}
-
-function extractSection(content: string, startRegex: RegExp, endRegex: RegExp): { content: string; startLine: number } {
-  const lines = content.split('\n');
-  const startIndex = lines.findIndex((line) => startRegex.test(line.trim()));
-  if (startIndex === -1) {
-    return { content: '', startLine: 1 };
-  }
-  const endIndex = lines.findIndex((line, index) => index > startIndex && endRegex.test(line.trim()));
-  return {
-    content: lines.slice(startIndex, endIndex === -1 ? lines.length : endIndex).join('\n'),
-    startLine: startIndex + 1,
-  };
-}
-
-type TextBlock = {
-  content: string;
-  startLine: number;
-};
-
 function normalizeBlock(content: string): string {
   return content.replaceAll('`', '').replace(/\s+/gu, ' ').trim();
-}
-
-function splitTextClauses(content: string): string[] {
-  return content
-    .split(/[；;。.]+/u)
-    .map((clause) => clause.trim())
-    .filter((clause) => clause.length > 0);
-}
-
-function splitMarkdownBlocks(content: string): TextBlock[] {
-  const blocks: TextBlock[] = [];
-  const lines = content.split('\n');
-  let current: string[] = [];
-  let startLine = 1;
-
-  const flush = (): void => {
-    if (current.length === 0) {
-      return;
-    }
-    blocks.push({
-      content: current.join('\n'),
-      startLine,
-    });
-    current = [];
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (trimmed === '') {
-      flush();
-      continue;
-    }
-
-    const startsStandaloneBlock =
-      /^#{1,6}\s/u.test(trimmed)
-      || /^[-*]\s/u.test(trimmed)
-      || /^\d+\.\s/u.test(trimmed);
-
-    if (current.length > 0 && startsStandaloneBlock) {
-      flush();
-    }
-
-    if (current.length === 0) {
-      startLine = i + 1;
-    }
-    current.push(line);
-  }
-
-  flush();
-  return blocks;
 }
 
 function isPositiveConstitutionWrite(line: string): boolean {
@@ -533,84 +453,12 @@ function isPositiveConstitutionWrite(line: string): boolean {
   return !/(?:(?:不|不应|不要|不得|不能|未|没有|无需|不再).{0,100}(?:写入|写进|新增|加入|纳入|补充|修改|更新|改到|落到)|(?:写入|写进|新增|加入|纳入|补充|修改|更新|改到|落到).{0,100}(?:不|不应|不要|不得|不能|未|没有|无需|不再))/u.test(normalized);
 }
 
-function isAllowedP6ReleaseReadyReference(block: string): boolean {
-  const normalized = normalizeBlock(block);
-
-  return (
-    /(?:(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不把|不给|不属于).{0,100}release:ready|release:ready.{0,100}(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不给|不属于))/u.test(normalized)
-    || /(?:只有|仅当|只在|仅限|只限).{0,120}(?:release\/runtime\/product readiness|release.{0,30}runtime.{0,30}product readiness|release.{0,30}runtime|product readiness).{0,120}(?:release:ready|发布级重门禁|重门禁)/u.test(normalized)
-    || /release:ready.{0,80}(?:仅限|只限|only when|only for).{0,100}(?:release|runtime|product readiness).{0,80}(?:路径|变更|改动|changes?)/iu.test(normalized)
-  );
-}
-
-function isNegatedP6ReleaseReadyReference(block: string): boolean {
-  const normalized = normalizeBlock(block);
-
-  return /(?:(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不把|不给|不属于|不跑|不执行|不使用).{0,100}release:ready|release:ready.{0,100}(?:不默认|不是默认|不作为|不得|不能|不应|不可|未接入|不接入|不消费|不接回|不给|不属于|不跑|不执行|不使用))/u.test(normalized);
-}
-
-function hasP6ReleaseReadyDefaultTrigger(block: string): boolean {
-  const normalized = normalizeBlock(block);
-  return /(?:默认|收口|验收|跑).{0,80}release:ready|release:ready.{0,80}(?:默认|收口|验收|跑)/u.test(normalized);
-}
-
-function hasDisallowedP6ReleaseReadyReference(block: string): boolean {
-  return splitTextClauses(block).some((clause) => {
-    if (!/release:ready/u.test(clause)) {
-      return false;
-    }
-    if (hasP6ReleaseReadyDefaultTrigger(clause) && !isNegatedP6ReleaseReadyReference(clause)) {
-      return true;
-    }
-    return !isAllowedP6ReleaseReadyReference(clause);
-  });
-}
-
-function isAllowedFormalOperatorReference(block: string): boolean {
-  const normalized = normalizeBlock(block);
-  const formalTerm = '(?:formal operator adoption verdict|formal release engineering verdict|offline release engineering gate)';
-
-  return (
-    new RegExp(`(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|不把|不能据此宣称).{0,120}${formalTerm}`, 'u').test(normalized)
-    || new RegExp(`${formalTerm}.{0,120}(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|只输出|not_issued)`, 'u').test(normalized)
-    || new RegExp(`(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求).{0,120}${formalTerm}`, 'u').test(normalized)
-    || new RegExp(`${formalTerm}.{0,120}(?:只有|仅当|只在|仅限|只限).{0,120}(?:客户|合规|GA|发布要求)`, 'u').test(normalized)
-  );
-}
-
-function isNegatedFormalOperatorReference(block: string): boolean {
-  const normalized = normalizeBlock(block);
-  const formalTerm = '(?:formal operator adoption verdict|formal release engineering verdict|offline release engineering gate)';
-
-  return (
-    new RegExp(`(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|不把|不能据此宣称).{0,120}${formalTerm}`, 'u').test(normalized)
-    || new RegExp(`${formalTerm}.{0,120}(?:不是|不等于|不作为|不得|不能|不应|不可|未接入|未输出|不再|只输出|not_issued)`, 'u').test(normalized)
-  );
-}
-
-function hasDisallowedFormalOperatorDefaultReference(
-  block: string,
-  formalOperatorTermRegex: RegExp,
-  formalOperatorDefaultRegex: RegExp,
-): boolean {
-  return splitTextClauses(block).some((clause) => {
-    if (!formalOperatorTermRegex.test(clause) || !formalOperatorDefaultRegex.test(clause)) {
-      return false;
-    }
-    if (!isNegatedFormalOperatorReference(clause)) {
-      return true;
-    }
-    return !isAllowedFormalOperatorReference(clause);
-  });
-}
-
 export function findReleaseKitSplitKissPlanViolations(
   content: string,
   file = RELEASE_KIT_SPLIT_PLAN,
 ): Violation[] {
   const violations: Violation[] = [];
 
-  const p6Section = extractSection(content, /^### P6\./u, /^## 9\./u);
   const constitutionLines = content.split('\n');
   for (let i = 0; i < constitutionLines.length; i += 1) {
     if (!isPositiveConstitutionWrite(constitutionLines[i])) {
@@ -622,43 +470,6 @@ export function findReleaseKitSplitKissPlanViolations(
       rule: 'constitution-governance-expansion',
       detail:
         'Release-kit split plan must not turn this slice into a project constitution update.',
-    });
-  }
-
-  for (const block of splitMarkdownBlocks(p6Section.content)) {
-    if (!/release:ready/u.test(block.content) || !hasDisallowedP6ReleaseReadyReference(block.content)) {
-      continue;
-    }
-    violations.push({
-      file,
-      line: p6Section.startLine + block.startLine + findLineNumber(block.content, 'release:ready') - 2,
-      rule: 'p6-lite-heavy-release-ready-default',
-      detail:
-        'P6-lite docs/old-reference cleanup must use doc/static guards and targeted contracts; release:ready is only for release/runtime/product readiness path changes.',
-    });
-  }
-
-  const formalOperatorTermRegex = /formal operator adoption verdict|formal release engineering verdict|offline release engineering gate/u;
-  const formalOperatorDefaultRegex =
-    /仍未完成|未完成|后续|下一步|推进|待办|todo|blocker|阻断|默认|收口|验收|必须|要做|应当/u;
-  for (const block of splitMarkdownBlocks(content)) {
-    if (
-      !formalOperatorTermRegex.test(block.content)
-      || !formalOperatorDefaultRegex.test(block.content)
-      || !hasDisallowedFormalOperatorDefaultReference(
-        block.content,
-        formalOperatorTermRegex,
-        formalOperatorDefaultRegex,
-      )
-    ) {
-      continue;
-    }
-    violations.push({
-      file,
-      line: block.startLine + findLineNumber(block.content, formalOperatorTermRegex) - 1,
-      rule: 'heavy-formal-operator-verdict-default',
-      detail:
-        'Pre-GA split plan must not make formal operator adoption verdict the default next step without the explicit customer/compliance/GA trigger.',
     });
   }
 

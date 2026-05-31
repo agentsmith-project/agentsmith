@@ -385,9 +385,9 @@ function assertQualityGateVisualLaneManualOptIn(
     job !== undefined
     && (job.blockingFor.length !== 2
       || !job.blockingFor.includes('manual')
-      || !job.blockingFor.includes('release'))
+      || !job.blockingFor.includes('product_readiness'))
   ) {
-    failures.push(`${label} manifest blockingFor must stay scoped to manual and release`);
+    failures.push(`${label} manifest blockingFor must stay scoped to manual and product_readiness`);
   }
 }
 
@@ -638,12 +638,14 @@ if (engineeringWorkflow?.role !== 'backend_real_regression' || engineeringWorkfl
   failures.push('engineering-gate.yml must be modeled as a scheduled backend-real regression workflow');
 }
 if (
-  engineeringWorkflow?.releaseBlocking !== false
-  || engineeringWorkflow?.blockingFor.includes('release') === true
-  || engineeringJob?.releaseBlocking !== false
-  || engineeringJob?.blockingFor.includes('release') === true
+  engineeringWorkflow?.productReadinessBlocking !== false
+  || engineeringWorkflow?.blockingFor.includes('product_readiness') === true
+  || engineeringWorkflow?.blockingFor.includes('handoff') === true
+  || engineeringJob?.productReadinessBlocking !== false
+  || engineeringJob?.blockingFor.includes('product_readiness') === true
+  || engineeringJob?.blockingFor.includes('handoff') === true
 ) {
-  failures.push('engineering-gate.yml must remain a scheduled/manual backend-real regression signal, not release readiness');
+  failures.push('engineering-gate.yml must remain a scheduled/manual backend-real regression signal, not product readiness / handoff');
 }
 if (engineeringJob?.laneId !== 'lane-backend-real-core') {
   failures.push('engineering-gate.yml must bind its scheduled job to lane-backend-real-core');

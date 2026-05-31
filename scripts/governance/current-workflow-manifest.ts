@@ -202,7 +202,8 @@ export const CURRENT_CI_WORKFLOW_BLOCKING_SCOPES = [
   'push',
   'manual',
   'scheduled',
-  'release',
+  'product_readiness',
+  'handoff',
 ] as const;
 
 export type CurrentCIWorkflowBlockingScope = (typeof CURRENT_CI_WORKFLOW_BLOCKING_SCOPES)[number];
@@ -239,7 +240,7 @@ export interface CurrentCIWorkflowJob {
   artifactPaths: readonly string[];
   blockingFor: readonly CurrentCIWorkflowBlockingScope[];
   scheduled: boolean;
-  releaseBlocking: boolean;
+  productReadinessBlocking: boolean;
   notes?: string;
 }
 
@@ -251,7 +252,7 @@ export interface CurrentCIWorkflowDefinition {
   jobs: readonly CurrentCIWorkflowJob[];
   blockingFor: readonly CurrentCIWorkflowBlockingScope[];
   scheduled: boolean;
-  releaseBlocking: boolean;
+  productReadinessBlocking: boolean;
 }
 
 export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
@@ -608,9 +609,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     workflowName: 'Contracts Check',
     role: 'contract_gate',
     triggers: ['pull_request', 'push'],
-    blockingFor: ['pull_request', 'push', 'release'],
+    blockingFor: ['pull_request', 'push', 'product_readiness'],
     scheduled: false,
-    releaseBlocking: true,
+    productReadinessBlocking: true,
     jobs: [
       {
         id: 'contracts',
@@ -626,9 +627,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         evidenceRequired: false,
         evidenceFamilies: [],
         artifactPaths: [],
-        blockingFor: ['pull_request', 'push', 'release'],
+        blockingFor: ['pull_request', 'push', 'product_readiness'],
         scheduled: false,
-        releaseBlocking: true,
+        productReadinessBlocking: true,
         notes: 'Contracts workflow is static/contract fail-fast only; gate:fast remains owned by quality-gates.yml.',
       },
     ],
@@ -640,7 +641,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     triggers: ['schedule', 'workflow_dispatch'],
     blockingFor: ['manual', 'scheduled'],
     scheduled: true,
-    releaseBlocking: false,
+    productReadinessBlocking: false,
     jobs: [
       {
         id: 'engineering-gate',
@@ -673,7 +674,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         blockingFor: ['manual', 'scheduled'],
         scheduled: true,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Scheduled/manual engineering regression signal must run the backend-real core lane and publish backend-real evidence; it is not release readiness, and governance reports are archived side evidence only.',
       },
     ],
@@ -683,9 +684,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     workflowName: 'Image Publish',
     role: 'release_artifact_producer',
     triggers: ['push', 'workflow_dispatch'],
-    blockingFor: ['manual', 'release'],
+    blockingFor: ['manual', 'handoff'],
     scheduled: false,
-    releaseBlocking: false,
+    productReadinessBlocking: false,
     jobs: [
       {
         id: 'publish-images',
@@ -708,9 +709,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'artifacts/image-publish/deploy-template-package.json',
           'artifacts/image-publish/agentsmith-deploy-template-package.tgz',
         ],
-        blockingFor: ['manual', 'release'],
+        blockingFor: ['manual', 'handoff'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Publishes the single shared agentsmith-app product image to GHCR and uploads the release-contract input handoff; it is not an AgentSmith product readiness gate.',
       },
     ],
@@ -722,7 +723,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     triggers: ['pull_request', 'workflow_dispatch'],
     blockingFor: ['pull_request', 'manual'],
     scheduled: false,
-    releaseBlocking: false,
+    productReadinessBlocking: false,
     jobs: [
       {
         id: 'integration-agent-task',
@@ -741,7 +742,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         blockingFor: ['pull_request', 'manual'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
       },
     ],
   }),
@@ -752,7 +753,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     triggers: ['workflow_dispatch'],
     blockingFor: ['manual'],
     scheduled: false,
-    releaseBlocking: false,
+    productReadinessBlocking: false,
     jobs: [
       {
         id: 'generate-release-contract',
@@ -771,7 +772,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         blockingFor: ['manual'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Produces the AgentSmith release contract handoff artifact only; it is not a deployment, package, or operator gate.',
       },
     ],
@@ -783,7 +784,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     triggers: ['workflow_dispatch'],
     blockingFor: ['manual'],
     scheduled: false,
-    releaseBlocking: false,
+    productReadinessBlocking: false,
     jobs: [
       {
         id: 'produce-runner-contract-artifact',
@@ -802,7 +803,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         blockingFor: ['manual'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Produces the runner contract descriptor and tgz artifact only; it is not an AgentSmith product readiness gate.',
       },
       {
@@ -819,7 +820,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         artifactPaths: [],
         blockingFor: ['manual'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Downloads the produced descriptor/tgz and verifies install/type consumption from that artifact.',
       },
       {
@@ -835,7 +836,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         artifactPaths: [],
         blockingFor: ['manual'],
         scheduled: false,
-        releaseBlocking: false,
+        productReadinessBlocking: false,
         notes: 'Focused cross-repo runner contract artifact handoff to the agentsmith-runner consumer only; it is not release readiness, runtime/image publication, runner adoption, signing, or attestation.',
       },
     ],
@@ -845,9 +846,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
     workflowName: 'Quality Gates',
     role: 'quality_gate',
     triggers: ['pull_request', 'push', 'workflow_dispatch'],
-    blockingFor: ['pull_request', 'push', 'manual', 'release'],
+    blockingFor: ['pull_request', 'push', 'manual', 'product_readiness'],
     scheduled: false,
-    releaseBlocking: true,
+    productReadinessBlocking: true,
     jobs: [
       {
         id: 'gate-fast',
@@ -864,9 +865,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'test-results/**',
           'playwright-report/**',
         ],
-        blockingFor: ['pull_request', 'push', 'manual', 'release'],
+        blockingFor: ['pull_request', 'push', 'manual', 'product_readiness'],
         scheduled: false,
-        releaseBlocking: true,
+        productReadinessBlocking: true,
       },
       {
         id: 'gate-default',
@@ -883,9 +884,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'test-results/**',
           'playwright-report/**',
         ],
-        blockingFor: ['pull_request', 'push', 'manual', 'release'],
+        blockingFor: ['pull_request', 'push', 'manual', 'product_readiness'],
         scheduled: false,
-        releaseBlocking: true,
+        productReadinessBlocking: true,
       },
       {
         id: 'lane-visual',
@@ -912,9 +913,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'test-results/**',
           'playwright-report/**',
         ],
-        blockingFor: ['manual', 'release'],
+        blockingFor: ['manual', 'product_readiness'],
         scheduled: false,
-        releaseBlocking: true,
+        productReadinessBlocking: true,
       },
       {
         id: 'lane-backend-real-core',
@@ -941,9 +942,9 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'test-results/**',
           'playwright-report/**',
         ],
-        blockingFor: ['manual', 'release'],
+        blockingFor: ['manual', 'product_readiness'],
         scheduled: false,
-        releaseBlocking: true,
+        productReadinessBlocking: true,
       },
     ],
   }),

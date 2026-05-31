@@ -7,6 +7,7 @@ import YAML from 'yaml';
 
 import {
   CURRENT_CI_WORKFLOW_MANIFEST,
+  CURRENT_CI_WORKFLOW_BLOCKING_SCOPES,
   CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS,
   CURRENT_WORKFLOW_DOCUMENT_FILES,
   CURRENT_WORKFLOW_ENTRY_PATHS,
@@ -1115,6 +1116,55 @@ describe('current workflow governance', () => {
     ]);
   });
 
+  it('keeps CI workflow readiness metadata on product readiness and handoff scopes', () => {
+    expect(CURRENT_CI_WORKFLOW_BLOCKING_SCOPES).toEqual([
+      'pull_request',
+      'push',
+      'manual',
+      'scheduled',
+      'product_readiness',
+      'handoff',
+    ]);
+    expect(CURRENT_CI_WORKFLOW_BLOCKING_SCOPES).not.toContain('release');
+
+    for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
+      expect(asRecord(workflow), workflow.path).not.toHaveProperty('releaseBlocking');
+      expect(workflow.blockingFor, workflow.path).not.toContain('release');
+
+      for (const job of workflow.jobs) {
+        expect(asRecord(job), `${job.workflowPath}:${job.id}`).not.toHaveProperty('releaseBlocking');
+        expect(job.blockingFor, `${job.workflowPath}:${job.id}`).not.toContain('release');
+      }
+    }
+
+    const productReadinessWorkflowPaths = CURRENT_CI_WORKFLOW_MANIFEST
+      .filter((workflow) => workflow.productReadinessBlocking)
+      .map((workflow) => workflow.path)
+      .sort();
+    const productReadinessJobs = listCurrentCIWorkflowJobs()
+      .filter((job) => job.productReadinessBlocking)
+      .map((job) => `${job.workflowPath}:${job.id}`)
+      .sort();
+    const handoffJobs = listCurrentCIWorkflowJobs()
+      .filter((job) => job.blockingFor.includes('handoff'))
+      .map((job) => `${job.workflowPath}:${job.id}`);
+
+    expect(productReadinessWorkflowPaths).toEqual([
+      '.github/workflows/contracts-check.yml',
+      '.github/workflows/quality-gates.yml',
+    ]);
+    expect(productReadinessJobs).toEqual([
+      '.github/workflows/contracts-check.yml:contracts',
+      '.github/workflows/quality-gates.yml:gate-default',
+      '.github/workflows/quality-gates.yml:gate-fast',
+      '.github/workflows/quality-gates.yml:lane-backend-real-core',
+      '.github/workflows/quality-gates.yml:lane-visual',
+    ]);
+    expect(handoffJobs).toEqual([
+      '.github/workflows/image-publish.yml:publish-images',
+    ]);
+  });
+
   it('keeps integration e2e pull request paths on active runner surfaces', () => {
     const paths = collectWorkflowPullRequestPaths(parseWorkflow('.github/workflows/integration-e2e.yml'));
 
@@ -1181,7 +1231,7 @@ describe('current workflow governance', () => {
     expect(jobIf).toContain("github.event_name == 'workflow_dispatch'");
     expect(jobIf).toContain('inputs.run_visual_lane');
     expect(jobIf).not.toContain("github.event_name == 'push'");
-    expect(job?.blockingFor).toEqual(['manual', 'release']);
+    expect(job?.blockingFor).toEqual(['manual', 'product_readiness']);
     expect(job?.blockingFor).not.toContain('push');
   });
 
@@ -1255,10 +1305,10 @@ describe('current workflow governance', () => {
     expect(engineeringWorkflow?.role).toBe('backend_real_regression');
     expect(engineeringWorkflow?.scheduled).toBe(true);
     expect(engineeringWorkflow?.blockingFor).toEqual(['manual', 'scheduled']);
-    expect(engineeringWorkflow?.releaseBlocking).toBe(false);
+    expect(engineeringWorkflow?.productReadinessBlocking).toBe(false);
     expect(engineeringJob?.laneId).toBe('lane-backend-real-core');
     expect(engineeringJob?.blockingFor).toEqual(['manual', 'scheduled']);
-    expect(engineeringJob?.releaseBlocking).toBe(false);
+    expect(engineeringJob?.productReadinessBlocking).toBe(false);
     expect(engineeringJob?.requiresSecrets).toBe(true);
     expect(engineeringJob?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
     expect(engineeringJob?.evidenceRequired).toBe(true);
@@ -1335,7 +1385,7 @@ describe('current workflow governance', () => {
     expect(workflow?.workflowName).toBe('Release Contract Artifact');
     expect(workflow?.role).toBe('release_artifact_producer');
     expect(workflow?.triggers).toEqual(['workflow_dispatch']);
-    expect(workflow?.releaseBlocking).toBe(false);
+    expect(workflow?.productReadinessBlocking).toBe(false);
     expect(job?.role).toBe('artifact_producer');
     expect(job?.requiresSecrets).toBe(false);
     expect(job?.evidenceRequired).toBe(true);
@@ -1465,7 +1515,7 @@ describe('current workflow governance', () => {
     expect(workflow?.workflowName).toBe('Runner Contract Artifact');
     expect(workflow?.role).toBe('release_artifact_producer');
     expect(workflow?.triggers).toEqual(['workflow_dispatch']);
-    expect(workflow?.releaseBlocking).toBe(false);
+    expect(workflow?.productReadinessBlocking).toBe(false);
     expect(producerJob?.role).toBe('artifact_producer');
     expect(producerJob?.requiresSecrets).toBe(false);
     expect(producerJob?.evidenceRequired).toBe(true);
@@ -1487,7 +1537,7 @@ describe('current workflow governance', () => {
     expect(handoffJob?.role).toBe('contract_gate');
     expect(handoffJob?.requiresSecrets).toBe(false);
     expect(handoffJob?.evidenceRequired).toBe(false);
-    expect(handoffJob?.releaseBlocking).toBe(false);
+    expect(handoffJob?.productReadinessBlocking).toBe(false);
     expect(handoffJob?.commands).toEqual([RUNNER_REPO_CONTRACT_HANDOFF_COMMAND]);
     expect(handoffJob?.commands).not.toContain(RUNNER_CONTRACT_BUILD_COMMAND);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read' });
@@ -1582,8 +1632,11 @@ describe('current workflow governance', () => {
     expect(workflow?.workflowName).toBe('Image Publish');
     expect(workflow?.role).toBe('release_artifact_producer');
     expect(workflow?.triggers).toEqual(['push', 'workflow_dispatch']);
-    expect(workflow?.releaseBlocking).toBe(false);
+    expect(workflow?.blockingFor).toEqual(['manual', 'handoff']);
+    expect(workflow?.productReadinessBlocking).toBe(false);
     expect(job?.role).toBe('artifact_producer');
+    expect(job?.blockingFor).toEqual(['manual', 'handoff']);
+    expect(job?.productReadinessBlocking).toBe(false);
     expect(job?.requiresSecrets).toBe(false);
     expect(job?.evidenceRequired).toBe(true);
     expect(job?.evidenceFamilies).toEqual(['image_publish_handoff']);

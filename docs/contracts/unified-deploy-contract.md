@@ -46,9 +46,12 @@ real Kubernetes, cloud, or airgap handoff support.
 
 The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
 chain is transition-only focused diagnostic evidence / 过渡期专项诊断 only.
-AgentSmith `release:ready` does not execute or require it for the AgentSmith
-product-side readiness and handoff input check. Deployment/package/operator
-release verdict ownership belongs to release-kit repo-local gates and evidence.
+AgentSmith `npm run product:ready` is the human product-side readiness and
+handoff input check; read-only inspection uses `npm run product:status`. It does
+not execute or require this deploy evidence chain. `npm run release:ready` /
+`npm run release:status` remain deprecated transition aliases only.
+Deployment/package/operator release verdict ownership belongs to release-kit
+repo-local gates and evidence.
 
 Release-kit handoff plans must use operator-facing language for the deployment
 choice: `online` / `airgap` distribution against both substrate strategies:

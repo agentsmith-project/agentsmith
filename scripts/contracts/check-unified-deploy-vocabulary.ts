@@ -82,6 +82,7 @@ const CURRENT_RELEASE_SUBSTRATE_STRATEGY_FILES = new Set<string>([
   'docs/engineering/README.md',
   'docs/user-guides/README.md',
   'docs/user-guides/local-runtime-flows.md',
+  'docs/user-guides/unified-deploy-operations.md',
   'docs/user-guides/runtime-lines-matrix.md',
   'DEVELOPMENT.md',
 ]);
@@ -659,7 +660,7 @@ function validateReleaseKitHandoffBoundary(
     addFailure(
       failures,
       path,
-      `${path} must state the release-kit handoff boundary: AgentSmith release:ready is product readiness / local complete / current product gate, not a deployment/package/operator verdict; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断; release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
+      `${path} must state the release-kit handoff boundary: npm run product:ready is AgentSmith product readiness / local complete / current product gate, not a deployment/package/operator verdict; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断; release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
     );
   }
 

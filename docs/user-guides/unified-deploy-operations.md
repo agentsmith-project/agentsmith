@@ -2,14 +2,16 @@
 
 Status: `current`
 
-This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run release:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are focused diagnostics only. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run product:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. `npm run release:ready` / `npm run release:status` remain deprecated transition aliases only; they do not give deployment, package, or operator verdicts. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are focused diagnostics only. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 The formal release model is not the command names in this guide. Release-kit
-operator-facing language is `online` / `airgap` crossed with `use_existing` /
-`install_substrates`; internal machine artifacts use `target_cluster` /
-`substrate_source` / `distribution`. `install_substrates` means the
-release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith
-deploying substrates and not a provider matrix.
+operator-facing language is `online` / `airgap` × `use_existing` /
+`kit_provided`; internal machine artifacts use `target_cluster` /
+`substrate_source` / `distribution`. `kit_provided` means kit-supplied
+substrate pack, truth, routability, and materiality validation, not installing
+substrates. `install_substrates` is only future / fail-fast language for a real
+installer path; it requires an independent installer producer and explicit
+installer confirmation flag.
 
 This guide still exposes two pre-GA diagnostic entry names:
 
@@ -19,7 +21,8 @@ This guide still exposes two pre-GA diagnostic entry names:
   operator-owned Kubernetes cluster plus declared substrate connection truth.
 
 They are not release targets, not long-term operator choices, and not
-`release:ready` deployment conclusions.
+`product:ready` deployment conclusions. `release:ready` is only a deprecated
+transition alias for product readiness.
 
 ## Current vs P0 Handoff Boundary
 

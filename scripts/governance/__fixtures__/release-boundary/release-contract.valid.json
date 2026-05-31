@@ -78,8 +78,8 @@
     },
     {
       "id": "managed_runner",
-      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-ce7cdde@sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
-      "digest": "sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
+      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
+      "digest": "sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
       "source": "managed_runner_image"
     }
   ],
@@ -197,14 +197,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:16fe01118d5021ecdd5e91237fe27396f032e67148598e0adeafd4c74b6a77c5",
+    "subject_sha256": "sha256:4169cca114e22f4251ebd74f7e41639d708234416adb9c9ce630c2463bde1ad9",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:a48204e8d91619f7dbca992533113f6c108810de3a3278239eda068156129b55",
+    "artifact_sha256": "sha256:8717c9f70f6d5fd64f3ace888ab3086b90484dff03d4348528fe8bf9d94b51b9",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",
@@ -212,7 +212,7 @@
   },
   "managed_runner_image": {
     "id": "agentsmith-runner",
-    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-ce7cdde@sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
-    "digest": "sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5"
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
+    "digest": "sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb"
   }
 }

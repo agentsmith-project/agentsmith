@@ -61,7 +61,7 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 
 ## Release Kit Handoff Boundary
 
-AgentSmith release:ready is product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
 const minimalReleaseKitSplitPlanDoc = `# Release Kit Split Plan
@@ -389,6 +389,7 @@ This intentionally omits the concrete deployment decisions.
     'docs/engineering/README.md',
     'docs/user-guides/local-runtime-flows.md',
     'docs/user-guides/README.md',
+    'docs/user-guides/unified-deploy-operations.md',
     'docs/contracts/README.md',
     'DEVELOPMENT.md',
   ])('rejects install_substrates as a current operator-facing success path in %s', (path) => {

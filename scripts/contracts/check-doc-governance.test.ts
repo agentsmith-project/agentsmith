@@ -18,7 +18,10 @@ const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH =
 const ACTIVE_PRODUCT_READINESS_ENTRYPOINT_DOCS = [
   'docs/CURRENT_BASELINE.md',
   'docs/testing/README.md',
+  'docs/testing/visual-baseline-policy-v1.md',
   'docs/contracts/afscp-file-libraries-architecture.md',
+  'docs/contracts/unified-deploy-contract.md',
+  'docs/user-guides/unified-deploy-operations.md',
   'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/test-and-evidence-directory-model.md',
   'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',

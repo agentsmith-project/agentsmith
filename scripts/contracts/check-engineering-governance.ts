@@ -228,6 +228,8 @@ requireMatch(governanceModel, /result\.json/, 'current engineering governance mo
 requireMatch(governanceModel, /gate id/i, 'current engineering governance model must describe gate id as the stable gate identity');
 requireMatch(governanceModel, /operational baseline/i, 'current engineering governance model must keep runtime baselines separate from correctness contracts');
 requireMatch(governanceModel, /Plain-language glossary/, 'current engineering governance model must include the plain-language workflow glossary');
+requireMatch(constitution, /provider-specific credential[\s\S]{0,100}runner skill[\s\S]{0,120}(?:默认|success|成功路径)/iu, 'constitution must forbid provider-specific credentials or runner skills as default success paths');
+requireMatch(constitution, /LLM endpoint[\s\S]{0,80}provider catalog[\s\S]{0,80}preset[\s\S]{0,160}(?:不等于|not)[\s\S]{0,80}runner credential[\s\S]{0,120}provider-specific execution binding/iu, 'constitution must keep LLM endpoint provider catalog/preset separate from runner credentials and provider-specific execution binding');
 requireMatch(governanceModel, /`e2e`/, 'current engineering governance model must define e2e plainly');
 requireMatch(governanceModel, /`lane`/, 'current engineering governance model must define lane plainly');
 requireMatch(governanceModel, /`gate`/, 'current engineering governance model must define gate plainly');

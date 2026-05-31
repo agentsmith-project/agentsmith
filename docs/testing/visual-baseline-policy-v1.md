@@ -27,12 +27,14 @@ Owner: Frontend
 npm run verify -- --goal=visual --run
 ```
 
-发布收口使用 `npm run release:ready` / `npm run release:status`。
+发布收口使用 `npm run product:ready`；只读查看使用 `npm run product:status`。
+`npm run release:ready` / `npm run release:status` 只保留为 deprecated
+transition aliases / 过渡 alias。
 
 结论：
 - targeted visual 可以属于对应业务链或治理链证据
 - full visual 的内部 evidence owner 是 `lane:visual`，但日常不要直接把它当成 copyable workflow
-- 发布验收使用 `npm run release:ready`，不能用默认检查或 visual owner 命令替代
+- 发布验收使用 `npm run product:ready`，不能用默认检查或 visual owner 命令替代
 
 ## 4. Producer-owned evidence contract
 

@@ -11,6 +11,10 @@ import {
 
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
+const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ACTIVE_PATH =
+  'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
+const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH =
+  'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
 
 function extractSetInitializer(source: string, constName: string): string {
   const match = source.match(new RegExp(`const ${constName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`, 'u'));
@@ -140,12 +144,21 @@ describe('check-doc-governance historical document detection', () => {
     const development = readFileSync(resolve(process.cwd(), 'DEVELOPMENT.md'), 'utf8');
     expect(development).toContain('ASBCP image/contract');
 
+  });
+
+  it('keeps the historical ASBCP release independence plan in engineering archive only', () => {
+    expect(existsSync(resolve(process.cwd(), HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ACTIVE_PATH))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH))).toBe(true);
+
     const historicalPlan = readFileSync(
-      resolve(process.cwd(), 'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md'),
+      resolve(process.cwd(), HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH),
       'utf8',
     );
+
+    expect(historicalPlan).toMatch(/Status:\s*`?historical_reference`?/i);
     expect(historicalPlan).toContain('本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明');
     expect(historicalPlan).toContain('当前 AgentSmith producer 只报告 absence');
+    expect(isHistoricalDoc(HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH, historicalPlan)).toBe(true);
   });
 
   it('keeps the historical unified deploy milestone out of active ASBCP guidance inputs', () => {

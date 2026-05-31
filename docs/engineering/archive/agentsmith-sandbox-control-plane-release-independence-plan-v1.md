@@ -1,6 +1,7 @@
 # AgentSmith Sandbox Control Plane (ASBCP) 独立发布改造计划 v1
 
-状态：handoff 收口中；本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明，不作为 ASBCP release/config 长期权威
+Status: `historical_reference`
+历史说明：本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明，不作为 ASBCP release/config 长期权威
 日期：2026-05-19（原计划创建于 2026-05-18）
 目标读者：后续开发团队、发布治理负责人、跨仓库集成负责人
 
@@ -62,7 +63,7 @@ ASBCP 是内部后端服务和部署依赖，不是用户访问入口、system �
 - canonical active forbidden list 固定为：`mbos-sandbox-v1`、`../mbos-sandbox-v1`、`sandbox-manager`、`sandbox manager`、`Sandbox Manager`、`agentsmith-sandbox-manager`、bare prefix `SANDBOX_MANAGER`、prefix env names `SANDBOX_MANAGER_...`、bare prefix `SANDBOX_CONTROL_PLANE`、prefix env names `SANDBOX_CONTROL_PLANE_...`、常见旧名/中间符号变体 `sandboxManager` / `SandboxManager` / `sandbox_manager` / `sandbox-manager` / `sandboxControlPlane` / `SandboxControlPlane` / `sandbox_control_plane`、`start-manager` / `stop-manager` / `restart-manager`、`SANDBOX_SERVICE_KEY`、`SANDBOX_SOURCE_DIR`、`--sandbox-source-dir`、`/v1/sandboxes`、`cmd/manager`、`./cmd/manager`、`go run ./cmd/manager`、`cmd/cleaner`、`mbos/sandbox-manager`、`github.com/sandbox/manager`、`/etc/asbcp/config.yaml`、`/etc/sandbox-manager/manager-config.yaml`、旧 `sandbox-manager` image lock/template 文件名，例如 `sandbox-manager-image.lock`、`sandbox-manager-pv-rbac.yaml.tpl`。
 - 旧名 guard 对 `SANDBOX_CONTROL_PLANE` 系列只禁 env bare/prefix 和代码符号形态，不得用裸 `sandbox-control-plane` substring pattern 匹配；`agentsmith-sandbox-control-plane` 作为 canonical repo/image/K8s/AFSCP caller 名必须允许。
 - `manager-service/` 是本轮唯一允许的 active path root prefix exception，仅用于保留既有 Go module root；guard 只能把这个 root prefix 本身当作例外，仍必须递归扫描其子路径。`manager-service/scripts/test-manager.sh`、`manager-service/cmd/manager`、`manager-service/cmd/cleaner` 等 nested old-name paths 禁止放行；除此之外不得新增或保留旧 `manager` 命名、命令、脚本 alias、服务名或用户/运维心智。
-- 旧名 guard 必须检查 active 内容和路径名；active docs 也必须被分类清理或 exact path + reason allowlist 覆盖，不能因为 guard 跳过 `docs/engineering/` 就报告绿色；任何旧名放行必须是 exact path + reason，禁止目录级或 glob 级 allowlist。本文件可作为 historical migration plan 被 exact allowlist：`docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md`，reason 为记录 pre-GA clean-cut 迁移背景；如果后续归档，必须迁到固定历史路径并更新 exact allowlist。
+- 旧名 guard 必须检查 active 内容和路径名；active docs 也必须被分类清理或 exact path + reason allowlist 覆盖，不能因为 guard 跳过 `docs/engineering/` 就报告绿色；任何旧名放行必须是 exact path + reason，禁止目录级或 glob 级 allowlist。本文件可作为 historical migration plan 被 exact allowlist：`docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md`，reason 为记录 pre-GA clean-cut 迁移背景。
 
 ASBCP 可以借鉴 AFSCP 的治理方法论，但不能复制 AFSCP 的业务内容。AFSCP 是 filesystem/storage control plane；ASBCP 是 sandbox workload lifecycle service。两者缩写相近，更需要在文档和代码中保持职责清晰。
 

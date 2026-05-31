@@ -9,6 +9,10 @@ const SCAN_ROOTS = ['README.md', 'AGENTS.md', 'DESIGN.md', 'DEVELOPMENT.md', 'do
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']);
 
 const RELEASE_KIT_SPLIT_PLAN = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
+const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_TOP_LEVEL =
+  'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
+const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE =
+  'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
 
 export const SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS = [
   'docs/engineering/governance-release-flow-simplification-plan-v3.md',
@@ -45,7 +49,7 @@ const ACTIVE_ASBCP_GUIDANCE_FILES = new Set([
 
 const HISTORICAL_ASBCP_REFERENCE_NOTICES = new Map([
   [
-    'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
+    HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE,
     '本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明',
   ],
 ]);
@@ -406,6 +410,23 @@ function checkSupersededReleaseGovernanceDocPlacement(filePath: string): Violati
   ];
 }
 
+function checkHistoricalAsbcpReleaseIndependencePlanPlacement(filePath: string): Violation[] {
+  const relativePath = toRel(filePath);
+  if (relativePath !== HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_TOP_LEVEL) {
+    return [];
+  }
+
+  return [
+    {
+      file: relativePath,
+      line: 1,
+      rule: 'historical-asbcp-release-independence-plan-active-top-level',
+      detail:
+        `Historical/reference ASBCP release independence plan must live under ${HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE}.`,
+    },
+  ];
+}
+
 function checkIndexExpectations(): Violation[] {
   const violations: Violation[] = [];
   for (const expectation of DOC_INDEX_EXPECTATIONS) {
@@ -529,6 +550,7 @@ function main(): void {
     violations.push(...checkMarkdownLinks(file, content));
     violations.push(...checkHistoricalDocsPlacement(file, content));
     violations.push(...checkSupersededReleaseGovernanceDocPlacement(file));
+    violations.push(...checkHistoricalAsbcpReleaseIndependencePlanPlacement(file));
     if (toRel(file) === RELEASE_KIT_SPLIT_PLAN) {
       violations.push(...findReleaseKitSplitKissPlanViolations(content));
     }

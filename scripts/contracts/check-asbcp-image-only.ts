@@ -39,7 +39,7 @@ const ACTIVE_SCAN_ROOTS = [
 const ACTIVE_SCAN_FILES = [
   'Makefile',
   'package.json',
-  'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
+  'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
   'scripts/lib/internal-sandbox-real-control.sh',
   'scripts/run-internal-agent-task-real-gate.sh',
   'scripts/run-integration-release-user-story.sh',
@@ -69,7 +69,7 @@ const NEGATIVE_FIXTURE_FILES = new Set([
 ]);
 
 const MIGRATION_NOTE_FILES = new Set([
-  'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
+  'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md',
 ]);
 const HISTORICAL_REFERENCE_LINE_LIMIT = 40;
 const HISTORICAL_REFERENCE_SENTINELS = [

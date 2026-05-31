@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { checkAsbcpImageOnly, collectAsbcpImageOnlyFiles } from './check-asbcp-image-only';
 
-const historicalMigrationPlanPath = 'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
+const historicalMigrationPlanPath =
+  'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
 
 const roots: string[] = [];
 

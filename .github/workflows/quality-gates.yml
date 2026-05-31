@@ -104,7 +104,7 @@ jobs:
   lane-visual:
     name: lane-visual
     needs: gate-fast
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_visual_lane) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual_lane }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

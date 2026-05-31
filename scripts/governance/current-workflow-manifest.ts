@@ -912,7 +912,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'test-results/**',
           'playwright-report/**',
         ],
-        blockingFor: ['push', 'manual', 'release'],
+        blockingFor: ['manual', 'release'],
         scheduled: false,
         releaseBlocking: true,
       },

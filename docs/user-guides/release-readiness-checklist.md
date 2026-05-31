@@ -90,7 +90,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 CI green 不是完整 product-side readiness sign-off：
 
 1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 对应的内部 CI surfaces 通过。
-2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
+2. `lane:visual` 只在手动 workflow dispatch 且 opt-in `run_visual_lane` 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
 4. 当前 AgentSmith product-side readiness 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real product readiness、aggregate readiness check 与 `summary.md`。
 

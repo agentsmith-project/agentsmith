@@ -361,6 +361,11 @@ function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: s
     .join('\n');
 }
 
+function collectJobIf(parsedWorkflow: Record<string, unknown>, jobId: string): string {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  return typeof job.if === 'string' ? job.if.trim() : '';
+}
+
 function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
   const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
   const steps = Array.isArray(job.steps) ? job.steps : [];
@@ -1157,6 +1162,20 @@ describe('current workflow governance', () => {
     expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
       runCommands.indexOf('npm run lane:visual'),
     );
+  });
+
+  it('keeps lane-visual opt-in on Quality Gates workflow dispatch instead of default push', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === '.github/workflows/quality-gates.yml',
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === 'lane-visual');
+    const jobIf = collectJobIf(parseWorkflow('.github/workflows/quality-gates.yml'), 'lane-visual');
+
+    expect(jobIf).toContain("github.event_name == 'workflow_dispatch'");
+    expect(jobIf).toContain('inputs.run_visual_lane');
+    expect(jobIf).not.toContain("github.event_name == 'push'");
+    expect(job?.blockingFor).toEqual(['manual', 'release']);
+    expect(job?.blockingFor).not.toContain('push');
   });
 
   it('keeps CI producer commands on npm adapters instead of removed Make compatibility targets', () => {

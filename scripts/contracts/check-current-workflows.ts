@@ -213,6 +213,11 @@ function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: s
   return collectJobRunCommandList(parsedWorkflow, jobId).join('\n');
 }
 
+function collectJobIf(parsedWorkflow: Record<string, unknown>, jobId: string): string {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  return typeof job.if === 'string' ? job.if.trim() : '';
+}
+
 function collectJobRunCommandList(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
   return collectJobSteps(parsedWorkflow, jobId)
     .map((step) => asRecord(step).run)
@@ -350,6 +355,39 @@ function assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
   }
   if (buildIndex >= 0 && gateIndex >= 0 && buildIndex >= gateIndex) {
     failures.push(`${label} must run ${RUNNER_CONTRACT_BUILD_COMMAND} before ${gateCommand}`);
+  }
+}
+
+function assertQualityGateVisualLaneManualOptIn(
+  parsedWorkflow: Record<string, unknown>,
+  failures: string[],
+): void {
+  const label = '.github/workflows/quality-gates.yml:lane-visual';
+  const jobIf = collectJobIf(parsedWorkflow, 'lane-visual');
+  const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+    (entry) => entry.path === '.github/workflows/quality-gates.yml',
+  );
+  const job = workflow?.jobs.find((entry) => entry.id === 'lane-visual');
+
+  if (!jobIf.includes("github.event_name == 'workflow_dispatch'")) {
+    failures.push(`${label} if condition must run only from workflow_dispatch`);
+  }
+  if (!jobIf.includes('inputs.run_visual_lane')) {
+    failures.push(`${label} if condition must require inputs.run_visual_lane`);
+  }
+  if (jobIf.includes("github.event_name == 'push'")) {
+    failures.push(`${label} must not run by default on push`);
+  }
+  if (job?.blockingFor.includes('push') === true) {
+    failures.push(`${label} manifest blockingFor must not include push`);
+  }
+  if (
+    job !== undefined
+    && (job.blockingFor.length !== 2
+      || !job.blockingFor.includes('manual')
+      || !job.blockingFor.includes('release'))
+  ) {
+    failures.push(`${label} manifest blockingFor must stay scoped to manual and release`);
   }
 }
 
@@ -644,6 +682,10 @@ assertQualityGateJobBuildsRunnerContractBeforeColdExecution(
   parseWorkflow('.github/workflows/quality-gates.yml'),
   'lane-visual',
   'npm run lane:visual',
+  failures,
+);
+assertQualityGateVisualLaneManualOptIn(
+  parseWorkflow('.github/workflows/quality-gates.yml'),
   failures,
 );
 

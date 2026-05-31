@@ -19,6 +19,7 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
   'docs/current-engineering-governance-model.md',
   'docs/testing/verification-campaigns-v1.md',
   'docs/user-guides/README.md',
+  'docs/user-guides/local-runtime-flows.md',
   'docs/user-guides/release-readiness-checklist.md',
   'docs/user-guides/runtime-lines-matrix.md',
   'docs/user-guides/uxui-review-runbook.md',
@@ -69,6 +70,41 @@ const RELEASE_KIT_HANDOFF_BOUNDARY_FILES = new Set<string>([
   'docs/user-guides/release-readiness-checklist.md',
   'docs/user-guides/unified-deploy-operations.md',
 ]);
+
+const CURRENT_RELEASE_SUBSTRATE_STRATEGY_FILES = new Set<string>([
+  'README.md',
+  DEPLOY_CONTRACT_PATH,
+  RELEASE_KIT_SPLIT_PLAN_PATH,
+  'docs/CURRENT_BASELINE.md',
+  'docs/current-engineering-governance-model.md',
+  'docs/contracts/README.md',
+  'docs/contracts/product-terminology.md',
+  'docs/engineering/README.md',
+  'docs/user-guides/README.md',
+  'docs/user-guides/local-runtime-flows.md',
+  'docs/user-guides/runtime-lines-matrix.md',
+  'DEVELOPMENT.md',
+]);
+
+const CURRENT_OPERATOR_STRATEGY_PATTERN =
+  /\bonline\b[\s\S]{0,80}\bairgap\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\bkit_provided\b|\buse_existing\b[\s\S]{0,80}\bkit_provided\b[\s\S]{0,120}\bonline\b[\s\S]{0,80}\bairgap\b/iu;
+
+const FUTURE_INSTALL_SUBSTRATES_PATTERN =
+  /\binstall_substrates\b[\s\S]{0,200}(?:\b(?:future|installer\s+producer|installer\s+confirmation|confirmation\s+flag|fail[- ]?fast|not\s+current|future\s+capability)\b|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式))|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式)[\s\S]{0,120}\binstall_substrates\b/iu;
+
+const ALLOWED_FUTURE_INSTALL_SUBSTRATES_LINE =
+  /\b(?:future|installer\s+producer|installer\s+confirmation|confirmation\s+flag|fail[- ]?fast|not\s+current|future\s+capability)\b|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式)/iu;
+
+const FORBIDDEN_CURRENT_INSTALL_SUBSTRATES_LINES = [
+  /\bformal\s+release\s+language\b[\s\S]{0,120}\binstall_substrates\b/iu,
+  /正式\s*release\s*语言[\s\S]{0,120}\binstall_substrates\b/iu,
+  /\boperator-facing\b[\s\S]{0,120}\binstall_substrates\b/iu,
+  /operator-facing\s*发布语言[\s\S]{0,120}\binstall_substrates\b/iu,
+  /\b(?:online|airgap)\b`?\s*(?:\+|\/|和|与)\s*`?\binstall_substrates\b/iu,
+  /\buse_existing\b`?\s*(?:\/|和|与)\s*`?\binstall_substrates\b/iu,
+  /\b(?:cover|covers|covering)\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\binstall_substrates\b/iu,
+  /覆盖[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\binstall_substrates\b/iu,
+] as const;
 
 const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
   {
@@ -416,6 +452,50 @@ function validateNoSplitDeployVocabulary(
   }
 }
 
+function validateCurrentReleaseSubstrateStrategy(
+  path: string,
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  if (!CURRENT_RELEASE_SUBSTRATE_STRATEGY_FILES.has(path)) {
+    return;
+  }
+
+  if (!CURRENT_OPERATOR_STRATEGY_PATTERN.test(content)) {
+    addFailure(
+      failures,
+      path,
+      `${path} must state the current operator-facing substrate strategy as online/airgap x use_existing/kit_provided.`,
+    );
+  }
+
+  if (!FUTURE_INSTALL_SUBSTRATES_PATTERN.test(content)) {
+    addFailure(
+      failures,
+      path,
+      `${path} must keep install_substrates as a future capability that requires an independent installer producer and explicit installer confirmation flag.`,
+    );
+  }
+
+  const lines = content.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    for (const pattern of FORBIDDEN_CURRENT_INSTALL_SUBSTRATES_LINES) {
+      if (!pattern.test(line) || ALLOWED_FUTURE_INSTALL_SUBSTRATES_LINE.test(line)) {
+        continue;
+      }
+
+      addFailure(
+        failures,
+        path,
+        'current operator-facing substrate strategy must use kit_provided, not install_substrates.',
+        index + 1,
+        line,
+      );
+    }
+  }
+}
+
 function validateDeployContract(
   content: string,
   failures: UnifiedDeployVocabularyFailure[],
@@ -725,6 +805,7 @@ export function checkUnifiedDeployVocabulary(
     }
 
     validateNoSplitDeployVocabulary(path, content, failures);
+    validateCurrentReleaseSubstrateStrategy(path, content, failures);
     if (P0_HANDOFF_BOUNDARY_FILES.has(path)) {
       validateP0HandoffBoundary(path, content, failures);
     }

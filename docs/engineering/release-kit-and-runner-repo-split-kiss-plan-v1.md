@@ -16,7 +16,8 @@ Active plan 读法：
 5. 宪法只补服务商中立建模和工程治理克制原则；release-kit / runner 拆分执行细节仍留在本计划，不把某一轮执行口径写成宪法操作流程。
 6. 当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 应进入 archive/reference，不滚动追加大型矩阵。
 7. 主协调 agent 只分配/验收，实际修改由 worker TDD 完成；worker 必须先写或调整最小失败测试/fixture，再改文档或 guard。
-8. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
+8. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `kit_provided`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。
+   真正 `install_substrates` 是未来能力，前提是 release-kit 有独立 installer producer + explicit installer confirmation flag。
 9. release-kit scoped operator runbook acceptance / unsigned scoped evidence 已由 release-kit HEAD 841702a 完成到 focused/candidate 边界；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入，不作为当前默认下一步。
 10. P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。
 11. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
@@ -128,7 +129,7 @@ pre-GA 已移除内容、过渡诊断、负向测试、失败边界或短期待�
 | 短期待删项 | owner | 删除条件 | 删除时机/阶段 | 验收证据 |
 | --- | --- | --- | --- | --- |
 | `local-kind` / `existing-cluster` non-canonical profile name 映射口 | AgentSmith release-boundary owner | P2/P6 移除或隐藏 AgentSmith active status/workflow 中的 transition-only diagnostics，或 release-kit repo-local gate 已拥有 deployment/package/operator verdict；不得继续作为长期入口或长期发布/部署契约 | 条件满足后立即删除 active workflow/adapter 映射，或至少从 active workflow 隐藏，只保留必要 fail-fast 负向测试 | `contracts:check-unified-deploy-vocabulary`、`contracts:check-current-verification-campaigns`、`contracts:check-release-boundary` 证明新轴值为正式输入，active workflow/adapter 不再接受映射口，混写和同义词漂移 fail fast |
-| `use_existing` / `install_substrates` operator-facing strategy 与内部机器值 `external_declared` / `kit_installed` 的映射说明 | release-kit boundary owner | release-kit repo-local contract、runbook 和 gate 已明确 operator 只看 `use_existing` / `install_substrates`，机器值只出现在 release contract / evidence；`install_substrates` 明确为 release-kit-owned minimal/adjacent substrate pack，不得让两套词都成为 operator 心智负担，也不得写成 AgentSmith substrate deployment 或 provider matrix | P2/P3/P6 收口时删除重复说明或归一到 release-kit repo-local contract；AgentSmith docs 只保留 handoff input 需要的映射 | release-kit repo-local strategy schema/gate、`contracts:check-release-boundary`、`contracts:check-doc-governance` 和 handoff note 证明 online/airgap 都覆盖 `use_existing` 与 `install_substrates`，且 kind 仍只是 optional local rehearsal |
+| `use_existing` / `kit_provided` operator-facing strategy 与内部机器值 `external_declared` / `kit_installed` 的映射说明 | release-kit boundary owner | release-kit repo-local contract、runbook 和 gate 已明确 operator 只看 `use_existing` / `kit_provided`，机器值只出现在 release contract / evidence；`kit_provided` 明确为 kit-supplied substrate pack、truth、routability 和 materiality validation，不得让两套词都成为 operator 心智负担，也不得写成 substrate installation、AgentSmith substrate deployment 或 provider matrix | P2/P3/P6 收口时删除重复说明或归一到 release-kit repo-local contract；AgentSmith docs 只保留 handoff input 需要的映射 | release-kit repo-local strategy schema/gate、`contracts:check-release-boundary`、`contracts:check-doc-governance` 和 handoff note 证明 online/airgap 都覆盖 `use_existing` 与 `kit_provided`，且 kind 仍只是 optional local rehearsal |
 | release-kit `--inputs` / `--evidence` focused diagnostic 输出和未来/预留 output 拒绝说明 | release-kit boundary owner | producer 已实现且 `--evidence` 能重新语义校验后进入正式接受清单；否则继续 fail fast | P2/P3/P6 清掉无实现说明，不把预留 output 写成长期发布/部署契约 | `contracts:check-release-boundary`、`contracts:check-release-kit-source-boundary -- --scan-root <repo>` 交接检查、provenance/redaction 负向测试 |
 | 已移除 runner 包、字段、路径、`@mbos/agent-runner` shim、旧 env helper / monorepo-side `buildAgentRuntimeEnv` 短期待删归属说明 | runner contract/runtime owner | P5 runner manifest/lock adoption、Dockerfile/image build adoption、release contract digest adoption 和 runtime semantics 后续收口完成；不能成为长期共享路径或 release proof；runner repo `buildAgentRuntimeEnv` 的 projected dependencies opaque env wiring 不属于旧路径成功轨 | P6 删除 AgentSmith 长期共享路径，只留必要 fail-fast 负向测试 | `contracts:check-agent-runner-contract-artifact`、`contracts:check-runner-contract-sync`、`contracts:check-release-boundary`、`contracts:check-runner-image-lock -- --adoption --manifest <path>` |
 | 服务商专用 runner skills / OAuth / managed credential key/refresh API / manual release step / fixture/evidence 旧引用 | runner contract/runtime owner + AgentSmith integration owner | provider-neutral runtime/projection 已覆盖当前需要，active workflow 不再引用服务商专用路径；Feishu/Jira/GitHub/Gitee/Lark/Atlassian 等业务集成不得成为正式成功路径 | 发现即删；若需要保留历史说明，P6 归档或删除，不能留在 active workflow/docs | `contracts:check-doc-governance`、`contracts:check-product-terminology`、对应 source-boundary/static guard 或 focused test 证明 active 路径不依赖服务商专用 skill/OAuth/credential/fixture/evidence |
@@ -139,7 +140,7 @@ pre-GA 已移除内容、过渡诊断、负向测试、失败边界或短期待�
 | Repo | 负责 | 不负责 |
 | --- | --- | --- |
 | `agentsmith` | 产品代码、产品合同、OpenAPI/AsyncAPI、product image、managed runner image handoff truth、产品验证、本地完整测试、产品证据、外部 image/manifest adoption、handoff readiness input | deployment/package/operator release verdict、operator 安装包、离线包、发布平台、runner 执行进程长期实现 |
-| `agentsmith-release-kit` | online/airgap 发布、离线包、image bundle、发布包测试、repo-local release/deploy gate、Kubernetes render/apply/smoke、`use_existing` 连接校验、`install_substrates` 最小 substrate 安装、operator runbook、部署/分发证据和 deployment/package/operator verdict | visual、backend-real、产品 DB/bootstrap 语义、产品 UI/e2e 真相、发布管理 UI、云资源 provisioning |
+| `agentsmith-release-kit` | online/airgap 发布、离线包、image bundle、发布包测试、repo-local release/deploy gate、Kubernetes render/apply/smoke、`use_existing` 连接校验、`kit_provided` substrate pack/truth/routability/materiality validation、operator runbook、部署/分发证据和 deployment/package/operator verdict | visual、backend-real、产品 DB/bootstrap 语义、产品 UI/e2e 真相、发布管理 UI、云资源 provisioning |
 | `agentsmith-runner` | runner 执行进程、Codex/terminal/artifact/provider-neutral skills runtime、runner image、runner CI、contract conformance tests | runner contract source of truth、Agent task API、Agent Runners API、runner key、presence/heartbeat、Context Store、Files/file library、managed credential、服务商专用 skills/OAuth/key refresh API、审计/用量、前端管理面 |
 
 补充说明：
@@ -216,7 +217,7 @@ Release kit 的正式部署模式由三根正交机器轴组成。三根轴是�
 | 轴 | 值 | 含义 |
 | --- | --- | --- |
 | `target_cluster` | `existing_kubernetes` | 真实 Kubernetes 目标，包括私有 Kubernetes 和云端托管 Kubernetes。 |
-| `substrate_source` | `kit_installed` | release-kit-owned minimal/adjacent substrate pack，由 release kit 安装并产出连接真相和 pod-routability preflight；`kit_installed/online` focused composition/evidence parity 已完成，但不等于 full release-kit verdict、formal release gate、release readiness 或 deployment/package/operator verdict。只做最小 substrate pack，不做 provider matrix；它不是 AgentSmith substrate deployment，不是云资源 provisioning，也不是 in-cluster substrate。 |
+| `substrate_source` | `kit_installed` | `kit_provided` 的内部 producer profile：release-kit-supplied minimal/adjacent substrate pack、连接真相、pod-routability preflight 和 materiality validation；`kit_installed/online` focused composition/evidence parity 已完成，但不等于 full release-kit verdict、formal release gate、release readiness 或 deployment/package/operator verdict。只做 pack/truth/validation，不做 substrate installation 或 provider matrix；它不是 AgentSmith substrate deployment，不是云资源 provisioning，也不是 in-cluster substrate。 |
 | `substrate_source` | `external_declared` | operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible object storage、Keycloak/OIDC 等连接真相；release kit 只校验，不创建云资源。 |
 | `distribution` | `online` | 从 GHCR 或 operator 指定 registry 拉取 digest-pinned images。 |
 | `distribution` | `airgap` | 使用离线包、OCI layout 或 image archives，不联网拉镜像、工具或模板。 |
@@ -226,9 +227,11 @@ strategy 名称；机器合同仍写 `substrate_source` 值：
 
 - `use_existing`：连接 operator 已有 substrates 或云端接口；内部机器值是
   `external_declared`。
-- `install_substrates`：由 release kit 安装 release-kit-owned minimal/adjacent
-  substrate pack 并产出同一份连接真相；内部机器值是 `kit_installed`。它
-  不表示 AgentSmith 负责部署 substrates，也不表示 provider matrix 扩张。
+- `kit_provided`：由 release kit 提供/校验 minimal/adjacent substrate pack、
+  同一份连接真相、pod-routability preflight 和 materiality validation；内部机器值是
+  `kit_installed`。它不表示安装 substrates、AgentSmith 负责部署 substrates，
+  也不表示 provider matrix 扩张。真正 `install_substrates` 是未来能力，
+  前提是 release-kit 有独立 installer producer + explicit installer confirmation flag。
 
 online 和 airgap 都必须覆盖这两个 strategy。未覆盖任一 strategy 时，
 release-kit 不能给 deployment/package/operator verdict。
@@ -238,9 +241,9 @@ operator 默认只需要看四种正式生产组合：
 | operator 选择 | 内部机器值 | 用途 |
 | --- | --- | --- |
 | `online` + `use_existing` | `target_cluster=existing_kubernetes`，`substrate_source=external_declared`，`distribution=online` | 常规真实部署主路径。 |
-| `online` + `install_substrates` | `target_cluster=existing_kubernetes`，`substrate_source=kit_installed`，`distribution=online` | 自包含或受控环境，release kit 安装最小 substrate pack。 |
+| `online` + `kit_provided` | `target_cluster=existing_kubernetes`，`substrate_source=kit_installed`，`distribution=online` | 自包含或受控环境，使用 kit-supplied substrate pack/truth/routability/materiality validation，不安装 substrates。 |
 | `airgap` + `use_existing` | `target_cluster=existing_kubernetes`，`substrate_source=external_declared`，`distribution=airgap` | 真实 airgap 主路径，外部依赖作为 operator prerequisite。 |
-| `airgap` + `install_substrates` | `target_cluster=existing_kubernetes`，`substrate_source=kit_installed`，`distribution=airgap` | 真实 airgap 自包含路径，包内必须包含 substrate images/tools/proofs。 |
+| `airgap` + `kit_provided` | `target_cluster=existing_kubernetes`，`substrate_source=kit_installed`，`distribution=airgap` | 真实 airgap 自包含路径，包内必须包含 substrate pack images/tools/proofs 并完成 validation，不安装 substrates。 |
 
 `kind` / `local-kind` 只作为 pre-GA/local diagnostic rehearsal。若机器合同中
 仍出现 `kind_rehearsal`，只能服务本机、CI 自测或离线包机械演练；它不和上面四个
@@ -253,13 +256,13 @@ operator 默认只需要看四种正式生产组合：
 | --- | --- | --- |
 | `existing_kubernetes + external_declared + online` | 是 | 常规真实部署主路径。 |
 | `existing_kubernetes + external_declared + airgap` | 是 | 真实离线部署主路径；外部依赖作为 operator prerequisite 记录和校验。 |
-| `existing_kubernetes + kit_installed + online` | 目标一等支持；当前需最小 substrate pack + pod-routability preflight slice 补齐 | 自包含或受控在线环境；release kit 安装最小 adjacent substrate pack，但不把它伪装成云资源管理、provider matrix 或 in-cluster substrate。 |
-| `existing_kubernetes + kit_installed + airgap` | 目标一等支持；当前需最小 substrate pack + pod-routability preflight slice 补齐 | 自包含或受控离线环境；离线包必须包含 substrate images/tools/proofs。 |
+| `existing_kubernetes + kit_installed + online` | 目标一等支持；当前对应 `kit_provided` pack/truth/routability/materiality validation | 自包含或受控在线环境；release kit 提供/校验最小 adjacent substrate pack，但不把它伪装成安装、云资源管理、provider matrix 或 in-cluster substrate。 |
+| `existing_kubernetes + kit_installed + airgap` | 目标一等支持；当前对应 `kit_provided` pack/truth/routability/materiality validation | 自包含或受控离线环境；离线包必须包含 substrate pack images/tools/proofs 并完成 validation。 |
 
 心智模型：
 
 1. operator 先选正式目标：真实 Kubernetes。
-2. 再选依赖：release kit 安装，或连接已有/云端依赖。
+2. 再选依赖：使用 `kit_provided` 的 kit-supplied pack/truth/validation，或连接已有/云端依赖。
 3. 最后选分发：在线拉镜像，或离线包导入。
 
 本机 kind 演练是诊断工具，不进入正式目标选择。
@@ -424,7 +427,7 @@ sequence；standalone `registry-presence-report.json` 仍不能作为 accepted
 focused output。
 
 另有 P2 `--online-adoption` 聚合 producer：它消费
-`online/use_existing` 与 `online/install_substrates` 两路 confirmed apply/evidence
+`online/use_existing` 与 `online/kit_provided` 两路 confirmed apply/evidence
 root，输出 `online-adoption-report.json`，包含 digest/provenance/coverage
 summary 且 `readiness=false`。该报告只作为 release-kit repo-local online
 adoption 聚合与 AgentSmith handoff 输入事实，不是 `release:ready`、
@@ -718,7 +721,7 @@ release readiness。
 10. `rollout/smoke` 必须采集所有 AgentSmith/runner/provider workload 的 live `imageID`，并和 release contract / target registry digest 对齐；当前 rollout 已对 render/check `matched_by === 'digest'` 的 target/adopted refs 做 strict live ref check，同 digest mixed source+target fail；target/adopted refs 如果 selected pods 只暴露 expected digest、没有可解析 digest-pinned live image ref，也 fail fast；普通 source-registry rollout 保持 digest-only。
 11. API single-replica 等规则来源仍是 AgentSmith release contract / deploy contract；release kit 只执行检查，不独立定义产品部署规则。
 12. online release-kit verdict 必须覆盖 `use_existing` 和
-    `install_substrates` 两种 operator-facing substrate strategy；机器值分别是
+    `kit_provided` 两种 operator-facing substrate strategy；机器值分别是
     `target_cluster=existing_kubernetes, substrate_source=external_declared, distribution=online`
     与
     `target_cluster=existing_kubernetes, substrate_source=kit_installed, distribution=online`。
@@ -731,8 +734,8 @@ release readiness。
     不能据此给 deployment/package/operator verdict。
 13. `kind_rehearsal + kit_installed + online` 只作为本机/CI 证明工具；kind 是可选
     local option，不是生产默认，也不是用户部署前提。
-14. `existing_kubernetes + kit_installed` 不做 provider matrix，不创建云资源；只安装
-    release-kit 管理的最小 substrate pack，并产出与 `use_existing` 同形的连接真相。
+14. `existing_kubernetes + kit_installed` 不做 provider matrix，不创建云资源；当前只提供/校验
+    release-kit 管理的最小 substrate pack、连接真相、routability 和 materiality，不安装 substrates。
 15. `agentsmith-release-kit` 必须把 source-boundary、remote identity、provenance check 作为 repo-local required CI；AgentSmith sibling scan/handoff evidence 只能证明交接输入可读，不能替代 release-kit CI。
 16. AgentSmith 保留 thin adapter 只用于读取/链接 release-kit repo-local verdict artifact；不得把这些 artifact 接回 AgentSmith release campaign，也不得新增第二套 AgentSmith verdict。
 
@@ -748,12 +751,12 @@ release readiness。
 
 - online deploy focused spine 能从 GHCR/digest 或 operator 指定 target/adopted refs 渲染并执行 apply、rollout、smoke。
 - `online + use_existing` 的 focused path 能产出 preflight、render、render-check、apply、rollout、smoke 和 online evidence root envelope，并通过 `--evidence` revalidation；内部机器值是 `existing_kubernetes + external_declared + online`。
-- `online + install_substrates` / `existing_kubernetes + kit_installed + online` focused composition/evidence parity 已完成；它仍不是 full release-kit verdict、formal release gate 或 release readiness，缺正式 repo-local verdict/adoption 收口时不能给 deployment/package/operator verdict。
+- `online + kit_provided` / `existing_kubernetes + kit_installed + online` focused composition/evidence parity 已完成；它仍不是 full release-kit verdict、formal release gate 或 release readiness，缺正式 repo-local verdict/adoption 收口时不能给 deployment/package/operator verdict。
 - P2 online focused spine、operator signoff intake、operator-preloaded registry prerequisite binding 和最小 online adoption 聚合已完成；历史 commit/CI/local command 见 evidence log。它们不是 full release-kit verdict、release engineering gate、operator signature/identity/full verdict、AgentSmith product-flow evidence 收口或 release readiness 证据。
 - `--online-deployment-gate --mode apply --target-registry` 必须带 `--registry-probe`，registry-presence 必须在 image-map 后、render/apply/rollout/smoke/evidence 前完成；source-registry apply 不受影响，target-registry server-dry-run 不要求且不允许 probe。standalone `registry-presence-report.json` 仍被 `--evidence` 拒收。registry mirror/login/push/pull 若要补齐，必须作为显式 operator/runbook 工作进入 repo-local gate。
 - 本切片不做 registry mirror/login/push/pull，不把 probe presence 写成 deploy adoption，不做 release readiness，不做 operator signature/identity/full verdict，不做 cloud provisioning。
 - 当前 AgentSmith `existing-cluster` 诊断在 release-kit formal release gate / offline install-deploy / operator adoption 收口前仍明确降级为 Docker substrate/IP-only transition diagnostic；任何把它写成真实 online/cloud/airgap substrate evidence 的路径都失败。
-- `install_substrates` 的内部机器值是 `kit_installed`；`kit_installed/online` focused composition/evidence parity 已完成，但只做最小 substrate pack + pod-routability preflight 的 focused 证据边界；不做 provider matrix，也不能写成当前 release-ready deploy snapshot、full release-kit verdict 或 formal release gate。
+- `kit_provided` 的内部机器值是 `kit_installed`；`kit_installed/online` focused composition/evidence parity 已完成，但只做最小 substrate pack + pod-routability preflight + materiality validation 的 focused 证据边界；不做 installation/provider matrix，也不能写成当前 release-ready deploy snapshot、full release-kit verdict 或 formal release gate。真正 `install_substrates` 是未来能力，前提是 release-kit 有独立 installer producer + explicit installer confirmation flag。
 - kind rehearsal 只是 optional local capability；当前不是 release-kit executable evidence，不产出当前 release readiness 证据，也不是用户真实部署前提。
 - real Kubernetes/cloud smoke 只证明目标集群安装和路由，不声称 product flows 通过。
 - P2 过渡说明以当前边界为准：AgentSmith `release:ready` 是 product readiness / local complete / current product gate，不要求 dependencies/images/rollout/product-flow deploy evidence；这些 unified deploy outputs 只保留为过渡期专项诊断，直到 P2/P3/P6 收口时从 AgentSmith active status/workflow 删除或隐藏。这里不暗示未来 AgentSmith release campaign 会继续消费它们。
@@ -764,7 +767,7 @@ release readiness。
 ### P3. Release Kit Airgap MVP
 
 目标：产出 airgap mechanism / dynamic image closure 的离线发布包能力；airgap
-必须覆盖 `use_existing` 和 `install_substrates` 两种 operator-facing substrate
+必须覆盖 `use_existing` 和 `kit_provided` 两种 operator-facing substrate
 strategy；内部机器值分别是 `existing_kubernetes + external_declared + airgap`
 和 `existing_kubernetes + kit_installed + airgap`。kind 只能作为离线包机械自测、本机诊断或 CI rehearsal，不是 airgap
 declarable target，也不能替代真实 Kubernetes airgap evidence。
@@ -774,7 +777,7 @@ release-kit managed runner image closure consumption blocker 已解除。
 
 当前状态：P3 airgap bundle render-check、dynamic image inventory closure、archive
 materiality diagnostic、image load/import diagnostic 和
-`airgap/install_substrates` repo-local focused surface 已完成；细节、commit、CI
+`airgap/kit_provided` repo-local focused surface 已完成；细节、commit、CI
 run 与本地命令见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 这些 focused reports 输出 `readiness=false` / scoped readiness false，`--evidence`
 继续拒收未列入接受清单的 report。它们只证明 bundle-local render/check、
@@ -791,7 +794,7 @@ readiness。
 3. image bundle 使用统一 manifest，记录 source image、archive sha256、target registry digest。
 4. 增加 target registry mirror map，支持真实集群使用 operator 指定的离线 registry。
 5. 增加断网演练：不允许运行时联网拉 image、下载 tool 或访问在线 registry。
-6. 禁止在 airgap 路径从公网下载工具、模板或 image；`use_existing` 可以把目标网络内的 operator-declared substrate endpoint 作为 prerequisite 校验，但不代表 release kit 创建云资源；`install_substrates` 必须从 airgap 包内安装最小 substrate pack。
+6. 禁止在 airgap 路径从公网下载工具、模板或 image；`use_existing` 可以把目标网络内的 operator-declared substrate endpoint 作为 prerequisite 校验，但不代表 release kit 创建云资源；`kit_provided` 必须从 airgap 包内提供 substrate pack images/tools/proofs 并完成 validation，不安装 substrates。
 7. 所有工具只有两种来源：包内携带并带 sha256，或 operator prerequisite 明确声明名称、版本、安装位置和 proof；两者都没有时 fail fast。
 8. 已完成的 `--airgap-image-archive-check` 只证明 archive content materiality
    digest alignment；不能从该 report 推导 image load/import、offline
@@ -814,7 +817,7 @@ slice 的历史证据。当前 active truth 是 dynamic release contract image c
 - managed runner：仅在 P5 runner manifest/lock adoption 后由 release contract 的 `deploy_image_inventory` 引入；P1/P3 不伪造临时 digest 或 archive 要求；
 - ASBCP、AFSCP、LLMUP；
 - ingress controller / certgen；
-- `install_substrates` bundle 需要的 substrate images；内部机器值是 `kit_installed`：PostgreSQL/pgvector、MongoDB、Redis、MinIO、MinIO client、Keycloak；
+- `kit_provided` bundle 需要的 substrate pack images；内部机器值是 `kit_installed`：PostgreSQL/pgvector、MongoDB、Redis、MinIO、MinIO client、Keycloak；
 - `kind_rehearsal` 需要的 registry/kind node/CSI 相关 images；
 - `use_existing` app bundle 可以把外部依赖列为 operator prerequisite；内部机器值是 `existing_kubernetes + external_declared`，且必须有明确 prerequisite/evidence，不静默在线拉取。
 
@@ -825,7 +828,7 @@ slice 的历史证据。当前 active truth 是 dynamic release contract image c
 - tag-only image 失败。
 - 缺工具或工具 proof 失败。
 - verify/load/render/apply/smoke 任一步尝试联网下载失败。
-- `airgap + use_existing` 和 `airgap + install_substrates` 都必须在断网环境基于
+- `airgap + use_existing` 和 `airgap + kit_provided` 都必须在断网环境基于
   dynamic release contract image closure 完成 `verify/load/render/apply/smoke`；内部机器值分别是
   `existing_kubernetes + external_declared + airgap` 和
   `existing_kubernetes + kit_installed + airgap`；
@@ -844,7 +847,7 @@ slice 的历史证据。当前 active truth 是 dynamic release contract image c
   loader 并校验 stdout digest 与 `target_digest` 对齐，但不证明 offline
   install/apply/smoke，也不是 registry readiness、airgap ready 或 release
   readiness；`airgap-image-load-report.json` 仍被 `--evidence` 拒收。
-- `kind_rehearsal` 在 `kit_installed/online` focused composition 中只作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代真实 Kubernetes 的 `use_existing` 或 `install_substrates` airgap evidence。
+- `kind_rehearsal` 在 `kit_installed/online` focused composition 中只作为可选演练；kind 可做离线包机械自测、本机诊断或 CI rehearsal，但不是 airgap declarable target，不能替代真实 Kubernetes 的 `use_existing` 或 `kit_provided` airgap evidence。
 - 正式手工 operator signoff / verdict 仍单独记录，不能被 intake 绑定自动化冒充。
 
 ### P4. AgentSmith 发布 Runner Contract 包
@@ -968,7 +971,7 @@ secret/redaction 价值、真实发布/运行安全价值或 operator 低心智�
 它从 GHCR 或配置的在线 registry 拉取 digest-pinned images。它不 build AgentSmith 或 runner 源码。正式输入不能使用含 mutable tag 的 `site.env.example`，也不能把 `site.env.example` 当 prerequisite image truth；必须由 release contract、deploy template manifest 和 profile-specific env/schema 生成。在线 smoke 的最低证明是：rendered image ref、target registry digest、live workload `imageID` 三者一致。
 
 online verdict 必须覆盖两种 operator-facing substrate strategy：`use_existing`
-连接已有 substrates / 云端接口，`install_substrates` 由 release kit 安装最小 substrate pack。
+连接已有 substrates / 云端接口，`kit_provided` 使用 kit-supplied substrate pack/truth/routability/materiality validation。
 只证明其中一路时，只能算 focused diagnostic，不能给 deployment/package/operator verdict。
 
 ### Airgap
@@ -987,15 +990,17 @@ airgap 的判断标准很简单：在断网环境里，包内内容足够完成 
 如果 operator 选择 `use_existing`，release contract 内部对应
 `substrate_source=external_declared`；外部 substrate / 云端依赖是 operator
 prerequisite，release kit 只校验连接和证据，不尝试离线创建这些云资源。
-如果 operator 选择 `install_substrates`，release contract 内部对应
+如果 operator 选择 `kit_provided`，release contract 内部对应
 `substrate_source=kit_installed`；离线包必须包含最小 substrate pack
-所需 image、工具和校验证据，不能联网补下载。
+所需 image、工具和校验证据，不能联网补下载，也不表示安装 substrates。
+真正 `install_substrates` 是未来能力，前提是 release-kit 有独立 installer producer
+和 explicit installer confirmation flag。
 
 如果某个工具不在包内，它必须是 operator prerequisite；如果某个步骤尝试在线下载工具、模板或 image，该步骤失败。
 
 operator-declared substrate endpoint 可以是目标网络内 prerequisite；release kit 只做连接、能力和证据校验，不因此获得创建云集群、数据库、bucket、Keycloak realm/client、IAM 或网络资源的职责。
 
-airgap verdict 必须覆盖 `use_existing` 和 `install_substrates` 两种 strategy。kind
+airgap verdict 必须覆盖 `use_existing` 和 `kit_provided` 两种 strategy。kind
 runbook 只能做本机 rehearsal，不能替代真实 Kubernetes airgap evidence，也不是正式 release target。
 
 ### Kubernetes Targets

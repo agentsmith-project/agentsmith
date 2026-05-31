@@ -206,7 +206,7 @@ present that P0 boundary as a new product capability.
 1. `AgentSmith deploy`
 - Operator-facing deployment workflow.
 - Formal release language is `online` / `airgap` distribution crossed with
-  `use_existing` / `install_substrates` substrate strategy.
+  `use_existing` / `kit_provided` substrate strategy.
 - Internal machine values are `target_cluster`, `substrate_source`, and
   `distribution`; they are not a second operator vocabulary.
 - It is not a current frontend page or sidebar object unless a later UI/IA
@@ -219,7 +219,7 @@ present that P0 boundary as a new product capability.
 
 3. `Substrate strategy`
 - Operator-facing choice for dependency ownership at deploy time.
-- Current values are `use_existing` and `install_substrates`.
+- Current values are `use_existing` and `kit_provided`.
 - It must not be expanded into a provider matrix in product-facing language.
 
 4. `use_existing`
@@ -228,13 +228,15 @@ present that P0 boundary as a new product capability.
 - Internal machine value: `substrate_source=external_declared`.
 - Release kit validates the declared truth; it does not create cloud resources.
 
-5. `install_substrates`
-- Release-kit-owned minimal/adjacent substrate pack capability.
+5. `kit_provided`
+- Kit-supplied minimal/adjacent substrate pack, truth, routability, and
+  materiality validation. It does not install substrates.
 - Internal machine value: `substrate_source=kit_installed`.
-- It means release kit installs the minimal substrate pack and emits the same
-  connection truth shape used by `use_existing`.
+- It emits the same connection truth shape used by `use_existing`.
 - It does not mean AgentSmith deploys substrates, does not create a cloud
   provider matrix, and does not add in-product substrate management.
+- A real `install_substrates` strategy is a future capability and requires an
+  independent installer producer plus an explicit installer confirmation flag.
 
 6. `pre-GA diagnostic entry names`
 - `local-kind` and `existing-cluster` are allowed only as pre-GA/local

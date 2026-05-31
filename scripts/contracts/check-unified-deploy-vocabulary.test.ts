@@ -16,6 +16,10 @@ const validDeployContract = `# Unified Deploy Contract
 
 Status: current_deploy_contract
 
+Operator-facing release language is online / airgap x use_existing / kit_provided.
+kit_provided maps to internal substrate_source=kit_installed for kit-supplied substrate pack, truth, routability, and materiality validation only.
+install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
+
 ## Runtime
 
 - Substrate: Docker-only substrate.
@@ -37,9 +41,14 @@ It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff suppo
 const cleanActiveDoc = `# Active Doc
 
 AgentSmith deploy exposes local-kind and existing-cluster as pre-GA/local diagnostic entry names.
+Formal release language is online / airgap x use_existing / kit_provided.
+install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
 `;
 
 const validP0BoundaryDoc = `# Active Doc
+
+Formal release language is online / airgap x use_existing / kit_provided.
+install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
 
 ## Current vs P0 Handoff Boundary
 
@@ -58,6 +67,9 @@ AgentSmith release:ready is product readiness / local complete / current product
 const minimalReleaseKitSplitPlanDoc = `# Release Kit Split Plan
 
 Status: team_reviewed_p0_start_ready
+
+Operator-facing release language is online / airgap x use_existing / kit_provided.
+install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
 
 ## Current Boundary
 
@@ -82,6 +94,7 @@ const ACTIVE_DOC_PATHS = [
   'docs/current-engineering-governance-model.md',
   'docs/testing/verification-campaigns-v1.md',
   'docs/user-guides/README.md',
+  'docs/user-guides/local-runtime-flows.md',
   'docs/user-guides/release-readiness-checklist.md',
   'docs/user-guides/runtime-lines-matrix.md',
   'docs/user-guides/uxui-review-runbook.md',
@@ -366,6 +379,32 @@ This intentionally omits the concrete deployment decisions.
 
     expect(text).toContain('P0/vNext handoff boundary');
     expect(text).toContain('external_declared');
+  });
+
+  it.each([
+    'README.md',
+    'docs/CURRENT_BASELINE.md',
+    'docs/current-engineering-governance-model.md',
+    'docs/contracts/product-terminology.md',
+    'docs/engineering/README.md',
+    'docs/user-guides/local-runtime-flows.md',
+    'docs/user-guides/README.md',
+    'docs/contracts/README.md',
+    'DEVELOPMENT.md',
+  ])('rejects install_substrates as a current operator-facing success path in %s', (path) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [path]: `${validP0BoundaryDoc}
+
+Formal release language is online / airgap x use_existing / install_substrates.
+`,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('current operator-facing substrate strategy');
+    expect(text).toContain('kit_provided');
   });
 
   it.each([

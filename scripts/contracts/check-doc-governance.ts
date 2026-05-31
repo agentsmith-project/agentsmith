@@ -30,7 +30,6 @@ const ACTIVE_ASBCP_GUIDANCE_FILES = new Set([
   'docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md',
   'docs/engineering/internal-agent-terminal-pod-lifecycle-analysis-v1.md',
   'docs/engineering/file-library-version-management-fast-path-plan-v1.md',
-  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
 ]);
 
 const HISTORICAL_ASBCP_REFERENCE_NOTICES = new Map([
@@ -159,6 +158,7 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string; current
 ];
 
 const REDIRECT_STATUS_REGEX = /Status:\s*`redirect`/i;
+const HISTORICAL_REFERENCE_STATUS_REGEX = /Status:\s*`?historical_reference`?/i;
 
 const HISTORICAL_LIFECYCLE_MARKERS = [
   'handoff',
@@ -212,6 +212,14 @@ function containsHistoricalLifecycleMarker(value: string): boolean {
   });
 }
 
+function isEngineeringArchiveDoc(relativePath: string): boolean {
+  return relativePath.toLowerCase().startsWith('docs/engineering/archive/');
+}
+
+function isHistoricalReferenceDoc(relativePath: string, content: string): boolean {
+  return isEngineeringArchiveDoc(relativePath) || HISTORICAL_REFERENCE_STATUS_REGEX.test(content);
+}
+
 export function isHistoricalDoc(relativePath: string, content: string): boolean {
   const normalized = relativePath.toLowerCase();
   const basename = path.basename(normalized);
@@ -219,6 +227,7 @@ export function isHistoricalDoc(relativePath: string, content: string): boolean 
 
   return (
     normalized.startsWith('docs/archive/')
+    || isHistoricalReferenceDoc(relativePath, content)
     || REDIRECT_STATUS_REGEX.test(content)
     || containsHistoricalLifecycleMarker(basename)
     || containsHistoricalLifecycleMarker(titleLine)
@@ -350,6 +359,10 @@ function checkMarkdownLinks(filePath: string, content: string): Violation[] {
 
 function checkHistoricalDocsPlacement(filePath: string, content: string): Violation[] {
   const relativePath = toRel(filePath);
+  if (isHistoricalReferenceDoc(relativePath, content)) {
+    return [];
+  }
+
   if (!isHistoricalDoc(relativePath, content)) {
     return [];
   }

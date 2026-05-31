@@ -33,4 +33,4 @@ Current next blocker:
 
 Historical/reference note:
 
-- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - historical reference for the earlier Docker substrate and unified-deploy diagnostic implementation. It is not the current active plan, and its `local-kind` / `existing-cluster` names are diagnostic evidence names only.
+- [AgentSmith Unified Deploy and Docker Substrate Milestone Plan v1](./archive/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md) - historical reference for the earlier Docker substrate and unified-deploy diagnostic implementation. It is not the current active plan, and its `local-kind` / `existing-cluster` names are diagnostic evidence names only.

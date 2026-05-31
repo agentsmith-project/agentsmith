@@ -8,6 +8,15 @@ import {
   isHistoricalDoc,
 } from './check-doc-governance';
 
+const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
+  'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
+
+function extractSetInitializer(source: string, constName: string): string {
+  const match = source.match(new RegExp(`const ${constName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`, 'u'));
+  expect(match).not.toBeNull();
+  return match?.[1] ?? '';
+}
+
 describe('check-doc-governance historical document detection', () => {
   it('allows active Agent task product docs in titles and paths', () => {
     expect(
@@ -50,6 +59,24 @@ describe('check-doc-governance historical document detection', () => {
   it('blocks historical markers in status and body content', () => {
     expect(isHistoricalDoc('docs/current-target.md', '# Current Target\n\nStatus: `redirect`')).toBe(true);
     expect(isHistoricalDoc('docs/current-target.md', '# Current Target\n\nHistorical handoff note.')).toBe(true);
+  });
+
+  it('treats engineering archive and historical_reference status as historical reference docs', () => {
+    const movedDocContent = readFileSync(
+      resolve(
+        process.cwd(),
+        'docs/engineering/archive/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+      ),
+      'utf8',
+    );
+
+    expect(
+      isHistoricalDoc(
+        'docs/engineering/archive/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
+        movedDocContent,
+      ),
+    ).toBe(true);
+    expect(isHistoricalDoc('docs/engineering/current-note.md', '# Current Note\n\nStatus: historical_reference')).toBe(true);
   });
 
   it('does not classify current target docs as historical just because they forbid compatibility', () => {
@@ -99,7 +126,6 @@ describe('check-doc-governance historical document detection', () => {
       'docs/engineering/afscp-file-library-runtime-rearchitecture-plan.md',
       'docs/engineering/internal-agent-terminal-pod-lifecycle-analysis-v1.md',
       'docs/engineering/file-library-version-management-fast-path-plan-v1.md',
-      'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
     ];
 
     for (const relativePath of activeDocs) {
@@ -119,6 +145,17 @@ describe('check-doc-governance historical document detection', () => {
     );
     expect(historicalPlan).toContain('本文件降级为历史迁移计划与 AgentSmith consumer-side 边界说明');
     expect(historicalPlan).toContain('当前 AgentSmith producer 只报告 absence');
+  });
+
+  it('keeps the historical unified deploy milestone out of active ASBCP guidance inputs', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'scripts/contracts/check-doc-governance.ts'),
+      'utf8',
+    );
+
+    expect(extractSetInitializer(source, 'ACTIVE_ASBCP_GUIDANCE_FILES')).not.toContain(
+      HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME,
+    );
   });
 
   it('keeps the persistent HOME implementation plan from reintroducing Developer local HOME smoke', () => {

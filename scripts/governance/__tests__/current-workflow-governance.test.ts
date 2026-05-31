@@ -77,6 +77,8 @@ const RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND = [
 const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
   'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
 const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
+const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
+  'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
 const QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS = [
   /\bnpm run verify:[a-z0-9:_-]+/,
@@ -1796,6 +1798,16 @@ describe('current workflow governance', () => {
     );
   });
 
+  it('keeps the historical unified deploy milestone out of current workflow active doc scan samples', () => {
+    const source = readRepoFile('scripts/governance/__tests__/current-workflow-governance.test.ts');
+    const match = source.match(
+      /it\('keeps unified deploy wording out of current release required evidence'[\s\S]*?const docs = \[([\s\S]*?)\]\.map\(readRepoFile\)\.join\('\\n'\);/u,
+    );
+
+    expect(match).not.toBeNull();
+    expect(match?.[1] ?? '').not.toContain(HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME);
+  });
+
   it('keeps unified deploy wording out of current release required evidence', () => {
     const workflowSource = readRepoFile('scripts/governance/current-workflow-manifest.ts');
     const docs = [
@@ -1806,7 +1818,6 @@ describe('current workflow governance', () => {
       'docs/user-guides/release-readiness-checklist.md',
       'docs/user-guides/unified-deploy-operations.md',
       'docs/current-engineering-governance-model.md',
-      'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
       'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
     ].map(readRepoFile).join('\n');
     const unifiedDeployWorkflowCommands = listCurrentWorkflowCommands()

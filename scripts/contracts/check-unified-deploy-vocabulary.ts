@@ -24,7 +24,6 @@ const ACTIVE_DEPLOY_TRUTH_FILES = [
   'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/unified-deploy-operations.md',
   'docs/agent-task-runner-runbook.md',
-  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
   'DEVELOPMENT.md',
   'AGENTS.md',
   '.env.local-manual.example',

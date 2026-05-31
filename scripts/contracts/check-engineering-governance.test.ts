@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +7,9 @@ import {
   DEFAULT_WORKFLOW_SURFACE_DOC_PATHS,
   findInternalWorkflowReferenceViolations,
 } from './engineering-governance-doc-guard';
+
+const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
+  'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
 describe('check-engineering-governance contract', () => {
   it('guards README as part of the human workflow surface', () => {
@@ -74,6 +78,16 @@ describe('check-engineering-governance contract', () => {
     });
 
     expect(violations).toEqual([]);
+  });
+
+  it('keeps the historical unified deploy milestone out of active release-boundary scans', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'scripts/contracts/check-engineering-governance.ts'),
+      'utf8',
+    );
+
+    expect(source).not.toContain(HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME);
+    expect(source).not.toContain('unifiedDeployMilestonePlan');
   });
 
   it('rejects internal workflow commands presented as a default command directory', () => {

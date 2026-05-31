@@ -9,6 +9,8 @@ import { checkUnifiedDeployVocabulary } from './check-unified-deploy-vocabulary'
 const CHECK_SCRIPT = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
 const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
 const RELEASE_KIT_SPLIT_PLAN_PATH = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
+const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_PATH =
+  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
 const validDeployContract = `# Unified Deploy Contract
 
@@ -85,7 +87,6 @@ const ACTIVE_DOC_PATHS = [
   'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/unified-deploy-operations.md',
   'docs/agent-task-runner-runbook.md',
-  'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md',
   'DEVELOPMENT.md',
   'AGENTS.md',
   '.env.local-manual.example',
@@ -202,6 +203,19 @@ afterEach(() => {
 describe('checkUnifiedDeployVocabulary', () => {
   it('accepts the current unified deploy contract and clean active docs', () => {
     const root = writeFixtureRoot();
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
+  });
+
+  it('does not require the historical unified deploy milestone as active deploy truth', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [HISTORICAL_UNIFIED_DEPLOY_MILESTONE_PATH]: null,
+      },
+    });
 
     expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
       ok: true,

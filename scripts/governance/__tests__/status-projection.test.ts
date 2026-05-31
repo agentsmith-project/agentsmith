@@ -269,7 +269,7 @@ describe('current status projection', () => {
       stage: 'preflight',
       why: 'port 27027 is owned by agentsmith-unified-substrate-mongodb-1',
       fixCommand: 'npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
-      rerunCommand: 'npm run release:ready',
+      rerunCommand: 'npm run product:ready',
       evidencePath: 'artifacts/release-runs/run-001/preflight/evidence.json',
     });
 
@@ -278,7 +278,7 @@ describe('current status projection', () => {
       'Stage: preflight',
       'Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1',
       'Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down',
-      'Rerun: npm run release:ready',
+      'Rerun: npm run product:ready',
       'Evidence: artifacts/release-runs/run-001/preflight/evidence.json',
       '',
     ].join('\n'));
@@ -303,7 +303,7 @@ describe('current status projection', () => {
     });
 
     expect(debugRendered).toContain('Rerun: npm run verify -- --goal=pr --run');
-    expect(releaseRealRendered).toContain('Rerun: npm run release:ready');
+    expect(releaseRealRendered).toContain('Rerun: npm run product:ready');
     expect(debugRendered).toContain('Why: internal fast verification check step failed.');
     expect(releaseRealRendered).toContain('Why: internal release-real verification check step failed.');
     expectNoForbiddenVerifyGoal(debugRendered);
@@ -312,7 +312,7 @@ describe('current status projection', () => {
     expectNoPublicAdapterTerm(releaseRealRendered);
   });
 
-  it('renders release-ready status rerun as release:ready instead of an owner diagnostic command', () => {
+  it('renders release-ready status rerun as product:ready instead of an owner diagnostic command', () => {
     withTempRoot((campaignRoot) => {
       const aggregatePath = writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -330,12 +330,12 @@ describe('current status projection', () => {
       });
       const rendered = renderStatusProjection(projection);
 
-      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
       expect(rendered).toContain('Blocker: lane-unified-deploy-product-flows');
       expect(rendered).toContain('Stage: aggregate');
       expect(rendered).toContain('Why: Campaign step lane-unified-deploy-product-flows did not pass.');
       expect(rendered).toContain(`Inspect: ${aggregatePath}`);
-      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('Rerun: npm run product:ready');
       expect(rendered).toContain(`Evidence: ${aggregatePath}`);
       expect(rendered).not.toContain('npm run lane:unified-deploy:product-flows');
     });
@@ -365,7 +365,7 @@ describe('current status projection', () => {
       expect(rendered).toContain('Blocker: Backend-real check');
       expect(rendered).toContain('Why: Backend-real check did not pass.');
       expect(rendered).toContain(`Evidence: ${campaignRoot}`);
-      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('Rerun: npm run product:ready');
       expect(rendered).not.toContain('Transition-only deploy diagnostics');
       expect(rendered).not.toContain('local-kind');
       expect(rendered).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
@@ -423,7 +423,7 @@ describe('current status projection', () => {
       expect(rendered).toContain('Poll/retry coverage: not covered');
       expect(rendered).not.toContain('Poll/retry attempts: 0');
       expect(rendered).toContain('Report size: 987654 bytes');
-      expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(rendered).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
       expectCleanReleaseStatusSummary(rendered);
     });
   });
@@ -604,8 +604,8 @@ describe('current status projection', () => {
     expect(rendered).toContain('Lease shadow secret profile: present');
     expect(rendered).toContain('profile_presence=true');
     expect(rendered).toContain('digest=sha256:');
-    expect(rendered).toContain('Next action: npm run release:ready');
-    expect(rendered).toContain('Safe action: npm run release:ready');
+    expect(rendered).toContain('Next action: npm run product:ready');
+    expect(rendered).toContain('Safe action: npm run product:ready');
     expect(rendered).toContain('Release decision produced: false');
     expect(rendered).toContain('Commands executed: false');
     expect(rendered).not.toContain('sk-status-render-do-not-print');
@@ -641,8 +641,8 @@ describe('current status projection', () => {
 
     expect(debugRendered).toContain('Next action: npm run verify -- --goal=pr --run');
     expect(debugRendered).toContain('safe_next=npm run verify -- --goal=pr --run');
-    expect(releaseRealRendered).toContain('Next action: npm run release:ready');
-    expect(releaseRealRendered).toContain('safe_next=npm run release:ready');
+    expect(releaseRealRendered).toContain('Next action: npm run product:ready');
+    expect(releaseRealRendered).toContain('safe_next=npm run product:ready');
     expectNoForbiddenVerifyGoal(debugRendered);
     expectNoForbiddenVerifyGoal(releaseRealRendered);
     expectNoInternalVerifyAlias(debugRendered);
@@ -869,8 +869,8 @@ describe('current status projection', () => {
         code: 'evidence_missing',
         summary: 'Missing campaign step result: lane-visual',
       });
-      expect(blocked.safe_next_command).toBe('npm run release:ready');
-      expect(blocked.resume_recommendation.safe_next_command).toBe('npm run release:ready');
+      expect(blocked.safe_next_command).toBe('npm run product:ready');
+      expect(blocked.resume_recommendation.safe_next_command).toBe('npm run product:ready');
       expectNoInternalVerifyAlias(blocked);
 
       const running = buildStatusProjection({
@@ -912,7 +912,7 @@ describe('current status projection', () => {
 
       expect(projection.presentation_status).toBe('failed');
       expect(projection.primary_blocker?.owner).toBe('gate-release');
-      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
       expect(projection.safe_next_command).not.toBe('npm run verify:release-real');
       expect(JSON.stringify(projection)).not.toContain('npm run verify -- --goal=release-real --run');
       expect(JSON.stringify(projection)).not.toContain('npm run verify:release-real');
@@ -964,12 +964,12 @@ describe('current status projection', () => {
           path: stepResultPath,
           digest: sha256(stepResultContent),
         },
-        safe_next_command: 'npm run release:ready',
+        safe_next_command: 'npm run product:ready',
         reason_codes: ['campaign_step_failed'],
         automatic_rerun: false,
         automatic_skip: false,
       });
-      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
       expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
       expect(JSON.stringify(projection)).not.toMatch(/claim_id|reusable|release_verdict|automated_release_verdict/);
       expect(existsSync(join(campaignRoot, 'status.json'))).toBe(false);
@@ -1080,7 +1080,7 @@ describe('current status projection', () => {
       expect(projection.primary_blocker).toMatchObject({
         owner: 'lane-visual',
       });
-      expect(projection.safe_next_command).toBe('npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
       expect(projection.resume_recommendation).toEqual({
         projection_kind: 'read_only',
         source: 'terminal_aggregate',
@@ -1090,7 +1090,7 @@ describe('current status projection', () => {
         producer_job_ids: ['lane-visual'],
         downstream_aggregate_job_id: 'gate-release-full',
         step_result_pointer: null,
-        safe_next_command: 'npm run release:ready',
+        safe_next_command: 'npm run product:ready',
         reason_codes: ['terminal_aggregate_failed'],
         automatic_rerun: false,
         automatic_skip: false,
@@ -1110,7 +1110,7 @@ describe('current status projection', () => {
     ['gate-fast'],
     ['gate-default'],
     ['gate-release'],
-  ])('uses release:ready as the public next action for failed release owner %s', (owner) => {
+  ])('uses product:ready as the public next action for failed release owner %s', (owner) => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -1129,9 +1129,9 @@ describe('current status projection', () => {
 
       expect(projection.presentation_status).toBe('failed');
       expect(projection.primary_blocker?.owner).toBe(owner);
-      expect(projection.safe_next_command).toBe('npm run release:ready');
-      expect(projection.resume_recommendation.safe_next_command).toBe('npm run release:ready');
-      expect(rendered).toContain('Next action: npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
+      expect(projection.resume_recommendation.safe_next_command).toBe('npm run product:ready');
+      expect(rendered).toContain('Next action: npm run product:ready');
       expect(rendered).not.toContain('Next action: npm run verify');
       expect(rendered).toContain('Diagnostic context:');
       expect(rendered).not.toContain('Resume recommendation:');
@@ -1336,7 +1336,7 @@ describe('current status projection', () => {
     });
   });
 
-  it('keeps release-status --json next action on release:ready for failed owner diagnostics', () => {
+  it('keeps release-status --json next action on product:ready for failed owner diagnostics', () => {
     withTempRoot((campaignRoot) => {
       writeAggregateResult(campaignRoot, {
         status: 'failed',
@@ -1361,8 +1361,8 @@ describe('current status projection', () => {
       };
 
       expect(projection.primary_blocker?.owner).toBe('gate-release');
-      expect(projection.safe_next_command).toBe('npm run release:ready');
-      expect(projection.resume_recommendation?.safe_next_command).toBe('npm run release:ready');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
+      expect(projection.resume_recommendation?.safe_next_command).toBe('npm run product:ready');
       expect(output).not.toContain('npm run verify -- --goal=release-real --run');
       expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
     });
@@ -1395,7 +1395,7 @@ describe('current status projection', () => {
         encoding: 'utf8',
       });
 
-      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(output).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
       expect(existsSync(logPath)).toBe(false);
     }));
   });

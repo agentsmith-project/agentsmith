@@ -20,6 +20,11 @@ import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
 import {
+  PRODUCT_READY_COMMAND,
+  PRODUCT_STATUS_COMMAND,
+  PRODUCT_STATUS_READ_ONLY_MESSAGE,
+} from './product-readiness-entrypoints';
+import {
   RELEASE_DEPLOY_CHECK_SNAPSHOT_SCHEMA,
   RELEASE_HUMAN_LOG_NOTE,
   renderHumanReleaseStageLabel,
@@ -566,14 +571,14 @@ function nextActionForFailure(
   }
 
   const ownerInspection = blockedStep
-    ? `Inspect the product readiness evidence for ${renderHumanReleaseStepLabel(blockedStep)}, fix the owning issue, then rerun npm run release:ready.`
-    : 'Inspect the product readiness evidence, fix the owning issue, then rerun npm run release:ready.';
+    ? `Inspect the product readiness evidence for ${renderHumanReleaseStepLabel(blockedStep)}, fix the owning issue, then rerun ${PRODUCT_READY_COMMAND}.`
+    : `Inspect the product readiness evidence, fix the owning issue, then rerun ${PRODUCT_READY_COMMAND}.`;
 
   if (failureClass === 'infra_setup_failure') {
-    return 'Fix the local release environment, then rerun npm run release:ready.';
+    return `Fix the local release environment, then rerun ${PRODUCT_READY_COMMAND}.`;
   }
   if (failureClass === 'environment_conflict') {
-    return 'Resolve the active runtime or port conflict, then run npm run release:status before retrying npm run release:ready.';
+    return `Resolve the active runtime or port conflict, then run ${PRODUCT_STATUS_COMMAND} before retrying ${PRODUCT_READY_COMMAND}.`;
   }
   if (failureClass === 'evidence_missing') {
     return ownerInspection;
@@ -1178,14 +1183,14 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       '',
       'Status: missing',
       `Latest product readiness summary: not found (${status.latestPath})`,
-      'Next: run npm run release:ready',
+      `Next: run ${PRODUCT_READY_COMMAND}`,
       renderShortFailureProjection({
-        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        readOnlyMessage: PRODUCT_STATUS_READ_ONLY_MESSAGE,
         verdict: 'BLOCKED',
         blocker: 'release_status_missing_latest',
         stage: 'not-started',
         why: `Latest release summary pointer was not found: ${status.latestPath}`,
-        rerunCommand: 'npm run release:ready',
+        rerunCommand: PRODUCT_READY_COMMAND,
         evidencePath: status.latestPath,
       }).trimEnd(),
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
@@ -1199,14 +1204,14 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       '',
       'Status: missing',
       `Product readiness summary: not found (${status.summaryPath})`,
-      'Next: run npm run release:ready to produce a fresh campaign summary.',
+      `Next: run ${PRODUCT_READY_COMMAND} to produce a fresh campaign summary.`,
       renderShortFailureProjection({
-        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        readOnlyMessage: PRODUCT_STATUS_READ_ONLY_MESSAGE,
         verdict: 'BLOCKED',
         blocker: 'release_status_missing_summary',
         stage: 'report',
         why: `Product readiness summary is missing: ${status.summaryPath}`,
-        rerunCommand: 'npm run release:ready',
+        rerunCommand: PRODUCT_READY_COMMAND,
         evidencePath: status.summaryPath,
       }).trimEnd(),
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
@@ -1220,15 +1225,15 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       '',
       'Status: unknown',
       `Why: ${renderHumanReleaseText(status.error)}`,
-      'Next: rerun npm run release:ready after fixing the malformed summary pointer.',
+      `Next: rerun ${PRODUCT_READY_COMMAND} after fixing the malformed summary pointer.`,
       renderShortFailureProjection({
-        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        readOnlyMessage: PRODUCT_STATUS_READ_ONLY_MESSAGE,
         verdict: 'BLOCKED',
         blocker: 'release_status_malformed',
         stage: 'report',
         why: renderHumanReleaseText(status.error),
         inspectCommand: status.latestPath,
-        rerunCommand: 'npm run release:ready',
+        rerunCommand: PRODUCT_READY_COMMAND,
         evidencePath: status.latestPath,
       }).trimEnd(),
       `Note: ${RELEASE_HUMAN_LOG_NOTE}`,
@@ -1244,13 +1249,13 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
       '',
       `Status: ${summary.status}`,
       renderShortFailureProjection({
-        readOnlyMessage: 'release:status does not rerun checks or revalidate evidence.',
+        readOnlyMessage: PRODUCT_STATUS_READ_ONLY_MESSAGE,
         verdict: 'FAILED',
         blocker: renderHumanReleaseStepLabel(summary.blocked_step ?? summary.failure_class),
         stage: renderHumanReleaseStageLabel(summary.stage),
         why: renderHumanReleaseText(summary.why),
         inspectCommand: summary.summary_md_path,
-        rerunCommand: 'npm run release:ready',
+        rerunCommand: PRODUCT_READY_COMMAND,
         evidencePath: summary.evidence_package,
       }).trimEnd(),
       `Summary: ${summary.summary_md_path}`,
@@ -1265,7 +1270,7 @@ export function renderReleaseStatus(status: ReleaseStatusRead): string {
   return [
     'AgentSmith Product Readiness Status',
     '',
-    'Read-only: release:status does not rerun checks or revalidate evidence.',
+    `Read-only: ${PRODUCT_STATUS_READ_ONLY_MESSAGE}`,
     `Status: ${summary.status}`,
     `Why: ${renderHumanReleaseText(summary.why)}`,
     `Summary: ${summary.summary_md_path}`,

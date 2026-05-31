@@ -389,7 +389,8 @@ function expectCanonicalNotStartedBlocker(output: string, blocker: string): void
   expect(output).toContain('AgentSmith Product Readiness');
   expect(output).toContain(`Blocker: ${blocker}`);
   expect(output).toContain('Stage: preflight');
-  expect(output).toContain('Rerun: npm run release:ready');
+  expect(output).toContain('Rerun: npm run product:ready');
+  expect(output).not.toContain('Rerun: npm run release:ready');
   expect(output).toContain('Evidence: no campaign evidence was produced; no product readiness conclusion was written.');
   expect(output).not.toContain('Automated release verdict: NOT STARTED');
   expect(output).not.toContain('Blocked before:');
@@ -712,7 +713,7 @@ describe('release readiness human entrypoints', () => {
     }
   });
 
-  it('keeps release summary next actions on release:ready instead of release-real owner diagnostics', () => {
+  it('keeps release summary next actions on product:ready instead of release-real owner diagnostics', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-public-next-action-'));
     const latestPath = join(root, 'latest.json');
     try {
@@ -729,7 +730,8 @@ describe('release readiness human entrypoints', () => {
       });
 
       expect(summary.blocked_step).toBe('gate-release');
-      expect(summary.next_action).toContain('npm run release:ready');
+      expect(summary.next_action).toContain('npm run product:ready');
+      expect(summary.next_action).not.toContain('npm run release:ready');
       expect(summary.next_action).not.toContain('npm run verify -- --goal=release-real --run');
       expect(summary.next_action).not.toContain('npm run verify:release-real');
       expect(summary.next_action).not.toMatch(/\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/);
@@ -737,7 +739,7 @@ describe('release readiness human entrypoints', () => {
         kind: 'ready',
         latestPath,
         summary,
-      })).toContain('Rerun: npm run release:ready');
+      })).toContain('Rerun: npm run product:ready');
       expect(readFileSync(join(root, 'summary.md'), 'utf8')).not.toContain('npm run verify:release-real');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -765,14 +767,17 @@ describe('release readiness human entrypoints', () => {
         summary,
       });
 
-      expect(summary.next_action).toContain('npm run release:ready');
+      expect(summary.next_action).toContain('npm run product:ready');
+      expect(summary.next_action).not.toContain('npm run release:ready');
       expect(summary.next_action).not.toContain('npm run lane:');
-      expect(rendered).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(rendered).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
+      expect(rendered).not.toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(rendered).toContain('Blocker: Transition-only deploy diagnostic / product flows');
       expect(rendered).toContain('Stage: release result');
       expect(rendered).toContain('Why: Transition-only deploy diagnostic / product flows did not pass.');
       expect(rendered).toContain('Inspect:');
-      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('Rerun: npm run product:ready');
+      expect(rendered).not.toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${root}`);
       expect(rendered).not.toContain('Transition-only deploy diagnostics');
       expect(rendered).not.toContain('local-kind');
@@ -798,7 +803,7 @@ describe('release readiness human entrypoints', () => {
         failure_class: 'product_regression',
         blocked_step: 'gate-release',
         why: 'Campaign step gate-release did not pass.',
-        next_action: 'Fix the product regression, run npm run verify:release-real, then rerun npm run release:ready.',
+        next_action: 'Fix the product regression, run npm run verify:release-real, then rerun npm run product:ready.',
       });
       writeLatestPointer(latestPath, root);
 
@@ -823,10 +828,11 @@ describe('release readiness human entrypoints', () => {
 
       const output = renderReleaseStatus(missing);
       expect(output).toContain('Status: missing');
-      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(output).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Blocker: release_status_missing_latest');
-      expect(output).toContain('Rerun: npm run release:ready');
-      expect(output).toContain('Next: run npm run release:ready');
+      expect(output).toContain('Rerun: npm run product:ready');
+      expect(output).toContain('Next: run npm run product:ready');
+      expect(output).not.toContain('Rerun: npm run release:ready');
       expect(output).not.toContain('gate:release:full');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1228,7 +1234,8 @@ exit 0
       expect(combinedOutput).toContain('Stage: preflight');
       expect(combinedOutput).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
       expect(combinedOutput).toContain('Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down');
-      expect(combinedOutput).toContain('Rerun: npm run release:ready');
+      expect(combinedOutput).toContain('Rerun: npm run product:ready');
+      expect(combinedOutput).not.toContain('Rerun: npm run release:ready');
       expect(combinedOutput).toContain(`Evidence: ${evidencePath}`);
       expect(combinedOutput).not.toContain('Automated release verdict: PASSED');
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
@@ -1256,7 +1263,7 @@ exit 0
         gitCleanGuard: () => ({
           ok: false,
           blocker: 'release_git_clean_guard',
-          why: 'release:ready requires a clean git worktree before product readiness / handoff sign-off.',
+          why: 'product:ready requires a clean git worktree before product readiness / handoff sign-off.',
           inspectCommand: 'git status --short',
         }),
         runNpmScript: (script) => {
@@ -1285,7 +1292,7 @@ exit 0
       expect(cleanupReasons).toEqual([]);
       expectCanonicalNotStartedBlocker(combinedOutput, 'release_git_clean_guard');
       expect(combinedOutput).toContain('Inspect: git status --short');
-      expect(combinedOutput).toContain('release:ready requires a clean git worktree');
+      expect(combinedOutput).toContain('product:ready requires a clean git worktree');
       expect(existsSync(join(root, 'state', 'readiness.json'))).toBe(false);
       expect(existsSync(join(root, 'gate-release-full', 'result.json'))).toBe(false);
     } finally {

@@ -28,6 +28,11 @@ import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
+import {
+  PRODUCT_READY_COMMAND,
+  PRODUCT_STATUS_COMMAND,
+  PRODUCT_STATUS_READ_ONLY_MESSAGE,
+} from './product-readiness-entrypoints';
 import { sanitizePublicVerificationText } from './verify-impact-selector';
 import type {
   MinimalLeaseLockSection,
@@ -218,13 +223,18 @@ function campaignRootFromAggregatePath(path: string | null | undefined): string 
 function isCleanRerunCommand(command: string): boolean {
   return [
     /^npm run verify(?:\s|$)/,
+    /^npm run product:(?:ready|status)(?:\s|$)/,
     /^npm run release:(?:ready|status)(?:\s|$)/,
     /^make local-real-(?:up|status|down|reset)(?:\s|$)/,
   ].some((pattern) => pattern.test(command));
 }
 
 function publicStatusCommand(command: string): string {
-  return sanitizePublicVerificationText(command);
+  return sanitizePublicVerificationText(command)
+    .replace(/\bnpm run release:ready\b/g, PRODUCT_READY_COMMAND)
+    .replace(/\bnpm run release:status\b/g, PRODUCT_STATUS_COMMAND)
+    .replace(/\brelease:ready\b/g, 'product:ready')
+    .replace(/\brelease:status\b/g, 'product:status');
 }
 
 function renderPublicCommand(value: string): string {
@@ -515,7 +525,7 @@ function inferBlockedOwner(summary: string): string | null {
 
 function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjectionGoal): string | null {
   if (goal === 'release-ready') {
-    return 'npm run release:ready';
+    return PRODUCT_READY_COMMAND;
   }
   if (owner === 'lane-visual') {
     return 'npm run verify -- --goal=visual --run';
@@ -529,7 +539,7 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
     || owner === 'lane-unified-deploy-local-kind'
     || owner === 'lane-unified-deploy-product-flows'
   ) {
-    return goal === 'release-ready' ? 'npm run release:ready' : null;
+    return goal === 'release-ready' ? PRODUCT_READY_COMMAND : null;
   }
   if (owner === 'gate-fast') {
     return 'npm run verify -- --goal=pr --run';
@@ -1189,7 +1199,7 @@ export function renderStatusProjectionLeaseShadowLines(
 
 function releaseReadyRerunCommand(projection: CurrentStatusProjection): string | null {
   if (projection.goal === 'release-ready' && projection.presentation_status !== 'passed') {
-    return 'npm run release:ready';
+    return PRODUCT_READY_COMMAND;
   }
   return projection.safe_next_command ? publicStatusCommand(projection.safe_next_command) : null;
 }
@@ -1258,7 +1268,7 @@ export function renderStatusProjectionSummary(projection: CurrentStatusProjectio
   return [
     'AgentSmith Product Readiness Status',
     '',
-    'Read-only: release:status does not rerun checks or revalidate evidence.',
+    `Read-only: ${PRODUCT_STATUS_READ_ONLY_MESSAGE}`,
     `Status: ${projection.presentation_status}`,
     ...(blocker ? [blocker] : []),
     `Evidence: ${renderOptionalPath(evidenceRoot)}`,

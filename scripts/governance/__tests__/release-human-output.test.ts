@@ -152,7 +152,7 @@ describe('release human output', () => {
           failure_class: 'product_regression',
           blocked_step: 'gate-release',
           why: 'Campaign step gate-release did not pass.',
-          next_action: 'Inspect campaign evidence for gate-release, fix the owning issue, then rerun npm run release:ready.',
+          next_action: 'Inspect campaign evidence for gate-release, fix the owning issue, then rerun npm run product:ready.',
         }),
       });
 
@@ -160,7 +160,8 @@ describe('release human output', () => {
       expect(output).toContain('Blocker: Backend-real check');
       expect(output).toContain('Why: Backend-real check did not pass.');
       expect(output).toContain(`Summary: ${join(campaignRoot, 'summary.md')}`);
-      expect(output).toContain('Rerun: npm run release:ready');
+      expect(output).toContain('Rerun: npm run product:ready');
+      expect(output).not.toContain('Rerun: npm run release:ready');
       expect(output).not.toContain('Terminal result:');
       expect(output).not.toContain('npm run verify -- --goal=release-real --run');
       expect(output).not.toContain('npm run lane:');
@@ -216,12 +217,13 @@ describe('release human output', () => {
         failure_class: 'product_regression',
         blocked_step: 'gate-release',
         why: 'Campaign step gate-release did not pass.',
-        next_action: 'Fix the blocking issue, then rerun npm run release:ready.',
+        next_action: 'Fix the blocking issue, then rerun npm run product:ready.',
       }),
     });
 
-    expect(output).toContain('Next: Fix the blocking issue, then rerun npm run release:ready.');
-    expect(output).toContain('Rerun: npm run release:ready');
+    expect(output).toContain('Next: Fix the blocking issue, then rerun npm run product:ready.');
+    expect(output).toContain('Rerun: npm run product:ready');
+    expect(output).not.toContain('Rerun: npm run release:ready');
     expect(output).not.toMatch(/\bnpm run verify -- --goal=release-real --run\b/);
     expect(output).not.toMatch(/\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/);
     expectCleanDefaultHumanOutput(output);

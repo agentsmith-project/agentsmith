@@ -282,7 +282,8 @@ describe('clean status entrypoints', () => {
       });
 
       expect(output).toContain('AgentSmith Product Readiness Status');
-      expect(output).toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
+      expect(output).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
+      expect(output).not.toContain('Read-only: release:status does not rerun checks or revalidate evidence.');
       expect(output).toContain('Status: passed');
       expect(output).toContain(`Evidence: ${campaignRoot}`);
       expect(output).not.toContain('Transition-only deploy diagnostics');
@@ -326,7 +327,8 @@ describe('clean status entrypoints', () => {
       expect(result.status).toBe(1);
       expect(output).toContain('Blocker: release_status_missing_latest');
       expect(output).toContain(`Evidence: ${latestPath}`);
-      expect(output).toContain('Rerun: npm run release:ready');
+      expect(output).toContain('Rerun: npm run product:ready');
+      expect(output).not.toContain('Rerun: npm run release:ready');
       expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');
       expect(output).not.toContain('Resume recommendation:');
       expect(output).not.toContain('Commands executed:');

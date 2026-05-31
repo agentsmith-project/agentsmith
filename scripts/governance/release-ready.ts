@@ -6,6 +6,7 @@ import {
   readReleaseStatus,
   renderReleaseStatus,
 } from './release-summary';
+import { PRODUCT_READY_COMMAND } from './product-readiness-entrypoints';
 import {
   assertSafeReleaseCampaignRunId,
   prepareDefaultReleaseCampaignRoot,
@@ -159,7 +160,7 @@ function renderNotStarted(options: {
       stage: options.stage,
       why: options.why,
       inspectCommand: options.logs,
-      rerunCommand: 'npm run release:ready',
+      rerunCommand: PRODUCT_READY_COMMAND,
       evidencePath: 'no campaign evidence was produced; no product readiness conclusion was written.',
     }).trimEnd(),
     '',
@@ -347,7 +348,7 @@ function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
     return {
       ok: false,
       blocker: 'release_git_clean_guard',
-      why: 'release:ready requires a traceable git HEAD before product readiness / handoff sign-off.',
+      why: 'product:ready requires a traceable git HEAD before product readiness / handoff sign-off.',
       inspectCommand: 'git rev-parse --verify HEAD',
     };
   }
@@ -357,7 +358,7 @@ function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
     return {
       ok: false,
       blocker: 'release_git_clean_guard',
-      why: 'release:ready could not verify the git worktree state.',
+      why: 'product:ready could not verify the git worktree state.',
       inspectCommand: 'git status --short',
     };
   }
@@ -365,7 +366,7 @@ function defaultGitCleanGuard(cwd: string): ReleaseReadyGitCleanGuardResult {
     return {
       ok: false,
       blocker: 'release_git_clean_guard',
-      why: 'release:ready requires a clean git worktree before product readiness / handoff sign-off.',
+      why: 'product:ready requires a clean git worktree before product readiness / handoff sign-off.',
       inspectCommand: 'git status --short',
     };
   }
@@ -422,7 +423,7 @@ export function runReleaseReady(
       blocker: gitGuard.blocker,
       stage: 'preflight',
       why: gitGuard.why,
-      next: 'commit or stash local changes, then run: npm run release:ready',
+      next: `commit or stash local changes, then run: ${PRODUCT_READY_COMMAND}`,
       logs: gitGuard.inspectCommand,
     }));
     return 1;
@@ -445,7 +446,7 @@ export function runReleaseReady(
   if (!ownerPreflightResult.ok) {
     stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
       title: 'AgentSmith Product Readiness',
-      rerunCommand: 'npm run release:ready',
+      rerunCommand: PRODUCT_READY_COMMAND,
     }));
     return 1;
   }
@@ -458,7 +459,7 @@ export function runReleaseReady(
       blocker: 'release_campaign_context',
       stage: 'preflight',
       why: error instanceof Error ? error.message : String(error),
-      next: 'fix the release campaign run id, then run: npm run release:ready',
+      next: `fix the release campaign run id, then run: ${PRODUCT_READY_COMMAND}`,
       logs: 'no campaign evidence was produced.',
     }));
     return 1;
@@ -507,7 +508,7 @@ export function runReleaseReady(
         blocker: 'release_precheck',
         stage: 'preflight',
         why: `release precheck failed with ${describeExit(precheck.status, precheck.signal)}.`,
-        next: 'fix the release precheck issue, then run: npm run release:ready',
+        next: `fix the release precheck issue, then run: ${PRODUCT_READY_COMMAND}`,
         logs: 'see the release precheck output above.',
       }));
       return exitCode;
@@ -521,7 +522,7 @@ export function runReleaseReady(
         blocker: 'release_precheck_summary',
         stage: 'preflight',
         why: precheckSummary.error,
-        next: 'rerun release precheck through npm run release:ready so the campaign records operational counts.',
+        next: `rerun release precheck through ${PRODUCT_READY_COMMAND} so the campaign records operational counts.`,
         logs: `inspect ${RELEASE_PRECHECK_SUMMARY_RELATIVE_PATH} in the campaign evidence.`,
       }));
       return exitCode;
@@ -557,7 +558,7 @@ export function runReleaseReady(
         blocker: 'sentinel_preflight',
         stage: 'preflight',
         why: 'sentinel preflight unavailable for release-ready.',
-        next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
+        next: `fix the release-ready sentinel issue, then run: ${PRODUCT_READY_COMMAND}`,
         logs: 'see the sentinel preflight output above.',
       }));
       return exitCode;
@@ -568,7 +569,7 @@ export function runReleaseReady(
         blocker: 'sentinel_preflight',
         stage: 'preflight',
         why: 'sentinel preflight failed for release-ready.',
-        next: 'fix the release-ready sentinel issue, then run: npm run release:ready',
+        next: `fix the release-ready sentinel issue, then run: ${PRODUCT_READY_COMMAND}`,
         logs: 'see the redacted sentinel diagnostic above.',
       }));
       return exitCode;

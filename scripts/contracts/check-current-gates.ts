@@ -326,6 +326,7 @@ requireMatch(workspaceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual
 requireMatch(governanceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual[\s\S]*--grep /, 'governance default gate must keep targeted visual coverage with --grep', failures);
 forbidMatch(workspaceDefaultGate, /npm run test:visual/, 'workspace-project default gate must not delegate to the full visual lane', failures);
 forbidMatch(governanceDefaultGate, /npm run test:visual/, 'governance default gate must not delegate to the full visual lane', failures);
+forbidMatch(workspaceDefaultGate, /\bnpm run test:unified-deploy(?::[a-z0-9:_-]+)?\b/, 'workspace-project default gate must not run unified deploy focused diagnostics', failures);
 requireMatch(workspaceDefaultGate, /source "\$\{ROOT_DIR\}\/scripts\/lib\/backend-real-gate-ports\.sh"/, 'workspace-project default gate must source backend-real-gate-ports when backend-real is enabled', failures);
 requireMatch(workspaceDefaultGate, /cleanup_gate_ports "\$\{real_api_port\}" "\$\{real_web_port\}" "\$\{real_spec\}"/, 'workspace-project default gate must clean stale backend-real ports before running integration-minimal', failures);
 

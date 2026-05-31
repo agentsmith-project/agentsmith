@@ -51,7 +51,6 @@ if [[ "${SKIP_SHARED_PREFLIGHT}" != "1" ]]; then
 fi
 
 run_cmd "npm run test:client-public-runtime"
-run_cmd "npm run test:unified-deploy:render"
 run_cmd "npx eslint \
   'src/app/[locale]/join/page.tsx' \
   'src/app/[locale]/workspaces/[workspace]/page.tsx' \

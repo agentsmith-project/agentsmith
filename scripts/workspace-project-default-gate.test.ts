@@ -99,6 +99,12 @@ describe('workspace-project-default-gate', () => {
     expect(script).toContain('--skip-focused-visual');
   });
 
+  it('keeps unified deploy diagnostics out of the workspace/project default gate', () => {
+    const script = readWorkspaceProjectGateScript();
+
+    expect(script).not.toMatch(/\bnpm run test:unified-deploy(?::[a-z0-9:_-]+)?\b/);
+  });
+
   it('keeps the visual grep exact and aligned with current workspace/project visual catalog titles', () => {
     const script = readWorkspaceProjectGateScript();
     const grep = extractVisualGrep(script);

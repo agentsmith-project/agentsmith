@@ -15,11 +15,34 @@ const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ACTIVE_PATH =
   'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
 const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH =
   'docs/engineering/archive/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
+const ACTIVE_PRODUCT_READINESS_ENTRYPOINT_DOCS = [
+  'docs/CURRENT_BASELINE.md',
+  'docs/testing/README.md',
+  'docs/contracts/afscp-file-libraries-architecture.md',
+  'docs/user-guides/uxui-review-runbook.md',
+  'docs/user-guides/test-and-evidence-directory-model.md',
+  'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
+] as const;
 
 function extractSetInitializer(source: string, constName: string): string {
   const match = source.match(new RegExp(`const ${constName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`, 'u'));
   expect(match).not.toBeNull();
   return match?.[1] ?? '';
+}
+
+function deprecatedReleaseAliasViolations(relativePath: string, content: string): string[] {
+  return content
+    .split(/\r?\n/u)
+    .flatMap((line, index, lines) => {
+      if (!/release:(?:ready|status)/u.test(line)) {
+        return [];
+      }
+      const context = lines.slice(Math.max(0, index - 2), index + 3).join('\n');
+      if (/(?:deprecated|transition|alias|过渡)/iu.test(context)) {
+        return [];
+      }
+      return [`${relativePath}:${index + 1}: ${line.trim()}`];
+    });
 }
 
 describe('check-doc-governance historical document detection', () => {
@@ -235,6 +258,18 @@ describe('check-doc-governance historical document detection', () => {
     expect(combined).not.toContain(
       'Bind existing file library to task | `project:agent_task:use` plus `project:files:update`',
     );
+  });
+
+  it('keeps active product readiness docs on product:ready/status with release aliases deprecated only', () => {
+    const violations: string[] = [];
+
+    for (const relativePath of ACTIVE_PRODUCT_READINESS_ENTRYPOINT_DOCS) {
+      const content = readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+      expect(content, `${relativePath} must expose npm run product:ready`).toContain('npm run product:ready');
+      violations.push(...deprecatedReleaseAliasViolations(relativePath, content));
+    }
+
+    expect(violations).toEqual([]);
   });
 
   it('flags handoff/refactor/migration entries in the engineering current index section', () => {

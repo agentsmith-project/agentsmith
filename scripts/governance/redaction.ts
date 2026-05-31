@@ -12,6 +12,7 @@ export type RedactedGovernanceDiagnostic = {
 type PresenceGroup = {
   label: string;
   keys: readonly string[];
+  keyPatterns?: readonly RegExp[];
 };
 
 export type BuildRedactedDiagnosticInput = {
@@ -156,8 +157,9 @@ const DEFAULT_PROFILE_KEYS = [
   ...PROXY_DATA_TOKEN_ENV_KEYS,
   ...SECRET_PROFILE_ENV_KEYS,
   'MANAGED_CREDENTIALS',
-  'MANAGED_CREDENTIALS_FEISHU',
 ] as const;
+
+const MANAGED_CREDENTIALS_ENV_KEY_PATTERN = /^MANAGED_CREDENTIALS(?:_[A-Z0-9]+)*$/u;
 
 const DEFAULT_PRESENCE_GROUPS: readonly PresenceGroup[] = [
   { label: 'endpoint.public', keys: DEFAULT_ENDPOINT_KEYS },
@@ -169,7 +171,11 @@ const DEFAULT_PRESENCE_GROUPS: readonly PresenceGroup[] = [
   { label: 'auth.cookie', keys: ['COOKIE'] },
   { label: 'profile.provider', keys: PROVIDER_PROFILE_ENV_KEYS },
   { label: 'profile.secret', keys: SECRET_PROFILE_ENV_KEYS },
-  { label: 'profile.managed_credentials', keys: ['MANAGED_CREDENTIALS', 'MANAGED_CREDENTIALS_FEISHU'] },
+  {
+    label: 'profile.managed_credentials',
+    keys: ['MANAGED_CREDENTIALS'],
+    keyPatterns: [MANAGED_CREDENTIALS_ENV_KEY_PATTERN],
+  },
   { label: 'keycloak.redirect_base', keys: KEYCLOAK_REDIRECT_BASE_ENV_KEYS },
   { label: 'tool.kind', keys: KIND_AVAILABILITY_ENV_KEYS },
   { label: 'tool.registry', keys: REGISTRY_AVAILABILITY_ENV_KEYS },
@@ -223,7 +229,7 @@ const SECRET_VALUE_PATTERNS = [
   /\bmanaged[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?\s*[:=]\s*[\[{]/i,
   /\bpassword\s*[:=]\s*[\[{]/i,
   /["'](?:api_key|access_token|refresh_token|admin_token|oauth_token|client_secret|password|ticket|managed_credentials)["']\s*:\s*[\[{]/i,
-  /["'](?:feishu|value)["']\s*:\s*["'][^"']*(?:raw|secret|credential|token|password|key)[^"']*["']/i,
+  /["'](?:provider|external_service|value)["']\s*:\s*["'][^"']*(?:raw|secret|credential|token|password|key)[^"']*["']/i,
 ] as const;
 const SENSITIVE_TEXT_KEY = String.raw`[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|admin[_-]?token|oauth(?:[_-]?token)?|client[_-]?secret|password|ticket|managed[_-]?credentials?(?:\.[A-Za-z0-9_-]+)?|cookie|authorization)[A-Za-z0-9_.-]*`;
 const BEARER_VALUE_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
@@ -365,7 +371,10 @@ function defaultPresence(env: RedactionEnv): Record<string, boolean> {
   return Object.fromEntries(
     DEFAULT_PRESENCE_GROUPS.map((group) => [
       group.label,
-      group.keys.some((key) => hasEnvValue(env, key)),
+      group.keys.some((key) => hasEnvValue(env, key))
+        || Object.keys(env).some((key) => (
+          group.keyPatterns?.some((pattern) => pattern.test(key)) && hasEnvValue(env, key)
+        )),
     ]),
   );
 }

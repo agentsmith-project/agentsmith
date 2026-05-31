@@ -315,7 +315,7 @@ describe('current evidence claim schema', () => {
       'client_secret=cleartext',
       'password=cleartext',
       'ticket=cleartext',
-      'managed_credentials.feishu',
+      'managed_credentials.provider',
       'sk-1234567890abcdef',
     ]) {
       expectInvalid(makeLocalClaim({ subject: secretLikeValue }));

@@ -10,6 +10,7 @@ import {
 } from '../run-verify';
 import {
   defaultGateProfileForVerificationPlan,
+  sanitizePublicVerificationText,
   verificationRunContractFailure,
 } from '../verify-impact-selector';
 import {
@@ -392,6 +393,17 @@ describe('verify impact selector', () => {
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not a product readiness conclusion');
     expect(plan.releaseVerdict).toBe(false);
+  });
+
+  it('sanitizes public release-real guidance to product:ready instead of the deprecated release alias', () => {
+    const sanitized = sanitizePublicVerificationText(
+      'Run npm run verify -- --goal=release-real --run or pass --goal=release-real after owner diagnostics.',
+    );
+
+    expect(sanitized).toContain('npm run product:ready');
+    expect(sanitized).not.toContain('npm run release:ready');
+    expect(sanitized).not.toContain('release:ready');
+    expect(sanitized).not.toContain('--goal=release-real');
   });
 
   it('does not downgrade mock-lane visual story policy floors for explicit release-real goal', () => {

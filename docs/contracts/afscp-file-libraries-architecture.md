@@ -114,7 +114,8 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 Before release, use the release sign-off entrypoint:
 
 ```bash
-npm run release:ready
+npm run product:ready
 ```
 
-Focused Files owner diagnostics are useful while investigating Files behavior, but release sign-off must return to the appropriate verify or release gate for the current stage.
+`npm run release:ready` remains only a deprecated transition alias for `npm run product:ready`.
+Focused Files owner diagnostics are useful while investigating Files behavior, but release sign-off must return to the appropriate verify or product readiness gate for the current stage.

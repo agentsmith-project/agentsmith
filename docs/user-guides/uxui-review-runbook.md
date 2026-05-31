@@ -88,7 +88,7 @@ npm run test:visual:backend-real:review
 
 说明：
 - `npm run test:visual:backend-real:review` 仅用于需要 standalone 真实后端视觉产物时的 focused diagnostic
-- 常规路径仍看 clean local-real 环境，加上对应的 `npm run verify -- --goal=... --run` 或 `npm run release:ready`
+- 常规路径仍看 clean local-real 环境，加上对应的 `npm run verify -- --goal=... --run` 或 `npm run product:ready`
 
 ### `release_grade`
 
@@ -99,12 +99,13 @@ npm run test:visual:backend-real:review
 建议路径：
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 
 说明：
-- `release:ready` 是发布前收口入口，会编排 full visual、backend-real release evidence 和 aggregate verdict
+- `product:ready` 是发布前产品收口入口，会编排 full visual、backend-real release evidence 和 aggregate verdict
+- `release:ready` / `release:status` 只保留为 deprecated transition aliases / 过渡 alias
 - 人工 UX/UI 审查仍然需要单独记录，不能被自动化 verdict 替代
 
 ## 4. 审查单位与范围模型
@@ -295,13 +296,13 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
   - 需要 Agent tasks / files 真实链路时：保持 clean local-real 环境，必要的底层 seeding 只按 owner diagnostic 执行
   - 仅当需要 standalone 真实界面产物诊断时：`npm run test:visual:backend-real:review`
 - `release_grade`
-  - `npm run release:ready`
-  - `npm run release:status`
+  - `npm run product:ready`
+  - `npm run product:status`
 
 注意：
 - 默认检查不能代替 full visual evidence
-- full visual evidence 不能代替 `npm run release:ready`
-- standalone 真实后端视觉产物诊断不能代替 clean local-real + verify/release 主路径
+- full visual evidence 不能代替 `npm run product:ready`
+- standalone 真实后端视觉产物诊断不能代替 clean local-real + verify/product readiness 主路径
 - `command passed` 不能代替 evidence completeness
 
 ### 6.3 第三步：收集证据

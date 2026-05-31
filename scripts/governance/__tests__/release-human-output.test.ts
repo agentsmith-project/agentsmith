@@ -243,7 +243,7 @@ describe('release human output', () => {
           'Authorization: Bearer release-human-raw-token',
           'OPENAI_API_KEY=sk-release-human-raw-value',
           'ticket=release-human-raw-ticket',
-          'managed_credentials.feishu=release-human-raw-managed-credential',
+          'managed_credentials.provider=release-human-raw-managed-credential',
         ].join(' '),
       }),
     });

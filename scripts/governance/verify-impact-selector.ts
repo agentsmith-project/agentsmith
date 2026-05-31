@@ -329,7 +329,7 @@ export function sanitizePublicVerificationText(value: string): string {
   }
   return output
     .replace(/\b--goal=debug\b/g, '--goal=pr')
-    .replace(/\b--goal=release-real\b/g, 'release:ready');
+    .replace(/--goal=release-real\b/g, PUBLIC_PRODUCT_READY_COMMAND);
 }
 
 export function publicRecommendedVerificationCommands(commands: readonly string[]): string[] {
@@ -2212,7 +2212,7 @@ function evidenceOwnerForLevel(level: VerificationLevel, context: EvidenceCardBu
 
 function evidenceNoteForLevel(level: VerificationLevel): string {
   if (level === 'V4') {
-    return 'Report-only pointer to release:ready product readiness / handoff evidence; this report is not a product readiness conclusion.';
+    return 'Report-only pointer to product:ready product readiness / handoff evidence; this report is not a product readiness conclusion.';
   }
   return 'Report-only pointer to producer-owned evidence; verify report did not inspect this artifact.';
 }
@@ -2926,9 +2926,9 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
   if (changedFiles.length > 0 && goal !== 'pr' && input.goalExplicit) {
     if (goal === 'release-real' && accumulator.levels.has('V4')) {
-      accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy impact requires release:ready operator review.');
+      accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy impact requires product:ready handoff review.');
     } else if (goal === 'real' && accumulator.levels.has('V4')) {
-      accumulator.reasons.push('Explicit real goal defaults were suppressed because V4 release/deploy impact requires release:ready operator review.');
+      accumulator.reasons.push('Explicit real goal defaults were suppressed because V4 release/deploy impact requires product:ready handoff review.');
     } else {
       addGoalDefaults(accumulator, goal);
     }

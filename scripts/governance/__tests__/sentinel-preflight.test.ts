@@ -376,7 +376,7 @@ describe('sentinel preflight', () => {
         CLIENT_SECRET: 'client_secret=sentinel-client-secret-raw-value',
         PASSWORD: 'sentinel-password-raw-value',
         RUNNER_TICKET: 'sentinel-ticket-raw-value',
-        MANAGED_CREDENTIALS: JSON.stringify({ feishu: 'sentinel-managed-credential-raw-value' }),
+        MANAGED_CREDENTIALS: JSON.stringify({ provider: 'sentinel-managed-credential-raw-value' }),
         COOKIE: 'sid=sentinel-cookie-raw-value',
       },
       probes: probeMap({}, []),

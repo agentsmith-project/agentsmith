@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -27,6 +30,13 @@ function stringifyDiagnostic(diagnostic: RedactedGovernanceDiagnostic): string {
 }
 
 describe('failure bundle redaction', () => {
+  it('keeps managed credential redaction provider-neutral in production patterns', () => {
+    const source = readFileSync(resolve(process.cwd(), 'scripts/governance/redaction.ts'), 'utf8');
+    const providerSpecificSample = ['fei', 'shu'].join('');
+
+    expect(source.toLowerCase()).not.toContain(providerSpecificSample);
+  });
+
   it('only emits presence booleans, profile digest, public endpoint, and port family', () => {
     const diagnostic = buildRedactedFailureBundle({
       env: {
@@ -41,7 +51,7 @@ describe('failure bundle redaction', () => {
         CLIENT_SECRET: SECRET_VALUES.clientSecret,
         DATABASE_PASSWORD: SECRET_VALUES.password,
         RUNNER_TICKET: SECRET_VALUES.ticket,
-        MANAGED_CREDENTIALS: JSON.stringify({ feishu: SECRET_VALUES.managedCredential }),
+        MANAGED_CREDENTIALS: JSON.stringify({ provider: SECRET_VALUES.managedCredential }),
         COOKIE: SECRET_VALUES.cookie,
       },
     });
@@ -56,6 +66,18 @@ describe('failure bundle redaction', () => {
     expect(diagnostic.profile_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(diagnostic.public_endpoint).toBe('https://api.example.test:20000');
     expect(diagnostic.port_family).toBe('api-20000');
+  });
+
+  it('treats provider-neutral managed credential env aliases as managed credential presence', () => {
+    const diagnostic = buildRedactedFailureBundle({
+      env: {
+        MANAGED_CREDENTIALS_EXTERNAL_SERVICE: SECRET_VALUES.managedCredential,
+      },
+    });
+
+    expect(diagnostic.presence['profile.managed_credentials']).toBe(true);
+    expect(stringifyDiagnostic(diagnostic)).not.toContain(SECRET_VALUES.managedCredential);
+    expect(findRedactionLeaks(diagnostic)).toEqual([]);
   });
 
   it('does not leak raw secret-bearing values from failure bundle env', () => {
@@ -73,7 +95,7 @@ describe('failure bundle redaction', () => {
         CLIENT_SECRET: SECRET_VALUES.clientSecret,
         DATABASE_PASSWORD: SECRET_VALUES.password,
         RUNNER_TICKET: SECRET_VALUES.ticket,
-        MANAGED_CREDENTIALS: JSON.stringify({ feishu: SECRET_VALUES.managedCredential }),
+        MANAGED_CREDENTIALS: JSON.stringify({ provider: SECRET_VALUES.managedCredential }),
         COOKIE: SECRET_VALUES.cookie,
       },
     });
@@ -176,7 +198,7 @@ describe('failure bundle redaction', () => {
       },
       additionalPresence: {
         'Authorization: Bearer additional-presence-raw-value': true,
-        'managed_credentials.feishu=additional-managed-credential-raw-value': true,
+        'managed_credentials.provider=additional-managed-credential-raw-value': true,
         'probe.dns_gateway_reachable': false,
       },
     });
@@ -189,21 +211,21 @@ describe('failure bundle redaction', () => {
     expect(serialized).not.toContain('Authorization');
     expect(serialized).not.toContain('Bearer');
     expect(serialized).not.toContain('additional-presence-raw-value');
-    expect(serialized).not.toContain('managed_credentials.feishu=');
+    expect(serialized).not.toContain('managed_credentials.provider=');
     expect(serialized).not.toContain('additional-managed-credential-raw-value');
     expect(findRedactionLeaks(diagnostic)).toEqual([]);
   });
 
   it('redacts object-shaped secret assignments and detects residual object leaks', () => {
     const summary = [
-      'managed_credentials: {"feishu":"redaction-managed-credential-object-raw-value"}',
+      'managed_credentials: {"provider":"redaction-managed-credential-object-raw-value"}',
       'password: {"value":"redaction-password-object-raw-value"}',
       '"client_secret": {"value":"redaction-client-secret-object-raw-value"}',
       'Authorization: Bearer redaction-bearer-object-raw-token',
     ].join(' ');
 
     expect(findRedactionLeaks(summary).length).toBeGreaterThan(0);
-    expect(findRedactionLeaks('"feishu":"redaction-managed-credential-object-raw-value"}').length).toBeGreaterThan(0);
+    expect(findRedactionLeaks('"provider":"redaction-managed-credential-object-raw-value"}').length).toBeGreaterThan(0);
     expect(findRedactionLeaks('"value":"redaction-password-object-raw-value"}').length).toBeGreaterThan(0);
 
     const redacted = redactSensitiveText(summary);
@@ -213,7 +235,7 @@ describe('failure bundle redaction', () => {
     expect(redacted).not.toContain('redaction-password-object-raw-value');
     expect(redacted).not.toContain('redaction-client-secret-object-raw-value');
     expect(redacted).not.toContain('redaction-bearer-object-raw-token');
-    expect(redacted).not.toContain('"feishu"');
+    expect(redacted).not.toContain('"provider"');
     expect(redacted).not.toContain('"value":"redaction-password-object-raw-value"');
     expect(findRedactionLeaks(redacted)).toEqual([]);
   });

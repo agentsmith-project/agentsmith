@@ -107,13 +107,13 @@
 
 ### 发布前结论
 看：
-- `npm run release:ready` / `npm run release:status` 的输出
+- `npm run product:ready` / `npm run product:status` 的输出
 - `artifacts/release-runs/<campaign-run-id>/summary.md`
 - `artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json`
 - `artifacts/release-runs/latest.json`
 - `artifacts/release-reports/` 中被当前 release run 明确引用的生成报告；其他旧报告只作为历史证据快照
 
-`release:ready` / `release:status` 的人类输出只做短摘要和 evidence path 导航；原始日志仍是排障材料。不要把 standalone `artifacts/backend-real-visual/<run-id>/...` 或 `artifacts/unified-deploy/` 的最新文件直接当作发布结论；除非它们被当前 campaign root 的 evidence pointer 明确引用，否则只属于诊断产物。`state/readiness.json` 这类运行期 readiness state 也不是 release authority evidence。
+`product:ready` / `product:status` 的人类输出只做短摘要和 evidence path 导航；`release:ready` / `release:status` 只保留为 deprecated transition aliases / 过渡 alias。原始日志仍是排障材料。不要把 standalone `artifacts/backend-real-visual/<run-id>/...` 或 `artifacts/unified-deploy/` 的最新文件直接当作发布结论；除非它们被当前 campaign root 的 evidence pointer 明确引用，否则只属于诊断产物。`state/readiness.json` 这类运行期 readiness state 也不是 release authority evidence。
 
 ## 6. 当前目录治理结论
 

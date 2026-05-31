@@ -35,10 +35,10 @@ const SENSITIVE_AGGREGATE_SUMMARY = [
   'oauth_token=projection-oauth-token-raw-value',
   'client_secret=projection-client-secret-raw-value',
   'password=projection-password-raw-value',
-  'managed_credentials: {"feishu":"projection-managed-credential-object-raw-value"}',
+  'managed_credentials: {"provider":"projection-managed-credential-object-raw-value"}',
   'password: {"value":"projection-password-object-raw-value"}',
   'ticket=projection-ticket-raw-value',
-  'managed_credentials.feishu=projection-managed-credential-raw-value',
+  'managed_credentials.provider=projection-managed-credential-raw-value',
   'Cookie: sid=projection-cookie-raw-value',
 ].join(' ');
 const SENSITIVE_PROJECTION_FRAGMENTS = [
@@ -1207,7 +1207,7 @@ describe('current status projection', () => {
         code: 'renderer_secret_regression',
         summary: [
           'Authorization: Bearer renderer-bearer-raw-token',
-          'managed_credentials: {"feishu":"renderer-managed-credential-raw-value"}',
+          'managed_credentials: {"provider":"renderer-managed-credential-raw-value"}',
           'password: {"value":"renderer-password-raw-value"}',
         ].join(' '),
         source_path: null,

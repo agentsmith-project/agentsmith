@@ -1,22 +1,22 @@
 {
   "schema_version": "agentsmith.runner-release-manifest/v1",
   "runner": "agentsmith-runner",
-  "release_id": "p5-publish-f588d88",
-  "git_sha": "f588d88d622f7d93ae8531e6e57118ee4a26267f",
+  "release_id": "locked-safety-ce7cdde",
+  "git_sha": "ce7cdde4f48ad46494df91f9b19d4e626d557b83",
   "runner_contract_version": "0.1.0",
   "supported_protocol_versions": [
     "1.0"
   ],
   "image": {
     "id": "agentsmith-runner",
-    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0",
-    "digest": "sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0"
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-ce7cdde@sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
+    "digest": "sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5"
   },
   "contract_artifact": {
-    "package_uri": "gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/26580019002/mbos-agent-runner-contract-0.1.0.tgz",
-    "package_sha256": "sha256:36c7013eee92cd2e4b28dc32f95482bb3e2b847bbf7bb03a3b42c5ccaafa8a60",
-    "package_integrity": "sha512-IG0g09jJ4yaBmKATB0h9YmNuv3z7mZui4fbs4FYg3KoQe9zQr1zwyixGx4xsNszUJfJaHFbv14yJpYOv5Rx+1Q==",
-    "descriptor_subject_sha256": "sha256:9fdb87216fe8e4e29152df35440020d991181aee1a15d4606aedfa413304da6a"
+    "package_uri": "gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/26700166425/mbos-agent-runner-contract-0.1.0.tgz",
+    "package_sha256": "sha256:750ee1994aeba5e43e91ceff98b7f0e058bf185ac727d8ff174cc4c6a8a3568f",
+    "package_integrity": "sha512-sbas/XCov4Gd53Li4FKiRk5iReEu496bhXBAJUtv4msnFflKjhic9AOL3+NCjn09Ab9AOIqv4a/PqHCtmQmpXw==",
+    "descriptor_subject_sha256": "sha256:6d75d54b10f13f213147edcca5f8efa371967a50a064c1c6723be0c258ad9436"
   },
   "artifact_provenance": {
     "schema_version": "agentsmith.artifact-provenance/v1",
@@ -25,15 +25,15 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith-runner",
     "workflow_name": "Runner Image Publish",
     "job": "publish",
-    "run_id": "26662288580",
+    "run_id": "26700207096",
     "run_attempt": "1",
-    "commit_sha": "f588d88d622f7d93ae8531e6e57118ee4a26267f",
-    "generated_at": "2026-05-29T21:09:53.000Z",
-    "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26662288580/runner-release-manifest.json",
-    "artifact_sha256": "sha256:adde057b9204201cf4d9c915e3ecc65281980e043cf73f038420162ba93c1837",
+    "commit_sha": "ce7cdde4f48ad46494df91f9b19d4e626d557b83",
+    "generated_at": "2026-05-31T01:42:17.000Z",
+    "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26700207096/runner-release-manifest.json",
+    "artifact_sha256": "sha256:6ef5e1b2e5cfd2e62d56c2ec57efeb82ca9fd6c77e66775f3931fe4886747306",
     "subject_name": "runner-release-manifest",
     "subject_uri": "runner-release-manifest.json",
-    "subject_sha256": "sha256:adde057b9204201cf4d9c915e3ecc65281980e043cf73f038420162ba93c1837",
+    "subject_sha256": "sha256:6ef5e1b2e5cfd2e62d56c2ec57efeb82ca9fd6c77e66775f3931fe4886747306",
     "generator_command": "node scripts/write-runner-release-manifest.mjs",
     "generator_version": "v1",
     "attestation": "none"

@@ -78,8 +78,8 @@
     },
     {
       "id": "managed_runner",
-      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0",
-      "digest": "sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0",
+      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-ce7cdde@sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
+      "digest": "sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
       "source": "managed_runner_image"
     }
   ],
@@ -197,14 +197,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:4e1cdd5483866bdd9e0d67fb23265f3d08ee95152311ded7f392fea712b84838",
+    "subject_sha256": "sha256:16fe01118d5021ecdd5e91237fe27396f032e67148598e0adeafd4c74b6a77c5",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:53e8f16e432a679db3792d2e1b36b13470c403e48acb56b522d76ab67d4dc306",
+    "artifact_sha256": "sha256:a48204e8d91619f7dbca992533113f6c108810de3a3278239eda068156129b55",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",
@@ -212,7 +212,7 @@
   },
   "managed_runner_image": {
     "id": "agentsmith-runner",
-    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-p5-publish-f588d88@sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0",
-    "digest": "sha256:67fd8ba56dcbe763c1b9f81d1e18d7755f38c9eaf0db618554032aecb4be34f0"
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-ce7cdde@sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5",
+    "digest": "sha256:df90f6583f25e1f45260d662bf1c9aee88462c758c303fb3083f4c93f3ebdcb5"
   }
 }

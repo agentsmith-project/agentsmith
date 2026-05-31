@@ -24,10 +24,12 @@ owner、删除条件和验收证据的短期待删项，不作为长期兼容承
 
 Current active plan:
 
+- [AgentSmith GA 发布交付计划 v1](./agentsmith-ga-release-plan-v1.md) - active implementation-ready GA plan for the AgentSmith project set release, release-kit GA verdict, runner/adopted image chain, operator runbooks, and deployment verification.
 - [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - active pre-GA plan for the release-kit / runner repo split and AgentSmith product-side boundary.
 
 Current next focus:
 
+- Execute the GA plan in small slices; keep AgentSmith product readiness, release-kit deployment/package/operator verdict, runner image adoption, and dependency image locks as separate responsibilities.
 - Default work is only P6-lite active docs / old-reference cleanup inside AgentSmith.
 - release-kit scoped evidence and runner locked safety are completed focused/candidate items; they remain focused evidence, not deployment/package/operator verdict or release readiness.
 - backend-real / full runtime semantics, formal verdict, and airgap readiness are not current blockers or default next steps.

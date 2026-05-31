@@ -501,7 +501,7 @@ artifact 有两个不同路径语义，不能混用：
 
 - Contracts：agent execution protocol、internal workspace binding model、Files module map、OpenAPI。
 - Backend：task create/delete、file library routes、binding repository、audit、reconcile job。
-- Runner：agent-runner protocol、agent-task-runner workspace builder、terminal runtime、pod manager path guard。
+- Runner：agent execution protocol contract、agent-task-runner workspace builder、terminal runtime、pod manager path guard。
 - Frontend：TaskCreateDialog、Task delete dialog、Files library list/detail/banner、i18n。
 - MSW：tasks/files handlers、fixtures、parity tests。
 - Docs：runbook、DEVELOPMENT、AGENTS、相关 user guide。
@@ -527,7 +527,7 @@ npm run test:run -- \
   packages/api-entry-node/src/project-file-library-routes.test.ts \
   packages/api-entry-node/src/internal-agent-workspace-provisioner.test.ts \
   packages/api-entry-node/src/internal-agent-pod-manager.test.ts \
-  packages/agent-runner/src/protocol.test.ts \
+  packages/agent-runner-contract/src/protocol.test.ts \
   packages/agent-task-runner/src/task-workspace.test.ts \
   packages/agent-task-runner/src/terminal-runtime.test.ts \
   src/components/agent-tasks/__tests__/TaskCreateDialog.test.tsx \

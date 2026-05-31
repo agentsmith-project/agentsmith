@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +6,7 @@ import {
   findEngineeringIndexCurrentSectionViolations,
   findReleaseKitSplitKissPlanViolations,
   isHistoricalDoc,
+  SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS,
 } from './check-doc-governance';
 
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
@@ -156,6 +157,27 @@ describe('check-doc-governance historical document detection', () => {
     expect(extractSetInitializer(source, 'ACTIVE_ASBCP_GUIDANCE_FILES')).not.toContain(
       HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME,
     );
+  });
+
+  it('keeps superseded release-governance plans and work logs in archive only', () => {
+    const activeTopLevelDocs = SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS.filter((relativePath) => (
+      existsSync(resolve(process.cwd(), relativePath))
+    ));
+    const archivePaths = SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS.map((relativePath) => (
+      relativePath.replace('docs/engineering/', 'docs/engineering/archive/')
+    ));
+    const missingArchiveDocs = archivePaths.filter((relativePath) => (
+      !existsSync(resolve(process.cwd(), relativePath))
+    ));
+
+    expect(activeTopLevelDocs).toEqual([]);
+    expect(missingArchiveDocs).toEqual([]);
+
+    for (const relativePath of archivePaths) {
+      const content = readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+      expect(content).toMatch(/Status:\s*`?historical_reference`?/i);
+      expect(isHistoricalDoc(relativePath, content)).toBe(true);
+    }
   });
 
   it('keeps the persistent HOME implementation plan from reintroducing Developer local HOME smoke', () => {

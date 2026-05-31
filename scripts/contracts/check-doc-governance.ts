@@ -10,6 +10,17 @@ const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']
 
 const RELEASE_KIT_SPLIT_PLAN = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
 
+export const SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS = [
+  'docs/engineering/governance-release-flow-simplification-plan-v3.md',
+  'docs/engineering/governance-verification-runtime-simplification-plan-v1.md',
+  'docs/engineering/release-verification-governance-optimization-plan.md',
+  'docs/engineering/release-verification-governance-optimization-log.md',
+] as const;
+
+const SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOC_SET = new Set<string>(
+  SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS,
+);
+
 const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   {
     file: 'docs/README.md',
@@ -378,6 +389,23 @@ function checkHistoricalDocsPlacement(filePath: string, content: string): Violat
   ];
 }
 
+function checkSupersededReleaseGovernanceDocPlacement(filePath: string): Violation[] {
+  const relativePath = toRel(filePath);
+  if (!SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOC_SET.has(relativePath)) {
+    return [];
+  }
+
+  return [
+    {
+      file: relativePath,
+      line: 1,
+      rule: 'superseded-release-governance-doc-active-top-level',
+      detail:
+        'Superseded release-governance plans/logs must live under docs/engineering/archive/ with Status: historical_reference; current truth is release-kit-and-runner-repo-split-kiss-plan-v1.md.',
+    },
+  ];
+}
+
 function checkIndexExpectations(): Violation[] {
   const violations: Violation[] = [];
   for (const expectation of DOC_INDEX_EXPECTATIONS) {
@@ -500,6 +528,7 @@ function main(): void {
     violations.push(...checkHistoricalAsbcpReferenceNotice(file, content));
     violations.push(...checkMarkdownLinks(file, content));
     violations.push(...checkHistoricalDocsPlacement(file, content));
+    violations.push(...checkSupersededReleaseGovernanceDocPlacement(file));
     if (toRel(file) === RELEASE_KIT_SPLIT_PLAN) {
       violations.push(...findReleaseKitSplitKissPlanViolations(content));
     }

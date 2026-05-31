@@ -1,10 +1,11 @@
 # Release Verification Governance Optimization Plan
 
-Status: `decision-complete minimal handoff`
+Status: `historical_reference`
+Former status: `decision-complete minimal handoff`
 
 Scope: release verification, backend-real verification, unified deploy evidence, product-flow evidence, and release status output.
 
-Primary input: `docs/engineering/release-verification-governance-optimization-log.md` plus current implementation under `scripts/governance/` and `scripts/unified-deploy/`.
+Primary input: `docs/engineering/archive/release-verification-governance-optimization-log.md` plus current implementation under `scripts/governance/` and `scripts/unified-deploy/`.
 
 ## 1. 决策摘要
 

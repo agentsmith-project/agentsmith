@@ -584,7 +584,7 @@ describe('verify human entrypoints', () => {
     const plan = buildVerificationPlan({
       goal: 'pr',
       run: false,
-      changedFiles: ['docs/engineering/governance-verification-runtime-simplification-plan-v1.md'],
+      changedFiles: ['docs/engineering/archive/governance-verification-runtime-simplification-plan-v1.md'],
     });
     const output = renderVerificationPlan(plan);
     const recommendedBlock = recommendedPlanBlock(output);
@@ -636,7 +636,7 @@ describe('verify human entrypoints', () => {
         '--report-root',
         root,
         '--changed-file',
-        'docs/engineering/governance-verification-runtime-simplification-plan-v1.md',
+        'docs/engineering/archive/governance-verification-runtime-simplification-plan-v1.md',
       ], {
         stdout: { write: (chunk: string) => stdout.push(chunk) },
         stderr: { write: (chunk: string) => stderr.push(chunk) },
@@ -664,7 +664,7 @@ describe('verify human entrypoints', () => {
         '--report-root',
         root,
         '--changed-file',
-        'docs/engineering/governance-verification-runtime-simplification-plan-v1.md',
+        'docs/engineering/archive/governance-verification-runtime-simplification-plan-v1.md',
       ], {
         stdout: { write: (chunk: string) => stdout.push(chunk) },
         stderr: { write: (chunk: string) => stderr.push(chunk) },

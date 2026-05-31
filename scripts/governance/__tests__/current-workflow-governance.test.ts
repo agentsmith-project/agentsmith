@@ -58,8 +58,8 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
   'make local-real-down',
   'make local-real-reset',
   'npm run verify',
-  'npm run release:ready',
-  'npm run release:status',
+  'npm run product:ready',
+  'npm run product:status',
 ] as const;
 const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
@@ -625,8 +625,8 @@ describe('current workflow governance', () => {
   it('models product-side readiness entry through the campaign launcher instead of the aggregate-only gate', () => {
     const releaseEntry = CURRENT_WORKFLOW_ENTRY_PATHS.find((entry) => entry.id === 'release_grade');
     const commands = listCurrentWorkflowCommands();
-    const releaseReady = commands.find((command) => command.npmScript === 'release:ready');
-    const releaseStatus = commands.find((command) => command.npmScript === 'release:status');
+    const releaseReady = commands.find((command) => command.npmScript === 'product:ready');
+    const releaseStatus = commands.find((command) => command.npmScript === 'product:status');
     const releaseAggregate = commands.find((command) => command.npmScript === 'release:aggregate');
     const releaseDeployTemplatePackage = commands.find(
       (command) => command.npmScript === 'release:deploy-template-package',
@@ -649,8 +649,8 @@ describe('current workflow governance', () => {
       'test:unified-deploy:product-flows',
     ].map((npmScript) => commands.find((command) => command.npmScript === npmScript));
 
-    expect(releaseEntry?.startCommands).toContain('npm run release:ready');
-    expect(releaseEntry?.startCommands).toContain('npm run release:status');
+    expect(releaseEntry?.startCommands).toContain('npm run product:ready');
+    expect(releaseEntry?.startCommands).toContain('npm run product:status');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind:images');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
@@ -793,14 +793,15 @@ describe('current workflow governance', () => {
         expect(block, `${label} must not expose ${pattern}`).not.toMatch(pattern);
       }
 
-      expect(block, `${label} must describe release:status as read-only`).toMatch(/release:status[\s\S]*read-only/i);
-      expect(block, `${label} must not describe release:status as a verdict producer`).not.toMatch(
-        /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
+      expect(block, `${label} must describe product:status as read-only`).toMatch(/product:status[\s\S]*read-only/i);
+      expect(block, `${label} must not describe product:status as a verdict producer`).not.toMatch(
+        /product:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
       );
+      expect(block, `${label} must describe release:* as transition aliases`).toMatch(/release:(?:ready|status)[\s\S]{0,180}(?:transition|deprecated|过渡)/i);
     }
   });
 
-  it('describes release:status as a frozen read-only projection in generated docs', () => {
+  it('describes product:status as a frozen read-only projection in generated docs', () => {
     const generatedDocBlocks = [
       {
         label: 'README current workflow block',
@@ -821,13 +822,14 @@ describe('current workflow governance', () => {
     ];
 
     for (const { label, block } of generatedDocBlocks) {
-      expect(block, `${label} must describe release:status as read-only`).toMatch(/release:status[\s\S]*read-only/i);
-      expect(block, `${label} must describe release:status as frozen projection/snapshot output`).toMatch(
-        /release:status[\s\S]*frozen[\s\S]*(?:projection|snapshot)/i,
+      expect(block, `${label} must describe product:status as read-only`).toMatch(/product:status[\s\S]*read-only/i);
+      expect(block, `${label} must describe product:status as frozen projection/snapshot output`).toMatch(
+        /product:status[\s\S]*frozen[\s\S]*(?:projection|snapshot)/i,
       );
       expect(block, `${label} must not use the old latest-summary-only wording`).not.toMatch(
-        /release:status[\s\S]*only reads the latest release summary/i,
+        /product:status[\s\S]*only reads the latest release summary/i,
       );
+      expect(block, `${label} must describe release:* as transition aliases`).toMatch(/release:(?:ready|status)[\s\S]{0,180}(?:transition|deprecated|过渡)/i);
     }
   });
 
@@ -898,8 +900,8 @@ describe('current workflow governance', () => {
     const packageScripts = readPackageScripts();
 
     for (const doc of docs) {
-      expect(readRepoFile(doc), `${doc} must mention the release campaign launcher`).toContain(
-        'npm run release:ready',
+      expect(readRepoFile(doc), `${doc} must mention the product readiness launcher`).toContain(
+        'npm run product:ready',
       );
     }
 
@@ -909,11 +911,14 @@ describe('current workflow governance', () => {
       'docs/agent-task-runner-runbook.md',
     ]) {
       const content = readRepoFile(doc);
-      expect(content, `${doc} must expose release:ready as the human release entrypoint`).toContain(
-        'npm run release:ready',
+      expect(content, `${doc} must expose product:ready as the human product readiness entrypoint`).toContain(
+        'npm run product:ready',
       );
-      expect(content, `${doc} must expose release:status as the read-only entrypoint`).toContain(
-        'npm run release:status',
+      expect(content, `${doc} must expose product:status as the read-only entrypoint`).toContain(
+        'npm run product:status',
+      );
+      expect(content, `${doc} must describe release:* as transition aliases`).toMatch(
+        /release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|过渡)/i,
       );
       expect(content, `${doc} must describe release:campaign:full as internal when it is mentioned`).not.toMatch(
         /npm run release:campaign:full/,
@@ -1025,14 +1030,14 @@ describe('current workflow governance', () => {
     }
   });
 
-  it('keeps diagnostic next steps on the human release:ready path', () => {
+  it('keeps diagnostic next steps on the human product:ready path', () => {
     const releaseDiagnostics = CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.filter(
       (command) => command.id.startsWith('release-'),
     );
 
     expect(releaseDiagnostics.length).toBeGreaterThan(0);
     for (const command of releaseDiagnostics) {
-      expect(command.nextStep).toContain('npm run release:ready');
+      expect(command.nextStep).toContain('npm run product:ready');
       expect(command.nextStep).not.toContain('npm run release:campaign:full');
     }
   });

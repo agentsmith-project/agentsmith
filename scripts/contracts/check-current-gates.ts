@@ -45,14 +45,20 @@ function assertReleaseHumanEntrypointSurface(
 ): void {
   requireMatch(
     content,
-    /npm run release:ready/,
-    `${owner} must point human product readiness / handoff execution to npm run release:ready`,
+    /npm run product:ready/,
+    `${owner} must point human product readiness / handoff execution to npm run product:ready`,
     failures,
   );
   requireMatch(
     content,
-    /npm run release:status/,
-    `${owner} must point read-only release inspection to npm run release:status`,
+    /npm run product:status/,
+    `${owner} must point read-only product readiness inspection to npm run product:status`,
+    failures,
+  );
+  requireMatch(
+    content,
+    /release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|过渡)/i,
+    `${owner} must describe release:ready/status only as transition aliases`,
     failures,
   );
   requireMatch(
@@ -235,10 +241,10 @@ const releaseCampaignWorkflow = listCurrentWorkflowCommands()
 const releaseFullAggregateWorkflow = listCurrentWorkflowCommands()
   .find((command) => command.npmScript === 'gate:release:full');
 if (releaseCampaignWorkflow?.command !== 'npm run release:campaign:full') {
-  failures.push('workflow command surface must define npm run release:campaign:full as the campaign launcher behind npm run release:ready');
+  failures.push('workflow command surface must define npm run release:campaign:full as the campaign launcher behind npm run product:ready');
 }
-if (!/behind release:ready/.test(releaseCampaignWorkflow?.description ?? '')) {
-  failures.push('workflow command surface must describe release:campaign:full as the campaign launcher behind release:ready');
+if (!/behind product:ready/.test(releaseCampaignWorkflow?.description ?? '')) {
+  failures.push('workflow command surface must describe release:campaign:full as the campaign launcher behind product:ready');
 }
 if (releaseCampaignWorkflow?.recommended === true) {
   failures.push('workflow command surface must not recommend release:campaign:full as a human release entrypoint');
@@ -435,12 +441,12 @@ requireMatch(governanceDefaultChecklist, /npm run verify -- --goal=visual --run/
 requireMatch(governanceDefaultChecklist, /internal evidence ownership remains `lane:visual`/, 'governance checklist must keep lane:visual only as internal visual evidence ownership', failures);
 forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance checklist must document its own canonical gate command instead of gate:default', failures);
 
-requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing product readiness / handoff entrypoint', failures);
-requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define npm run release:status as the read-only status entrypoint', failures);
+requireMatch(releaseChecklist, /npm run product:ready/, 'release checklist must define npm run product:ready as the human-facing product readiness / handoff entrypoint', failures);
+requireMatch(releaseChecklist, /npm run product:status/, 'release checklist must define npm run product:status as the read-only status entrypoint', failures);
 requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics', failures);
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics', failures);
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow diagnostics', failures);
-requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that release:ready delegates to internal adapters only after precheck passes', failures);
+requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that product:ready delegates to internal adapters only after precheck passes', failures);
 requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default', failures);

@@ -41,8 +41,9 @@ Repo version files:
 
 Quick path note:
 - `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。
-- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.
-- `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。
+- `npm run product:status` is read-only; it reads the latest product readiness summary plus the frozen projection/snapshot fields recorded in that summary.
+- `npm run product:ready` / `npm run product:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。
+- `npm run release:ready` / `npm run release:status` 保留为 deprecated transition aliases / 过渡 alias；它们不提供 deployment、package 或 operator verdict。
 
 ### 环境
 
@@ -63,12 +64,12 @@ npm run verify
 ### 发布
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 <!-- current-workflow:development:end -->
 
-Release boundary note: `npm run release:ready` is the AgentSmith product-side readiness / local complete / contract and handoff input gate, not a deployment/package/operator verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are pre-GA focused diagnostics.
+Release boundary note: `npm run product:ready` is the AgentSmith product-side readiness / local complete / contract and handoff input gate, not a deployment/package/operator verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are pre-GA focused diagnostics.
 
 先选入口，不要混用三条路径：
 
@@ -76,9 +77,9 @@ Release boundary note: `npm run release:ready` is the AgentSmith product-side re
 | --- | --- | --- |
 | `ui_only` | 只改前端 UI、文案、mock 交互、客户端状态。 | `npm run dev`，然后用 `npm run verify` 生成 dry-run plan。 |
 | `local_manual` | 需要真实本地 API / Web / Agent tasks / Terminal / runner / files 行为。 | `make local-real-up`，然后用 `make local-real-status` 看当前状态。 |
-| `release_grade` | 大改动收口、发布前产品侧 readiness / handoff input completeness 复核、incident 修复后的跨层复验。 | `npm run release:ready`，然后用 `npm run release:status` 只读查看 frozen summary/status projection。 |
+| `release_grade` | 大改动收口、发布前产品侧 readiness / handoff input completeness 复核、incident 修复后的跨层复验。 | `npm run product:ready`，然后用 `npm run product:status` 只读查看 frozen summary/status projection。 |
 
-如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`。
+如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run product:ready`。
 
 ### Pre-GA 开发提效约定
 
@@ -101,7 +102,7 @@ Gate adapter fidelity notes:
 1. 先区分诊断命令和 authoritative verdict
 - `test` family commands、某个 focused Playwright spec、owner runbook 里的 targeted internal adapter，主要用于诊断、复现和缩小问题范围。
 - 普通开发者先用 `npm run verify` 生成计划，并用 `npm run verify -- --goal=... --run` 执行正式验证；不从 gate adapter 目录手工拼流程。
-- 诊断命令语境：`gate:default` 不是 full visual，也不是产品侧 readiness 结论。full visual 的内部 owner 是 `lane:visual`；面向人的 AgentSmith product readiness 入口统一看 `npm run release:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 aggregate readiness check。
+- 诊断命令语境：`gate:default` 不是 full visual，也不是产品侧 readiness 结论。full visual 的内部 owner 是 `lane:visual`；面向人的 AgentSmith product readiness 入口统一看 `npm run product:ready`，它会在 precheck 通过后委托内部 campaign，并在 campaign context 内调用 aggregate readiness check。
 - 维护者排障语境：`gate:release:full` 是 aggregate-only 内部复核器，只能在显式 campaign context 下由 release wrapper 或 owner runbook 使用；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
@@ -113,9 +114,9 @@ Gate adapter fidelity notes:
 3. 日常开发、功能收口、AgentSmith product readiness 自动化是三种不同路径
 - 日常开发：先跑 contract / type / unit / targeted integration，尽量用最小成本定位问题。
 - 功能收口：补跑与改动直接相关的 integration、e2e、story、backend-real smoke 或 targeted visual。
-- AgentSmith product readiness 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，日常入口是 `npm run release:ready`。
+- AgentSmith product readiness 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，日常入口是 `npm run product:ready`。
 - 如果需要理解 wave、证据、rerun 策略与常见误区，再看 [`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)。
-- Diagnostic catalog 里的 internal adapters、unified deploy producers 与 `test:*` owner commands 是维护者诊断，不是普通流程的默认命令目录；诊断变绿后要回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
+- Diagnostic catalog 里的 internal adapters、unified deploy producers 与 `test:*` owner commands 是维护者诊断，不是普通流程的默认命令目录；诊断变绿后要回到 `npm run verify -- --goal=... --run` 或 `npm run product:ready`。
 
 4. `failure_class` 是 gate verdict，不是 troubleshooting 标签
 - `result.json` 里的 `failure_class` 只用于 canonical gate verdict。
@@ -587,22 +588,22 @@ For focused owner diagnostics on the real-backend core producer, rerun:
 npm run test:backend-real:core
 ```
 
-This backend-real producer auto starts integration dependencies, API, and frontend on dedicated ports. It is not product readiness sign-off; AgentSmith product-side readiness conclusions still use `npm run release:ready`.
+This backend-real producer auto starts integration dependencies, API, and frontend on dedicated ports. It is not product readiness sign-off; AgentSmith product-side readiness conclusions still use `npm run product:ready`.
 
 ## Release Readiness Checklist
 
 For final AgentSmith product readiness verification, use the human-friendly readiness wrapper:
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 
 Machine-readable Reports / Maintainer Troubleshooting Notes:
 
-1. 机器可读报告语境：`npm run release:ready` is the human-friendly AgentSmith product-side readiness / local complete / contract and handoff input gate. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the aggregate readiness check. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence, and it is not a deployment/package/operator verdict.
+1. 机器可读报告语境：`npm run product:ready` is the human-friendly AgentSmith product-side readiness / local complete / contract and handoff input gate. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the aggregate readiness check. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence, and it is not a deployment/package/operator verdict.
 2. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
-3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run release:ready`.
+3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run product:ready`.
 4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY`.
 5. Unified deploy diagnostic roots are transition-only focused diagnostics / 过渡期专项诊断；when run directly, they derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 6. The final human output is a short evidence summary. Keep raw logs for diagnosis, but do not treat common setup warnings such as NO_COLOR, Postgres already exists, or containerd deprecation as blockers unless the referenced evidence names them.

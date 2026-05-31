@@ -402,8 +402,8 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     label: 'Release grade',
     whenToUse: '准备收口大改动、发布前产品侧 readiness 复核、或者 incident 修复后的跨层复验。',
     startCommands: [
-      'npm run release:ready',
-      'npm run release:status',
+      'npm run product:ready',
+      'npm run product:status',
     ],
     docs: [
       'docs/testing/verification-campaigns-v1.md',
@@ -529,7 +529,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'test:release:precheck',
     workflowRole: 'diagnostic',
     whenToUse: '准备进入产品侧 readiness 验证前，先确认本地 substrate 和端口就绪。',
-    nextStep: 'precheck 绿只是准入，不是产品侧 readiness 结论；继续跑 `npm run release:ready`。',
+    nextStep: 'precheck 绿只是准入，不是产品侧 readiness 结论；继续跑 `npm run product:ready`。',
   },
   {
     id: 'mock-lane',
@@ -548,7 +548,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'gate-release',
     workflowRole: 'diagnostic',
     whenToUse: '产品侧 readiness campaign 失败指向 backend-real owner，或需要单独复核 `ux_trace_bundle` owner。',
-    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 aggregate readiness check。',
+    nextStep: '通过后回到 `npm run product:ready`；不要用它代替 full visual 或 aggregate readiness check。',
   },
   {
     id: 'release-unified-deploy-substrate-owner',
@@ -558,7 +558,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-substrate',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only unified deploy substrate reset / readiness 诊断。',
-    nextStep: '修复本机 substrate 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
+    nextStep: '修复本机 substrate 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run product:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-images-owner',
@@ -568,7 +568,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-local-kind-images',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only local-kind image handoff 诊断。',
-    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
+    nextStep: '修复镜像构建、tag、registry handoff 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run product:ready`。',
   },
   {
     id: 'release-unified-deploy-local-kind-owner',
@@ -578,7 +578,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-local-kind',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only local-kind Kubernetes rollout / ingress smoke 诊断。',
-    nextStep: '修复 deploy topology 或 ingress route 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
+    nextStep: '修复 deploy topology 或 ingress route 后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run product:ready`。',
   },
   {
     id: 'release-unified-deploy-product-flows-owner',
@@ -588,7 +588,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-unified-deploy-product-flows',
     workflowRole: 'diagnostic_lane',
     whenToUse: '需要定位 transition-only deployed project / files / managed runner product-flow 诊断。',
-    nextStep: '修复产品链路后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run release:ready`。',
+    nextStep: '修复产品链路后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run product:ready`。',
   },
   {
     id: 'release-terminal-aggregate',
@@ -598,7 +598,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'gate-release-full',
     workflowRole: 'diagnostic',
     whenToUse: '只在已有显式 campaign root/run id 时复核 aggregate readiness evidence；该命令不会执行任何 suite。',
-    nextStep: '如果缺少显式 campaign context，改跑 `npm run release:ready` 生成当前 campaign evidence。',
+    nextStep: '如果缺少显式 campaign context，改跑 `npm run product:ready` 生成当前 campaign evidence。',
   },
 ] as const;
 
@@ -1263,18 +1263,18 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     title: '发布',
     commands: [
       {
-        command: 'npm run release:ready',
+        command: 'npm run product:ready',
         description: 'run the human-friendly AgentSmith product readiness wrapper',
         canonical: 'npm',
-        npmScript: 'release:ready',
+        npmScript: 'product:ready',
         recommended: true,
         quickHuman: true,
       },
       {
-        command: 'npm run release:status',
+        command: 'npm run product:status',
         description: 'read the latest release summary in read-only mode',
         canonical: 'npm',
-        npmScript: 'release:status',
+        npmScript: 'product:status',
         recommended: true,
         quickHuman: true,
       },
@@ -1352,7 +1352,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run release:campaign:full',
-        description: 'run the product readiness campaign launcher behind release:ready; do not use as the human release entrypoint',
+        description: 'run the product readiness campaign launcher behind product:ready; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:campaign:full',
       },

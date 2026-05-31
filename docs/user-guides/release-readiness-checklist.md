@@ -1,12 +1,13 @@
 # 发布前检查清单
 
-这份清单用于当前 AgentSmith product-side readiness：本地完整验证、合同完整性、release-kit/operator 交接输入完整性。当前 `npm run release:ready` 不给部署、package 或 operator runbook 下最终结论；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断。真实 Kubernetes / release-kit adoption target profile 在 AgentSmith release boundary 中只能作为 optional/candidate handoff。release-kit functional repo ready 后，deployment、package 和 operator runbook 结论归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
+这份清单用于当前 AgentSmith product-side readiness：本地完整验证、合同完整性、release-kit/operator 交接输入完整性。当前 `npm run product:ready` 不给部署、package 或 operator runbook 下最终结论；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断。真实 Kubernetes / release-kit adoption target profile 在 AgentSmith release boundary 中只能作为 optional/candidate handoff。release-kit functional repo ready 后，deployment、package 和 operator runbook 结论归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 术语边界：
 - 这里的 `release` 仅表示工程验收与上线准备流程。
 - 不代表 AgentSmith 提供对外 DevOps 发布管理能力。
 - 不代表 AgentSmith 拥有在线/airgap 部署执行、发布包验收或 operator runbook 最终结论；这些在 release-kit functional repo ready 后归 release-kit repo-local gate/evidence。
-- release-kit handoff boundary: AgentSmith release:ready is product readiness / local complete / current product gate for product evidence, full visual, backend-real product readiness, and terminal aggregate evidence for handoff input completeness. It is not a deployment/package/operator verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After release-kit functional repo is ready, release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+- release-kit handoff boundary: AgentSmith product:ready is product readiness / local complete / current product gate for product evidence, full visual, backend-real product readiness, and terminal aggregate evidence for handoff input completeness. It is not a deployment/package/operator verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After release-kit functional repo is ready, release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+- `npm run release:ready` / `npm run release:status` remain deprecated transition aliases / 过渡 alias for `npm run product:ready` / `npm run product:status`; they do not produce deployment, package, or operator verdicts.
 
 ## 当前过渡期通过标准
 
@@ -17,13 +18,13 @@
 4. full visual、machine-readable story evidence 与 aggregate readiness check 通过。
 
 补充判定规则：
-1. 当前面向人的 AgentSmith product-side readiness 执行入口统一是 `npm run release:ready`。
-2. `npm run release:status` 是只读入口，只读取 latest summary 及其中冻结的 status/deploy snapshot，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
+1. 当前面向人的 AgentSmith product-side readiness 执行入口统一是 `npm run product:ready`。
+2. `npm run product:status` 是只读入口，只读取 latest summary 及其中冻结的 status/deploy snapshot，不重新聚合 evidence；默认人类输出是短摘要，机器可读完整投影用 `--json`。
 3. 默认 product readiness campaign 不执行 online/airgap deploy，也不要求 `local-kind`、`existing-cluster` 或 focused product-flow deploy diagnostics 作为 AgentSmith readiness 证据。
 4. 机器可读报告语境：`gate:default` does not run the full visual lane，也不能代替 backend-real product readiness 或当前 AgentSmith product-side readiness 结论。
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. 维护者排障语境：`gate:release:full` is aggregate-only readiness verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
-7. `release:ready` / `release:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
+7. `product:ready` / `product:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
 
 ## 环境前提
 
@@ -35,7 +36,7 @@ product readiness 验证前，先确认：
 ## 自动化与手工边界
 
 1. 本文里的自动化 product readiness campaign，指当前 machine-readable gates、lanes 与 backend-real product readiness 证据链。
-2. `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 都是 internal adapter / evidence producer surface，保留给 CI、`npm run release:ready` 和 owner runbook，不作为普通发布人员的 copyable command 目录。
+2. `gate:*`、`lane:*`、`backend-real:*`、`release:campaign:*` 都是 internal adapter / evidence producer surface，保留给 CI、`npm run product:ready` 和 owner runbook，不作为普通发布人员的 copyable command 目录。
 
 ## 验证顺序
 
@@ -44,15 +45,15 @@ product readiness 验证前，先确认：
 日常 AgentSmith product-side readiness 自动化入口只跑：
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 
-维护者排障语境：`npm run release:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 product readiness 结论。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 aggregate readiness check。结束时优先看短摘要里的 `Evidence` / `Summary` 路径；上方原始日志仍保留用于排障。
+维护者排障语境：`npm run product:ready` 先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 product readiness 结论。precheck 通过后才委托 internal adapter family 编排 required steps，并在 campaign context 内调用 aggregate readiness check。结束时优先看短摘要里的 `Evidence` / `Summary` 路径；上方原始日志仍保留用于排障。
 
 ### 2. 维护者排障 / Owner Producer Diagnostics
 
-下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向 transition-only deploy diagnostic / 过渡期专项诊断时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run release:ready`：
+下面命令是维护者诊断，只在 failure summary、owner runbook 或 manifest 明确指向 transition-only deploy diagnostic / 过渡期专项诊断时用于定位；它们不是默认 automated release 执行路径，不能替代 `npm run product:ready`：
 
 ```bash
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
@@ -67,8 +68,8 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 
 | Role | Surface | 当前用途 |
 | --- | --- | --- |
-| human product readiness entry | `npm run release:ready` | precheck 通过后进入当前 AgentSmith product readiness campaign，并在结束后生成 summary |
-| status reader | `npm run release:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
+| human product readiness entry | `npm run product:ready` | precheck 通过后进入当前 AgentSmith product readiness campaign，并在结束后生成 summary |
+| status reader | `npm run product:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
 | transition-only deploy diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith product readiness 必需证据 |
 | transition-only deploy smoke diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith product readiness 必需证据 |
 | transition-only product-flow deploy diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的最小产品链诊断：project、files、managed runner task；不属于 AgentSmith product readiness 必需证据 |
@@ -83,7 +84,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 backend-real product readiness `ux_trace_bundle` 证据所有权。
 4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；这些命令保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于默认 product readiness campaign。route smoke 不能替代 focused product-flow 诊断，也不是 release-kit 职责归属证明。
-5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
+5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run product:ready`。
 
 ### 4. CI Green 的含义（机器可读报告）
 
@@ -92,13 +93,13 @@ CI green 不是完整 product-side readiness sign-off：
 1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 对应的内部 CI surfaces 通过。
 2. `lane:visual` 只在手动 workflow dispatch 且 opt-in `run_visual_lane` 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
-4. 当前 AgentSmith product-side readiness 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real product readiness、aggregate readiness check 与 `summary.md`。
+4. 当前 AgentSmith product-side readiness 仍然必须看 `npm run product:ready` 产生的 campaign evidence、`lane:visual`、backend-real product readiness、aggregate readiness check 与 `summary.md`。
 
 ## 当前证据路径
 
 ### Official Campaign-Scoped Machine-Readable Reports
 
-`npm run release:ready` 通过 precheck 后会产生 canonical product readiness evidence root：
+`npm run product:ready` 通过 precheck 后会产生 canonical product readiness evidence root：
 
 ```text
 artifacts/release-runs/<campaign-run-id>
@@ -132,7 +133,7 @@ artifacts/release-runs/<campaign-run-id>
 
 ### Standalone Lane Evidence
 
-下面路径只表示单独运行某个 lane/gate adapter 时的默认产物位置，可用于诊断或人工查看；它们不能替代 `npm run release:ready` 产生的 campaign-scoped evidence。
+下面路径只表示单独运行某个 lane/gate adapter 时的默认产物位置，可用于诊断或人工查看；它们不能替代 `npm run product:ready` 产生的 campaign-scoped evidence。
 
 - standalone backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`

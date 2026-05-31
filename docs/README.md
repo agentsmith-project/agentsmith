@@ -43,8 +43,9 @@
   - pick the smallest diagnostic command before an expensive gate
 - [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
   - release-grade automated verification campaign guide
-  - human release entrypoint: `npm run release:ready`
-  - internal adapter `release:campaign:full` behind `npm run release:ready`
+  - human release entrypoint: `npm run product:ready`
+  - internal adapter `release:campaign:full` behind `npm run product:ready`
+  - `npm run release:ready` / `npm run release:status` remain deprecated transition aliases, not deployment/package/operator verdicts
   - use this when you need the current testing principles, evidence model, and execution advice
 
 ### Methodology reference

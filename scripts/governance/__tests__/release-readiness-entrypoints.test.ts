@@ -399,11 +399,13 @@ function expectCanonicalNotStartedBlocker(output: string, blocker: string): void
 }
 
 describe('release readiness human entrypoints', () => {
-  it('exposes clean release aliases and unified deploy lanes', () => {
+  it('exposes clean product readiness entrypoints, transition release aliases, and unified deploy lanes', () => {
     const scripts = readPackageScripts();
 
-    expect(scripts['release:ready']).toContain('scripts/governance/release-ready.ts');
-    expect(scripts['release:status']).toContain('scripts/governance/release-status.ts');
+    expect(scripts['product:ready']).toContain('scripts/governance/release-ready.ts');
+    expect(scripts['product:status']).toContain('scripts/governance/release-status.ts');
+    expect(scripts['release:ready']).toBe('npm run product:ready --');
+    expect(scripts['release:status']).toBe('npm run product:status --');
     expect(scripts['release:aggregate']).toContain('scripts/governance/run-release-aggregate.ts');
 
     expect(scripts['release:campaign:full']).toBeTruthy();
@@ -423,6 +425,10 @@ describe('release readiness human entrypoints', () => {
     expect(scripts['release:deploy-template-package']).toContain(
       'scripts/governance/deploy-template-package.ts',
     );
+    expect(scripts['product:ready']).not.toContain('release-contract-artifact');
+    expect(scripts['product:status']).not.toContain('release-contract-artifact');
+    expect(scripts['product:ready']).not.toContain('deploy-template-package');
+    expect(scripts['product:status']).not.toContain('deploy-template-package');
     expect(scripts['release:ready']).not.toContain('release-contract-artifact');
     expect(scripts['release:status']).not.toContain('release-contract-artifact');
     expect(scripts['release:ready']).not.toContain('deploy-template-package');
@@ -432,13 +438,35 @@ describe('release readiness human entrypoints', () => {
   it('keeps the release readiness checklist centered on clean human entrypoints', () => {
     const checklist = readFileSync('docs/user-guides/release-readiness-checklist.md', 'utf8');
 
-    expect(checklist).toContain('npm run release:ready');
-    expect(checklist).toContain('npm run release:status');
+    expect(checklist).toContain('npm run product:ready');
+    expect(checklist).toContain('npm run product:status');
+    expect(checklist).toMatch(/release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|过渡)/i);
     expect(checklist).toContain('internal adapter');
     expect(checklist).not.toMatch(/Terminal result/i);
 
     for (const pattern of RELEASE_HUMAN_DOC_FORBIDDEN_COPYABLE_PATTERNS) {
       expect(checklist, `release checklist must not expose internal adapter as copyable human path: ${pattern}`).not.toMatch(pattern);
+    }
+  });
+
+  it('keeps common human surfaces prioritized on product readiness entrypoints', () => {
+    for (const surface of [
+      'README.md',
+      'DEVELOPMENT.md',
+      'AGENTS.md',
+      'Makefile',
+      'docs/README.md',
+      'docs/agent-task-runner-runbook.md',
+      'docs/testing/verification-campaigns-v1.md',
+    ]) {
+      const content = readFileSync(surface, 'utf8');
+      expect(content, `${surface} must expose npm run product:ready`).toContain('npm run product:ready');
+      const productIndex = content.indexOf('npm run product:ready');
+      const releaseAliasIndex = content.indexOf('npm run release:ready');
+      if (releaseAliasIndex >= 0) {
+        expect(productIndex, `${surface} must mention product:ready before the transition release alias`).toBeLessThan(releaseAliasIndex);
+        expect(content, `${surface} must label release:ready as a transition alias`).toMatch(/release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|过渡)/i);
+      }
     }
   });
 

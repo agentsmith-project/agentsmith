@@ -102,11 +102,11 @@ npm run test:e2e:integration:agent-task:terminal:ux
 ### Current release-grade Agent task path
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 
-默认从 `release:ready` 发起 release-grade campaign，用 `release:status` 查看当前 verdict / evidence 状态。`release:campaign:full` 只作为 `release:ready` 后面的 internal adapter identity 出现，不是 Agent task runbook 里的可复制发布命令。下面的 owner identity 只用于 campaign 失败后的 diagnostics / rerun 归因，不能替代 `release:ready`。
+默认从 `product:ready` 发起 release-grade campaign，用 `product:status` 查看当前 readiness / evidence 状态。`npm run release:ready` / `npm run release:status` 只是 deprecated transition aliases / 过渡 alias，不给 deployment、package 或 operator verdict。`release:campaign:full` 只作为 `product:ready` 后面的 internal adapter identity 出现，不是 Agent task runbook 里的可复制发布命令。下面的 owner identity 只用于 campaign 失败后的 diagnostics / rerun 归因，不能替代 `product:ready`。
 
 | Owner identity | Use after campaign failure |
 | --- | --- |
@@ -237,8 +237,8 @@ npm run test:skills:backend-real
 
 如果需要 current release verdict，看：
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
-- human release execution entrypoint: `npm run release:ready`
-- read-only release status entrypoint: `npm run release:status`
+- human release execution entrypoint: `npm run product:ready`
+- read-only release status entrypoint: `npm run product:status`
 - campaign launcher behind the wrapper: internal adapter `release:campaign:full`
 - aggregate-only verifier for an existing campaign: internal verifier `gate:release:full`
 

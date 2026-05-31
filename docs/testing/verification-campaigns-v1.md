@@ -81,7 +81,7 @@ Status: `current reference`
 - 一个 lane 里可以跑 e2e，但 lane 不是 e2e。
 - 一个 gate 可以消费 lane 结果，也可以直接跑某些 tests，但 gate 的本质是 verdict。
 - `lane:mock` 是 current workflow 里的 diagnostic lane surface；它有价值，但不是 product readiness evidence。
-- `npm run release:ready` 是面向人的 product-side readiness / handoff input completeness 入口；`npm run release:status` 是只读状态入口。`release:campaign:full` 只作为 `release:ready` 后面的 internal adapter identity 出现，`gate:release:full` 只是在 campaign context 内做 aggregate-only readiness check，不执行任何 suite。
+- `npm run product:ready` 是面向人的 product-side readiness / handoff input completeness 入口；`npm run product:status` 是只读状态入口。`npm run release:ready` / `npm run release:status` 只是 deprecated transition aliases / 过渡 alias，不给 deployment、package 或 operator verdict。`release:campaign:full` 只作为 `product:ready` 后面的 internal adapter identity 出现，`gate:release:full` 只是在 campaign context 内做 aggregate-only readiness check，不执行任何 suite。
 
 ## 4. 诊断路径 vs verdict 路径
 
@@ -111,8 +111,8 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `npm run verify -- --goal=real --run`
 - `npm run verify -- --goal=visual --run`
 - `make local-real-up` / `make local-real-status` / `make local-real-down` / `make local-real-reset`
-- `npm run release:ready`
-- `npm run release:status`
+- `npm run product:ready`
+- `npm run product:status`
 unified deploy 的 producer 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断；
 当前 AgentSmith product readiness campaign 不编排 unified deploy，也不把
 local-kind / product-flow deploy evidence 作为 product readiness 必需证据。
@@ -124,14 +124,14 @@ local-kind / product-flow deploy evidence 作为 product readiness 必需证据�
 - `gate:default` 不是 full visual，也不是 product readiness 结论
 - `lane:visual` 是 full visual 的 internal evidence owner
 - `gate:release` 不替代 `lane:visual`
-- `release:ready` 先跑非 verdict precheck，precheck 失败时不进入 campaign、也不写 product readiness 结论
+- `product:ready` 先跑非 verdict precheck，precheck 失败时不进入 campaign、也不写 product readiness 结论
 - internal adapter `release:campaign:full` 编排 product-side readiness required steps，并在最后调用 aggregate-only 的 `gate:release:full`
 - `gate:release:full` 只能在显式 campaign root / run id context 下复核已有 evidence，不是日常执行入口
 
 结论：
 - 诊断路径可以帮助你修问题
 - verdict 路径负责给出最后结论
-- 不能用前者代替后者，也不应该每修一个小问题就直接从头跑完整 `release:ready`
+- 不能用前者代替后者，也不应该每修一个小问题就直接从头跑完整 `product:ready`
 
 ## 5. 当前 campaign taxonomy
 
@@ -194,8 +194,8 @@ local-kind / product-flow deploy evidence 作为 product readiness 必需证据�
 | Role | Surface | What it proves |
 | --- | --- | --- |
 | human visual entry | `npm run verify -- --goal=visual --run` | release 外 full visual verification |
-| human product readiness entry | `npm run release:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
-| read-only status | `npm run release:status` | 读取 latest summary / status，不重新聚合 evidence |
+| human product readiness entry | `npm run product:ready` | 先执行非 verdict precheck，precheck 通过后进入 official campaign |
+| read-only status | `npm run product:status` | 读取 latest summary / status，不重新聚合 evidence |
 | deploy diagnostic | unified deploy producers | transition-only focused diagnostics / 过渡期专项诊断 for local-kind image handoff、K8s rollout、ingress route smoke；不属于当前 AgentSmith product readiness 必需证据 |
 | deploy smoke diagnostic | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
 | product diagnostic | focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 project、files、managed runner task 最小诊断；不属于当前 AgentSmith product readiness 必需证据 |
@@ -206,7 +206,7 @@ local-kind / product-flow deploy evidence 作为 product readiness 必需证据�
 | evidence owner | internal adapter `gate:release` / `lane:backend-real:release` | backend-real product readiness 与 `ux_trace_bundle` 证据 |
 | aggregate readiness check | internal verifier `gate:release:full` | aggregate-only 聚合已有 campaign evidence，不执行任何 suite |
 
-`npm run release:ready` 是 AgentSmith product-side readiness / handoff input completeness 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 readiness 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
+`npm run product:ready` 是 AgentSmith product-side readiness / handoff input completeness 的人类入口；release 外 full visual verification 用 `npm run verify -- --goal=visual --run`。internal adapter `release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 readiness 判断。`gate:release:full` 如果没有 campaign context，就不应该被新人当作 release 执行入口。
 
 ## 6. 证据完整性和命令通过同等重要
 
@@ -341,13 +341,13 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 
 4. 只在 release 外需要 full visual 时跑 `npm run verify -- --goal=visual --run`
 - 不是所有改动都要第一步就跑 visual
-- product-side readiness / handoff verification 用 `npm run release:ready`
+- product-side readiness / handoff verification 用 `npm run product:ready`
 
 5. backend-real 与 release gate 分开理解
 - `test:backend-real:core` / `lane:backend-real:core` 更像默认层真实验证
 - `gate:release` / `lane:backend-real:release` 才是 backend-real product readiness 义务
 
-6. 发布级人类入口看 `npm run release:ready`
+6. 发布级人类入口看 `npm run product:ready`
 - 它先执行 non-verdict precheck，再调用 official one-shot product readiness campaign
 - campaign 会在 context 内调用 aggregate-only 的 `gate:release:full`
 - 不要把 `gate:release:full` 当成第一轮问题定位工具或 suite launcher

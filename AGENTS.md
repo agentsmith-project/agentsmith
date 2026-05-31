@@ -59,12 +59,14 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 ```bash
 npm run dev / build / start / lint
 npm run verify / npm run verify -- --goal=<pr|real|visual> --run
-npm run release:ready / npm run release:status
+npm run product:ready / npm run product:status
 npm run contracts:check / contracts:check-openapi / openapi:check-generated
 make local-real-up / local-real-status / local-real-down / local-real-reset
 ```
 
-Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命令只作为 progressive validation 里的 focused diagnostics、evidence producer 或 owner runbook adapter；它们不能替代阶段/最终验收，收口时必须按风险回到 `npm run verify -- --goal=... --run` 或 `npm run release:ready`。
+`npm run release:ready` / `npm run release:status` 保留为 deprecated transition aliases / 过渡 alias；它们不给 deployment、package 或 operator verdict。
+
+Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命令只作为 progressive validation 里的 focused diagnostics、evidence producer 或 owner runbook adapter；它们不能替代阶段/最终验收，收口时必须按风险回到 `npm run verify -- --goal=... --run` 或 `npm run product:ready`。
 
 ## 架构要点
 
@@ -108,9 +110,9 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 **执行**: 不让 Playwright 管理服务启动，手动启动后用 `BASE_URL` 运行，清理代理环境变量；UI/visual 变更先跑受影响 visual scenario grep/snapshot，只有视觉系统/整页级改动、最终视觉验收或明确用户/发布要求才跑 full visual catalog
 
 **验证范围控制**:
-- 不要在每个小改动后运行重门禁：`npm run verify -- --goal=real --run`、`npm run release:ready`、full visual catalog、full unified deploy rollout/smoke 等。
+- 不要在每个小改动后运行重门禁：`npm run verify -- --goal=real --run`、`npm run product:ready`、full visual catalog、full unified deploy rollout/smoke 等。
 - 采用渐进验证：每个 change slice 先跑最小相关的 TDD/unit/contract/focused integration/focused e2e/focused visual 命令，用 `npm run verify` dry-run/plan 或 focused diagnostics 判断范围。
-- 重门禁（`npm run verify -- --goal=pr|real|visual --run` / `npm run release:ready`）放在阶段收口、最终交付、合并/发布/部署前，或改动跨多个模块、权限、合约、运行路径时执行。
+- 重门禁（`npm run verify -- --goal=pr|real|visual --run` / `npm run product:ready`）放在阶段收口、最终交付、合并/发布/部署前，或改动跨多个模块、权限、合约、运行路径时执行。
 - focused 变绿只是局部证据，不是发布签署；最终 evidence 必须匹配用户请求与改动风险。
 - 每个 change slice 先按 `DEVELOPMENT.md` 的 “Pre-GA 开发提效约定” 明确 exit criteria / evidence。
 - 重门禁只在风险和阶段匹配时跑；不要把 focused diagnostic 写成 release/deploy/package/operator verdict。
@@ -120,7 +122,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 - 改 Agent task / terminal execution context、runner ticket scope、Context Store ownership 时，再加跑 focused producer `npm run test:skills:backend-real`
 - `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 verification entrypoint
 - Agent task runner 主链 owner diagnostics 可用 `npm run test:agent-task:runner:fast` / `npm run test:agent-task:runner:backend-real`
-- diagnostics 变绿后，按改动范围和当前阶段决定是否升级到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`
+- diagnostics 变绿后，按改动范围和当前阶段决定是否升级到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run product:ready`
 
 ## 测试 ID 规范
 

@@ -134,7 +134,7 @@ Human-facing command blocks intentionally list clean entrypoints only.
 
 Internal adapters and evidence producers remain in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `package.json`, but are not rendered here as copyable human defaults.
 
-`npm run release:ready` and `npm run release:status` keep raw logs available while ending on a short evidence summary. Treat common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations as diagnostic unless the referenced evidence names them as the blocker.
+`npm run product:ready` and `npm run product:status` keep raw logs available while ending on a short evidence summary. `npm run release:ready` and `npm run release:status` remain deprecated transition aliases and do not produce deployment, package, or operator verdicts. Treat common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations as diagnostic unless the referenced evidence names them as the blocker.
 
 ### 环境
 
@@ -155,8 +155,8 @@ npm run verify
 ### 发布
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 <!-- current-workflow:governance-model:end -->
 

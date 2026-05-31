@@ -294,11 +294,16 @@ for (const [label, block] of [
   for (const pattern of QUICK_HUMAN_FORBIDDEN_COMMAND_PATTERNS) {
     forbidMatch(block, pattern, `${label} must not expose advanced command pattern in the quick path: ${pattern}`);
   }
-  requireMatch(block, /release:status[\s\S]*read-only/i, `${label} must describe release:status as read-only`);
+  requireMatch(block, /product:status[\s\S]*read-only/i, `${label} must describe product:status as read-only`);
   forbidMatch(
     block,
-    /release:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
-    `${label} must not describe release:status as producing or re-aggregating a verdict`,
+    /product:status[\s\S]{0,120}(?:verdict|re-aggregat|aggregate)/i,
+    `${label} must not describe product:status as producing or re-aggregating a verdict`,
+  );
+  requireMatch(
+    block,
+    /release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|过渡)/i,
+    `${label} must describe release:ready/status as transition aliases`,
   );
 }
 
@@ -406,8 +411,8 @@ requireMatch(releaseChecklist, /preflight/i, 'release checklist must label prefl
 requireMatch(releaseChecklist, /evidence owner/i, 'release checklist must label evidence-owner steps');
 requireMatch(releaseChecklist, /aggregate readiness check/i, 'release checklist must label the aggregate readiness check step');
 requireMatch(releaseChecklist, /CI green/i, 'release checklist must explain what CI green means');
-requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define release:ready as the human-facing product readiness / handoff entrypoint');
-requireMatch(releaseChecklist, /npm run release:status/, 'release checklist must define release:status as the read-only product readiness status entrypoint');
+requireMatch(releaseChecklist, /npm run product:ready/, 'release checklist must define product:ready as the human-facing product readiness / handoff entrypoint');
+requireMatch(releaseChecklist, /npm run product:status/, 'release checklist must define product:status as the read-only product readiness status entrypoint');
 requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics');
 requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics');
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow deploy diagnostics');

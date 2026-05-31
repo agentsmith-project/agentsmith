@@ -48,7 +48,7 @@ Before you run commands, choose one entry path:
 | --- | --- | --- |
 | `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run verify` for the dry-run plan. |
 | `local_manual` | You need the real local API, Agent tasks, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
-| `release_grade` | You need an AgentSmith product-side readiness / handoff input completeness answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the frozen summary/projection snapshot. |
+| `release_grade` | You need an AgentSmith product-side readiness / handoff input completeness answer after a large change, release prep, or incident fix. | Run `npm run product:ready`; use `npm run product:status` to read the frozen summary/projection snapshot. |
 
 Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when a failure needs maintainer diagnosis and you need the smallest command that can reproduce or narrow it. The catalog is not a default command directory; diagnostic commands help you find the problem, then the clean entrypoint gives the product or gate conclusion for that layer.
 
@@ -94,13 +94,14 @@ Authoritative definition:
 Command naming rule:
 - `npm run dev` is the canonical frontend/mock development entrypoint
 - `make` is the canonical entrypoint for local-real environment orchestration
-- `npm run` is the canonical entrypoint for clean verification and release wrappers
+- `npm run` is the canonical entrypoint for clean verification and product readiness wrappers
 - Maintainer troubleshooting: `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints
 
 Quick path note:
 - `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.
-- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.
-- `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.
+- `npm run product:status` is read-only; it reads the latest product readiness summary plus the frozen projection/snapshot fields recorded in that summary.
+- `npm run product:ready` and `npm run product:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.
+- `npm run release:ready` and `npm run release:status` remain deprecated transition aliases; they do not produce deployment, package, or operator verdicts.
 
 ### 环境
 
@@ -121,8 +122,8 @@ npm run verify
 ### 发布
 
 ```bash
-npm run release:ready
-npm run release:status
+npm run product:ready
+npm run product:status
 ```
 <!-- current-workflow:readme:end -->
 
@@ -166,9 +167,9 @@ This validates the required behavior for MVP deployment without sandbox:
 
 ### Internal Adapters And Owner Diagnostics
 
-For daily verification, use the generated workflow entry above: `npm run verify`. For AgentSmith product-side readiness / handoff input completeness, use `npm run release:ready` and `npm run release:status`.
+For daily verification, use the generated workflow entry above: `npm run verify`. For AgentSmith product-side readiness / handoff input completeness, use `npm run product:ready` and `npm run product:status`.
 
-Low-level `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts exist in `package.json` for CI, `release:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
+Low-level `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` scripts exist in `package.json` for CI, `product:ready`, and evidence-owner runbooks. They are internal adapters, not a default command directory for ordinary development, testing, or release work.
 
 When a product readiness campaign points to a specific owner, use the named adapter family from the owner runbook or manifest rather than copying commands from this README. Examples of readiness evidence owner identities are `gate:default`, `lane:visual`, `gate:release`, and the aggregate-only `gate:release:full`; unified deploy producers are transition-only focused diagnostics / 过渡期专项诊断, not current AgentSmith product readiness owners.
 

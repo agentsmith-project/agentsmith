@@ -58,13 +58,14 @@ function renderCurrentWorkflowDocBlock(): string {
     'Command naming rule:',
     '- `npm run dev` is the canonical frontend/mock development entrypoint',
     '- `make` is the canonical entrypoint for local-real environment orchestration',
-    '- `npm run` is the canonical entrypoint for clean verification and release wrappers',
+    '- `npm run` is the canonical entrypoint for clean verification and product readiness wrappers',
     '- Maintainer troubleshooting: `gate:*`, `lane:*`, `backend-real:*`, and `release:campaign:*` stay internal adapters/evidence producers, not default human entrypoints',
     '',
     'Quick path note:',
     '- `make help-extended` repeats this clean human surface and points owners to manifest-backed internal adapters.',
-    '- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.',
-    '- `npm run release:ready` and `npm run release:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.',
+    '- `npm run product:status` is read-only; it reads the latest product readiness summary plus the frozen projection/snapshot fields recorded in that summary.',
+    '- `npm run product:ready` and `npm run product:status` end with a short evidence summary; raw logs stay available, and common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations are diagnostic unless the evidence names them as the blocker.',
+    '- `npm run release:ready` and `npm run release:status` remain deprecated transition aliases; they do not produce deployment, package, or operator verdicts.',
     '',
     ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -95,8 +96,9 @@ function renderDevelopmentWorkflowBlock(): string {
     '',
     'Quick path note:',
     '- `make help-extended` 只重复 clean human surface；owner 需要内部 adapter 时回到 manifest / runbook。',
-    '- `npm run release:status` is read-only; it reads the latest release summary plus the frozen projection/snapshot fields recorded in that summary.',
-    '- `npm run release:ready` / `npm run release:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。',
+    '- `npm run product:status` is read-only; it reads the latest product readiness summary plus the frozen projection/snapshot fields recorded in that summary.',
+    '- `npm run product:ready` / `npm run product:status` 最后输出短 evidence summary；原始日志仍保留，NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 evidence 明确列为 blocker 时才进入主结论。',
+    '- `npm run release:ready` / `npm run release:status` 保留为 deprecated transition aliases / 过渡 alias；它们不提供 deployment、package 或 operator verdict。',
     '',
     ...quickSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -111,7 +113,7 @@ function renderGovernanceModelCommandBlock(): string {
     '',
     'Internal adapters and evidence producers remain in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `package.json`, but are not rendered here as copyable human defaults.',
     '',
-    '`npm run release:ready` and `npm run release:status` keep raw logs available while ending on a short evidence summary. Treat common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations as diagnostic unless the referenced evidence names them as the blocker.',
+    '`npm run product:ready` and `npm run product:status` keep raw logs available while ending on a short evidence summary. `npm run release:ready` and `npm run release:status` remain deprecated transition aliases and do not produce deployment, package, or operator verdicts. Treat common setup warnings such as NO_COLOR, already-existing Postgres resources, or containerd deprecations as diagnostic unless the referenced evidence names them as the blocker.',
     '',
     ...listQuickHumanCurrentWorkflowSections().flatMap((section, index, sections) => {
       const block = renderCommandList(section).split('\n');
@@ -155,7 +157,8 @@ function renderMakeHelpExtendedBlock(): string {
   }
 
   lines.push('\t@echo "Maintainer diagnostics (internal adapter context):"');
-  lines.push('\t@echo "  package.json keeps gate/lane/backend-real/release:campaign scripts for CI, release:ready, and evidence owners."');
+  lines.push('\t@echo "  package.json keeps gate/lane/backend-real/release:campaign scripts for CI, product:ready, and evidence owners."');
+  lines.push('\t@echo "  release:ready/status remain deprecated transition aliases, not deployment/package/operator verdicts."');
   lines.push('\t@echo "  They are intentionally omitted from help output as copyable human defaults."');
   lines.push('\t@echo ""');
 
@@ -177,6 +180,9 @@ function renderMakeQuickHelpBlock(): string {
     lines.push(`\t@echo "    ${sentence}"`);
     lines.push('\t@echo ""');
   }
+  lines.push('\t@echo "  release:ready/status"');
+  lines.push('\t@echo "    Deprecated transition aliases; not deployment/package/operator verdicts."');
+  lines.push('\t@echo ""');
 
   return lines.join('\n');
 }

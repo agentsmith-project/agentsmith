@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "${SCRIPT_DIR}/require-monorepo-runner-diagnostic-opt-in.sh" "scripts/local-manual/start-runner.sh"
+
+source "${SCRIPT_DIR}/common.sh"
 init_local_manual_env
 if [[ -z "${MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT:-}" ]]; then
   MBOS_AGENT_TASK_DEVELOPER_WORKSPACE_ROOT="${ROOT_DIR}/.local-manual/ags-workspace"

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+bash "${ROOT_DIR}/scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh" "scripts/agent-task-terminal-ux-real-gate.sh"
+
 source "${ROOT_DIR}/scripts/local-manual/common.sh"
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY

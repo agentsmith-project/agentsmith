@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER="${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}"
+if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER}" == "1" ]]; then
+  bash "${SCRIPT_DIR}/require-monorepo-runner-diagnostic-opt-in.sh" "scripts/local-manual/seed-agent-task-diagnostics.sh"
+fi
+
+source "${SCRIPT_DIR}/common.sh"
 init_local_manual_env
 require_preset_endpoint_env
 AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"
-LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER="${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}"
 
 if ! local_manual_platform_is_ready; then
   err "local-manual platform is not ready; run make local-manual-up first"

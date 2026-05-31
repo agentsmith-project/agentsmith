@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
+bash "${ROOT_DIR}/scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh" "scripts/agent-task-terminal-matrix-real-gate.sh"
+
 source "${ROOT_DIR}/scripts/local-manual/common.sh"
 
 AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE="${AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE:-developer_runner}"

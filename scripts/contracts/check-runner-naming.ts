@@ -960,6 +960,53 @@ function getMakeTargetBody(targetName: string): string | null {
     : remaining;
 }
 
+function requireMonorepoRunnerDiagnosticGuardBeforeSideEffects(
+  filePath: string,
+  sideEffectMarkers: readonly string[],
+  consistencyScope: string,
+  sourceList: string,
+): void {
+  requirePath(
+    filePath,
+    `${filePath} must stay guarded as a monorepo runner diagnostic for ${consistencyScope} while referenced by ${sourceList}`,
+  );
+  if (!existsSync(path.join(rootDir, filePath))) return;
+
+  const source = readText(filePath);
+  const guardMarker = path.basename(monorepoRunnerDiagnosticGuardScript);
+  const guardIndex = source.indexOf(guardMarker);
+  if (guardIndex < 0) {
+    failures.push(
+      `${filePath} must call ${monorepoRunnerDiagnosticGuardScript} before local runner diagnostic side effects for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+    return;
+  }
+
+  const markerIndexes = sideEffectMarkers.map((marker) => ({
+    marker,
+    index: source.indexOf(marker),
+  }));
+  for (const { marker, index } of markerIndexes) {
+    if (index < 0) {
+      failures.push(
+        `${filePath} must keep side-effect marker "${marker}" covered by ${monorepoRunnerDiagnosticGuardScript} for ${consistencyScope} while referenced by ${sourceList}`,
+      );
+    }
+  }
+
+  const presentIndexes = markerIndexes
+    .map(({ index }) => index)
+    .filter((index) => index >= 0);
+  if (presentIndexes.length === 0) return;
+
+  const firstSideEffectIndex = Math.min(...presentIndexes);
+  if (guardIndex > firstSideEffectIndex) {
+    failures.push(
+      `${filePath} must check ${monorepoRunnerDiagnosticOptInEnv}=1 before local runner diagnostic side effects for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+}
+
 function requireRunnerTransitionOnlyDiagnosticConsistency(): void {
   const references = getRunnerTransitionDiagnosticReferences();
   if (references.length === 0) return;
@@ -1034,6 +1081,59 @@ function requireRunnerTransitionOnlyDiagnosticConsistency(): void {
         `Makefile target ${targetName} must check ${monorepoRunnerDiagnosticOptInEnv}=1 before starting monorepo runner diagnostics for ${consistencyScope} while referenced by ${sourceList}`,
       );
     }
+  }
+  for (const entrypoint of [
+    {
+      filePath: "scripts/local-manual/start-runner.sh",
+      sideEffectMarkers: [
+        'source "${SCRIPT_DIR}/common.sh"',
+        "stop_local_manual_runner_owner_aware replace_runner",
+        "local_runtime_start_owned_service",
+      ],
+    },
+    {
+      filePath: "scripts/local-manual/seed-agent-task-diagnostics.sh",
+      sideEffectMarkers: [
+        'source "${SCRIPT_DIR}/common.sh"',
+        "make agent-runner-refresh-token",
+        "make agent-runner-init-resources",
+        'bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"',
+      ],
+    },
+    {
+      filePath: "scripts/agent-task-terminal-matrix-real-gate.sh",
+      sideEffectMarkers: [
+        'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+        "local_manual_platform_is_ready",
+        "bash scripts/local-manual/up.sh",
+        "bash scripts/local-manual/seed-agent-task-diagnostics.sh",
+        "bash scripts/local-manual/start-runner.sh",
+      ],
+    },
+    {
+      filePath: "scripts/agent-task-terminal-real-smoke.sh",
+      sideEffectMarkers: [
+        'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+        "init_local_manual_env",
+        'bash "${ROOT_DIR}/scripts/local-manual/up.sh"',
+        'bash "${ROOT_DIR}/scripts/local-manual/seed-agent-task-diagnostics.sh"',
+        "ensure_local_manual_runner_connected",
+      ],
+    },
+    {
+      filePath: "scripts/agent-task-terminal-ux-real-gate.sh",
+      sideEffectMarkers: [
+        'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+        'AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE=managed_agent_task bash "${ROOT_DIR}/scripts/agent-task-terminal-matrix-real-gate.sh"',
+      ],
+    },
+  ] as const) {
+    requireMonorepoRunnerDiagnosticGuardBeforeSideEffects(
+      entrypoint.filePath,
+      entrypoint.sideEffectMarkers,
+      consistencyScope,
+      sourceList,
+    );
   }
   if (existsSync(path.join(rootDir, monorepoRunnerDiagnosticGuardScript))) {
     const guardSource = readText(monorepoRunnerDiagnosticGuardScript);

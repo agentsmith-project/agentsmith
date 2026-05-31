@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,6 +20,10 @@ function setupStartRunnerFixture() {
   cpSync(
     path.join(process.cwd(), 'scripts/local-manual/start-runner.sh'),
     path.join(scriptsDir, 'start-runner.sh'),
+  );
+  cpSync(
+    path.join(process.cwd(), 'scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh'),
+    path.join(scriptsDir, 'require-monorepo-runner-diagnostic-opt-in.sh'),
   );
 
   writeFileSync(
@@ -229,6 +233,14 @@ function errorStderr(error: unknown): string {
   return '';
 }
 
+function startRunnerEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC: '1',
+    ...extra,
+  };
+}
+
 function writeOwnedRunnerTreeScripts(tempRoot: string) {
   const level1Script = path.join(tempRoot, 'runner-level-1.sh');
   const level2Script = path.join(tempRoot, 'runner-level-2.sh');
@@ -424,7 +436,35 @@ describe('local-manual start-runner', () => {
     );
 
     expect(source).toContain('exec make agent-task-runner-from-state');
+    expect(source).toContain('require-monorepo-runner-diagnostic-opt-in.sh');
     expect(source).not.toContain('AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1');
+  });
+
+  it('fails before runner replacement side effects without diagnostic opt-in', () => {
+    const fixture = setupStartRunnerFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    writeFileSync(fixture.runnerPidFile, '4100\n', 'utf8');
+    writeFileSync(fixture.runnerReadyFile, 'ready\n', 'utf8');
+
+    const result = spawnSync('bash', [fixture.script], {
+      cwd: fixture.tempRoot,
+      env: {
+        ...process.env,
+        AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC: '',
+        PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    expect(result.status).toBe(2);
+    expect(`${result.stdout}\n${result.stderr}`).toContain(
+      'pre-GA transition-only monorepo runner diagnostic',
+    );
+    expect(readFileSync(fixture.runnerPidFile, 'utf8')).toBe('4100\n');
+    expect(readFileSync(fixture.runnerReadyFile, 'utf8')).toBe('ready\n');
+    expect(existsSync(fixture.eventsFile)).toBe(false);
   });
 
   it('blocks restart without deleting tracked state or launching a replacement runner', () => {
@@ -438,11 +478,10 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           START_RUNNER_JANITOR_MODE: 'block',
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -464,11 +503,10 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
           START_RUNNER_FAST_TIMEOUT: '1',
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -490,12 +528,11 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
           START_RUNNER_REAL_CHILD: '1',
           START_RUNNER_FAIL_PID_FILE_WRITE: '1',
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -522,12 +559,11 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
           START_RUNNER_REAL_CHILD: '1',
           START_RUNNER_FAIL_OWNER_STATE_WRITE: '1',
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -554,12 +590,11 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
           START_RUNNER_FAST_TIMEOUT: '1',
           START_RUNNER_JANITOR_MODE: 'rollback_block',
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -578,12 +613,11 @@ describe('local-manual start-runner', () => {
 
     execFileSync('bash', [fixture.script], {
       cwd: fixture.tempRoot,
-      env: {
-        ...process.env,
+      env: startRunnerEnv({
         PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
         START_RUNNER_FAST_TIMEOUT: '1',
         START_RUNNER_HEALTH_CONNECTED: '1',
-      },
+      }),
       stdio: 'pipe',
     });
 
@@ -607,12 +641,11 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [fixture.script], {
         cwd: fixture.tempRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
           START_RUNNER_FAST_TIMEOUT: '1',
           START_RUNNER_HEALTH_STATE: 'shutting_down',
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {
@@ -644,15 +677,14 @@ describe('local-manual start-runner', () => {
     try {
       execFileSync('bash', [path.join(repoRoot, 'scripts/local-manual/start-runner.sh')], {
         cwd: repoRoot,
-        env: {
-          ...process.env,
+        env: startRunnerEnv({
           ENV_FILE: fixture.envFile,
           BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
           RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
           LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
           START_RUNNER_FAST_TIMEOUT: '1',
           PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
-        },
+        }),
         stdio: 'pipe',
       });
     } catch (caught) {

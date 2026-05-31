@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "${ROOT_DIR}/scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh" "scripts/agent-task-terminal-real-smoke.sh"
+
 source "${ROOT_DIR}/scripts/local-manual/common.sh"
 
 init_local_manual_env

@@ -3,6 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+function expectSourceOrder(source: string, earlier: string, later: string): void {
+  const earlierIndex = source.indexOf(earlier);
+  const laterIndex = source.indexOf(later);
+  expect(earlierIndex, `missing source marker: ${earlier}`).toBeGreaterThanOrEqual(0);
+  expect(laterIndex, `missing source marker: ${later}`).toBeGreaterThanOrEqual(0);
+  expect(earlierIndex).toBeLessThan(laterIndex);
+}
+
 describe("check-runner-naming contract", () => {
   const agentTaskSpecs = [
     "e2e/integration-agent-task-runner.spec.ts",
@@ -333,6 +341,9 @@ describe("check-runner-naming contract", () => {
     expect(checkerSource).toContain(
       "explicit opt-in diagnostic consistency",
     );
+    expect(checkerSource).toContain(
+      "requireMonorepoRunnerDiagnosticGuardBeforeSideEffects",
+    );
     expect(checkerSource).toContain("runnerTransitionDiagnosticReferenceFiles");
     expect(checkerSource).toContain(guardScript);
     expect(checkerSource).toContain(optInEnv);
@@ -426,6 +437,55 @@ describe("check-runner-naming contract", () => {
 
     expect(allowed.status).toBe(0);
     expect(`${allowed.stdout}\n${allowed.stderr}`).toBe("\n");
+  });
+
+  it("keeps monorepo runner diagnostic guards ahead of side-effecting upper entries", () => {
+    const root = process.cwd();
+    const guardScript = "require-monorepo-runner-diagnostic-opt-in.sh";
+    const startRunner = readFileSync(
+      path.join(root, "scripts/local-manual/start-runner.sh"),
+      "utf8",
+    );
+    const seedDiagnostics = readFileSync(
+      path.join(root, "scripts/local-manual/seed-agent-task-diagnostics.sh"),
+      "utf8",
+    );
+    const matrixGate = readFileSync(
+      path.join(root, "scripts/agent-task-terminal-matrix-real-gate.sh"),
+      "utf8",
+    );
+    const terminalSmoke = readFileSync(
+      path.join(root, "scripts/agent-task-terminal-real-smoke.sh"),
+      "utf8",
+    );
+    const terminalUxGate = readFileSync(
+      path.join(root, "scripts/agent-task-terminal-ux-real-gate.sh"),
+      "utf8",
+    );
+
+    expectSourceOrder(startRunner, guardScript, 'source "${SCRIPT_DIR}/common.sh"');
+    expectSourceOrder(startRunner, guardScript, "stop_local_manual_runner_owner_aware replace_runner");
+    expectSourceOrder(seedDiagnostics, guardScript, 'source "${SCRIPT_DIR}/common.sh"');
+    expectSourceOrder(seedDiagnostics, guardScript, "make agent-runner-refresh-token");
+    expect(seedDiagnostics).toContain(
+      'if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER}" == "1" ]]; then',
+    );
+    expectSourceOrder(
+      matrixGate,
+      guardScript,
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+    );
+    expectSourceOrder(matrixGate, guardScript, "bash scripts/local-manual/up.sh");
+    expectSourceOrder(
+      terminalSmoke,
+      guardScript,
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+    );
+    expectSourceOrder(
+      terminalUxGate,
+      guardScript,
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+    );
   });
 
   it("keeps preprod baseline capture from generating legacy runner rollback startup paths", () => {

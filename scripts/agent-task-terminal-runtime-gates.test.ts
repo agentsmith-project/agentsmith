@@ -54,6 +54,14 @@ function findRequiredTrimmedLineIndex(source: string, expectedLine: string): num
   return index;
 }
 
+function expectSourceOrder(source: string, earlier: string, later: string): void {
+  const earlierIndex = source.indexOf(earlier);
+  const laterIndex = source.indexOf(later);
+  expect(earlierIndex, `missing source marker: ${earlier}`).toBeGreaterThanOrEqual(0);
+  expect(laterIndex, `missing source marker: ${later}`).toBeGreaterThanOrEqual(0);
+  expect(earlierIndex).toBeLessThan(laterIndex);
+}
+
 function extractMakeTargetBody(source: string, target: string): string {
   const lines = source.split(/\r?\n/);
   const start = lines.findIndex((line) => line === `${target}:` || line.startsWith(`${target}:`));
@@ -501,6 +509,11 @@ describe('Agent Task terminal runtime gates', () => {
     expect(matrixGate).toContain('finish_matrix_in_final_posture');
     expect(matrixGate).toContain('keeping managed terminal runtime posture for downstream UX recovery gate');
     expect(matrixGate).toContain('AGENT_RUNNER_SEED_MODE=managed_agent_task');
+    expectSourceOrder(
+      matrixGate,
+      'require-monorepo-runner-diagnostic-opt-in.sh',
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+    );
     expect(matrixGate).toContain('source "${ROOT_DIR}/scripts/local-manual/common.sh"');
     expect(matrixGate).toContain('local_manual_platform_is_ready');
     expect(matrixGate).not.toContain('scripts/juicefs-orphan-preflight.ts');
@@ -537,6 +550,11 @@ describe('Agent Task terminal runtime gates', () => {
     const matrixLine = findRequiredTrimmedLineIndex(
       uxGate,
       'AGENT_TASK_TERMINAL_MATRIX_FINAL_MODE=managed_agent_task bash "${ROOT_DIR}/scripts/agent-task-terminal-matrix-real-gate.sh"',
+    );
+    expectSourceOrder(
+      uxGate,
+      'require-monorepo-runner-diagnostic-opt-in.sh',
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
     );
     const initEnvLine = findRequiredTrimmedLineIndex(uxGate, 'init_local_manual_env');
     const mongoUrlRequiredLine = findRequiredTrimmedLineIndex(uxGate, 'if [[ -z "${MONGO_URL:-}" ]]; then');
@@ -592,6 +610,11 @@ describe('Agent Task terminal runtime gates', () => {
     const stopProcesses = extractFunctionBody(localManualCommon, 'stop_local_manual_processes');
 
     expect(startRunner).toContain('make agent-task-runner-from-state');
+    expectSourceOrder(
+      startRunner,
+      'require-monorepo-runner-diagnostic-opt-in.sh',
+      'source "${SCRIPT_DIR}/common.sh"',
+    );
     expect(startRunner).not.toContain('exec make notebook-runner');
     expect(startRunner).not.toContain("stop_matching_processes 'make agent-task-runner-from-state'");
     expect(startRunner).toContain('trap');
@@ -630,6 +653,13 @@ describe('Agent Task terminal runtime gates', () => {
     );
 
     expect(seedDiagnostics).toContain('AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"');
+    expect(seedDiagnostics).toContain('LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER="${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER:-1}"');
+    expect(seedDiagnostics).toContain('if [[ "${LOCAL_MANUAL_AGENT_TASK_DIAGNOSTICS_START_RUNNER}" == "1" ]]; then');
+    expectSourceOrder(
+      seedDiagnostics,
+      'require-monorepo-runner-diagnostic-opt-in.sh',
+      'source "${SCRIPT_DIR}/common.sh"',
+    );
     expect(initResources).toContain('AGENT_RUNNER_SEED_MODE="${AGENT_RUNNER_SEED_MODE:-developer_runner}"');
     expect(initResources).toContain('agent-runner-seed-developer-runner.ts');
     expect(initResources).toContain('agent-runner-seed-managed-runner.ts');
@@ -686,6 +716,11 @@ describe('Agent Task terminal runtime gates', () => {
     );
 
     expect(externalSmoke).toContain('TASK_AGENT_RUNNER_ID="${TASK_AGENT_RUNNER_ID:-$(state_get agent_runner.id)}"');
+    expectSourceOrder(
+      externalSmoke,
+      'require-monorepo-runner-diagnostic-opt-in.sh',
+      'source "${ROOT_DIR}/scripts/local-manual/common.sh"',
+    );
     expect(externalSmoke).toContain('TASK_AGENT_RUNNER_PROVIDER="${TASK_AGENT_RUNNER_PROVIDER:-$(state_get agent_runner.runner_provider)}"');
     expect(externalSmoke).toContain('expected Developer runner diagnostic state');
     expect(externalSmoke).toContain('bound_runner_id: agentRunnerId');

@@ -16,10 +16,13 @@ import {
 const RAW_RELEASE_KIT_EVIDENCE_ENVELOPE_SCHEMA_VERSION =
   'agentsmith.release-kit-evidence-envelope/v1';
 const RELEASE_KIT_EVIDENCE_SUBJECT_NAME = 'release-kit-evidence-subject';
+const STALE_RELEASE_KIT_OUTPUT_REPLACEMENTS: Record<string, string> = {
+  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json': 'airgap_bundle_check',
+};
 
 const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[]> = {
   'image-map.json': ['evidence.json', 'image-map.json'],
-  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json': [
+  airgap_bundle_check: [
     'evidence.json',
     'airgap-bundle-check-report.json',
     'airgap-bundle-manifest.json',
@@ -27,6 +30,11 @@ const RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES: Record<string, readonly string[
   ],
   'online-deployment-gate-report.json': ['evidence.json', 'online-deployment-gate-report.json'],
 };
+
+interface ReleaseKitEvidenceSubjectFileBinding {
+  requiredFiles: readonly string[];
+  allowedFiles: readonly string[];
+}
 
 export interface ReleaseKitEvidenceAdapterTargetProfile {
   target_cluster: CurrentDeploymentTargetCluster;
@@ -104,6 +112,41 @@ function validateContextTargetProfile(
   return null;
 }
 
+function profileRequiredEvidenceSubjectFilesForOutput(
+  releaseKitOutput: string,
+  rawEnvelope: Record<string, unknown>,
+): readonly string[] {
+  if (
+    releaseKitOutput === 'airgap_bundle_check'
+    && rawEnvelope.substrate_source === 'kit_installed'
+    && rawEnvelope.distribution === 'airgap'
+  ) {
+    return ['substrate-pack-manifest.json'];
+  }
+
+  return [];
+}
+
+function evidenceSubjectFileBindingForOutput(
+  releaseKitOutput: string,
+  rawEnvelope: Record<string, unknown>,
+): ReleaseKitEvidenceSubjectFileBinding | null {
+  const baseRequiredFiles = RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES[releaseKitOutput];
+  if (!baseRequiredFiles) {
+    return null;
+  }
+
+  const requiredFiles = [
+    ...baseRequiredFiles,
+    ...profileRequiredEvidenceSubjectFilesForOutput(releaseKitOutput, rawEnvelope),
+  ];
+
+  return {
+    requiredFiles,
+    allowedFiles: requiredFiles,
+  };
+}
+
 function resolveMapping(
   rawEnvelope: Record<string, unknown>,
 ): CurrentReleaseBoundaryValidationResult<typeof CURRENT_RELEASE_KIT_EVIDENCE_MAPPING[number]> {
@@ -116,6 +159,14 @@ function resolveMapping(
     return invalid(
       'release_kit_output',
       'release-kit cannot produce AgentSmith product-flow evidence.',
+    );
+  }
+
+  const staleReplacement = STALE_RELEASE_KIT_OUTPUT_REPLACEMENTS[releaseKitOutput];
+  if (staleReplacement) {
+    return invalid(
+      'release_kit_output',
+      `stale pre-GA release_kit_output; use ${staleReplacement}.`,
     );
   }
 
@@ -138,11 +189,13 @@ function resolveMapping(
 function validateEvidenceSubjectOutputBinding(
   releaseKitOutput: string,
   evidenceSubject: Record<string, unknown>,
+  rawEnvelope: Record<string, unknown>,
 ): CurrentReleaseBoundaryValidationResult | null {
-  const requiredFiles = RELEASE_KIT_OUTPUT_REQUIRED_SUBJECT_FILES[releaseKitOutput];
-  if (!requiredFiles) {
+  const fileBinding = evidenceSubjectFileBindingForOutput(releaseKitOutput, rawEnvelope);
+  if (!fileBinding) {
     return null;
   }
+  const { requiredFiles, allowedFiles } = fileBinding;
 
   if (!Array.isArray(evidenceSubject.files)) {
     return null;
@@ -157,7 +210,7 @@ function validateEvidenceSubjectOutputBinding(
   }
 
   const missingFiles = requiredFiles.filter((requiredFile) => !subjectFilePaths.has(requiredFile));
-  const extraFiles = [...subjectFilePaths].filter((subjectFile) => !requiredFiles.includes(subjectFile));
+  const extraFiles = [...subjectFilePaths].filter((subjectFile) => !allowedFiles.includes(subjectFile));
   if (missingFiles.length === 0 && extraFiles.length === 0) {
     return null;
   }
@@ -171,7 +224,7 @@ function validateEvidenceSubjectOutputBinding(
 
   return invalid(
     'evidence_subject.files',
-    `release_kit_output ${releaseKitOutput} requires evidence_subject.files to contain only ${requiredFiles.join(', ')}.`,
+    `release_kit_output ${releaseKitOutput} requires evidence_subject.files to contain only ${allowedFiles.join(', ')}.`,
   );
 }
 
@@ -276,6 +329,7 @@ export function adaptReleaseKitRawEvidenceEnvelope(
   const bindingResult = validateEvidenceSubjectOutputBinding(
     mappingResult.value.release_kit_output,
     evidenceSubject,
+    rawEnvelope,
   );
   if (bindingResult) {
     return bindingResult;

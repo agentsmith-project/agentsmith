@@ -396,6 +396,8 @@ describe('current release boundary schema', () => {
       ok: true,
       value: CURRENT_RELEASE_KIT_EVIDENCE_MAPPING,
     });
+    expect(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.map((entry) => entry.release_kit_output))
+      .not.toContain('airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json');
 
     const productFlowMapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => entry.target === 'product_flows');
     expect(productFlowMapping).toMatchObject({
@@ -420,7 +422,7 @@ describe('current release boundary schema', () => {
         ],
       }),
       expect.objectContaining({
-        release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
+        release_kit_output: 'airgap_bundle_check',
         target: 'images',
         current_campaign_target_profiles: [
           {
@@ -428,9 +430,27 @@ describe('current release boundary schema', () => {
             substrate_source: 'external_declared',
             distribution: 'airgap',
           },
+          {
+            target_cluster: 'existing_kubernetes',
+            substrate_source: 'kit_installed',
+            distribution: 'airgap',
+          },
         ],
       }),
     ]));
+
+    const staleAirgapMapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.map((entry) => (
+      entry.canonical_writer.gate_id === 'release-kit-airgap-bundle-check'
+        ? {
+            ...entry,
+            release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
+          }
+        : entry
+    ));
+    expectInvalid(
+      validateReleaseKitEvidenceMapping(staleAirgapMapping),
+      'stale pre-GA release kit output',
+    );
   });
 
   it('rejects tag-only images, missing image digests, and missing required product flows', () => {
@@ -1369,6 +1389,143 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateReleaseKitEvidence(airgapWithOnlineDistribution),
       'target profile tuple is not allowed for the mapped current release-kit evidence writer',
+    );
+  });
+
+  it('accepts kit-installed airgap bundle evidence with substrate-pack-manifest subject binding', () => {
+    const kitInstalledAirgap = cloneFixture('release-kit-evidence.valid.json');
+    kitInstalledAirgap.target = 'images';
+    kitInstalledAirgap.substrate_source = 'kit_installed';
+    kitInstalledAirgap.distribution = 'airgap';
+    kitInstalledAirgap.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    kitInstalledAirgap.substrate_connection_truth = cloneFixture('substrate-connection.kit-installed.valid.json');
+    (kitInstalledAirgap.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    (kitInstalledAirgap.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      },
+      {
+        path: 'image-map.json',
+        sha256: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
+      {
+        path: 'substrate-pack-manifest.json',
+        sha256: 'sha256:9999999999999999999999999999999999999999999999999999999999999999',
+      },
+    ];
+    rehashArtifactProvenanceSubject(kitInstalledAirgap, 'evidence_subject');
+
+    expect(validateReleaseKitEvidence(kitInstalledAirgap).ok).toBe(true);
+    expect(validateReleaseKitEvidenceForAggregate(kitInstalledAirgap)).toMatchObject({
+      ok: true,
+      value: {
+        target: 'images',
+        substrate_source: 'kit_installed',
+        distribution: 'airgap',
+      },
+    });
+  });
+
+  it('rejects kit-installed airgap bundle evidence missing substrate-pack-manifest subject binding', () => {
+    const kitInstalledAirgap = cloneFixture('release-kit-evidence.valid.json');
+    kitInstalledAirgap.target = 'images';
+    kitInstalledAirgap.substrate_source = 'kit_installed';
+    kitInstalledAirgap.distribution = 'airgap';
+    kitInstalledAirgap.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    kitInstalledAirgap.substrate_connection_truth = cloneFixture('substrate-connection.kit-installed.valid.json');
+    (kitInstalledAirgap.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    (kitInstalledAirgap.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      },
+      {
+        path: 'image-map.json',
+        sha256: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
+    ];
+    rehashArtifactProvenanceSubject(kitInstalledAirgap, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(kitInstalledAirgap),
+      'substrate-pack-manifest.json',
+    );
+  });
+
+  it('rejects external-declared airgap bundle evidence with substrate-pack-manifest subject binding', () => {
+    const externalDeclaredAirgap = cloneFixture('release-kit-evidence.valid.json');
+    externalDeclaredAirgap.target = 'images';
+    externalDeclaredAirgap.distribution = 'airgap';
+    (externalDeclaredAirgap.substrate_connection_truth as Record<string, unknown>).distribution = 'airgap';
+    externalDeclaredAirgap.canonical_writer = {
+      gate_id: 'release-kit-airgap-bundle-check',
+      line_kind: 'release_kit_airgap_bundle_check',
+    };
+    (externalDeclaredAirgap.evidence_subject as Record<string, unknown>).files = [
+      {
+        path: 'evidence.json',
+        sha256: 'sha256:8888888888888888888888888888888888888888888888888888888888888888',
+      },
+      {
+        path: 'airgap-bundle-check-report.json',
+        sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      },
+      {
+        path: 'airgap-bundle-manifest.json',
+        sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      },
+      {
+        path: 'image-map.json',
+        sha256: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
+      {
+        path: 'substrate-pack-manifest.json',
+        sha256: 'sha256:9999999999999999999999999999999999999999999999999999999999999999',
+      },
+    ];
+    rehashArtifactProvenanceSubject(externalDeclaredAirgap, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(externalDeclaredAirgap),
+      'evidence_subject.files must contain only mapped release-kit subject file(s)',
+    );
+  });
+
+  it('rejects release-kit evidence missing metadata subject file evidence.json', () => {
+    const withoutMetadataSubjectFile = cloneFixture('release-kit-evidence.valid.json');
+    const metadataFiles = (
+      withoutMetadataSubjectFile.evidence_subject as Record<string, unknown>
+    ).files as Record<string, unknown>[];
+    (withoutMetadataSubjectFile.evidence_subject as Record<string, unknown>).files = metadataFiles
+      .filter((file) => file.path !== 'evidence.json');
+    rehashArtifactProvenanceSubject(withoutMetadataSubjectFile, 'evidence_subject');
+
+    expectInvalid(
+      validateReleaseKitEvidence(withoutMetadataSubjectFile),
+      'release-kit metadata subject file(s): evidence.json',
     );
   });
 

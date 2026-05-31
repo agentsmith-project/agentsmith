@@ -654,7 +654,7 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
   },
   {
-    release_kit_output: 'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
+    release_kit_output: 'airgap_bundle_check',
     target: 'images',
     canonical_writer: {
       gate_id: 'release-kit-airgap-bundle-check',
@@ -669,6 +669,11 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
       {
         target_cluster: 'existing_kubernetes',
         substrate_source: 'external_declared',
+        distribution: 'airgap',
+      },
+      {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'kit_installed',
         distribution: 'airgap',
       },
     ],
@@ -762,10 +767,23 @@ const RELEASE_KIT_TARGET_SET = new Set<string>([
 ] satisfies CurrentReleaseKitEvidenceTarget[]);
 const REQUIRED_CURRENT_RELEASE_KIT_EVIDENCE_MAPPING_OUTPUTS = [
   'image-map.json',
-  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json',
+  'airgap_bundle_check',
   'online-deployment-gate-report.json',
   'AgentSmith product flow aggregate',
 ] as const;
+const STALE_RELEASE_KIT_OUTPUT_REPLACEMENTS: Record<string, string> = {
+  'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json': 'airgap_bundle_check',
+};
+const RELEASE_KIT_OUTPUT_NATIVE_SUBJECT_FILES: Record<string, readonly string[]> = {
+  'image-map.json': ['image-map.json'],
+  airgap_bundle_check: [
+    'airgap-bundle-check-report.json',
+    'airgap-bundle-manifest.json',
+    'image-map.json',
+  ],
+  'online-deployment-gate-report.json': ['online-deployment-gate-report.json'],
+};
+const RELEASE_KIT_EVIDENCE_METADATA_SUBJECT_FILES = ['evidence.json'] as const;
 const INVENTORY_SOURCE_SET = new Set<string>([
   'product_images',
   'adopted_provider_images',
@@ -1373,7 +1391,13 @@ export function validateReleaseKitEvidence(
   const evidenceSubject = value.evidence_subject;
   const evidenceSubjectRecord = validateReleaseKitEvidenceSubject(evidenceSubject, 'evidence_subject', failures);
   if (evidenceSubjectRecord && evidenceMapping) {
-    validateReleaseKitEvidenceSubjectMappingFiles(evidenceSubjectRecord, evidenceMapping, failures);
+    validateReleaseKitEvidenceSubjectMappingFiles(
+      evidenceSubjectRecord,
+      evidenceMapping,
+      substrateSource,
+      distribution,
+      failures,
+    );
   }
 
   if (target === 'product_flows') {
@@ -1403,23 +1427,55 @@ export function validateReleaseKitEvidence(
 }
 
 function releaseKitOutputNativeFiles(releaseKitOutput: string): string[] {
+  const nativeFiles = RELEASE_KIT_OUTPUT_NATIVE_SUBJECT_FILES[releaseKitOutput];
+  if (nativeFiles) {
+    return [...nativeFiles];
+  }
+
   return releaseKitOutput
     .split('+')
     .map((part) => part.split('#')[0])
     .filter((part) => part.endsWith('.json'));
 }
 
+function releaseKitOutputProfileRequiredFiles(
+  releaseKitOutput: string,
+  substrateSource: CurrentDeploymentSubstrateSource | undefined,
+  distribution: CurrentDeploymentDistribution | undefined,
+): string[] {
+  if (
+    releaseKitOutput === 'airgap_bundle_check'
+    && substrateSource === 'kit_installed'
+    && distribution === 'airgap'
+  ) {
+    return ['substrate-pack-manifest.json'];
+  }
+
+  return [];
+}
+
 function validateReleaseKitEvidenceSubjectMappingFiles(
   evidenceSubject: Record<string, unknown>,
   mapping: CurrentReleaseKitEvidenceMappingEntry,
+  substrateSource: CurrentDeploymentSubstrateSource | undefined,
+  distribution: CurrentDeploymentDistribution | undefined,
   failures: CurrentReleaseBoundaryValidationFailure[],
 ): void {
   if (mapping.canonical_evidence_owner !== 'agentsmith-release-kit') {
     return;
   }
 
-  const requiredFiles = releaseKitOutputNativeFiles(mapping.release_kit_output);
-  if (requiredFiles.length === 0 || !Array.isArray(evidenceSubject.files)) {
+  const metadataRequiredFiles = [...RELEASE_KIT_EVIDENCE_METADATA_SUBJECT_FILES];
+  const nativeRequiredFiles = releaseKitOutputNativeFiles(mapping.release_kit_output);
+  const profileRequiredFiles = releaseKitOutputProfileRequiredFiles(
+    mapping.release_kit_output,
+    substrateSource,
+    distribution,
+  );
+  if (
+    (metadataRequiredFiles.length === 0 && nativeRequiredFiles.length === 0 && profileRequiredFiles.length === 0)
+    || !Array.isArray(evidenceSubject.files)
+  ) {
     return;
   }
 
@@ -1429,11 +1485,38 @@ function validateReleaseKitEvidenceSubjectMappingFiles(
       subjectFilePaths.add(entry.path);
     }
   }
-  const missingFiles = requiredFiles.filter((file) => !subjectFilePaths.has(file));
-  if (missingFiles.length > 0) {
+  const missingMetadataFiles = metadataRequiredFiles.filter((file) => !subjectFilePaths.has(file));
+  if (missingMetadataFiles.length > 0) {
     failures.push({
       path: 'evidence_subject.files',
-      reason: `evidence_subject.files must include mapped release-kit native output file(s): ${missingFiles.join(', ')}.`,
+      reason: `evidence_subject.files must include release-kit metadata subject file(s): ${missingMetadataFiles.join(', ')}.`,
+    });
+  }
+  const missingNativeFiles = nativeRequiredFiles.filter((file) => !subjectFilePaths.has(file));
+  if (missingNativeFiles.length > 0) {
+    failures.push({
+      path: 'evidence_subject.files',
+      reason: `evidence_subject.files must include mapped release-kit native output file(s): ${missingNativeFiles.join(', ')}.`,
+    });
+  }
+  const missingProfileFiles = profileRequiredFiles.filter((file) => !subjectFilePaths.has(file));
+  if (missingProfileFiles.length > 0) {
+    failures.push({
+      path: 'evidence_subject.files',
+      reason: `evidence_subject.files must include profile-bound release-kit subject file(s): ${missingProfileFiles.join(', ')}.`,
+    });
+  }
+
+  const allowedFiles = [
+    ...metadataRequiredFiles,
+    ...nativeRequiredFiles,
+    ...profileRequiredFiles,
+  ];
+  const extraFiles = [...subjectFilePaths].filter((file) => !allowedFiles.includes(file));
+  if (extraFiles.length > 0) {
+    failures.push({
+      path: 'evidence_subject.files',
+      reason: `evidence_subject.files must contain only mapped release-kit subject file(s): ${allowedFiles.join(', ')}.`,
     });
   }
 }
@@ -1782,6 +1865,13 @@ export function validateReleaseKitEvidenceMapping(
 
     const releaseKitOutput = validateRequiredString(entry.release_kit_output, `${path}.release_kit_output`, failures);
     if (releaseKitOutput) {
+      const staleReplacement = STALE_RELEASE_KIT_OUTPUT_REPLACEMENTS[releaseKitOutput];
+      if (staleReplacement) {
+        failures.push({
+          path: `${path}.release_kit_output`,
+          reason: `stale pre-GA release kit output "${releaseKitOutput}"; use "${staleReplacement}".`,
+        });
+      }
       if (seenReleaseKitOutputs.has(releaseKitOutput)) {
         failures.push({
           path: `${path}.release_kit_output`,

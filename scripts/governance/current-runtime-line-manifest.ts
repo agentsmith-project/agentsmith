@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; formal release language is `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `install_substrates` is a release-kit-owned minimal/adjacent substrate pack capability, not AgentSmith substrate deployment or provider-matrix expansion.',
+    summary: 'There is one AgentSmith deploy model; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `kit_provided` is kit-supplied substrate pack, truth, routability, and materiality validation, not substrate installation. A real `install_substrates` path is a future capability that requires an independent installer producer plus an explicit installer confirmation flag.',
     binding: 'contract',
   },
   {

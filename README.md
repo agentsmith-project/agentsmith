@@ -144,7 +144,7 @@ Current local runtime baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `kit_provided` means kit-supplied substrate pack, truth, routability, and materiality validation, not substrate installation. A real `install_substrates` path is future work and requires an independent installer producer plus an explicit installer confirmation flag.
+- There is one AgentSmith deploy model; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `kit_provided` is kit-supplied substrate pack, truth, routability, and materiality validation, not substrate installation. A real `install_substrates` path is a future capability that requires an independent installer producer plus an explicit installer confirmation flag.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 

@@ -439,11 +439,11 @@ describe("check-runner-naming contract", () => {
       /$/,
       "active handoff",
     );
-    const currentNextBlocker = sliceBetweenMatches(
+    const currentNextFocus = sliceBetweenMatches(
       engineeringReadme,
-      /Current next blocker:/,
+      /Current next focus:/,
       /Historical\/reference note:/,
-      "engineering readme current blocker",
+      "engineering readme current focus",
     );
     const openWorkSections = [
       currentNextSteps,
@@ -479,16 +479,16 @@ describe("check-runner-naming contract", () => {
     expect(handoff).toMatch(
       /backend-real \/ full runtime semantics[\s\S]{0,80}formal verdict[\s\S]{0,80}签名身份[\s\S]{0,80}不是默认下一步/,
     );
-    expect(currentNextBlocker).toMatch(
-      /Current default work[\s\S]{0,120}P6-lite[\s\S]{0,120}(docs|old-reference)/,
+    expect(currentNextFocus).toMatch(
+      /Default work[\s\S]{0,120}P6-lite[\s\S]{0,120}(docs|old-reference)/,
     );
-    expect(currentNextBlocker).toMatch(
+    expect(currentNextFocus).toMatch(
       /release-kit[\s\S]{0,120}runner locked safety[\s\S]{0,120}completed focused\/candidate/,
     );
-    expect(currentNextBlocker).toMatch(
+    expect(currentNextFocus).toMatch(
       /backend-real \/ full runtime semantics[\s\S]{0,120}formal verdict[\s\S]{0,120}airgap readiness[\s\S]{0,120}not current blockers or default next steps/,
     );
-    expect(currentNextBlocker).not.toMatch(
+    expect(currentNextFocus).not.toMatch(
       /Current work is[\s\S]{0,320}(scoped operator runbook acceptance|unsigned scoped evidence|backend-real \/ full runtime semantics|airgap readiness)/,
     );
     expect(plan).toMatch(

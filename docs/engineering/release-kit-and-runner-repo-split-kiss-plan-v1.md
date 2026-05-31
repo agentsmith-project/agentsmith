@@ -7,6 +7,11 @@ Date: 2026-05-27
 Owner: Product + Engineering
 Handoff state: `handoff-ready`
 
+Current status: completed historical phases are archive/reference evidence only, not
+active workload. Current active work is P6-lite docs / old-reference cleanup; new
+rules should first delete or archive duplicated old rules, then add only the
+smallest focused guard when a current risk needs it.
+
 Active plan 读法：
 
 1. AgentSmith 当前是 pre-GA。旧名称、旧路径、旧职责、旧 profile、旧 env、旧脚本入口和已移除字段默认不保留长期正式路径；正式路径不能接就删除或 fail fast。
@@ -14,12 +19,12 @@ Active plan 读法：
 3. 功能核心优先 / 治理最小化：后续只保留服务当前用户路径、当前合同边界、当前安全边界、真实发布/运行安全或 operator 低心智负担的 gate/docs/script；没有明确风险绑定的治理项不进入 active workflow。过时、低收益、只增加心智负担的治理检查/文档/脚本删除优先，其次降级为 focused diagnostic，最后才保留长期 gate。
 4. No vendor-bound invariant：AgentSmith/runner 不提供特定服务商的一等配置、credential、runner skills、OAuth 或 managed credential key/refresh API；Feishu/Jira/GitHub/Gitee/Lark/Atlassian 等业务服务商专用 skills、OAuth、managed credential key/refresh API、manual release step、fixture/evidence 不作为正式成功路径。当前 repo/CI/provenance 使用 GitHub/GHCR 是工程基础设施事实，不等于 AgentSmith/runner 业务集成绑定。
 5. 宪法只补服务商中立建模和工程治理克制原则；release-kit / runner 拆分执行细节仍留在本计划，不把某一轮执行口径写成宪法操作流程。
-6. 当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 应进入 archive/reference，不滚动追加大型矩阵。
+6. 当前 active 正文只维护当前边界、下一步和验收；已完成历史阶段不再作为 active 工作负担，历史 evidence 进入 archive/reference，不滚动追加大型矩阵。
 7. 主协调 agent 只分配/验收，实际修改由 worker TDD 完成；worker 必须先写或调整最小失败测试/fixture，再改文档或 guard。
 8. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `kit_provided`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。
    真正 `install_substrates` 是未来能力，前提是 release-kit 有独立 installer producer + explicit installer confirmation flag。
 9. release-kit scoped operator runbook acceptance / unsigned scoped evidence 已由 release-kit HEAD 841702a 完成到 focused/candidate 边界；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入，不作为当前默认下一步。
-10. P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。
+10. P6-lite 文档/旧引用清理默认按小切片 + focused diagnostics 推进，使用 doc/static guard + targeted contracts；新增规则时优先删除或归档旧重复规则。只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。
 11. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 12. 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)；它是只读交接证据，不是规范源。
 
@@ -44,7 +49,7 @@ Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做
 
 当前默认下一步 / 当前 P6-lite open work：
 
-1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
+1. 继续 P6-lite 文档/旧引用归档清理：已完成历史阶段不再作为 active 工作负担；合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；新增规则时优先删除或归档旧重复规则，只保留必要 fail-fast 负向测试和短期待删说明。
 2. release-kit 不再把 scoped acceptance / unsigned evidence 当作当前待办；后续只有新触发的真实 deploy/package 风险才拆小 focused slice。formal release engineering verdict、offline release engineering gate 或 formal operator adoption verdict 不作为 pre-GA 默认下一步。
 3. runner 不再把已完成的 locked safety smoke 当作当前待办；backend-real / full runtime semantics 仍不一口吃，后续只按真实风险拆小 focused runtime safety slice。
 

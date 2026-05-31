@@ -143,7 +143,7 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 ## 开发工作流
 
 **Route Gate**: 合并前 `npm run contracts:check` + `contracts:check-openapi` + `openapi:check-generated`
-**提交前**: `npm run verify -- --goal=pr --run`；只做计划时用 `npm run verify`
+**提交前**: 普通小切片先跑 `npm run verify` dry-run/plan 或相关 focused check；PR/merge/阶段收口或高风险改动再跑 `npm run verify -- --goal=pr --run`
 **错误处理**: `useApiError` + ErrorBoundary
 
 ## 常见问题 & 开发注意

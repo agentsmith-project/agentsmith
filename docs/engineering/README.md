@@ -26,9 +26,9 @@ Current active plan:
 
 - [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./release-kit-and-runner-repo-split-kiss-plan-v1.md) - active pre-GA plan for the release-kit / runner repo split and AgentSmith product-side boundary.
 
-Current next blocker:
+Current next focus:
 
-- Current default work is only P6-lite active docs / old-reference cleanup inside AgentSmith.
+- Default work is only P6-lite active docs / old-reference cleanup inside AgentSmith.
 - release-kit scoped evidence and runner locked safety are completed focused/candidate items; they remain focused evidence, not deployment/package/operator verdict or release readiness.
 - backend-real / full runtime semantics, formal verdict, and airgap readiness are not current blockers or default next steps.
 

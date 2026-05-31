@@ -384,7 +384,8 @@ requireMatch(gateContract, /stable gate id/i, 'current gate manifest contract mu
 requireMatch(gateContract, /adapter surface/i, 'current gate manifest contract must describe npmScript\\/command\\/ciJob as adapter surfaces', failures);
 requireMatch(gateContract, /execution target/i, 'current gate manifest contract must describe structured execution targets', failures);
 requireMatch(gateContract, /operator hint/i, 'current gate manifest contract must describe command as an operator hint', failures);
-requireMatch(gateContract, /npm run release:ready/, 'current gate manifest contract must identify npm run release:ready as the human-facing release entrypoint', failures);
+requireMatch(gateContract, /npm run product:ready/, 'current gate manifest contract must identify npm run product:ready as the human-facing product readiness entrypoint', failures);
+requireMatch(gateContract, /release:(?:ready|status)[\s\S]{0,240}(?:transition|deprecated|alias|过渡)/i, 'current gate manifest contract must describe release:ready/status only as deprecated transition aliases', failures);
 requireMatch(gateContract, /release:campaign:full[\s\S]{0,240}internal adapter|internal adapter[\s\S]{0,240}release:campaign:full/i, 'current gate manifest contract must describe release:campaign:full as an internal adapter identity', failures);
 requireMatch(gateResultContract, /release:campaign:full[\s\S]{0,240}not a writer identity/i, 'current gate result schema contract must keep campaign launchers out of writer identity truth', failures);
 requireMatch(gateResultContract, /gate:release:full[\s\S]{0,240}aggregate-only/i, 'current gate result schema contract must describe gate:release:full as aggregate-only', failures);

@@ -106,7 +106,8 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - the terminal aggregate verifier for an existing release campaign
 - depends on the release evidence owned by `gate:release` and `lane:visual`
 - requires both `visual_scene_catalog` and `ux_trace_bundle` evidence to be present in their canonical roots
-- does not execute suites, gates, or lanes itself; the human-facing release execution entrypoint is `npm run release:ready`, which delegates to internal adapter `release:campaign:full` after precheck passes
+- does not execute suites, gates, or lanes itself; the human-facing product readiness entrypoint is `npm run product:ready`, which delegates to internal adapter `release:campaign:full` after precheck passes
+- `npm run release:ready` / `npm run release:status` are deprecated transition aliases for `npm run product:ready` / `npm run product:status`; they are not canonical human entrypoints
 - requires explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>` or an equivalent explicit run id context
 - must evaluate evidence completeness from the current verification campaign manifest, not from whatever paths an older `evidence.json` happened to declare
 - must reject stale evidence pointers that omit current required check ids, even when all referenced dummy paths exist

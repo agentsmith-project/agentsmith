@@ -34,7 +34,7 @@ import {
 } from './status-projection';
 import { redactSensitiveText } from './redaction';
 
-export type AutomatedReleaseVerdict = 'PASSED' | 'FAILED';
+export type ProductReadinessVerdict = 'PASSED' | 'FAILED';
 
 export const AGENTSMITH_RELEASE_CONTRACT_PATH_ENV = 'AGENTSMITH_RELEASE_CONTRACT_PATH';
 
@@ -62,7 +62,7 @@ export interface ReleaseSummary {
   campaign_id: 'release-full';
   campaign_run_id: string;
   campaign_root: string;
-  automated_release_verdict: AutomatedReleaseVerdict;
+  product_readiness_verdict: ProductReadinessVerdict;
   status: CurrentGateResultStatus;
   failure_class: CurrentGateResultFailureClass;
   stage: string;
@@ -641,7 +641,7 @@ export function writeReleaseSummaryForCampaign(options: WriteReleaseSummaryOptio
     campaign_id: 'release-full',
     campaign_run_id: basename(campaignRoot),
     campaign_root: campaignRoot,
-    automated_release_verdict: status === 'passed' ? 'PASSED' : 'FAILED',
+    product_readiness_verdict: status === 'passed' ? 'PASSED' : 'FAILED',
     status,
     failure_class: failureClass,
     stage: terminalResult.stage as string,
@@ -918,6 +918,28 @@ function validateReleaseContractSummary(value: unknown): void {
 
 function parseSummary(path: string): ReleaseSummary {
   const summary = requireRecord(readJson(path), 'release summary');
+  assertAllowedFields(summary, new Set([
+    'schema',
+    'campaign_id',
+    'campaign_run_id',
+    'campaign_root',
+    'product_readiness_verdict',
+    'status',
+    'failure_class',
+    'stage',
+    'blocked_step',
+    'why',
+    'next_action',
+    'terminal_result_path',
+    'summary_json_path',
+    'summary_md_path',
+    'evidence_package',
+    'manual_operator_signoff',
+    'release_contract',
+    'run_observability',
+    'deploy_check_snapshot',
+    'generated_at',
+  ]), 'release summary');
   if (summary.schema !== 'agentsmith_release_summary/v1') {
     throw new Error('release summary schema must be agentsmith_release_summary/v1.');
   }
@@ -926,7 +948,7 @@ function parseSummary(path: string): ReleaseSummary {
     'campaign_id',
     'campaign_run_id',
     'campaign_root',
-    'automated_release_verdict',
+    'product_readiness_verdict',
     'status',
     'failure_class',
     'stage',
@@ -950,8 +972,8 @@ function parseSummary(path: string): ReleaseSummary {
   if (summary.campaign_id !== 'release-full') {
     throw new Error('release summary cache campaign_id must be release-full.');
   }
-  if (summary.automated_release_verdict !== 'PASSED' && summary.automated_release_verdict !== 'FAILED') {
-    throw new Error('release summary cache automated_release_verdict is invalid.');
+  if (summary.product_readiness_verdict !== 'PASSED' && summary.product_readiness_verdict !== 'FAILED') {
+    throw new Error('release summary cache product_readiness_verdict is invalid.');
   }
   if (!CURRENT_GATE_RESULT_STATUSES.includes(summary.status as CurrentGateResultStatus)) {
     throw new Error('release summary cache status is invalid.');
@@ -1072,7 +1094,7 @@ function summaryMatchesTerminal(args: {
   const checks: Array<[boolean, string]> = [
     [resolve(args.summary.campaign_root) === resolve(args.campaignRoot), 'campaign_root'],
     [args.summary.campaign_run_id === basename(resolve(args.campaignRoot)), 'campaign_run_id'],
-    [args.summary.automated_release_verdict === expectedVerdict, 'automated_release_verdict'],
+    [args.summary.product_readiness_verdict === expectedVerdict, 'product_readiness_verdict'],
     [args.summary.status === terminalStatus, 'status'],
     [args.summary.failure_class === terminalFailureClass, 'failure_class'],
     [args.summary.stage === args.terminalResult.stage, 'stage'],

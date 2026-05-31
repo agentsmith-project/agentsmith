@@ -1273,7 +1273,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run product:status',
-        description: 'read the latest release summary in read-only mode',
+        description: 'read the latest product readiness summary in read-only mode',
         canonical: 'npm',
         npmScript: 'product:status',
         recommended: true,

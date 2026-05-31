@@ -9,7 +9,7 @@ export const CURRENT_STATUS_PROJECTION_VERSION = 1 as const;
 
 export type CurrentStatusProjectionGoal =
   | 'verify'
-  | 'release-ready'
+  | 'product-readiness'
   | 'local-real'
   | null;
 
@@ -239,7 +239,7 @@ const STATUS_PROJECTION_REQUIRED_TOP_LEVEL_FIELDS = new Set<string>(
 
 const GOALS = new Set<Exclude<CurrentStatusProjectionGoal, null>>([
   'verify',
-  'release-ready',
+  'product-readiness',
   'local-real',
 ]);
 

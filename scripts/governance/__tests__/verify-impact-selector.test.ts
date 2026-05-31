@@ -386,7 +386,8 @@ describe('verify impact selector', () => {
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
     expect(plan.requiredEvidence).toEqual(['backend-real ux_trace_bundle evidence']);
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not a product readiness conclusion');
@@ -1954,7 +1955,8 @@ export default defineConfig({
       expect(plan.recommendedCommands).not.toContain('npm run verify:real');
       expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
       expect(plan.riskSummary.warnings.join('\n')).toContain('cannot cover product-readiness backend-real owner changes');
-      expect(plan.riskSummary.warnings.join('\n')).toContain('npm run release:ready');
+      expect(plan.riskSummary.warnings.join('\n')).toContain('npm run product:ready');
+      expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run release:ready');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify -- --goal=release-real --run');
       expect(plan.riskSummary.warnings.join('\n')).not.toContain('npm run verify:release-real');
       expect(plan.releaseVerdict).toBe(false);
@@ -1973,7 +1975,8 @@ export default defineConfig({
     expect(plan.requiredLevels).toEqual(['V3']);
     expect(plan.finalVerdict).toBe('delegated_to_executed_verification_commands');
     expect(plan.releaseVerdict).toBe(false);
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not a product readiness conclusion');
@@ -2008,7 +2011,8 @@ export default defineConfig({
 
     expect(plan.requiredLevels).toContain('V4');
     expect(plan.affectedSurfaces).toContain('release/deploy');
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.recommendedCommands).toContain('npm run test:unified-deploy:unit');
     expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
     expect(plan.recommendedCommands).not.toContain('npm run release:ready');
@@ -2533,7 +2537,8 @@ export default defineConfig({
     ]);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
     expect(plan.changedFileImpacts.flatMap((impact) => impact.matchedRules)).not.toContain('unmapped_source');
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.releaseVerdict).toBe(false);
     expect(plan.changedFileImpacts).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -3237,7 +3242,8 @@ export default defineConfig({
     expect(plan.recommendedCommands).toEqual([]);
     expect(plan.affectedSurfaces).toEqual(['release/deploy']);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.releaseVerdict).toBe(false);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.storyCards[0]).toMatchObject({
@@ -3260,7 +3266,8 @@ export default defineConfig({
     expect(plan.recommendedCommands).toEqual([]);
     expect(plan.affectedSurfaces).toEqual(['release/deploy']);
     expect(plan.affectedSurfaces).not.toContain('unmapped-source');
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.nextAction).toContain('not a product readiness conclusion');
     expect(plan.finalVerdict).toBe('not_evaluated_next_action_required');
     expect(plan.releaseVerdict).toBe(false);
@@ -3497,11 +3504,12 @@ export default defineConfig({
     expect(plan.affectedSurfaces).toEqual(['release-real-owner']);
     expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-real-owner');
     expect(plan.affectedStories.join('\n')).not.toContain('No changed files provided or detected');
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
     expect(plan.nextAction).not.toContain('npm run verify -- --goal=release-real --run');
     expect(plan.nextAction).not.toContain('npm run verify:release-real');
     expect(plan.nextAction).toContain('not a product readiness conclusion');
-    expect(report.recommended_commands).toEqual(['npm run release:ready']);
+    expect(report.recommended_commands).toEqual(['npm run product:ready']);
     expect(JSON.stringify(report)).not.toContain('npm run verify:');
     expect(JSON.stringify(report)).not.toContain('--goal=release-real');
     expect(JSON.stringify(report)).not.toContain('--goal=debug');
@@ -3613,7 +3621,8 @@ export default defineConfig({
     expect(plan.requiredLevels).toEqual(['V4']);
     expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
     expect(plan.recommendedCommands).toEqual(['npm run test:unified-deploy:unit']);
-    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.nextAction).toContain('npm run product:ready');
+    expect(plan.nextAction).not.toContain('npm run release:ready');
   });
 
   it('writes the story acceptance report JSON and markdown under the requested report root', () => {

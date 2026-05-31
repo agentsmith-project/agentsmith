@@ -245,7 +245,7 @@ exit 0
       const status = readReleaseStatus({ campaignRoot: root });
       expect(status.kind).toBe('ready');
       if (status.kind === 'ready') {
-        expect(status.summary.automated_release_verdict).toBe('FAILED');
+        expect(status.summary.product_readiness_verdict).toBe('FAILED');
         expect(status.summary.terminal_result_path).toBe(terminalPath);
       }
     } finally {
@@ -291,7 +291,7 @@ exit 0
       const status = readReleaseStatus({ campaignRoot: root });
       expect(status.kind).toBe('ready');
       if (status.kind === 'ready') {
-        expect(status.summary.automated_release_verdict).toBe('FAILED');
+        expect(status.summary.product_readiness_verdict).toBe('FAILED');
         expect(status.summary.failure_class).toBe('product_regression');
         expect(status.summary.terminal_result_path).toBe(terminalPath);
       }

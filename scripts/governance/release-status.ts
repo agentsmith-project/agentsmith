@@ -51,7 +51,7 @@ export function runReleaseStatus(argv: readonly string[] = process.argv.slice(2)
     const runId = status?.kind === 'ready' ? status.summary.campaign_run_id : null;
     const evidenceGitSha = status?.kind === 'ready' ? status.latest?.git_sha ?? null : null;
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       campaignRoot,
       runId,
       currentGitSha: tryResolveCurrentGitSha(),

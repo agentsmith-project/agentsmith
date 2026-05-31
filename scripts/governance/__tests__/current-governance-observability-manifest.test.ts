@@ -101,7 +101,7 @@ describe('current governance observability manifest', () => {
 
   it('keeps manifest forbidden fields aligned with projection, diagnostics, and redacted diagnostic output', () => {
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       generatedAt: '2026-04-27T12:00:00.000Z',
     });
     const statusForbiddenFields = byId('status_projection_schema').safety_boundary.forbidden_fields;

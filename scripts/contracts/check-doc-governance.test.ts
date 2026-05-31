@@ -313,7 +313,7 @@ describe('check-doc-governance historical document detection', () => {
       '',
       '### P6. 清理和防回流',
       '',
-      'P6-lite 文档/旧引用清理默认使用 doc/static guard；如果本切片同时改 release/runtime/product readiness 路径，再跑 `npm run release:ready`。',
+      'P6-lite 文档/旧引用清理默认使用 doc/static guard；如果本切片同时改 release/runtime/product readiness 路径，再跑 `npm run product:ready`。',
       '',
       '## 9. 发布模式',
     ].join('\n');

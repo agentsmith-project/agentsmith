@@ -34,8 +34,8 @@ Plain-language glossary:
 Workflow role model:
 - `scripts/governance/current-workflow-manifest.ts` classifies command surfaces as `environment_setup`, `diagnostic`, `diagnostic_lane`, `evidence_lane`, `gate_verdict`, `terminal_gate_verdict`, or `release_operation`.
 - `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not product readiness evidence and does not replace `gate:default`.
-- `release:ready` is the human-friendly AgentSmith product-side readiness / handoff input completeness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
-- `release:campaign:full` remains the campaign launcher behind `release:ready`. It orchestrates required gates, visual/backend-real evidence lanes, and the aggregate readiness check.
+- `product:ready` is the human-friendly AgentSmith product-side readiness / handoff input completeness launcher. It runs the non-verdict precheck first, then delegates to `release:campaign:full` when precheck passes.
+- `release:campaign:full` remains the internal campaign launcher behind `product:ready`. It orchestrates required gates, visual/backend-real evidence lanes, and the aggregate readiness check.
 - `gate:release:full` is aggregate-only. It should be used only with explicit campaign context, such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`, and must not be described as a suite launcher or daily release entrypoint.
 - `gate:release:full` recomputes required product readiness evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
 
@@ -53,12 +53,12 @@ Current gate truth:
 - gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
 - `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
 - `gate:default` does not own the full visual lane.
-- `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run release:ready` for product-side readiness / handoff input completeness.
+- `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run product:ready` for product-side readiness / handoff input completeness.
 
 Verification governance rules:
 - Focused `测试` commands and targeted `验证通道` runs are diagnosis paths used to localize failures, verify one subsystem, or regenerate one evidence family.
 - Stable engineering acceptance still comes from the machine-readable gate ids in `scripts/governance/current-gate-manifest.ts`; focused reruns never replace the final gate verdict they support.
-- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers. `release:ready` is the human-facing product-side readiness execution entrypoint; it delegates to `release:campaign:full` after the non-verdict precheck passes. `gate:release:full` is the aggregate readiness verifier inside or after an explicit campaign context.
+- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers. `product:ready` is the human-facing product-side readiness execution entrypoint; it delegates to `release:campaign:full` after the non-verdict precheck passes. `gate:release:full` is the aggregate readiness verifier inside or after an explicit campaign context.
 - `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and backend-real product readiness evidence, but they do not replace the aggregate readiness check.
 - For any gate or lane that owns required machine-readable evidence, `command passed` and evidence completeness are same-level acceptance conditions. Missing required review artifacts, missing `visual_scene_catalog`, or missing required `ux_trace_bundle` output is a failure, not a soft warning.
 - Where a current result writer is registered in `scripts/governance/current-gate-result-schema.ts`, evidence completeness also requires canonical `<evidence_dir>/result.json`.
@@ -81,7 +81,7 @@ Current local operational baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `release:ready` product readiness / handoff scope. `kit_provided` is kit-supplied substrate pack, truth, routability, and materiality validation, not substrate installation. A real `install_substrates` path is a future capability that requires an independent installer producer plus an explicit installer confirmation flag.
+- There is one AgentSmith deploy model; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `kit_provided` is kit-supplied substrate pack, truth, routability, and materiality validation, not substrate installation. A real `install_substrates` path is a future capability that requires an independent installer producer plus an explicit installer confirmation flag.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 
@@ -171,8 +171,8 @@ Public human entrypoints:
 - `make local-real-down`
 - `make local-real-reset`
 - `npm run verify` and `npm run verify -- --goal=<pr|real|visual> --run`
-- `npm run release:ready`
-- `npm run release:status`
+- `npm run product:ready`
+- `npm run product:status`
 
 Internal adapters and owner diagnostics stay behind manifests, CI, failure projection, or owner runbooks:
 - `gate:*`, `lane:*`, `backend-real:*`, `release:campaign:*`, `release:aggregate`
@@ -250,7 +250,7 @@ Important:
 5. Ownership rule
 - `gate:default` may contain targeted visual checks inside domain gates.
 - `lane:visual` is the internal full visual evidence owner / verification owner.
-- Human full visual execution outside release uses `npm run verify -- --goal=visual --run`; product-side readiness / handoff verification uses `npm run release:ready`.
+- Human full visual execution outside release uses `npm run verify -- --goal=visual --run`; product-side readiness / handoff verification uses `npm run product:ready`.
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
 - `lane:visual` product readiness authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
 - `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.

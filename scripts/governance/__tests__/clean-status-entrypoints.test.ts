@@ -61,7 +61,7 @@ function writeReleaseSummarySnapshot(campaignRoot: string): void {
     campaign_id: 'release-full',
     campaign_run_id: campaignRoot.split('/').at(-1) ?? 'clean-status-run',
     campaign_root: campaignRoot,
-    automated_release_verdict: 'PASSED',
+    product_readiness_verdict: 'PASSED',
     status: 'passed',
     failure_class: 'none',
     stage: 'aggregate',
@@ -309,6 +309,39 @@ describe('clean status entrypoints', () => {
     }
   });
 
+  it('renders product readiness as the canonical JSON goal without legacy release verdict fields', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'agentsmith-product-status-json-'));
+    try {
+      writeReleaseAggregateResult(campaignRoot);
+      writeReleaseSummarySnapshot(campaignRoot);
+
+      const output = execFileSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--campaign-root',
+        campaignRoot,
+        '--json',
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(output) as Record<string, unknown>;
+      const serialized = JSON.stringify(projection);
+
+      expect(projection.goal).toBe('product-readiness');
+      expect(projection.aggregate_status_ref).toMatchObject({
+        gate_id: 'gate-release-full',
+        line_kind: 'release_full_verdict',
+      });
+      expect(validateCurrentStatusProjection(projection).ok).toBe(true);
+      expect(serialized).not.toMatch(/"goal":"release-ready"/);
+      expect(serialized).not.toContain('automated_release_verdict');
+      expect(serialized).not.toContain('release_verdict');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
   it('keeps release:status missing-latest output focused on the missing evidence pointer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-missing-latest-'));
     const latestPath = join(root, 'latest.json');
@@ -357,7 +390,7 @@ describe('clean status entrypoints', () => {
       expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
       expect(projection).toMatchObject({
         schema: 'agentsmith_status_projection/v1',
-        goal: 'release-ready',
+        goal: 'product-readiness',
         projection_kind: 'read_only',
         lease_status_shadow: null,
         release_decision_produced: false,

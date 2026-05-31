@@ -78,6 +78,7 @@ import {
   TRACE_SPEC_STORY_BINDING_SOURCE_GLOB,
   type TraceSpecStoryMapEntry,
 } from './trace-spec-story-map';
+import { PRODUCT_READY_COMMAND } from './product-readiness-entrypoints';
 
 export const VERIFICATION_CATALOG_SCHEMA = 'agentsmith_verification_catalog/v1' as const;
 export const VERIFICATION_CATALOG_FILE_NAME = 'verification-catalog.json' as const;
@@ -917,7 +918,7 @@ function buildEvidenceProjection(
   } as VerificationCatalogV3EvidenceProjection;
   const v4 = evidenceProjection({
     level: 'V4',
-    owner: 'npm run release:ready',
+    owner: PRODUCT_READY_COMMAND,
     gateId: 'gate-release-full',
     source: 'current_verification_campaign_manifest',
     template: releaseCampaignEvidenceTemplate(verificationCampaigns),

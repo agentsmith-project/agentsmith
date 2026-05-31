@@ -12,6 +12,7 @@ import {
   type VerificationCatalogStory,
   type VerificationCatalogVisualCodeRefMapping,
 } from './verification-catalog';
+import { PRODUCT_READY_COMMAND } from './product-readiness-entrypoints';
 
 export type VerificationGoal = 'debug' | 'pr' | 'visual' | 'real' | 'release-real';
 export type VerificationMode = 'dry-run' | 'run';
@@ -239,7 +240,7 @@ const COMMAND_ORDER = [
 const BARE_AGENT_TASK_INTEGRATION_COMMAND = 'npm run test:e2e:integration:agent-task';
 const AGENT_TASK_INTEGRATION_WITH_API_COMMAND = 'npm run test:e2e:integration:agent-task:with-api';
 const UNIFIED_DEPLOY_UNIT_COMMAND = 'npm run test:unified-deploy:unit';
-export const PUBLIC_RELEASE_READY_COMMAND = 'npm run release:ready';
+export const PUBLIC_PRODUCT_READY_COMMAND = PRODUCT_READY_COMMAND;
 const GOVERNED_PR_VERIFY_COMMAND = 'npm run verify -- --goal=pr --run';
 const GOVERNED_VISUAL_VERIFY_COMMAND = 'npm run verify -- --goal=visual --run';
 const GOVERNED_REAL_VERIFY_COMMAND = 'npm run verify -- --goal=real --run';
@@ -249,10 +250,10 @@ const PUBLIC_GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS: Record<string, string> =
   'npm run verify:default': GOVERNED_PR_VERIFY_COMMAND,
   'npm run verify:visual': GOVERNED_VISUAL_VERIFY_COMMAND,
   [REAL_VERIFY_COMMAND]: GOVERNED_REAL_VERIFY_COMMAND,
-  [RELEASE_REAL_VERIFY_COMMAND]: PUBLIC_RELEASE_READY_COMMAND,
+  [RELEASE_REAL_VERIFY_COMMAND]: PUBLIC_PRODUCT_READY_COMMAND,
 };
 const PUBLIC_VERIFY_TEXT_REPLACEMENTS: readonly (readonly [string, string])[] = [
-  [GOVERNED_RELEASE_REAL_VERIFY_COMMAND, PUBLIC_RELEASE_READY_COMMAND],
+  [GOVERNED_RELEASE_REAL_VERIFY_COMMAND, PUBLIC_PRODUCT_READY_COMMAND],
   ['npm run verify -- --goal=debug --run', GOVERNED_PR_VERIFY_COMMAND],
   ...Object.entries(PUBLIC_GOVERNED_VERIFY_COMMAND_BY_INTERNAL_ALIAS)
     .sort(([left], [right]) => right.length - left.length)
@@ -311,7 +312,7 @@ function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): 
 
 export function publicVerifyRunCommandForGoal(goal: VerificationGoal): string {
   if (goal === 'release-real') {
-    return PUBLIC_RELEASE_READY_COMMAND;
+    return PUBLIC_PRODUCT_READY_COMMAND;
   }
   if (goal === 'debug') {
     return GOVERNED_PR_VERIFY_COMMAND;
@@ -400,7 +401,7 @@ export function verificationRunContractFailure(input: {
   }
 
   if (blockedCommands.includes(RELEASE_REAL_VERIFY_COMMAND)) {
-    return `--goal=${publicGoal} --run cannot cover product-readiness backend-real owner changes; use ${PUBLIC_RELEASE_READY_COMMAND}. This verify report is not a product readiness conclusion; ${PUBLIC_RELEASE_READY_COMMAND} refreshes AgentSmith product readiness / handoff inputs.`;
+    return `--goal=${publicGoal} --run cannot cover product-readiness backend-real owner changes; use ${PUBLIC_PRODUCT_READY_COMMAND}. This verify report is not a product readiness conclusion; ${PUBLIC_PRODUCT_READY_COMMAND} refreshes AgentSmith product readiness / handoff inputs.`;
   }
 
   const blockedGovernedCommands = [...new Set(blockedCommands.map(publicGovernedVerifyCommandForInternalAlias))];
@@ -1801,7 +1802,7 @@ function nextActionPriority(action: string): number {
   if (action.includes('changed-file detection failed')) {
     return 0;
   }
-  if (action.includes('npm run release:ready') || action.includes('Release or deploy path changed')) {
+  if (action.includes(PUBLIC_PRODUCT_READY_COMMAND) || action.includes('Release or deploy path changed')) {
     return 1;
   }
   if (action.includes('Manual impact owner triage')) {
@@ -2279,7 +2280,7 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
 
 function defaultNextAction(levels: readonly VerificationLevel[]): string {
   if (levels.includes('V4')) {
-    return 'Release or deploy-support path changed. Use npm run release:ready to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.';
+    return `Release or deploy-support path changed. Use ${PUBLIC_PRODUCT_READY_COMMAND} to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.`;
   }
   if (levels.includes('V3')) {
     return `Run ${GOVERNED_REAL_VERIFY_COMMAND} after reviewing the fail-closed impact selection.`;
@@ -2304,7 +2305,7 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
   pushUnique(
     accumulator.nextActions,
     goal === 'release-real'
-      ? `Run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`
+      ? `Run ${PUBLIC_PRODUCT_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_PRODUCT_READY_COMMAND} refreshes handoff inputs.`
       : defaultNextAction(levels),
   );
 }
@@ -2357,7 +2358,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       const releaseRealDiagnosticStoryImpact = releaseRealDiagnosticGoal && isReleaseRealDiagnosticStory(exactStory);
       const levels: readonly VerificationLevel[] = releaseRealDiagnosticStoryImpact ? ['V3'] : levelsForStory(exactStory);
       const action = releaseRealDiagnosticStoryImpact
-        ? `Manual story review required because canonical story markdown changed; then run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`
+        ? `Manual story review required because canonical story markdown changed; then run ${PUBLIC_PRODUCT_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_PRODUCT_READY_COMMAND} refreshes handoff inputs.`
         : 'Manual story review required because canonical story markdown changed; then run the governed verification entrypoint.';
       const surface = `story:${exactStory.storyId}`;
       const impactSource: VerificationStoryImpactSource = {
@@ -2768,7 +2769,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
-      const action = `Run ${PUBLIC_RELEASE_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_RELEASE_READY_COMMAND} refreshes handoff inputs.`;
+      const action = `Run ${PUBLIC_PRODUCT_READY_COMMAND} for product-readiness backend-real owner coverage; this report is not a product readiness conclusion until ${PUBLIC_PRODUCT_READY_COMMAND} refreshes handoff inputs.`;
       const surface = 'release-real-owner';
       accumulator.levels.add('V3');
       accumulator.commands.add(RELEASE_REAL_VERIFY_COMMAND);
@@ -2789,7 +2790,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     if (isReleaseDeployPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V4'];
-      const action = 'Release or deploy-support path changed. Use npm run release:ready to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.';
+      const action = `Release or deploy-support path changed. Use ${PUBLIC_PRODUCT_READY_COMMAND} to refresh AgentSmith product readiness / handoff inputs outside this verification report; this report is not a product readiness conclusion.`;
       const surface = 'release/deploy';
       const storyIds = stories.map((story) => story.storyId);
       const impactSource: VerificationStoryImpactSource = {

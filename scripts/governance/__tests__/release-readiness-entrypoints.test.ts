@@ -231,7 +231,7 @@ function writeSummaryCache(campaignRoot: string, overrides: Partial<Record<strin
     campaign_id: 'release-full',
     campaign_run_id: overrides.campaign_run_id ?? basename(campaignRoot),
     campaign_root: overrides.campaign_root ?? campaignRoot,
-    automated_release_verdict: overrides.automated_release_verdict ?? 'PASSED',
+    product_readiness_verdict: overrides.product_readiness_verdict ?? 'PASSED',
     status: overrides.status ?? 'passed',
     failure_class: overrides.failure_class ?? 'none',
     stage: overrides.stage ?? 'aggregate',
@@ -487,7 +487,8 @@ describe('release readiness human entrypoints', () => {
         resolveGitSha: () => VALID_TEST_GIT_SHA,
       });
 
-      expect(summary.automated_release_verdict).toBe('FAILED');
+      expect(summary.product_readiness_verdict).toBe('FAILED');
+      expect(summary).not.toHaveProperty('automated_release_verdict');
       expect(summary.failure_class).toBe('evidence_missing');
       expect(summary.blocked_step).toBe('lane-visual');
       expect(summary.terminal_result_path).toBe(join(root, 'gate-release-full', 'result.json'));
@@ -507,6 +508,7 @@ describe('release readiness human entrypoints', () => {
         summary_json: join(root, 'summary.json'),
         summary_md: join(root, 'summary.md'),
       });
+      expect(latest.product_readiness_verdict).toBeUndefined();
       expect(latest.automated_release_verdict).toBeUndefined();
       expect(latest.status).toBeUndefined();
     } finally {
@@ -798,7 +800,7 @@ describe('release readiness human entrypoints', () => {
         summary: 'Campaign step gate-release did not pass.',
       });
       writeSummaryCache(root, {
-        automated_release_verdict: 'FAILED',
+        product_readiness_verdict: 'FAILED',
         status: 'failed',
         failure_class: 'product_regression',
         blocked_step: 'gate-release',
@@ -973,7 +975,7 @@ describe('release readiness human entrypoints', () => {
         summary: 'Release-full campaign evidence passed aggregate verification.',
       });
       writeSummaryCache(root, {
-        automated_release_verdict: 'FAILED',
+        product_readiness_verdict: 'FAILED',
         status: 'failed',
         failure_class: 'evidence_missing',
         why: 'stale summary cache says failed',
@@ -987,6 +989,30 @@ describe('release readiness human entrypoints', () => {
       expect(output).toContain('summary cache');
       expect(output).toContain('terminal result');
       expect(output).not.toContain('Automated release verdict: FAILED');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when summary cache carries the deprecated automated release verdict alias', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-deprecated-verdict-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root);
+      writeSummaryCache(root);
+      const summaryPath = join(root, 'summary.json');
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as Record<string, unknown>;
+      writeJson(summaryPath, {
+        ...summary,
+        automated_release_verdict: 'PASSED',
+      });
+      writeLatestPointer(latestPath, root);
+
+      const status = readReleaseStatus({ latestPath });
+      expect(status.kind).toBe('malformed');
+      if (status.kind === 'malformed') {
+        expect(status.error).toContain('unexpected field: automated_release_verdict');
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -2263,7 +2289,7 @@ JSON
   "campaign_id": "release-full",
   "campaign_run_id": "\${campaign_run_id}",
   "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
-  "automated_release_verdict": "PASSED",
+  "product_readiness_verdict": "PASSED",
   "status": "passed",
   "failure_class": "none",
   "stage": "aggregate",
@@ -2319,7 +2345,7 @@ exit 0
         summary: 'Old campaign failed and must not be displayed.',
       });
       writeSummaryCache(oldCampaignRoot, {
-        automated_release_verdict: 'FAILED',
+        product_readiness_verdict: 'FAILED',
         status: 'failed',
         failure_class: 'product_regression',
         why: 'Old campaign failed and must not be displayed.',
@@ -2357,7 +2383,7 @@ JSON
   "campaign_id": "release-full",
   "campaign_run_id": "\${campaign_run_id}",
   "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
-  "automated_release_verdict": "PASSED",
+  "product_readiness_verdict": "PASSED",
   "status": "passed",
   "failure_class": "none",
   "stage": "aggregate",
@@ -2449,7 +2475,7 @@ JSON
   "campaign_id": "release-full",
   "campaign_run_id": "\${campaign_run_id}",
   "campaign_root": "\${RELEASE_CAMPAIGN_ROOT}",
-  "automated_release_verdict": "PASSED",
+  "product_readiness_verdict": "PASSED",
   "status": "passed",
   "failure_class": "none",
   "stage": "aggregate",

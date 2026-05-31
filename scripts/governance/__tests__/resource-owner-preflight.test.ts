@@ -164,14 +164,15 @@ describe('resource owner preflight', () => {
 
       const rendered = renderResourceOwnerPreflightSummary(result, {
         title: 'AgentSmith Product Readiness',
-        rerunCommand: 'npm run release:ready',
+        rerunCommand: 'npm run product:ready',
       });
       expect(rendered.trim().split('\n')).toHaveLength(8);
       expect(rendered).toContain('Blocker: environment_conflict');
       expect(rendered).toContain('Stage: preflight');
       expect(rendered).toContain('Why: port 27027 is owned by agentsmith-unified-substrate-mongodb-1');
       expect(rendered).toContain('Fix: npx tsx scripts/unified-deploy/substrate-lifecycle.ts down');
-      expect(rendered).toContain('Rerun: npm run release:ready');
+      expect(rendered).toContain('Rerun: npm run product:ready');
+      expect(rendered).not.toContain('Rerun: npm run release:ready');
       expect(rendered).toContain(`Evidence: ${evidencePath}`);
       expect(failed.blocker.owner_kind).toBe('unified-deploy-substrate');
     } finally {

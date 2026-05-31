@@ -13,7 +13,7 @@ function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary
     campaign_id: 'release-full',
     campaign_run_id: 'release-ready-test',
     campaign_root: campaignRoot,
-    automated_release_verdict: 'PASSED',
+    product_readiness_verdict: 'PASSED',
     status: 'passed',
     failure_class: 'none',
     stage: 'aggregate',
@@ -147,7 +147,7 @@ describe('release human output', () => {
         summary: releaseSummary({
           campaign_root: campaignRoot,
           evidence_package: campaignRoot,
-          automated_release_verdict: 'FAILED',
+          product_readiness_verdict: 'FAILED',
           status: 'failed',
           failure_class: 'product_regression',
           blocked_step: 'gate-release',
@@ -212,7 +212,7 @@ describe('release human output', () => {
       kind: 'ready',
       latestPath: 'artifacts/release-runs/latest.json',
       summary: releaseSummary({
-        automated_release_verdict: 'FAILED',
+        product_readiness_verdict: 'FAILED',
         status: 'failed',
         failure_class: 'product_regression',
         blocked_step: 'gate-release',
@@ -234,7 +234,7 @@ describe('release human output', () => {
       kind: 'ready',
       latestPath: 'artifacts/release-runs/latest.json',
       summary: releaseSummary({
-        automated_release_verdict: 'FAILED',
+        product_readiness_verdict: 'FAILED',
         status: 'failed',
         failure_class: 'product_regression',
         blocked_step: 'gate-release',

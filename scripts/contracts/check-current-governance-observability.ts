@@ -129,7 +129,7 @@ function main(): void {
   );
   for (const field of statusProjection.safety_boundary.forbidden_fields) {
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       generatedAt: '2026-04-27T12:00:00.000Z',
     });
     const result = validateCurrentStatusProjection({

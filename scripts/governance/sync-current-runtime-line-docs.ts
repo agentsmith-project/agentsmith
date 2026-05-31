@@ -43,7 +43,7 @@ function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
   const summaries: Record<string, string> = {
     'local-real-human-entry': '- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。',
     'serial-local-runtime-switching': '- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。',
-    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前公开 release 成功路径是 `online` / `airgap` × `use_existing` / `kit_provided`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `release:ready` 的部署结论。`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。真正 `install_substrates` 是未来能力，需要 independent installer producer + explicit installer confirmation flag。',
+    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前公开 release 成功路径是 `online` / `airgap` × `use_existing` / `kit_provided`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。真正 `install_substrates` 是未来能力，需要 independent installer producer + explicit installer confirmation flag。',
     'docker-substrate-k8s-app-boundary': '- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。',
     'api-single-replica-current': '- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。',
   };

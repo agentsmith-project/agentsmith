@@ -524,7 +524,7 @@ function inferBlockedOwner(summary: string): string | null {
 }
 
 function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjectionGoal): string | null {
-  if (goal === 'release-ready') {
+  if (goal === 'product-readiness') {
     return PRODUCT_READY_COMMAND;
   }
   if (owner === 'lane-visual') {
@@ -539,7 +539,7 @@ function safeCommandForOwner(owner: string | null, goal: CurrentStatusProjection
     || owner === 'lane-unified-deploy-local-kind'
     || owner === 'lane-unified-deploy-product-flows'
   ) {
-    return goal === 'release-ready' ? PRODUCT_READY_COMMAND : null;
+    return goal === 'product-readiness' ? PRODUCT_READY_COMMAND : null;
   }
   if (owner === 'gate-fast') {
     return 'npm run verify -- --goal=pr --run';
@@ -744,7 +744,7 @@ function resumeRecommendationForRelease(input: {
       path: redactProjectionPath(failedStepResult.path),
       digest: failedStepResult.digest,
     },
-    safe_next_command: safeCommandForOwner(failedStepResult.step.id, 'release-ready'),
+    safe_next_command: safeCommandForOwner(failedStepResult.step.id, 'product-readiness'),
     reason_codes: [failedStepResult.skipped ? 'campaign_step_skipped' : 'campaign_step_failed'],
     automatic_rerun: false,
     automatic_skip: false,
@@ -905,7 +905,7 @@ function buildMissingAggregateProjection(input: {
     resume_recommendation: notAvailableResumeRecommendation({
       reasonCodes: [running ? 'aggregate_result_pending' : input.source.reasonCode],
       safeNextCommand,
-      downstreamAggregateJobId: input.options.goal === 'release-ready' ? 'gate-release-full' : null,
+      downstreamAggregateJobId: input.options.goal === 'product-readiness' ? 'gate-release-full' : null,
     }),
     destructive_recovery_command: null,
     lock_owner: lockOwnerForInput(input.options),
@@ -933,7 +933,7 @@ export function buildStatusProjection(input: BuildStatusProjectionInput): Curren
     runtimeLine: input.runtimeLine,
   });
 
-  const aggregate = input.goal === 'release-ready'
+  const aggregate = input.goal === 'product-readiness'
     ? readReleaseAggregateResult(input.campaignRoot)
     : {
         ok: false as const,
@@ -1198,7 +1198,7 @@ export function renderStatusProjectionLeaseShadowLines(
 }
 
 function releaseReadyRerunCommand(projection: CurrentStatusProjection): string | null {
-  if (projection.goal === 'release-ready' && projection.presentation_status !== 'passed') {
+  if (projection.goal === 'product-readiness' && projection.presentation_status !== 'passed') {
     return PRODUCT_READY_COMMAND;
   }
   return projection.safe_next_command ? publicStatusCommand(projection.safe_next_command) : null;
@@ -1222,7 +1222,7 @@ function renderProjectionBlocker(
   projection: CurrentStatusProjection,
   options: { humanSummary?: boolean } = {},
 ): string | null {
-  if (projection.goal !== 'release-ready' || projection.presentation_status === 'passed') {
+  if (projection.goal !== 'product-readiness' || projection.presentation_status === 'passed') {
     return null;
   }
 

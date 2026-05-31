@@ -6,6 +6,7 @@ import {
   findCurrentResourceLockById,
   type CurrentResourceLockPort,
 } from './current-resource-lock-manifest';
+import { PRODUCT_READY_COMMAND } from './product-readiness-entrypoints';
 import { renderShortFailureProjection } from './status-projection';
 
 export type ResourceOwnerPreflightTarget =
@@ -637,7 +638,7 @@ function titleForTarget(target: ResourceOwnerPreflightTarget): string {
 
 function rerunForTarget(target: ResourceOwnerPreflightTarget): string | null {
   if (target === 'release-ready') {
-    return 'npm run release:ready';
+    return PRODUCT_READY_COMMAND;
   }
   if (target === 'verify-real') {
     return 'npm run verify -- --goal=real --run';

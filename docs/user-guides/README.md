@@ -13,7 +13,7 @@
 
 - `ui_only`: 如果只是前端 UI、文案、mock 交互，先回到 [README](../../README.md) 和 [Diagnostic Catalog v1](../testing/diagnostic-catalog-v1.md)，不要从 release runbook 开始。
 - `local_manual`: 如果要真实本地 API / Web / Agent tasks / Terminal / runner 行为，从 [Local Runtime Flows](./local-runtime-flows.md) 开始。
-- `release_grade`: 如果要做 AgentSmith 产品侧 readiness / handoff input completeness 复核或大改动收口，从 `npm run release:ready`、`npm run release:status`、[Release Readiness Checklist](./release-readiness-checklist.md) 和 [Verification Campaigns v1](../testing/verification-campaigns-v1.md) 开始。
+- `release_grade`: 如果要做 AgentSmith 产品侧 readiness / handoff input completeness 复核或大改动收口，从 `npm run product:ready`、`npm run product:status`、[Release Readiness Checklist](./release-readiness-checklist.md) 和 [Verification Campaigns v1](../testing/verification-campaigns-v1.md) 开始。
 - 如果要按 `DESIGN.md`、`docs/UXUI/` 和真实/visual 证据做重复性人工界面审查，从 [UX/UI Review Runbook](./uxui-review-runbook.md) 开始。
 
 ### 日常运行与切线
@@ -30,7 +30,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 
 ### 发布与部署
 - [Release Readiness Checklist](./release-readiness-checklist.md)
-  - human product-side readiness / handoff input completeness entrypoint: `npm run release:ready`
+  - human product-side readiness / handoff input completeness entrypoint: `npm run product:ready`
 - [Unified Deploy Operations](./unified-deploy-operations.md)
   - pre-GA/local diagnostic entrypoint for `local-kind` and `existing-cluster`; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`; `kit_provided` is kit-supplied substrate pack/truth/routability/materiality validation, not substrate installation; real `install_substrates` requires a future independent installer producer plus an explicit installer confirmation flag
 

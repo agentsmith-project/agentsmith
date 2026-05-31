@@ -834,6 +834,30 @@ describe('current workflow governance', () => {
     }
   });
 
+  it('keeps active readiness docs on product entrypoints, with release aliases labeled as deprecated only', () => {
+    const surfaces = [
+      'docs/current-engineering-governance-model.md',
+      'docs/user-guides/README.md',
+      'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+      'docs/user-guides/release-readiness-checklist.md',
+    ];
+    const legacyAliasPattern = /(?:npm run\s+)?release:(?:ready|status)\b/g;
+
+    for (const surface of surfaces) {
+      const content = readRepoFile(surface);
+      expect(content, `${surface} must expose the product readiness entrypoint`).toContain('npm run product:ready');
+
+      for (const match of content.matchAll(legacyAliasPattern)) {
+        const start = Math.max(0, match.index - 240);
+        const end = Math.min(content.length, match.index + match[0].length + 240);
+        const context = content.slice(start, end);
+        expect(context, `${surface} may mention ${match[0]} only as a deprecated transition alias`).toMatch(
+          /(?:deprecated|transition|alias|过渡)/i,
+        );
+      }
+    }
+  });
+
   it('renders make quick-help with public entrypoints only', () => {
     const output = execSync('make quick-help', {
       cwd: rootDir,

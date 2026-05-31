@@ -25,7 +25,7 @@ describe('check-engineering-governance contract', () => {
         '### Clean Human Entrypoints',
         '',
         '```bash',
-        'npm run release:ready',
+        'npm run product:ready',
         'npm run test:unified-deploy:local-kind',
         '```',
         '',
@@ -53,7 +53,7 @@ describe('check-engineering-governance contract', () => {
         'npm run test:unified-deploy:local-kind',
         '```',
         '',
-        'Owner diagnostics return to `npm run release:ready` for product-side readiness / handoff sign-off.',
+        'Owner diagnostics return to `npm run product:ready` for product-side readiness / handoff sign-off.',
       ].join('\n'),
     });
 

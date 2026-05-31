@@ -103,7 +103,7 @@ function writeReleaseSummaryWithObservability(campaignRoot: string): void {
     campaign_id: 'release-full',
     campaign_run_id: campaignRoot.split('/').at(-1) ?? 'release-status-observability',
     campaign_root: campaignRoot,
-    automated_release_verdict: 'PASSED',
+    product_readiness_verdict: 'PASSED',
     status: 'passed',
     failure_class: 'none',
     stage: 'aggregate',
@@ -261,6 +261,36 @@ function expectNoPublicAdapterTerm(value: unknown): void {
 }
 
 describe('current status projection', () => {
+  it('uses product-readiness as the canonical machine goal for readiness projections', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot);
+
+      const projection = buildStatusProjection({
+        goal: 'product-readiness',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const serialized = JSON.stringify(projection);
+      const legacyProjection = {
+        ...projection,
+        goal: 'release-ready',
+      };
+
+      expect(projection.goal).toBe('product-readiness');
+      expect(projection.aggregate_status_ref).toMatchObject({
+        gate_id: 'gate-release-full',
+        line_kind: 'release_full_verdict',
+      });
+      expect(projection.resume_recommendation.downstream_aggregate_job_id).toBe('gate-release-full');
+      expect(validateCurrentStatusProjection(projection).ok).toBe(true);
+      expect(validateCurrentStatusProjection(legacyProjection).ok).toBe(false);
+      expect(serialized).not.toMatch(/"goal":"release-ready"/);
+      expect(serialized).not.toContain('automated_release_verdict');
+    });
+  });
+
   it('renders clean command failures with the canonical blocker-only shape', () => {
     const rendered = renderShortFailureProjection({
       title: 'AgentSmith Product Readiness',
@@ -322,7 +352,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -352,7 +382,7 @@ describe('current status projection', () => {
       writeReleaseSummaryWithObservability(campaignRoot);
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -384,7 +414,7 @@ describe('current status projection', () => {
       writeReleaseSummaryWithObservability(campaignRoot);
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -442,7 +472,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -459,7 +489,7 @@ describe('current status projection', () => {
 
   it('accepts v1 status projections that omit additive run observability', () => {
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       currentGitSha: CURRENT_GIT_SHA,
       generatedAt: GENERATED_AT,
     });
@@ -509,7 +539,7 @@ describe('current status projection', () => {
     });
 
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       currentGitSha: CURRENT_GIT_SHA,
       generatedAt: GENERATED_AT,
       leaseStatusShadow,
@@ -589,7 +619,7 @@ describe('current status projection', () => {
     });
 
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       currentGitSha: CURRENT_GIT_SHA,
       generatedAt: GENERATED_AT,
       leaseStatusShadow,
@@ -613,7 +643,7 @@ describe('current status projection', () => {
 
   it('renders legacy diagnostic safe-next commands as public entrypoints', () => {
     const base = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       currentGitSha: CURRENT_GIT_SHA,
       generatedAt: GENERATED_AT,
     });
@@ -678,7 +708,7 @@ describe('current status projection', () => {
     });
 
     const projection = buildStatusProjection({
-      goal: 'release-ready',
+      goal: 'product-readiness',
       currentGitSha: CURRENT_GIT_SHA,
       generatedAt: GENERATED_AT,
       leaseStatusShadow,
@@ -717,7 +747,7 @@ describe('current status projection', () => {
       const aggregateContent = readFileSync(aggregatePath, 'utf8');
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -728,7 +758,7 @@ describe('current status projection', () => {
         schema: CURRENT_STATUS_PROJECTION_SCHEMA,
         version: CURRENT_STATUS_PROJECTION_VERSION,
         projection_kind: 'read_only',
-        goal: 'release-ready',
+        goal: 'product-readiness',
         runtime_line: null,
         phase: 'aggregate',
         presentation_status: 'passed',
@@ -767,7 +797,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -820,7 +850,7 @@ describe('current status projection', () => {
       const aggregatePath = writeAggregateResult(campaignRoot);
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -838,7 +868,7 @@ describe('current status projection', () => {
     withTempRoot((staleRoot) => withTempRoot((blockedRoot) => withTempRoot((runningRoot) => {
       writeAggregateResult(staleRoot, { status: 'passed', failure_class: 'none' });
       const stale = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot: staleRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: STALE_EVIDENCE_GIT_SHA,
@@ -854,7 +884,7 @@ describe('current status projection', () => {
         summary: 'Missing campaign step result: lane-visual',
       });
       const blocked = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot: blockedRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -874,7 +904,7 @@ describe('current status projection', () => {
       expectNoInternalVerifyAlias(blocked);
 
       const running = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot: runningRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -903,7 +933,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -945,7 +975,7 @@ describe('current status projection', () => {
       const stepResultContent = readFileSync(stepResultPath, 'utf8');
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -986,7 +1016,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1029,7 +1059,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: STALE_EVIDENCE_GIT_SHA,
@@ -1069,7 +1099,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1119,7 +1149,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1151,7 +1181,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1169,7 +1199,7 @@ describe('current status projection', () => {
   it('redacts deepest reason summary again when rendering exported status projections', () => {
     const projection = {
       ...buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         currentGitSha: CURRENT_GIT_SHA,
         generatedAt: GENERATED_AT,
       }),
@@ -1202,7 +1232,7 @@ describe('current status projection', () => {
       });
 
       const projection = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1230,7 +1260,7 @@ describe('current status projection', () => {
         summary: 'Corrupt aggregate uses an unknown status.',
       });
       const badStatus = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot: badStatusRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1251,7 +1281,7 @@ describe('current status projection', () => {
         summary: 'Corrupt aggregate uses an unknown failure class.',
       });
       const badFailureClass = buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         campaignRoot: badFailureClassRoot,
         currentGitSha: CURRENT_GIT_SHA,
         evidenceGitSha: EVIDENCE_GIT_SHA,
@@ -1276,7 +1306,7 @@ describe('current status projection', () => {
   it('fails schema validation for verdict pollution and non-aggregate status references', () => {
     const polluted = {
       ...buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         currentGitSha: CURRENT_GIT_SHA,
         generatedAt: GENERATED_AT,
       }),
@@ -1292,7 +1322,7 @@ describe('current status projection', () => {
 
     const badAggregate = {
       ...buildStatusProjection({
-        goal: 'release-ready',
+        goal: 'product-readiness',
         currentGitSha: CURRENT_GIT_SHA,
         generatedAt: GENERATED_AT,
       }),

@@ -847,12 +847,12 @@ describe('verification catalog', () => {
     });
   });
 
-  it('projects V4 release-ready ownership without a release verdict', () => {
+  it('projects V4 product readiness ownership without a release verdict', () => {
     const catalog = buildVerificationCatalog();
     const v4 = catalog.evidence.levels.V4;
 
     expect(v4).toMatchObject({
-      owner: 'npm run release:ready',
+      owner: 'npm run product:ready',
       gateId: 'gate-release-full',
       artifactPathTemplate: 'artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json',
       verdictState: 'none',

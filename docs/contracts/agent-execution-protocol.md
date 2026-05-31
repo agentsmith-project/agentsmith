@@ -311,19 +311,12 @@ Agent task runs return explicit API error codes for runner bootstrap and protoco
 - `DELETE /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/keys/{keyId}`
 - `GET /api/v1/workspaces/{ws}/projects/{project}/agent-runners/{agentRunnerId}/execution-config`
 
-## 11. Local Diagnostic Example
+## 11. Local Diagnostic Boundary
 
 Transition-only local diagnostic:
 
 - `@mbos/agent-task-runner` is the current monorepo migration subject and transition-only local diagnostic. It is not release proof, and the formal release identity comes from runner manifest/lock adoption.
-
-Run with:
-
-```bash
-MBOS_AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' \
-MBOS_AGENT_KEY='ask_xxx' \
-npm run agent:task-runner
-```
+- This protocol does not publish copyable monorepo runner startup commands. Owner diagnostics stay in [`docs/agent-task-runner-runbook.md`](../agent-task-runner-runbook.md) and remain transition-only.
 
 ## 12. Risk Register
 

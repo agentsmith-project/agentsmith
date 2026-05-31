@@ -17,7 +17,7 @@ Active plan 读法：
 6. 当前 active 正文只维护当前边界、下一步、阻断项和验收；历史 evidence 应进入 archive/reference，不滚动追加大型矩阵。
 7. 主协调 agent 只分配/验收，实际修改由 worker TDD 完成；worker 必须先写或调整最小失败测试/fixture，再改文档或 guard。
 8. operator-facing 发布语言只说 `online` / `airgap` × `use_existing` / `install_substrates`。`external_declared` / `kit_installed` 只是 release contract 的内部机器值，不并列成第二套 operator 词；`install_substrates` 是 release-kit-owned minimal/adjacent substrate pack 能力，不是 AgentSmith 部署 substrates，也不是 provider matrix 扩张。
-9. pre-GA 默认先做 scoped operator runbook acceptance / unsigned scoped evidence；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入，不作为当前默认下一步。
+9. release-kit scoped operator runbook acceptance / unsigned scoped evidence 已由 release-kit HEAD 841702a 完成到 focused/candidate 边界；签名身份或全四象限 GA verdict 只有明确客户/合规/GA 发布要求时才进入，不作为当前默认下一步。
 10. P6-lite 文档/旧引用清理默认使用 doc/static guard + targeted contracts；只有改 release/runtime/product readiness 路径才升级到 `npm run release:ready` 或发布级重门禁。
 11. `kind` / `local-kind` 只表示 pre-GA/local diagnostic rehearsal，用于本机或 CI 演练；它不是正式 release target，不和四个真实生产组合放在同一层。
 12. 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)；它是只读交接证据，不是规范源。
@@ -37,15 +37,15 @@ Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做
 
 近期完成摘要（细节、commit 和 CI run 见 evidence log）：
 
-1. release-kit online/airgap focused surfaces、adoption aggregation 和 `release-engineering-gate-intake` 已完成到 repo-local focused/candidate 边界，输出仍保持 `readiness=false` / `formal_verdict=not_issued`。
+1. release-kit online/airgap focused surfaces、adoption aggregation、`release-engineering-gate-intake` 和 release-kit scoped operator runbook acceptance / unsigned scoped evidence 已完成到 repo-local focused/candidate 边界，输出仍保持 `readiness=false` / `formal_verdict=not_issued`。
 2. AgentSmith link-level handoff validator 与 P6-lite summary/status 降噪已完成；`release:ready` / `release:status` 默认不展示 transition-only unified deploy diagnostics。
-3. llmup v0.2.44 lock truth 与 locked runner projection semantic smoke 已完成；runner backend-real / full runtime semantics 仍未完成，后续不一口吃，只做 focused locked runtime safety smoke。
+3. llmup v0.2.44 lock truth、locked runner projection semantic smoke 与 runner focused locked runtime safety smoke 已完成到 focused/candidate 边界；它们仍不是 backend-real / full runtime semantics，后续 runner 只按真实风险做小 focused runtime safety slice。
 
-尚未完成事项 / 当前真实下一步：
+当前默认下一步 / 当前 P6-lite open work：
 
 1. 继续 P6-lite 文档/旧引用归档清理：合并、删除或降级不服务当前功能、安全、真实发布运行风险或 operator 低心智的文档和检查；只保留必要 fail-fast 负向测试和短期待删说明。
-2. release-kit 下一步只做与真实 deploy/package 风险绑定的 scoped operator runbook acceptance / unsigned scoped evidence；formal release engineering verdict、offline release engineering gate 或 formal operator adoption verdict 不作为 pre-GA 默认下一步。
-3. locked runner projection semantic smoke with real LLM provider / llmup image-lock truth 已完成；runner backend-real / full runtime semantics 不一口吃，后续只做 focused locked runtime safety smoke。
+2. release-kit 不再把 scoped acceptance / unsigned evidence 当作当前待办；后续只有新触发的真实 deploy/package 风险才拆小 focused slice。formal release engineering verdict、offline release engineering gate 或 formal operator adoption verdict 不作为 pre-GA 默认下一步。
+3. runner 不再把已完成的 locked safety smoke 当作当前待办；backend-real / full runtime semantics 仍不一口吃，后续只按真实风险拆小 focused runtime safety slice。
 
 历史 evidence ledger 已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 
@@ -86,7 +86,7 @@ AgentSmith 仍保留：
 - `release` 在当前 repo 中只是工程验收术语，不是产品功能，见 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md)。
 - 当前 release campaign 只绑定 AgentSmith product readiness / local complete / current product gate、full visual、backend-real release 和 terminal aggregate；unified deploy / local-kind / product-flow deploy commands 是 transition-only focused diagnostics / 过渡期专项诊断，不属于当前产品门禁结论，见 [current-verification-campaign-manifest.ts](../../scripts/governance/current-verification-campaign-manifest.ts)。
 - Unified deploy 只有一个部署模型，正式机器轴是 `target_cluster` / `substrate_source` / `distribution`，见 [unified-deploy-contract.md](../contracts/unified-deploy-contract.md)。`local-kind` / `existing-cluster` 只是 pre-GA 诊断入口名，不是权威发布轴，也不是两个产品；当前 `existing-cluster` 仍按 Docker substrate/IP-only transition diagnostic 处理，不能冒充真实 cloud/airgap substrate。
-- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。P4/P5 已完成的 contract artifact、runner repo consumer、manifest、image smoke、publish manifest、lock/adoption、release contract digest、release-kit image closure、request-scoped projection wiring、focused task-execution smoke 和 locked projection semantic smoke 细节见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)；active plan 只保留边界结论。正式 artifact 是外部 `runner-contract-artifact.json` + tgz，包内 manifest 是 package manifest v1，`local_pack_manifest` 只允许作为负向测试输入。runner repo 当前边界是 provider-neutral runtime：只消费 AgentSmith opaque request projections + explicit CLI 参数；不消费 workspace-access/file-library product API、AFSCP binding schema 或 release fence payload，不定义 Context Store、managed credential、scope、write policy 或特定服务商 credential 语义，也不本地估算/伪造 `usage_tokens`。这些 focused/adoption 证据都不是 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict；后续 runner 不一口吃 backend-real / full runtime semantics，只做 focused locked runtime safety smoke。
+- Runner contract 当前事实源是 `@mbos/agent-runner-contract` / `packages/agent-runner-contract/src`；协议核心在 `TaskExecutionContext`、WS frame、runner spec 和路径/env 约束，见 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md) 与 [protocol.ts](../../packages/agent-runner-contract/src/protocol.ts)。P4/P5 已完成的 contract artifact、runner repo consumer、manifest、image smoke、publish manifest、lock/adoption、release contract digest、release-kit image closure、request-scoped projection wiring、focused task-execution smoke、locked projection semantic smoke 和 runner focused locked runtime safety smoke 细节见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)；active plan 只保留边界结论。正式 artifact 是外部 `runner-contract-artifact.json` + tgz，包内 manifest 是 package manifest v1，`local_pack_manifest` 只允许作为负向测试输入。runner repo 当前边界是 provider-neutral runtime：只消费 AgentSmith opaque request projections + explicit CLI 参数；不消费 workspace-access/file-library product API、AFSCP binding schema 或 release fence payload，不定义 Context Store、managed credential、scope、write policy 或特定服务商 credential 语义，也不本地估算/伪造 `usage_tokens`。这些 focused/adoption 证据都不是 release readiness、deployment readiness、full backend-real、full runtime semantics 或 operator/package verdict；后续 runner 只按真实风险做小 focused runtime safety slice。
 - AgentSmith contract 收口：`agent.response.done.payload.usage_tokens` 已在 [agent-execution-protocol.md](../contracts/agent-execution-protocol.md)、AsyncAPI YAML 和 AsyncAPI JSON 从必填修为可选；缺省表示 runner 未上报真实 usage，runner 不得本地估算。这不是后端行为新增，后端原本已按 optional 处理。
 - 当前仍是全项目 pre-GA：旧命名、旧路径、旧职责、旧入口、旧文档/旧脚本引用、旧 env/profile 别名默认不保留，也不成为长期发布/部署契约。它们只能作为第 3.2 节定义的负向测试、失败边界或短期待删清单，出现在过渡期专项诊断或 operator 短期说明里，并带删除条件、删除时机/阶段、owner 与 fail-fast 验收；旧 runner 路径/包名只作为负向测试或短期待删说明，不作为正式成功路径，也不作为长期发布/部署契约。部署 profile 映射口在 P2/P6 去掉 active workflow 后删除或归位到 operator docs；runner 已移除旧包/旧输入/旧路径/旧字段/旧 env 在 P5 runner repo/manifest/lock adoption 和 runtime migration 完成后删除或归位；P6 只保留必要 fail-fast 负向测试。
 - 当前 AgentSmith 产品侧 runner 集成和 managed runner 运行路径仍以 [packages/agent-task-runner](../../packages/agent-task-runner) 为迁移对象；runner repo P5.3b first half 已拥有 repo-local runtime source 和 provider-neutral builtin skills，P5 image smoke 只证明 no-push image build/start missing-env fail-fast。AgentSmith API 编排、Context Store、Files 与 execution ticket 仍在 [packages/api-entry-node](../../packages/api-entry-node)，这些语义不是 runner release identity。
@@ -108,7 +108,8 @@ AgentSmith 仍保留：
 
 当前边界保持不变：focused diagnostics 不等于 readiness；AgentSmith `release:ready` 不给 deployment/package/operator verdict；release-kit repo-local gate/evidence 才能给部署、发布包和 operator 结论。
 
-当前尚未完成事项只保留三类：P6-lite 文档/旧引用归档清理；release-kit scoped operator runbook acceptance / unsigned scoped evidence（仅当绑定真实 deploy/package 风险）；runner backend-real / full runtime semantics。runner 侧后续不一口吃 backend-real / full semantics，只做 focused locked runtime safety smoke。已完成的 release-kit focused/candidate surface（含四象限 adoption inputs 验证）、AgentSmith handoff/status 降噪和 runner locked projection semantic smoke 都见 evidence log；它们不再作为待办，也不能升级为 formal release engineering verdict、operator verdict、package verdict、release readiness，或接回 AgentSmith `release:ready`。
+当前默认下一步只保留 P6-lite 文档/旧引用归档清理。
+已完成的 release-kit focused/candidate surface（含四象限 adoption inputs、scoped acceptance / unsigned evidence）、AgentSmith handoff/status 降噪、runner locked projection semantic smoke 和 runner locked safety smoke 都见 evidence log；它们不再作为待办，也不能升级为 formal release engineering verdict、operator verdict、package verdict、release readiness、backend-real/full semantics，或接回 AgentSmith `release:ready`。
 
 ### 3.2 Pre-GA 旧路径/旧引用处理规则
 
@@ -785,7 +786,7 @@ readiness。
 
 工作：
 
-1. repo-local focused surface 已完成 bundle packaging、substrate pack validation 和 consume/deployment chain；后续默认只补 scoped operator runbook acceptance / unsigned scoped evidence，不把 focused reports 写成 readiness。
+1. repo-local focused surface 已完成 bundle packaging、substrate pack validation、consume/deployment chain 和 scoped operator acceptance / unsigned evidence；后续只有新触发的真实 deploy/package 风险才拆小 focused slice，不把 focused reports 写成 readiness。
 2. 离线包包含所有实际会被安装触达的 images、deploy templates、profile-specific env/schema、scripts、runbook、checksums。
 3. image bundle 使用统一 manifest，记录 source image、archive sha256、target registry digest。
 4. 增加 target registry mirror map，支持真实集群使用 operator 指定的离线 registry。
@@ -889,9 +890,9 @@ semantic smoke 已完成；细节、commit、CI run、digest 和本地命令见
 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
 这些切片只证明 contract artifact consumption、fail-closed start guard、
 provider-neutral runtime boundary、manifest/lock/digest adoption 和 focused
-locked projection semantics；不证明 release readiness、deployment/package/operator
+locked projection semantics 和 locked safety smoke；不证明 release readiness、deployment/package/operator
 verdict、backend-real 或 full runtime semantics。下一步不是从 manifest/lock
-adoption 直接跳到 readiness；runner backend-real / full semantics 不一口吃，后续只做 focused locked runtime safety smoke。
+adoption 直接跳到 readiness；runner 后续只按真实风险做小 focused runtime safety slice。
 
 工作：
 
@@ -899,7 +900,7 @@ adoption 直接跳到 readiness；runner backend-real / full semantics 不一口
 2. P5 已完成切片只解锁后续 focused work，不解锁 release/adoption；完成证据统一指向 evidence log，不在 active plan 继续滚动追加。
 3. Runner repo 只允许 provider-neutral runtime：消费 `@mbos/agent-runner-contract`、AgentSmith opaque request projections 和 explicit CLI 参数；不定义 Context Store scopes、Files/file-library 行为、managed credential resolution、execution ticket 颁发、权限语义、服务商专用 OAuth/key refresh API、workspace-access/release fence、file-library reserved namespace policy 或 `usage_tokens` 本地估算。
 4. Runner release manifest 必须保持 `image.id=agentsmith-runner`，`contract_artifact` 绑定 P5.2 正式字段；正式 adoption 只接受 runner manifest + canonical lock + release contract digest + release-kit consumption，不接受旧 `agent-task-runner` lock identity、caller 自报 `managed_runner_image` 或 monorepo source build 作为 release proof。
-5. 后续 runner 工作只做 focused locked runtime safety smoke；backend-real / full runtime semantics、HOME/TASK_HOME、credential non-persistence、internal agent pod imageID probe 和 adoption 串联按真实风险拆成小切片，不在当前 P6-lite 一口吃。
+5. 后续 runner 工作按真实风险拆小 focused runtime safety slice；backend-real / full runtime semantics、HOME/TASK_HOME、credential non-persistence、internal agent pod imageID probe 和 adoption 串联不在当前 P6-lite 一口吃。
 6. 旧 `@mbos/agent-runner` shim、旧字段、旧 env helper / monorepo-side `buildAgentRuntimeEnv` 和本地 dev 启动说明只保留第 3.2 节定义的负向测试、短期诊断或短期待删说明；不能形成 AgentSmith 与 runner repo 的长期共享包、legacy 成功路径或 release proof。
 
 P5.1 start preflight: `scripts/governance/__fixtures__/release-boundary/runner-adapter-inventory.valid.json`
@@ -1117,7 +1118,7 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 6. Runner handoff job 必须保持固定 5 个步骤、2 个 run step，不混入 release readiness/runtime/image/adoption/signing/attestation/downloader。Runner release manifest 必须使用 `image.id=agentsmith-runner`，`contract_artifact` 必须绑定 P5.2 正式字段 `package_uri` / `package_sha256` / `package_integrity` / `descriptor_subject_sha256`；runner release manifest adoption 仍必须比对 image digest、这些 contract artifact 字段、由 `artifact_provenance` 承载的 provenance 和 canonical lock。P5 已完成证据见 evidence log，不在 active plan 重复 commit/run ledger。
 7. 如果复制 AFSCP/ASBCP gate 脚本作为权威 gate、把 sibling repo status 当 gate、
    或让 quick gate/team signoff 变成 release readiness，停止并回到边界评审。
-8. 下一步仍不是 release readiness。release-kit scoped operator runbook acceptance / unsigned scoped evidence 只在真实 deploy/package 风险绑定时做；runner backend-real / full runtime semantics 不一口吃，后续只做 focused locked runtime safety smoke；P2/P3 deployment/operator/adoption 按 KISS 小切片收口。
+8. 下一步仍不是 release readiness。release-kit 已完成的 scoped acceptance / unsigned evidence 不升级成 formal verdict；runner backend-real / full runtime semantics 不一口吃；P2/P3 deployment/operator/adoption 和后续 runner safety 都按真实风险拆 KISS 小切片收口。
 
 阶段收口审查只看这些 invariant；详细历史问题已移至 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)，不是每次切片默认必答清单：
 
@@ -1145,12 +1146,13 @@ kind runbook 单独标记为 `kind rehearsal`，只服务本机演练、CI 诊�
 推荐执行顺序：
 
 1. 继续 P6-lite 文档/旧引用归档清理。
-2. release-kit scoped operator runbook acceptance / unsigned scoped evidence 只在绑定真实 deploy/package 风险时做；formal verdict、签名身份或全四象限 GA 结论不作为 pre-GA 默认下一步。
-3. runner 后续只做 focused locked runtime safety smoke；backend-real / full runtime semantics 不一口吃，后续按真实风险拆小切片。
+2. release-kit 不再把已完成的 scoped acceptance / unsigned evidence 列为当前待办；formal verdict、签名身份或全四象限 GA 结论不作为 pre-GA 默认下一步。
+3. runner 已完成 locked safety focused 版本；backend-real / full runtime semantics 不一口吃，后续按真实风险拆小切片。
 
 当前交接判断：
 
 1. 当前计划 handoff-ready，主计划只保留状态、下一步和阻断项。
 2. 历史证据和逐切片 ledger 见 [Evidence log reference](archive/release-kit-and-runner-repo-split-evidence-log-v1.md)。
-3. 未完成项只保留三类：P6-lite 文档/旧引用归档清理、与真实 deploy/package 风险绑定的 scoped operator runbook acceptance / unsigned scoped evidence、runner backend-real / full runtime semantics；runner 下一步只做 focused locked runtime safety smoke。
-4. 高信号边界继续由 static guard 兜底：`kind` / `local-kind` 不能写成正式 release target/prerequisite；release-kit focused evidence 不能写成 AgentSmith `release:ready`；deployment/operator verdict 不能接回 AgentSmith `release:ready`。
+3. 当前 P6-lite open work 只保留 P6-lite 文档/旧引用归档清理。
+4. release-kit scoped acceptance / unsigned evidence 和 runner locked safety focused 版本已移到 focused/candidate 边界；backend-real / full runtime semantics、formal verdict 和签名身份仍不是默认下一步。
+5. 高信号边界继续由 static guard 兜底：`kind` / `local-kind` 不能写成正式 release target/prerequisite；release-kit focused evidence 不能写成 AgentSmith `release:ready`；deployment/operator verdict 不能接回 AgentSmith `release:ready`。

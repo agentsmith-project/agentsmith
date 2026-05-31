@@ -8,6 +8,13 @@ Source: [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](../release-kit
 
 本文只保存从 active 计划移出的交接证据和历史审查问题。它只读、非规范，不能替代当前 release-kit repo-local deployment/package/operator verdict，也不能把 focused diagnostic 写成 readiness。
 
+## Latest Sibling Focused/Candidate References
+
+以下只补 active plan 的 evidence pointer，不改变当前默认下一步，也不发布 formal verdict。
+
+- release-kit scoped operator runbook acceptance / unsigned scoped evidence：`agentsmith-release-kit` commit `841702abf58e03b94d79fa387fc91c6956265d22`（short `841702a`），CI run `26705035722` success。该 evidence 仍是 focused/candidate，输出边界保持 `readiness=false` / `formal_verdict=not_issued`。
+- runner locked safety / publish smoke：`agentsmith-runner` commit `ce7cdde4f48ad46494df91f9b19d4e626d557b83`（short `ce7cdde`），CI run `26700162675` success，Runner Image Publish run `26700207096` success；commit `fb838f4cea5a1fdac0853521f5de1b7e742686fe`（short `fb838f4`），CI run `26703524218` success；commit `871f1e0065823332d7bc282481e2da584b712870`（short `871f1e0`），CI run `26705035670` success。该 group 只覆盖 locked safety smoke、locked runner publish image smoke 和 publish digest evidence 的 focused/candidate 边界；不是 backend-real、full runtime semantics、release readiness、deployment/package/operator verdict 或 airgap readiness。
+
 ## Previous Status Ledger
 
 ```text

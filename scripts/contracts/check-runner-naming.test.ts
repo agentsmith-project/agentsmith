@@ -294,6 +294,9 @@ describe("check-runner-naming contract", () => {
       "utf8",
     );
     const development = readFileSync(path.join(root, "DEVELOPMENT.md"), "utf8");
+    const developmentCommonCommands =
+      development.match(/常用命令：\n\n```bash\n([\s\S]*?)\n```/)?.[1] ??
+      "";
 
     expect(
       existsSync(path.join(root, "scripts/run-agent-task-runner-dev.sh")),
@@ -328,8 +331,185 @@ describe("check-runner-naming contract", () => {
     expect(protocol).toMatch(
       /@mbos\/agent-task-runner[\s\S]{0,160}transition-only local diagnostic/,
     );
+    expect(protocol).not.toMatch(
+      /```bash[\s\S]*?\bnpm run agent:task-runner\b[\s\S]*?```/,
+    );
+    expect(protocol).not.toMatch(/^\s*npm run agent:task-runner(?:\s|$)/m);
+    expect(developmentCommonCommands).not.toMatch(
+      /^make agent-task-runner\s+AGENT_WS_URL=/m,
+    );
+    expect(development).not.toMatch(
+      /^make agent-task-runner\s+AGENT_WS_URL=/m,
+    );
     expect(development).toMatch(
-      /agent:task-runner[\s\S]{0,220}transition-only diagnostic[\s\S]{0,220}release proof/,
+      /make agent-task-runner[\s\S]{0,220}owner runbook[\s\S]{0,220}diagnostic/,
+    );
+    expect(development).toMatch(
+      /agent:task-runner[\s\S]{0,260}transition-only diagnostic[\s\S]{0,260}release proof/,
+    );
+  });
+
+  it("keeps preprod baseline capture from generating legacy runner rollback startup paths", () => {
+    const baselineCapture = readFileSync(
+      path.join(process.cwd(), "scripts/preprod-capture-baseline.sh"),
+      "utf8",
+    );
+
+    expect(baselineCapture).not.toMatch(/\bask_[a-zA-Z0-9]{12,}\b/);
+    expect(baselineCapture).not.toMatch(
+      /MBOS_AGENT_WS_URL="\$\{MBOS_AGENT_WS_URL:-ws:\/\//,
+    );
+    expect(baselineCapture).not.toContain(
+      "ws://localhost:20000/api/v1/agent-execution/ws",
+    );
+    expect(baselineCapture).not.toMatch(
+      /RUNNER_IMAGE="\$\{RUNNER_IMAGE:-[^}]+}"/,
+    );
+    expect(baselineCapture).not.toMatch(/\bnpm run agent:task-runner\b/);
+  });
+
+  it("keeps completed release-kit and runner focused work out of active next-step sections", () => {
+    const root = process.cwd();
+    const plan = readFileSync(
+      path.join(
+        root,
+        "docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md",
+      ),
+      "utf8",
+    );
+    const engineeringReadme = readFileSync(
+      path.join(root, "docs/engineering/README.md"),
+      "utf8",
+    );
+    const evidenceLog = readFileSync(
+      path.join(
+        root,
+        "docs/engineering/archive/release-kit-and-runner-repo-split-evidence-log-v1.md",
+      ),
+      "utf8",
+    );
+    const sliceBetweenMatches = (
+      source: string,
+      start: RegExp,
+      end: RegExp,
+      label: string,
+    ): string => {
+      const startMatch = source.match(start);
+
+      expect(
+        startMatch?.index ?? -1,
+        `${label} start must exist`,
+      ).toBeGreaterThanOrEqual(0);
+
+      const startIndex =
+        (startMatch?.index ?? -1) + (startMatch?.[0].length ?? 0);
+      const endMatch = source.slice(startIndex).match(end);
+
+      expect(
+        endMatch?.index ?? -1,
+        `${label} end must exist after start`,
+      ).toBeGreaterThanOrEqual(0);
+
+      return source.slice(
+        startIndex,
+        startIndex + (endMatch?.index ?? source.length),
+      );
+    };
+    const currentNextSteps = sliceBetweenMatches(
+      plan,
+      /当前(?:真实|默认)[^\n]*(?:下一步|open work)[^\n]*：/,
+      /历史 evidence ledger/,
+      "active current next/open work",
+    );
+    const currentBoundary = sliceBetweenMatches(
+      plan,
+      /### 3\.1 Evidence reference\s*\/\s*当前边界/,
+      /### 3\.2 Pre-GA/,
+      "active current evidence boundary",
+    );
+    const executionOrder = sliceBetweenMatches(
+      plan,
+      /推荐执行顺序：/,
+      /当前交接判断：/,
+      "active execution order",
+    );
+    const handoff = sliceBetweenMatches(
+      plan,
+      /当前交接判断：/,
+      /$/,
+      "active handoff",
+    );
+    const currentNextBlocker = sliceBetweenMatches(
+      engineeringReadme,
+      /Current next blocker:/,
+      /Historical\/reference note:/,
+      "engineering readme current blocker",
+    );
+    const openWorkSections = [
+      currentNextSteps,
+      currentBoundary,
+      executionOrder,
+      handoff,
+    ].join("\n");
+    const defaultWorkLines = openWorkSections
+      .split("\n")
+      .filter((line) =>
+        /Current (?:default work|work)|当前(?:默认下一步|P6-lite open work|工作)|^\s*\d+\.\s*继续/.test(
+          line,
+        ),
+      )
+      .filter(
+        (line) =>
+          !/not current blockers|not default next steps|不是默认下一步|不作为|不再把/.test(
+            line,
+          ),
+      )
+      .join("\n");
+
+    expect(openWorkSections).toMatch(/P6-lite[\s\S]{0,80}(文档|docs)/);
+    expect(defaultWorkLines).not.toMatch(
+      /scoped (?:operator runbook acceptance|acceptance|evidence)|unsigned scoped evidence|backend-real\s*\/\s*full runtime semantics|formal verdict|airgap readiness|签名身份/,
+    );
+    expect(plan).not.toContain("当前尚未完成事项只保留一类");
+    expect(plan).not.toContain("未完成项只保留 P6-lite");
+    expect(currentBoundary).toMatch(
+      /当前默认下一步[\s\S]{0,80}P6-lite[\s\S]{0,80}文档\/旧引用归档清理/,
+    );
+    expect(handoff).toMatch(/当前 P6-lite open work[\s\S]{0,80}只保留/);
+    expect(handoff).toMatch(
+      /backend-real \/ full runtime semantics[\s\S]{0,80}formal verdict[\s\S]{0,80}签名身份[\s\S]{0,80}不是默认下一步/,
+    );
+    expect(currentNextBlocker).toMatch(
+      /Current default work[\s\S]{0,120}P6-lite[\s\S]{0,120}(docs|old-reference)/,
+    );
+    expect(currentNextBlocker).toMatch(
+      /release-kit[\s\S]{0,120}runner locked safety[\s\S]{0,120}completed focused\/candidate/,
+    );
+    expect(currentNextBlocker).toMatch(
+      /backend-real \/ full runtime semantics[\s\S]{0,120}formal verdict[\s\S]{0,120}airgap readiness[\s\S]{0,120}not current blockers or default next steps/,
+    );
+    expect(currentNextBlocker).not.toMatch(
+      /Current work is[\s\S]{0,320}(scoped operator runbook acceptance|unsigned scoped evidence|backend-real \/ full runtime semantics|airgap readiness)/,
+    );
+    expect(plan).toMatch(
+      /release-kit[\s\S]{0,120}scoped[\s\S]{0,120}evidence[\s\S]{0,220}(已完成|focused\/candidate|candidate 边界)/,
+    );
+    expect(plan).toMatch(
+      /runner[\s\S]{0,120}locked[\s\S]{0,120}safety[\s\S]{0,220}(已完成|focused\/candidate|candidate 边界)/,
+    );
+    for (const focusedCandidateCommit of [
+      "841702a",
+      "ce7cdde",
+      "fb838f4",
+      "871f1e0",
+    ]) {
+      expect(evidenceLog).toContain(focusedCandidateCommit);
+    }
+    expect(evidenceLog).toMatch(
+      /841702a[\s\S]{0,360}(focused\/candidate|readiness=false|formal_verdict=not_issued)/,
+    );
+    expect(evidenceLog).toMatch(
+      /(ce7cdde|fb838f4|871f1e0)[\s\S]{0,520}(locked safety|publish smoke|focused\/candidate)/,
     );
   });
 

@@ -13,10 +13,11 @@
 2. [DESIGN.md](../DESIGN.md)（UI design guide）
 3. [Product Terminology Contract](./contracts/product-terminology.md)
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)
-5. [Contracts Index](./contracts/README.md)
-6. [User Guides Index](./user-guides/README.md)
-7. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
-8. [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
+5. [AgentSmith GA 发布交付计划 v1](./engineering/agentsmith-ga-release-plan-v1.md)（只用于 GA 发布实施与计划取舍）
+6. [Contracts Index](./contracts/README.md)
+7. [User Guides Index](./user-guides/README.md)
+8. [Agent Task Runner Runbook](./agent-task-runner-runbook.md)
+9. [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)
 
 ## 2. 不再属于 current docs 的内容
 
@@ -65,6 +66,6 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 - 产品对象名、页面 IA、用户可见命名冲突时，以 [Product Terminology Contract](./contracts/product-terminology.md) 为准。
 - UI 风格、视觉语言与实现偏好冲突时，以 [DESIGN.md](../DESIGN.md) 为准；产品对象与 IA 不由 `DESIGN.md` 定义。
 - 工程命令、gate、验证通道、发布流程冲突时，以 [Current Engineering Governance Model](./current-engineering-governance-model.md) 和 machine-readable manifests 为准。
-- 部署模型冲突时，以 [Unified Deploy Contract](./contracts/unified-deploy-contract.md) 为正式 release 词汇和机器合同真相；[Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 只负责 pre-GA/local focused diagnostic 操作入口。当前公开 release 成功路径是 `online` / `airgap` × `use_existing` / `kit_provided`；`local-kind` / `existing-cluster` 不是 release target。`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates；真正 `install_substrates` 是未来能力，需要 independent installer producer + explicit installer confirmation flag。
+- 部署模型冲突时，以 [Unified Deploy Contract](./contracts/unified-deploy-contract.md) 为正式 release 词汇和机器合同真相；[Unified Deploy Operations](./user-guides/unified-deploy-operations.md) 只负责 pre-GA/local focused diagnostic 操作入口。当前 pre-GA 实现仍使用 `online` / `airgap` × `use_existing` / `kit_provided`；`local-kind` / `existing-cluster` 不是 release target。`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。GA 目标态由 [AgentSmith GA 发布交付计划 v1](./engineering/agentsmith-ga-release-plan-v1.md) 定义：operator-facing 语言收敛为 `online` / `airgap` × `use_existing` / `install_substrates`，其中 `install_substrates` 必须先补齐 independent installer producer + explicit installer confirmation flag；落地前继续 fail fast，不能用 `kit_provided` 伪装安装。
 - Engineering 计划冲突时，以 [Engineering Docs Index](./engineering/README.md) 标记的 active plan 为准；旧 milestone plan 若仍在树中，只是 historical/reference evidence，不是 current active plan。
 - product readiness automated verification 的面向人入口是 `npm run product:ready`，只读查看是 `npm run product:status`；`npm run release:ready` / `npm run release:status` 只保留为 deprecated transition aliases / 过渡 alias，不给 deployment、package 或 operator verdict。precheck 通过后使用其背后的 internal adapter `release:campaign:full`。证据完整性、aggregate-only `gate:release:full` 复核语义和常见误区，参考 [Verification Campaigns v1](./testing/verification-campaigns-v1.md)；若与 contracts 冲突，仍以 contracts 和 manifests 为准。

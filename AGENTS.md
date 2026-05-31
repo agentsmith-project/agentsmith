@@ -112,6 +112,8 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 - 采用渐进验证：每个 change slice 先跑最小相关的 TDD/unit/contract/focused integration/focused e2e/focused visual 命令，用 `npm run verify` dry-run/plan 或 focused diagnostics 判断范围。
 - 重门禁（`npm run verify -- --goal=pr|real|visual --run` / `npm run release:ready`）放在阶段收口、最终交付、合并/发布/部署前，或改动跨多个模块、权限、合约、运行路径时执行。
 - focused 变绿只是局部证据，不是发布签署；最终 evidence 必须匹配用户请求与改动风险。
+- 每个 change slice 先按 `DEVELOPMENT.md` 的 “Pre-GA 开发提效约定” 明确 exit criteria / evidence。
+- 重门禁只在风险和阶段匹配时跑；不要把 focused diagnostic 写成 release/deploy/package/operator verdict。
 
 **skill runtime diagnostics**:
 - 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 focused producer `npm run test:skills:fast`

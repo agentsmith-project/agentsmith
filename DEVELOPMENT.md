@@ -80,6 +80,16 @@ Release boundary note: `npm run release:ready` is the AgentSmith product-side re
 
 如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run release:ready`。
 
+### Pre-GA 开发提效约定
+
+- 每个改动先定事实源和职责边界：哪个对象由后端、合约、URL、manifest、lock 或本地 fixture 说了算，前端只消费对应真相。
+- pre-GA 旧路径、旧命名、旧脚本和旧计划默认删除、归档或 fail fast；不要为过渡实现增加长期兼容层。
+- 每个 change slice 先用最小 TDD、fixture、focused diagnostic 或 focused e2e 证明局部事实；重门禁不是日常调试工具。
+- focused diagnostic 只能写成 scoped evidence，不能写成 readiness、release、deploy、package 或 operator verdict。
+- active 文档只维护当前边界、下一步、阻断点和验收口径；历史 evidence、流水账和过期决策进入 archive/reference。
+- 长期 gate、docs、script 必须绑定当前功能、安全、合同、真实运行/发布风险，或显著降低 operator 心智负担；否则降级、合并或删除。
+- 服务商专用集成只能作为显式选择或 targeted diagnostic，不进入默认成功路径。
+
 Gate adapter fidelity notes:
 - adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
 - free-form `command` 只作为 operator hint / 展示面，不再承担 enforcement truth

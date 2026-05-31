@@ -28,6 +28,9 @@ Active plan 读法：
 
 Review/计划承载语义口径；doc guard 只拦高信号结构漂移，不做自然语言 policy parser。
 
+- 后续执行遵循 [Pre-GA 开发提效约定](../../DEVELOPMENT.md#pre-ga-开发提效约定)，本计划只保留当前边界、下一步、阻断和验收口径。
+- release-kit / runner 主链按 artifact freshness、runner image publish manifest -> AgentSmith lock adoption -> release contract digest -> release-kit smoke 串联；任一环缺失只算 focused diagnostic，不能写成 readiness / release / deploy / package / operator verdict。
+
 ## 当前状态 / 下一步切片
 
 回答用户问题：治理克制进入 `docs/项目宪法.md` 的只是原则层，执行细节仍留在当前 release-kit / runner split 计划。治理克制已经作为执行约束：能直接服务当前功能、安全、operator 低心智和真实发布/运行风险的检查保留；其余删除、合并或降级为 focused diagnostic，不把“反过度治理”写成新的治理体系。

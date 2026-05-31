@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -289,14 +289,26 @@ describe("check-runner-naming contract", () => {
       path.join(root, "scripts/contracts/check-runner-naming.ts"),
       "utf8",
     );
+    const packageJson = JSON.parse(
+      readFileSync(path.join(root, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    const makefile = readFileSync(path.join(root, "Makefile"), "utf8");
     const protocol = readFileSync(
       path.join(root, "docs/contracts/agent-execution-protocol.md"),
+      "utf8",
+    );
+    const runbook = readFileSync(
+      path.join(root, "docs/agent-task-runner-runbook.md"),
       "utf8",
     );
     const development = readFileSync(path.join(root, "DEVELOPMENT.md"), "utf8");
     const developmentCommonCommands =
       development.match(/常用命令：\n\n```bash\n([\s\S]*?)\n```/)?.[1] ??
       "";
+    const runnerScript = packageJson.scripts?.["agent:task-runner"] ?? "";
+    const guardScript =
+      "scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh";
+    const optInEnv = "AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC";
 
     expect(
       existsSync(path.join(root, "scripts/run-agent-task-runner-dev.sh")),
@@ -319,12 +331,32 @@ describe("check-runner-naming contract", () => {
       "requireRunnerTransitionOnlyDiagnosticConsistency",
     );
     expect(checkerSource).toContain(
-      "transition-only diagnostic consistency",
+      "explicit opt-in diagnostic consistency",
     );
     expect(checkerSource).toContain("runnerTransitionDiagnosticReferenceFiles");
+    expect(checkerSource).toContain(guardScript);
+    expect(checkerSource).toContain(optInEnv);
+    expect(checkerSource).toContain("agentsmith-runner image/manifest/lock");
     expect(checkerSource).toContain('scripts["agent:task-runner"]');
     expect(checkerSource).toContain("/^agent-task-runner:/m");
+    expect(checkerSource).toContain('"agent-task-runner-from-state"');
+    expect(checkerSource).toContain('"agent-task-smoke-full"');
     expect(checkerSource).toContain("$(NPM) run agent:task-runner");
+    expect(runnerScript).not.toBe("npm run dev -w @mbos/agent-task-runner");
+    expect(runnerScript).toContain(guardScript);
+    expect(runnerScript).toContain("npm run dev -w @mbos/agent-task-runner");
+    for (const targetName of [
+      "agent-task-runner",
+      "agent-task-runner-from-state",
+      "agent-task-smoke-full",
+    ]) {
+      expect(makefile).toMatch(
+        new RegExp(
+          `^${targetName}:\\n\\t\\$\\(call require_monorepo_runner_diagnostic_opt_in,make ${targetName}\\)`,
+          "m",
+        ),
+      );
+    }
     expect(protocol).not.toMatch(
       /Reference implementation:[\s\S]{0,160}@mbos\/agent-task-runner/,
     );
@@ -347,6 +379,53 @@ describe("check-runner-naming contract", () => {
     expect(development).toMatch(
       /agent:task-runner[\s\S]{0,260}transition-only diagnostic[\s\S]{0,260}release proof/,
     );
+    expect(`${development}\n${runbook}`).toContain(
+      "AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner",
+    );
+    expect(`${development}\n${runbook}`).toContain(
+      "AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 npm run agent:task-runner",
+    );
+  });
+
+  it("keeps the monorepo runner diagnostic opt-in guard fail-fast by default", () => {
+    const root = process.cwd();
+    const guardScript = path.join(
+      root,
+      "scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh",
+    );
+    const denied = spawnSync("bash", [guardScript, "npm run agent:task-runner"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC: "",
+      },
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+
+    expect(denied.status).toBe(2);
+    expect(`${denied.stdout}\n${denied.stderr}`).toContain(
+      "pre-GA transition-only monorepo runner diagnostic",
+    );
+    expect(`${denied.stdout}\n${denied.stderr}`).toContain(
+      "agentsmith-runner image/manifest/lock",
+    );
+    expect(`${denied.stdout}\n${denied.stderr}`).toContain(
+      "AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1",
+    );
+
+    const allowed = spawnSync("bash", [guardScript, "npm run agent:task-runner"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC: "1",
+      },
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+
+    expect(allowed.status).toBe(0);
+    expect(`${allowed.stdout}\n${allowed.stderr}`).toBe("\n");
   });
 
   it("keeps preprod baseline capture from generating legacy runner rollback startup paths", () => {

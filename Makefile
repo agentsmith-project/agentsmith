@@ -64,6 +64,10 @@ MBOS_UNIVERSAL_PROXY_BASE_URL ?= http://127.0.0.1:38080
 LOCALE ?= en-US
 BASE_URL ?= http://localhost:$(PORT_WEB)
 
+define require_monorepo_runner_diagnostic_opt_in
+@bash scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh "$(1)"
+endef
+
 help:
 	@echo "MBOS MVP Help"
 	@echo ""
@@ -465,10 +469,11 @@ governance-core-smoke:
 	$(MAKE) governance-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 
 agent-task-runner:
+	$(call require_monorepo_runner_diagnostic_opt_in,make agent-task-runner)
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
 		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
 		echo "[make] Example:"; \
-		echo "  make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'"; \
+		echo "  AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
 	@env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -507,6 +512,7 @@ agent-runner-init-resources:
 	./scripts/agent-runner-init-resources.sh
 
 agent-task-runner-from-state:
+	$(call require_monorepo_runner_diagnostic_opt_in,make agent-task-runner-from-state)
 	@set -e; \
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent_runner?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
@@ -746,6 +752,7 @@ governance-smoke:
 	fi
 
 agent-task-smoke-full:
+	$(call require_monorepo_runner_diagnostic_opt_in,make agent-task-smoke-full)
 	@set -e; \
 	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/backend-real/current/runner-smoke.log}"; \

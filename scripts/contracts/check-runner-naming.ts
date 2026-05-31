@@ -339,6 +339,10 @@ const rootPackage = readJson("package.json") as {
 };
 const scripts = rootPackage.scripts ?? {};
 const makefile = readText("Makefile");
+const monorepoRunnerDiagnosticOptInEnv =
+  "AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC";
+const monorepoRunnerDiagnosticGuardScript =
+  "scripts/local-manual/require-monorepo-runner-diagnostic-opt-in.sh";
 const integrationWorkflow = readText(".github/workflows/integration-e2e.yml");
 const runnerImageCommon = readText("scripts/lib/runner-image-common.sh");
 const buildRunnerImageScript = readText("scripts/build-runner-image.sh");
@@ -943,17 +947,45 @@ function getRunnerTransitionDiagnosticReferences(): string[] {
   );
 }
 
+function getMakeTargetBody(targetName: string): string | null {
+  const targetPattern = new RegExp(`^${targetName}:\\n`, "m");
+  const targetMatch = makefile.match(targetPattern);
+  if (!targetMatch || targetMatch.index === undefined) return null;
+
+  const bodyStart = targetMatch.index + targetMatch[0].length;
+  const remaining = makefile.slice(bodyStart);
+  const nextTargetIndex = remaining.search(/^[A-Za-z0-9_.-]+:/m);
+  return nextTargetIndex >= 0
+    ? remaining.slice(0, nextTargetIndex)
+    : remaining;
+}
+
 function requireRunnerTransitionOnlyDiagnosticConsistency(): void {
   const references = getRunnerTransitionDiagnosticReferences();
   if (references.length === 0) return;
 
   const sourceList = references.join(", ");
   const consistencyScope =
-    "transition-only diagnostic consistency; not a formal path, release proof, or canonical runner requirement";
+    "explicit opt-in diagnostic consistency; not a formal path, release proof, or canonical runner requirement";
+  const rootRunnerScript = scripts["agent:task-runner"] ?? "";
 
-  if (scripts["agent:task-runner"] !== "npm run dev -w @mbos/agent-task-runner") {
+  requirePath(
+    monorepoRunnerDiagnosticGuardScript,
+    `${monorepoRunnerDiagnosticGuardScript} must guard monorepo runner diagnostics for ${consistencyScope} while referenced by ${sourceList}`,
+  );
+  if (!rootRunnerScript.includes(monorepoRunnerDiagnosticGuardScript)) {
     failures.push(
-      `package.json agent:task-runner must stay wired to "npm run dev -w @mbos/agent-task-runner" for ${consistencyScope} while referenced by ${sourceList}`,
+      `package.json agent:task-runner must call ${monorepoRunnerDiagnosticGuardScript} before starting @mbos/agent-task-runner for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+  if (!rootRunnerScript.includes("npm run dev -w @mbos/agent-task-runner")) {
+    failures.push(
+      `package.json agent:task-runner may keep monorepo runner source only behind the explicit diagnostic guard for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+  if (rootRunnerScript.trim() === "npm run dev -w @mbos/agent-task-runner") {
+    failures.push(
+      `package.json agent:task-runner must not start @mbos/agent-task-runner as a normal success path for ${consistencyScope} while referenced by ${sourceList}`,
     );
   }
   if (!/^agent-task-runner:/m.test(makefile)) {
@@ -965,6 +997,58 @@ function requireRunnerTransitionOnlyDiagnosticConsistency(): void {
     failures.push(
       `Makefile target agent-task-runner must call root $(NPM) run agent:task-runner for ${consistencyScope} while referenced by ${sourceList}`,
     );
+  }
+  if (!makefile.includes("define require_monorepo_runner_diagnostic_opt_in")) {
+    failures.push(
+      `Makefile must define require_monorepo_runner_diagnostic_opt_in for ${consistencyScope} while referenced by ${sourceList}`,
+    );
+  }
+  for (const targetName of [
+    "agent-task-runner",
+    "agent-task-runner-from-state",
+    "agent-task-smoke-full",
+  ]) {
+    if (!new RegExp(`^${targetName}:`, "m").test(makefile)) {
+      failures.push(
+        `Makefile target ${targetName} must stay present for ${consistencyScope} while referenced by ${sourceList}`,
+      );
+      continue;
+    }
+    const targetBody = getMakeTargetBody(targetName) ?? "";
+    const guardCall = `$(call require_monorepo_runner_diagnostic_opt_in,make ${targetName})`;
+    const guardIndex = targetBody.indexOf(guardCall);
+    if (guardIndex < 0) {
+      failures.push(
+        `Makefile target ${targetName} must require ${monorepoRunnerDiagnosticOptInEnv}=1 via the shared guard before starting monorepo runner diagnostics for ${consistencyScope} while referenced by ${sourceList}`,
+      );
+      continue;
+    }
+    const startIndexes = [
+      targetBody.indexOf("$(NPM) run agent:task-runner"),
+      targetBody.indexOf("$(MAKE) agent-task-runner"),
+    ].filter((index) => index >= 0);
+    const firstStartIndex =
+      startIndexes.length > 0 ? Math.min(...startIndexes) : -1;
+    if (firstStartIndex >= 0 && guardIndex > firstStartIndex) {
+      failures.push(
+        `Makefile target ${targetName} must check ${monorepoRunnerDiagnosticOptInEnv}=1 before starting monorepo runner diagnostics for ${consistencyScope} while referenced by ${sourceList}`,
+      );
+    }
+  }
+  if (existsSync(path.join(rootDir, monorepoRunnerDiagnosticGuardScript))) {
+    const guardSource = readText(monorepoRunnerDiagnosticGuardScript);
+    for (const requiredText of [
+      monorepoRunnerDiagnosticOptInEnv,
+      "pre-GA transition-only monorepo runner diagnostic",
+      "agentsmith-runner image/manifest/lock",
+      "exit 2",
+    ]) {
+      if (!guardSource.includes(requiredText)) {
+        failures.push(
+          `${monorepoRunnerDiagnosticGuardScript} must include ${requiredText} for ${consistencyScope} while referenced by ${sourceList}`,
+        );
+      }
+    }
   }
 }
 

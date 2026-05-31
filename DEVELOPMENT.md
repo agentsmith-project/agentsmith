@@ -255,7 +255,14 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
 底层 `substrate-*` / `local-manual-*` 目标保留给 maintainer diagnostics、owner runbook 和实现排障，不作为新人默认常用命令。
-`make agent-task-runner` / root `npm run agent:task-runner` 只保留在 owner runbook 指向的底层 diagnostic adapter 中，作为短期待删的 transition-only diagnostic：它们从当前 monorepo 源码启动本机 runner，不能作为正式成功路径或 release proof。正式发布证据只接受 runner manifest/lock adoption 与对应 release contract digest。
+`make agent-task-runner` / root `npm run agent:task-runner` 只保留在 owner runbook 指向的底层 diagnostic adapter 中，作为短期待删的 transition-only diagnostic：它们从当前 monorepo 源码启动本机 runner，不能作为正式成功路径或 release proof。默认不带 opt-in 会 fail fast；正式发布证据只接受 `agentsmith-runner` image/manifest/lock adoption 与对应 release contract digest。
+
+```bash
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner-from-state
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-smoke-full
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 npm run agent:task-runner
+```
 
 ## 本地真实手测环境
 

@@ -417,6 +417,16 @@ describe('local-manual start-runner', () => {
     }
   });
 
+  it('does not synthesize the monorepo runner diagnostic opt-in before delegating to make', () => {
+    const source = readFileSync(
+      path.join(repoRoot, 'scripts/local-manual/start-runner.sh'),
+      'utf8',
+    );
+
+    expect(source).toContain('exec make agent-task-runner-from-state');
+    expect(source).not.toContain('AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1');
+  });
+
   it('blocks restart without deleting tracked state or launching a replacement runner', () => {
     const fixture = setupStartRunnerFixture();
     tempRoots.push(fixture.tempRoot);

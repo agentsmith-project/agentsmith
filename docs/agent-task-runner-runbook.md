@@ -80,6 +80,17 @@ npm run verify -- --goal=real --run
 npm run test:agent-task:runner:backend-real
 ```
 
+### Transition-only monorepo runner owner diagnostic
+
+这些命令只用于 owner 排障，默认 fail fast。正常运行/发布路径消费 `agentsmith-runner` image/manifest/lock；不要把 monorepo source runner 启动写成 release proof。
+
+```bash
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_runner_id=runner_xxx' AGENT_KEY='ask_xxx'
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-runner-from-state
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 make agent-task-smoke-full
+AGENTSMITH_ALLOW_MONOREPO_RUNNER_DIAGNOSTIC=1 npm run agent:task-runner
+```
+
 ### Terminal-specific owner diagnostics
 
 ```bash

@@ -156,7 +156,7 @@ function renderLocalRuntimeFlowsBlock(): string {
     '',
     '## 一句话基线',
     '',
-    '`local-real` 用来开发和手测；unified deploy 用来证明部署。两者在一台开发机上串行切换。',
+    '`local-real` 用来开发和手测；unified deploy 只作为 pre-GA/local deploy diagnostic / wiring rehearsal，用来检查部署 wiring 与证据路径，不给 deployment/package/operator verdict，也不属于 AgentSmith release readiness。两者在一台开发机上串行切换。',
     '',
     '## 当前操作基线',
     '',
@@ -189,7 +189,7 @@ function renderLocalRuntimeFlowsBlock(): string {
     'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
     '```',
     '',
-    '统一部署证据统一写到 `artifacts/unified-deploy/`。',
+    '统一部署证据统一写到 `artifacts/unified-deploy/`；这些证据只服务 pre-GA/local deploy diagnostic / wiring rehearsal，不给 deployment/package/operator verdict。',
   ].join('\n');
 }
 

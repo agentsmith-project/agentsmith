@@ -2,7 +2,7 @@
 
 This guide covers local development and local verification on a developer machine.
 
-For deployment operations, use [Unified Deploy Operations](./unified-deploy-operations.md).
+For unified deploy diagnostics, use [Unified Deploy Operations](./unified-deploy-operations.md).
 
 <!-- current-runtime-lines:local-runtime-flows:start -->
 运行线职责、部署 diagnostic entry、substrate 边界以
@@ -15,7 +15,7 @@ Machine-readable source:
 
 ## 一句话基线
 
-`local-real` 用来开发和手测；unified deploy 用来证明部署。两者在一台开发机上串行切换。
+`local-real` 用来开发和手测；unified deploy 只作为 pre-GA/local deploy diagnostic / wiring rehearsal，用来检查部署 wiring 与证据路径，不给 deployment/package/operator verdict，也不属于 AgentSmith release readiness。两者在一台开发机上串行切换。
 
 ## 当前操作基线
 
@@ -51,7 +51,7 @@ npm run test:unified-deploy:local-kind
 npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
 ```
 
-统一部署证据统一写到 `artifacts/unified-deploy/`。
+统一部署证据统一写到 `artifacts/unified-deploy/`；这些证据只服务 pre-GA/local deploy diagnostic / wiring rehearsal，不给 deployment/package/operator verdict。
 <!-- current-runtime-lines:local-runtime-flows:end -->
 
 ## Troubleshooting
@@ -69,6 +69,7 @@ If local test PVs remain after Agent task or file-library work, clean the local 
 ## Remember
 
 1. `local-real` is the supported developer-machine runtime.
-2. Unified deploy is the supported deployment runtime.
+2. Unified deploy is only a pre-GA/local deploy diagnostic and wiring rehearsal.
 3. Run them serially on one machine.
-4. Use focused checks first; reserve heavy gates for stage closeout or product readiness / handoff sign-off.
+4. Unified deploy evidence does not give deployment/package/operator verdicts or AgentSmith release readiness.
+5. Use focused checks first; reserve heavy gates for stage closeout or product readiness / handoff sign-off.

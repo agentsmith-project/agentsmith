@@ -74,6 +74,30 @@ const runtimeLinesMatrix = read('docs/user-guides/runtime-lines-matrix.md');
 const unifiedDeployOperations = read('docs/user-guides/unified-deploy-operations.md');
 const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
 
+const currentRuntimeLineWordingFiles = [
+  'scripts/governance/sync-current-runtime-line-docs.ts',
+  'docs/user-guides/local-runtime-flows.md',
+] as const;
+const forbiddenCurrentRuntimeLineWording = [
+  {
+    snippet: 'unified deploy 用来证明部署',
+    message: 'unified deploy must be described as a pre-GA/local deploy diagnostic or wiring rehearsal, not deployment proof',
+  },
+  {
+    snippet: 'Unified deploy is the supported deployment runtime.',
+    message: 'unified deploy must not be described as the supported deployment runtime',
+  },
+] as const;
+
+for (const sourcePath of currentRuntimeLineWordingFiles) {
+  const content = read(sourcePath);
+  for (const forbidden of forbiddenCurrentRuntimeLineWording) {
+    if (content.includes(forbidden.snippet)) {
+      failures.push(`${sourcePath}: ${forbidden.message}`);
+    }
+  }
+}
+
 const duplicateDepsBootstrapPattern = /\bintegration:deps:up\b[\s\S]{0,1400}?\bmake\s+deps-ready\b/;
 for (const sourcePath of listFiles('scripts').filter((filePath) => filePath.endsWith('.sh'))) {
   if (duplicateDepsBootstrapPattern.test(read(sourcePath))) {

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
+import { validateCurrentStatusProjection } from '../current-status-projection-schema';
 import {
   canonicalReleaseBoundaryJson,
   type CurrentAgentSmithReleaseContract,
@@ -1013,6 +1014,90 @@ describe('release readiness human entrypoints', () => {
       if (status.kind === 'malformed') {
         expect(status.error).toContain('unexpected field: automated_release_verdict');
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed in release-status --json when summary cache is malformed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-json-malformed-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root);
+      writeSummaryCache(root);
+      const summaryPath = join(root, 'summary.json');
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as Record<string, unknown>;
+      writeJson(summaryPath, {
+        ...summary,
+        automated_release_verdict: 'PASSED',
+      });
+      writeLatestPointer(latestPath, root);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--json',
+        '--latest-path',
+        latestPath,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(result.stdout) as {
+        aggregate_status_ref?: unknown;
+        deepest_reason?: { code?: unknown; summary?: unknown };
+        phase?: unknown;
+        presentation_status?: unknown;
+        primary_blocker?: { owner?: unknown };
+        resume_recommendation?: { reason_codes?: readonly unknown[] };
+        safe_next_command?: unknown;
+      };
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe('');
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection.aggregate_status_ref).toBeNull();
+      expect(projection.phase).toBe('report');
+      expect(projection.presentation_status).toBe('unknown');
+      expect(projection.primary_blocker?.owner).toBe('release_status_malformed');
+      expect(projection.deepest_reason?.code).toBe('release_status_malformed');
+      expect(projection.deepest_reason?.summary).toContain('unexpected field: automated_release_verdict');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
+      expect(projection.resume_recommendation?.reason_codes).toContain('release_status_malformed');
+      expect(result.stdout).not.toContain('aggregate_result_not_applicable');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed in release-status --json when latest summary is missing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-status-json-missing-summary-'));
+    const latestPath = join(root, 'latest.json');
+    try {
+      writeTerminalResult(root);
+      writeLatestPointer(latestPath, root);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--json',
+        '--latest-path',
+        latestPath,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(result.stdout) as {
+        deepest_reason?: { code?: unknown };
+        primary_blocker?: { owner?: unknown };
+      };
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe('');
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection.primary_blocker?.owner).toBe('release_status_missing_summary');
+      expect(projection.deepest_reason?.code).toBe('release_status_missing_summary');
+      expect(result.stdout).not.toContain('aggregate_result_not_applicable');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
@@ -1453,6 +1453,44 @@ describe('current status projection', () => {
       expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
       expectNoReleaseVerdictFields(projection);
       expectNoSensitiveProjectionLeak(output);
+    });
+  });
+
+  it('projects release-status --json missing latest as a status-read blocker', () => {
+    withTempRoot((root) => {
+      const latestPath = join(root, 'missing-latest.json');
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/release-status.ts',
+        '--json',
+        '--latest-path',
+        latestPath,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+      const projection = JSON.parse(result.stdout) as {
+        aggregate_status_ref?: unknown;
+        deepest_reason?: { code?: unknown; summary?: unknown };
+        phase?: unknown;
+        presentation_status?: unknown;
+        primary_blocker?: { owner?: unknown };
+        resume_recommendation?: { reason_codes?: readonly unknown[] };
+        safe_next_command?: unknown;
+      };
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe('');
+      expect(validateCurrentStatusProjection(projection)).toMatchObject({ ok: true });
+      expect(projection.aggregate_status_ref).toBeNull();
+      expect(projection.phase).toBe('not-started');
+      expect(projection.presentation_status).toBe('unknown');
+      expect(projection.primary_blocker?.owner).toBe('release_status_missing_latest');
+      expect(projection.deepest_reason?.code).toBe('release_status_missing_latest');
+      expect(projection.deepest_reason?.summary).toContain('Latest release summary pointer was not found');
+      expect(projection.safe_next_command).toBe('npm run product:ready');
+      expect(projection.resume_recommendation?.reason_codes).toContain('release_status_missing_latest');
+      expect(result.stdout).not.toContain('aggregate_result_not_applicable');
     });
   });
 });

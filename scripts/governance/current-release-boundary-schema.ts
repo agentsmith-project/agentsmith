@@ -12,7 +12,7 @@ import {
   POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
-} from '../post-deploy-product-smoke/report';
+} from '../post-deploy-product-smoke/constants';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
 export const CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;

@@ -21,6 +21,11 @@ import {
 
 const tempRoots: string[] = [];
 const RELEASE_CONTRACT_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
+const RELEASE_CONTRACT_RELEASE_ID = '2026.05.23-p0';
+const RELEASE_CONTRACT_FIXTURE_PATH = join(
+  process.cwd(),
+  'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
+);
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
@@ -41,12 +46,16 @@ function writeJson(root: string, name: string, value: unknown): string {
   return target;
 }
 
+function writeText(root: string, name: string, value: string): string {
+  const target = join(root, name);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, value, 'utf8');
+  return target;
+}
+
 function releaseContractFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schema_version: 'agentsmith.release-contract/v1',
-    product: 'agentsmith',
-    release_id: '2026.05.08-p0',
-    git_sha: RELEASE_CONTRACT_GIT_SHA,
+    ...(JSON.parse(readFileSync(RELEASE_CONTRACT_FIXTURE_PATH, 'utf8')) as Record<string, unknown>),
     ...overrides,
   };
 }
@@ -142,7 +151,29 @@ describe('post-deploy product smoke report producer', () => {
     const root = tempDir('post-deploy-product-smoke-');
     const outputDir = join(root, 'out');
     writeFocusedEvidenceFiles(root);
-    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+    const siteEnvPath = writeText(
+      root,
+      'site.env',
+      [
+        'UNIFIED_DEPLOY_PROFILE=local-kind',
+        'PUBLIC_BASE_URL=http://agentsmith.localtest.me:29180',
+        'PUBLIC_API_BASE_URL=http://agentsmith.localtest.me:29180/api/v1',
+        'RUNNER_PUBLIC_API_BASE_URL=ws://agentsmith.localtest.me:29180/api/v1',
+        '',
+      ].join('\n'),
+    );
+    const substrateTruthPath = writeJson(root, 'substrate-truth.json', {
+      schema_version: 'fixture.substrate-truth/v1',
+      target: 'local-kind',
+    });
+    const aggregate = aggregateWithFlows();
+    aggregate.source = {
+      ...(aggregate.source as Record<string, unknown>),
+      runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
+      site_env_path: siteEnvPath,
+      substrate_truth_path: substrateTruthPath,
+    };
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregate);
     const releaseContractPath = writeReleaseContract(root);
 
     const result = await runPostDeployProductSmokeReportProducer({
@@ -166,8 +197,26 @@ describe('post-deploy product smoke report producer', () => {
     expect(report.release_contract).toMatchObject({
       path: releaseContractPath,
       input_sha256: fileSha256(releaseContractPath),
-      release_id: '2026.05.08-p0',
+      release_id: RELEASE_CONTRACT_RELEASE_ID,
       git_sha: RELEASE_CONTRACT_GIT_SHA,
+    });
+    expect(report.source).toMatchObject({
+      product_flows_path: aggregatePath,
+      product_flows_sha256: fileSha256(aggregatePath),
+    });
+    expect(report.deployment_target).toMatchObject({
+      profile: 'local-kind',
+      public_base_url: 'http://agentsmith.localtest.me:29180',
+      api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
+      runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
+      site_env: {
+        path: siteEnvPath,
+        sha256: fileSha256(siteEnvPath),
+      },
+      substrate_truth: {
+        path: substrateTruthPath,
+        sha256: fileSha256(substrateTruthPath),
+      },
     });
     const smokeResults = report.smoke_results as Record<string, unknown>;
     expect(Object.keys(smokeResults)).toContain('provider_neutral_endpoint');
@@ -175,10 +224,12 @@ describe('post-deploy product smoke report producer', () => {
     expect(smokeResults.provider_neutral_endpoint).toMatchObject({
       source_flow: 'chat_via_llmup',
       source_evidence_path: join(root, 'chat_via_llmup.json'),
+      source_evidence_sha256: fileSha256(join(root, 'chat_via_llmup.json')),
       status: 'passed',
     });
     for (const smokeResult of Object.values(smokeResults) as Record<string, unknown>[]) {
       expect(smokeResult.source_evidence_path).toEqual(expect.stringMatching(root));
+      expect(smokeResult.source_evidence_sha256).toEqual(fileSha256(smokeResult.source_evidence_path as string));
     }
   });
 
@@ -215,7 +266,7 @@ describe('post-deploy product smoke report producer', () => {
     expect(report.release_contract).toMatchObject({
       path: 'release-contract/agentsmith-release-contract.json',
       input_sha256: fileSha256(releaseContractPath),
-      release_id: '2026.05.08-p0',
+      release_id: RELEASE_CONTRACT_RELEASE_ID,
       git_sha: RELEASE_CONTRACT_GIT_SHA,
     });
 
@@ -318,12 +369,12 @@ describe('post-deploy product smoke report producer', () => {
     [
       'schema_version',
       { schema_version: 'agentsmith.release-contract/v0' },
-      /release_contract\.schema_version must be agentsmith\.release-contract\/v1/u,
+      /release_contract failed full release contract validation: .*schema_version: schema_version must be "agentsmith\.release-contract\/v1"/u,
     ],
     [
       'git_sha',
       { git_sha: '0123456789abcdef0123456789abcdef0123456Z' },
-      /release_contract\.git_sha must be a 40-character lowercase hex string/u,
+      /release_contract failed full release contract validation: .*git_sha: git_sha must be a 40-character lowercase git sha/u,
     ],
   ] as const)('fails when release contract %s is invalid', async (_field, overrides, expectedError) => {
     const root = tempDir('post-deploy-product-smoke-bad-release-contract-');
@@ -337,6 +388,24 @@ describe('post-deploy product smoke report producer', () => {
       overrides,
       name: 'bad-release-contract.json',
     }))).rejects.toThrow(expectedError);
+  });
+
+  it('fails when the full release contract validator rejects a non-top-level contract drift', async () => {
+    const root = tempDir('post-deploy-product-smoke-full-release-contract-');
+    writeFocusedEvidenceFiles(root);
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out'),
+    }, {
+      overrides: {
+        required_product_flows: PRODUCT_VERIFICATION_FLOW_IDS.filter((flow) => flow !== 'files'),
+      },
+      name: 'release-contract-missing-flow.json',
+    }))).rejects.toThrow(
+      /release_contract failed full release contract validation: .*required_product_flows: required product flow "files" is missing/u,
+    );
   });
 
   it('fails when a required source flow is missing', async () => {
@@ -470,6 +539,13 @@ describe('post-deploy product smoke report producer', () => {
     }));
 
     expect(result.report).not.toHaveProperty('formal_verdict');
+    expect(result.report.source.product_flows_sha256).toBe(fileSha256(aggregatePath));
+    expect(result.report.deployment_target).toMatchObject({
+      public_base_url: 'http://agentsmith.localtest.me:29180',
+      api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
+    });
+    expect(result.report.deployment_target).not.toHaveProperty('site_env');
+    expect(result.report.deployment_target).not.toHaveProperty('substrate_truth');
     const report = readReport(result.reportPath);
     expect(report).not.toHaveProperty('formal_verdict');
     for (const legacyField of [

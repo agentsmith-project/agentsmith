@@ -7,52 +7,34 @@ import {
   PRODUCT_VERIFICATION_FLOW_IDS,
   type ProductVerificationFlowId,
 } from '../unified-deploy/check-verification-report';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_REPO,
+  POST_DEPLOY_PRODUCT_SMOKE_SPECS,
+  type PostDeployProductSmokeId,
+} from './constants';
+import {
+  validateAgentSmithReleaseContract,
+  type CurrentReleaseBoundaryValidationFailure,
+} from '../governance/current-release-boundary-schema';
 
-export const POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION =
-  'agentsmith.post-deploy-product-smoke-report/v1' as const;
-export const POST_DEPLOY_PRODUCT_SMOKE_PRODUCER =
-  'agentsmith-post-deploy-product-smoke' as const;
-export const POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME =
-  'post-deploy-product-smoke-report.json' as const;
+export {
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_REPO,
+  POST_DEPLOY_PRODUCT_SMOKE_SPECS,
+  type PostDeployProductSmokeId,
+} from './constants';
+
 export const PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION =
   'agentsmith.unified-deploy.product-flows.aggregate/v1' as const;
 export const PRODUCT_FLOWS_AGGREGATE_PRODUCER =
   'unified-deploy-product-flows' as const;
 export const FOCUSED_PRODUCT_FLOW_EVIDENCE_SCHEMA_VERSION =
   'agentsmith.focused-product-flow.evidence/v1' as const;
-export const AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_REPO =
-  'github.com/agentsmith-project/agentsmith' as const;
-const RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;
-const RELEASE_CONTRACT_PRODUCT = 'agentsmith' as const;
-const GIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
-
-export type PostDeployProductSmokeId =
-  | Exclude<ProductVerificationFlowId, 'chat_via_llmup'>
-  | 'provider_neutral_endpoint';
-
-type ProductSmokeSpec = {
-  id: PostDeployProductSmokeId;
-  source_flow: ProductVerificationFlowId;
-  label: string;
-};
-
-export const POST_DEPLOY_PRODUCT_SMOKE_SPECS: readonly ProductSmokeSpec[] = [
-  { id: 'login_profile', source_flow: 'login_profile', label: 'login/profile' },
-  { id: 'workspace_project', source_flow: 'workspace_project', label: 'workspace/project' },
-  {
-    id: 'provider_neutral_endpoint',
-    source_flow: 'chat_via_llmup',
-    label: 'provider-neutral Endpoint',
-  },
-  {
-    id: 'agent_task_managed_runner',
-    source_flow: 'agent_task_managed_runner',
-    label: 'Agent task managed runner',
-  },
-  { id: 'files', source_flow: 'files', label: 'Files' },
-  { id: 'audit', source_flow: 'audit', label: 'audit' },
-  { id: 'usage', source_flow: 'usage', label: 'usage' },
-] as const;
 
 export type PostDeployProductSmokeResult = {
   id: PostDeployProductSmokeId;
@@ -60,6 +42,21 @@ export type PostDeployProductSmokeResult = {
   label: string;
   source_flow: ProductVerificationFlowId;
   source_evidence_path: string;
+  source_evidence_sha256: string;
+};
+
+type EvidenceFileDigest = {
+  path: string;
+  sha256: string;
+};
+
+type DeploymentTargetBinding = {
+  profile?: string;
+  public_base_url?: string;
+  api_base_url?: string;
+  runner_public_api_base_url?: string;
+  site_env?: EvidenceFileDigest;
+  substrate_truth?: EvidenceFileDigest;
 };
 
 export type PostDeployProductSmokeReport = {
@@ -71,6 +68,7 @@ export type PostDeployProductSmokeReport = {
   generated_at: string;
   source: {
     product_flows_path: string;
+    product_flows_sha256: string;
     aggregate_schema_version: typeof PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION;
     aggregate_producer: typeof PRODUCT_FLOWS_AGGREGATE_PRODUCER;
     aggregate_generated_at?: string;
@@ -82,6 +80,7 @@ export type PostDeployProductSmokeReport = {
     release_id: string;
     git_sha: string;
   };
+  deployment_target?: DeploymentTargetBinding;
   smoke_results: Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
   failures: [];
   paths: {
@@ -139,17 +138,25 @@ function requireExactString(
   throw new Error(`${pathLabel}.${key} must be ${expected}.`);
 }
 
-async function readJsonRecord(filePath: string): Promise<Record<string, unknown>> {
-  const source = await readFile(filePath, 'utf8');
-  const parsed = JSON.parse(source) as unknown;
-  if (!isRecord(parsed)) {
-    throw new Error('product-flows aggregate must be a JSON object.');
-  }
-  return parsed;
-}
-
 function sha256Digest(value: string | Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+type JsonRecordFile = {
+  record: Record<string, unknown>;
+  input_sha256: string;
+};
+
+async function readJsonRecordFile(filePath: string, label: string): Promise<JsonRecordFile> {
+  const raw = await readFile(filePath);
+  const parsed = JSON.parse(raw.toString('utf8')) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return {
+    record: parsed,
+    input_sha256: sha256Digest(raw),
+  };
 }
 
 type ReleaseContractBinding = {
@@ -159,28 +166,8 @@ type ReleaseContractBinding = {
   git_sha: string;
 };
 
-function validateReleaseContract(contract: Record<string, unknown>): {
-  releaseId: string;
-  gitSha: string;
-} {
-  if (stringValue(contract, 'schema_version') !== RELEASE_CONTRACT_SCHEMA_VERSION) {
-    throw new Error(`release_contract.schema_version must be ${RELEASE_CONTRACT_SCHEMA_VERSION}.`);
-  }
-  if (stringValue(contract, 'product') !== RELEASE_CONTRACT_PRODUCT) {
-    throw new Error(`release_contract.product must be ${RELEASE_CONTRACT_PRODUCT}.`);
-  }
-
-  const releaseId = stringValue(contract, 'release_id').trim();
-  if (!releaseId) {
-    throw new Error('release_contract.release_id must be a non-empty string.');
-  }
-
-  const gitSha = stringValue(contract, 'git_sha');
-  if (!GIT_SHA_PATTERN.test(gitSha)) {
-    throw new Error('release_contract.git_sha must be a 40-character lowercase hex string.');
-  }
-
-  return { releaseId, gitSha };
+function formatValidationFailures(failures: readonly CurrentReleaseBoundaryValidationFailure[]): string {
+  return failures.map((failure) => `${failure.path}: ${failure.reason}`).join('; ');
 }
 
 async function readReleaseContractBinding(
@@ -189,16 +176,17 @@ async function readReleaseContractBinding(
 ): Promise<ReleaseContractBinding> {
   const raw = await readFile(releaseContractPath);
   const parsed = JSON.parse(raw.toString('utf8')) as unknown;
-  if (!isRecord(parsed)) {
-    throw new Error('release_contract must be a JSON object.');
+  const validation = validateAgentSmithReleaseContract(parsed);
+  if (!validation.ok) {
+    throw new Error(
+      `release_contract failed full release contract validation: ${formatValidationFailures(validation.failures)}`,
+    );
   }
-
-  const { releaseId, gitSha } = validateReleaseContract(parsed);
   return {
     path: reportReleaseContractPath,
     input_sha256: sha256Digest(raw),
-    release_id: releaseId,
-    git_sha: gitSha,
+    release_id: validation.value.release_id,
+    git_sha: validation.value.git_sha,
   };
 }
 
@@ -309,13 +297,16 @@ function resolveFocusedEvidencePaths(
 
 async function validateFocusedEvidenceFiles(
   evidencePaths: Record<ProductVerificationFlowId, string>,
-): Promise<void> {
+): Promise<Record<ProductVerificationFlowId, string>> {
+  const digests: Partial<Record<ProductVerificationFlowId, string>> = {};
   for (const sourceFlow of PRODUCT_VERIFICATION_FLOW_IDS) {
     const evidencePath = evidencePaths[sourceFlow];
     let evidence: Record<string, unknown>;
+    let raw: Buffer;
     try {
+      raw = await readFile(evidencePath);
       evidence = parseJsonRecord(
-        await readFile(evidencePath, 'utf8'),
+        raw.toString('utf8'),
         `product_flows.flow_evidence_paths.${sourceFlow}`,
       );
     } catch (error: unknown) {
@@ -340,11 +331,15 @@ async function validateFocusedEvidenceFiles(
     );
     requireExactString(evidence, 'flow', sourceFlow, `product_flows.flow_evidence_paths.${sourceFlow}`);
     requireExactString(evidence, 'status', 'passed', `product_flows.flow_evidence_paths.${sourceFlow}`);
+    digests[sourceFlow] = sha256Digest(raw);
   }
+
+  return digests as Record<ProductVerificationFlowId, string>;
 }
 
 function buildSmokeResults(
   evidencePaths: Record<ProductVerificationFlowId, string>,
+  evidenceSha256: Record<ProductVerificationFlowId, string>,
 ): Record<PostDeployProductSmokeId, PostDeployProductSmokeResult> {
   return Object.fromEntries(POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => {
     return [
@@ -355,6 +350,7 @@ function buildSmokeResults(
         label: spec.label,
         source_flow: spec.source_flow,
         source_evidence_path: evidencePaths[spec.source_flow],
+        source_evidence_sha256: evidenceSha256[spec.source_flow],
       },
     ];
   })) as Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
@@ -399,13 +395,102 @@ function serializeEvidencePathsForReport(
   ])) as Record<ProductVerificationFlowId, string>;
 }
 
+type SourceFileBinding = EvidenceFileDigest & {
+  source: string;
+};
+
+function resolveAggregateSourcePath(
+  rawPath: string,
+  resolvedAggregatePath: string,
+): string {
+  return path.isAbsolute(rawPath)
+    ? rawPath
+    : path.resolve(path.dirname(resolvedAggregatePath), rawPath);
+}
+
+async function readOptionalAggregateSourceFileBinding(
+  aggregate: Record<string, unknown>,
+  sourceKey: string,
+  resolvedAggregatePath: string,
+  pathRoot: string | undefined,
+  reportPathLabel: string,
+): Promise<SourceFileBinding | undefined> {
+  const source = asRecord(aggregate.source);
+  const rawPath = stringValue(source, sourceKey).trim();
+  if (!rawPath) {
+    return undefined;
+  }
+
+  const resolvedPath = resolveAggregateSourcePath(rawPath, resolvedAggregatePath);
+  const reportPath = serializePathForReport(resolvedPath, pathRoot, reportPathLabel);
+  let raw: Buffer;
+  try {
+    raw = await readFile(resolvedPath);
+  } catch (error: unknown) {
+    throw new Error(
+      `${reportPathLabel} must point to a readable file: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  return {
+    path: reportPath,
+    sha256: sha256Digest(raw),
+    source: raw.toString('utf8'),
+  };
+}
+
+function parseEnvValue(source: string, key: string): string {
+  for (const line of source.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex < 1) {
+      continue;
+    }
+    if (trimmed.slice(0, separatorIndex) !== key) {
+      continue;
+    }
+    return trimmed.slice(separatorIndex + 1).trim();
+  }
+  return '';
+}
+
+function buildDeploymentTargetBinding(
+  aggregate: Record<string, unknown>,
+  siteEnv: SourceFileBinding | undefined,
+  substrateTruth: SourceFileBinding | undefined,
+): DeploymentTargetBinding | undefined {
+  const source = asRecord(aggregate.source);
+  const profile = siteEnv ? parseEnvValue(siteEnv.source, 'UNIFIED_DEPLOY_PROFILE') : '';
+  const publicBaseUrl = stringValue(source, 'public_base_url');
+  const apiBaseUrl = stringValue(source, 'api_base_url');
+  const runnerPublicApiBaseUrl = stringValue(source, 'runner_public_api_base_url');
+  const deploymentTarget: DeploymentTargetBinding = {
+    ...(profile ? { profile } : {}),
+    ...(publicBaseUrl ? { public_base_url: publicBaseUrl } : {}),
+    ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+    ...(runnerPublicApiBaseUrl ? { runner_public_api_base_url: runnerPublicApiBaseUrl } : {}),
+    ...(siteEnv ? { site_env: { path: siteEnv.path, sha256: siteEnv.sha256 } } : {}),
+    ...(substrateTruth ? { substrate_truth: { path: substrateTruth.path, sha256: substrateTruth.sha256 } } : {}),
+  };
+
+  return Object.keys(deploymentTarget).length > 0 ? deploymentTarget : undefined;
+}
+
 function buildReport(
   aggregate: Record<string, unknown>,
   productFlowsPath: string,
+  productFlowsSha256: string,
   releaseContract: ReleaseContractBinding,
   reportPath: string,
   generatedAt: string,
   evidencePaths: Record<ProductVerificationFlowId, string>,
+  evidenceSha256: Record<ProductVerificationFlowId, string>,
+  deploymentTarget: DeploymentTargetBinding | undefined,
 ): PostDeployProductSmokeReport {
   const aggregateGeneratedAt = stringValue(aggregate, 'generated_at');
   const aggregateCommand = stringValue(aggregate, 'command');
@@ -419,13 +504,15 @@ function buildReport(
     generated_at: generatedAt,
     source: {
       product_flows_path: productFlowsPath,
+      product_flows_sha256: productFlowsSha256,
       aggregate_schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
       aggregate_producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
       ...(aggregateGeneratedAt ? { aggregate_generated_at: aggregateGeneratedAt } : {}),
       ...(aggregateCommand ? { aggregate_command: aggregateCommand } : {}),
     },
     release_contract: releaseContract,
-    smoke_results: buildSmokeResults(evidencePaths),
+    ...(deploymentTarget ? { deployment_target: deploymentTarget } : {}),
+    smoke_results: buildSmokeResults(evidencePaths, evidenceSha256),
     failures: [],
     paths: {
       report_path: reportPath,
@@ -461,7 +548,11 @@ export async function runPostDeployProductSmokeReportProducer(
     'release_contract.path',
   );
 
-  const aggregate = await readJsonRecord(resolvedProductFlowsPath);
+  const productFlowsFile = await readJsonRecordFile(
+    resolvedProductFlowsPath,
+    'product-flows aggregate',
+  );
+  const aggregate = productFlowsFile.record;
   const releaseContract = await readReleaseContractBinding(
     resolvedReleaseContractPath,
     reportReleaseContractPath,
@@ -471,16 +562,34 @@ export async function runPostDeployProductSmokeReportProducer(
   validateRequiredSourceFlows(flowMap);
   const evidencePaths = resolveFocusedEvidencePaths(aggregate, resolvedProductFlowsPath);
   const reportEvidencePaths = serializeEvidencePathsForReport(evidencePaths, resolvedPathRoot);
-  await validateFocusedEvidenceFiles(evidencePaths);
+  const evidenceSha256 = await validateFocusedEvidenceFiles(evidencePaths);
+  const siteEnv = await readOptionalAggregateSourceFileBinding(
+    aggregate,
+    'site_env_path',
+    resolvedProductFlowsPath,
+    resolvedPathRoot,
+    'deployment_target.site_env.path',
+  );
+  const substrateTruth = await readOptionalAggregateSourceFileBinding(
+    aggregate,
+    'substrate_truth_path',
+    resolvedProductFlowsPath,
+    resolvedPathRoot,
+    'deployment_target.substrate_truth.path',
+  );
+  const deploymentTarget = buildDeploymentTargetBinding(aggregate, siteEnv, substrateTruth);
 
   await mkdir(outputDir, { recursive: true });
   const report = buildReport(
     aggregate,
     reportProductFlowsPath,
+    productFlowsFile.input_sha256,
     releaseContract,
     reportReportPath,
     (options.now ?? (() => new Date()))().toISOString(),
     reportEvidencePaths,
+    evidenceSha256,
+    deploymentTarget,
   );
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 

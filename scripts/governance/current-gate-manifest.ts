@@ -3,7 +3,7 @@ import {
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
   POST_DEPLOY_PRODUCT_SMOKE_SPECS,
-} from '../post-deploy-product-smoke/report';
+} from '../post-deploy-product-smoke/constants';
 
 export const CURRENT_GATE_DOCUMENT_FILES = [
   'docs/current-engineering-governance-model.md',

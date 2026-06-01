@@ -1,0 +1,102 @@
+name: Product Readiness Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_contract_artifact_name:
+        description: "GitHub Actions artifact name containing agentsmith-release-contract.json"
+        required: true
+        default: "agentsmith-release-contract"
+        type: string
+      release_contract_run_id:
+        description: "GitHub Actions run id that produced the release contract artifact"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: product-readiness-artifact-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  product-readiness:
+    name: product-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      AGENTSMITH_PRODUCT_READINESS_ARTIFACT_NAME: agentsmith-product-readiness
+      PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
+      RELEASE_CAMPAIGN_RUN_ID: product-readiness-${{ github.run_id }}
+      RELEASE_CAMPAIGN_ROOT: artifacts/release-runs/product-readiness-${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runner contract
+        run: npm run build -w @mbos/agent-runner-contract
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${PRESET_ENDPOINT_API_KEY:-}" ]]; then
+            echo "PRESET_ENDPOINT_API_KEY secret is required for product readiness artifact generation; BACKEND_REAL_API_KEY is accepted only as a temporary GitHub Actions secret rename fallback." >&2
+            exit 1
+          fi
+
+      - name: Materialize backend-real endpoint env
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${PRESET_ENDPOINT_API_KEY}" > .env.backend-real
+
+      - name: Download release contract artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.release_contract_artifact_name }}
+          run-id: ${{ inputs.release_contract_run_id }}
+          path: artifacts/product-readiness/input
+          github-token: ${{ github.token }}
+
+      - name: Verify release contract input
+        run: |
+          set -euo pipefail
+          test -f artifacts/product-readiness/input/agentsmith-release-contract.json
+
+      - name: Run product readiness
+        run: |
+          set -euo pipefail
+          npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json
+
+      - name: Verify product readiness handoff files
+        run: |
+          set -euo pipefail
+          test -f "${RELEASE_CAMPAIGN_ROOT}/product-readiness/product-readiness-report.json"
+          test -f "${RELEASE_CAMPAIGN_ROOT}/summary.json"
+          test -f "${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json"
+
+      - name: Upload product readiness artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentsmith-product-readiness
+          if-no-files-found: error
+          path: |
+            ${{ env.RELEASE_CAMPAIGN_ROOT }}/product-readiness/product-readiness-report.json
+            ${{ env.RELEASE_CAMPAIGN_ROOT }}/summary.json
+            ${{ env.RELEASE_CAMPAIGN_ROOT }}/gate-release-full/result.json

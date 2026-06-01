@@ -4,11 +4,12 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   AGENTSMITH_CANONICAL_REPO,
@@ -33,25 +34,77 @@ export const PRODUCT_READINESS_REPORT_SCHEMA_VERSION =
 export const PRODUCT_READINESS_REPORT_FILENAME = 'product-readiness-report.json' as const;
 export const PRODUCT_READINESS_REPORT_GENERATOR_COMMAND = 'npm run product-readiness:report' as const;
 export const PRODUCT_READINESS_REPORT_GENERATOR_VERSION = 'p0-product-readiness-report' as const;
+export const PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV =
+  'AGENTSMITH_PRODUCT_READINESS_ARTIFACT_NAME' as const;
+export const PRODUCT_READINESS_REPORT_ARTIFACT_URI_ENV =
+  'AGENTSMITH_PRODUCT_READINESS_REPORT_ARTIFACT_URI' as const;
 
 const PRODUCT_READINESS_REPORT_SUBJECT_NAME = 'product-readiness-report' as const;
 
-export interface ProductReadinessReport {
+export interface ProductReadinessReferencedFile {
+  id: 'product_readiness_summary' | 'terminal_result';
+  path: string;
+  sha256: string;
+}
+
+export type ProductReadinessArtifactPublication =
+  | {
+      mode: 'ci_artifact';
+      artifact_name: string;
+      artifact_uri: string;
+      repository: string;
+      run_id: string;
+      run_attempt: string;
+    }
+  | {
+      mode: 'local_diagnostics_only';
+      artifact_uri: null;
+      reason: string;
+    };
+
+export type ProductReadinessArtifactProvenance = Omit<CurrentArtifactProvenance, 'artifact_uri'> & {
+  artifact_uri?: string;
+};
+
+export interface ProductReadinessLocalDiagnostics {
+  path_root: string;
+  output_path: string;
+  release_contract_path: string;
+  product_readiness_summary_path: string;
+  campaign_root: string;
+  terminal_result_path: string;
+}
+
+export interface ProductReadinessReportSubject {
   schema: typeof PRODUCT_READINESS_REPORT_SCHEMA_VERSION;
   status: 'pass';
   release_id: string;
   git_sha: string;
+  /**
+   * Compatibility alias for release_contract_file_sha256. Do not compare this
+   * field with release_contract_artifact_sha256.
+   */
   release_contract_digest: string;
+  release_contract_file_sha256: string;
+  release_contract_artifact_sha256: string;
+  release_contract_artifact_uri: string;
   product_readiness_summary: {
     path: string;
     sha256: string;
   };
   campaign: {
     root: string;
+    path_root: string;
     terminal_result_path: string;
     terminal_result_sha256: string;
   };
-  artifact_provenance: CurrentArtifactProvenance;
+  referenced_files: readonly ProductReadinessReferencedFile[];
+  artifact_publication: ProductReadinessArtifactPublication;
+}
+
+export interface ProductReadinessReport extends ProductReadinessReportSubject {
+  artifact_provenance: ProductReadinessArtifactProvenance;
+  local_diagnostics: ProductReadinessLocalDiagnostics;
 }
 
 export interface WriteProductReadinessReportOptions {
@@ -59,6 +112,7 @@ export interface WriteProductReadinessReportOptions {
   latestPath?: string;
   releaseContractPath?: string;
   outputPath?: string;
+  pathRoot?: string;
   env?: Readonly<Record<string, string | undefined>>;
   now?: () => Date;
 }
@@ -207,50 +261,142 @@ function assertReleaseContractMatchesSummary(
   }
 }
 
-function encodeArtifactUriSegment(value: string): string {
-  return encodeURIComponent(value).replaceAll('%2F', '_');
-}
-
-function portableSubjectUri(campaignRoot: string, outputPath: string): string {
-  const relativePath = relative(resolve(campaignRoot), resolve(outputPath)).split(sep).join('/');
+function toPortableRelativePath(relativePath: string, label: string): string {
   if (
     relativePath.length === 0
-    || relativePath.startsWith('../')
     || relativePath === '..'
+    || relativePath.startsWith(`..${sep}`)
+    || relativePath.startsWith('../')
+    || isAbsolute(relativePath)
     || relativePath.includes('\0')
   ) {
-    return `product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`;
+    throw new Error(`${label} must stay under --path-root.`);
   }
-  return relativePath;
+  return relativePath.split(sep).join('/');
+}
+
+function resolvePathRoot(summary: ReleaseSummary, options: WriteProductReadinessReportOptions): string {
+  const rawPathRoot = firstNonEmptyString(options.pathRoot, summary.campaign_root);
+  if (!rawPathRoot) {
+    throw new Error('--path-root is required when product readiness summary has no campaign_root.');
+  }
+  return resolve(rawPathRoot);
+}
+
+function requireRootRelativeOutputPath(path: string, pathRoot: string, label: string): string {
+  return toPortableRelativePath(relative(resolve(pathRoot), resolve(path)), label);
+}
+
+function readReferencedFile(input: {
+  id: ProductReadinessReferencedFile['id'];
+  label: string;
+  path: string;
+  pathRoot: string;
+}): ProductReadinessReferencedFile {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(input.path);
+  } catch (error) {
+    throw new Error(`${input.label} is missing: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!stat.isFile()) {
+    throw new Error(`${input.label} must be a file.`);
+  }
+
+  let realRoot: string;
+  let realPath: string;
+  try {
+    realRoot = realpathSync(input.pathRoot);
+    realPath = realpathSync(input.path);
+  } catch (error) {
+    throw new Error(`${input.label} cannot be resolved under --path-root: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return {
+    id: input.id,
+    path: toPortableRelativePath(relative(realRoot, realPath), input.label),
+    sha256: sha256FileDigest(realPath, input.label),
+  };
+}
+
+function requireGitHubArtifactEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  field: string,
+): string {
+  const value = firstNonEmptyString(env[field]);
+  if (!value) {
+    throw new Error(`${PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV} requires ${field} for CI artifact provenance.`);
+  }
+  return value;
+}
+
+function buildArtifactPublication(input: {
+  env: Readonly<Record<string, string | undefined>>;
+  subjectUri: string;
+}): ProductReadinessArtifactPublication {
+  const artifactName = firstNonEmptyString(input.env[PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV]);
+  const explicitArtifactUri = firstNonEmptyString(input.env[PRODUCT_READINESS_REPORT_ARTIFACT_URI_ENV]);
+  if (explicitArtifactUri && !artifactName) {
+    throw new Error(`${PRODUCT_READINESS_REPORT_ARTIFACT_URI_ENV} requires ${PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV}.`);
+  }
+
+  if (!artifactName) {
+    return {
+      mode: 'local_diagnostics_only',
+      artifact_uri: null,
+      reason: input.env.GITHUB_ACTIONS === 'true'
+        ? `${PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV} was not set; artifact_uri omitted.`
+        : 'local run; artifact_uri omitted.',
+    };
+  }
+
+  if (input.env.GITHUB_ACTIONS !== 'true') {
+    throw new Error(`${PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV} requires GITHUB_ACTIONS=true.`);
+  }
+
+  const repository = requireGitHubArtifactEnv(input.env, 'GITHUB_REPOSITORY');
+  if (`github.com/${repository}` !== AGENTSMITH_CANONICAL_REPO) {
+    throw new Error(`GITHUB_REPOSITORY must be agentsmith-project/agentsmith for product readiness artifact provenance.`);
+  }
+  const runId = requireGitHubArtifactEnv(input.env, 'GITHUB_RUN_ID');
+  const runAttempt = requireGitHubArtifactEnv(input.env, 'GITHUB_RUN_ATTEMPT');
+  const expectedArtifactUriPrefix = `gh-artifact://${repository}/${artifactName}/${runId}/`;
+  if (explicitArtifactUri && !explicitArtifactUri.startsWith(expectedArtifactUriPrefix)) {
+    throw new Error(`${PRODUCT_READINESS_REPORT_ARTIFACT_URI_ENV} must start with ${expectedArtifactUriPrefix}.`);
+  }
+  const artifactUri = explicitArtifactUri
+    ?? `gh-artifact://${repository}/${artifactName}/${runId}/${input.subjectUri}`;
+
+  return {
+    mode: 'ci_artifact',
+    artifact_name: artifactName,
+    artifact_uri: artifactUri,
+    repository,
+    run_id: runId,
+    run_attempt: runAttempt,
+  };
 }
 
 function buildArtifactProvenance(input: {
-  summary: ReleaseSummary;
+  subject: ProductReadinessReportSubject;
   contract: CurrentAgentSmithReleaseContract;
-  releaseContractDigest: string;
-  summaryJsonDigest: string;
-  terminalResultDigest: string;
-  outputPath: string;
+  artifactPublication: ProductReadinessArtifactPublication;
+  subjectUri: string;
   env: Readonly<Record<string, string | undefined>>;
   generatedAt: string;
-}): CurrentArtifactProvenance {
-  const subject = buildProductReadinessReportSubject(input);
-  const subjectSha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
-  const runId = firstNonEmptyString(
-    input.env.GITHUB_RUN_ID,
-    input.contract.artifact_provenance.run_id,
-    input.summary.campaign_run_id,
-  ) ?? input.summary.campaign_run_id;
-  const runAttempt = firstNonEmptyString(
-    input.env.GITHUB_RUN_ATTEMPT,
-    input.contract.artifact_provenance.run_attempt,
-    '1',
-  ) ?? '1';
-  const artifactUri = firstNonEmptyString(
-    input.env.AGENTSMITH_PRODUCT_READINESS_REPORT_ARTIFACT_URI,
-  ) ?? `gh-artifact://agentsmith-project/agentsmith/product-readiness/${encodeArtifactUriSegment(runId)}/${PRODUCT_READINESS_REPORT_FILENAME}`;
+}): ProductReadinessArtifactProvenance {
+  const subjectSha256 = sha256Digest(canonicalReleaseBoundaryJson(input.subject));
+  const ciFields = input.artifactPublication.mode === 'ci_artifact'
+    ? {
+        workflow_name: requireGitHubArtifactEnv(input.env, 'GITHUB_WORKFLOW'),
+        run_id: input.artifactPublication.run_id,
+        run_attempt: input.artifactPublication.run_attempt,
+        job: requireGitHubArtifactEnv(input.env, 'GITHUB_JOB'),
+        artifact_uri: input.artifactPublication.artifact_uri,
+      }
+    : {};
 
-  const provenanceWithoutArtifactSha256 = {
+  const provenanceWithoutArtifactSha256: Omit<ProductReadinessArtifactProvenance, 'artifact_sha256'> = {
     schema_version: CURRENT_ARTIFACT_PROVENANCE_SCHEMA_VERSION,
     provenance_kind: 'ci_artifact',
     producer_repo: AGENTSMITH_CANONICAL_REPO,
@@ -258,28 +404,16 @@ function buildArtifactProvenance(input: {
     commit_sha: input.contract.git_sha,
     subject_name: PRODUCT_READINESS_REPORT_SUBJECT_NAME,
     subject_sha256: subjectSha256,
-    subject_uri: portableSubjectUri(input.summary.campaign_root, input.outputPath),
-    workflow_name: firstNonEmptyString(
-      input.env.GITHUB_WORKFLOW,
-      input.contract.artifact_provenance.workflow_name,
-      'AgentSmith Product Readiness Report',
-    ) ?? 'AgentSmith Product Readiness Report',
-    run_id: runId,
-    run_attempt: runAttempt,
-    job: firstNonEmptyString(
-      input.env.GITHUB_JOB,
-      input.contract.artifact_provenance.job,
-      'product-readiness-report',
-    ) ?? 'product-readiness-report',
-    artifact_uri: artifactUri,
+    subject_uri: input.subjectUri,
+    ...ciFields,
     generated_at: input.generatedAt,
     generator_command: PRODUCT_READINESS_REPORT_GENERATOR_COMMAND,
     generator_version: PRODUCT_READINESS_REPORT_GENERATOR_VERSION,
     attestation: 'none',
-  } satisfies Omit<CurrentArtifactProvenance, 'artifact_sha256'>;
+  };
 
   const artifactProjection = {
-    ...subject,
+    ...input.subject,
     artifact_provenance: provenanceWithoutArtifactSha256,
   };
 
@@ -290,43 +424,62 @@ function buildArtifactProvenance(input: {
 }
 
 function buildProductReadinessReport(input: {
-  summary: ReleaseSummary;
   contract: CurrentAgentSmithReleaseContract;
-  releaseContractDigest: string;
-  summaryJsonDigest: string;
-  terminalResultDigest: string;
-  outputPath: string;
+  releaseContractFileSha256: string;
+  productReadinessSummary: ProductReadinessReferencedFile;
+  terminalResult: ProductReadinessReferencedFile;
+  artifactPublication: ProductReadinessArtifactPublication;
+  localDiagnostics: ProductReadinessLocalDiagnostics;
+  subjectUri: string;
   env: Readonly<Record<string, string | undefined>>;
   generatedAt: string;
 }): ProductReadinessReport {
+  const subject = buildProductReadinessReportSubject(input);
   return {
-    ...buildProductReadinessReportSubject(input),
-    artifact_provenance: buildArtifactProvenance(input),
+    ...subject,
+    artifact_provenance: buildArtifactProvenance({
+      subject,
+      contract: input.contract,
+      artifactPublication: input.artifactPublication,
+      subjectUri: input.subjectUri,
+      env: input.env,
+      generatedAt: input.generatedAt,
+    }),
+    local_diagnostics: input.localDiagnostics,
   };
 }
 
 function buildProductReadinessReportSubject(input: {
-  summary: ReleaseSummary;
   contract: CurrentAgentSmithReleaseContract;
-  releaseContractDigest: string;
-  summaryJsonDigest: string;
-  terminalResultDigest: string;
-}): Omit<ProductReadinessReport, 'artifact_provenance'> {
+  releaseContractFileSha256: string;
+  productReadinessSummary: ProductReadinessReferencedFile;
+  terminalResult: ProductReadinessReferencedFile;
+  artifactPublication: ProductReadinessArtifactPublication;
+}): ProductReadinessReportSubject {
   return {
     schema: PRODUCT_READINESS_REPORT_SCHEMA_VERSION,
     status: 'pass',
     release_id: input.contract.release_id,
     git_sha: input.contract.git_sha,
-    release_contract_digest: input.releaseContractDigest,
+    release_contract_digest: input.releaseContractFileSha256,
+    release_contract_file_sha256: input.releaseContractFileSha256,
+    release_contract_artifact_sha256: input.contract.artifact_provenance.artifact_sha256,
+    release_contract_artifact_uri: input.contract.artifact_provenance.artifact_uri,
     product_readiness_summary: {
-      path: input.summary.summary_json_path,
-      sha256: input.summaryJsonDigest,
+      path: input.productReadinessSummary.path,
+      sha256: input.productReadinessSummary.sha256,
     },
     campaign: {
-      root: input.summary.campaign_root,
-      terminal_result_path: input.summary.terminal_result_path,
-      terminal_result_sha256: input.terminalResultDigest,
+      root: '.',
+      path_root: '.',
+      terminal_result_path: input.terminalResult.path,
+      terminal_result_sha256: input.terminalResult.sha256,
     },
+    referenced_files: [
+      input.productReadinessSummary,
+      input.terminalResult,
+    ],
+    artifact_publication: input.artifactPublication,
   };
 }
 
@@ -380,22 +533,47 @@ export function writeProductReadinessReport(
   const summary = requirePassedReleaseSummary(options);
   const releaseContractPath = resolveReleaseContractPath(summary, options);
   const outputPath = resolveOutputPath(summary, options);
+  const pathRoot = resolvePathRoot(summary, options);
   assertReleaseCampaignRootNotSymlink(resolve(summary.campaign_root));
+  assertReleaseCampaignRootNotSymlink(pathRoot, 'product readiness report path root');
   assertOutputPathWritable(outputPath);
   const { raw, contract } = readValidatedReleaseContract(releaseContractPath);
   assertReleaseContractMatchesSummary(summary, contract);
 
-  const releaseContractDigest = sha256BufferDigest(raw);
-  const summaryJsonDigest = sha256FileDigest(summary.summary_json_path, 'product readiness summary');
-  const terminalResultDigest = sha256FileDigest(summary.terminal_result_path, 'product readiness terminal result');
+  const releaseContractFileSha256 = sha256BufferDigest(raw);
+  const productReadinessSummary = readReferencedFile({
+    id: 'product_readiness_summary',
+    label: 'product_readiness_summary.path',
+    path: summary.summary_json_path,
+    pathRoot,
+  });
+  const terminalResult = readReferencedFile({
+    id: 'terminal_result',
+    label: 'campaign.terminal_result_path',
+    path: summary.terminal_result_path,
+    pathRoot,
+  });
+  const subjectUri = requireRootRelativeOutputPath(outputPath, pathRoot, 'artifact_provenance.subject_uri');
+  const artifactPublication = buildArtifactPublication({
+    env: options.env ?? process.env,
+    subjectUri,
+  });
   const generatedAt = (options.now ?? (() => new Date()))().toISOString();
   const report = buildProductReadinessReport({
-    summary,
     contract,
-    releaseContractDigest,
-    summaryJsonDigest,
-    terminalResultDigest,
-    outputPath,
+    releaseContractFileSha256,
+    productReadinessSummary,
+    terminalResult,
+    artifactPublication,
+    localDiagnostics: {
+      path_root: pathRoot,
+      output_path: outputPath,
+      release_contract_path: releaseContractPath,
+      product_readiness_summary_path: summary.summary_json_path,
+      campaign_root: summary.campaign_root,
+      terminal_result_path: summary.terminal_result_path,
+    },
+    subjectUri,
     env: options.env ?? process.env,
     generatedAt,
   });
@@ -403,7 +581,7 @@ export function writeProductReadinessReport(
   return {
     outputPath,
     releaseContractPath,
-    releaseContractDigest,
+    releaseContractDigest: releaseContractFileSha256,
     report,
   };
 }
@@ -413,6 +591,7 @@ function usage(): string {
   npm run product-readiness:report -- \\
     [--campaign-root <campaign-root> | --latest-path <latest.json>] \\
     [--release-contract <agentsmith-release-contract.json>] \\
+    [--path-root <artifact-root>] \\
     [--output <product-readiness-report.json>]
 
 Converts an already-passed AgentSmith product readiness summary into the
@@ -448,6 +627,11 @@ function parseCliArgs(argv: readonly string[]): CliOptions {
       index += 1;
     } else if (arg.startsWith('--release-contract=')) {
       options.releaseContractPath = arg.slice('--release-contract='.length);
+    } else if (arg === '--path-root') {
+      options.pathRoot = requireArgValue(argv, index);
+      index += 1;
+    } else if (arg.startsWith('--path-root=')) {
+      options.pathRoot = arg.slice('--path-root='.length);
     } else if (arg === '--output') {
       options.outputPath = requireArgValue(argv, index);
       index += 1;

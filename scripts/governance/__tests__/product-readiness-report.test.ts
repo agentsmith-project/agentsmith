@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -20,6 +20,7 @@ import {
 } from '../current-release-boundary-schema';
 import { writeReleaseSummaryForCampaign } from '../release-summary';
 import {
+  PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV,
   PRODUCT_READINESS_REPORT_FILENAME,
   PRODUCT_READINESS_REPORT_GENERATOR_COMMAND,
   PRODUCT_READINESS_REPORT_GENERATOR_VERSION,
@@ -27,6 +28,7 @@ import {
   runProductReadinessReportCli,
   writeProductReadinessReport,
   type ProductReadinessReport,
+  type ProductReadinessReportSubject,
 } from '../product-readiness-report';
 
 const VALID_RELEASE_CONTRACT_FIXTURE =
@@ -124,17 +126,49 @@ function expectReleaseKitProductProvenanceShape(
   expect(provenance.producer_repo).toBe(AGENTSMITH_CANONICAL_REPO);
   expect(provenance.normalized_remote).toBe(AGENTSMITH_CANONICAL_REPO);
   expect(provenance.commit_sha).toBe(contract.git_sha);
-  expect(provenance.run_id).toBe('10001');
-  expect(provenance.run_attempt).toBe('1');
   expect(provenance.subject_name).toBe('product-readiness-report');
   expect(provenance.subject_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+  expect(provenance.subject_uri).toBe(report.artifact_provenance.subject_uri);
   expect(provenance.artifact_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
-  expect(provenance.artifact_uri).toBe(
-    `gh-artifact://agentsmith-project/agentsmith/product-readiness/10001/${PRODUCT_READINESS_REPORT_FILENAME}`,
-  );
   expect(provenance.generated_at).toBe(GENERATED_AT);
   expect(provenance.generator_command).toBe(PRODUCT_READINESS_REPORT_GENERATOR_COMMAND);
   expect(provenance.generator_version).toBe(PRODUCT_READINESS_REPORT_GENERATOR_VERSION);
+}
+
+function reportSubject(report: ProductReadinessReport): ProductReadinessReportSubject {
+  const {
+    artifact_provenance: _artifactProvenance,
+    local_diagnostics: _localDiagnostics,
+    ...subject
+  } = report;
+  return subject;
+}
+
+function collectAbsoluteStrings(value: unknown, path = '$'): string[] {
+  if (typeof value === 'string') {
+    return isAbsolute(value) ? [`${path}=${value}`] : [];
+  }
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectAbsoluteStrings(item, `${path}[${index}]`));
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .flatMap(([key, item]) => collectAbsoluteStrings(item, `${path}.${key}`));
+}
+
+function githubArtifactEnv(overrides: Readonly<Record<string, string | undefined>> = {}): Record<string, string | undefined> {
+  return {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'agentsmith-project/agentsmith',
+    GITHUB_RUN_ID: '10001',
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_WORKFLOW: 'AgentSmith Product Readiness Artifact',
+    GITHUB_JOB: 'product-readiness',
+    [PRODUCT_READINESS_REPORT_ARTIFACT_NAME_ENV]: 'agentsmith-product-readiness',
+    ...overrides,
+  };
 }
 
 describe('product readiness report producer', () => {
@@ -157,36 +191,59 @@ describe('product readiness report producer', () => {
       const report = readJson<ProductReadinessReport>(defaultOutputPath);
       const summaryPath = join(root, 'summary.json');
       const terminalResultPath = join(root, 'gate-release-full', 'result.json');
-      const reportSubject: Omit<ProductReadinessReport, 'artifact_provenance'> = {
-        schema: report.schema,
-        status: report.status,
-        release_id: report.release_id,
-        git_sha: report.git_sha,
-        release_contract_digest: report.release_contract_digest,
-        product_readiness_summary: report.product_readiness_summary,
-        campaign: report.campaign,
-      };
+      const subject = reportSubject(report);
       expect(report).toMatchObject({
         schema: PRODUCT_READINESS_REPORT_SCHEMA_VERSION,
         status: 'pass',
         release_id: contract.release_id,
         git_sha: contract.git_sha,
         release_contract_digest: rawContractDigest,
+        release_contract_file_sha256: rawContractDigest,
+        release_contract_artifact_sha256: (contract.artifact_provenance as Record<string, unknown>).artifact_sha256,
+        release_contract_artifact_uri: (contract.artifact_provenance as Record<string, unknown>).artifact_uri,
         product_readiness_summary: {
-          path: summaryPath,
+          path: 'summary.json',
           sha256: sha256Buffer(readFileSync(summaryPath)),
         },
         campaign: {
-          root,
-          terminal_result_path: terminalResultPath,
+          root: '.',
+          path_root: '.',
+          terminal_result_path: 'gate-release-full/result.json',
           terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
         },
+        referenced_files: [
+          {
+            id: 'product_readiness_summary',
+            path: 'summary.json',
+            sha256: sha256Buffer(readFileSync(summaryPath)),
+          },
+          {
+            id: 'terminal_result',
+            path: 'gate-release-full/result.json',
+            sha256: sha256Buffer(readFileSync(terminalResultPath)),
+          },
+        ],
+        artifact_publication: {
+          mode: 'local_diagnostics_only',
+          artifact_uri: null,
+          reason: 'local run; artifact_uri omitted.',
+        },
+        local_diagnostics: {
+          path_root: root,
+          output_path: defaultOutputPath,
+          release_contract_path: contractPath,
+          product_readiness_summary_path: summaryPath,
+          campaign_root: root,
+          terminal_result_path: terminalResultPath,
+        },
       });
+      expect(collectAbsoluteStrings(subject)).toEqual([]);
       expect(report.artifact_provenance.subject_sha256)
-        .toBe(sha256Text(canonicalReleaseBoundaryJson(reportSubject)));
-      expect(report.release_contract_digest).not.toBe(
-        (contract.artifact_provenance as Record<string, unknown>).artifact_sha256,
-      );
+        .toBe(sha256Text(canonicalReleaseBoundaryJson(subject)));
+      expect(report.artifact_provenance.subject_uri).toBe(`product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`);
+      expect(report.artifact_provenance).not.toHaveProperty('artifact_uri');
+      expect(report.release_contract_digest).toBe(report.release_contract_file_sha256);
+      expect(report.release_contract_file_sha256).not.toBe(report.release_contract_artifact_sha256);
       expectReleaseKitProductProvenanceShape(report, contract);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -200,7 +257,7 @@ describe('product readiness report producer', () => {
     const stderr: string[] = [];
     try {
       const exitCode = runProductReadinessReportCli({
-        argv: ['--campaign-root', root, '--release-contract', contractPath, '--output', outputPath],
+        argv: ['--campaign-root', root, '--release-contract', contractPath, '--path-root', root, '--output', outputPath],
         env: {},
         now: () => new Date(GENERATED_AT),
         stdout: (message) => stdout.push(message),
@@ -210,7 +267,83 @@ describe('product readiness report producer', () => {
       expect(exitCode).toBe(0);
       expect(stderr).toEqual([]);
       expect(stdout.join('\n')).toContain(`product readiness report: ${outputPath}`);
-      expect(readJson<ProductReadinessReport>(outputPath).schema).toBe(PRODUCT_READINESS_REPORT_SCHEMA_VERSION);
+      const report = readJson<ProductReadinessReport>(outputPath);
+      expect(report.schema).toBe(PRODUCT_READINESS_REPORT_SCHEMA_VERSION);
+      expect(report.artifact_provenance.subject_uri).toBe(`handoff/${PRODUCT_READINESS_REPORT_FILENAME}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('adds artifact_uri only when the CI artifact upload binding is present', () => {
+    const { root, contractPath, contract } = preparePassedCampaign('agentsmith-product-readiness-report-ci-');
+    try {
+      const result = writeProductReadinessReport({
+        campaignRoot: root,
+        env: githubArtifactEnv(),
+        now: () => new Date(GENERATED_AT),
+      });
+      const report = readJson<ProductReadinessReport>(result.outputPath);
+
+      expect(report.artifact_publication).toEqual({
+        mode: 'ci_artifact',
+        artifact_name: 'agentsmith-product-readiness',
+        artifact_uri:
+          `gh-artifact://agentsmith-project/agentsmith/agentsmith-product-readiness/10001/product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`,
+        repository: 'agentsmith-project/agentsmith',
+        run_id: '10001',
+        run_attempt: '1',
+      });
+      expect(report.artifact_provenance).toMatchObject({
+        workflow_name: 'AgentSmith Product Readiness Artifact',
+        run_id: '10001',
+        run_attempt: '1',
+        job: 'product-readiness',
+        artifact_uri:
+          `gh-artifact://agentsmith-project/agentsmith/agentsmith-product-readiness/10001/product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`,
+      });
+      expect(report.artifact_provenance.subject_uri).toBe(`product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`);
+      expectReleaseKitProductProvenanceShape(report, contract);
+      expect(contractPath).toContain('agentsmith-release-contract.json');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when CI artifact binding is incomplete', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-ci-missing-run-');
+    try {
+      expect(() => writeProductReadinessReport({
+        campaignRoot: root,
+        env: githubArtifactEnv({ GITHUB_RUN_ID: undefined }),
+      })).toThrow(/requires GITHUB_RUN_ID/u);
+      expect(existsSync(join(root, 'product-readiness', PRODUCT_READINESS_REPORT_FILENAME))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when a referenced handoff file escapes --path-root', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-escape-');
+    const narrowPathRoot = join(root, 'product-readiness');
+    try {
+      mkdirSync(narrowPathRoot, { recursive: true });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root, pathRoot: narrowPathRoot }))
+        .toThrow(/product_readiness_summary\.path must stay under --path-root/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when a referenced handoff file is missing', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-missing-ref-');
+    try {
+      rmSync(join(root, 'gate-release-full', 'result.json'));
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/campaign terminal result is missing or malformed/u);
+      expect(existsSync(join(root, 'product-readiness', PRODUCT_READINESS_REPORT_FILENAME))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

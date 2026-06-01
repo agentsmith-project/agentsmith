@@ -1155,6 +1155,7 @@ describe('current workflow governance', () => {
       '.github/workflows/engineering-gate.yml',
       '.github/workflows/image-publish.yml',
       '.github/workflows/integration-e2e.yml',
+      '.github/workflows/product-readiness-artifact.yml',
       '.github/workflows/quality-gates.yml',
       '.github/workflows/release-contract-artifact.yml',
       '.github/workflows/runner-contract-artifact.yml',
@@ -1207,6 +1208,7 @@ describe('current workflow governance', () => {
     ]);
     expect(handoffJobs).toEqual([
       '.github/workflows/image-publish.yml:publish-images',
+      '.github/workflows/product-readiness-artifact.yml:product-readiness',
     ]);
   });
 

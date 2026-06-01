@@ -2426,14 +2426,39 @@ exit 0
       expect(campaignReleaseContracts).toEqual([contractPath]);
       expect(summary.release_contract?.path).toBe(contractPath);
       expect(report.release_contract_digest).toBe(sha256Buffer(readFileSync(contractPath)));
+      expect(report.release_contract_file_sha256).toBe(sha256Buffer(readFileSync(contractPath)));
+      expect(report.release_contract_artifact_sha256).toBe(summary.release_contract?.digest);
       expect(report.product_readiness_summary).toEqual({
-        path: summaryPath,
+        path: 'summary.json',
         sha256: sha256Buffer(readFileSync(summaryPath)),
       });
       expect(report.campaign).toEqual({
-        root,
-        terminal_result_path: terminalResultPath,
+        root: '.',
+        path_root: '.',
+        terminal_result_path: 'gate-release-full/result.json',
         terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
+      });
+      expect(report.referenced_files).toEqual([
+        {
+          id: 'product_readiness_summary',
+          path: 'summary.json',
+          sha256: sha256Buffer(readFileSync(summaryPath)),
+        },
+        {
+          id: 'terminal_result',
+          path: 'gate-release-full/result.json',
+          sha256: sha256Buffer(readFileSync(terminalResultPath)),
+        },
+      ]);
+      expect(report.artifact_publication.mode).toBe('local_diagnostics_only');
+      expect(report.artifact_provenance).not.toHaveProperty('artifact_uri');
+      expect(report.local_diagnostics).toMatchObject({
+        path_root: root,
+        output_path: reportPath,
+        release_contract_path: contractPath,
+        product_readiness_summary_path: summaryPath,
+        campaign_root: root,
+        terminal_result_path: terminalResultPath,
       });
       expect(stdout.join('')).toContain(`Product readiness report: ${reportPath}`);
       expect(stdout.join('')).toContain(`Release contract digest: ${report.release_contract_digest}`);

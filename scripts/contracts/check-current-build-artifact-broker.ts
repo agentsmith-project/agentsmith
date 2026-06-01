@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 
 import {
@@ -53,6 +54,38 @@ const RELEASE_CONTRACT_ARTIFACT_WORKFLOW_PATH = '.github/workflows/release-contr
 const RELEASE_CONTRACT_ARTIFACT_JOB_ID = 'generate-release-contract';
 const HOST_NODE_OR_TSX_COMMAND_PATTERN =
   /(?:^|\s)(?:node(?:\s|$)|npx\s+tsx\b|tsx\s+scripts\/|npm\s+run\s+release:(?:contract:ci-artifact|deploy-template-package)\b)/u;
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)*$/u;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+
+export interface CurrentProviderImageSourceLockSpec {
+  providerLabel: string;
+  versionKey: string;
+  imageKey: string;
+  releaseUrlKey: string;
+  commitShaKey: string;
+  expectedImageRepository: string;
+  expectedSourceRepoSlug: string;
+}
+
+export const CURRENT_LLMUP_IMAGE_SOURCE_LOCK_SPEC: CurrentProviderImageSourceLockSpec = {
+  providerLabel: 'llmup',
+  versionKey: 'llmup_version',
+  imageKey: 'llmup_source_image',
+  releaseUrlKey: 'llmup_release_url',
+  commitShaKey: 'llmup_commit_sha',
+  expectedImageRepository: 'ghcr.io/agentsmith-project/llm-universal-proxy',
+  expectedSourceRepoSlug: 'agentsmith-project/llm-universal-proxy',
+};
+
+export const CURRENT_AFSCP_IMAGE_SOURCE_LOCK_SPEC: CurrentProviderImageSourceLockSpec = {
+  providerLabel: 'afscp',
+  versionKey: 'afscp_version',
+  imageKey: 'afscp_source_image',
+  releaseUrlKey: 'afscp_release_url',
+  commitShaKey: 'afscp_commit_sha',
+  expectedImageRepository: 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane',
+  expectedSourceRepoSlug: 'agentsmith-project/agentsmith-fs-control-plane',
+};
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -92,6 +125,37 @@ function parseKeyValueText(text: string): Map<string, string> {
   }
 
   return values;
+}
+
+function parseProviderImageSourceLockText(
+  text: string,
+  spec: CurrentProviderImageSourceLockSpec,
+): { values: Map<string, string>; failures: string[] } {
+  const values = new Map<string, string>();
+  const failures: string[] = [];
+
+  text.split(/\r?\n/u).forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      return;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) {
+      failures.push(`${spec.providerLabel} provider image source lock line ${index + 1} must be key=value.`);
+      return;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    if (values.has(key)) {
+      failures.push(`${spec.providerLabel} provider image source lock line ${index + 1} must not duplicate ${key}.`);
+      return;
+    }
+
+    values.set(key, line.slice(separatorIndex + 1).trim());
+  });
+
+  return { values, failures };
 }
 
 function normalizeInstructionWhitespace(instruction: string): string {
@@ -395,6 +459,65 @@ function assertVersionedImageLock(
   assert(parsedSourceImage.value.tag === version, `${imageKey} tag must match ${versionKey}.`);
 }
 
+export function validateProviderImageSourceLockText(
+  lockText: string,
+  spec: CurrentProviderImageSourceLockSpec,
+): string[] {
+  const failures: string[] = [];
+  const parsedLock = parseProviderImageSourceLockText(lockText, spec);
+  const values = parsedLock.values;
+  const releaseUrlPrefix = `https://github.com/${spec.expectedSourceRepoSlug}/releases/tag/`;
+  const requiredValue = (key: string): string | null => {
+    const value = values.get(key);
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      failures.push(`${key} must be present in shared image lock.`);
+      return null;
+    }
+    return value;
+  };
+
+  failures.push(...parsedLock.failures);
+  if (failures.length > 0) {
+    return failures;
+  }
+
+  const version = requiredValue(spec.versionKey);
+  const sourceImage = requiredValue(spec.imageKey);
+  const releaseUrl = requiredValue(spec.releaseUrlKey);
+  const commitSha = requiredValue(spec.commitShaKey);
+
+  if (!version || !sourceImage || !releaseUrl || !commitSha) {
+    return failures;
+  }
+
+  if (!RELEASE_TAG_PATTERN.test(version)) {
+    failures.push(`${spec.versionKey} must be a release tag; actual ${version}.`);
+  }
+  if (releaseUrl !== `${releaseUrlPrefix}${version}`) {
+    failures.push(
+      `${spec.releaseUrlKey} must match ${spec.versionKey}; expected ${releaseUrlPrefix}${version}; actual ${releaseUrl}.`,
+    );
+  }
+  if (!COMMIT_SHA_PATTERN.test(commitSha)) {
+    failures.push(`${spec.commitShaKey} must be a 40-character lowercase git commit sha.`);
+  }
+
+  const parsedSourceImage = parseLockedImageRef(sourceImage);
+  if (!parsedSourceImage.ok) {
+    failures.push(`${spec.imageKey} failed validation: ${parsedSourceImage.reason}`);
+    return failures;
+  }
+
+  if (parsedSourceImage.value.image !== spec.expectedImageRepository) {
+    failures.push(`${spec.imageKey} must use ${spec.expectedImageRepository}.`);
+  }
+  if (parsedSourceImage.value.tag !== version) {
+    failures.push(`${spec.imageKey} tag must match ${spec.versionKey}.`);
+  }
+
+  return failures;
+}
+
 function main(): void {
   const packageJson = readJson<PackageJson>('package.json');
   const contractsCheck = packageJson.scripts?.['contracts:check'] ?? '';
@@ -495,32 +618,9 @@ function main(): void {
       && !buildBaseImagesLock.includes(['llmup', 'runtime', 'base', 'image'].join('_')),
     'build base image lock must not require llmup Rust/runtime base images.',
   );
-  const llmupLockValues = parseKeyValueText(llmupImageLock);
-  const llmupVersion = llmupLockValues.get('llmup_version');
-  const llmupSourceImage = llmupLockValues.get('llmup_source_image');
-  assert(typeof llmupVersion === 'string' && llmupVersion.length > 0, 'llmup image lock must include llmup_version.');
-  assert(
-    typeof llmupSourceImage === 'string' && llmupSourceImage.length > 0,
-    'llmup image lock must include llmup_source_image.',
-  );
-  if (typeof llmupVersion === 'string' && typeof llmupSourceImage === 'string') {
-    const parsedLlmupSourceImage = parseLockedImageRef(llmupSourceImage);
-    assert(
-      parsedLlmupSourceImage.ok,
-      `llmup image lock source image failed validation: ${parsedLlmupSourceImage.ok ? '' : parsedLlmupSourceImage.reason}`,
-    );
-    if (parsedLlmupSourceImage.ok) {
-      assert(
-        parsedLlmupSourceImage.value.tag === llmupVersion,
-        'llmup image lock source image tag must match llmup_version.',
-      );
-    }
-  }
-  assertVersionedImageLock(
-    parseKeyValueText(afscpImageLock),
-    'afscp_version',
-    'afscp_source_image',
-    'ghcr.io/agentsmith-project/agentsmith-fs-control-plane',
+  failures.push(
+    ...validateProviderImageSourceLockText(llmupImageLock, CURRENT_LLMUP_IMAGE_SOURCE_LOCK_SPEC),
+    ...validateProviderImageSourceLockText(afscpImageLock, CURRENT_AFSCP_IMAGE_SOURCE_LOCK_SPEC),
   );
   const ingressNginxLockValues = parseKeyValueText(ingressNginxImageLock);
   assertVersionedImageLock(
@@ -870,4 +970,6 @@ function main(): void {
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

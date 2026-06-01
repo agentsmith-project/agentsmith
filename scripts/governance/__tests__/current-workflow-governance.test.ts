@@ -65,7 +65,7 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
 const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
 const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
-  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>';
+  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --llmup-source-gate <llmup-source-gate.json> --afscp-source-gate <afscp-source-gate.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 const RUNNER_RELEASE_MANIFEST_PATH =
   'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json';
@@ -78,6 +78,10 @@ const ASBCP_FINAL_MANIFEST_ADOPTION_MANIFEST_COMMAND =
   'npm run contracts:check-asbcp-adoption -- --manifest <downloaded-asbcp-final-manifest.json>';
 const ASBCP_FINAL_MANIFEST_ADOPTION_COMMAND =
   'npm run contracts:check-asbcp-adoption -- --manifest "${ASBCP_FINAL_MANIFEST_PATH}"';
+const LLMUP_IMAGE_DIGEST_CHECK_COMMAND =
+  'docker buildx imagetools inspect ghcr.io/agentsmith-project/llm-universal-proxy:<tag>';
+const AFSCP_IMAGE_DIGEST_CHECK_COMMAND =
+  'docker buildx imagetools inspect ghcr.io/agentsmith-project/agentsmith-fs-control-plane:<tag>';
 const RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND =
   'npx tsx scripts/governance/runner-contract-artifact.ts';
 const RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND =
@@ -1411,6 +1415,9 @@ describe('current workflow governance', () => {
     const steps = Array.isArray(releaseContractJob.steps) ? releaseContractJob.steps.map(asRecord) : [];
     const runnerSourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate runner release manifest source');
     const asbcpSourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate ASBCP final manifest source');
+    const dependencyImageSourceGateStepIndex = steps.findIndex(
+      (step) => step.name === 'Gate LLMUP and AFSCP image source',
+    );
     const sourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate release contract input source');
     const downloadStepIndex = steps.findIndex((step) => step.uses === 'actions/download-artifact@v7');
     const handoffFileCheckStepIndex = steps.findIndex(
@@ -1422,6 +1429,11 @@ describe('current workflow governance', () => {
     const asbcpSourceGateStep = steps[asbcpSourceGateStepIndex] ?? {};
     const asbcpSourceGateEnv = asRecord(asbcpSourceGateStep.env);
     const asbcpSourceGateRun = typeof asbcpSourceGateStep.run === 'string' ? asbcpSourceGateStep.run : '';
+    const dependencyImageSourceGateStep = steps[dependencyImageSourceGateStepIndex] ?? {};
+    const dependencyImageSourceGateEnv = asRecord(dependencyImageSourceGateStep.env);
+    const dependencyImageSourceGateRun = typeof dependencyImageSourceGateStep.run === 'string'
+      ? dependencyImageSourceGateStep.run
+      : '';
     const sourceGateStep = steps[sourceGateStepIndex] ?? {};
     const sourceGateEnv = asRecord(sourceGateStep.env);
     const sourceGateRun = typeof sourceGateStep.run === 'string' ? sourceGateStep.run : '';
@@ -1443,6 +1455,8 @@ describe('current workflow governance', () => {
       'artifacts/release-contract/agentsmith-release-contract.json',
       'artifacts/release-contract/release-contract-input-source.json',
       'artifacts/release-contract/runner-release-manifest-source.json',
+      'artifacts/release-contract/llmup-image-source.json',
+      'artifacts/release-contract/afscp-image-source.json',
       'artifacts/release-contract/asbcp-final-manifest-source.json',
     ]);
     expect(job?.commands).toEqual([
@@ -1450,13 +1464,16 @@ describe('current workflow governance', () => {
       'npm run contracts:check-runner-image-lock',
       ASBCP_IMAGE_ONLY_COMMAND,
       ASBCP_FINAL_MANIFEST_ADOPTION_MANIFEST_COMMAND,
+      LLMUP_IMAGE_DIGEST_CHECK_COMMAND,
+      AFSCP_IMAGE_DIGEST_CHECK_COMMAND,
       'npm run release:contract:ci-artifact',
     ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ actions: 'read', contents: 'read' });
     expect(runnerSourceGateStepIndex).toBeGreaterThan(-1);
     expect(asbcpSourceGateStepIndex).toBeGreaterThan(runnerSourceGateStepIndex);
+    expect(dependencyImageSourceGateStepIndex).toBeGreaterThan(asbcpSourceGateStepIndex);
     expect(sourceGateStepIndex).toBeGreaterThan(-1);
-    expect(sourceGateStepIndex).toBeGreaterThan(asbcpSourceGateStepIndex);
+    expect(sourceGateStepIndex).toBeGreaterThan(dependencyImageSourceGateStepIndex);
     expect(downloadStepIndex).toBeGreaterThan(sourceGateStepIndex);
     expect(handoffFileCheckStepIndex).toBeGreaterThan(downloadStepIndex);
     expect(runnerSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
@@ -1494,6 +1511,19 @@ describe('current workflow governance', () => {
     expect(asbcpSourceGateRun).toContain('sha256sum "${ASBCP_FINAL_MANIFEST_PATH}"');
     expect(asbcpSourceGateRun).toContain('release asset digest must match downloaded manifest sha256');
     expect(asbcpSourceGateRun).toContain(ASBCP_FINAL_MANIFEST_ADOPTION_COMMAND);
+    expect(dependencyImageSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
+    expect(dependencyImageSourceGateRun).toContain('gate_dependency_image');
+    expect(dependencyImageSourceGateRun).toContain('infra/deploy/shared/llmup-image.lock');
+    expect(dependencyImageSourceGateRun).toContain('infra/deploy/shared/afscp-image.lock');
+    expect(dependencyImageSourceGateRun).toContain('agentsmith-project/llm-universal-proxy');
+    expect(dependencyImageSourceGateRun).toContain('agentsmith-project/agentsmith-fs-control-plane');
+    expect(dependencyImageSourceGateRun).toContain('gh api "repos/${repo_slug}/releases/tags/${release_tag}"');
+    expect(dependencyImageSourceGateRun).toContain('gh api "repos/${repo_slug}/git/ref/tags/${release_tag}"');
+    expect(dependencyImageSourceGateRun).toContain('docker buildx imagetools inspect "${image_tag_ref}"');
+    expect(dependencyImageSourceGateRun).toContain("check_command: `docker buildx imagetools inspect ${imageTagRef} --format '{{.Manifest.Digest}}'`");
+    expect(dependencyImageSourceGateRun).toContain('source-gate.json');
+    expect(dependencyImageSourceGateRun).toContain('observed GHCR digest must match lock digest');
+    expect(dependencyImageSourceGateRun).toContain('tag commit sha must match lock commit sha');
     expect(sourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
     expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_RUN_ID).toBe('${{ inputs.release_contract_input_run_id }}');
     expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_ARTIFACT_NAME).toBe(
@@ -1541,6 +1571,7 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
     expect(runCommands).toContain(ASBCP_IMAGE_ONLY_COMMAND);
     expect(runCommands).toContain(ASBCP_FINAL_MANIFEST_ADOPTION_COMMAND);
+    expect(runCommands).toContain('docker buildx imagetools inspect "${image_tag_ref}"');
     expect(runCommands).toContain('npm run release:contract:ci-artifact');
     expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
       runCommands.indexOf(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND),
@@ -1552,6 +1583,9 @@ describe('current workflow governance', () => {
       runCommands.indexOf(ASBCP_FINAL_MANIFEST_ADOPTION_COMMAND),
     );
     expect(runCommands.indexOf(ASBCP_FINAL_MANIFEST_ADOPTION_COMMAND)).toBeLessThan(
+      runCommands.indexOf('docker buildx imagetools inspect "${image_tag_ref}"'),
+    );
+    expect(runCommands.indexOf('docker buildx imagetools inspect "${image_tag_ref}"')).toBeLessThan(
       runCommands.indexOf('npm run release:contract:ci-artifact'),
     );
     expect(runCommands).toContain('RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"');
@@ -1572,6 +1606,12 @@ describe('current workflow governance', () => {
       'RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"',
     );
     expect(runCommands).toContain(
+      'LLMUP_IMAGE_SOURCE_GATE_PATH="artifacts/release-contract/llmup-image-source-gate/source-gate.json"',
+    );
+    expect(runCommands).toContain(
+      'AFSCP_IMAGE_SOURCE_GATE_PATH="artifacts/release-contract/afscp-image-source-gate/source-gate.json"',
+    );
+    expect(runCommands).toContain(
       'ASBCP_FINAL_MANIFEST_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asbcp-final-manifest.json"',
     );
     expect(runCommands).toContain(
@@ -1582,6 +1622,8 @@ describe('current workflow governance', () => {
     );
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"');
@@ -1590,18 +1632,24 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');
+    expect(runCommands).toContain('test -f "${LLMUP_IMAGE_SOURCE_GATE_PATH}"');
+    expect(runCommands).toContain('test -f "${AFSCP_IMAGE_SOURCE_GATE_PATH}"');
     expect(runCommands).toContain('test -f "${ASBCP_FINAL_MANIFEST_PATH}"');
     expect(runCommands).toContain('test -f "${ASBCP_RELEASE_API_PATH}"');
     expect(runCommands).toContain('test -f "${ASBCP_ASSET_API_PATH}"');
     expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('release-contract-input-source.json');
     expect(runCommands).toContain('runner-release-manifest-source.json');
+    expect(runCommands).toContain('llmup-image-source.json');
+    expect(runCommands).toContain('afscp-image-source.json');
     expect(runCommands).toContain('asbcp-final-manifest-source.json');
     expect(runCommands).toContain('--runner-manifest "${RUNNER_RELEASE_MANIFEST_PATH}"');
     expect(runCommands).toContain('--runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
     expect(runCommands).toContain('--runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
     expect(runCommands).toContain('--runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
     expect(runCommands).toContain('--runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');
+    expect(runCommands).toContain('--llmup-source-gate "${LLMUP_IMAGE_SOURCE_GATE_PATH}"');
+    expect(runCommands).toContain('--afscp-source-gate "${AFSCP_IMAGE_SOURCE_GATE_PATH}"');
     expect(runCommands).toContain('--asbcp-final-manifest "${ASBCP_FINAL_MANIFEST_PATH}"');
     expect(runCommands).toContain('--asbcp-release-api "${ASBCP_RELEASE_API_PATH}"');
     expect(runCommands).toContain('--asbcp-asset-api "${ASBCP_ASSET_API_PATH}"');

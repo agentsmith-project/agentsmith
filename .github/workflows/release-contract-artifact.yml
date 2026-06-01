@@ -268,6 +268,213 @@ jobs:
 
           npm run contracts:check-asbcp-adoption -- --manifest "${ASBCP_FINAL_MANIFEST_PATH}"
 
+      - name: Gate LLMUP and AFSCP image source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gate_dependency_image() {
+            local provider_id="$1"
+            local lock_path="$2"
+            local repo_slug="$3"
+            local image_repository="$4"
+            local gate_dir="artifacts/release-contract/${provider_id}-image-source-gate"
+            mkdir -p "${gate_dir}"
+
+            export DEP_PROVIDER_ID="${provider_id}"
+            export DEP_LOCK_PATH="${lock_path}"
+            export DEP_REPO_SLUG="${repo_slug}"
+            export DEP_IMAGE_REPOSITORY="${image_repository}"
+            export DEP_GATE_DIR="${gate_dir}"
+            export DEP_RELEASE_TAG_PATH="${gate_dir}/release-tag.txt"
+            export DEP_IMAGE_TAG_REF_PATH="${gate_dir}/image-tag-ref.txt"
+            export DEP_LOCK_DIGEST_PATH="${gate_dir}/lock-digest.txt"
+            export DEP_LOCK_SOURCE_IMAGE_PATH="${gate_dir}/lock-source-image.txt"
+            export DEP_LOCK_RELEASE_URL_PATH="${gate_dir}/lock-release-url.txt"
+            export DEP_LOCK_COMMIT_SHA_PATH="${gate_dir}/lock-commit-sha.txt"
+            node <<'NODE'
+            const { readFileSync, writeFileSync } = require('node:fs');
+
+            const providerId = process.env.DEP_PROVIDER_ID;
+            const lockPath = process.env.DEP_LOCK_PATH;
+            const repoSlug = process.env.DEP_REPO_SLUG;
+            const imageRepository = process.env.DEP_IMAGE_REPOSITORY;
+            const gateDir = process.env.DEP_GATE_DIR;
+            const fail = (message) => {
+              throw new Error(`${providerId?.toUpperCase() || 'dependency'} image source gate failed: ${message}`);
+            };
+            if (!providerId || !lockPath || !repoSlug || !imageRepository || !gateDir) {
+              fail('provider id, lock path, repo slug, image repository, and gate dir are required.');
+            }
+
+            const values = new Map();
+            readFileSync(lockPath, 'utf8').split(/\r?\n/u).forEach((rawLine, index) => {
+              const line = rawLine.trim();
+              if (line.length === 0 || line.startsWith('#')) {
+                return;
+              }
+              const separatorIndex = line.indexOf('=');
+              if (separatorIndex <= 0) {
+                fail(`${lockPath}:${index + 1} must be key=value.`);
+              }
+              values.set(line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim());
+            });
+
+            const version = values.get(`${providerId}_version`) || '';
+            const sourceImage = values.get(`${providerId}_source_image`) || '';
+            const releaseUrl = values.get(`${providerId}_release_url`) || '';
+            const commitSha = values.get(`${providerId}_commit_sha`) || '';
+            const releaseUrlPrefix = `https://github.com/${repoSlug}/releases/tag/`;
+            const sourceMatch = sourceImage.match(/^(.*):([^/@]+)@(sha256:[0-9a-f]{64})$/u);
+            if (!/^v\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)*$/u.test(version)) {
+              fail(`${providerId}_version must be a release tag; actual ${version || '<missing>'}.`);
+            }
+            if (releaseUrl !== `${releaseUrlPrefix}${version}`) {
+              fail(`${providerId}_release_url must match ${providerId}_version; expected ${releaseUrlPrefix}${version}; actual ${releaseUrl || '<missing>'}.`);
+            }
+            if (!/^[0-9a-f]{40}$/u.test(commitSha)) {
+              fail(`${providerId}_commit_sha must be a 40-character lowercase git commit sha.`);
+            }
+            if (!sourceMatch) {
+              fail(`${providerId}_source_image must be image:tag@sha256:<64 lowercase hex>.`);
+            }
+            if (sourceMatch[1] !== imageRepository) {
+              fail(`${providerId}_source_image repository must be ${imageRepository}; actual ${sourceMatch[1]}.`);
+            }
+            if (sourceMatch[2] !== version) {
+              fail(`${providerId}_source_image tag must match ${providerId}_version.`);
+            }
+
+            writeFileSync(process.env.DEP_RELEASE_TAG_PATH, `${version}\n`);
+            writeFileSync(process.env.DEP_IMAGE_TAG_REF_PATH, `${sourceMatch[1]}:${sourceMatch[2]}\n`);
+            writeFileSync(process.env.DEP_LOCK_DIGEST_PATH, `${sourceMatch[3]}\n`);
+            writeFileSync(process.env.DEP_LOCK_SOURCE_IMAGE_PATH, `${sourceImage}\n`);
+            writeFileSync(process.env.DEP_LOCK_RELEASE_URL_PATH, `${releaseUrl}\n`);
+            writeFileSync(process.env.DEP_LOCK_COMMIT_SHA_PATH, `${commitSha}\n`);
+          NODE
+
+            local release_tag
+            release_tag="$(cat "${DEP_RELEASE_TAG_PATH}")"
+            export DEP_RELEASE_TAG="${release_tag}"
+            export DEP_RELEASE_API_PATH="${gate_dir}/release-api.json"
+            export DEP_TAG_REF_API_PATH="${gate_dir}/tag-ref-api.json"
+            export DEP_TAG_OBJECT_API_PATH="${gate_dir}/tag-object-api.json"
+            export DEP_OBSERVED_DIGEST_PATH="${gate_dir}/observed-ghcr-digest.txt"
+            export DEP_SOURCE_GATE_PATH="${gate_dir}/source-gate.json"
+            gh api "repos/${repo_slug}/releases/tags/${release_tag}" \
+              > "${DEP_RELEASE_API_PATH}"
+            gh api "repos/${repo_slug}/git/ref/tags/${release_tag}" \
+              > "${DEP_TAG_REF_API_PATH}"
+
+            local tag_object_api_route
+            tag_object_api_route="$(node <<'NODE'
+            const { readFileSync } = require('node:fs');
+            const ref = JSON.parse(readFileSync(process.env.DEP_TAG_REF_API_PATH, 'utf8'));
+            const object = ref && typeof ref === 'object' ? ref.object : null;
+            if (object && object.type === 'tag' && typeof object.url === 'string') {
+              process.stdout.write(object.url.replace(/^https:\/\/api\.github\.com\//u, ''));
+            }
+          NODE
+            )"
+            if [[ -n "${tag_object_api_route}" ]]; then
+              gh api "${tag_object_api_route}" > "${DEP_TAG_OBJECT_API_PATH}"
+            else
+              printf 'null\n' > "${DEP_TAG_OBJECT_API_PATH}"
+            fi
+
+            local image_tag_ref
+            image_tag_ref="$(cat "${DEP_IMAGE_TAG_REF_PATH}")"
+            docker buildx imagetools inspect "${image_tag_ref}" --format '{{.Manifest.Digest}}' \
+              > "${DEP_OBSERVED_DIGEST_PATH}"
+
+            node <<'NODE'
+            const { readFileSync, writeFileSync } = require('node:fs');
+
+            const readText = (path) => readFileSync(path, 'utf8').trim();
+            const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+            const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
+            const providerId = process.env.DEP_PROVIDER_ID;
+            const repoSlug = process.env.DEP_REPO_SLUG;
+            const imageTagRef = readText(process.env.DEP_IMAGE_TAG_REF_PATH);
+            const releaseTag = process.env.DEP_RELEASE_TAG;
+            const lockDigest = readText(process.env.DEP_LOCK_DIGEST_PATH).toLowerCase();
+            const lockReleaseUrl = readText(process.env.DEP_LOCK_RELEASE_URL_PATH);
+            const lockCommitSha = readText(process.env.DEP_LOCK_COMMIT_SHA_PATH);
+            const observedDigest = readText(process.env.DEP_OBSERVED_DIGEST_PATH).toLowerCase();
+            const release = readJson(process.env.DEP_RELEASE_API_PATH);
+            const tagRef = readJson(process.env.DEP_TAG_REF_API_PATH);
+            const tagObject = readJson(process.env.DEP_TAG_OBJECT_API_PATH);
+            const fail = (message) => {
+              throw new Error(`${providerId?.toUpperCase() || 'dependency'} image source gate failed: ${message}`);
+            };
+            if (!isRecord(release) || !isRecord(tagRef)) {
+              fail('GitHub release and tag ref metadata must be JSON objects.');
+            }
+            if (release.tag_name !== releaseTag) {
+              fail(`release tag must be ${releaseTag}; actual ${release.tag_name || '<missing>'}.`);
+            }
+            if (release.html_url !== lockReleaseUrl) {
+              fail(`release html_url must match lock release URL; expected ${lockReleaseUrl}; actual ${release.html_url || '<missing>'}.`);
+            }
+            if (!Number.isSafeInteger(release.id) || release.id <= 0) {
+              fail('release id must be a positive integer.');
+            }
+            if (tagRef.ref !== `refs/tags/${releaseTag}`) {
+              fail(`tag ref must be refs/tags/${releaseTag}; actual ${tagRef.ref || '<missing>'}.`);
+            }
+            const tagRefObject = isRecord(tagRef.object) ? tagRef.object : {};
+            let tagCommitSha = '';
+            if (tagRefObject.type === 'commit') {
+              tagCommitSha = String(tagRefObject.sha || '');
+            } else if (tagRefObject.type === 'tag') {
+              if (!isRecord(tagObject)) {
+                fail('annotated tag object metadata is required.');
+              }
+              if (tagObject.tag !== releaseTag) {
+                fail(`annotated tag name must be ${releaseTag}; actual ${tagObject.tag || '<missing>'}.`);
+              }
+              const tagObjectTarget = isRecord(tagObject.object) ? tagObject.object : {};
+              if (tagObjectTarget.type !== 'commit') {
+                fail(`annotated tag object must point at a commit; actual ${tagObjectTarget.type || '<missing>'}.`);
+              }
+              tagCommitSha = String(tagObjectTarget.sha || '');
+            } else {
+              fail(`tag ref object type must be commit or tag; actual ${tagRefObject.type || '<missing>'}.`);
+            }
+            if (tagCommitSha !== lockCommitSha) {
+              fail(`tag commit sha must match lock commit sha; expected ${lockCommitSha}; actual ${tagCommitSha || '<missing>'}.`);
+            }
+            if (!/^sha256:[0-9a-f]{64}$/u.test(observedDigest)) {
+              fail(`observed GHCR digest must be sha256:<64 lowercase hex>; actual ${observedDigest || '<missing>'}.`);
+            }
+            if (observedDigest !== lockDigest) {
+              fail(`observed GHCR digest must match lock digest; expected ${lockDigest}; actual ${observedDigest}.`);
+            }
+
+            writeFileSync(process.env.DEP_SOURCE_GATE_PATH, `${JSON.stringify({
+              provider_id: providerId,
+              repo_slug: repoSlug,
+              release_api: release,
+              tag_ref_api: tagRef,
+              tag_object_api: tagObject,
+              observed_ghcr_digest: observedDigest,
+              check_command: `docker buildx imagetools inspect ${imageTagRef} --format '{{.Manifest.Digest}}'`,
+            }, null, 2)}\n`);
+          NODE
+          }
+
+          gate_dependency_image \
+            "llmup" \
+            "infra/deploy/shared/llmup-image.lock" \
+            "agentsmith-project/llm-universal-proxy" \
+            "ghcr.io/agentsmith-project/llm-universal-proxy"
+          gate_dependency_image \
+            "afscp" \
+            "infra/deploy/shared/afscp-image.lock" \
+            "agentsmith-project/agentsmith-fs-control-plane" \
+            "ghcr.io/agentsmith-project/agentsmith-fs-control-plane"
+
       - name: Gate release contract input source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -482,6 +689,8 @@ jobs:
           RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"
           RUNNER_RELEASE_MANIFEST_RUN_API_PATH="artifacts/release-contract/runner-manifest-source-gate/run-api.json"
           RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"
+          LLMUP_IMAGE_SOURCE_GATE_PATH="artifacts/release-contract/llmup-image-source-gate/source-gate.json"
+          AFSCP_IMAGE_SOURCE_GATE_PATH="artifacts/release-contract/afscp-image-source-gate/source-gate.json"
           ASBCP_FINAL_MANIFEST_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asbcp-final-manifest.json"
           ASBCP_RELEASE_API_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/release-api.json"
           ASBCP_ASSET_API_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asset-api.json"
@@ -491,6 +700,8 @@ jobs:
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"
@@ -499,6 +710,8 @@ jobs:
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
+          test -f "${LLMUP_IMAGE_SOURCE_GATE_PATH}"
+          test -f "${AFSCP_IMAGE_SOURCE_GATE_PATH}"
           test -f "${ASBCP_FINAL_MANIFEST_PATH}"
           test -f "${ASBCP_RELEASE_API_PATH}"
           test -f "${ASBCP_ASSET_API_PATH}"
@@ -511,11 +724,15 @@ jobs:
             --runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}" \
             --runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}" \
             --runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}" \
+            --llmup-source-gate "${LLMUP_IMAGE_SOURCE_GATE_PATH}" \
+            --afscp-source-gate "${AFSCP_IMAGE_SOURCE_GATE_PATH}" \
             --asbcp-final-manifest "${ASBCP_FINAL_MANIFEST_PATH}" \
             --asbcp-release-api "${ASBCP_RELEASE_API_PATH}" \
             --asbcp-asset-api "${ASBCP_ASSET_API_PATH}"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
           node <<'NODE'
           const { readFileSync, writeFileSync } = require('node:fs');
@@ -540,6 +757,8 @@ jobs:
           NODE
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
 
       - name: Upload release contract artifact
@@ -551,4 +770,6 @@ jobs:
             artifacts/release-contract/agentsmith-release-contract.json
             artifacts/release-contract/release-contract-input-source.json
             artifacts/release-contract/runner-release-manifest-source.json
+            artifacts/release-contract/llmup-image-source.json
+            artifacts/release-contract/afscp-image-source.json
             artifacts/release-contract/asbcp-final-manifest-source.json

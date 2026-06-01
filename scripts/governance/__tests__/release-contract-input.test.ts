@@ -24,8 +24,12 @@ import {
   type AgentSmithReleaseContractGeneratorInputAssemblyInput,
 } from '../release-contract-input';
 import {
+  AFSCP_IMAGE_SOURCE_RECEIPT_NAME,
+  AFSCP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
   ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME,
   ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
+  LLMUP_IMAGE_SOURCE_RECEIPT_NAME,
+  LLMUP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
   RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME,
   RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
   runReleaseContractArtifactCli,
@@ -47,6 +51,16 @@ const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
 const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const LLMUP_VERSION = 'v0.2.44';
+const LLMUP_DIGEST = `sha256:${'3'.repeat(64)}`;
+const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
+const LLMUP_RELEASE_URL =
+  `https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/${LLMUP_VERSION}`;
+const AFSCP_VERSION = 'v1.0.7';
+const AFSCP_DIGEST = `sha256:${'5'.repeat(64)}`;
+const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const AFSCP_RELEASE_URL =
+  `https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/${AFSCP_VERSION}`;
 const ASBCP_VERSION = 'v2.0.12';
 const ASBCP_DIGEST = `sha256:${'6'.repeat(64)}`;
 const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
@@ -234,13 +248,13 @@ function buildReleaseContractInput(
     adopted_provider_images: [
       {
         id: 'llmup',
-        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
-        digest: `sha256:${'3'.repeat(64)}`,
+        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION}@${LLMUP_DIGEST}`,
+        digest: LLMUP_DIGEST,
       },
       {
         id: 'afscp',
-        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
-        digest: `sha256:${'5'.repeat(64)}`,
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:${AFSCP_VERSION}@${AFSCP_DIGEST}`,
+        digest: AFSCP_DIGEST,
       },
       {
         id: 'asbcp',
@@ -298,13 +312,13 @@ function buildAssemblyInput(): AgentSmithReleaseContractGeneratorInputAssemblyIn
     adopted_provider_images: [
       {
         id: 'llmup',
-        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${RELEASE_ID}@sha256:${'3'.repeat(64)}`,
-        digest: `sha256:${'3'.repeat(64)}`,
+        image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION}@${LLMUP_DIGEST}`,
+        digest: LLMUP_DIGEST,
       },
       {
         id: 'afscp',
-        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
-        digest: `sha256:${'5'.repeat(64)}`,
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:${AFSCP_VERSION}@${AFSCP_DIGEST}`,
+        digest: AFSCP_DIGEST,
       },
       {
         id: 'asbcp',
@@ -390,6 +404,8 @@ interface AsbcpFinalManifestSourceMetadataPaths {
   manifestPath: string;
   releaseApiPath: string;
   assetApiPath: string;
+  llmupSourceGatePath: string;
+  afscpSourceGatePath: string;
 }
 
 interface AsbcpFinalManifestSourceMetadataFixture {
@@ -399,6 +415,28 @@ interface AsbcpFinalManifestSourceMetadataFixture {
     [key: string]: unknown;
   };
   assetApi: Record<string, unknown>;
+}
+
+interface DependencyImageSourceFixtureConfig {
+  providerId: 'llmup' | 'afscp';
+  repoSlug: string;
+  imageRepository: string;
+  version: string;
+  digest: string;
+  commitSha: string;
+  releaseUrl: string;
+  releaseId: number;
+  tagObjectSha: string;
+}
+
+interface DependencyImageSourceGateFixture {
+  provider_id: 'llmup' | 'afscp';
+  repo_slug: string;
+  release_api: Record<string, unknown>;
+  tag_ref_api: Record<string, unknown>;
+  tag_object_api: Record<string, unknown>;
+  observed_ghcr_digest: string;
+  check_command: string;
 }
 
 function writeCanonicalRunnerImageLock(root: string): void {
@@ -563,11 +601,110 @@ function writeCanonicalAsbcpImageLock(root: string): void {
   ].join('\n'));
 }
 
+function writeCanonicalDependencyImageLock(root: string, config: DependencyImageSourceFixtureConfig): void {
+  const lockPath = join(root, 'infra', 'deploy', 'shared', `${config.providerId}-image.lock`);
+  mkdirSync(join(root, 'infra', 'deploy', 'shared'), { recursive: true });
+  writeFileSync(lockPath, [
+    `${config.providerId}_version=${config.version}`,
+    `${config.providerId}_source_image=${config.imageRepository}:${config.version}@${config.digest}`,
+    `${config.providerId}_release_url=${config.releaseUrl}`,
+    `${config.providerId}_commit_sha=${config.commitSha}`,
+    '',
+  ].join('\n'));
+}
+
+function buildDependencyImageSourceGateFixture(
+  config: DependencyImageSourceFixtureConfig,
+): DependencyImageSourceGateFixture {
+  return {
+    provider_id: config.providerId,
+    repo_slug: config.repoSlug,
+    release_api: {
+      id: config.releaseId,
+      tag_name: config.version,
+      target_commitish: 'main',
+      name: config.version,
+      url: `https://api.github.com/repos/${config.repoSlug}/releases/tags/${config.version}`,
+      html_url: config.releaseUrl,
+      created_at: '2026-05-31T13:50:00.000Z',
+      published_at: '2026-05-31T14:02:00.000Z',
+      updated_at: '2026-05-31T14:02:00.000Z',
+      assets: [],
+    },
+    tag_ref_api: {
+      ref: `refs/tags/${config.version}`,
+      object: {
+        type: 'tag',
+        sha: config.tagObjectSha,
+        url: `https://api.github.com/repos/${config.repoSlug}/git/tags/${config.tagObjectSha}`,
+      },
+    },
+    tag_object_api: {
+      sha: config.tagObjectSha,
+      tag: config.version,
+      object: {
+        type: 'commit',
+        sha: config.commitSha,
+        url: `https://api.github.com/repos/${config.repoSlug}/git/commits/${config.commitSha}`,
+      },
+    },
+    observed_ghcr_digest: config.digest,
+    check_command: `docker buildx imagetools inspect ${config.imageRepository}:${config.version} --format '{{.Manifest.Digest}}'`,
+  };
+}
+
+function writeDependencyImageSourceGate(
+  root: string,
+  config: DependencyImageSourceFixtureConfig,
+  mutate: (sourceGate: DependencyImageSourceGateFixture) => void = () => undefined,
+): string {
+  writeCanonicalDependencyImageLock(root, config);
+  const metadataRoot = join(root, `${config.providerId}-image-source-metadata`);
+  const sourceGate = buildDependencyImageSourceGateFixture(config);
+
+  mutate(sourceGate);
+  mkdirSync(metadataRoot, { recursive: true });
+  const sourceGatePath = join(metadataRoot, 'source-gate.json');
+  writeFileSync(sourceGatePath, `${JSON.stringify(sourceGate, null, 2)}\n`);
+  return sourceGatePath;
+}
+
+function writeDependencyImageSourceGates(root: string): Pick<
+  AsbcpFinalManifestSourceMetadataPaths,
+  'llmupSourceGatePath' | 'afscpSourceGatePath'
+> {
+  return {
+    llmupSourceGatePath: writeDependencyImageSourceGate(root, {
+      providerId: 'llmup',
+      repoSlug: 'agentsmith-project/llm-universal-proxy',
+      imageRepository: LLMUP_PROVIDER_IMAGE_REPOSITORY,
+      version: LLMUP_VERSION,
+      digest: LLMUP_DIGEST,
+      commitSha: LLMUP_COMMIT_SHA,
+      releaseUrl: LLMUP_RELEASE_URL,
+      releaseId: 331570298,
+      tagObjectSha: '5bac2cd8cc316c27a42a4fbdd21b986600bfaadf',
+    }),
+    afscpSourceGatePath: writeDependencyImageSourceGate(root, {
+      providerId: 'afscp',
+      repoSlug: 'agentsmith-project/agentsmith-fs-control-plane',
+      imageRepository: AFSCP_PROVIDER_IMAGE_REPOSITORY,
+      version: AFSCP_VERSION,
+      digest: AFSCP_DIGEST,
+      commitSha: AFSCP_COMMIT_SHA,
+      releaseUrl: AFSCP_RELEASE_URL,
+      releaseId: 326107668,
+      tagObjectSha: '9f4f16a691049da6065a2bd45720c652e6fed171',
+    }),
+  };
+}
+
 function writeAsbcpFinalManifestSourceMetadata(
   root: string,
   mutate: (metadata: AsbcpFinalManifestSourceMetadataFixture) => void = () => undefined,
 ): AsbcpFinalManifestSourceMetadataPaths {
   writeCanonicalAsbcpImageLock(root);
+  const dependencySourceGates = writeDependencyImageSourceGates(root);
   const metadataRoot = join(root, 'asbcp-final-manifest-source-metadata');
   const assetId = 246802468;
   const manifest = buildAsbcpFinalManifest();
@@ -609,6 +746,7 @@ function writeAsbcpFinalManifestSourceMetadata(
     manifestPath: join(metadataRoot, ASBCP_FINAL_MANIFEST_ASSET_NAME),
     releaseApiPath: join(metadataRoot, 'release-api.json'),
     assetApiPath: join(metadataRoot, 'asset-api.json'),
+    ...dependencySourceGates,
   };
   writeFileSync(paths.manifestPath, `${JSON.stringify(metadata.manifest, null, 2)}\n`);
   writeFileSync(paths.releaseApiPath, `${JSON.stringify(metadata.releaseApi, null, 2)}\n`);
@@ -634,6 +772,8 @@ function asbcpFinalManifestSourceEnv(
     ASBCP_FINAL_MANIFEST_SOURCE_MANIFEST_PATH: paths.manifestPath,
     ASBCP_FINAL_MANIFEST_SOURCE_RELEASE_API_PATH: paths.releaseApiPath,
     ASBCP_FINAL_MANIFEST_SOURCE_ASSET_API_PATH: paths.assetApiPath,
+    LLMUP_IMAGE_SOURCE_GATE_PATH: paths.llmupSourceGatePath,
+    AFSCP_IMAGE_SOURCE_GATE_PATH: paths.afscpSourceGatePath,
   };
 }
 
@@ -668,6 +808,10 @@ function artifactProducerArgv(
     paths.runApiPath,
     '--runner-artifacts-api',
     paths.artifactsApiPath,
+    '--llmup-source-gate',
+    asbcpPaths.llmupSourceGatePath,
+    '--afscp-source-gate',
+    asbcpPaths.afscpSourceGatePath,
     '--asbcp-final-manifest',
     asbcpPaths.manifestPath,
     '--asbcp-release-api',
@@ -1334,6 +1478,8 @@ describe('release contract CI artifact producer', () => {
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
     const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const llmupImageSourceReceiptPath = join(outputDir, LLMUP_IMAGE_SOURCE_RECEIPT_NAME);
+    const afscpImageSourceReceiptPath = join(outputDir, AFSCP_IMAGE_SOURCE_RECEIPT_NAME);
     const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
 
     const stderr: string[] = [];
@@ -1349,10 +1495,18 @@ describe('release contract CI artifact producer', () => {
     expect(exitCode).toBe(0);
     expect(existsSync(outputPath)).toBe(true);
     expect(existsSync(runnerManifestReceiptPath)).toBe(true);
+    expect(existsSync(llmupImageSourceReceiptPath)).toBe(true);
+    expect(existsSync(afscpImageSourceReceiptPath)).toBe(true);
     expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(true);
 
     const contract = JSON.parse(readFileSync(outputPath, 'utf8')) as unknown;
     const runnerManifestReceipt = JSON.parse(readFileSync(runnerManifestReceiptPath, 'utf8')) as Record<string, unknown>;
+    const llmupImageSourceReceipt = JSON.parse(
+      readFileSync(llmupImageSourceReceiptPath, 'utf8'),
+    ) as Record<string, unknown>;
+    const afscpImageSourceReceipt = JSON.parse(
+      readFileSync(afscpImageSourceReceiptPath, 'utf8'),
+    ) as Record<string, unknown>;
     const asbcpFinalManifestReceipt = JSON.parse(
       readFileSync(asbcpFinalManifestReceiptPath, 'utf8'),
     ) as Record<string, unknown>;
@@ -1435,6 +1589,76 @@ describe('release contract CI artifact producer', () => {
     expect(runnerManifestReceipt.remote_artifact_zip_digest).not.toBe(
       runnerManifestReceipt.local_manifest_canonical_sha256,
     );
+    expect(llmupImageSourceReceipt).toMatchObject({
+      schema_version: LLMUP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
+      source_kind: 'github_release_tag_and_ghcr_manifest',
+      provider_image_id: 'llmup',
+      producer_repo: 'github.com/agentsmith-project/llm-universal-proxy',
+      producer_repo_slug: 'agentsmith-project/llm-universal-proxy',
+      lock_path: 'infra/deploy/shared/llmup-image.lock',
+      lock_version: LLMUP_VERSION,
+      lock_source_image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION}@${LLMUP_DIGEST}`,
+      lock_digest: LLMUP_DIGEST,
+      lock_commit_sha: LLMUP_COMMIT_SHA,
+      release_url: LLMUP_RELEASE_URL,
+      release_tag: LLMUP_VERSION,
+      release_id: 331570298,
+      release_html_url: LLMUP_RELEASE_URL,
+      tag_ref: `refs/tags/${LLMUP_VERSION}`,
+      tag_ref_object_type: 'tag',
+      tag_ref_object_sha: '5bac2cd8cc316c27a42a4fbdd21b986600bfaadf',
+      tag_commit_sha: LLMUP_COMMIT_SHA,
+      tag_commit_sha_match: true,
+      observed_ghcr_digest: LLMUP_DIGEST,
+      ghcr_digest_match: true,
+      check_command:
+        `docker buildx imagetools inspect ${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION} --format '{{.Manifest.Digest}}'`,
+      source_gate_path: 'llmup-image-source-metadata/source-gate.json',
+      consumer: {
+        repo: 'github.com/agentsmith-project/agentsmith',
+        workflow_name: 'Release Contract Artifact',
+        run_id: '10001',
+        run_attempt: '2',
+        job: 'generate-release-contract',
+        commit_sha: GIT_SHA,
+      },
+      generated_at: GENERATED_AT,
+    });
+    expect(afscpImageSourceReceipt).toMatchObject({
+      schema_version: AFSCP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
+      source_kind: 'github_release_tag_and_ghcr_manifest',
+      provider_image_id: 'afscp',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
+      producer_repo_slug: 'agentsmith-project/agentsmith-fs-control-plane',
+      lock_path: 'infra/deploy/shared/afscp-image.lock',
+      lock_version: AFSCP_VERSION,
+      lock_source_image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:${AFSCP_VERSION}@${AFSCP_DIGEST}`,
+      lock_digest: AFSCP_DIGEST,
+      lock_commit_sha: AFSCP_COMMIT_SHA,
+      release_url: AFSCP_RELEASE_URL,
+      release_tag: AFSCP_VERSION,
+      release_id: 326107668,
+      release_html_url: AFSCP_RELEASE_URL,
+      tag_ref: `refs/tags/${AFSCP_VERSION}`,
+      tag_ref_object_type: 'tag',
+      tag_ref_object_sha: '9f4f16a691049da6065a2bd45720c652e6fed171',
+      tag_commit_sha: AFSCP_COMMIT_SHA,
+      tag_commit_sha_match: true,
+      observed_ghcr_digest: AFSCP_DIGEST,
+      ghcr_digest_match: true,
+      check_command:
+        `docker buildx imagetools inspect ${AFSCP_PROVIDER_IMAGE_REPOSITORY}:${AFSCP_VERSION} --format '{{.Manifest.Digest}}'`,
+      source_gate_path: 'afscp-image-source-metadata/source-gate.json',
+      consumer: {
+        repo: 'github.com/agentsmith-project/agentsmith',
+        workflow_name: 'Release Contract Artifact',
+        run_id: '10001',
+        run_attempt: '2',
+        job: 'generate-release-contract',
+        commit_sha: GIT_SHA,
+      },
+      generated_at: GENERATED_AT,
+    });
     expect(asbcpFinalManifestReceipt).toMatchObject({
       schema_version: ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
       source_kind: 'github_release_asset',
@@ -1503,6 +1727,152 @@ describe('release contract CI artifact producer', () => {
     expect(stderr.join('\n')).toContain('remote_manifest.canonical_sha256');
     expect(existsSync(outputPath)).toBe(false);
     expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
+  });
+
+  it('rejects LLMUP image source receipt digest mismatch before writing receipts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
+    const sourceGate = JSON.parse(readFileSync(asbcpMetadata.llmupSourceGatePath, 'utf8')) as Record<string, unknown>;
+    sourceGate.observed_ghcr_digest = `sha256:${'9'.repeat(64)}`;
+    writeFileSync(asbcpMetadata.llmupSourceGatePath, `${JSON.stringify(sourceGate, null, 2)}\n`);
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const llmupImageSourceReceiptPath = join(outputDir, LLMUP_IMAGE_SOURCE_RECEIPT_NAME);
+    const afscpImageSourceReceiptPath = join(outputDir, AFSCP_IMAGE_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata, asbcpMetadata),
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('LLMUP image source freshness check failed');
+    expect(stderr.join('\n')).toContain('source_gate.observed_ghcr_digest');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(llmupImageSourceReceiptPath)).toBe(false);
+    expect(existsSync(afscpImageSourceReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'LLMUP image',
+      mutate: (input: Record<string, unknown>) => {
+        const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
+        adoptedProviderImages[0] = {
+          ...adoptedProviderImages[0],
+          image: `${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION}@sha256:${'8'.repeat(64)}`,
+        };
+      },
+      expected:
+        `adopted_provider_images[0].image: expected source image ${LLMUP_PROVIDER_IMAGE_REPOSITORY}:${LLMUP_VERSION}@${LLMUP_DIGEST}`,
+    },
+    {
+      name: 'AFSCP digest',
+      mutate: (input: Record<string, unknown>) => {
+        const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
+        adoptedProviderImages[1] = {
+          ...adoptedProviderImages[1],
+          digest: `sha256:${'8'.repeat(64)}`,
+        };
+      },
+      expected:
+        `adopted_provider_images[1].digest: expected source digest ${AFSCP_DIGEST}; actual sha256:${'8'.repeat(64)}.`,
+    },
+  ])('rejects adopted provider $name drift before writing artifacts or receipts', ({ mutate, expected }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
+    const input = buildArtifactProducerInput();
+    mutate(input);
+    const inputPath = writeArtifactProducerInput(root, input);
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const llmupImageSourceReceiptPath = join(outputDir, LLMUP_IMAGE_SOURCE_RECEIPT_NAME);
+    const afscpImageSourceReceiptPath = join(outputDir, AFSCP_IMAGE_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata, asbcpMetadata),
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('release contract adopted provider image source binding failed');
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(llmupImageSourceReceiptPath)).toBe(false);
+    expect(existsSync(afscpImageSourceReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'missing LLMUP image',
+      mutate: (input: Record<string, unknown>) => {
+        const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
+        input.adopted_provider_images = adoptedProviderImages.filter((image) => image.id !== 'llmup');
+      },
+      expected: 'adopted_provider_images.llmup: expected exactly one source-bound image; actual 0.',
+    },
+    {
+      name: 'duplicate AFSCP image',
+      mutate: (input: Record<string, unknown>) => {
+        const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
+        adoptedProviderImages.push({ ...adoptedProviderImages[1] });
+      },
+      expected: 'adopted_provider_images.afscp: expected exactly one source-bound image; actual 2.',
+    },
+  ])('rejects adopted provider $name before writing artifacts or receipts', ({ mutate, expected }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
+    const input = buildArtifactProducerInput();
+    mutate(input);
+    const inputPath = writeArtifactProducerInput(root, input);
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const llmupImageSourceReceiptPath = join(outputDir, LLMUP_IMAGE_SOURCE_RECEIPT_NAME);
+    const afscpImageSourceReceiptPath = join(outputDir, AFSCP_IMAGE_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata, asbcpMetadata),
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('release contract adopted provider image source binding failed');
+    expect(stderr.join('\n')).toContain('expected exactly one source-bound image');
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(llmupImageSourceReceiptPath)).toBe(false);
+    expect(existsSync(afscpImageSourceReceiptPath)).toBe(false);
     expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
   });
 
@@ -1927,7 +2297,8 @@ describe('release contract CI artifact producer', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stderr.join('\n')).toContain('image must be pinned by digest');
+    expect(stderr.join('\n')).toContain('release contract adopted provider image source binding failed');
+    expect(stderr.join('\n')).toContain('adopted_provider_images[0].image');
     expect(existsSync(outputPath)).toBe(false);
   });
 });

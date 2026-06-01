@@ -1,5 +1,7 @@
-import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, execSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -142,13 +144,106 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
     expect(releaseEnvScript).toContain('unified_deploy_release_contract()');
     expect(releaseEnvScript).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT');
-    expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT="$(unified_deploy_release_contract)"');
-    expect(releaseProductFlowsScript).toContain('test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}"');
-    expect(releaseProductFlowsScript).toContain('--release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}"');
+    expect(releaseEnvScript).toContain('AGENTSMITH_RELEASE_CONTRACT_PATH');
+    expect(releaseEnvScript).toContain('unified_deploy_release_contract_target()');
+    expect(releaseProductFlowsScript).toContain(
+      'POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE="$(unified_deploy_release_contract)"',
+    );
+    expect(releaseProductFlowsScript).toContain(
+      'POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET="$(unified_deploy_release_contract_target)"',
+    );
+    expect(releaseProductFlowsScript).toContain('test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"');
+    expect(releaseProductFlowsScript).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT or AGENTSMITH_RELEASE_CONTRACT_PATH');
+    expect(releaseProductFlowsScript).toContain('mkdir -p "$(dirname "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}")"');
+    expect(releaseProductFlowsScript).toContain(
+      'cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}"',
+    );
+    expect(releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"')).toBeLessThan(
+      releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
+    );
+    expect(releaseProductFlowsScript).toContain('--release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}"');
     expect(releaseProductFlowsScript).toContain('--path-root="${POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT}"');
     expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
     expect(releaseProductFlowsScript).toContain('--agent-task-polls=');
     expect(releaseProductFlowsScript).toContain('--agent-task-poll-interval-ms=');
+  });
+
+  it('copies external release contracts into the campaign root before producing product-flow reports', () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'agentsmith-product-flows-staging-'));
+
+    try {
+      const campaignRoot = join(tempRoot, 'campaign');
+      const sourceRoot = join(tempRoot, 'source');
+      const fakeBin = join(tempRoot, 'bin');
+      const reportArgvPath = join(tempRoot, 'report-argv.txt');
+      const sourceContractPath = join(sourceRoot, 'agentsmith-release-contract.json');
+      const targetContractPath = join(campaignRoot, 'release-contract', 'agentsmith-release-contract.json');
+      const expectedProductFlowsPath = join(campaignRoot, 'unified-deploy', 'product-flows', 'aggregate.json');
+
+      mkdirSync(sourceRoot, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(sourceContractPath, '{"schema_version":"test-release-contract"}\n');
+      expect(sourceContractPath.startsWith(`${campaignRoot}/`)).toBe(false);
+
+      const npmStubPath = join(fakeBin, 'npm');
+      writeFileSync(
+        npmStubPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -lt 2 || "$1" != "run" ]]; then
+  printf 'unexpected npm invocation: %s\\n' "$*" >&2
+  exit 64
+fi
+
+case "$2" in
+  test:unified-deploy:product-flows)
+    if [[ "\${3:-}" != "--" ]]; then
+      printf 'unexpected product flows argv: %s\\n' "$*" >&2
+      exit 64
+    fi
+    printf '[fake product flows] --product-flows=%s/unified-deploy/product-flows/aggregate.json\\n' "\${RELEASE_CAMPAIGN_ROOT}"
+    ;;
+  post-deploy-product-smoke:report)
+    if [[ "\${3:-}" != "--" ]]; then
+      printf 'unexpected report argv: %s\\n' "$*" >&2
+      exit 64
+    fi
+    printf '%s\\n' "$@" > "\${REPORT_ARGV_CAPTURE}"
+    ;;
+  *)
+    printf 'unexpected npm script: %s\\n' "$2" >&2
+    exit 64
+    ;;
+esac
+`,
+      );
+      chmodSync(npmStubPath, 0o755);
+
+      execFileSync('bash', ['scripts/unified-deploy/release-product-flows.sh'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: campaignRoot,
+          AGENTSMITH_RELEASE_CONTRACT_PATH: sourceContractPath,
+          REPORT_ARGV_CAPTURE: reportArgvPath,
+          UNIFIED_DEPLOY_RELEASE_CONTRACT: '',
+          UNIFIED_DEPLOY_RELEASE_ROOT_DIR: '',
+        },
+        stdio: 'pipe',
+      });
+
+      expect(readFileSync(targetContractPath, 'utf8')).toBe(readFileSync(sourceContractPath, 'utf8'));
+
+      const reportArgv = readFileSync(reportArgvPath, 'utf8').trim().split('\n');
+      expect(reportArgv).toContain(`--product-flows=${expectedProductFlowsPath}`);
+      expect(reportArgv).toContain(`--release-contract=${targetContractPath}`);
+      expect(reportArgv).not.toContain(`--release-contract=${sourceContractPath}`);
+      expect(reportArgv).toContain(`--path-root=${campaignRoot}`);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('models lane:mock as a canonical lane object with adapter alias support', () => {

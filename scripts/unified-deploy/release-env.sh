@@ -24,7 +24,15 @@ unified_deploy_release_site_env() {
 unified_deploy_release_contract() {
   if [[ -n "${UNIFIED_DEPLOY_RELEASE_CONTRACT:-}" ]]; then
     printf '%s\n' "${UNIFIED_DEPLOY_RELEASE_CONTRACT}"
-  elif [[ -n "${RELEASE_CAMPAIGN_ROOT:-}" ]]; then
+  elif [[ -n "${AGENTSMITH_RELEASE_CONTRACT_PATH:-}" ]]; then
+    printf '%s\n' "${AGENTSMITH_RELEASE_CONTRACT_PATH}"
+  else
+    unified_deploy_release_contract_target
+  fi
+}
+
+unified_deploy_release_contract_target() {
+  if [[ -n "${RELEASE_CAMPAIGN_ROOT:-}" ]]; then
     printf '%s/release-contract/agentsmith-release-contract.json\n' "${RELEASE_CAMPAIGN_ROOT}"
   else
     printf '%s/release-contract/agentsmith-release-contract.json\n' "${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${UNIFIED_DEPLOY_REPO_ROOT_DIR}/artifacts}"

@@ -125,6 +125,7 @@ describe('current gate governance', () => {
     const productSmokeReport = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
       (artifact) => artifact.id === 'post_deploy_product_smoke_report',
     );
+    const releaseEnvScript = readFileSync('scripts/unified-deploy/release-env.sh', 'utf8');
     const releaseProductFlowsScript = readFileSync('scripts/unified-deploy/release-product-flows.sh', 'utf8');
 
     expect(productSmokeReport).toMatchObject({
@@ -139,6 +140,11 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_ROOT="${RELEASE_CAMPAIGN_ROOT:-${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${ROOT_DIR}/artifacts}}"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-product-smoke"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
+    expect(releaseEnvScript).toContain('unified_deploy_release_contract()');
+    expect(releaseEnvScript).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT');
+    expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT="$(unified_deploy_release_contract)"');
+    expect(releaseProductFlowsScript).toContain('test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}"');
+    expect(releaseProductFlowsScript).toContain('--release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}"');
     expect(releaseProductFlowsScript).toContain('--path-root="${POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT}"');
     expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
     expect(releaseProductFlowsScript).toContain('--agent-task-polls=');

@@ -1922,6 +1922,8 @@ const RELEASE_KIT_TEXT_EVIDENCE_FILE_NAMES = new Set([
   'kubeconfig',
   'config',
 ]);
+const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const GIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const RELEASE_KIT_TEXT_EVIDENCE_FILE_EXTENSION_PATTERN =
   /\.(?:log|txt|md|markdown|json|yaml|yml|env|ini|conf|cfg|properties|kubeconfig)$/iu;
 const RELEASE_KIT_MAX_TEXT_EVIDENCE_BYTES = 1024 * 1024;
@@ -2219,12 +2221,24 @@ function productFlowFailureClassFromAggregate(
   return 'evidence_missing';
 }
 
-function isForbiddenLocalProductSmokePath(value: string): boolean {
+function isInvalidPortableProductSmokePath(value: string): boolean {
   const trimmed = value.trim();
-  return trimmed.startsWith('/')
+  if (
+    trimmed.length === 0
+    || trimmed.startsWith('/')
     || trimmed.startsWith('\\')
-    || /^file:\/\//iu.test(trimmed)
-    || /^[A-Za-z]:[\\/]/u.test(trimmed);
+    || trimmed.includes('\\')
+    || /^file:/iu.test(trimmed)
+    || /^[A-Za-z]:/u.test(trimmed)
+  ) {
+    return true;
+  }
+
+  return trimmed.split('/').some((segment) => (
+    segment.length === 0
+    || segment === '.'
+    || segment === '..'
+  ));
 }
 
 function productSmokeReportPathIssues(payload: Record<string, unknown>): string[] {
@@ -2233,8 +2247,7 @@ function productSmokeReportPathIssues(payload: Record<string, unknown>): string[
   const productFlowsPath = source.product_flows_path;
   if (
     typeof productFlowsPath === 'string'
-    && productFlowsPath.trim().length > 0
-    && isForbiddenLocalProductSmokePath(productFlowsPath)
+    && isInvalidPortableProductSmokePath(productFlowsPath)
   ) {
     issues.push('source.product_flows_path must be a portable relative path');
   }
@@ -2243,10 +2256,45 @@ function productSmokeReportPathIssues(payload: Record<string, unknown>): string[
   const reportPath = paths.report_path;
   if (
     typeof reportPath === 'string'
-    && reportPath.trim().length > 0
-    && isForbiddenLocalProductSmokePath(reportPath)
+    && isInvalidPortableProductSmokePath(reportPath)
   ) {
     issues.push('paths.report_path must be a portable relative path');
+  }
+
+  return issues;
+}
+
+function productSmokeReleaseContractShapeIssues(
+  payload: Record<string, unknown>,
+  pathIssues: string[],
+): string[] {
+  const issues: string[] = [];
+  if (!isRecord(payload.release_contract)) {
+    issues.push('release_contract must be an object');
+    return issues;
+  }
+
+  const releaseContract = payload.release_contract;
+  const releaseContractPath = releaseContract.path;
+  if (typeof releaseContractPath !== 'string' || releaseContractPath.trim().length === 0) {
+    issues.push('release_contract.path must be a non-empty string');
+  } else if (isInvalidPortableProductSmokePath(releaseContractPath)) {
+    pathIssues.push('release_contract.path must be a portable relative path');
+  }
+
+  const inputSha256 = releaseContract.input_sha256;
+  if (typeof inputSha256 !== 'string' || !SHA256_DIGEST_PATTERN.test(inputSha256)) {
+    issues.push('release_contract.input_sha256 must be a sha256 digest');
+  }
+
+  const releaseId = releaseContract.release_id;
+  if (typeof releaseId !== 'string' || releaseId.trim().length === 0) {
+    issues.push('release_contract.release_id must be a non-empty string');
+  }
+
+  const gitSha = releaseContract.git_sha;
+  if (typeof gitSha !== 'string' || !GIT_SHA_PATTERN.test(gitSha)) {
+    issues.push('release_contract.git_sha must be a 40-character lowercase hex string');
   }
 
   return issues;
@@ -2272,6 +2320,7 @@ function validateExpectedProductSmokeResults(
 
   const invalidSmokes: string[] = [];
   const pathIssues = productSmokeReportPathIssues(payload);
+  const releaseContractIssues = productSmokeReleaseContractShapeIssues(payload, pathIssues);
   for (const [smoke, smokeResult] of Object.entries(smokeResults)) {
     if (!isRecord(smokeResult)) {
       continue;
@@ -2279,8 +2328,7 @@ function validateExpectedProductSmokeResults(
     const sourceEvidencePath = smokeResult.source_evidence_path;
     if (
       typeof sourceEvidencePath === 'string'
-      && sourceEvidencePath.trim().length > 0
-      && isForbiddenLocalProductSmokePath(sourceEvidencePath)
+      && isInvalidPortableProductSmokePath(sourceEvidencePath)
     ) {
       pathIssues.push(`${smoke} source_evidence_path must be a portable relative path`);
     }
@@ -2306,6 +2354,12 @@ function validateExpectedProductSmokeResults(
   if (pathIssues.length > 0) {
     return unifiedDeployDiagnostic(
       `${path} product smoke report paths must be release-portable: ${pathIssues.join('; ')}.`,
+      'contract_drift',
+    );
+  }
+  if (releaseContractIssues.length > 0) {
+    return unifiedDeployDiagnostic(
+      `${path} must include valid release_contract binding: ${releaseContractIssues.join('; ')}.`,
       'contract_drift',
     );
   }

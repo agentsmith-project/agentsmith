@@ -8,6 +8,12 @@ PRODUCT_FLOWS_EVIDENCE_DIR="$(unified_deploy_release_evidence_dir product-flows)
 POST_DEPLOY_PRODUCT_SMOKE_ROOT="${RELEASE_CAMPAIGN_ROOT:-${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${ROOT_DIR}/artifacts}}"
 POST_DEPLOY_PRODUCT_SMOKE_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-product-smoke"
 POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"
+POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT="$(unified_deploy_release_contract)"
+
+if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}"; then
+  printf '[post-deploy-product-smoke] release contract is required before product flows: %s\n' "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}" >&2
+  exit 1
+fi
 
 mkdir -p "${PRODUCT_FLOWS_EVIDENCE_DIR}" "${POST_DEPLOY_PRODUCT_SMOKE_DIR}"
 product_flow_log="$(mktemp)"
@@ -32,5 +38,6 @@ fi
 
 exec npm run post-deploy-product-smoke:report -- \
   --product-flows="${product_flows_path}" \
+  --release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT}" \
   --output-dir="${POST_DEPLOY_PRODUCT_SMOKE_DIR}" \
   --path-root="${POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT}"

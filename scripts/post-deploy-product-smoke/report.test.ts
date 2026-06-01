@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -19,6 +20,7 @@ import {
 } from './report';
 
 const tempRoots: string[] = [];
+const RELEASE_CONTRACT_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
@@ -37,6 +39,46 @@ function writeJson(root: string, name: string, value: unknown): string {
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   return target;
+}
+
+function releaseContractFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema_version: 'agentsmith.release-contract/v1',
+    product: 'agentsmith',
+    release_id: '2026.05.08-p0',
+    git_sha: RELEASE_CONTRACT_GIT_SHA,
+    ...overrides,
+  };
+}
+
+function writeReleaseContract(
+  root: string,
+  overrides: Record<string, unknown> = {},
+  name = 'release-contract/agentsmith-release-contract.json',
+): string {
+  return writeJson(root, name, releaseContractFixture(overrides));
+}
+
+function fileSha256(path: string): string {
+  return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+}
+
+function withReleaseContract(
+  root: string,
+  options: Omit<Parameters<typeof runPostDeployProductSmokeReportProducer>[0], 'releaseContractPath'>,
+  releaseContract: {
+    overrides?: Record<string, unknown>;
+    name?: string;
+  } = {},
+): Parameters<typeof runPostDeployProductSmokeReportProducer>[0] {
+  return {
+    ...options,
+    releaseContractPath: writeReleaseContract(
+      root,
+      releaseContract.overrides ?? {},
+      releaseContract.name,
+    ),
+  };
 }
 
 function focusedEvidence(
@@ -101,9 +143,11 @@ describe('post-deploy product smoke report producer', () => {
     const outputDir = join(root, 'out');
     writeFocusedEvidenceFiles(root);
     const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+    const releaseContractPath = writeReleaseContract(root);
 
     const result = await runPostDeployProductSmokeReportProducer({
       productFlowsPath: aggregatePath,
+      releaseContractPath,
       outputDir,
       now: () => new Date('2026-05-08T00:00:00.000Z'),
     });
@@ -118,6 +162,12 @@ describe('post-deploy product smoke report producer', () => {
       producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
       owner: 'agentsmith',
       status: 'passed',
+    });
+    expect(report.release_contract).toMatchObject({
+      path: releaseContractPath,
+      input_sha256: fileSha256(releaseContractPath),
+      release_id: '2026.05.08-p0',
+      git_sha: RELEASE_CONTRACT_GIT_SHA,
     });
     const smokeResults = report.smoke_results as Record<string, unknown>;
     expect(Object.keys(smokeResults)).toContain('provider_neutral_endpoint');
@@ -138,9 +188,11 @@ describe('post-deploy product smoke report producer', () => {
     const outputDir = join(campaignRoot, 'post-deploy-product-smoke');
     writeFocusedEvidenceFiles(productFlowsDir);
     const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregateWithFlows());
+    const releaseContractPath = writeReleaseContract(campaignRoot);
 
     const result = await runPostDeployProductSmokeReportProducer({
       productFlowsPath: aggregatePath,
+      releaseContractPath,
       outputDir,
       pathRoot: campaignRoot,
       now: () => new Date('2026-05-08T00:00:00.000Z'),
@@ -159,6 +211,12 @@ describe('post-deploy product smoke report producer', () => {
     });
     expect(report.paths).toMatchObject({
       report_path: 'post-deploy-product-smoke/post-deploy-product-smoke-report.json',
+    });
+    expect(report.release_contract).toMatchObject({
+      path: 'release-contract/agentsmith-release-contract.json',
+      input_sha256: fileSha256(releaseContractPath),
+      release_id: '2026.05.08-p0',
+      git_sha: RELEASE_CONTRACT_GIT_SHA,
     });
 
     const smokeResults = report.smoke_results as Record<string, Record<string, unknown>>;
@@ -183,11 +241,11 @@ describe('post-deploy product smoke report producer', () => {
       aggregateWithFlows(),
     );
     const outsideProductOutputDir = join(productFlowsRoot, 'post-deploy-product-smoke');
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(productFlowsRoot, {
       productFlowsPath: outsideAggregatePath,
       outputDir: outsideProductOutputDir,
       pathRoot: productFlowsRoot,
-    })).rejects.toThrow(/source\.product_flows_path must stay under --path-root/u);
+    }))).rejects.toThrow(/source\.product_flows_path must stay under --path-root/u);
     expect(existsSync(join(outsideProductOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
 
     const reportRoot = tempDir('post-deploy-product-smoke-outside-report-root-');
@@ -196,11 +254,11 @@ describe('post-deploy product smoke report producer', () => {
     writeFocusedEvidenceFiles(reportProductFlowsDir);
     const reportAggregatePath = writeJson(reportProductFlowsDir, 'aggregate.json', aggregateWithFlows());
     const outsideReportOutputDir = join(outsideReportRoot, 'post-deploy-product-smoke');
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(reportRoot, {
       productFlowsPath: reportAggregatePath,
       outputDir: outsideReportOutputDir,
       pathRoot: reportRoot,
-    })).rejects.toThrow(/paths\.report_path must stay under --path-root/u);
+    }))).rejects.toThrow(/paths\.report_path must stay under --path-root/u);
     expect(existsSync(join(outsideReportOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
 
     const evidenceRoot = tempDir('post-deploy-product-smoke-outside-evidence-root-');
@@ -212,12 +270,73 @@ describe('post-deploy product smoke report producer', () => {
     (aggregate.flow_evidence_paths as Record<string, unknown>).files = join(outsideEvidenceRoot, 'files.json');
     const evidenceAggregatePath = writeJson(evidenceProductFlowsDir, 'aggregate.json', aggregate);
     const evidenceOutputDir = join(evidenceRoot, 'post-deploy-product-smoke');
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(evidenceRoot, {
       productFlowsPath: evidenceAggregatePath,
       outputDir: evidenceOutputDir,
       pathRoot: evidenceRoot,
-    })).rejects.toThrow(/smoke_results\.files\.source_evidence_path must stay under --path-root/u);
+    }))).rejects.toThrow(/smoke_results\.files\.source_evidence_path must stay under --path-root/u);
     expect(existsSync(join(evidenceOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+  });
+
+  it('fails fast when the release contract is outside pathRoot', async () => {
+    const root = tempDir('post-deploy-product-smoke-outside-release-contract-root-');
+    const outsideRoot = tempDir('post-deploy-product-smoke-outside-release-contract-source-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregateWithFlows());
+    const releaseContractPath = writeReleaseContract(outsideRoot);
+
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: aggregatePath,
+      releaseContractPath,
+      outputDir,
+      pathRoot: root,
+    })).rejects.toThrow(/release_contract\.path must stay under --path-root/u);
+    expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+  });
+
+  it('fails when releaseContractPath is missing or empty', async () => {
+    const root = tempDir('post-deploy-product-smoke-missing-release-contract-');
+    writeFocusedEvidenceFiles(root);
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+    const missingOptions = {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out-missing'),
+    } as unknown as Parameters<typeof runPostDeployProductSmokeReportProducer>[0];
+
+    await expect(runPostDeployProductSmokeReportProducer(missingOptions))
+      .rejects.toThrow(/releaseContractPath is required/u);
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: aggregatePath,
+      releaseContractPath: '   ',
+      outputDir: join(root, 'out-empty'),
+    })).rejects.toThrow(/releaseContractPath is required/u);
+  });
+
+  it.each([
+    [
+      'schema_version',
+      { schema_version: 'agentsmith.release-contract/v0' },
+      /release_contract\.schema_version must be agentsmith\.release-contract\/v1/u,
+    ],
+    [
+      'git_sha',
+      { git_sha: '0123456789abcdef0123456789abcdef0123456Z' },
+      /release_contract\.git_sha must be a 40-character lowercase hex string/u,
+    ],
+  ] as const)('fails when release contract %s is invalid', async (_field, overrides, expectedError) => {
+    const root = tempDir('post-deploy-product-smoke-bad-release-contract-');
+    writeFocusedEvidenceFiles(root);
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out'),
+    }, {
+      overrides,
+      name: 'bad-release-contract.json',
+    }))).rejects.toThrow(expectedError);
   });
 
   it('fails when a required source flow is missing', async () => {
@@ -229,10 +348,10 @@ describe('post-deploy product smoke report producer', () => {
       aggregateWithFlows(PRODUCT_VERIFICATION_FLOW_IDS.filter((flow) => flow !== 'files')),
     );
 
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: aggregatePath,
       outputDir: join(root, 'out'),
-    })).rejects.toThrow(/missing required source flow: files/u);
+    }))).rejects.toThrow(/missing required source flow: files/u);
   });
 
   it('fails fast for release-kit-shaped product-flow aggregate producers', async () => {
@@ -242,10 +361,10 @@ describe('post-deploy product smoke report producer', () => {
     aggregate.producer = 'agentsmith-release-kit';
     const aggregatePath = writeJson(root, 'product-flows-release-kit.json', aggregate);
 
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: aggregatePath,
       outputDir: join(root, 'out'),
-    })).rejects.toThrow(/producer must be unified-deploy-product-flows; release-kit producers are not accepted/u);
+    }))).rejects.toThrow(/producer must be unified-deploy-product-flows; release-kit producers are not accepted/u);
   });
 
   it('fails when flow_evidence_paths is missing or omits a required source flow', async () => {
@@ -254,17 +373,17 @@ describe('post-deploy product smoke report producer', () => {
 
     const missingPaths = aggregateWithFlows();
     delete missingPaths.flow_evidence_paths;
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-no-paths.json', missingPaths),
       outputDir: join(root, 'out-no-paths'),
-    })).rejects.toThrow(/flow_evidence_paths must be an object/u);
+    }))).rejects.toThrow(/flow_evidence_paths must be an object/u);
 
     const missingFlowPath = aggregateWithFlows();
     delete (missingFlowPath.flow_evidence_paths as Record<string, unknown>).files;
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-missing-flow-path.json', missingFlowPath),
       outputDir: join(root, 'out-missing-flow-path'),
-    })).rejects.toThrow(/flow_evidence_paths\.files is required/u);
+    }))).rejects.toThrow(/flow_evidence_paths\.files is required/u);
   });
 
   it('fails when a required focused flow has bad schema or producer provenance', async () => {
@@ -278,10 +397,10 @@ describe('post-deploy product smoke report producer', () => {
       throw new Error('missing files flow fixture');
     }
     badSchemaFlow.schema_version = 'agentsmith.focused-product-flow.evidence/v0';
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-bad-schema.json', badSchema),
       outputDir: join(root, 'out-bad-schema'),
-    })).rejects.toThrow(/product_flows\.flows\.files\.schema_version must be agentsmith\.focused-product-flow\.evidence\/v1/u);
+    }))).rejects.toThrow(/product_flows\.flows\.files\.schema_version must be agentsmith\.focused-product-flow\.evidence\/v1/u);
 
     const badProducer = aggregateWithFlows();
     const badProducerFlow = (badProducer.flows as Record<string, unknown>[])
@@ -290,10 +409,10 @@ describe('post-deploy product smoke report producer', () => {
       throw new Error('missing usage flow fixture');
     }
     badProducerFlow.producer = 'agentsmith-release-kit';
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-bad-producer.json', badProducer),
       outputDir: join(root, 'out-bad-producer'),
-    })).rejects.toThrow(/product_flows\.flows\.usage\.producer must be unified-deploy-product-flows/u);
+    }))).rejects.toThrow(/product_flows\.flows\.usage\.producer must be unified-deploy-product-flows/u);
   });
 
   it('fails when any required source flow status is failed', async () => {
@@ -307,10 +426,10 @@ describe('post-deploy product smoke report producer', () => {
     }
     filesFlow.status = 'failed';
 
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-failed-flow.json', aggregate),
       outputDir: join(root, 'out'),
-    })).rejects.toThrow(/product_flows\.flows\.files\.status must be passed/u);
+    }))).rejects.toThrow(/product_flows\.flows\.files\.status must be passed/u);
   });
 
   it('fails when aggregate failures are non-empty', async () => {
@@ -319,10 +438,10 @@ describe('post-deploy product smoke report producer', () => {
     const aggregate = aggregateWithFlows();
     aggregate.failures = [{ path: 'flow:files', message: 'files failed' }];
 
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, 'product-flows-failures.json', aggregate),
       outputDir: join(root, 'out'),
-    })).rejects.toThrow(/failures must be empty/u);
+    }))).rejects.toThrow(/failures must be empty/u);
   });
 
   it.each([
@@ -334,23 +453,34 @@ describe('post-deploy product smoke report producer', () => {
     const aggregate = aggregateWithFlows();
     aggregate[field] = value;
 
-    await expect(runPostDeployProductSmokeReportProducer({
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: writeJson(root, `product-flows-bad-${field}.json`, aggregate),
       outputDir: join(root, 'out'),
-    })).rejects.toThrow(expectedError);
+    }))).rejects.toThrow(expectedError);
   });
 
-  it('does not emit a formal_verdict field', async () => {
+  it('does not emit formal_verdict or legacy top-level release binding fields', async () => {
     const root = tempDir('post-deploy-product-smoke-no-verdict-');
     writeFocusedEvidenceFiles(root);
     const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
 
-    const result = await runPostDeployProductSmokeReportProducer({
+    const result = await runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
       productFlowsPath: aggregatePath,
       now: () => new Date('2026-05-08T00:00:00.000Z'),
-    });
+    }));
 
     expect(result.report).not.toHaveProperty('formal_verdict');
-    expect(readReport(result.reportPath)).not.toHaveProperty('formal_verdict');
+    const report = readReport(result.reportPath);
+    expect(report).not.toHaveProperty('formal_verdict');
+    for (const legacyField of [
+      'release_id',
+      'git_sha',
+      'release_contract_digest',
+      'artifact_provenance',
+      'covered_flows',
+    ]) {
+      expect(result.report).not.toHaveProperty(legacyField);
+      expect(report).not.toHaveProperty(legacyField);
+    }
   });
 });

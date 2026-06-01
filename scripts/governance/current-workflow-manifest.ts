@@ -760,6 +760,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         role: 'artifact_producer',
         commands: [
           'npm run build -w @mbos/agent-runner-contract',
+          'npm run contracts:check-runner-image-lock',
           'npm run release:contract:ci-artifact',
         ],
         requiredSecrets: [],
@@ -769,6 +770,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         artifactPaths: [
           'artifacts/release-contract/agentsmith-release-contract.json',
           'artifacts/release-contract/release-contract-input-source.json',
+          'artifacts/release-contract/runner-release-manifest-source.json',
         ],
         blockingFor: ['manual'],
         scheduled: false,
@@ -1292,7 +1294,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         npmScript: 'release:deploy-template-package',
       },
       {
-        command: 'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>',
+        command: 'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json>',
         description: 'internal artifact producer: write the AgentSmith release contract handoff artifact; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:contract:ci-artifact',

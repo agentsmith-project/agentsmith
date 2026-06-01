@@ -42,6 +42,97 @@ jobs:
       - name: Build runner contract workspace package
         run: npm run build -w @mbos/agent-runner-contract
 
+      - name: Gate runner release manifest source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
+          runner_repo="agentsmith-project/agentsmith-runner"
+          runner_gate_dir="artifacts/release-contract/runner-manifest-source-gate"
+          runner_remote_download_dir="${runner_gate_dir}/artifact-download"
+          mkdir -p "${runner_gate_dir}"
+          rm -rf "${runner_remote_download_dir}"
+
+          npm run contracts:check-runner-image-lock -- --adoption --manifest "${RUNNER_RELEASE_MANIFEST_PATH}"
+
+          runner_run_id="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.run_id || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"
+          runner_artifact_name="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.subject_name || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"
+          if [[ ! "${runner_run_id}" =~ ^[0-9]+$ ]]; then
+            echo "runner release manifest artifact_provenance.run_id must be a GitHub Actions numeric run id." >&2
+            exit 1
+          fi
+          if [[ -z "${runner_artifact_name}" ]]; then
+            echo "runner release manifest artifact_provenance.subject_name is required." >&2
+            exit 1
+          fi
+
+          gh run view "${runner_run_id}" \
+            --repo "${runner_repo}" \
+            --json conclusion,databaseId,headSha,status,url,workflowName \
+            > "${runner_gate_dir}/run-view.json"
+          gh api "repos/${runner_repo}/actions/runs/${runner_run_id}" \
+            > "${runner_gate_dir}/run-api.json"
+          gh api "repos/${runner_repo}/actions/runs/${runner_run_id}/artifacts?per_page=100" \
+            > "${runner_gate_dir}/artifacts-api.json"
+          gh run download "${runner_run_id}" \
+            --repo "${runner_repo}" \
+            --name "${runner_artifact_name}" \
+            --dir "${runner_remote_download_dir}"
+
+          export RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR="${runner_remote_download_dir}"
+          export RUNNER_REMOTE_MANIFEST_GATE_DIR="${runner_gate_dir}"
+          node <<'NODE'
+          const { readdirSync, readFileSync, statSync, writeFileSync } = require('node:fs');
+          const path = require('node:path');
+
+          const downloadDir = process.env.RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR;
+          const gateDir = process.env.RUNNER_REMOTE_MANIFEST_GATE_DIR;
+          const manifestSchemaVersion = 'agentsmith.runner-release-manifest/v1';
+          const fail = (message) => {
+            throw new Error(`runner release manifest artifact download failed: ${message}`);
+          };
+          if (!downloadDir || !gateDir) {
+            fail('download and gate directories are required.');
+          }
+
+          const files = [];
+          const walk = (dir) => {
+            for (const entry of readdirSync(dir)) {
+              const filePath = path.join(dir, entry);
+              if (statSync(filePath).isDirectory()) {
+                walk(filePath);
+              } else {
+                files.push(filePath);
+              }
+            }
+          };
+          walk(downloadDir);
+
+          const matches = [];
+          for (const filePath of files.filter((candidate) => candidate.endsWith('.json'))) {
+            try {
+              const json = JSON.parse(readFileSync(filePath, 'utf8'));
+              if (
+                json
+                && typeof json === 'object'
+                && !Array.isArray(json)
+                && json.schema_version === manifestSchemaVersion
+                && json.artifact_provenance?.subject_name === 'runner-release-manifest'
+              ) {
+                matches.push(path.resolve(filePath));
+              }
+            } catch {
+              // Non-manifest JSON files are ignored; uniqueness is enforced on parsed manifest candidates.
+            }
+          }
+
+          if (matches.length !== 1) {
+            fail(`expected exactly one runner release manifest JSON; found ${matches.length}.`);
+          }
+          writeFileSync(path.join(gateDir, 'remote-manifest-path.txt'), `${matches[0]}\n`);
+          NODE
+
       - name: Gate release contract input source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -251,16 +342,35 @@ jobs:
           # This workflow only produces a release contract artifact from a GitHub Actions handoff artifact.
           RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"
           RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"
+          RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
+          RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "artifacts/release-contract/runner-manifest-source-gate/remote-manifest-path.txt")"
+          RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"
+          RUNNER_RELEASE_MANIFEST_RUN_API_PATH="artifacts/release-contract/runner-manifest-source-gate/run-api.json"
+          RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"
           RELEASE_CONTRACT_OUTPUT_DIR="artifacts/release-contract"
           export RELEASE_CONTRACT_INPUT_PATH RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH RELEASE_CONTRACT_OUTPUT_DIR
           mkdir -p "${RELEASE_CONTRACT_OUTPUT_DIR}"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"
+          test -f "${RUNNER_RELEASE_MANIFEST_PATH}"
+          test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"
+          test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"
+          test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"
+          test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
           export RELEASE_CONTRACT_INPUT_SHA256="$(sha256sum "${RELEASE_CONTRACT_INPUT_PATH}" | awk '{print $1}')"
-          npm run release:contract:ci-artifact -- --input "${RELEASE_CONTRACT_INPUT_PATH}" --output-dir "${RELEASE_CONTRACT_OUTPUT_DIR}"
+          npm run release:contract:ci-artifact -- \
+            --input "${RELEASE_CONTRACT_INPUT_PATH}" \
+            --output-dir "${RELEASE_CONTRACT_OUTPUT_DIR}" \
+            --runner-manifest "${RUNNER_RELEASE_MANIFEST_PATH}" \
+            --runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}" \
+            --runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}" \
+            --runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}" \
+            --runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
           node <<'NODE'
           const { readFileSync, writeFileSync } = require('node:fs');
 
@@ -283,6 +393,7 @@ jobs:
           );
           NODE
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
 
       - name: Upload release contract artifact
         uses: actions/upload-artifact@v7
@@ -292,3 +403,4 @@ jobs:
           path: |
             artifacts/release-contract/agentsmith-release-contract.json
             artifacts/release-contract/release-contract-input-source.json
+            artifacts/release-contract/runner-release-manifest-source.json

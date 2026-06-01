@@ -65,8 +65,14 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
 const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
 const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
-  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir>';
+  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json>';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
+const RUNNER_RELEASE_MANIFEST_PATH =
+  'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json';
+const RUNNER_REMOTE_MANIFEST_PATH_FILE =
+  'artifacts/release-contract/runner-manifest-source-gate/remote-manifest-path.txt';
+const RUNNER_IMAGE_LOCK_ADOPTION_COMMAND =
+  `npm run contracts:check-runner-image-lock -- --adoption --manifest "\${RUNNER_RELEASE_MANIFEST_PATH}"`;
 const RUNNER_CONTRACT_ARTIFACT_PRODUCER_COMMAND =
   'npx tsx scripts/governance/runner-contract-artifact.ts';
 const RUNNER_CONTRACT_ARTIFACT_CONSUMER_COMMAND =
@@ -1392,11 +1398,15 @@ describe('current workflow governance', () => {
     );
     const releaseContractJob = asRecord(asRecord(parsedWorkflow.jobs)['generate-release-contract']);
     const steps = Array.isArray(releaseContractJob.steps) ? releaseContractJob.steps.map(asRecord) : [];
+    const runnerSourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate runner release manifest source');
     const sourceGateStepIndex = steps.findIndex((step) => step.name === 'Gate release contract input source');
     const downloadStepIndex = steps.findIndex((step) => step.uses === 'actions/download-artifact@v7');
     const handoffFileCheckStepIndex = steps.findIndex(
       (step) => step.name === 'Verify release contract input handoff files',
     );
+    const runnerSourceGateStep = steps[runnerSourceGateStepIndex] ?? {};
+    const runnerSourceGateEnv = asRecord(runnerSourceGateStep.env);
+    const runnerSourceGateRun = typeof runnerSourceGateStep.run === 'string' ? runnerSourceGateStep.run : '';
     const sourceGateStep = steps[sourceGateStepIndex] ?? {};
     const sourceGateEnv = asRecord(sourceGateStep.env);
     const sourceGateRun = typeof sourceGateStep.run === 'string' ? sourceGateStep.run : '';
@@ -1417,15 +1427,40 @@ describe('current workflow governance', () => {
     expect(job?.artifactPaths).toEqual([
       'artifacts/release-contract/agentsmith-release-contract.json',
       'artifacts/release-contract/release-contract-input-source.json',
+      'artifacts/release-contract/runner-release-manifest-source.json',
     ]);
     expect(job?.commands).toEqual([
       RUNNER_CONTRACT_BUILD_COMMAND,
+      'npm run contracts:check-runner-image-lock',
       'npm run release:contract:ci-artifact',
     ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ actions: 'read', contents: 'read' });
+    expect(runnerSourceGateStepIndex).toBeGreaterThan(-1);
     expect(sourceGateStepIndex).toBeGreaterThan(-1);
+    expect(sourceGateStepIndex).toBeGreaterThan(runnerSourceGateStepIndex);
     expect(downloadStepIndex).toBeGreaterThan(sourceGateStepIndex);
     expect(handoffFileCheckStepIndex).toBeGreaterThan(downloadStepIndex);
+    expect(runnerSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
+    expect(runnerSourceGateRun).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
+    expect(runnerSourceGateRun).toContain('runner_repo="agentsmith-project/agentsmith-runner"');
+    expect(runnerSourceGateRun).toContain('runner_remote_download_dir="${runner_gate_dir}/artifact-download"');
+    expect(runnerSourceGateRun).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
+    expect(runnerSourceGateRun).toContain('runner-manifest-source-gate');
+    expect(runnerSourceGateRun).toContain('manifest.artifact_provenance.run_id');
+    expect(runnerSourceGateRun).toContain('manifest.artifact_provenance.subject_name');
+    expect(runnerSourceGateRun).toContain('runner release manifest artifact_provenance.subject_name is required.');
+    expect(runnerSourceGateRun).toContain('gh run view "${runner_run_id}"');
+    expect(runnerSourceGateRun).toContain('--json conclusion,databaseId,headSha,status,url,workflowName');
+    expect(runnerSourceGateRun).toContain('gh api "repos/${runner_repo}/actions/runs/${runner_run_id}"');
+    expect(runnerSourceGateRun).toContain(
+      'gh api "repos/${runner_repo}/actions/runs/${runner_run_id}/artifacts?per_page=100"',
+    );
+    expect(runnerSourceGateRun).toContain('gh run download "${runner_run_id}"');
+    expect(runnerSourceGateRun).toContain('--name "${runner_artifact_name}"');
+    expect(runnerSourceGateRun).toContain('RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR');
+    expect(runnerSourceGateRun).toContain('agentsmith.runner-release-manifest/v1');
+    expect(runnerSourceGateRun).toContain('expected exactly one runner release manifest JSON');
+    expect(runnerSourceGateRun).toContain('remote-manifest-path.txt');
     expect(sourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
     expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_RUN_ID).toBe('${{ inputs.release_contract_input_run_id }}');
     expect(sourceGateEnv.RELEASE_CONTRACT_INPUT_ARTIFACT_NAME).toBe(
@@ -1470,19 +1505,48 @@ describe('current workflow governance', () => {
     expect(handoffFileCheckRun).toContain('input.deployTemplatePackage');
     expect(handoffFileCheckRun).toContain("['package_uri', 'package_sha256', 'manifest_sha256']");
     expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
+    expect(runCommands).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
     expect(runCommands).toContain('npm run release:contract:ci-artifact');
     expect(runCommands.indexOf(RUNNER_CONTRACT_BUILD_COMMAND)).toBeLessThan(
+      runCommands.indexOf(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND),
+    );
+    expect(runCommands.indexOf(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND)).toBeLessThan(
       runCommands.indexOf('npm run release:contract:ci-artifact'),
     );
     expect(runCommands).toContain('RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"');
     expect(runCommands).toContain(
       'RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"',
     );
+    expect(runCommands).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
+    expect(runCommands).toContain(
+      `RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "${RUNNER_REMOTE_MANIFEST_PATH_FILE}")"`,
+    );
+    expect(runCommands).toContain(
+      'RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"',
+    );
+    expect(runCommands).toContain(
+      'RUNNER_RELEASE_MANIFEST_RUN_API_PATH="artifacts/release-contract/runner-manifest-source-gate/run-api.json"',
+    );
+    expect(runCommands).toContain(
+      'RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"',
+    );
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');
     expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('release-contract-input-source.json');
+    expect(runCommands).toContain('runner-release-manifest-source.json');
+    expect(runCommands).toContain('--runner-manifest "${RUNNER_RELEASE_MANIFEST_PATH}"');
+    expect(runCommands).toContain('--runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
+    expect(runCommands).toContain('--runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
+    expect(runCommands).toContain('--runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
+    expect(runCommands).toContain('--runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');
     expect(runCommands).toContain('input_sha256');
     expect(runCommands).toContain('validated_source');
     expect(receiptObjectSource).toContain('input_sha256');

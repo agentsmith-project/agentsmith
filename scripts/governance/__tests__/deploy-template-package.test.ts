@@ -33,6 +33,7 @@ import {
   sha256Digest,
   validateDeployTemplatePackage,
   type CurrentDeployTemplatePackage,
+  type CurrentReleaseImageSourceProvenanceBinding,
   type CurrentRunnerImageLock,
 } from '../current-release-boundary-schema';
 import {
@@ -49,6 +50,9 @@ const GENERATED_AT = '2026-05-23T12:00:00.000Z';
 const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
+const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
 const VALID_REMOTE_ATTESTATION = {
@@ -366,6 +370,7 @@ function buildReleaseContractAssemblyInput(
         digest: `sha256:${'7'.repeat(64)}`,
       },
     ],
+    external_image_source_provenance: buildExternalImageSourceProvenance(),
     runnerImageLock: structuredClone(RUNNER_IMAGE_LOCK),
     target_profiles: structuredClone(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES),
     min_release_kit_version: '0.1.0',
@@ -384,6 +389,51 @@ function buildReleaseContractAssemblyInput(
       attestation: 'none',
     },
   };
+}
+
+function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBinding[] {
+  return [
+    {
+      image_id: 'llmup',
+      producer_repo: 'github.com/agentsmith-project/llm-universal-proxy',
+      normalized_remote: 'github.com/agentsmith-project/llm-universal-proxy',
+      commit_sha: LLMUP_COMMIT_SHA,
+      tag: RELEASE_ID,
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: `sha256:${'3'.repeat(64)}`,
+    },
+    {
+      image_id: 'afscp',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
+      commit_sha: AFSCP_COMMIT_SHA,
+      tag: 'v1.0.7',
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: `sha256:${'5'.repeat(64)}`,
+    },
+    {
+      image_id: 'asbcp',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+      commit_sha: ASBCP_COMMIT_SHA,
+      tag: 'v2.0.7',
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: `sha256:${'6'.repeat(64)}`,
+    },
+    {
+      image_id: 'managed_runner',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
+      commit_sha: RUNNER_IMAGE_LOCK.git_sha,
+      tag: 'release-locked-safety-35ada93',
+      run_id: '26714141935',
+      run_attempt: '1',
+      artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
+    },
+  ];
 }
 
 describe('deploy template package generator', () => {

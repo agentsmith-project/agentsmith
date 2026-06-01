@@ -892,6 +892,15 @@ describe('current release boundary schema', () => {
         'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
       digest: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
       source: 'managed_runner_image',
+      source_provenance: {
+        producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+        normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
+        commit_sha: '35ada93cbba0102e9f099c3d47eeb8a48bc89e6f',
+        tag: 'release-locked-safety-35ada93',
+        run_id: '26714141935',
+        run_attempt: '1',
+        artifact_sha256: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
+      },
     });
 
     const missingManagedRunner = cloneFixture('release-contract.valid.json');
@@ -986,6 +995,40 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateAgentSmithReleaseContract(contract),
       'deploy_image_inventory id "agentsmith_app" is declared more than once',
+    );
+  });
+
+  it('requires GA deploy image inventory source provenance and validates digest and repo binding', () => {
+    const missingSourceProvenance = cloneFixture('release-contract.valid.json');
+    delete (missingSourceProvenance.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'llmup',
+    )!.source_provenance;
+    rehashReleaseContract(missingSourceProvenance);
+    expectInvalid(
+      validateAgentSmithReleaseContract(missingSourceProvenance),
+      'source_provenance is required for GA image id "llmup"',
+    );
+
+    const digestDrift = cloneFixture('release-contract.valid.json');
+    const asbcpProvenance = (digestDrift.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'asbcp',
+    )!.source_provenance as Record<string, unknown>;
+    asbcpProvenance.artifact_sha256 = `sha256:${'9'.repeat(64)}`;
+    rehashReleaseContract(digestDrift);
+    expectInvalid(
+      validateAgentSmithReleaseContract(digestDrift),
+      'source_provenance.artifact_sha256 must match image.digest',
+    );
+
+    const repoMismatch = cloneFixture('release-contract.valid.json');
+    const afscpProvenance = (repoMismatch.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'afscp',
+    )!.source_provenance as Record<string, unknown>;
+    afscpProvenance.producer_repo = 'github.com/agentsmith-project/agentsmith';
+    rehashReleaseContract(repoMismatch);
+    expectInvalid(
+      validateAgentSmithReleaseContract(repoMismatch),
+      'canonical repo identity must be github.com/agentsmith-project/agentsmith-fs-control-plane',
     );
   });
 

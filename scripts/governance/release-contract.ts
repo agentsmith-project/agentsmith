@@ -19,6 +19,8 @@ import {
   type CurrentDeploymentTargetProfile,
   type CurrentReleaseBoundaryValidationFailure,
   type CurrentReleaseImage,
+  type CurrentReleaseImageSourceProvenance,
+  type CurrentReleaseImageSourceProvenanceBinding,
   type CurrentReleaseInventoryImage,
   type CurrentRunnerImageLock,
 } from './current-release-boundary-schema';
@@ -28,6 +30,7 @@ const REQUIRED_GENERATOR_ARRAY_FIELDS = [
   'product_images',
   'adopted_provider_images',
   'release_kit_prerequisite_images',
+  'image_source_provenance',
   'target_profiles',
 ] as const;
 
@@ -53,6 +56,7 @@ export interface AgentSmithReleaseContractGeneratorInput {
   product_images: readonly CurrentReleaseImage[];
   adopted_provider_images: readonly CurrentReleaseImage[];
   release_kit_prerequisite_images: readonly CurrentReleaseImage[];
+  image_source_provenance: readonly CurrentReleaseImageSourceProvenanceBinding[];
   runnerImageLock: CurrentRunnerImageLock;
   deploy_template_digest: string;
   deploy_template_package: CurrentDeployTemplatePackage;
@@ -171,23 +175,47 @@ function buildReleaseContractSubject(
 function buildDeployImageInventory(
   input: Pick<
     AgentSmithReleaseContractGeneratorInput,
-    'product_images' | 'adopted_provider_images' | 'release_kit_prerequisite_images' | 'runnerImageLock'
+    | 'product_images'
+    | 'adopted_provider_images'
+    | 'release_kit_prerequisite_images'
+    | 'image_source_provenance'
+    | 'runnerImageLock'
   >,
 ): CurrentReleaseInventoryImage[] {
+  const sourceProvenanceByImageId = buildImageSourceProvenanceMap(input.image_source_provenance);
+  const withSource = (
+    image: CurrentReleaseImage,
+    source: CurrentReleaseInventoryImage['source'],
+    imageId = image.id,
+  ): CurrentReleaseInventoryImage => {
+    const sourceProvenance = sourceProvenanceByImageId.get(imageId);
+    return sourceProvenance
+      ? { ...image, source, source_provenance: sourceProvenance }
+      : { ...image, source };
+  };
+
   return [
-    ...input.product_images.map((image) => ({ ...image, source: 'product_images' as const })),
-    ...input.adopted_provider_images.map((image) => ({ ...image, source: 'adopted_provider_images' as const })),
-    ...input.release_kit_prerequisite_images.map((image) => ({
-      ...image,
-      source: 'release_kit_prerequisite_images' as const,
-    })),
-    {
+    ...input.product_images.map((image) => withSource(image, 'product_images')),
+    ...input.adopted_provider_images.map((image) => withSource(image, 'adopted_provider_images')),
+    ...input.release_kit_prerequisite_images.map((image) => withSource(image, 'release_kit_prerequisite_images')),
+    withSource({
       id: CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID,
       image: input.runnerImageLock.image.image,
       digest: input.runnerImageLock.image.digest,
-      source: 'managed_runner_image',
-    },
+    }, 'managed_runner_image', CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID),
   ];
+}
+
+function buildImageSourceProvenanceMap(
+  bindings: readonly CurrentReleaseImageSourceProvenanceBinding[],
+): Map<string, CurrentReleaseImageSourceProvenance> {
+  const result = new Map<string, CurrentReleaseImageSourceProvenance>();
+  for (const binding of bindings) {
+    const { image_id, ...sourceProvenance } = binding;
+    result.set(image_id, sourceProvenance);
+  }
+
+  return result;
 }
 
 function buildArtifactProvenance(
@@ -292,6 +320,7 @@ function validateGeneratorInput(
       });
     }
   }
+  validateImageSourceProvenanceInput(record.image_source_provenance, failures);
 
   if (!isRecord(input.ci_provenance)) {
     failures.push({
@@ -354,6 +383,42 @@ function validateGeneratorInput(
   }
 
   return failures;
+}
+
+function validateImageSourceProvenanceInput(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+
+  const seenIds = new Set<string>();
+  value.forEach((entry, index) => {
+    const path = `image_source_provenance[${index}]`;
+    if (!isRecord(entry)) {
+      failures.push({
+        path,
+        reason: 'image source provenance entry must be an object.',
+      });
+      return;
+    }
+    if (typeof entry.image_id !== 'string' || entry.image_id.trim().length === 0) {
+      failures.push({
+        path: `${path}.image_id`,
+        reason: 'image_id must be a non-empty string.',
+      });
+      return;
+    }
+    if (seenIds.has(entry.image_id)) {
+      failures.push({
+        path: `${path}.image_id`,
+        reason: `image source provenance id "${entry.image_id}" is declared more than once.`,
+      });
+      return;
+    }
+    seenIds.add(entry.image_id);
+  });
 }
 
 function prefixValidationFailures(

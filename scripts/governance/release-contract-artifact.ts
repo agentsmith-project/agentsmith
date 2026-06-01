@@ -11,6 +11,7 @@ import {
   sha256Digest,
   validateRunnerReleaseManifest,
   type CurrentArtifactProvenance,
+  type CurrentReleaseImageSourceProvenanceBinding,
   type CurrentRunnerImageLock,
   type CurrentRunnerReleaseManifest,
 } from './current-release-boundary-schema';
@@ -69,12 +70,19 @@ const AFSCP_IMAGE_REPOSITORY =
 const ASBCP_IMAGE_LOCK_RELATIVE_PATH = 'infra/deploy/shared/asbcp-image.lock' as const;
 const ASBCP_REPO_SLUG = 'agentsmith-project/agentsmith-sandbox-control-plane' as const;
 const ASBCP_CANONICAL_REPO = `github.com/${ASBCP_REPO_SLUG}` as const;
+const ASBCP_IMAGE_REPOSITORY =
+  'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane' as const;
 const ASBCP_RELEASE_URL_PREFIX =
   `https://github.com/${ASBCP_REPO_SLUG}/releases/tag/` as const;
 const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json' as const;
 const RUNNER_RELEASE_MANIFEST_ADOPTION_COMMAND =
   `npm run contracts:check-runner-image-lock -- --adoption --manifest ${RUNNER_RELEASE_MANIFEST_RELATIVE_PATH}` as const;
-const PRODUCER_OWNED_INPUT_FIELDS = ['sourceGitSha', 'ci_provenance', 'runnerImageLock'] as const;
+const PRODUCER_OWNED_INPUT_FIELDS = [
+  'sourceGitSha',
+  'ci_provenance',
+  'runnerImageLock',
+  'external_image_source_provenance',
+] as const;
 type ProducerOwnedInputField = typeof PRODUCER_OWNED_INPUT_FIELDS[number];
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
@@ -196,6 +204,9 @@ interface RunnerReleaseManifestSourceReceipt {
 interface AsbcpImageLockSource {
   version: string;
   sourceImage: string;
+  imageRepository: string;
+  imageTagRef: string;
+  digest: string;
   releaseUrl: string;
   commitSha: string;
 }
@@ -387,10 +398,24 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
       llmupImageSourceReceipt,
       afscpImageSourceReceipt,
     ]);
+    const externalImageSourceProvenance = [
+      buildRunnerImageSourceProvenance({
+        runnerImageLock,
+        manifest: runnerReleaseManifest,
+        receipt: runnerManifestReceipt,
+      }),
+      buildDependencyImageSourceProvenance(llmupImageSourceReceipt),
+      buildDependencyImageSourceProvenance(afscpImageSourceReceipt),
+      buildAsbcpImageSourceProvenance({
+        imageLock: asbcpImageLock,
+        receipt: asbcpFinalManifestReceipt,
+      }),
+    ];
     const contract = assembleAgentSmithReleaseContractFromInput(
       {
         ...input,
         runnerImageLock,
+        external_image_source_provenance: externalImageSourceProvenance,
         sourceGitSha: ciEnv.commitSha,
         ci_provenance: ciProvenance,
       },
@@ -536,19 +561,47 @@ function readCanonicalAsbcpImageLockSource(rootDir: string): AsbcpImageLockSourc
   const sourceImage = requireKeyValue(values, 'asbcp_source_image', ASBCP_IMAGE_LOCK_RELATIVE_PATH);
   const releaseUrl = requireKeyValue(values, 'asbcp_release_url', ASBCP_IMAGE_LOCK_RELATIVE_PATH);
   const commitSha = requireKeyValue(values, 'asbcp_commit_sha', ASBCP_IMAGE_LOCK_RELATIVE_PATH);
+  const failures: string[] = [];
 
   if (!RELEASE_TAG_PATTERN.test(version)) {
-    throw new Error(`ASBCP image lock asbcp_version must be a release tag; actual ${version}.`);
+    failures.push(`asbcp_version: must be a release tag; actual ${version}.`);
   }
   if (releaseUrl !== `${ASBCP_RELEASE_URL_PREFIX}${version}`) {
-    throw new Error(
-      `ASBCP image lock asbcp_release_url must match asbcp_version; expected ${ASBCP_RELEASE_URL_PREFIX}${version}; actual ${releaseUrl}.`,
+    failures.push(
+      `asbcp_release_url: expected ${ASBCP_RELEASE_URL_PREFIX}${version}; actual ${releaseUrl}.`,
     );
+  }
+  if (!COMMIT_SHA_PATTERN.test(commitSha)) {
+    failures.push('asbcp_commit_sha: must be a 40-character lowercase git commit sha.');
+  }
+
+  const parsedSourceImage = parseLockedImageRef(sourceImage);
+  if (!parsedSourceImage.ok) {
+    failures.push(`asbcp_source_image: ${parsedSourceImage.reason}`);
+  } else {
+    if (parsedSourceImage.value.image !== ASBCP_IMAGE_REPOSITORY) {
+      failures.push(
+        `asbcp_source_image: expected image repository ${ASBCP_IMAGE_REPOSITORY}; actual ${parsedSourceImage.value.image}.`,
+      );
+    }
+    if (parsedSourceImage.value.tag !== version) {
+      failures.push('asbcp_source_image: image tag must match asbcp_version.');
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(formatAsbcpManifestSourceFailures(failures));
+  }
+  if (!parsedSourceImage.ok) {
+    throw new Error(formatAsbcpManifestSourceFailures(['asbcp_source_image: invalid.']));
   }
 
   return {
     version,
     sourceImage,
+    imageRepository: parsedSourceImage.value.image,
+    imageTagRef: `${parsedSourceImage.value.image}:${version}`,
+    digest: parsedSourceImage.value.digest,
     releaseUrl,
     commitSha,
   };
@@ -918,6 +971,57 @@ function assertAdoptedProviderImagesMatchSourceReceipts(
   }
 }
 
+function buildRunnerImageSourceProvenance(input: {
+  runnerImageLock: CurrentRunnerImageLock;
+  manifest: CurrentRunnerReleaseManifest;
+  receipt: RunnerReleaseManifestSourceReceipt;
+}): CurrentReleaseImageSourceProvenanceBinding {
+  return {
+    image_id: 'managed_runner',
+    producer_repo: input.receipt.producer_repo,
+    normalized_remote: requireNonEmptyField(
+      input.manifest.artifact_provenance.normalized_remote,
+      'runner release manifest artifact_provenance.normalized_remote',
+    ),
+    commit_sha: input.receipt.manifest_git_sha,
+    tag: requireLockedImageTag(input.runnerImageLock.image.image, 'runnerImageLock.image.image'),
+    run_id: input.receipt.run_id,
+    run_attempt: input.receipt.run_attempt,
+    artifact_sha256: input.runnerImageLock.image.digest,
+  };
+}
+
+function buildDependencyImageSourceProvenance(
+  receipt: DependencyImageSourceReceipt,
+): CurrentReleaseImageSourceProvenanceBinding {
+  return {
+    image_id: receipt.provider_image_id,
+    producer_repo: receipt.producer_repo,
+    normalized_remote: receipt.producer_repo,
+    commit_sha: receipt.tag_commit_sha,
+    tag: receipt.release_tag,
+    run_id: receipt.consumer.run_id,
+    run_attempt: receipt.consumer.run_attempt,
+    artifact_sha256: receipt.observed_ghcr_digest,
+  };
+}
+
+function buildAsbcpImageSourceProvenance(input: {
+  imageLock: AsbcpImageLockSource;
+  receipt: AsbcpFinalManifestSourceReceipt;
+}): CurrentReleaseImageSourceProvenanceBinding {
+  return {
+    image_id: 'asbcp',
+    producer_repo: input.receipt.producer_repo,
+    normalized_remote: input.receipt.producer_repo,
+    commit_sha: input.receipt.lock_commit_sha,
+    tag: input.receipt.release_tag,
+    run_id: input.receipt.consumer.run_id,
+    run_attempt: input.receipt.consumer.run_attempt,
+    artifact_sha256: input.imageLock.digest,
+  };
+}
+
 function formatProducerOwnedInputFieldFailure(field: ProducerOwnedInputField): string {
   switch (field) {
     case 'sourceGitSha':
@@ -925,6 +1029,8 @@ function formatProducerOwnedInputFieldFailure(field: ProducerOwnedInputField): s
       return `${field} must be provided by GitHub CI env.`;
     case 'runnerImageLock':
       return 'runnerImageLock must be provided by canonical agentsmith-runner-image.lock.';
+    case 'external_image_source_provenance':
+      return 'external_image_source_provenance must be provided by canonical source receipts.';
   }
 }
 
@@ -1517,6 +1623,26 @@ function requireEnvString(env: Readonly<Record<string, string | undefined>>, nam
     throw new Error(`${name} is required.`);
   }
   return value;
+}
+
+function requireNonEmptyField(value: unknown, pathName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${pathName} must be a non-empty string.`);
+  }
+
+  return value.trim();
+}
+
+function requireLockedImageTag(value: string, pathName: string): string {
+  const parsed = parseLockedImageRef(value);
+  if (!parsed.ok) {
+    throw new Error(`${pathName}: ${parsed.reason}`);
+  }
+  if (!parsed.value.tag) {
+    throw new Error(`${pathName}: image ref must include a tag.`);
+  }
+
+  return parsed.value.tag;
 }
 
 function firstNonEmptyString(...values: readonly (string | undefined)[]): string | null {

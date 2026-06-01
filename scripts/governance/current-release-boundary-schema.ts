@@ -35,6 +35,10 @@ export const CURRENT_RUNNER_PROTOCOL_VERSION = AGENT_TASK_RUNNER_SPEC.protocol_v
 export const AGENTSMITH_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith' as const;
 export const RELEASE_KIT_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-release-kit' as const;
 export const RUNNER_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-runner' as const;
+export const LLMUP_CANONICAL_REPO = 'github.com/agentsmith-project/llm-universal-proxy' as const;
+export const AFSCP_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-fs-control-plane' as const;
+export const ASBCP_CANONICAL_REPO =
+  'github.com/agentsmith-project/agentsmith-sandbox-control-plane' as const;
 export const FORBIDDEN_RUNNER_REPO = 'github.com/agentsmith-project/agentsmith-codex-runner' as const;
 export const CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID = 'managed_runner' as const;
 
@@ -97,12 +101,27 @@ export interface CurrentReleaseImage {
   digest: string;
 }
 
+export interface CurrentReleaseImageSourceProvenance {
+  producer_repo: string;
+  normalized_remote: string;
+  commit_sha: string;
+  tag: string;
+  run_id: string;
+  run_attempt: string;
+  artifact_sha256: string;
+}
+
+export interface CurrentReleaseImageSourceProvenanceBinding extends CurrentReleaseImageSourceProvenance {
+  image_id: string;
+}
+
 export interface CurrentReleaseInventoryImage extends CurrentReleaseImage {
   source:
     | 'product_images'
     | 'adopted_provider_images'
     | 'release_kit_prerequisite_images'
     | 'managed_runner_image';
+  source_provenance?: CurrentReleaseImageSourceProvenance;
 }
 
 export interface CurrentDeploymentTargetProfile {
@@ -799,6 +818,13 @@ const INVENTORY_SOURCE_SET = new Set<string>([
   'release_kit_prerequisite_images',
   'managed_runner_image',
 ] satisfies CurrentReleaseInventoryImage['source'][]);
+const IMAGE_SOURCE_PROVENANCE_REPO_BY_ID: ReadonlyMap<string, string> = new Map([
+  ['agentsmith_app', AGENTSMITH_CANONICAL_REPO],
+  [CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID, RUNNER_CANONICAL_REPO],
+  ['llmup', LLMUP_CANONICAL_REPO],
+  ['afscp', AFSCP_CANONICAL_REPO],
+  ['asbcp', ASBCP_CANONICAL_REPO],
+]);
 const REQUIRED_TRUTH_IDS = [
   'release_contract',
   'deploy_template_package',
@@ -2941,6 +2967,7 @@ function validateDeployImageInventory(
         reason: 'deploy image inventory entry must match the declared image source.',
       });
     }
+    validateInventoryImageSourceProvenance(entry.source_provenance, path, image, failures);
   });
 
   for (const imageId of imageRegistry.keys()) {
@@ -2951,6 +2978,85 @@ function validateDeployImageInventory(
       });
     }
   }
+}
+
+function validateInventoryImageSourceProvenance(
+  value: unknown,
+  path: string,
+  image: CurrentReleaseImage,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const expectedRepo = IMAGE_SOURCE_PROVENANCE_REPO_BY_ID.get(image.id);
+  if (!expectedRepo && value === undefined) {
+    return;
+  }
+
+  if (!isRecord(value)) {
+    failures.push({
+      path: `${path}.source_provenance`,
+      reason: expectedRepo
+        ? `source_provenance is required for GA image id "${image.id}".`
+        : 'source_provenance must be an object when provided.',
+    });
+    return;
+  }
+
+  if (expectedRepo) {
+    validateSourceProvenanceRepo(
+      value.producer_repo,
+      expectedRepo,
+      `${path}.source_provenance.producer_repo`,
+      failures,
+    );
+    validateSourceProvenanceRepo(
+      value.normalized_remote,
+      expectedRepo,
+      `${path}.source_provenance.normalized_remote`,
+      failures,
+    );
+  } else {
+    validateRequiredString(value.producer_repo, `${path}.source_provenance.producer_repo`, failures);
+    validateRequiredString(value.normalized_remote, `${path}.source_provenance.normalized_remote`, failures);
+  }
+  validateGitSha(value.commit_sha, `${path}.source_provenance.commit_sha`, failures);
+  const tag = validateRequiredString(value.tag, `${path}.source_provenance.tag`, failures);
+  validatePositiveIntegerString(value.run_id, `${path}.source_provenance.run_id`, failures);
+  validatePositiveIntegerString(value.run_attempt, `${path}.source_provenance.run_attempt`, failures);
+  const artifactSha256 = validateDigest(value.artifact_sha256, `${path}.source_provenance.artifact_sha256`, failures);
+
+  const imageTag = imageTagFromRef(image.image);
+  if (tag && imageTag && tag !== imageTag) {
+    failures.push({
+      path: `${path}.source_provenance.tag`,
+      reason: 'source_provenance.tag must match the image ref tag.',
+    });
+  }
+  if (artifactSha256 && artifactSha256 !== image.digest) {
+    failures.push({
+      path: `${path}.source_provenance.artifact_sha256`,
+      reason: 'source_provenance.artifact_sha256 must match image.digest.',
+    });
+  }
+}
+
+function validateSourceProvenanceRepo(
+  value: unknown,
+  expectedRepo: string,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  validateRequiredString(value, path, failures);
+  if (typeof value !== 'string' || value === expectedRepo) {
+    return;
+  }
+
+  const normalized = normalizeReleaseBoundaryRemote(value);
+  failures.push({
+    path,
+    reason: normalized === expectedRepo
+      ? `${path.split('.').at(-1) ?? 'repo'} must already be canonical ${expectedRepo}.`
+      : `canonical repo identity must be ${expectedRepo}.`,
+  });
 }
 
 function validateRequiredImageIds(
@@ -4533,6 +4639,13 @@ function normalizeFieldNameForSecretCheck(key: string): string {
 
 function imageDigestSuffix(image: string): string | null {
   return IMAGE_DIGEST_SUFFIX_PATTERN.exec(image)?.[1] ?? null;
+}
+
+function imageTagFromRef(image: string): string | null {
+  const refWithoutDigest = image.replace(/@sha256:[0-9a-f]{64}$/u, '');
+  const lastSlashIndex = refWithoutDigest.lastIndexOf('/');
+  const lastColonIndex = refWithoutDigest.lastIndexOf(':');
+  return lastColonIndex > lastSlashIndex ? refWithoutDigest.slice(lastColonIndex + 1) : null;
 }
 
 function hostFromEndpoint(endpoint: string): string {

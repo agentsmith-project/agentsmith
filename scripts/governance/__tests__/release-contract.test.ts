@@ -13,6 +13,7 @@ import {
   type CurrentAgentSmithReleaseContract,
   type CurrentDeploymentTargetProfile,
   type CurrentDeployTemplatePackage,
+  type CurrentReleaseImageSourceProvenanceBinding,
   type CurrentRunnerImageLock,
 } from '../current-release-boundary-schema';
 import {
@@ -28,6 +29,9 @@ const CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/ll
 const NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = ['ghcr.io/agentsmith-project', 'llmup'].join('/');
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
+const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
   'agentsmith_app',
@@ -144,6 +148,80 @@ function buildRunnerImageLock(): CurrentRunnerImageLock {
   return structuredClone(RUNNER_IMAGE_LOCK);
 }
 
+function buildImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBinding[] {
+  return [
+    {
+      image_id: 'agentsmith_app',
+      producer_repo: 'github.com/agentsmith-project/agentsmith',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith',
+      commit_sha: GIT_SHA,
+      tag: RELEASE_ID,
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: PRODUCT_IMAGES[0].digest,
+    },
+    {
+      image_id: 'llmup',
+      producer_repo: 'github.com/agentsmith-project/llm-universal-proxy',
+      normalized_remote: 'github.com/agentsmith-project/llm-universal-proxy',
+      commit_sha: LLMUP_COMMIT_SHA,
+      tag: RELEASE_ID,
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: ADOPTED_PROVIDER_IMAGES[0].digest,
+    },
+    {
+      image_id: 'afscp',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
+      commit_sha: AFSCP_COMMIT_SHA,
+      tag: 'v1.0.7',
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: ADOPTED_PROVIDER_IMAGES[1].digest,
+    },
+    {
+      image_id: 'asbcp',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+      commit_sha: ASBCP_COMMIT_SHA,
+      tag: 'v2.0.7',
+      run_id: '10001',
+      run_attempt: '1',
+      artifact_sha256: ADOPTED_PROVIDER_IMAGES[2].digest,
+    },
+    {
+      image_id: 'managed_runner',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
+      normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
+      commit_sha: RUNNER_IMAGE_LOCK.git_sha,
+      tag: 'release-locked-safety-35ada93',
+      run_id: '26714141935',
+      run_attempt: '1',
+      artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
+    },
+  ];
+}
+
+function sourceProvenanceFor(
+  bindings: readonly CurrentReleaseImageSourceProvenanceBinding[],
+  imageId: string,
+): Omit<CurrentReleaseImageSourceProvenanceBinding, 'image_id'> {
+  const binding = bindings.find((entry) => entry.image_id === imageId);
+  if (!binding) {
+    throw new Error(`missing source provenance for ${imageId}`);
+  }
+  return {
+    producer_repo: binding.producer_repo,
+    normalized_remote: binding.normalized_remote,
+    commit_sha: binding.commit_sha,
+    tag: binding.tag,
+    run_id: binding.run_id,
+    run_attempt: binding.run_attempt,
+    artifact_sha256: binding.artifact_sha256,
+  };
+}
+
 function buildInput(): AgentSmithReleaseContractGeneratorInput {
   const openapiSubject = {
     openapi: '3.1.0',
@@ -168,6 +246,7 @@ function buildInput(): AgentSmithReleaseContractGeneratorInput {
     product_images: PRODUCT_IMAGES,
     adopted_provider_images: ADOPTED_PROVIDER_IMAGES,
     release_kit_prerequisite_images: RELEASE_KIT_PREREQUISITE_IMAGES,
+    image_source_provenance: buildImageSourceProvenance(),
     runnerImageLock: buildRunnerImageLock(),
     deploy_template_digest: `sha256:${'6'.repeat(64)}`,
     deploy_template_package: buildDeployTemplatePackage(),
@@ -251,11 +330,20 @@ describe('release contract generator', () => {
   });
 
   it('generates a validated contract with mechanical image inventory and deterministic provenance hashes', () => {
-    const contract = generateAgentSmithReleaseContract(buildInput(), SOURCE_OPTIONS);
+    const input = buildInput();
+    const contract = generateAgentSmithReleaseContract(input, SOURCE_OPTIONS);
 
     expect(contract.deploy_image_inventory).toEqual([
-      { ...PRODUCT_IMAGES[0], source: 'product_images' },
-      ...ADOPTED_PROVIDER_IMAGES.map((image) => ({ ...image, source: 'adopted_provider_images' as const })),
+      {
+        ...PRODUCT_IMAGES[0],
+        source: 'product_images',
+        source_provenance: sourceProvenanceFor(input.image_source_provenance, 'agentsmith_app'),
+      },
+      ...ADOPTED_PROVIDER_IMAGES.map((image) => ({
+        ...image,
+        source: 'adopted_provider_images' as const,
+        source_provenance: sourceProvenanceFor(input.image_source_provenance, image.id),
+      })),
       ...RELEASE_KIT_PREREQUISITE_IMAGES.map((image) => ({
         ...image,
         source: 'release_kit_prerequisite_images' as const,
@@ -265,6 +353,7 @@ describe('release contract generator', () => {
         image: RUNNER_IMAGE_LOCK.image.image,
         digest: RUNNER_IMAGE_LOCK.image.digest,
         source: 'managed_runner_image',
+        source_provenance: sourceProvenanceFor(input.image_source_provenance, 'managed_runner'),
       },
     ]);
     expect(contract.managed_runner_image).toEqual(RUNNER_IMAGE_LOCK.image);
@@ -273,6 +362,7 @@ describe('release contract generator', () => {
       image: RUNNER_IMAGE_LOCK.image.image,
       digest: RUNNER_IMAGE_LOCK.image.digest,
       source: 'managed_runner_image',
+      source_provenance: sourceProvenanceFor(input.image_source_provenance, 'managed_runner'),
     });
     expect(validateAgentSmithReleaseContract(contract).ok).toBe(true);
 
@@ -333,6 +423,34 @@ describe('release contract generator', () => {
     expectThrowsWithMessage(
       input,
       'deploy image inventory id "unused_prerequisite" is not required by deploy_template_package.required_image_ids',
+    );
+  });
+
+  it('rejects missing GA image source provenance before writing a contract', () => {
+    const input = buildInput();
+    input.image_source_provenance = input.image_source_provenance.filter((entry) => entry.image_id !== 'llmup');
+
+    expectThrowsWithMessage(input, 'source_provenance is required for GA image id "llmup"');
+  });
+
+  it('rejects GA image source provenance digest drift from the image digest', () => {
+    const input = buildInput();
+    input.image_source_provenance = input.image_source_provenance.map((entry) => entry.image_id === 'asbcp'
+      ? { ...entry, artifact_sha256: `sha256:${'9'.repeat(64)}` }
+      : entry);
+
+    expectThrowsWithMessage(input, 'source_provenance.artifact_sha256 must match image.digest');
+  });
+
+  it('rejects GA image source provenance repo mismatch', () => {
+    const input = buildInput();
+    input.image_source_provenance = input.image_source_provenance.map((entry) => entry.image_id === 'afscp'
+      ? { ...entry, producer_repo: 'github.com/agentsmith-project/agentsmith' }
+      : entry);
+
+    expectThrowsWithMessage(
+      input,
+      'canonical repo identity must be github.com/agentsmith-project/agentsmith-fs-control-plane',
     );
   });
 

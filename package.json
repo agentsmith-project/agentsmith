@@ -129,6 +129,7 @@
     "release:deploy-template-package": "tsx scripts/governance/deploy-template-package.ts",
     "product:ready": "tsx scripts/governance/release-ready.ts",
     "product:status": "tsx scripts/governance/release-status.ts",
+    "product-readiness:report": "tsx scripts/governance/product-readiness-report.ts",
     "release:ready": "npm run product:ready --",
     "release:status": "npm run product:status --",
     "release:aggregate": "tsx scripts/governance/run-release-aggregate.ts",

@@ -117,7 +117,7 @@ This proves:
 
 - login/profile access;
 - a project can be created;
-- Chat can run through llmup;
+- `provider_neutral_endpoint` / provider-neutral Endpoint can complete through the endpoint gateway;
 - a managed runner task can complete through the selected endpoint;
 - a file library can become ready;
 - a file can be uploaded, listed, and downloaded;

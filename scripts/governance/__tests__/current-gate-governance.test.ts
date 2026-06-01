@@ -10,7 +10,12 @@ import {
   findCurrentGateDefinitionById,
   listCurrentGateDefinitionsByKind,
 } from '../current-gate-manifest';
-import { PRODUCT_VERIFICATION_FLOW_IDS } from '../../unified-deploy/check-verification-report';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  POST_DEPLOY_PRODUCT_SMOKE_SPECS,
+} from '../../post-deploy-product-smoke/report';
 
 describe('current gate governance', () => {
   it('keeps current gate definitions structurally complete and uniquely keyed', () => {
@@ -116,14 +121,21 @@ describe('current gate governance', () => {
     }
   });
 
-  it('keeps unified deploy product-flow evidence aligned to the canonical seven-flow matrix', () => {
-    const productFlowEvidence = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
-      (artifact) => artifact.id === 'unified_deploy_product_flow_evidence',
+  it('keeps unified deploy product-flow lane aligned to the canonical post-deploy smoke report', () => {
+    const productSmokeReport = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
+      (artifact) => artifact.id === 'post_deploy_product_smoke_report',
     );
     const releaseProductFlowsScript = readFileSync('scripts/unified-deploy/release-product-flows.sh', 'utf8');
 
-    expect(productFlowEvidence?.expectedProductFlows).toEqual(PRODUCT_VERIFICATION_FLOW_IDS);
+    expect(productSmokeReport).toMatchObject({
+      path: `<campaign-root>/post-deploy-product-smoke/${POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME}`,
+      expectedSchemaVersion: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+      expectedProducer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+      expectedStatus: 'passed',
+      expectedProductSmokes: POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => spec.id),
+    });
     expect(releaseProductFlowsScript).toContain('npm run test:unified-deploy:product-flows --');
+    expect(releaseProductFlowsScript).toContain('npm run post-deploy-product-smoke:report --');
     expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
     expect(releaseProductFlowsScript).toContain('--agent-task-polls=');
     expect(releaseProductFlowsScript).toContain('--agent-task-poll-interval-ms=');

@@ -95,11 +95,11 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `lane-unified-deploy-product-flows` (`lane:unified-deploy:product-flows`)
 - these lanes are not `requiredFor: release`
 - start from a clean substrate reset via `substrate-lifecycle.ts reset`
-- transition-only lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run
+- transition-only lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run; the product-flow lane also writes the AgentSmith-owned smoke report at `<campaign-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke
-- focused product-flow evidence proves the canonical seven-flow product smoke matrix after rollout
+- focused product-flow evidence is adapted into the canonical post-deploy product smoke report after rollout
 - existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the release campaign
 
 7. `gate:release:full`

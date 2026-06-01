@@ -40,6 +40,10 @@ import {
   UX_TRACE_INDEX_FILE,
   validateUxTraceBundleArtifact,
 } from '../../e2e/trace-bundle-support';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+} from '../post-deploy-product-smoke/report';
 
 export interface ReleaseCampaignResultInput {
   step: CurrentVerificationCampaignStep;
@@ -1482,6 +1486,54 @@ function validateVisualBaselineAutomatedPassArtifact(args: {
   return { ok: true };
 }
 
+function evaluateVisualBaselineReviews(
+  campaignRoot: string,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): ReleaseCampaignEvidencePointer['required_paths'] {
+  const manifestPath = resolveVisualRunManifestPath(campaignRoot);
+  const manifest = readVisualBaselineRunManifestArtifact({
+    path: manifestPath,
+    expectedRunId: resolveCampaignRunId(campaignRoot),
+    requiredCompleteness: 'require_full_catalog',
+  });
+  if (!manifest.ok) {
+    return [{
+      id: `${check.id}:run-manifest`,
+      path: manifest.path,
+      kind: check.kind,
+      exists: false,
+      error: manifest.message,
+      failure_class: manifest.failureClass,
+    }];
+  }
+
+  const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
+  for (const scenario of manifest.snapshot.scenarios) {
+    const path = materializeCampaignPath(
+      campaignRoot,
+      check.path.replaceAll('<visual-scenario-id>', scenario.scenarioId),
+    );
+    const validation = validateVisualBaselineReviewArtifact({
+      manifest: manifest.snapshot,
+      scenario,
+      path,
+    });
+    records.push({
+      id: `${check.id}:${scenario.scenarioId}`,
+      path,
+      kind: check.kind,
+      exists: validation.ok,
+      ...(validation.ok
+        ? {}
+        : {
+            error: validation.message,
+            failure_class: validation.failureClass,
+          }),
+    });
+  }
+  return records;
+}
+
 function evaluateVisualBaselineAutomatedPasses(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
@@ -1819,6 +1871,26 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function hasStructuredJsonEvidenceExpectations(check: CurrentVerificationCampaignEvidenceCheck): boolean {
+  return Boolean(
+    check.expectedSchemaVersion
+    || check.expectedProducer
+    || check.expectedStatus
+    || check.expectedCommand
+    || check.expectedProfile
+    || stringArray(check.expectedProductFlows).length > 0
+    || stringArray(check.expectedProductSmokes).length > 0,
+  );
+}
+
+function hasAgentSmithProductSmokeReportExpectations(
+  check: CurrentVerificationCampaignEvidenceCheck,
+): boolean {
+  return stringArray(check.expectedProductSmokes).length > 0
+    || check.expectedSchemaVersion === POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION
+    || check.expectedProducer === POST_DEPLOY_PRODUCT_SMOKE_PRODUCER;
+}
+
 function flowIdsFromAggregate(payload: Record<string, unknown>): Set<string> {
   const flows = Array.isArray(payload.flows) ? payload.flows : [];
   const ids = new Set<string>();
@@ -1857,8 +1929,12 @@ const RELEASE_KIT_TARGET_BY_CHECK_ID: Partial<Record<string, CurrentReleaseKitEv
   unified_deploy_substrate_evidence: 'dependencies',
   unified_deploy_local_kind_images_evidence: 'images',
   unified_deploy_local_kind_evidence: 'rollout',
-  unified_deploy_product_flow_evidence: 'product_flows',
 };
+
+function acceptsReleaseKitEvidenceBoundary(check: CurrentVerificationCampaignEvidenceCheck): boolean {
+  return !hasAgentSmithProductSmokeReportExpectations(check)
+    && RELEASE_KIT_TARGET_BY_CHECK_ID[check.id] !== undefined;
+}
 
 function isCurrentGateResultFailureClass(value: unknown): value is CurrentGateResultFailureClass {
   return value === 'none'
@@ -2098,13 +2174,18 @@ function validateReleaseKitEvidenceBoundary(
 function inferredUnifiedDeployFailureClass(
   check: CurrentVerificationCampaignEvidenceCheck,
 ): CurrentGateResultFailureClass {
-  return stringArray(check.expectedProductFlows).length > 0 ? 'product_regression' : 'infra_setup_failure';
+  return stringArray(check.expectedProductFlows).length > 0 || stringArray(check.expectedProductSmokes).length > 0
+    ? 'product_regression'
+    : 'infra_setup_failure';
 }
 
 function failedPayloadFailureClass(
   payload: Record<string, unknown>,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): CurrentGateResultFailureClass {
+  if (stringArray(check.expectedProductSmokes).length > 0) {
+    return 'product_regression';
+  }
   if (
     isCurrentGateResultFailureClass(payload.failure_class)
     && payload.failure_class !== 'none'
@@ -2136,6 +2217,51 @@ function productFlowFailureClassFromAggregate(
     }
   }
   return 'evidence_missing';
+}
+
+function validateExpectedProductSmokeResults(
+  payload: Record<string, unknown>,
+  check: CurrentVerificationCampaignEvidenceCheck,
+  path: string,
+): UnifiedDeployEvidenceDiagnostic | null {
+  const expectedSmokes = stringArray(check.expectedProductSmokes);
+  if (expectedSmokes.length === 0) {
+    return null;
+  }
+
+  if (!isRecord(payload.smoke_results)) {
+    return unifiedDeployDiagnostic(
+      `${path} must include smoke_results object with passed product smoke results for: ${expectedSmokes.join(', ')}.`,
+      'product_regression',
+    );
+  }
+
+  const invalidSmokes: string[] = [];
+  for (const smoke of expectedSmokes) {
+    const smokeResult = payload.smoke_results[smoke];
+    if (!isRecord(smokeResult)) {
+      invalidSmokes.push(`${smoke} result must be an object`);
+      continue;
+    }
+    if (smokeResult.status !== 'passed') {
+      invalidSmokes.push(`${smoke} status must be passed`);
+    }
+    if (
+      typeof smokeResult.source_evidence_path !== 'string'
+      || smokeResult.source_evidence_path.trim().length === 0
+    ) {
+      invalidSmokes.push(`${smoke} source_evidence_path must be a non-empty string`);
+    }
+  }
+
+  if (invalidSmokes.length > 0) {
+    return unifiedDeployDiagnostic(
+      `${path} must include valid product smoke results: ${invalidSmokes.join('; ')}.`,
+      'product_regression',
+    );
+  }
+
+  return null;
 }
 
 function validateFocusedProductFlowEvidence(
@@ -2235,6 +2361,18 @@ function validateUnifiedDeployPayload(
   path: string,
 ): UnifiedDeployEvidenceDiagnostic | null {
   if (isReleaseKitEvidencePayload(payload)) {
+    if (hasAgentSmithProductSmokeReportExpectations(check)) {
+      return unifiedDeployDiagnostic(
+        `${path} release-kit evidence is not accepted for AgentSmith product smoke report evidence; schema_version must be ${POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION} and producer must be ${POST_DEPLOY_PRODUCT_SMOKE_PRODUCER}.`,
+        'contract_drift',
+      );
+    }
+    if (!acceptsReleaseKitEvidenceBoundary(check)) {
+      return unifiedDeployDiagnostic(
+        `${path} release-kit evidence is not accepted for current campaign check ${check.id}.`,
+        'contract_drift',
+      );
+    }
     return validateReleaseKitEvidenceBoundary(payload, check, path);
   }
 
@@ -2252,6 +2390,11 @@ function validateUnifiedDeployPayload(
   }
   if (check.expectedProfile && payload.profile !== check.expectedProfile) {
     return unifiedDeployDiagnostic(`${path} profile must be ${check.expectedProfile}.`, 'contract_drift');
+  }
+
+  const productSmokeDiagnostic = validateExpectedProductSmokeResults(payload, check, path);
+  if (productSmokeDiagnostic) {
+    return productSmokeDiagnostic;
   }
 
   const expectedFlows = stringArray(check.expectedProductFlows);
@@ -2274,14 +2417,29 @@ function validateUnifiedDeployPayload(
   return null;
 }
 
+function listStructuredEvidenceCandidateFiles(
+  path: string,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): readonly string[] {
+  if (check.kind === 'file') {
+    try {
+      return statSync(path).isFile() ? [path] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return listRecursiveFiles(path);
+}
+
 function evaluateUnifiedDeployEvidence(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   const path = materializeCampaignPath(campaignRoot, check.path);
   const minCount = check.minCount ?? 1;
-  const fileName = check.fileName ?? '.json';
-  const files = listRecursiveFiles(path);
+  const fileName = check.fileName ?? (check.kind === 'file' ? basename(path) : '.json');
+  const files = listStructuredEvidenceCandidateFiles(path, check);
   const matches = files.filter((candidate) => matchesFileName(candidate, fileName));
   const matchingSchemaPaths: string[] = [];
   const validPaths: string[] = [];
@@ -2307,8 +2465,14 @@ function evaluateUnifiedDeployEvidence(
     }
 
     const releaseKitEvidencePayload = isReleaseKitEvidencePayload(payload);
+    const releaseKitBoundaryAccepted = releaseKitEvidencePayload && acceptsReleaseKitEvidenceBoundary(check);
     hasReleaseKitEvidencePayload ||= releaseKitEvidencePayload;
-    if (check.expectedSchemaVersion && payload.schema_version !== check.expectedSchemaVersion && !releaseKitEvidencePayload) {
+    if (
+      check.expectedSchemaVersion
+      && payload.schema_version !== check.expectedSchemaVersion
+      && !releaseKitBoundaryAccepted
+      && !(releaseKitEvidencePayload && hasAgentSmithProductSmokeReportExpectations(check))
+    ) {
       continue;
     }
 
@@ -2355,7 +2519,7 @@ function evaluateEvidenceCheck(
   if (check.semantic === 'ux_trace_bundle') {
     return evaluateUxTraceBundles(campaignRoot, step, check);
   }
-  if (check.semantic === 'unified_deploy_evidence') {
+  if (check.semantic === 'unified_deploy_evidence' || hasStructuredJsonEvidenceExpectations(check)) {
     return evaluateUnifiedDeployEvidence(campaignRoot, check);
   }
 

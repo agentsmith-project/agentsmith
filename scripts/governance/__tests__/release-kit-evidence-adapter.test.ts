@@ -9,6 +9,7 @@ import {
   validateReleaseKitEvidenceForAggregate,
 } from '../current-release-boundary-schema';
 import { adaptReleaseKitRawEvidenceEnvelope } from '../release-kit-evidence-adapter';
+import { POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME } from '../../post-deploy-product-smoke/report';
 
 const FIXTURE_ROOT = resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary');
 const EXPECTED_RELEASE_CONTRACT_DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -412,7 +413,7 @@ describe('release kit raw evidence adapter', () => {
     );
   });
 
-  it('fails fast when release_kit_output is missing, unknown, or product-flow-owned', () => {
+  it('fails fast when release_kit_output is missing, unknown, or product-smoke-owned', () => {
     const missingOutput = validRawEnvelope();
     delete missingOutput.release_kit_output;
     expectInvalid(adapt(missingOutput), 'release_kit_output is required');
@@ -422,8 +423,12 @@ describe('release kit raw evidence adapter', () => {
     expectInvalid(adapt(unknownOutput), 'release_kit_output is not mapped');
 
     const productFlowOutput = validRawEnvelope();
-    productFlowOutput.release_kit_output = 'AgentSmith product flow aggregate';
-    expectInvalid(adapt(productFlowOutput), 'release-kit cannot produce AgentSmith product-flow evidence');
+    productFlowOutput.release_kit_output = POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME;
+    expectInvalid(adapt(productFlowOutput), 'release-kit cannot produce AgentSmith product smoke evidence');
+
+    const oldProductFlowOutput = validRawEnvelope();
+    oldProductFlowOutput.release_kit_output = 'AgentSmith product flow aggregate';
+    expectInvalid(adapt(oldProductFlowOutput), 'release_kit_output is not mapped');
   });
 
   it('fails fast when release_kit_output does not match evidence_subject files', () => {

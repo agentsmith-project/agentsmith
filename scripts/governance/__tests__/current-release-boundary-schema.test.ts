@@ -32,6 +32,11 @@ import {
   validateTruthMatrix,
   type CurrentDeploymentTargetProfile,
 } from '../current-release-boundary-schema';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+} from '../../post-deploy-product-smoke/report';
 
 const FIXTURE_ROOT = resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary');
 
@@ -401,12 +406,16 @@ describe('current release boundary schema', () => {
 
     const productFlowMapping = CURRENT_RELEASE_KIT_EVIDENCE_MAPPING.find((entry) => entry.target === 'product_flows');
     expect(productFlowMapping).toMatchObject({
+      release_kit_output: POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
       canonical_writer: {
         gate_id: 'lane-unified-deploy-product-flows',
         line_kind: 'unified_deploy_product_flows',
+        native_result_path: '<campaign-root>/lane-unified-deploy-product-flows/native/result.json',
+        evidence_root: '<campaign-root>/post-deploy-product-smoke',
       },
       canonical_evidence_owner: 'agentsmith',
-      expected_product_flow_producer: 'unified-deploy-product-flows',
+      expected_product_smoke_report_schema: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+      expected_product_smoke_report_producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
     });
 
     expect(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING).toEqual(expect.arrayContaining([
@@ -1755,7 +1764,7 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('rejects mappings to nonexistent writers, duplicate ownership, and release-kit-forged product-flow evidence', () => {
+  it('rejects mappings to nonexistent writers, duplicate ownership, and release-kit-forged product smoke evidence', () => {
     const mapping = structuredClone(CURRENT_RELEASE_KIT_EVIDENCE_MAPPING);
     const productFlowMappingIndex = mapping.findIndex((entry) => entry.target === 'product_flows');
     mapping[productFlowMappingIndex] = {
@@ -1779,10 +1788,32 @@ describe('current release boundary schema', () => {
       gate_id: 'lane-unified-deploy-product-flows',
       line_kind: 'unified_deploy_product_flows',
     };
-    forgedProductFlows.product_flow_canonical_evidence = {
+    forgedProductFlows.product_smoke_canonical_evidence = {
+      schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
       producer: 'agentsmith-release-kit',
     };
-    expectInvalid(validateReleaseKitEvidence(forgedProductFlows), 'product flow canonical evidence must be produced by AgentSmith');
+    expectInvalid(
+      validateReleaseKitEvidence(forgedProductFlows),
+      'product smoke canonical evidence must be produced by AgentSmith post-deploy product smoke',
+    );
+
+    const legacyProductFlowFallback = cloneFixture('release-kit-evidence.valid.json');
+    legacyProductFlowFallback.target = 'product_flows';
+    legacyProductFlowFallback.canonical_writer = {
+      gate_id: 'lane-unified-deploy-product-flows',
+      line_kind: 'unified_deploy_product_flows',
+    };
+    legacyProductFlowFallback.product_flow_canonical_evidence = {
+      producer: 'unified-deploy-product-flows',
+    };
+    expectInvalid(
+      validateReleaseKitEvidence(legacyProductFlowFallback),
+      'product smoke canonical evidence must be produced by AgentSmith post-deploy product smoke',
+    );
+    expectInvalid(
+      validateReleaseKitEvidence(legacyProductFlowFallback),
+      'product smoke canonical evidence must use the AgentSmith post-deploy report schema',
+    );
 
     const releaseKitProductFlows = cloneFixture('release-kit-evidence.valid.json');
     releaseKitProductFlows.target = 'product_flows';
@@ -1790,16 +1821,17 @@ describe('current release boundary schema', () => {
       gate_id: 'lane-unified-deploy-product-flows',
       line_kind: 'unified_deploy_product_flows',
     };
-    releaseKitProductFlows.product_flow_canonical_evidence = {
-      producer: 'unified-deploy-product-flows',
+    releaseKitProductFlows.product_smoke_canonical_evidence = {
+      schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+      producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
     };
     artifactProvenanceOf(releaseKitProductFlows).producer_repo = AGENTSMITH_CANONICAL_REPO;
     artifactProvenanceOf(releaseKitProductFlows).normalized_remote = AGENTSMITH_CANONICAL_REPO;
-    artifactProvenanceOf(releaseKitProductFlows).subject_name = 'agentsmith-product-flow-evidence';
+    artifactProvenanceOf(releaseKitProductFlows).subject_name = 'agentsmith-post-deploy-product-smoke-report';
     rehashArtifactProvenanceSubject(releaseKitProductFlows, 'evidence_subject');
     expectInvalid(
       validateReleaseKitEvidence(releaseKitProductFlows),
-      'product_flows release-kit evidence is not accepted in P0',
+      'product_flows release-kit evidence is not accepted in P0; use AgentSmith post-deploy product smoke report evidence',
     );
 
     const splitTarget = cloneFixture('release-kit-evidence.valid.json');

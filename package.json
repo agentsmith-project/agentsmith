@@ -96,6 +96,8 @@
     "test:unified-deploy:product-flows": "tsx scripts/unified-deploy/check-product-flows.ts",
     "test:unified-deploy:verification-report:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/verification-report.test.ts",
     "test:unified-deploy:verification-report": "tsx scripts/unified-deploy/check-verification-report.ts",
+    "test:post-deploy-product-smoke:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/post-deploy-product-smoke/report.test.ts",
+    "post-deploy-product-smoke:report": "tsx scripts/post-deploy-product-smoke/report.ts",
     "test:unified-deploy:address-truth:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/address-truth.test.ts",
     "test:unified-deploy:address-truth": "tsx scripts/unified-deploy/check-address-truth.ts",
     "test:unified-deploy:render": "tsx scripts/unified-deploy/check-render.ts",

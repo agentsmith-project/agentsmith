@@ -8,6 +8,11 @@ import {
   PRODUCT_VERIFICATION_FLOW_IDS,
   type ProductVerificationFlowId,
 } from '../unified-deploy/check-verification-report';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+} from '../post-deploy-product-smoke/report';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
 export const CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;
@@ -290,7 +295,8 @@ export interface CurrentReleaseKitEvidenceMappingEntry {
   canonical_evidence_owner: 'agentsmith' | 'agentsmith-release-kit';
   current_campaign_target_clusters: readonly CurrentDeploymentTargetCluster[];
   current_campaign_target_profiles?: readonly CurrentReleaseKitEvidenceTargetProfileTuple[];
-  expected_product_flow_producer?: 'unified-deploy-product-flows';
+  expected_product_smoke_report_schema?: typeof POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION;
+  expected_product_smoke_report_producer?: typeof POST_DEPLOY_PRODUCT_SMOKE_PRODUCER;
   reject_conditions: readonly string[];
 }
 
@@ -310,7 +316,8 @@ export interface CurrentReleaseKitEvidence {
   canonical_writer: CurrentReleaseKitCanonicalWriter;
   evidence_subject: Record<string, unknown>;
   artifact_provenance: CurrentArtifactProvenance;
-  product_flow_canonical_evidence?: {
+  product_smoke_canonical_evidence?: {
+    schema_version: string;
     producer: string;
   };
 }
@@ -711,21 +718,22 @@ export const CURRENT_RELEASE_KIT_EVIDENCE_MAPPING: readonly CurrentReleaseKitEvi
     ],
   },
   {
-    release_kit_output: 'AgentSmith product flow aggregate',
+    release_kit_output: POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
     target: 'product_flows',
     canonical_writer: {
       gate_id: 'lane-unified-deploy-product-flows',
       line_kind: 'unified_deploy_product_flows',
       npm_script: 'lane:unified-deploy:product-flows',
       native_result_path: '<campaign-root>/lane-unified-deploy-product-flows/native/result.json',
-      evidence_root: '<campaign-root>/unified-deploy/product-flows',
+      evidence_root: '<campaign-root>/post-deploy-product-smoke',
     },
     canonical_evidence_owner: 'agentsmith',
     current_campaign_target_clusters: ['kind_rehearsal', 'existing_kubernetes'],
-    expected_product_flow_producer: 'unified-deploy-product-flows',
+    expected_product_smoke_report_schema: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+    expected_product_smoke_report_producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
     reject_conditions: [
-      'release_kit_forged_product_flow_evidence',
-      'missing_required_product_flow',
+      'release_kit_forged_product_smoke_evidence',
+      'missing_required_product_smoke',
       'docker_defaults_used_for_external_declared',
     ],
   },
@@ -770,7 +778,7 @@ const REQUIRED_CURRENT_RELEASE_KIT_EVIDENCE_MAPPING_OUTPUTS = [
   'image-map.json',
   'airgap_bundle_check',
   'online-deployment-gate-report.json',
-  'AgentSmith product flow aggregate',
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
 ] as const;
 const STALE_RELEASE_KIT_OUTPUT_REPLACEMENTS: Record<string, string> = {
   'airgap-bundle-check-report.json+airgap-bundle-manifest.json+image-map.json': 'airgap_bundle_check',
@@ -1404,7 +1412,7 @@ export function validateReleaseKitEvidence(
   if (target === 'product_flows') {
     failures.push({
       path: 'target',
-      reason: 'product_flows release-kit evidence is not accepted in P0; use AgentSmith native product-flow evidence.',
+      reason: 'product_flows release-kit evidence is not accepted in P0; use AgentSmith post-deploy product smoke report evidence.',
     });
   }
 
@@ -1417,7 +1425,7 @@ export function validateReleaseKitEvidence(
     validateArtifactProvenanceInto(value.artifact_provenance, {
       path: 'artifact_provenance',
       expectedRepo: target === 'product_flows' ? AGENTSMITH_CANONICAL_REPO : RELEASE_KIT_CANONICAL_REPO,
-      expectedSubjectName: target === 'product_flows' ? 'agentsmith-product-flow-evidence' : 'release-kit-evidence-subject',
+      expectedSubjectName: target === 'product_flows' ? 'agentsmith-post-deploy-product-smoke-report' : 'release-kit-evidence-subject',
       subject: evidenceSubjectRecord,
       fullSubjectContainer: value,
       allowedKinds: target === 'product_flows' ? ['ci_artifact'] : ['ci_artifact', 'signed_operator_run'],
@@ -1968,13 +1976,19 @@ export function validateReleaseKitEvidenceMapping(
       if (entry.canonical_evidence_owner !== 'agentsmith') {
         failures.push({
           path: `${path}.canonical_evidence_owner`,
-          reason: 'product flow canonical evidence must be produced by AgentSmith.',
+          reason: 'product smoke canonical evidence must be produced by AgentSmith.',
         });
       }
-      if (entry.expected_product_flow_producer !== 'unified-deploy-product-flows') {
+      if (entry.expected_product_smoke_report_schema !== POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION) {
         failures.push({
-          path: `${path}.expected_product_flow_producer`,
-          reason: 'product flow canonical evidence must be produced by AgentSmith.',
+          path: `${path}.expected_product_smoke_report_schema`,
+          reason: 'product smoke canonical evidence must use the AgentSmith post-deploy report schema.',
+        });
+      }
+      if (entry.expected_product_smoke_report_producer !== POST_DEPLOY_PRODUCT_SMOKE_PRODUCER) {
+        failures.push({
+          path: `${path}.expected_product_smoke_report_producer`,
+          reason: 'product smoke canonical evidence must be produced by AgentSmith post-deploy product smoke.',
         });
       }
     }
@@ -3658,11 +3672,17 @@ function validateEvidenceMappingCompatibility(
   }
 
   if (target === 'product_flows') {
-    const canonicalEvidence = value.product_flow_canonical_evidence;
-    if (!isRecord(canonicalEvidence) || canonicalEvidence.producer !== mapping.expected_product_flow_producer) {
+    const canonicalEvidence = value.product_smoke_canonical_evidence;
+    if (!isRecord(canonicalEvidence) || canonicalEvidence.producer !== mapping.expected_product_smoke_report_producer) {
       failures.push({
-        path: 'product_flow_canonical_evidence.producer',
-        reason: 'product flow canonical evidence must be produced by AgentSmith.',
+        path: 'product_smoke_canonical_evidence.producer',
+        reason: 'product smoke canonical evidence must be produced by AgentSmith post-deploy product smoke.',
+      });
+    }
+    if (!isRecord(canonicalEvidence) || canonicalEvidence.schema_version !== mapping.expected_product_smoke_report_schema) {
+      failures.push({
+        path: 'product_smoke_canonical_evidence.schema_version',
+        reason: 'product smoke canonical evidence must use the AgentSmith post-deploy report schema.',
       });
     }
   }

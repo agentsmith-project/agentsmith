@@ -118,6 +118,29 @@ function pushMalformedResultFailure(
   });
 }
 
+function caughtErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function caughtErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return null;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : null;
+}
+
+function pushEvidenceEvaluationFailure(
+  failures: AggregateFailure[],
+  step: CurrentVerificationCampaignStep,
+  error: unknown,
+): void {
+  failures.push({
+    failureClass: caughtErrorCode(error) === 'ENOENT' ? 'evidence_missing' : 'contract_drift',
+    message: `Current evidence evaluation for campaign step ${step.id} failed: ${caughtErrorMessage(error)}`,
+  });
+}
+
 function validateCanonicalGateResult(
   failures: AggregateFailure[],
   label: string,
@@ -359,7 +382,15 @@ function validateCurrentEvidenceChecks(
     pointerById.set(candidate.id, candidate);
   }
 
-  for (const expected of evaluateCampaignEvidenceChecks(campaignRoot, step)) {
+  let expectedRecords: readonly ReleaseCampaignEvidencePathRecord[];
+  try {
+    expectedRecords = evaluateCampaignEvidenceChecks(campaignRoot, step);
+  } catch (error) {
+    pushEvidenceEvaluationFailure(failures, step, error);
+    return;
+  }
+
+  for (const expected of expectedRecords) {
     requiredPaths.push(buildReleaseCampaignEvidencePathRecord(expected));
 
     const pointerRecord = pointerById.get(expected.id);

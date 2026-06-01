@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
@@ -20,13 +20,25 @@ import {
   CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
   type CurrentGateEvidenceArtifact,
 } from '../current-gate-manifest';
-import { PRODUCT_VERIFICATION_FLOW_IDS } from '../../unified-deploy/check-verification-report';
+import {
+  AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_REPO,
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  POST_DEPLOY_PRODUCT_SMOKE_SPECS,
+  PRODUCT_FLOWS_AGGREGATE_PRODUCER,
+  PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
+} from '../../post-deploy-product-smoke/report';
 import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignEvidenceCheck,
   type CurrentVerificationCampaignStep,
 } from '../current-verification-campaign-manifest';
 import { CURRENT_GATE_RESULT_SCHEMA_VERSION } from '../current-gate-result-schema';
+import {
+  canonicalReleaseBoundaryJson,
+  sha256Digest,
+} from '../current-release-boundary-schema';
 import {
   assertSafeReleaseCampaignRunId,
   evidencePointerPath,
@@ -96,6 +108,126 @@ function getCampaignStep(stepId: string): CurrentVerificationCampaignStep {
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function recordField(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = record[key];
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Expected ${key} to be a record.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function releaseKitEvidenceFixture(): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(
+      resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary/release-kit-evidence.valid.json'),
+      'utf8',
+    ),
+  ) as Record<string, unknown>;
+}
+
+function writeValidReleaseKitSubjectFiles(reportPath: string, payload: Record<string, unknown>): void {
+  const evidenceRoot = 'release-kit-rollout-evidence';
+  payload.evidence_root = evidenceRoot;
+  const subject = recordField(payload, 'evidence_subject');
+  const subjectFiles = subject.files;
+  if (!Array.isArray(subjectFiles)) {
+    throw new Error('Expected release-kit fixture subject files.');
+  }
+
+  const fixtureContentByPath: Record<string, string> = {
+    'evidence.json': '{"schema_version":"release-kit-subject-fixture/v1"}\n',
+    'online-deployment-gate-report.json': '{"status":"passed"}\n',
+  };
+  for (const subjectFile of subjectFiles) {
+    if (subjectFile === null || typeof subjectFile !== 'object' || Array.isArray(subjectFile)) {
+      throw new Error('Expected release-kit fixture subject file record.');
+    }
+    const file = subjectFile as Record<string, unknown>;
+    const relPath = file.path;
+    if (typeof relPath !== 'string') {
+      throw new Error('Expected release-kit fixture subject file path.');
+    }
+    const content = fixtureContentByPath[relPath] ?? `${relPath}\n`;
+    createFile(join(dirname(reportPath), evidenceRoot, relPath), content);
+    file.sha256 = `sha256:${createHash('sha256').update(content).digest('hex')}`;
+  }
+
+  recordField(payload, 'artifact_provenance').subject_sha256 = sha256Digest(
+    canonicalReleaseBoundaryJson(subject),
+  );
+}
+
+function productSmokeEvidenceChecks(): CurrentVerificationCampaignEvidenceCheck[] {
+  return CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.map((artifact) => ({
+    ...artifact,
+  })) as CurrentVerificationCampaignEvidenceCheck[];
+}
+
+function getProductSmokeReportCheck(): CurrentVerificationCampaignEvidenceCheck {
+  const check = productSmokeEvidenceChecks().find((candidate) => candidate.id === 'post_deploy_product_smoke_report');
+  if (!check) {
+    throw new Error('Missing post-deploy product smoke report check.');
+  }
+  return check;
+}
+
+function getProductSmokeEvidenceStep(): CurrentVerificationCampaignStep {
+  return {
+    id: 'lane-unified-deploy-product-flows',
+    gateId: 'lane-unified-deploy-product-flows',
+    npmScript: 'lane:unified-deploy:product-flows',
+    command: 'npm run lane:unified-deploy:product-flows',
+    workflowRole: 'evidence_owner',
+    executionMode: 'execute',
+    resultRequired: true,
+    evidenceRequired: true,
+    lineKind: 'unified_deploy_product_flows',
+    defaultFailureClass: 'product_regression',
+    dependsOn: [],
+    evidenceHints: CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.map((artifact) => artifact.path),
+    evidenceChecks: productSmokeEvidenceChecks(),
+    nativeResult: {
+      gateId: 'lane-unified-deploy-product-flows',
+      npmScript: 'lane:unified-deploy:product-flows',
+      path: '<campaign-root>/lane-unified-deploy-product-flows/native/result.json',
+    },
+  };
+}
+
+function productSmokeResultsFixture(): Record<string, unknown> {
+  return Object.fromEntries(POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => [
+    spec.id,
+    {
+      id: spec.id,
+      status: 'passed',
+      label: spec.label,
+      source_flow: spec.source_flow,
+      source_evidence_path: `focused/${spec.source_flow}.json`,
+    },
+  ]));
+}
+
+function productSmokeReportFixture(campaignRoot: string, smokeResults: Record<string, unknown>): Record<string, unknown> {
+  return {
+    schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+    producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+    owner: 'agentsmith',
+    repo: AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_REPO,
+    status: 'passed',
+    generated_at: '2026-04-12T12:00:00.000Z',
+    source: {
+      product_flows_path: join(campaignRoot, 'unified-deploy', 'product-flows', 'aggregate.json'),
+      aggregate_schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
+      aggregate_producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
+    },
+    smoke_results: smokeResults,
+    failures: [],
+    paths: {
+      report_path: materializeCampaignPath(campaignRoot, getProductSmokeReportCheck().path),
+    },
+  };
 }
 
 function npmScriptForNativeResult(step: CurrentVerificationCampaignStep): string {
@@ -912,14 +1044,135 @@ describe('release-full aggregate gate', () => {
     }
   });
 
-  it('pins the current release product-flow proof to the governed required flow list', () => {
-    const productFlowEvidence = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
-      (artifact): artifact is CurrentGateEvidenceArtifact & { expectedProductFlows: readonly string[] } =>
-        artifact.id === 'unified_deploy_product_flow_evidence'
-        && Array.isArray(artifact.expectedProductFlows),
+  it('pins the current release product smoke proof to the governed smoke report', () => {
+    const productSmokeReport = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
+      (artifact): artifact is CurrentGateEvidenceArtifact & { expectedProductSmokes: readonly string[] } =>
+        artifact.id === 'post_deploy_product_smoke_report'
+        && Array.isArray(artifact.expectedProductSmokes),
     );
 
-    expect(productFlowEvidence?.expectedProductFlows).toEqual(PRODUCT_VERIFICATION_FLOW_IDS);
+    expect(productSmokeReport?.path).toBe(
+      `<campaign-root>/post-deploy-product-smoke/${POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME}`,
+    );
+    expect(productSmokeReport?.expectedProductSmokes).toEqual(
+      POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => spec.id),
+    );
+  });
+
+  it('fails product smoke report evidence when a canonical smoke id is missing', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-missing-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const smokeResults = productSmokeResultsFixture();
+      const missingSmokeId = POST_DEPLOY_PRODUCT_SMOKE_SPECS[0]?.id ?? 'login_profile';
+      delete smokeResults[missingSmokeId];
+
+      writeJson(reportPath, productSmokeReportFixture(campaignRoot, smokeResults));
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'product_regression',
+      });
+      expect(reportRecord?.error).toContain(missingSmokeId);
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when a canonical smoke is missing its source evidence path', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-source-missing-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const smokeResults = productSmokeResultsFixture();
+      const missingSourceSmokeId = POST_DEPLOY_PRODUCT_SMOKE_SPECS[0]?.id ?? 'login_profile';
+      smokeResults[missingSourceSmokeId] = {
+        id: missingSourceSmokeId,
+        status: 'passed',
+        label: 'fixture smoke',
+        source_flow: 'fixture-flow',
+      };
+
+      writeJson(reportPath, productSmokeReportFixture(campaignRoot, smokeResults));
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'product_regression',
+      });
+      expect(reportRecord?.error).toContain(missingSourceSmokeId);
+      expect(reportRecord?.error).toContain('source_evidence_path');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when the canonical report path contains release-kit-shaped JSON', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-release-kit-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const releaseKitPayload = releaseKitEvidenceFixture();
+      writeValidReleaseKitSubjectFiles(reportPath, releaseKitPayload);
+
+      writeJson(reportPath, releaseKitPayload);
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.matches).not.toContain(reportPath);
+      expect(reportRecord?.error).toContain('release-kit evidence is not accepted');
+      expect(reportRecord?.error).toContain('AgentSmith product smoke report evidence');
+      expect(reportRecord?.error).toContain(POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION);
+      expect(reportRecord?.error).toContain(POST_DEPLOY_PRODUCT_SMOKE_PRODUCER);
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts product smoke report evidence when every canonical smoke id passed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-pass-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+
+      writeJson(reportPath, productSmokeReportFixture(campaignRoot, productSmokeResultsFixture()));
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: true,
+        matches: [reportPath],
+        min_count: 1,
+      });
+      expect(reportRecord).not.toHaveProperty('error');
+      expect(reportRecord).not.toHaveProperty('failure_class');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
   });
 
   it('rejects unsafe release campaign run id shapes', () => {

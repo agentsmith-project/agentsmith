@@ -1,4 +1,9 @@
-import { PRODUCT_VERIFICATION_FLOW_IDS } from '../unified-deploy/check-verification-report';
+import {
+  POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
+  POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  POST_DEPLOY_PRODUCT_SMOKE_SPECS,
+} from '../post-deploy-product-smoke/report';
 
 export const CURRENT_GATE_DOCUMENT_FILES = [
   'docs/current-engineering-governance-model.md',
@@ -77,7 +82,7 @@ export interface CurrentGateEvidenceArtifact {
   expectedStatus?: string;
   expectedCommand?: string;
   expectedProfile?: string;
-  expectedProductFlows?: readonly string[];
+  expectedProductSmokes?: readonly string[];
 }
 
 export interface CurrentGateDefinition {
@@ -156,14 +161,6 @@ function shellScriptTarget(scriptPath: string, args: readonly string[] = []): Cu
   return {
     kind: 'shell_script',
     scriptPath,
-    args,
-  };
-}
-
-function npxCommandTarget(command: string, args: readonly string[] = []): CurrentGateExecutionTarget {
-  return {
-    kind: 'npx_command',
-    command,
     args,
   };
 }
@@ -360,16 +357,13 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'file',
     },
     {
-      id: 'unified_deploy_product_flow_evidence',
-      path: '<campaign-root>/unified-deploy/product-flows',
-      kind: 'recursive_file',
-      fileName: '.json',
-      minCount: 1,
-      semantic: 'unified_deploy_evidence',
-      expectedSchemaVersion: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
-      expectedProducer: 'unified-deploy-product-flows',
+      id: 'post_deploy_product_smoke_report',
+      path: `<campaign-root>/post-deploy-product-smoke/${POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME}`,
+      kind: 'file',
+      expectedSchemaVersion: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+      expectedProducer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
       expectedStatus: 'passed',
-      expectedProductFlows: PRODUCT_VERIFICATION_FLOW_IDS,
+      expectedProductSmokes: POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => spec.id),
     },
   ],
 } as const satisfies Record<string, readonly CurrentGateEvidenceArtifact[]>;

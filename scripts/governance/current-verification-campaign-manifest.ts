@@ -42,6 +42,7 @@ export interface CurrentVerificationCampaignEvidenceCheck {
   expectedCommand?: string;
   expectedProfile?: string;
   expectedProductFlows?: readonly string[];
+  expectedProductSmokes?: readonly string[];
 }
 
 export interface CurrentVerificationCampaignNativeResult {

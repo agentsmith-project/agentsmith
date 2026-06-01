@@ -12,6 +12,7 @@ import {
   type CurrentReleaseBoundaryValidationResult,
   type CurrentReleaseKitEvidence,
 } from './current-release-boundary-schema';
+import { POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME } from '../post-deploy-product-smoke/report';
 
 const RAW_RELEASE_KIT_EVIDENCE_ENVELOPE_SCHEMA_VERSION =
   'agentsmith.release-kit-evidence-envelope/v1';
@@ -74,7 +75,6 @@ function hasOwn(value: Record<string, unknown>, key: string): boolean {
 function rawString(
   value: Record<string, unknown>,
   key: string,
-  path: string,
 ): string | null {
   const field = value[key];
   return typeof field === 'string' && field.trim() !== '' ? field : null;
@@ -150,15 +150,15 @@ function evidenceSubjectFileBindingForOutput(
 function resolveMapping(
   rawEnvelope: Record<string, unknown>,
 ): CurrentReleaseBoundaryValidationResult<typeof CURRENT_RELEASE_KIT_EVIDENCE_MAPPING[number]> {
-  const releaseKitOutput = rawString(rawEnvelope, 'release_kit_output', 'release_kit_output');
+  const releaseKitOutput = rawString(rawEnvelope, 'release_kit_output');
   if (!releaseKitOutput) {
     return invalid('release_kit_output', 'release_kit_output is required.');
   }
 
-  if (releaseKitOutput === 'AgentSmith product flow aggregate') {
+  if (releaseKitOutput === POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME) {
     return invalid(
       'release_kit_output',
-      'release-kit cannot produce AgentSmith product-flow evidence.',
+      'release-kit cannot produce AgentSmith product smoke evidence.',
     );
   }
 
@@ -179,7 +179,7 @@ function resolveMapping(
   if (mapping.target === 'product_flows' || mapping.canonical_evidence_owner !== 'agentsmith-release-kit') {
     return invalid(
       'release_kit_output',
-      'release-kit cannot produce AgentSmith product-flow evidence.',
+      'release-kit cannot produce AgentSmith product smoke evidence.',
     );
   }
 

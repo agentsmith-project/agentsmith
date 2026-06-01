@@ -346,7 +346,7 @@ AgentSmith CI 产出一个机器可读 release contract，给 release kit 消费
     truth 时 fail fast；`MANAGED_RUNNER_IMAGE` 必须映射到
     `images.managed_runner.image`，不得作为长期 `values.MANAGED_RUNNER_IMAGE`
     成功路径；不得新增第二套 top-level required image IDs 字段。
-13. `required_product_flows` 复用当前 canonical post-deploy product smoke matrix：`login_profile`、`workspace_project`、`chat_via_llmup`、`agent_task_managed_runner`、`files`、`audit`、`usage`。
+13. `required_product_flows` 保持当前 source-flow contract IDs：`login_profile`、`workspace_project`、`chat_via_llmup`、`agent_task_managed_runner`、`files`、`audit`、`usage`。post-deploy product smoke report 面向 operator/边界展示为 `provider_neutral_endpoint` / provider-neutral Endpoint，并在 `source_flow` 中追溯到 `chat_via_llmup`。
 14. `target_profiles` 声明支持的 `target_cluster`、`substrate_source`、`distribution` 组合，以及每个组合的 namespace/RBAC/ingress/TLS/storage class/registry/pull secret prerequisites；target prerequisites 的 registry allowlist 只允许 `pull_secret_ref`，拒绝 pseudo-proof/secret fields 和 raw secret 字段。当前 pre-GA/release-kit focused diagnostics 阶段，`target_profiles.required` 不是 readiness 开关，当前实现若拒绝 `required: true` 是 pre-GA fail-fast posture。只有 P2/P3/P6 明确 adoption 条件满足、repo-local gate 拥有对应正式 evidence 后，才允许把某些组合翻为 required；翻转时缺对应 gate/evidence 就 fail fast。
 15. `substrate_connection_schema` 使用中性连接真相命名，例如 `agentsmith.substrate-connection.truth/v1`；`agentsmith.docker-substrate.truth/v1` 是真实 Docker substrate truth，只能作为 `kit_installed` 的内部 installer truth；已移除的未命名空间输入名 `docker-substrate.truth/v1` 是 pre-GA invalid input，直接 fail fast，两者都不得用于 `external_declared`。
 16. `artifact_provenance` 至少包含 producer repo identity、commit SHA、workflow/run/job、artifact URI、artifact digest、generated_at 和 generator version。正式 release adapter 必须拒绝缺 provenance、local provenance 或 repo identity 不匹配的 contract。
@@ -490,7 +490,7 @@ Pre-GA transition-only diagnostic mapping（不属于 AgentSmith product gate）
 | --- | --- | --- | --- | --- |
 | `image-map.json` / mirror report | `lane-unified-deploy-local-kind-images` / `unified_deploy_local_kind_images`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind-images/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind-images/` | images | tag-only image、digest mismatch、local-kind evidence 被用于 `existing_kubernetes` |
 | `render-report.json` + `rollout-report.json` | `lane-unified-deploy-local-kind` / `unified_deploy_local_kind`，仅限 transition local-kind diagnostic profile | `<diagnostic-root>/lane-unified-deploy-local-kind/native/result.json` 与 `<diagnostic-root>/unified-deploy/local-kind/` | rollout | rendered image inventory 与 release contract 不一致、live imageID 缺失、不匹配 target digest |
-| AgentSmith product flow aggregate | `lane-unified-deploy-product-flows` / `unified_deploy_product_flows` | `<diagnostic-root>/lane-unified-deploy-product-flows/native/result.json` 与 `<diagnostic-root>/unified-deploy/product-flows/` | product flows | 由 release kit 伪造、缺 required flows、仍从 Docker defaults 猜外部 substrate |
+| AgentSmith post-deploy product smoke report（producer: `agentsmith-post-deploy-product-smoke`） | `lane-unified-deploy-product-flows` / `unified_deploy_product_flows` | `<diagnostic-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` | product smoke | 由 release kit 伪造、缺 required source flows、仍从 Docker defaults 猜外部 substrate |
 
 说明：
 

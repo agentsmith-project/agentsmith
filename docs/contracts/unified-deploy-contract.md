@@ -381,15 +381,16 @@ deploy, package, or operator verdict.
 | --- | --- |
 | login/profile | Authenticated login/profile backend-real or e2e evidence |
 | workspace/project | Workspace/project backend-real or e2e evidence |
-| Chat via llmup | Chat backend-real evidence proving API -> llmup -> provider path |
+| `provider_neutral_endpoint` / provider-neutral Endpoint | Endpoint smoke evidence proving API -> endpoint gateway -> provider path; internal diagnostics may keep `chat_via_llmup` as the source flow |
 | Agent task managed runner | Managed runner Agent task backend-real evidence |
 | Files | Object storage and file-library backend-real evidence |
 | audit | Audit evidence tied to deploy/product actions |
 | usage | Usage evidence tied to deploy/product actions |
 
-The product-flow aggregate must also bind each required flow to its focused
-evidence file through `flow_evidence_paths`; counting arbitrary JSON files is
-not deploy diagnostic evidence.
+The AgentSmith post-deploy product smoke report is adapted from the product-flow
+aggregate, and must bind each required source flow to its focused evidence file
+through `flow_evidence_paths`; counting arbitrary JSON files is not deploy
+diagnostic evidence.
 
 These flows are deploy diagnostic product smoke evidence only. They do not make
 unified deploy a product readiness entrypoint or release target.

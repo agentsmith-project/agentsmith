@@ -52,8 +52,10 @@ function errorCodeForStatus(status: number): string {
   return 'INVALID_REQUEST';
 }
 
-function isRetiredManagedCredentialKey(key: string): boolean {
-  return key.startsWith('managed_credentials.');
+const FORBIDDEN_CONTEXT_KEY_PREFIXES = ['managed_credentials.'] as const;
+
+function isForbiddenContextKey(key: string): boolean {
+  return FORBIDDEN_CONTEXT_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
 async function findOwnedTask(args: {
@@ -106,9 +108,10 @@ async function resolveContextAccess(args: {
   writeIntent: boolean;
 }): Promise<ResolvedContextAccess | { error: { status: number; message: string } }> {
   const { deps, user, internalTicket, scope, key, identifiers, writeIntent } = args;
-  const isManagedCredentialKey = isRetiredManagedCredentialKey(key);
-  if (writeIntent && isManagedCredentialKey) {
-    return { error: { status: 403, message: 'context_managed_credentials_read_only' } };
+  if (isForbiddenContextKey(key)) {
+    return writeIntent
+      ? { error: { status: 403, message: 'context_managed_credentials_read_only' } }
+      : { error: { status: 404, message: 'context_not_found' } };
   }
 
   if (isAgentExecutionTicket(internalTicket)) {
@@ -336,7 +339,7 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       workspace_id: resolved.target.workspace_id,
     });
     const items = stored
-      .filter((item) => !isRetiredManagedCredentialKey(item.key))
+      .filter((item) => !isForbiddenContextKey(item.key))
       .map(presentContextEntry);
     json(res, 200, { items, total: items.length });
     return true;
@@ -361,10 +364,6 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       });
       if ('error' in resolved) {
         json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
-        return true;
-      }
-      if (scope === 'member' && isRetiredManagedCredentialKey(key)) {
-        json(res, 404, { error_code: 'NOT_FOUND', message: 'context_not_found' });
         return true;
       }
       const entry = await getContextEntry(deps.docStore, resolved.target);

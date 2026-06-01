@@ -4,7 +4,12 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { handleContextRoute } from './context-route-handler.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
-import { putContextEntry } from './context-store.js';
+import {
+  getContextEntry,
+  putContextEntry,
+  type ContextScope,
+  type ContextTarget,
+} from './context-store.js';
 import { upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
 
 type TestResponse = {
@@ -74,6 +79,113 @@ async function executeContextRoute(params: {
   });
 
   return response;
+}
+
+const FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY = 'managed_credentials.legacy_projection';
+const LEGACY_CREDENTIAL_PROJECTION_CONTENT = '{"fields":{"access_token":"legacy_sample_token"}}';
+
+type NonMemberContextScope = Exclude<ContextScope, 'member'>;
+type ForbiddenContextScopeCase = {
+  label: string;
+  scope: NonMemberContextScope;
+  identifiers: Record<string, string>;
+  target: ContextTarget;
+};
+
+const forbiddenNonMemberScopeCases: ForbiddenContextScopeCase[] = [
+  {
+    label: 'project_member',
+    scope: 'project_member',
+    identifiers: {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    },
+    target: {
+      scope: 'project_member',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    },
+  },
+  {
+    label: 'project',
+    scope: 'project',
+    identifiers: {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    },
+    target: {
+      scope: 'project',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    },
+  },
+  {
+    label: 'task',
+    scope: 'task',
+    identifiers: {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+    },
+    target: {
+      scope: 'task',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+    },
+  },
+  {
+    label: 'workspace',
+    scope: 'workspace',
+    identifiers: {
+      workspace_id: 'ws_default',
+    },
+    target: {
+      scope: 'workspace',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+      workspace_id: 'ws_default',
+    },
+  },
+];
+
+function createNotebookAgentTicket(): ResolvedInternalTicket {
+  return {
+    ticket: 'int_context_forbidden_key',
+    purpose: 'agent_execution',
+    user_id: 'user_1',
+    workspace_id: 'ws_default',
+    project_id: 'proj_1',
+    expires_at: '2099-01-01T00:00:00.000Z',
+    max_uses: 1,
+    remaining_uses: 1,
+    payload: {
+      endpoint_id: 'ep_1',
+      task_id: 'task_1',
+      mode: 'notebook',
+    },
+  };
+}
+
+function contextUrl(scopeCase: ForbiddenContextScopeCase): string {
+  const params = new URLSearchParams({
+    scope: scopeCase.scope,
+    key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+    ...scopeCase.identifiers,
+  });
+  return `/api/v1/context?${params.toString()}`;
+}
+
+function contextListUrl(scopeCase: ForbiddenContextScopeCase): string {
+  const params = new URLSearchParams({
+    scope: scopeCase.scope,
+    ...scopeCase.identifiers,
+  });
+  return `/api/v1/context/list?${params.toString()}`;
 }
 
 describe('context-route-handler', () => {
@@ -426,7 +538,7 @@ describe('context-route-handler', () => {
       reqUrl: '/api/v1/context',
       body: {
         scope: 'member',
-        key: 'managed_credentials.sample_provider',
+        key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
         workspace_id: 'ws_default',
         content: '{"fields":{"access_token":"legacy"}}',
         content_type: 'json',
@@ -444,7 +556,7 @@ describe('context-route-handler', () => {
     const docStore = new InMemoryJsonDocStore();
     await putContextEntry(docStore, {
       scope: 'member',
-      key: 'managed_credentials.sample_provider',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
       content: '{"fields":{"access_token":"legacy_sample_token"}}',
       content_type: 'json',
       user_id: 'user_1',
@@ -455,7 +567,7 @@ describe('context-route-handler', () => {
     const getResponse = await executeContextRoute({
       deps: { docStore } as unknown as NodeApiDeps,
       method: 'GET',
-      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.sample_provider&workspace_id=ws_default',
+      reqUrl: `/api/v1/context?scope=member&key=${FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY}&workspace_id=ws_default`,
     });
 
     expect(getResponse.statusCode).toBe(404);
@@ -474,13 +586,125 @@ describe('context-route-handler', () => {
     const body = expectJsonObject(listResponse.body);
     expect(body.items).toEqual([]);
     expect(JSON.stringify(listResponse.body)).not.toContain('legacy_sample_token');
+
+    const deleteResponse = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'DELETE',
+      reqUrl: `/api/v1/context?scope=member&key=${FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY}&workspace_id=ws_default`,
+    });
+
+    expect(deleteResponse.statusCode).toBe(403);
+    expect(deleteResponse.body).toEqual({
+      error_code: 'FORBIDDEN',
+      message: 'context_managed_credentials_read_only',
+    });
+    await expect(getContextEntry(docStore, {
+      scope: 'member',
+      key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+    })).resolves.toEqual(expect.objectContaining({
+      content: '{"fields":{"access_token":"legacy_sample_token"}}',
+    }));
   });
+
+  it.each(forbiddenNonMemberScopeCases)(
+    'does not expose forbidden managed credential keys in $label scope reads or listings',
+    async (scopeCase) => {
+      const docStore = new InMemoryJsonDocStore();
+      await putContextEntry(docStore, {
+        ...scopeCase.target,
+        content: LEGACY_CREDENTIAL_PROJECTION_CONTENT,
+        content_type: 'json',
+        updated_by: 'user_1',
+      });
+
+      const getResponse = await executeContextRoute({
+        deps: { docStore } as unknown as NodeApiDeps,
+        method: 'GET',
+        reqUrl: contextUrl(scopeCase),
+        internalTicket: createNotebookAgentTicket(),
+      });
+
+      expect(getResponse.statusCode).toBe(404);
+      expect(getResponse.body).toEqual({
+        error_code: 'NOT_FOUND',
+        message: 'context_not_found',
+      });
+      expect(JSON.stringify(getResponse.body)).not.toContain('legacy_sample_token');
+
+      const listResponse = await executeContextRoute({
+        deps: { docStore } as unknown as NodeApiDeps,
+        method: 'GET',
+        reqUrl: contextListUrl(scopeCase),
+        internalTicket: createNotebookAgentTicket(),
+      });
+
+      expect(listResponse.statusCode).toBe(200);
+      const body = expectJsonObject(listResponse.body);
+      expect(body.items).toEqual([]);
+      expect(JSON.stringify(listResponse.body)).not.toContain('legacy_sample_token');
+    },
+  );
+
+  it.each(forbiddenNonMemberScopeCases)(
+    'rejects writes and deletes for forbidden managed credential keys in $label scope',
+    async (scopeCase) => {
+      const docStore = new InMemoryJsonDocStore();
+
+      const putResponse = await executeContextRoute({
+        deps: { docStore } as unknown as NodeApiDeps,
+        method: 'PUT',
+        reqUrl: '/api/v1/context',
+        body: {
+          scope: scopeCase.scope,
+          key: FORBIDDEN_MANAGED_CREDENTIAL_CONTEXT_KEY,
+          ...scopeCase.identifiers,
+          content: LEGACY_CREDENTIAL_PROJECTION_CONTENT,
+          content_type: 'json',
+        },
+        internalTicket: createNotebookAgentTicket(),
+      });
+
+      expect(putResponse.statusCode).toBe(403);
+      expect(putResponse.body).toEqual({
+        error_code: 'FORBIDDEN',
+        message: 'context_managed_credentials_read_only',
+      });
+      expect(JSON.stringify(putResponse.body)).not.toContain('legacy_sample_token');
+      await expect(getContextEntry(docStore, scopeCase.target)).resolves.toBeNull();
+
+      await putContextEntry(docStore, {
+        ...scopeCase.target,
+        content: LEGACY_CREDENTIAL_PROJECTION_CONTENT,
+        content_type: 'json',
+        updated_by: 'user_1',
+      });
+
+      const deleteResponse = await executeContextRoute({
+        deps: { docStore } as unknown as NodeApiDeps,
+        method: 'DELETE',
+        reqUrl: contextUrl(scopeCase),
+        internalTicket: createNotebookAgentTicket(),
+      });
+
+      expect(deleteResponse.statusCode).toBe(403);
+      expect(deleteResponse.body).toEqual({
+        error_code: 'FORBIDDEN',
+        message: 'context_managed_credentials_read_only',
+      });
+      expect(JSON.stringify(deleteResponse.body)).not.toContain('legacy_sample_token');
+      await expect(getContextEntry(docStore, scopeCase.target)).resolves.toEqual(expect.objectContaining({
+        content: LEGACY_CREDENTIAL_PROJECTION_CONTENT,
+      }));
+    },
+  );
 
   it('does not handle retired managed credential refresh routes', async () => {
     const response = await executeContextRoute({
       deps: { docStore: new InMemoryJsonDocStore() } as unknown as NodeApiDeps,
       method: 'POST',
-      reqUrl: '/api/v1/context/managed-credentials/sample_provider/refresh?workspace_id=ws_default&project_id=proj_1',
+      reqUrl: '/api/v1/context/managed-credentials/legacy_projection/refresh?workspace_id=ws_default&project_id=proj_1',
     });
 
     expect(response.handled).toBe(false);

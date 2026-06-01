@@ -383,7 +383,7 @@ describe('api-entry-node context store integration', () => {
 
     const projectionRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/context?scope=member&key=managed_credentials.sample_provider&workspace_id=ws_default',
+      '/api/v1/context?scope=member&key=managed_credentials.legacy_projection&workspace_id=ws_default',
       'test-token',
     );
     expect(projectionRes.status).toBe(404);
@@ -394,7 +394,7 @@ describe('api-entry-node context store integration', () => {
 
     const refreshRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/context/managed-credentials/sample_provider/refresh?workspace_id=ws_default',
+      '/api/v1/context/managed-credentials/legacy_projection/refresh?workspace_id=ws_default',
       'test-token',
       { method: 'POST' },
     );

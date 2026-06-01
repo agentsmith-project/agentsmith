@@ -99,7 +99,11 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke
-- focused product-flow evidence is adapted into the canonical post-deploy product smoke report after rollout
+- `npm run test:unified-deploy:product-flows` is the focused product-flow aggregate diagnostic; it is not the release-kit canonical report producer
+- `npm run lane:unified-deploy:product-flows` adapts the focused product-flow evidence into the canonical post-deploy product smoke report after rollout
+- the product-flow lane requires a release contract from `UNIFIED_DEPLOY_RELEASE_CONTRACT` or `AGENTSMITH_RELEASE_CONTRACT_PATH`; `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the smoke evidence root
+- the release-kit `--ga-release` input is `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
+- the product-flow lane is not part of default `product:ready` / release-full
 - existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the release campaign
 
 7. `gate:release:full`

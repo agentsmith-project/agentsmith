@@ -151,7 +151,7 @@ bash scripts/verify-release.sh --ga-release \
   --deployment-path-report <airgap/use_existing/deployment-path-report.json> \
   --deployment-path-report <airgap/install_substrates/deployment-path-report.json> \
   --product-readiness-report <agentsmith/product-readiness-report.json> \
-  --post-deploy-product-smoke-report <agentsmith/post-deploy-product-smoke-report.json> \
+  --post-deploy-product-smoke-report <ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
   --output-dir <dir>
 ```
 
@@ -183,6 +183,8 @@ bash scripts/verify-release.sh --ga-release \
 
 `--ga-release` 只消费 finalized path reports，不重新跑 producer。裸 `operator-release-surface-report.json`、adoption report、candidate intake、operator signoff intake 和 runbook acceptance 只能作为 path report 的内部子步骤证据；不能直接作为 GA verdict 输入，也不能成为 operator 主文档的成功判断对象。
 
+Post-deploy product smoke 的 AgentSmith-owned producer 是 `npm run lane:unified-deploy:product-flows`。它需要下载后的 `agentsmith-release-contract.json`，可通过 `UNIFIED_DEPLOY_RELEASE_CONTRACT` 或 `AGENTSMITH_RELEASE_CONTRACT_PATH` 指向；`UNIFIED_DEPLOY_RELEASE_SITE_ENV` 指向部署目标 site env，`UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` 指向输出根。`npm run test:unified-deploy:product-flows` 只是 focused aggregate diagnostic，不是 release-kit `--ga-release` 的 canonical report producer。该 lane 不加入默认 `product:ready` / release-full；release-kit `--ga-release` 只消费它已经写好的 finalized report。
+
 ### 3.3 AgentSmith 保持产品侧入口
 
 AgentSmith 不变成部署平台：
@@ -207,7 +209,7 @@ npm run product:status
 | online/install_substrates | substrate installer、substrate truth、routability、render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | airgap/use_existing | bundle create/check、image archive materiality、offline image load、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | airgap/install_substrates | bundle create/check、substrate installer bundle、image load、substrate install truth、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
-| Post-deploy product smoke | auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
+| Post-deploy product smoke | `npm run lane:unified-deploy:product-flows` 产出的 `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`，覆盖 auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
 | Final GA | `--ga-release` aggregate over required reports | release-kit |
 
 ### 4.2 不做矩阵爆炸

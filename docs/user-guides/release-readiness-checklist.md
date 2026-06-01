@@ -1,12 +1,12 @@
 # 发布前检查清单
 
-这份清单用于当前 AgentSmith product-side readiness：本地完整验证、合同完整性、release-kit/operator 交接输入完整性。当前 `npm run product:ready` 不给部署、package 或 operator runbook 下最终结论；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断。真实 Kubernetes / release-kit adoption target profile 在 AgentSmith release boundary 中只能作为 optional/candidate handoff。release-kit functional repo ready 后，deployment、package 和 operator runbook 结论归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
+这份清单用于当前 AgentSmith product-side readiness：本地完整验证、合同完整性、release-kit/operator 交接输入完整性。当前 `npm run product:ready` 不给部署、package 或 operator runbook 下最终结论；unified deploy、local-kind、existing-cluster 与 product-flow deploy 命令只保留为 transition-only focused diagnostics / 过渡期专项诊断。Product-flow 额外有一个 AgentSmith-owned post-deploy product smoke report producer：它给 release-kit `--ga-release` 提供 finalized report，但仍不进入默认 `product:ready` / release-full。真实 Kubernetes / release-kit adoption target profile 在 AgentSmith release boundary 中只能作为 optional/candidate handoff。release-kit functional repo ready 后，deployment、package 和 operator runbook 结论归 release-kit repo-local gate/evidence。AgentSmith 长期保留 product readiness、images/release contract、local full test 和 thin adapter。
 
 术语边界：
 - 这里的 `release` 仅表示工程验收与上线准备流程。
 - 不代表 AgentSmith 提供对外 DevOps 发布管理能力。
 - 不代表 AgentSmith 拥有在线/airgap 部署执行、发布包验收或 operator runbook 最终结论；这些在 release-kit functional repo ready 后归 release-kit repo-local gate/evidence。
-- release-kit handoff boundary: AgentSmith product:ready is product readiness / local complete / current product gate for product evidence, full visual, backend-real product readiness, and terminal aggregate evidence for handoff input completeness. It is not a deployment/package/operator verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After release-kit functional repo is ready, release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+- release-kit handoff boundary: AgentSmith product:ready is product readiness / local complete / current product gate for product evidence, full visual, backend-real product readiness, and terminal aggregate evidence for handoff input completeness. It is not a deployment/package/operator verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. The product-flow lane is only the AgentSmith-owned producer for the canonical post-deploy product smoke report consumed by release-kit `--ga-release`; it is not a default product readiness or release-full step. After release-kit functional repo is ready, release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 - `npm run release:ready` / `npm run release:status` remain deprecated transition aliases / 过渡 alias for `npm run product:ready` / `npm run product:status`; they do not produce deployment, package, or operator verdicts.
 
 ## 当前过渡期通过标准
@@ -72,7 +72,8 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | status reader | `npm run product:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
 | transition-only deploy diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith product readiness 必需证据 |
 | transition-only deploy smoke diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith product readiness 必需证据 |
-| transition-only product-flow deploy diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 canonical seven-flow deployed product smoke matrix；不属于 AgentSmith product readiness 必需证据 |
+| transition-only product-flow aggregate diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 seven-flow product-flow aggregate；不是 release-kit canonical report producer，也不属于 AgentSmith product readiness 必需证据 |
+| post-deploy product smoke handoff producer | internal adapter `lane:unified-deploy:product-flows` | 绑定 downloaded `agentsmith-release-contract.json`，输出 `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 给 release-kit `--ga-release`；不属于默认 `product:ready` / release-full |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
@@ -84,7 +85,8 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 backend-real product readiness `ux_trace_bundle` 证据所有权。
 4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；这些命令保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于默认 product readiness campaign。route smoke 不能替代 focused product-flow 诊断，也不是 release-kit 职责归属证明。
-5. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run product:ready`。
+5. Post-deploy product smoke handoff 只消费 downloaded `agentsmith-release-contract.json`、部署目标 site env 与 `<ga-smoke-evidence-root>`，然后把 finalized report 交给 release-kit；不要把该 lane 加回默认 `product:ready` / release-full。
+6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run product:ready`。
 
 ### 4. CI Green 的含义（机器可读报告）
 

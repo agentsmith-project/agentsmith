@@ -1423,6 +1423,7 @@ describe('current workflow governance', () => {
     const handoffFileCheckStepIndex = steps.findIndex(
       (step) => step.name === 'Verify release contract input handoff files',
     );
+    const generateArtifactStepIndex = steps.findIndex((step) => step.name === 'Generate release contract artifact');
     const runnerSourceGateStep = steps[runnerSourceGateStepIndex] ?? {};
     const runnerSourceGateEnv = asRecord(runnerSourceGateStep.env);
     const runnerSourceGateRun = typeof runnerSourceGateStep.run === 'string' ? runnerSourceGateStep.run : '';
@@ -1454,6 +1455,8 @@ describe('current workflow governance', () => {
     expect(job?.artifactPaths).toEqual([
       'artifacts/release-contract/agentsmith-release-contract.json',
       'artifacts/release-contract/release-contract-input-source.json',
+      'artifacts/release-contract/deploy-template-package.json',
+      'artifacts/release-contract/agentsmith-deploy-template-package.tgz',
       'artifacts/release-contract/runner-release-manifest-source.json',
       'artifacts/release-contract/llmup-image-source.json',
       'artifacts/release-contract/afscp-image-source.json',
@@ -1476,6 +1479,7 @@ describe('current workflow governance', () => {
     expect(sourceGateStepIndex).toBeGreaterThan(dependencyImageSourceGateStepIndex);
     expect(downloadStepIndex).toBeGreaterThan(sourceGateStepIndex);
     expect(handoffFileCheckStepIndex).toBeGreaterThan(downloadStepIndex);
+    expect(generateArtifactStepIndex).toBeGreaterThan(handoffFileCheckStepIndex);
     expect(runnerSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
     expect(runnerSourceGateRun).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
     expect(runnerSourceGateRun).toContain('runner_repo="agentsmith-project/agentsmith-runner"');
@@ -1592,6 +1596,12 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain(
       'RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"',
     );
+    expect(runCommands).toContain(
+      'RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH="artifacts/release-contract/input/deploy-template-package.json"',
+    );
+    expect(runCommands).toContain(
+      'RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH="artifacts/release-contract/input/agentsmith-deploy-template-package.tgz"',
+    );
     expect(runCommands).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
     expect(runCommands).toContain(
       `RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "${RUNNER_REMOTE_MANIFEST_PATH_FILE}")"`,
@@ -1621,12 +1631,16 @@ describe('current workflow governance', () => {
       'ASBCP_ASSET_API_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asset-api.json"',
     );
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"');
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH}"');
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
@@ -1655,6 +1669,14 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('--asbcp-asset-api "${ASBCP_ASSET_API_PATH}"');
     expect(runCommands).toContain('input_sha256');
     expect(runCommands).toContain('validated_source');
+    expect(runCommands).toContain(
+      'cp "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH}" "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"',
+    );
+    expect(runCommands).toContain(
+      'cp "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}" "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"',
+    );
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"');
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"');
     expect(receiptObjectSource).toContain('input_sha256');
     expect(receiptObjectSource).toContain('validated_source');
     for (const releaseContractField of [

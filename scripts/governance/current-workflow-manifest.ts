@@ -774,6 +774,8 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         artifactPaths: [
           'artifacts/release-contract/agentsmith-release-contract.json',
           'artifacts/release-contract/release-contract-input-source.json',
+          'artifacts/release-contract/deploy-template-package.json',
+          'artifacts/release-contract/agentsmith-deploy-template-package.tgz',
           'artifacts/release-contract/runner-release-manifest-source.json',
           'artifacts/release-contract/llmup-image-source.json',
           'artifacts/release-contract/afscp-image-source.json',

@@ -684,6 +684,8 @@ jobs:
           # This workflow only produces a release contract artifact from a GitHub Actions handoff artifact.
           RELEASE_CONTRACT_INPUT_PATH="artifacts/release-contract/input/release-contract-input.json"
           RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH="artifacts/release-contract/input-source-gate.json"
+          RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH="artifacts/release-contract/input/deploy-template-package.json"
+          RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH="artifacts/release-contract/input/agentsmith-deploy-template-package.tgz"
           RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
           RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "artifacts/release-contract/runner-manifest-source-gate/remote-manifest-path.txt")"
           RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"
@@ -699,12 +701,16 @@ jobs:
           mkdir -p "${RELEASE_CONTRACT_OUTPUT_DIR}"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"
+          test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH}"
+          test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"
@@ -755,7 +761,11 @@ jobs:
             `${JSON.stringify(receipt, null, 2)}\n`,
           );
           NODE
+          cp "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_DESCRIPTOR_PATH}" "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"
+          cp "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}" "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
@@ -769,6 +779,8 @@ jobs:
           path: |
             artifacts/release-contract/agentsmith-release-contract.json
             artifacts/release-contract/release-contract-input-source.json
+            artifacts/release-contract/deploy-template-package.json
+            artifacts/release-contract/agentsmith-deploy-template-package.tgz
             artifacts/release-contract/runner-release-manifest-source.json
             artifacts/release-contract/llmup-image-source.json
             artifacts/release-contract/afscp-image-source.json

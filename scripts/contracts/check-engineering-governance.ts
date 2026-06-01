@@ -51,6 +51,7 @@ const gateResultContract = read('docs/contracts/current-gate-result-schema-contr
 const unifiedDeployContract = read('docs/contracts/unified-deploy-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
+const gaReleasePlan = read('docs/engineering/agentsmith-ga-release-plan-v1.md');
 const releaseKitSplitPlan = read('docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 const internalAgentTaskRealGate = read('scripts/run-internal-agent-task-real-gate.sh');
@@ -431,7 +432,7 @@ const currentReleaseBoundaryDocs = [
   verificationCampaigns,
   unifiedDeployContract,
   releaseChecklist,
-  releaseKitSplitPlan,
+  gaReleasePlan,
 ].join('\n');
 forbidMatch(currentReleaseBoundaryDocs, /release campaign evidence uses unified deploy lanes/i, 'active docs must not say release campaign evidence uses unified deploy lanes');
 forbidMatch(currentReleaseBoundaryDocs, /当前 release campaign 直接绑定[\s\S]{0,120}unified deploy/i, 'active docs must not say the current release campaign directly binds unified deploy');

@@ -35,8 +35,10 @@
 
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
+- [AgentSmith GA 发布交付计划 v1](./engineering/agentsmith-ga-release-plan-v1.md)
+  - current GA implementation plan for product readiness, release-kit GA verdict, runner/adopted image chain, operator runbooks, and deployment verification
 - [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md)
-  - active pre-GA boundary plan for release-kit / runner repo split; deployment verdict ownership belongs to release-kit repo-local gates
+  - pre-GA reference / historical context / split background for release-kit and runner repo boundaries; not the current mainline implementation plan
 - [Testing Docs Index](./testing/README.md)
 - [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
   - choose `ui_only`, `local_manual`, or `release_grade`

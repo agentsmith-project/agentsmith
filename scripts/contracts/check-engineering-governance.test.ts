@@ -10,6 +10,7 @@ import {
 
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
+const GA_RELEASE_PLAN_PATH = 'docs/engineering/agentsmith-ga-release-plan-v1.md';
 
 describe('check-engineering-governance contract', () => {
   it('guards README as part of the human workflow surface', () => {
@@ -88,6 +89,18 @@ describe('check-engineering-governance contract', () => {
 
     expect(source).not.toContain(HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME);
     expect(source).not.toContain('unifiedDeployMilestonePlan');
+  });
+
+  it('uses the GA release plan in active release-boundary scans while keeping split plan reference-scoped', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'scripts/contracts/check-engineering-governance.ts'),
+      'utf8',
+    );
+    const currentReleaseBoundaryDocsBlock = source.match(/const currentReleaseBoundaryDocs = \[[\s\S]*?\]\.join\('\\n'\);/u)?.[0] ?? '';
+
+    expect(source).toContain(`read('${GA_RELEASE_PLAN_PATH}')`);
+    expect(currentReleaseBoundaryDocsBlock).toContain('gaReleasePlan');
+    expect(currentReleaseBoundaryDocsBlock).not.toContain('releaseKitSplitPlan');
   });
 
   it('rejects internal workflow commands presented as a default command directory', () => {

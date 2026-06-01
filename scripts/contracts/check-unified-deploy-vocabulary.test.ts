@@ -8,6 +8,7 @@ import { checkUnifiedDeployVocabulary } from './check-unified-deploy-vocabulary'
 
 const CHECK_SCRIPT = 'tsx scripts/contracts/check-unified-deploy-vocabulary.ts';
 const CHECK_NPM_SCRIPT = 'contracts:check-unified-deploy-vocabulary';
+const GA_RELEASE_PLAN_PATH = 'docs/engineering/agentsmith-ga-release-plan-v1.md';
 const RELEASE_KIT_SPLIT_PLAN_PATH = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_PATH =
   'docs/engineering/agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
@@ -64,16 +65,31 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
+const minimalGaReleasePlanDoc = `# AgentSmith GA Release Plan
+
+Status: implementation-ready
+
+This is the current GA implementation plan for AgentSmith product readiness, release-kit final GA verdict, runner adoption, dependency image locks, operator runbooks, and deployment verification.
+
+Current implemented operator-facing release language remains online / airgap x use_existing / kit_provided until the release-kit installer producer lands.
+kit_provided remains a pre-GA pack, truth, routability, and materiality validation fail-fast path; it does not install substrates.
+install_substrates is a GA target and blocking prerequisite that requires an independent installer producer and explicit installer confirmation flag before it can become an operator path.
+
+## GA Target
+
+The GA plan may define online/install_substrates and airgap/install_substrates as target deployment paths, but they are not current implemented operator paths.
+`;
+
 const minimalReleaseKitSplitPlanDoc = `# Release Kit Split Plan
 
-Status: team_reviewed_p0_start_ready
+Status: pre_ga_reference
 
-Operator-facing release language is online / airgap x use_existing / kit_provided.
-install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
+This pre-GA reference preserves the release-kit / runner repo split background and historical context.
+It is not the current GA implementation plan.
 
-## Current Boundary
+## Reference Boundary
 
-This active plan keeps the current repo boundary, next slice, blockers, and short-term deletion list.
+This reference keeps the pre-GA repo boundary and split background available for handoff readers.
 Historical evidence belongs in the evidence log reference.
 `;
 
@@ -85,6 +101,7 @@ type FixtureOptions = {
 
 const ACTIVE_DOC_PATHS = [
   'README.md',
+  GA_RELEASE_PLAN_PATH,
   RELEASE_KIT_SPLIT_PLAN_PATH,
   'docs/engineering/README.md',
   'docs/contracts/README.md',
@@ -150,6 +167,10 @@ ${validReleaseHandoffBoundaryDoc}`;
 
   if (path === 'docs/user-guides/release-readiness-checklist.md') {
     return validReleaseHandoffBoundaryDoc;
+  }
+
+  if (path === GA_RELEASE_PLAN_PATH) {
+    return minimalGaReleasePlanDoc;
   }
 
   if (path === RELEASE_KIT_SPLIT_PLAN_PATH) {
@@ -227,6 +248,69 @@ describe('checkUnifiedDeployVocabulary', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
         [HISTORICAL_UNIFIED_DEPLOY_MILESTONE_PATH]: null,
+      },
+    });
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
+  });
+
+  it('requires the GA release plan as the current implementation plan', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [GA_RELEASE_PLAN_PATH]: null,
+      },
+    });
+
+    expect(failureText(root)).toContain(`${GA_RELEASE_PLAN_PATH} must exist`);
+  });
+
+  it.each([
+    '`install_substrates` 当前可执行，无需安装器',
+    'install_substrates is not future; available now',
+  ])('rejects GA install_substrates implemented-state wording: %s', (implementedClaim) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [GA_RELEASE_PLAN_PATH]: `${minimalGaReleasePlanDoc}
+
+## Drift
+
+${implementedClaim}
+`,
+      },
+    });
+
+    expect(failureText(root)).toContain(
+      'GA release plan must not describe install_substrates as an already implemented operator path.',
+    );
+  });
+
+  it('allows GA install_substrates wording that negates current implementation claims', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [GA_RELEASE_PLAN_PATH]: `${minimalGaReleasePlanDoc}
+
+## Boundary
+
+install_substrates is not implemented yet.
+install_substrates 不是当前已实现路径。
+不得写成当前可执行: install_substrates。
+`,
+      },
+    });
+
+    expect(checkUnifiedDeployVocabulary({ rootDir: root })).toEqual({
+      ok: true,
+      failures: [],
+    });
+  });
+
+  it('allows the split KISS plan as a pre-GA reference instead of current deploy truth', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [RELEASE_KIT_SPLIT_PLAN_PATH]: minimalReleaseKitSplitPlanDoc,
       },
     });
 

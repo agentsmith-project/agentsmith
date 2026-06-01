@@ -8,6 +8,7 @@ const SCAN_ROOTS = ['README.md', 'AGENTS.md', 'DESIGN.md', 'DEVELOPMENT.md', 'do
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']);
 
+const GA_RELEASE_PLAN = 'docs/engineering/agentsmith-ga-release-plan-v1.md';
 const RELEASE_KIT_SPLIT_PLAN = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
 const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_TOP_LEVEL =
   'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
@@ -28,7 +29,12 @@ const SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOC_SET = new Set<string>(
 const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   {
     file: 'docs/README.md',
-    includes: ['CURRENT_BASELINE.md', 'contracts/README.md', 'user-guides/README.md'],
+    includes: [
+      'CURRENT_BASELINE.md',
+      'contracts/README.md',
+      'user-guides/README.md',
+      'agentsmith-ga-release-plan-v1.md',
+    ],
   },
   {
     file: 'docs/user-guides/README.md',
@@ -405,7 +411,7 @@ function checkSupersededReleaseGovernanceDocPlacement(filePath: string): Violati
       line: 1,
       rule: 'superseded-release-governance-doc-active-top-level',
       detail:
-        'Superseded release-governance plans/logs must live under docs/engineering/archive/ with Status: historical_reference; current truth is release-kit-and-runner-repo-split-kiss-plan-v1.md.',
+        'Superseded release-governance plans/logs must live under docs/engineering/archive/ with Status: historical_reference; current GA implementation plan is agentsmith-ga-release-plan-v1.md.',
     },
   ];
 }
@@ -499,6 +505,82 @@ function checkEngineeringIndexCurrentSection(): Violation[] {
   );
 }
 
+function contextAroundNeedle(content: string, needle: string, radius = 2): { line: number; text: string } | null {
+  const lines = content.split('\n');
+  const index = lines.findIndex((line) => line.includes(needle));
+  if (index === -1) {
+    return null;
+  }
+
+  const start = Math.max(0, index - radius);
+  const end = Math.min(lines.length, index + radius + 1);
+
+  return {
+    line: index + 1,
+    text: lines.slice(start, end).join('\n'),
+  };
+}
+
+export function findDocsIndexGaRoutingViolations(
+  content: string,
+  file = 'docs/README.md',
+): Violation[] {
+  const violations: Violation[] = [];
+  const gaContext = contextAroundNeedle(content, 'agentsmith-ga-release-plan-v1.md');
+  const splitContext = contextAroundNeedle(content, 'release-kit-and-runner-repo-split-kiss-plan-v1.md');
+
+  if (gaContext === null) {
+    violations.push({
+      file,
+      line: 1,
+      rule: 'missing-ga-release-plan-current-route',
+      detail:
+        `Docs index must route current GA implementation work to ${GA_RELEASE_PLAN}.`,
+    });
+  } else if (!/(?:current|active)[\s\S]{0,80}GA[\s\S]{0,120}(?:implementation|实施)|当前\s*GA\s*实施计划/iu.test(gaContext.text)) {
+    violations.push({
+      file,
+      line: gaContext.line,
+      rule: 'ga-release-plan-not-current-route',
+      detail:
+        'Docs index must describe agentsmith-ga-release-plan-v1.md as the current GA implementation plan.',
+    });
+  }
+
+  if (splitContext === null) {
+    violations.push({
+      file,
+      line: 1,
+      rule: 'missing-split-plan-pre-ga-reference-route',
+      detail:
+        'Docs index must keep release-kit-and-runner-repo-split-kiss-plan-v1.md discoverable as pre-GA reference / historical context / split background.',
+    });
+  } else if (
+    !/(?:pre-GA\s+reference|historical context|split background|历史|背景|参考)/iu.test(splitContext.text)
+    || /active\s+pre-GA\s+boundary\s+plan|current\s+(?:mainline\s+)?truth|当前主线/iu.test(splitContext.text)
+  ) {
+    violations.push({
+      file,
+      line: splitContext.line,
+      rule: 'split-plan-routed-as-current-truth',
+      detail:
+        'Docs index must route release-kit-and-runner-repo-split-kiss-plan-v1.md as pre-GA reference / historical context / split background, not current mainline truth.',
+    });
+  }
+
+  return violations;
+}
+
+function checkDocsIndexGaRouting(): Violation[] {
+  const file = 'docs/README.md';
+  const absPath = path.join(ROOT, file);
+  if (!fs.existsSync(absPath)) {
+    return [];
+  }
+
+  return findDocsIndexGaRoutingViolations(fs.readFileSync(absPath, 'utf8'), file);
+}
+
 function normalizeBlock(content: string): string {
   return content.replaceAll('`', '').replace(/\s+/gu, ' ').trim();
 }
@@ -558,6 +640,7 @@ function main(): void {
 
   violations.push(...checkIndexExpectations());
   violations.push(...checkEngineeringIndexCurrentSection());
+  violations.push(...checkDocsIndexGaRouting());
 
   if (violations.length > 0) {
     console.error('[docs-governance] check failed.');

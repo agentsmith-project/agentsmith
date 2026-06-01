@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   findEngineeringIndexCurrentSectionViolations,
+  findDocsIndexGaRoutingViolations,
   findReleaseKitSplitKissPlanViolations,
   isHistoricalDoc,
   SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS,
@@ -11,6 +12,8 @@ import {
 
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
+const GA_RELEASE_PLAN_PATH = 'docs/engineering/agentsmith-ga-release-plan-v1.md';
+const RELEASE_KIT_SPLIT_PLAN_PATH = 'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md';
 const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ACTIVE_PATH =
   'docs/engineering/agentsmith-sandbox-control-plane-release-independence-plan-v1.md';
 const HISTORICAL_ASBCP_RELEASE_INDEPENDENCE_PLAN_ARCHIVE_PATH =
@@ -24,7 +27,6 @@ const ACTIVE_PRODUCT_READINESS_ENTRYPOINT_DOCS = [
   'docs/user-guides/unified-deploy-operations.md',
   'docs/user-guides/uxui-review-runbook.md',
   'docs/user-guides/test-and-evidence-directory-model.md',
-  'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
 ] as const;
 
 function extractSetInitializer(source: string, constName: string): string {
@@ -305,6 +307,49 @@ describe('check-doc-governance historical document detection', () => {
     );
 
     expect(findEngineeringIndexCurrentSectionViolations(index)).toEqual([]);
+  });
+
+  it('flags docs index routing that keeps the split plan as active current truth', () => {
+    const violations = findDocsIndexGaRoutingViolations(
+      [
+        '# Documentation Index',
+        '',
+        '### Engineering and testing reference',
+        '- [Release Kit 与 Runner Repo 拆分 KISS 工程计划 v1](./engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md)',
+        '  - active pre-GA boundary plan for release-kit / runner repo split',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'missing-ga-release-plan-current-route' }),
+        expect.objectContaining({ rule: 'split-plan-routed-as-current-truth' }),
+      ]),
+    );
+  });
+
+  it('flags docs index routing that removes the split plan reference route', () => {
+    const violations = findDocsIndexGaRoutingViolations(
+      [
+        '# Documentation Index',
+        '',
+        '### Engineering and testing reference',
+        '- [AgentSmith GA Release Plan v1](./engineering/agentsmith-ga-release-plan-v1.md)',
+        '  - current GA implementation plan for AgentSmith product readiness',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({ rule: 'missing-split-plan-pre-ga-reference-route' }),
+    ]);
+  });
+
+  it('keeps the docs index routed to the GA plan with split plan as pre-GA reference', () => {
+    const docsIndex = readFileSync(resolve(process.cwd(), 'docs/README.md'), 'utf8');
+
+    expect(findDocsIndexGaRoutingViolations(docsIndex)).toEqual([]);
+    expect(docsIndex).toContain(GA_RELEASE_PLAN_PATH.replace('docs/', './'));
+    expect(docsIndex).toContain(RELEASE_KIT_SPLIT_PLAN_PATH.replace('docs/', './'));
   });
 
   it('flags positive split-plan instructions to update the project constitution', () => {

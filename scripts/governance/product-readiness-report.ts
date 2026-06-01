@@ -42,6 +42,15 @@ export interface ProductReadinessReport {
   release_id: string;
   git_sha: string;
   release_contract_digest: string;
+  product_readiness_summary: {
+    path: string;
+    sha256: string;
+  };
+  campaign: {
+    root: string;
+    terminal_result_path: string;
+    terminal_result_sha256: string;
+  };
   artifact_provenance: CurrentArtifactProvenance;
 }
 
@@ -80,6 +89,14 @@ function firstNonEmptyString(...values: readonly (string | undefined)[]): string
 
 function sha256BufferDigest(value: Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function sha256FileDigest(path: string, label: string): string {
+  try {
+    return sha256BufferDigest(readFileSync(path));
+  } catch (error) {
+    throw new Error(`cannot read ${label} for sha256: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function readJsonBuffer(path: string, label: string): { raw: Buffer; value: unknown } {
@@ -211,17 +228,13 @@ function buildArtifactProvenance(input: {
   summary: ReleaseSummary;
   contract: CurrentAgentSmithReleaseContract;
   releaseContractDigest: string;
+  summaryJsonDigest: string;
+  terminalResultDigest: string;
   outputPath: string;
   env: Readonly<Record<string, string | undefined>>;
   generatedAt: string;
 }): CurrentArtifactProvenance {
-  const subject = {
-    schema: PRODUCT_READINESS_REPORT_SCHEMA_VERSION,
-    status: 'pass',
-    release_id: input.contract.release_id,
-    git_sha: input.contract.git_sha,
-    release_contract_digest: input.releaseContractDigest,
-  } satisfies Omit<ProductReadinessReport, 'artifact_provenance'>;
+  const subject = buildProductReadinessReportSubject(input);
   const subjectSha256 = sha256Digest(canonicalReleaseBoundaryJson(subject));
   const runId = firstNonEmptyString(
     input.env.GITHUB_RUN_ID,
@@ -280,17 +293,40 @@ function buildProductReadinessReport(input: {
   summary: ReleaseSummary;
   contract: CurrentAgentSmithReleaseContract;
   releaseContractDigest: string;
+  summaryJsonDigest: string;
+  terminalResultDigest: string;
   outputPath: string;
   env: Readonly<Record<string, string | undefined>>;
   generatedAt: string;
 }): ProductReadinessReport {
+  return {
+    ...buildProductReadinessReportSubject(input),
+    artifact_provenance: buildArtifactProvenance(input),
+  };
+}
+
+function buildProductReadinessReportSubject(input: {
+  summary: ReleaseSummary;
+  contract: CurrentAgentSmithReleaseContract;
+  releaseContractDigest: string;
+  summaryJsonDigest: string;
+  terminalResultDigest: string;
+}): Omit<ProductReadinessReport, 'artifact_provenance'> {
   return {
     schema: PRODUCT_READINESS_REPORT_SCHEMA_VERSION,
     status: 'pass',
     release_id: input.contract.release_id,
     git_sha: input.contract.git_sha,
     release_contract_digest: input.releaseContractDigest,
-    artifact_provenance: buildArtifactProvenance(input),
+    product_readiness_summary: {
+      path: input.summary.summary_json_path,
+      sha256: input.summaryJsonDigest,
+    },
+    campaign: {
+      root: input.summary.campaign_root,
+      terminal_result_path: input.summary.terminal_result_path,
+      terminal_result_sha256: input.terminalResultDigest,
+    },
   };
 }
 
@@ -350,11 +386,15 @@ export function writeProductReadinessReport(
   assertReleaseContractMatchesSummary(summary, contract);
 
   const releaseContractDigest = sha256BufferDigest(raw);
+  const summaryJsonDigest = sha256FileDigest(summary.summary_json_path, 'product readiness summary');
+  const terminalResultDigest = sha256FileDigest(summary.terminal_result_path, 'product readiness terminal result');
   const generatedAt = (options.now ?? (() => new Date()))().toISOString();
   const report = buildProductReadinessReport({
     summary,
     contract,
     releaseContractDigest,
+    summaryJsonDigest,
+    terminalResultDigest,
     outputPath,
     env: options.env ?? process.env,
     generatedAt,

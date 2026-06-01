@@ -13,10 +13,15 @@ import {
   type CurrentAgentSmithReleaseContract,
 } from '../current-release-boundary-schema';
 import {
+  AGENTSMITH_RELEASE_CONTRACT_PATH_ENV,
   readReleaseStatus,
   renderReleaseStatus,
   writeReleaseSummaryForCampaign,
 } from '../release-summary';
+import {
+  PRODUCT_READINESS_REPORT_FILENAME,
+  type ProductReadinessReport,
+} from '../product-readiness-report';
 import {
   createReleaseCleanupFinalizer,
 } from '../release-cleanup-finalizer';
@@ -78,6 +83,10 @@ function writeReleaseContractFixture(
 }
 
 function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function sha256Buffer(value: Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
@@ -2335,6 +2344,171 @@ exit 0
         'run release:campaign:full',
         '',
       ].join('\n'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when --release-contract is missing its path', () => {
+    const stdout: string[] = [];
+    const exitCode = runReleaseReady(['--release-contract'], {
+      stdout: { write: (chunk: string) => stdout.push(chunk) },
+      gitCleanGuard: () => {
+        throw new Error('git guard should not run when release contract input is malformed');
+      },
+      ownerPreflight: passingOwnerPreflight,
+      sentinelRunner: () => passingSentinelResult(),
+      createCleanupFinalizer: null,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.join('')).toContain('Blocker: release_contract_input');
+    expect(stdout.join('')).toContain('missing value for --release-contract');
+    expect(stdout.join('')).toContain('no campaign evidence was produced');
+  });
+
+  it('passes an explicit release contract into the campaign and writes the handoff report', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-ready-contract-report-'));
+    const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');
+    const stdout: string[] = [];
+    const campaignArgs: string[][] = [];
+    const campaignReleaseContracts: Array<string | undefined> = [];
+    try {
+      writeReleaseContractFixture(contractPath);
+
+      const exitCode = runReleaseReady(['--release-contract', contractPath, '--dry-run'], {
+        stdout: { write: (chunk: string) => stdout.push(chunk) },
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_ROOT: root,
+        },
+        gitCleanGuard: () => ({
+          ok: true,
+          headSha: VALID_TEST_GIT_SHA,
+        }),
+        runNpmScript: (script, args, env) => {
+          if (script === 'test:release:precheck') {
+            writePrecheckSummaryForEnv(env);
+          }
+          if (script === 'release:campaign:full') {
+            campaignArgs.push([...args]);
+            campaignReleaseContracts.push(env[AGENTSMITH_RELEASE_CONTRACT_PATH_ENV]);
+            const releaseContractPath = env[AGENTSMITH_RELEASE_CONTRACT_PATH_ENV];
+            if (!releaseContractPath) {
+              throw new Error('expected release contract path in campaign env');
+            }
+            writeTerminalResult(root);
+            writeReleaseSummaryForCampaign({
+              campaignRoot: root,
+              writeLatest: false,
+              releaseContractPath,
+              resolveGitSha: () => VALID_TEST_GIT_SHA,
+            });
+          }
+          return { status: 0, signal: null };
+        },
+        sentinelRunner: () => passingSentinelResult(),
+        ownerPreflight: passingOwnerPreflight,
+        createCleanupFinalizer: null,
+      });
+
+      const reportPath = join(root, 'product-readiness', PRODUCT_READINESS_REPORT_FILENAME);
+      const summaryPath = join(root, 'summary.json');
+      const terminalResultPath = join(root, 'gate-release-full', 'result.json');
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as {
+        release_contract?: { path: string; digest: string };
+      };
+      const report = JSON.parse(readFileSync(reportPath, 'utf8')) as ProductReadinessReport;
+
+      expect(exitCode).toBe(0);
+      expect(campaignArgs).toEqual([['--dry-run']]);
+      expect(campaignReleaseContracts).toEqual([contractPath]);
+      expect(summary.release_contract?.path).toBe(contractPath);
+      expect(report.release_contract_digest).toBe(sha256Buffer(readFileSync(contractPath)));
+      expect(report.product_readiness_summary).toEqual({
+        path: summaryPath,
+        sha256: sha256Buffer(readFileSync(summaryPath)),
+      });
+      expect(report.campaign).toEqual({
+        root,
+        terminal_result_path: terminalResultPath,
+        terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
+      });
+      expect(stdout.join('')).toContain(`Product readiness report: ${reportPath}`);
+      expect(stdout.join('')).toContain(`Release contract digest: ${report.release_contract_digest}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('binds release aggregate summary to a CLI release contract without passing it to the gate', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-aggregate-contract-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-release-aggregate-bin-'));
+    const logPath = join(root, 'npm.log');
+    const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');
+    try {
+      writeReleaseContractFixture(contractPath);
+      const npmPath = join(fakeBin, 'npm');
+      writeFileSync(npmPath, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|contract=%s\\n' "$*" "\${AGENTSMITH_RELEASE_CONTRACT_PATH:-}" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  mkdir -p "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full"
+  cat > "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json" <<JSON
+{
+  "schema_version": "${CURRENT_GATE_RESULT_SCHEMA_VERSION}",
+  "gate_id": "gate-release-full",
+  "gate_adapter": { "npm_script": "gate:release:full", "ci_job": null },
+  "status": "passed",
+  "failure_class": "none",
+  "stage": "aggregate",
+  "line_kind": "release_full_verdict",
+  "evidence_dir": "\${RELEASE_CAMPAIGN_ROOT}/gate-release-full",
+  "summary": "Release aggregate passed.",
+  "generated_at": "2026-04-25T12:00:00.000Z"
+}
+JSON
+  exit 0
+fi
+exit 1
+`);
+      chmodSync(npmPath, 0o755);
+      const gitPath = join(fakeBin, 'git');
+      writeFileSync(gitPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[ "$1" == "rev-parse" ]]; then',
+        `  printf '%s\\n' "${VALID_TEST_GIT_SHA}"`,
+        '  exit 0',
+        'fi',
+        'exit 1',
+        '',
+      ].join('\n'));
+      chmodSync(gitPath, 0o755);
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-release-aggregate.ts',
+        '--campaign-root',
+        root,
+        '--release-contract',
+        contractPath,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(readFileSync(logPath, 'utf8')).toBe(`run gate:release:full|contract=${contractPath}\n`);
+      const summary = JSON.parse(readFileSync(join(root, 'summary.json'), 'utf8')) as {
+        release_contract?: { path: string; digest: string };
+      };
+      expect(summary.release_contract?.path).toBe(contractPath);
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

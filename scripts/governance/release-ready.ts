@@ -3,9 +3,13 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
+  AGENTSMITH_RELEASE_CONTRACT_PATH_ENV,
   readReleaseStatus,
   renderReleaseStatus,
 } from './release-summary';
+import {
+  writeProductReadinessReport,
+} from './product-readiness-report';
 import { PRODUCT_READY_COMMAND } from './product-readiness-entrypoints';
 import {
   assertSafeReleaseCampaignRunId,
@@ -106,6 +110,11 @@ type ReleasePrecheckIntegrationDepsIdentity = Record<
   string
 >;
 
+type ReleaseReadyCliArgs = {
+  passthrough: string[];
+  releaseContractPath?: string;
+};
+
 type ReleasePrecheckSummaryResult =
   | {
     ok: true;
@@ -189,6 +198,49 @@ function runGitCommand(cwd: string, args: readonly string[]): {
 
 function firstLine(value: string): string {
   return value.trim().split(/\r?\n/u)[0]?.trim() ?? '';
+}
+
+function firstNonEmptyString(...values: readonly (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function requireArgValue(argv: readonly string[], index: number): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`missing value for ${argv[index]}.`);
+  }
+  return value;
+}
+
+function parseReleaseReadyArgs(argv: readonly string[]): ReleaseReadyCliArgs {
+  const passthrough: string[] = [];
+  let releaseContractPath: string | undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--release-contract') {
+      releaseContractPath = requireArgValue(argv, index);
+      index += 1;
+    } else if (arg.startsWith('--release-contract=')) {
+      const value = arg.slice('--release-contract='.length).trim();
+      if (!value) {
+        throw new Error('missing value for --release-contract.');
+      }
+      releaseContractPath = value;
+    } else {
+      passthrough.push(arg);
+    }
+  }
+
+  return {
+    passthrough,
+    ...(releaseContractPath ? { releaseContractPath } : {}),
+  };
 }
 
 function parsePrecheckOperation(value: unknown, fieldPath: string): {
@@ -416,6 +468,19 @@ export function runReleaseReady(
     ? defaultCreateCleanupFinalizer
     : dependencies.createCleanupFinalizer;
   const defaultRunId = timestampRunId();
+  let parsedArgs: ReleaseReadyCliArgs;
+  try {
+    parsedArgs = parseReleaseReadyArgs(argv);
+  } catch (error) {
+    stdout.write(renderNotStarted({
+      blocker: 'release_contract_input',
+      stage: 'preflight',
+      why: error instanceof Error ? error.message : String(error),
+      next: `pass --release-contract <agentsmith-release-contract.json>, then run: ${PRODUCT_READY_COMMAND}`,
+      logs: 'no campaign evidence was produced.',
+    }));
+    return 1;
+  }
 
   const gitGuard = gitCleanGuard(cwd, env);
   if (!gitGuard.ok) {
@@ -433,16 +498,26 @@ export function runReleaseReady(
     ...env,
     AGENTSMITH_RELEASE_READY_GIT_SHA: gitGuard.headSha,
   };
-  const preflightEnv = guardedEnv.RELEASE_CAMPAIGN_RUN_ID === undefined
-    ? { ...guardedEnv, RELEASE_CAMPAIGN_RUN_ID: defaultRunId }
+  const releaseContractPath = firstNonEmptyString(
+    parsedArgs.releaseContractPath,
+    guardedEnv[AGENTSMITH_RELEASE_CONTRACT_PATH_ENV],
+  );
+  const campaignInputEnv = releaseContractPath
+    ? {
+      ...guardedEnv,
+      [AGENTSMITH_RELEASE_CONTRACT_PATH_ENV]: releaseContractPath,
+    }
     : guardedEnv;
+  const preflightEnv = campaignInputEnv.RELEASE_CAMPAIGN_RUN_ID === undefined
+    ? { ...campaignInputEnv, RELEASE_CAMPAIGN_RUN_ID: defaultRunId }
+    : campaignInputEnv;
 
   const ownerPreflightEvidencePath = defaultResourceOwnerPreflightEvidencePath({
     target: 'release-ready',
     env: preflightEnv,
     cwd,
   });
-  const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath, guardedEnv, cwd);
+  const ownerPreflightResult = ownerPreflight(ownerPreflightEvidencePath, campaignInputEnv, cwd);
   if (!ownerPreflightResult.ok) {
     stdout.write(renderResourceOwnerPreflightSummary(ownerPreflightResult, {
       title: 'AgentSmith Product Readiness',
@@ -453,7 +528,7 @@ export function runReleaseReady(
 
   let campaignContext: ReturnType<typeof resolveReleaseReadyCampaignContext>;
   try {
-    campaignContext = resolveReleaseReadyCampaignContext(guardedEnv, defaultRunId);
+    campaignContext = resolveReleaseReadyCampaignContext(campaignInputEnv, defaultRunId);
   } catch (error) {
     stdout.write(renderNotStarted({
       blocker: 'release_campaign_context',
@@ -465,7 +540,7 @@ export function runReleaseReady(
     return 1;
   }
   const campaignBaseEnv = {
-    ...guardedEnv,
+    ...campaignInputEnv,
     RELEASE_CAMPAIGN_RUN_ID: campaignContext.runId,
     RELEASE_CAMPAIGN_ROOT: campaignContext.campaignRoot,
   };
@@ -584,13 +659,33 @@ export function runReleaseReady(
       }),
     };
 
-    const campaign = runNpmScript('release:campaign:full', argv, campaignEnv);
+    const campaign = runNpmScript('release:campaign:full', parsedArgs.passthrough, campaignEnv);
 
     const status = readReleaseStatus({ campaignRoot: campaignContext.campaignRoot });
     const statusExitCode = status.kind === 'ready' ? 0 : 1;
     stdout.write(renderReleaseStatus(status).replace('AgentSmith Product Readiness Status', 'AgentSmith Product Readiness'));
     const campaignExitCode = typeof campaign.status === 'number' ? campaign.status : 1;
     exitCode = campaignExitCode === 0 ? statusExitCode : campaignExitCode;
+    if (
+      exitCode === 0
+      && status.kind === 'ready'
+      && status.summary.status === 'passed'
+      && status.summary.product_readiness_verdict === 'PASSED'
+      && (status.summary.release_contract || releaseContractPath)
+    ) {
+      try {
+        const report = writeProductReadinessReport({
+          campaignRoot: campaignContext.campaignRoot,
+          ...(releaseContractPath ? { releaseContractPath } : {}),
+          env: campaignEnv,
+        });
+        stdout.write(`Product readiness report: ${report.outputPath}\n`);
+        stdout.write(`Release contract digest: ${report.releaseContractDigest}\n`);
+      } catch (error) {
+        stdout.write(`Product readiness report failed: ${error instanceof Error ? error.message : String(error)}\n`);
+        exitCode = 1;
+      }
+    }
     return exitCode;
   } finally {
     signalCleanupDisposer?.();

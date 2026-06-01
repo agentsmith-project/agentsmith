@@ -603,12 +603,13 @@ npm run product:status
 Machine-readable Reports / Maintainer Troubleshooting Notes:
 
 1. 机器可读报告语境：`npm run product:ready` is the human-friendly AgentSmith product-side readiness / local complete / contract and handoff input gate. It runs the non-verdict precheck first, then delegates to internal campaign adapters for `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, and the aggregate readiness check. It does not execute or require unified deploy/local-kind/existing-cluster/product-flow deploy evidence, and it is not a deployment/package/operator verdict.
-2. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
-3. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run product:ready`.
-4. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY`.
-5. Unified deploy diagnostic roots are transition-only focused diagnostics / 过渡期专项诊断；when run directly, they derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
-6. 机器可读报告语境：Post-deploy product smoke handoff uses the product-flow lane (`lane:unified-deploy:product-flows`) as an AgentSmith-owned producer for release-kit `--ga-release`, not as a `product:ready` / release-full step. Configure the downloaded release contract with `UNIFIED_DEPLOY_RELEASE_CONTRACT` or `AGENTSMITH_RELEASE_CONTRACT_PATH`, the target site env with `UNIFIED_DEPLOY_RELEASE_SITE_ENV`, and the output root with `UNIFIED_DEPLOY_RELEASE_ROOT_DIR`.
-7. The final human output is a short evidence summary. Keep raw logs for diagnosis, but do not treat common setup warnings such as NO_COLOR, Postgres already exists, or containerd deprecation as blockers unless the referenced evidence names them.
+2. GA handoff with release-kit: pass the downloaded release contract with `npm run product:ready -- --release-contract <agentsmith-release-contract.json>` or `AGENTSMITH_RELEASE_CONTRACT_PATH=<agentsmith-release-contract.json> npm run product:ready`; a passed campaign writes `<campaign-root>/product-readiness/product-readiness-report.json`.
+3. 维护者排障语境：`gate:release:full` is aggregate-only. Treat it as an internal verifier for an explicit campaign context, not as a copyable release command.
+4. When diagnosing a failed campaign, rerun the owning evidence adapter from the owner runbook or manifest, then return to `npm run product:ready`.
+5. Real-backend Agent task verification requires `PRESET_ENDPOINT_API_KEY`.
+6. Unified deploy diagnostic roots are transition-only focused diagnostics / 过渡期专项诊断；when run directly, they derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
+7. 机器可读报告语境：Post-deploy product smoke handoff uses the product-flow lane (`lane:unified-deploy:product-flows`) as an AgentSmith-owned producer for release-kit `--ga-release`, not as a `product:ready` / release-full step. Configure the downloaded release contract with `UNIFIED_DEPLOY_RELEASE_CONTRACT` or `AGENTSMITH_RELEASE_CONTRACT_PATH`, the target site env with `UNIFIED_DEPLOY_RELEASE_SITE_ENV`, and the output root with `UNIFIED_DEPLOY_RELEASE_ROOT_DIR`.
+8. The final human output is a short evidence summary. Keep raw logs for diagnosis, but do not treat common setup warnings such as NO_COLOR, Postgres already exists, or containerd deprecation as blockers unless the referenced evidence names them.
 
 ## Test & Evidence Directory Contract
 

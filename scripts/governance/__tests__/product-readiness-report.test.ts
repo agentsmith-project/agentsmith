@@ -155,13 +155,35 @@ describe('product readiness report producer', () => {
       expect(existsSync(defaultOutputPath)).toBe(true);
 
       const report = readJson<ProductReadinessReport>(defaultOutputPath);
+      const summaryPath = join(root, 'summary.json');
+      const terminalResultPath = join(root, 'gate-release-full', 'result.json');
+      const reportSubject: Omit<ProductReadinessReport, 'artifact_provenance'> = {
+        schema: report.schema,
+        status: report.status,
+        release_id: report.release_id,
+        git_sha: report.git_sha,
+        release_contract_digest: report.release_contract_digest,
+        product_readiness_summary: report.product_readiness_summary,
+        campaign: report.campaign,
+      };
       expect(report).toMatchObject({
         schema: PRODUCT_READINESS_REPORT_SCHEMA_VERSION,
         status: 'pass',
         release_id: contract.release_id,
         git_sha: contract.git_sha,
         release_contract_digest: rawContractDigest,
+        product_readiness_summary: {
+          path: summaryPath,
+          sha256: sha256Buffer(readFileSync(summaryPath)),
+        },
+        campaign: {
+          root,
+          terminal_result_path: terminalResultPath,
+          terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
+        },
       });
+      expect(report.artifact_provenance.subject_sha256)
+        .toBe(sha256Text(canonicalReleaseBoundaryJson(reportSubject)));
       expect(report.release_contract_digest).not.toBe(
         (contract.artifact_provenance as Record<string, unknown>).artifact_sha256,
       );

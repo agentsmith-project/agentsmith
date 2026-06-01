@@ -354,23 +354,27 @@ The pre-GA `existing-cluster` smoke producer proves diagnostic routing and
 rollout ownership only. It is not a formal release target and is not sufficient
 product verification.
 
-The current deploy diagnostic product proof is passed only when focused evidence
-exists for these required flows:
+The current deploy diagnostic product proof is passed only when focused
+evidence exists for the canonical seven-flow deployed product smoke matrix. It
+remains a transition-only focused diagnostic and is not a formal release,
+deploy, package, or operator verdict.
 
 | Product flow | Required evidence input |
 | --- | --- |
+| login/profile | Authenticated login/profile backend-real or e2e evidence |
 | workspace/project | Workspace/project backend-real or e2e evidence |
+| Chat via llmup | Chat backend-real evidence proving API -> llmup -> provider path |
 | Agent task managed runner | Managed runner Agent task backend-real evidence |
 | Files | Object storage and file-library backend-real evidence |
+| audit | Audit evidence tied to deploy/product actions |
+| usage | Usage evidence tied to deploy/product actions |
 
 The product-flow aggregate must also bind each required flow to its focused
 evidence file through `flow_evidence_paths`; counting arbitrary JSON files is
 not deploy diagnostic evidence.
 
-`login/profile`, Chat via llmup, audit, and usage remain product diagnostics
-covered by their own verification surfaces. They are not part of the current
-minimal unified deploy diagnostic proof unless the deployment diagnostic scope
-explicitly changes the required product-flow set.
+These flows are deploy diagnostic product smoke evidence only. They do not make
+unified deploy a product readiness entrypoint or release target.
 
 ## Out Of Scope
 

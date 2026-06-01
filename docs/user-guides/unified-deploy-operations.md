@@ -105,25 +105,26 @@ npm run test:unified-deploy:local-kind
 
 ### Focused Product Proof
 
-For the minimal app behavior proof, run only project setup, file library, and managed runner task:
+For the canonical post-deploy product smoke matrix, let the producer use its default flow list:
 
 ```bash
 npm run test:unified-deploy:product-flows -- \
-  --flow=workspace_project \
-  --flow=files \
-  --flow=agent_task_managed_runner \
   --agent-task-polls=30 \
   --agent-task-poll-interval-ms=2000
 ```
 
 This proves:
 
+- login/profile access;
 - a project can be created;
+- Chat can run through llmup;
+- a managed runner task can complete through the selected endpoint;
 - a file library can become ready;
 - a file can be uploaded, listed, and downloaded;
-- a managed runner task can complete through the selected endpoint.
+- audit evidence is visible for key actions;
+- usage evidence is visible for key actions.
 
-It does not run chat, audit, usage, or full release verification.
+It does not run full release verification.
 
 ### Existing Cluster Smoke
 

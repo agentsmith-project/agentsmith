@@ -4,6 +4,10 @@ import { isAbsolute, resolve } from 'node:path';
 
 import { AGENT_TASK_RUNNER_SPEC } from '@mbos/agent-runner-contract';
 import { findCurrentGateDefinitionById } from './current-gate-manifest';
+import {
+  PRODUCT_VERIFICATION_FLOW_IDS,
+  type ProductVerificationFlowId,
+} from '../unified-deploy/check-verification-report';
 
 export const CURRENT_RELEASE_BOUNDARY_SCHEMA_VERSION = 'agentsmith.current-release-boundary/v1' as const;
 export const CURRENT_RELEASE_CONTRACT_SCHEMA_VERSION = 'agentsmith.release-contract/v1' as const;
@@ -29,11 +33,8 @@ export const RUNNER_CANONICAL_REPO = 'github.com/agentsmith-project/agentsmith-r
 export const FORBIDDEN_RUNNER_REPO = 'github.com/agentsmith-project/agentsmith-codex-runner' as const;
 export const CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID = 'managed_runner' as const;
 
-export const CURRENT_REQUIRED_PRODUCT_FLOWS = [
-  'workspace_project',
-  'files',
-  'agent_task_managed_runner',
-] as const;
+export const CURRENT_REQUIRED_PRODUCT_FLOWS: readonly ProductVerificationFlowId[] =
+  PRODUCT_VERIFICATION_FLOW_IDS;
 
 export const CURRENT_DEPLOYMENT_TARGET_CLUSTERS = [
   'existing_kubernetes',

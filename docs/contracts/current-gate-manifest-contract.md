@@ -99,7 +99,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke
-- focused product-flow evidence proves project, files, and managed runner task behavior after rollout
+- focused product-flow evidence proves the canonical seven-flow product smoke matrix after rollout
 - existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the release campaign
 
 7. `gate:release:full`

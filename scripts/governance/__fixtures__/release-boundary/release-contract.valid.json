@@ -122,9 +122,13 @@
   "openapi_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
   "asyncapi_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
   "required_product_flows": [
+    "login_profile",
     "workspace_project",
+    "chat_via_llmup",
+    "agent_task_managed_runner",
     "files",
-    "agent_task_managed_runner"
+    "audit",
+    "usage"
   ],
   "target_profiles": [
     {
@@ -197,14 +201,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:4169cca114e22f4251ebd74f7e41639d708234416adb9c9ce630c2463bde1ad9",
+    "subject_sha256": "sha256:45856de56a47dfd6db7ac28fe0267c01cdce6a8cf5b0792f1e4262f75c089c2f",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:8717c9f70f6d5fd64f3ace888ab3086b90484dff03d4348528fe8bf9d94b51b9",
+    "artifact_sha256": "sha256:3d5d9a069a61a9d7b2784bc4a7cd5128a7394d116b1660519cf9cea3acc0de44",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

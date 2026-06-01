@@ -20,6 +20,7 @@ import {
   CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
   type CurrentGateEvidenceArtifact,
 } from '../current-gate-manifest';
+import { PRODUCT_VERIFICATION_FLOW_IDS } from '../../unified-deploy/check-verification-report';
 import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignEvidenceCheck,
@@ -75,8 +76,6 @@ type AggregateFixtureEvidenceKind =
   | 'visual_baseline_automated_passes'
   | 'visual_baseline_reviews'
   | 'visual_run_manifest';
-
-const REQUIRED_RELEASE_PRODUCT_FLOWS = ['workspace_project', 'files', 'agent_task_managed_runner'] as const;
 
 function getReleaseFullCampaign() {
   const campaign = findCurrentVerificationCampaignById('release-full');
@@ -920,7 +919,7 @@ describe('release-full aggregate gate', () => {
         && Array.isArray(artifact.expectedProductFlows),
     );
 
-    expect(productFlowEvidence?.expectedProductFlows).toEqual(REQUIRED_RELEASE_PRODUCT_FLOWS);
+    expect(productFlowEvidence?.expectedProductFlows).toEqual(PRODUCT_VERIFICATION_FLOW_IDS);
   });
 
   it('rejects unsafe release campaign run id shapes', () => {

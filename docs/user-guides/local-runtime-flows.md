@@ -48,7 +48,7 @@ make local-real-down
 npx tsx scripts/unified-deploy/substrate-lifecycle.ts reset
 npm run test:unified-deploy:local-kind:images
 npm run test:unified-deploy:local-kind
-npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner
+npm run test:unified-deploy:product-flows
 ```
 
 统一部署证据统一写到 `artifacts/unified-deploy/`；这些证据只服务 pre-GA/local deploy diagnostic / wiring rehearsal，不给 deployment/package/operator verdict。

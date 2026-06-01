@@ -72,7 +72,7 @@ npm run test:unified-deploy:existing-cluster-smoke -- --site-env=<existing-clust
 | status reader | `npm run product:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
 | transition-only deploy diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:local-kind:images` + `npm run test:unified-deploy:local-kind` | 本机 K8s profile 镜像 handoff、rollout、ingress route smoke；不属于 AgentSmith product readiness 必需证据 |
 | transition-only deploy smoke diagnostic / 过渡期专项诊断 | 维护者诊断：`npm run test:unified-deploy:existing-cluster-smoke` | 目标集群在 scope 内时显式执行 existing-cluster profile deploy、rollout、routing smoke；不属于 AgentSmith product readiness 必需证据 |
-| transition-only product-flow deploy diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的最小产品链诊断：project、files、managed runner task；不属于 AgentSmith product readiness 必需证据 |
+| transition-only product-flow deploy diagnostic / 过渡期专项诊断 | 维护者诊断：focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 canonical seven-flow deployed product smoke matrix；不属于 AgentSmith product readiness 必需证据 |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |

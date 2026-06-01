@@ -10,6 +10,7 @@ import {
   findCurrentGateDefinitionById,
   listCurrentGateDefinitionsByKind,
 } from '../current-gate-manifest';
+import { PRODUCT_VERIFICATION_FLOW_IDS } from '../../unified-deploy/check-verification-report';
 
 describe('current gate governance', () => {
   it('keeps current gate definitions structurally complete and uniquely keyed', () => {
@@ -113,6 +114,19 @@ describe('current gate governance', () => {
       expect(lane?.description).toMatch(/transition-only focused diagnostic/i);
       expect(lane?.description).not.toMatch(/legacy focused diagnostic/i);
     }
+  });
+
+  it('keeps unified deploy product-flow evidence aligned to the canonical seven-flow matrix', () => {
+    const productFlowEvidence = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.unifiedDeployProductFlows.find(
+      (artifact) => artifact.id === 'unified_deploy_product_flow_evidence',
+    );
+    const releaseProductFlowsScript = readFileSync('scripts/unified-deploy/release-product-flows.sh', 'utf8');
+
+    expect(productFlowEvidence?.expectedProductFlows).toEqual(PRODUCT_VERIFICATION_FLOW_IDS);
+    expect(releaseProductFlowsScript).toContain('npm run test:unified-deploy:product-flows --');
+    expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
+    expect(releaseProductFlowsScript).toContain('--agent-task-polls=');
+    expect(releaseProductFlowsScript).toContain('--agent-task-poll-interval-ms=');
   });
 
   it('models lane:mock as a canonical lane object with adapter alias support', () => {

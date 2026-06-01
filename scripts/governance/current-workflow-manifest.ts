@@ -588,7 +588,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'lane:unified-deploy:product-flows',
     gateId: 'lane-unified-deploy-product-flows',
     workflowRole: 'diagnostic_lane',
-    whenToUse: '需要定位 transition-only deployed project / files / managed runner product-flow 诊断。',
+    whenToUse: '需要定位 transition-only deployed product smoke matrix 诊断。',
     nextStep: '修复产品链路后重跑该 diagnostic；AgentSmith product-side readiness / handoff input completeness 仍使用 `npm run product:ready`。',
   },
   {
@@ -1312,8 +1312,8 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         npmScript: 'test:unified-deploy:local-kind',
       },
       {
-        command: 'npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner',
-        description: 'owner diagnostic: run the focused deployed product proof for project, files, and managed runner task',
+        command: 'npm run test:unified-deploy:product-flows',
+        description: 'owner diagnostic: run the canonical seven-flow deployed product smoke matrix',
         canonical: 'npm',
         npmScript: 'test:unified-deploy:product-flows',
       },

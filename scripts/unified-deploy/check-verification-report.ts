@@ -72,6 +72,9 @@ export const PRODUCT_VERIFICATION_FLOWS: Array<{
   },
 ];
 
+export const PRODUCT_VERIFICATION_FLOW_IDS: readonly ProductVerificationFlowId[] =
+  PRODUCT_VERIFICATION_FLOWS.map((flow) => flow.id);
+
 type ProductEvidenceInput = Partial<Record<ProductVerificationFlowId, string>>;
 
 type ProductFlowEvidence = {

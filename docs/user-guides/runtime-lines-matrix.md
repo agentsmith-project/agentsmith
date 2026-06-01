@@ -33,8 +33,8 @@ AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再
 | 运行线 | 当前入口命名 | 主要用途 | App runtime | substrate | 备注 |
 |-------|-------------|---------|-------------|----------|------|
 | 本地真实开发线 | `local-manual` | Daily development, real-backend manual validation, and focused Agent task / Files checks through the local-real entrypoint. | Host API/Web/runner processes. | Local Docker development substrate. | local-real is the product-facing developer path; local-manual is the adapter identity and runtime evidence root. |
-| 统一部署本机 diagnostic entry | `unified-deploy local-kind` | Local Kubernetes diagnostic rehearsal on a developer machine. | Kubernetes workloads in local kind. | Docker substrate registered into Kubernetes Services and EndpointSlices. | Transition-only focused diagnostic; not a release target. Use focused product flows after rollout to prove Files and managed runner behavior. |
-| 统一部署既有集群 diagnostic entry | `unified-deploy existing-cluster` | Transition-only app/route wiring smoke against an operator-owned Kubernetes cluster and declared external substrate truth. | Kubernetes workloads in an operator-owned cluster. | Operator-provided external substrate truth. | Not formal online/airgap evidence and not an AgentSmith product gate. Route smoke proves deploy wiring; focused product flows still prove Files and managed runner behavior. |
+| 统一部署本机 diagnostic entry | `unified-deploy local-kind` | Local Kubernetes diagnostic rehearsal on a developer machine. | Kubernetes workloads in local kind. | Docker substrate registered into Kubernetes Services and EndpointSlices. | Transition-only focused diagnostic; not a release target or operator verdict. Use focused product flows after rollout for the canonical deployed product smoke matrix. |
+| 统一部署既有集群 diagnostic entry | `unified-deploy existing-cluster` | Transition-only app/route wiring smoke against an operator-owned Kubernetes cluster and declared external substrate truth. | Kubernetes workloads in an operator-owned cluster. | Operator-provided external substrate truth. | Not formal online/airgap evidence, not an AgentSmith product gate, and not an operator verdict. Route smoke proves deploy wiring; focused product flows still prove the canonical deployed product smoke matrix. |
 
 ## 当前证据路径
 
@@ -46,5 +46,6 @@ AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再
 
 Use `local-real` to develop and manually test. Use unified deploy diagnostic
 entries for local/wiring diagnostics only. Formal release targets live in the
-release-kit four-quadrant model; focused product flows prove file library and
-managed runner task behavior without running a heavy release campaign.
+release-kit four-quadrant model; focused product flows prove the canonical
+deployed product smoke matrix without creating product readiness, release
+target, or operator verdict.

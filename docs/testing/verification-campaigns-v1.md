@@ -198,7 +198,7 @@ local-kind / product-flow deploy evidence 作为 product readiness 必需证据�
 | read-only status | `npm run product:status` | 读取 latest summary / status，不重新聚合 evidence |
 | deploy diagnostic | unified deploy producers | transition-only focused diagnostics / 过渡期专项诊断 for local-kind image handoff、K8s rollout、ingress route smoke；不属于当前 AgentSmith product readiness 必需证据 |
 | deploy smoke diagnostic | `npm run test:unified-deploy:existing-cluster-smoke` | target cluster in scope 时显式执行 existing-cluster app apply、rollout、route ownership smoke |
-| product diagnostic | focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 project、files、managed runner task 最小诊断；不属于当前 AgentSmith product readiness 必需证据 |
+| product diagnostic | focused `npm run test:unified-deploy:product-flows` | deploy profile 上的 canonical seven-flow deployed product smoke matrix；仍是 transition-only focused diagnostic，不属于当前 AgentSmith product readiness 必需证据 |
 | campaign launcher | internal adapter `release:campaign:full` | official campaign launcher，编排所有 required steps 并调用 aggregate readiness check |
 | preflight | internal adapter `gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程层是否可接受 |

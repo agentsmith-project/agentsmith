@@ -655,12 +655,15 @@ describe('current workflow governance', () => {
       'test:unified-deploy:local-kind',
       'test:unified-deploy:product-flows',
     ].map((npmScript) => commands.find((command) => command.npmScript === npmScript));
+    const productFlowsHumanCheck = commands.find(
+      (command) => command.npmScript === 'test:unified-deploy:product-flows',
+    );
 
     expect(releaseEntry?.startCommands).toContain('npm run product:ready');
     expect(releaseEntry?.startCommands).toContain('npm run product:status');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind:images');
     expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:local-kind');
-    expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:product-flows -- --flow=workspace_project --flow=files --flow=agent_task_managed_runner');
+    expect(releaseEntry?.startCommands).not.toContain('npm run test:unified-deploy:product-flows');
     expect(releaseEntry?.startCommands).not.toContain('npm run release:aggregate -- --campaign-root=<campaign-root>');
     expect(releaseEntry?.startCommands).not.toContain(DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND);
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
@@ -704,6 +707,9 @@ describe('current workflow governance', () => {
     expect(unifiedDeployHumanChecks.every((check) => check?.recommended !== true)).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.quickHuman !== true)).toBe(true);
     expect(unifiedDeployHumanChecks.every((check) => check?.gateId === undefined)).toBe(true);
+    expect(productFlowsHumanCheck?.command).toBe('npm run test:unified-deploy:product-flows');
+    expect(productFlowsHumanCheck?.command).not.toContain('--flow=');
+    expect(productFlowsHumanCheck?.description).toMatch(/canonical seven-flow deployed product smoke matrix/i);
   });
 
   it('keeps internal adapters out of generated human workflow blocks', () => {

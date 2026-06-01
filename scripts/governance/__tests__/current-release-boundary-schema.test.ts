@@ -1243,11 +1243,12 @@ describe('current release boundary schema', () => {
     expect(validateSubstrateConnectionTruth(withoutProbeRefs).ok).toBe(true);
 
     const invalidProbeRefs = cloneFixture('substrate-connection.external-declared.valid.json');
-    invalidProbeRefs.product_flow_probe_secret_refs = {
-      workspace_project: 'secretRef:agentsmith/probe-workspace-project',
-      files: 'plain-probe-secret',
-      agent_task_managed_runner: 'secretRef:agentsmith/probe-agent-task',
-    };
+    invalidProbeRefs.product_flow_probe_secret_refs = Object.fromEntries(
+      CURRENT_REQUIRED_PRODUCT_FLOWS.map((flow) => [
+        flow,
+        flow === 'files' ? 'plain-probe-secret' : `secretRef:agentsmith/probe-${flow.replaceAll('_', '-')}`,
+      ]),
+    );
     expectInvalid(
       validateSubstrateConnectionTruth(invalidProbeRefs),
       'credential values must be persisted as secret refs only',

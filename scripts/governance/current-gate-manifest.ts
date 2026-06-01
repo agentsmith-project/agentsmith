@@ -1,3 +1,5 @@
+import { PRODUCT_VERIFICATION_FLOW_IDS } from '../unified-deploy/check-verification-report';
+
 export const CURRENT_GATE_DOCUMENT_FILES = [
   'docs/current-engineering-governance-model.md',
   'docs/contracts/current-gate-manifest-contract.md',
@@ -367,7 +369,7 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       expectedSchemaVersion: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
       expectedProducer: 'unified-deploy-product-flows',
       expectedStatus: 'passed',
-      expectedProductFlows: ['workspace_project', 'files', 'agent_task_managed_runner'],
+      expectedProductFlows: PRODUCT_VERIFICATION_FLOW_IDS,
     },
   ],
 } as const satisfies Record<string, readonly CurrentGateEvidenceArtifact[]>;
@@ -617,7 +619,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     npmScript: 'lane:unified-deploy:product-flows',
     command: 'bash scripts/unified-deploy/release-product-flows.sh',
     executionTargets: [shellScriptTarget('scripts/unified-deploy/release-product-flows.sh')],
-    description: 'transition-only focused diagnostic for deployed project, files, and managed runner task flows',
+    description: 'transition-only focused diagnostic for the canonical deployed product smoke matrix',
     kind: 'lane',
     visualPolicy: 'none',
     backendRealPolicy: 'none',

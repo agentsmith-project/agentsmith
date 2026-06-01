@@ -154,6 +154,24 @@ During release adoption, compare the ASBCP GitHub Release asset
 release URL tag, and commit SHA must match. ASBCP API contract version truth
 lives in that manifest, not in the AgentSmith lock.
 
+Formal CI evidence is produced by the Release Contract Artifact workflow. That
+workflow reads `infra/deploy/shared/asbcp-image.lock`, resolves the pinned ASBCP
+GitHub release, downloads the release asset `asbcp-final-manifest.json`,
+compares the GitHub asset digest with the downloaded file SHA256 when GitHub
+provides one, runs the explicit ASBCP adoption checker against the downloaded
+manifest, and uploads
+`asbcp-final-manifest-source.json` as a source receipt beside the release
+contract artifact. The receipt records release/asset metadata, downloaded
+SHA256, and checker result; the full ASBCP final manifest is not embedded in the
+AgentSmith release contract schema.
+
+Default `npm run contracts:check` remains network-free. It runs only
+`npm run contracts:check-asbcp-image-only` for ASBCP lock shape and terminology
+guarding; it does not call GitHub and does not prove final manifest adoption.
+Offline or airgap adoption must use a predownloaded
+`asbcp-final-manifest.json` with the explicit adoption checker command below, or
+consume the CI-produced source receipt.
+
 Lock update/adoption procedure:
 
 - Download the target release asset `asbcp-final-manifest.json`.

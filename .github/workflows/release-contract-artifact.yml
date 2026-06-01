@@ -133,6 +133,141 @@ jobs:
           writeFileSync(path.join(gateDir, 'remote-manifest-path.txt'), `${matches[0]}\n`);
           NODE
 
+      - name: Gate ASBCP final manifest source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          asbcp_lock_path="infra/deploy/shared/asbcp-image.lock"
+          asbcp_repo="agentsmith-project/agentsmith-sandbox-control-plane"
+          asbcp_asset_name="asbcp-final-manifest.json"
+          asbcp_gate_dir="artifacts/release-contract/asbcp-final-manifest-source-gate"
+          asbcp_manifest_path="${asbcp_gate_dir}/${asbcp_asset_name}"
+          mkdir -p "${asbcp_gate_dir}"
+          rm -f "${asbcp_manifest_path}"
+
+          npm run contracts:check-asbcp-image-only
+
+          export ASBCP_IMAGE_LOCK_PATH="${asbcp_lock_path}"
+          export ASBCP_RELEASE_TAG_PATH="${asbcp_gate_dir}/release-tag.txt"
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const lockPath = process.env.ASBCP_IMAGE_LOCK_PATH;
+          const releaseTagPath = process.env.ASBCP_RELEASE_TAG_PATH;
+          const releaseUrlPrefix = 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/';
+          const fail = (message) => {
+            throw new Error(`ASBCP final manifest source gate failed: ${message}`);
+          };
+          if (!lockPath || !releaseTagPath) {
+            fail('lock path and release tag output path are required.');
+          }
+
+          const values = new Map();
+          readFileSync(lockPath, 'utf8').split(/\r?\n/u).forEach((rawLine, index) => {
+            const line = rawLine.trim();
+            if (line.length === 0 || line.startsWith('#')) {
+              return;
+            }
+            const separatorIndex = line.indexOf('=');
+            if (separatorIndex <= 0) {
+              fail(`${lockPath}:${index + 1} must be key=value.`);
+            }
+            values.set(line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim());
+          });
+
+          const version = values.get('asbcp_version') || '';
+          const releaseUrl = values.get('asbcp_release_url') || '';
+          if (!/^v\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)*$/u.test(version)) {
+            fail(`asbcp_version must be a release tag; actual ${version || '<missing>'}.`);
+          }
+          if (releaseUrl !== `${releaseUrlPrefix}${version}`) {
+            fail(`asbcp_release_url must match asbcp_version; expected ${releaseUrlPrefix}${version}; actual ${releaseUrl || '<missing>'}.`);
+          }
+
+          writeFileSync(releaseTagPath, `${version}\n`);
+          NODE
+
+          asbcp_release_tag="$(cat "${ASBCP_RELEASE_TAG_PATH}")"
+          export ASBCP_RELEASE_TAG="${asbcp_release_tag}"
+          export ASBCP_RELEASE_API_PATH="${asbcp_gate_dir}/release-api.json"
+          export ASBCP_ASSET_API_PATH="${asbcp_gate_dir}/asset-api.json"
+          export ASBCP_ASSET_ID_PATH="${asbcp_gate_dir}/asset-id.txt"
+          export ASBCP_ASSET_NAME="${asbcp_asset_name}"
+          gh api "repos/${asbcp_repo}/releases/tags/${asbcp_release_tag}" \
+            > "${ASBCP_RELEASE_API_PATH}"
+
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const releaseApiPath = process.env.ASBCP_RELEASE_API_PATH;
+          const assetApiPath = process.env.ASBCP_ASSET_API_PATH;
+          const assetIdPath = process.env.ASBCP_ASSET_ID_PATH;
+          const expectedAssetName = process.env.ASBCP_ASSET_NAME;
+          const expectedTag = process.env.ASBCP_RELEASE_TAG;
+          const fail = (message) => {
+            throw new Error(`ASBCP final manifest source gate failed: ${message}`);
+          };
+          const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
+          if (!releaseApiPath || !assetApiPath || !assetIdPath || !expectedAssetName || !expectedTag) {
+            fail('release API path, asset API path, asset ID path, asset name, and release tag are required.');
+          }
+
+          const release = JSON.parse(readFileSync(releaseApiPath, 'utf8'));
+          if (!isRecord(release)) {
+            fail('GitHub release metadata must be a JSON object.');
+          }
+          if (release.tag_name !== expectedTag) {
+            fail(`release tag must be ${expectedTag}; actual ${release.tag_name || '<missing>'}.`);
+          }
+          const assets = Array.isArray(release.assets) ? release.assets.filter(isRecord) : [];
+          const matchingAssets = assets.filter((asset) => asset.name === expectedAssetName);
+          if (matchingAssets.length !== 1) {
+            fail(`expected exactly one ${expectedAssetName} release asset; found ${matchingAssets.length}.`);
+          }
+          const asset = matchingAssets[0];
+          if (!Number.isSafeInteger(asset.id) || asset.id <= 0) {
+            fail(`${expectedAssetName} asset id must be a positive integer.`);
+          }
+          writeFileSync(assetApiPath, `${JSON.stringify(asset, null, 2)}\n`);
+          writeFileSync(assetIdPath, `${asset.id}\n`);
+          NODE
+
+          asbcp_asset_id="$(cat "${ASBCP_ASSET_ID_PATH}")"
+          export ASBCP_FINAL_MANIFEST_PATH="${asbcp_manifest_path}"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            "repos/${asbcp_repo}/releases/assets/${asbcp_asset_id}" \
+            > "${ASBCP_FINAL_MANIFEST_PATH}"
+
+          export ASBCP_FINAL_MANIFEST_DOWNLOAD_SHA256="sha256:$(sha256sum "${ASBCP_FINAL_MANIFEST_PATH}" | awk '{print $1}')"
+          printf '%s\n' "${ASBCP_FINAL_MANIFEST_DOWNLOAD_SHA256}" > "${asbcp_gate_dir}/download-sha256.txt"
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+
+          const assetApiPath = process.env.ASBCP_ASSET_API_PATH;
+          const downloadedSha256 = process.env.ASBCP_FINAL_MANIFEST_DOWNLOAD_SHA256;
+          const fail = (message) => {
+            throw new Error(`ASBCP final manifest source gate failed: ${message}`);
+          };
+          if (!assetApiPath || !downloadedSha256) {
+            fail('asset API path and downloaded SHA256 are required.');
+          }
+          const asset = JSON.parse(readFileSync(assetApiPath, 'utf8'));
+          const apiDigest = typeof asset.digest === 'string' ? asset.digest.trim().toLowerCase() : '';
+          if (apiDigest.length === 0) {
+            process.exit(0);
+          }
+          if (!/^sha256:[0-9a-f]{64}$/u.test(apiDigest)) {
+            fail(`release asset digest must be sha256:<64 lowercase hex>; actual ${asset.digest}.`);
+          }
+          if (apiDigest !== downloadedSha256) {
+            fail(`release asset digest must match downloaded manifest sha256; expected ${apiDigest}; actual ${downloadedSha256}.`);
+          }
+          NODE
+
+          npm run contracts:check-asbcp-adoption -- --manifest "${ASBCP_FINAL_MANIFEST_PATH}"
+
       - name: Gate release contract input source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -347,12 +482,16 @@ jobs:
           RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"
           RUNNER_RELEASE_MANIFEST_RUN_API_PATH="artifacts/release-contract/runner-manifest-source-gate/run-api.json"
           RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"
+          ASBCP_FINAL_MANIFEST_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asbcp-final-manifest.json"
+          ASBCP_RELEASE_API_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/release-api.json"
+          ASBCP_ASSET_API_PATH="artifacts/release-contract/asbcp-final-manifest-source-gate/asset-api.json"
           RELEASE_CONTRACT_OUTPUT_DIR="artifacts/release-contract"
           export RELEASE_CONTRACT_INPUT_PATH RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH RELEASE_CONTRACT_OUTPUT_DIR
           mkdir -p "${RELEASE_CONTRACT_OUTPUT_DIR}"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${RELEASE_CONTRACT_INPUT_SOURCE_GATE_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_PATH}"
@@ -360,6 +499,9 @@ jobs:
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
+          test -f "${ASBCP_FINAL_MANIFEST_PATH}"
+          test -f "${ASBCP_RELEASE_API_PATH}"
+          test -f "${ASBCP_ASSET_API_PATH}"
           export RELEASE_CONTRACT_INPUT_SHA256="$(sha256sum "${RELEASE_CONTRACT_INPUT_PATH}" | awk '{print $1}')"
           npm run release:contract:ci-artifact -- \
             --input "${RELEASE_CONTRACT_INPUT_PATH}" \
@@ -368,9 +510,13 @@ jobs:
             --runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}" \
             --runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}" \
             --runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}" \
-            --runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
+            --runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}" \
+            --asbcp-final-manifest "${ASBCP_FINAL_MANIFEST_PATH}" \
+            --asbcp-release-api "${ASBCP_RELEASE_API_PATH}" \
+            --asbcp-asset-api "${ASBCP_ASSET_API_PATH}"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
           node <<'NODE'
           const { readFileSync, writeFileSync } = require('node:fs');
 
@@ -394,6 +540,7 @@ jobs:
           NODE
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/release-contract-input-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
 
       - name: Upload release contract artifact
         uses: actions/upload-artifact@v7
@@ -404,3 +551,4 @@ jobs:
             artifacts/release-contract/agentsmith-release-contract.json
             artifacts/release-contract/release-contract-input-source.json
             artifacts/release-contract/runner-release-manifest-source.json
+            artifacts/release-contract/asbcp-final-manifest-source.json

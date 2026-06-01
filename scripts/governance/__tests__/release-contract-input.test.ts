@@ -24,6 +24,8 @@ import {
   type AgentSmithReleaseContractGeneratorInputAssemblyInput,
 } from '../release-contract-input';
 import {
+  ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME,
+  ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
   RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME,
   RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
   runReleaseContractArtifactCli,
@@ -45,6 +47,13 @@ const LOCKED_DIGEST = `sha256:${'b'.repeat(64)}`;
 const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy';
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
+const ASBCP_VERSION = 'v2.0.12';
+const ASBCP_DIGEST = `sha256:${'6'.repeat(64)}`;
+const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
+const ASBCP_RELEASE_URL =
+  `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/${ASBCP_VERSION}`;
+const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json';
+const ASBCP_BREAKING_CHANGE_ID = 'ASBCP-BC-0001';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
   'agentsmith_app',
@@ -377,6 +386,21 @@ interface RunnerManifestSourceMetadataFixture {
   };
 }
 
+interface AsbcpFinalManifestSourceMetadataPaths {
+  manifestPath: string;
+  releaseApiPath: string;
+  assetApiPath: string;
+}
+
+interface AsbcpFinalManifestSourceMetadataFixture {
+  manifest: Record<string, unknown>;
+  releaseApi: {
+    assets: Record<string, unknown>[];
+    [key: string]: unknown;
+  };
+  assetApi: Record<string, unknown>;
+}
+
 function writeCanonicalRunnerImageLock(root: string): void {
   const lockPath = join(root, CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH);
   mkdirSync(join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary'), { recursive: true });
@@ -468,6 +492,130 @@ function writeRunnerManifestSourceMetadata(
   return paths;
 }
 
+function buildAsbcpFinalManifest(): Record<string, unknown> {
+  const imageRef = `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:${ASBCP_VERSION}@${ASBCP_DIGEST}`;
+  const tagRef = `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:${ASBCP_VERSION}`;
+  return {
+    schema_id: 'https://agentsmith.dev/schemas/asbcp/final-manifest.v1.json',
+    manifest_schema_version: 'v1',
+    asbcp_version: ASBCP_VERSION,
+    git_tag: ASBCP_VERSION,
+    commit_sha: ASBCP_COMMIT_SHA,
+    image_ref: imageRef,
+    image_digest: ASBCP_DIGEST,
+    api_contract_version: 'v1',
+    anonymous_pull: {
+      result: 'ok',
+      tag_ref: tagRef,
+      image_ref: imageRef,
+      tag_resolved_digest: ASBCP_DIGEST,
+      build_push_digest: ASBCP_DIGEST,
+      anonymous_digest: ASBCP_DIGEST,
+      docker_config: 'fresh-empty',
+      commands: [
+        `DOCKER_CONFIG=<fresh-empty> docker pull ${tagRef}`,
+        `DOCKER_CONFIG=<fresh-empty> docker pull ${imageRef}`,
+      ],
+    },
+    same_digest_proof: {
+      tag_resolved_digest: ASBCP_DIGEST,
+      build_push_digest: ASBCP_DIGEST,
+      anonymous_digest: ASBCP_DIGEST,
+      matches: true,
+      source: 'fresh-empty Docker config docker pull image:tag and image:tag@build_push_digest',
+    },
+    known_breaking_changes: [
+      {
+        id: ASBCP_BREAKING_CHANGE_ID,
+        summary: 'pre-GA ASBCP release evidence clean cut.',
+      },
+    ],
+    changelog_summary: 'ASBCP release evidence schema clean cut.',
+    known_risk_status: 'no release-blocking risks',
+    known_risk_status_source: 'docs/RISK_REGISTER.md release_blocking column',
+    runbook_url:
+      `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/blob/${ASBCP_COMMIT_SHA}/docs/runbooks/release.md`,
+    release_notes: {
+      body_source: [
+        '## ASBCP Release',
+        `Version: ${ASBCP_VERSION}`,
+        `Git tag: ${ASBCP_VERSION}`,
+        `Commit SHA: ${ASBCP_COMMIT_SHA}`,
+        'API contract version: v1',
+        `Image ref: \`${imageRef}\``,
+        `Image digest: \`${ASBCP_DIGEST}\``,
+      ].join('\n'),
+      github_release_url: ASBCP_RELEASE_URL,
+    },
+    release_gate: 'scripts/verify-release.sh',
+  };
+}
+
+function writeCanonicalAsbcpImageLock(root: string): void {
+  const lockPath = join(root, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
+  mkdirSync(join(root, 'infra', 'deploy', 'shared'), { recursive: true });
+  writeFileSync(lockPath, [
+    `asbcp_version=${ASBCP_VERSION}`,
+    `asbcp_source_image=${ASBCP_PROVIDER_IMAGE_REPOSITORY}:${ASBCP_VERSION}@${ASBCP_DIGEST}`,
+    `asbcp_release_url=${ASBCP_RELEASE_URL}`,
+    `asbcp_commit_sha=${ASBCP_COMMIT_SHA}`,
+    '',
+  ].join('\n'));
+}
+
+function writeAsbcpFinalManifestSourceMetadata(
+  root: string,
+  mutate: (metadata: AsbcpFinalManifestSourceMetadataFixture) => void = () => undefined,
+): AsbcpFinalManifestSourceMetadataPaths {
+  writeCanonicalAsbcpImageLock(root);
+  const metadataRoot = join(root, 'asbcp-final-manifest-source-metadata');
+  const assetId = 246802468;
+  const manifest = buildAsbcpFinalManifest();
+  const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+  const manifestSha256 = sha256Digest(manifestText);
+  const assetApi = {
+    id: assetId,
+    name: ASBCP_FINAL_MANIFEST_ASSET_NAME,
+    url: `https://api.github.com/repos/agentsmith-project/agentsmith-sandbox-control-plane/releases/assets/${assetId}`,
+    browser_download_url:
+      `${ASBCP_RELEASE_URL}/download/${ASBCP_FINAL_MANIFEST_ASSET_NAME}`,
+    content_type: 'application/json',
+    state: 'uploaded',
+    size: Buffer.byteLength(manifestText, 'utf8'),
+    digest: manifestSha256,
+    created_at: '2026-05-31T14:00:00.000Z',
+    updated_at: '2026-05-31T14:01:00.000Z',
+  };
+  const metadata: AsbcpFinalManifestSourceMetadataFixture = {
+    manifest,
+    releaseApi: {
+      id: 975310864,
+      tag_name: ASBCP_VERSION,
+      target_commitish: ASBCP_COMMIT_SHA,
+      name: ASBCP_VERSION,
+      url: `https://api.github.com/repos/agentsmith-project/agentsmith-sandbox-control-plane/releases/tags/${ASBCP_VERSION}`,
+      html_url: ASBCP_RELEASE_URL,
+      created_at: '2026-05-31T13:50:00.000Z',
+      published_at: '2026-05-31T14:02:00.000Z',
+      updated_at: '2026-05-31T14:02:00.000Z',
+      assets: [assetApi],
+    },
+    assetApi,
+  };
+
+  mutate(metadata);
+  mkdirSync(metadataRoot, { recursive: true });
+  const paths = {
+    manifestPath: join(metadataRoot, ASBCP_FINAL_MANIFEST_ASSET_NAME),
+    releaseApiPath: join(metadataRoot, 'release-api.json'),
+    assetApiPath: join(metadataRoot, 'asset-api.json'),
+  };
+  writeFileSync(paths.manifestPath, `${JSON.stringify(metadata.manifest, null, 2)}\n`);
+  writeFileSync(paths.releaseApiPath, `${JSON.stringify(metadata.releaseApi, null, 2)}\n`);
+  writeFileSync(paths.assetApiPath, `${JSON.stringify(metadata.assetApi, null, 2)}\n`);
+  return paths;
+}
+
 function runnerManifestSourceEnv(
   paths: RunnerManifestSourceMetadataPaths,
 ): Readonly<Record<string, string>> {
@@ -479,10 +627,31 @@ function runnerManifestSourceEnv(
   };
 }
 
+function asbcpFinalManifestSourceEnv(
+  paths: AsbcpFinalManifestSourceMetadataPaths,
+): Readonly<Record<string, string>> {
+  return {
+    ASBCP_FINAL_MANIFEST_SOURCE_MANIFEST_PATH: paths.manifestPath,
+    ASBCP_FINAL_MANIFEST_SOURCE_RELEASE_API_PATH: paths.releaseApiPath,
+    ASBCP_FINAL_MANIFEST_SOURCE_ASSET_API_PATH: paths.assetApiPath,
+  };
+}
+
+function artifactProducerSourceEnv(
+  runnerPaths: RunnerManifestSourceMetadataPaths,
+  asbcpPaths: AsbcpFinalManifestSourceMetadataPaths,
+): Readonly<Record<string, string>> {
+  return {
+    ...runnerManifestSourceEnv(runnerPaths),
+    ...asbcpFinalManifestSourceEnv(asbcpPaths),
+  };
+}
+
 function artifactProducerArgv(
   inputPath: string,
   outputDir: string,
   paths: RunnerManifestSourceMetadataPaths,
+  asbcpPaths: AsbcpFinalManifestSourceMetadataPaths,
 ): string[] {
   return [
     '--input',
@@ -499,6 +668,12 @@ function artifactProducerArgv(
     paths.runApiPath,
     '--runner-artifacts-api',
     paths.artifactsApiPath,
+    '--asbcp-final-manifest',
+    asbcpPaths.manifestPath,
+    '--asbcp-release-api',
+    asbcpPaths.releaseApiPath,
+    '--asbcp-asset-api',
+    asbcpPaths.assetApiPath,
   ];
 }
 
@@ -1154,14 +1329,16 @@ describe('release contract CI artifact producer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
     const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
 
     const stderr: string[] = [];
     const exitCode = runReleaseContractArtifactCli({
-      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata),
+      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata, asbcpMetadata),
       cwd: root,
       env: githubReleaseContractEnv(),
       stdout: () => undefined,
@@ -1172,9 +1349,13 @@ describe('release contract CI artifact producer', () => {
     expect(exitCode).toBe(0);
     expect(existsSync(outputPath)).toBe(true);
     expect(existsSync(runnerManifestReceiptPath)).toBe(true);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(true);
 
     const contract = JSON.parse(readFileSync(outputPath, 'utf8')) as unknown;
     const runnerManifestReceipt = JSON.parse(readFileSync(runnerManifestReceiptPath, 'utf8')) as Record<string, unknown>;
+    const asbcpFinalManifestReceipt = JSON.parse(
+      readFileSync(asbcpFinalManifestReceiptPath, 'utf8'),
+    ) as Record<string, unknown>;
     const expectedRunnerManifestCanonicalSha256 = sha256Digest(
       canonicalReleaseBoundaryJson(JSON.parse(readFileSync(runnerMetadata.manifestPath, 'utf8'))),
     );
@@ -1254,12 +1435,51 @@ describe('release contract CI artifact producer', () => {
     expect(runnerManifestReceipt.remote_artifact_zip_digest).not.toBe(
       runnerManifestReceipt.local_manifest_canonical_sha256,
     );
+    expect(asbcpFinalManifestReceipt).toMatchObject({
+      schema_version: ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION,
+      source_kind: 'github_release_asset',
+      producer_repo: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+      producer_repo_slug: 'agentsmith-project/agentsmith-sandbox-control-plane',
+      lock_path: 'infra/deploy/shared/asbcp-image.lock',
+      lock_source_image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:${ASBCP_VERSION}@${ASBCP_DIGEST}`,
+      lock_commit_sha: ASBCP_COMMIT_SHA,
+      manifest_path: 'asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',
+      release_url: ASBCP_RELEASE_URL,
+      release_tag: ASBCP_VERSION,
+      release_id: 975310864,
+      release_html_url: ASBCP_RELEASE_URL,
+      asset_id: 246802468,
+      asset_name: ASBCP_FINAL_MANIFEST_ASSET_NAME,
+      asset_content_type: 'application/json',
+      api_asset_digest_source: 'github_release_asset.digest',
+      api_asset_digest_match: true,
+      adoption_gate: {
+        command:
+          'npm run contracts:check-asbcp-adoption -- --manifest asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',
+        lock_path: 'infra/deploy/shared/asbcp-image.lock',
+        manifest_path: 'asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',
+        ok: true,
+      },
+      consumer: {
+        repo: 'github.com/agentsmith-project/agentsmith',
+        workflow_name: 'Release Contract Artifact',
+        run_id: '10001',
+        run_attempt: '2',
+        job: 'generate-release-contract',
+        commit_sha: GIT_SHA,
+      },
+      generated_at: GENERATED_AT,
+    });
+    expect(asbcpFinalManifestReceipt.api_asset_digest).toBe(
+      asbcpFinalManifestReceipt.downloaded_manifest_sha256,
+    );
   });
 
   it('rejects remote runner manifest artifact content drift before writing receipts', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const remoteManifest = JSON.parse(readFileSync(runnerMetadata.remoteManifestPath, 'utf8')) as Record<string, unknown>;
     remoteManifest.release_id = 'locked-safety-drift';
     rehashRunnerManifestProvenance(remoteManifest);
@@ -1268,10 +1488,11 @@ describe('release contract CI artifact producer', () => {
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
     const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
 
     const stderr: string[] = [];
     const exitCode = runReleaseContractArtifactCli({
-      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata),
+      argv: artifactProducerArgv(inputPath, outputDir, runnerMetadata, asbcpMetadata),
       cwd: root,
       env: githubReleaseContractEnv(),
       stdout: () => undefined,
@@ -1282,6 +1503,7 @@ describe('release contract CI artifact producer', () => {
     expect(stderr.join('\n')).toContain('remote_manifest.canonical_sha256');
     expect(existsSync(outputPath)).toBe(false);
     expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
   });
 
   it('does not synthesize a remote artifact digest from the runner manifest subject hash', () => {
@@ -1290,6 +1512,7 @@ describe('release contract CI artifact producer', () => {
     const runnerMetadata = writeRunnerManifestSourceMetadata(root, (metadata) => {
       delete metadata.artifactsApi.artifacts[0]?.digest;
     });
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
@@ -1297,7 +1520,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: () => undefined,
     });
@@ -1309,14 +1532,145 @@ describe('release contract CI artifact producer', () => {
     expect(receipt.remote_artifact_zip_digest_source).toBe('not_provided_by_github');
   });
 
+  it('does not synthesize an ASBCP release asset digest when GitHub omits it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root, (metadata) => {
+      delete metadata.assetApi.digest;
+      const releaseAsset = { ...(metadata.releaseApi.assets[0] ?? {}) };
+      delete releaseAsset.digest;
+      metadata.releaseApi.assets[0] = releaseAsset;
+    });
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    const receipt = JSON.parse(readFileSync(asbcpFinalManifestReceiptPath, 'utf8')) as Record<string, unknown>;
+    expect(receipt.api_asset_digest).toBeNull();
+    expect(receipt.api_asset_digest_source).toBe('not_provided_by_github');
+    expect(receipt.downloaded_manifest_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+  });
+
+  it('uses the ASBCP release asset digest from release metadata when asset API omits it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root, (metadata) => {
+      const releaseAssetDigest = metadata.assetApi.digest;
+      delete metadata.assetApi.digest;
+      metadata.releaseApi.assets[0] = {
+        ...(metadata.releaseApi.assets[0] ?? {}),
+        digest: releaseAssetDigest,
+      };
+    });
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    const receipt = JSON.parse(readFileSync(asbcpFinalManifestReceiptPath, 'utf8')) as Record<string, unknown>;
+    expect(receipt.api_asset_digest).toBe(receipt.downloaded_manifest_sha256);
+    expect(receipt.api_asset_digest_source).toBe('github_release_asset.digest');
+    expect(receipt.api_asset_digest_match).toBe(true);
+  });
+
+  it('rejects ASBCP release asset digest drift before writing receipts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root, (metadata) => {
+      const releaseAssetDigest = metadata.assetApi.digest;
+      metadata.assetApi.digest = `sha256:${'9'.repeat(64)}`;
+      metadata.releaseApi.assets[0] = {
+        ...(metadata.releaseApi.assets[0] ?? {}),
+        digest: releaseAssetDigest,
+      };
+    });
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('asset_api.digest');
+    expect(stderr.join('\n')).toContain('release_api.assets[].digest');
+    expect(stderr.join('\n')).toContain('downloaded manifest sha256');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
+  });
+
+  it('rejects ASBCP final manifest adoption drift before writing receipts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root, (metadata) => {
+      metadata.manifest.commit_sha = 'ffffffffffffffffffffffffffffffffffffffff';
+      delete metadata.assetApi.digest;
+      const releaseAsset = { ...(metadata.releaseApi.assets[0] ?? {}) };
+      delete releaseAsset.digest;
+      metadata.releaseApi.assets[0] = releaseAsset;
+    });
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('adoption_gate');
+    expect(stderr.join('\n')).toContain('manifest.commit_sha');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
+  });
+
   it('fails fast without downloaded runner release manifest artifact content', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
-    const envPaths = { ...runnerManifestSourceEnv(runnerMetadata) };
+    const envPaths = { ...artifactProducerSourceEnv(runnerMetadata, asbcpMetadata) };
     delete envPaths.RUNNER_RELEASE_MANIFEST_SOURCE_REMOTE_MANIFEST_PATH;
 
     const stderr: string[] = [];
@@ -1338,6 +1692,7 @@ describe('release contract CI artifact producer', () => {
   it('fails fast without runner release manifest source metadata', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const manifestPath = writeCanonicalRunnerReleaseManifest(root);
     const remoteManifestPath = join(root, 'remote-runner-release-manifest.json');
     writeFileSync(remoteManifestPath, `${canonicalReleaseBoundaryJson(JSON.parse(readFileSync(manifestPath, 'utf8')))}\n`);
@@ -1351,6 +1706,7 @@ describe('release contract CI artifact producer', () => {
       cwd: root,
       env: githubReleaseContractEnv({
         RUNNER_RELEASE_MANIFEST_SOURCE_REMOTE_MANIFEST_PATH: remoteManifestPath,
+        ...asbcpFinalManifestSourceEnv(asbcpMetadata),
       }),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
@@ -1372,6 +1728,7 @@ describe('release contract CI artifact producer', () => {
         expired: true,
       };
     });
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
@@ -1381,7 +1738,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
@@ -1420,6 +1777,7 @@ describe('release contract CI artifact producer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root, mutate);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
@@ -1429,7 +1787,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
@@ -1448,23 +1806,26 @@ describe('release contract CI artifact producer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
     const outputDir = join(root, 'artifacts', 'release-contract');
     const outputPath = join(outputDir, 'agentsmith-release-contract.json');
     const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const asbcpFinalManifestReceiptPath = join(outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
 
     expect(runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: () => undefined,
     })).toBe(0);
     expect(existsSync(outputPath)).toBe(true);
     expect(existsSync(runnerManifestReceiptPath)).toBe(true);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(true);
 
     const env = {
-      ...githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      ...githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       [envField]: undefined,
     };
     const stderr: string[] = [];
@@ -1480,12 +1841,14 @@ describe('release contract CI artifact producer', () => {
     expect(stderr.join('\n')).toContain(expected);
     expect(existsSync(outputPath)).toBe(false);
     expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(asbcpFinalManifestReceiptPath)).toBe(false);
   });
 
   it('rejects caller-provided provenance and source sha because CI env owns them', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const input = buildArtifactProducerInput();
     input.ci_provenance = buildAssemblyInput().ci_provenance;
     input.sourceGitSha = GIT_SHA;
@@ -1497,7 +1860,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
@@ -1512,6 +1875,7 @@ describe('release contract CI artifact producer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const input = buildArtifactProducerInput();
     input.runnerImageLock = {
       ...buildRunnerImageLock(),
@@ -1528,7 +1892,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });
@@ -1542,6 +1906,7 @@ describe('release contract CI artifact producer', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
     writeCanonicalRunnerImageLock(root);
     const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
     const input = buildArtifactProducerInput();
     const adoptedProviderImages = input.adopted_provider_images as Array<Record<string, unknown>>;
     adoptedProviderImages[0] = {
@@ -1556,7 +1921,7 @@ describe('release contract CI artifact producer', () => {
     const exitCode = runReleaseContractArtifactCli({
       argv: ['--input', inputPath, '--output-dir', outputDir],
       cwd: root,
-      env: githubReleaseContractEnv(runnerManifestSourceEnv(runnerMetadata)),
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
       stdout: () => undefined,
       stderr: (message) => stderr.push(message),
     });

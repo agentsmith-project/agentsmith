@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -34,6 +34,7 @@ function tempDir(prefix: string): string {
 
 function writeJson(root: string, name: string, value: unknown): string {
   const target = join(root, name);
+  mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   return target;
 }
@@ -129,6 +130,94 @@ describe('post-deploy product smoke report producer', () => {
     for (const smokeResult of Object.values(smokeResults) as Record<string, unknown>[]) {
       expect(smokeResult.source_evidence_path).toEqual(expect.stringMatching(root));
     }
+  });
+
+  it('serializes report paths relative to pathRoot using POSIX paths while reading absolute evidence', async () => {
+    const campaignRoot = tempDir('post-deploy-product-smoke-campaign-');
+    const productFlowsDir = join(campaignRoot, 'unified-deploy', 'product-flows');
+    const outputDir = join(campaignRoot, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregateWithFlows());
+
+    const result = await runPostDeployProductSmokeReportProducer({
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: campaignRoot,
+      now: () => new Date('2026-05-08T00:00:00.000Z'),
+    });
+
+    const expectedPath = join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME);
+    expect(result.reportPath).toBe(expectedPath);
+    expect(existsSync(expectedPath)).toBe(true);
+
+    const reportText = readFileSync(expectedPath, 'utf8');
+    expect(reportText).not.toContain(campaignRoot);
+
+    const report = readReport(expectedPath);
+    expect(report.source).toMatchObject({
+      product_flows_path: 'unified-deploy/product-flows/aggregate.json',
+    });
+    expect(report.paths).toMatchObject({
+      report_path: 'post-deploy-product-smoke/post-deploy-product-smoke-report.json',
+    });
+
+    const smokeResults = report.smoke_results as Record<string, Record<string, unknown>>;
+    expect(smokeResults.provider_neutral_endpoint).toMatchObject({
+      source_flow: 'chat_via_llmup',
+      source_evidence_path: 'unified-deploy/product-flows/chat_via_llmup.json',
+    });
+    for (const smokeResult of Object.values(smokeResults)) {
+      const sourceEvidencePath = smokeResult.source_evidence_path;
+      expect(sourceEvidencePath).toEqual(expect.any(String));
+      expect(sourceEvidencePath).not.toMatch(/^\/|\\/u);
+    }
+  });
+
+  it('fails fast when pathRoot serialization would point outside the campaign root', async () => {
+    const productFlowsRoot = tempDir('post-deploy-product-smoke-outside-product-root-');
+    const outsideProductFlowsRoot = tempDir('post-deploy-product-smoke-outside-product-source-');
+    writeFocusedEvidenceFiles(outsideProductFlowsRoot);
+    const outsideAggregatePath = writeJson(
+      outsideProductFlowsRoot,
+      'aggregate.json',
+      aggregateWithFlows(),
+    );
+    const outsideProductOutputDir = join(productFlowsRoot, 'post-deploy-product-smoke');
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: outsideAggregatePath,
+      outputDir: outsideProductOutputDir,
+      pathRoot: productFlowsRoot,
+    })).rejects.toThrow(/source\.product_flows_path must stay under --path-root/u);
+    expect(existsSync(join(outsideProductOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+
+    const reportRoot = tempDir('post-deploy-product-smoke-outside-report-root-');
+    const reportProductFlowsDir = join(reportRoot, 'unified-deploy', 'product-flows');
+    const outsideReportRoot = tempDir('post-deploy-product-smoke-outside-report-target-');
+    writeFocusedEvidenceFiles(reportProductFlowsDir);
+    const reportAggregatePath = writeJson(reportProductFlowsDir, 'aggregate.json', aggregateWithFlows());
+    const outsideReportOutputDir = join(outsideReportRoot, 'post-deploy-product-smoke');
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: reportAggregatePath,
+      outputDir: outsideReportOutputDir,
+      pathRoot: reportRoot,
+    })).rejects.toThrow(/paths\.report_path must stay under --path-root/u);
+    expect(existsSync(join(outsideReportOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+
+    const evidenceRoot = tempDir('post-deploy-product-smoke-outside-evidence-root-');
+    const evidenceProductFlowsDir = join(evidenceRoot, 'unified-deploy', 'product-flows');
+    const outsideEvidenceRoot = tempDir('post-deploy-product-smoke-outside-evidence-source-');
+    writeFocusedEvidenceFiles(evidenceProductFlowsDir);
+    writeJson(outsideEvidenceRoot, 'files.json', focusedEvidence('files'));
+    const aggregate = aggregateWithFlows();
+    (aggregate.flow_evidence_paths as Record<string, unknown>).files = join(outsideEvidenceRoot, 'files.json');
+    const evidenceAggregatePath = writeJson(evidenceProductFlowsDir, 'aggregate.json', aggregate);
+    const evidenceOutputDir = join(evidenceRoot, 'post-deploy-product-smoke');
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: evidenceAggregatePath,
+      outputDir: evidenceOutputDir,
+      pathRoot: evidenceRoot,
+    })).rejects.toThrow(/smoke_results\.files\.source_evidence_path must stay under --path-root/u);
+    expect(existsSync(join(evidenceOutputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
   });
 
   it('fails when a required source flow is missing', async () => {

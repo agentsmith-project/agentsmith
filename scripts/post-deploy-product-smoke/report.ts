@@ -82,6 +82,7 @@ export type PostDeployProductSmokeReport = {
 export type PostDeployProductSmokeReportOptions = {
   productFlowsPath: string;
   outputDir?: string;
+  pathRoot?: string;
   now?: () => Date;
 };
 
@@ -94,6 +95,7 @@ export type PostDeployProductSmokeReportResult = {
 type CliOptions = {
   productFlowsPath: string;
   outputDir?: string;
+  pathRoot?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -229,15 +231,19 @@ function sourceEvidencePath(
     : path.resolve(path.dirname(resolvedAggregatePath), rawPath);
 }
 
-async function validateFocusedEvidenceFiles(
+function resolveFocusedEvidencePaths(
   aggregate: Record<string, unknown>,
   resolvedAggregatePath: string,
-): Promise<Record<ProductVerificationFlowId, string>> {
-  const evidencePaths = Object.fromEntries(PRODUCT_VERIFICATION_FLOW_IDS.map((sourceFlow) => [
+): Record<ProductVerificationFlowId, string> {
+  return Object.fromEntries(PRODUCT_VERIFICATION_FLOW_IDS.map((sourceFlow) => [
     sourceFlow,
     sourceEvidencePath(aggregate, resolvedAggregatePath, sourceFlow),
   ])) as Record<ProductVerificationFlowId, string>;
+}
 
+async function validateFocusedEvidenceFiles(
+  evidencePaths: Record<ProductVerificationFlowId, string>,
+): Promise<void> {
   for (const sourceFlow of PRODUCT_VERIFICATION_FLOW_IDS) {
     const evidencePath = evidencePaths[sourceFlow];
     let evidence: Record<string, unknown>;
@@ -269,8 +275,6 @@ async function validateFocusedEvidenceFiles(
     requireExactString(evidence, 'flow', sourceFlow, `product_flows.flow_evidence_paths.${sourceFlow}`);
     requireExactString(evidence, 'status', 'passed', `product_flows.flow_evidence_paths.${sourceFlow}`);
   }
-
-  return evidencePaths;
 }
 
 function buildSmokeResults(
@@ -290,9 +294,48 @@ function buildSmokeResults(
   })) as Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
 }
 
+function resolveOptionalPathRoot(pathRoot: string | undefined): string | undefined {
+  if (pathRoot === undefined) {
+    return undefined;
+  }
+  if (pathRoot.trim().length === 0) {
+    throw new Error('--path-root must be a non-empty path.');
+  }
+  return path.resolve(pathRoot);
+}
+
+function pathRelativeToRoot(pathRoot: string, absolutePath: string, label: string): string {
+  const relativePath = path.relative(pathRoot, absolutePath);
+  if (relativePath === '' || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw new Error(`${label} must stay under --path-root: ${absolutePath} is outside ${pathRoot}.`);
+  }
+  return relativePath.replace(/\\/g, '/');
+}
+
+function serializePathForReport(absolutePath: string, pathRoot: string | undefined, label: string): string {
+  if (!pathRoot) {
+    return absolutePath;
+  }
+  return pathRelativeToRoot(pathRoot, absolutePath, label);
+}
+
+function serializeEvidencePathsForReport(
+  evidencePaths: Record<ProductVerificationFlowId, string>,
+  pathRoot: string | undefined,
+): Record<ProductVerificationFlowId, string> {
+  return Object.fromEntries(POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => [
+    spec.source_flow,
+    serializePathForReport(
+      evidencePaths[spec.source_flow],
+      pathRoot,
+      `smoke_results.${spec.id}.source_evidence_path`,
+    ),
+  ])) as Record<ProductVerificationFlowId, string>;
+}
+
 function buildReport(
   aggregate: Record<string, unknown>,
-  resolvedAggregatePath: string,
+  productFlowsPath: string,
   reportPath: string,
   generatedAt: string,
   evidencePaths: Record<ProductVerificationFlowId, string>,
@@ -308,7 +351,7 @@ function buildReport(
     status: 'passed',
     generated_at: generatedAt,
     source: {
-      product_flows_path: resolvedAggregatePath,
+      product_flows_path: productFlowsPath,
       aggregate_schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
       aggregate_producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
       ...(aggregateGeneratedAt ? { aggregate_generated_at: aggregateGeneratedAt } : {}),
@@ -328,20 +371,33 @@ export async function runPostDeployProductSmokeReportProducer(
   const resolvedProductFlowsPath = path.resolve(options.productFlowsPath);
   const outputDir = path.resolve(options.outputDir ?? path.dirname(resolvedProductFlowsPath));
   const reportPath = path.join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME);
+  const resolvedPathRoot = resolveOptionalPathRoot(options.pathRoot);
+  const reportProductFlowsPath = serializePathForReport(
+    resolvedProductFlowsPath,
+    resolvedPathRoot,
+    'source.product_flows_path',
+  );
+  const reportReportPath = serializePathForReport(
+    reportPath,
+    resolvedPathRoot,
+    'paths.report_path',
+  );
 
   const aggregate = await readJsonRecord(resolvedProductFlowsPath);
   validateAggregateEnvelope(aggregate);
   const flowMap = flowMapFromAggregate(aggregate);
   validateRequiredSourceFlows(flowMap);
-  const evidencePaths = await validateFocusedEvidenceFiles(aggregate, resolvedProductFlowsPath);
+  const evidencePaths = resolveFocusedEvidencePaths(aggregate, resolvedProductFlowsPath);
+  const reportEvidencePaths = serializeEvidencePathsForReport(evidencePaths, resolvedPathRoot);
+  await validateFocusedEvidenceFiles(evidencePaths);
 
   await mkdir(outputDir, { recursive: true });
   const report = buildReport(
     aggregate,
-    resolvedProductFlowsPath,
-    reportPath,
+    reportProductFlowsPath,
+    reportReportPath,
     (options.now ?? (() => new Date()))().toISOString(),
-    evidencePaths,
+    reportEvidencePaths,
   );
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 
@@ -375,6 +431,11 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       index += 1;
     } else if (arg.startsWith('--output-dir=')) {
       options.outputDir = arg.slice('--output-dir='.length);
+    } else if (arg === '--path-root') {
+      options.pathRoot = requireArgValue(argv, index, '--path-root');
+      index += 1;
+    } else if (arg.startsWith('--path-root=')) {
+      options.pathRoot = arg.slice('--path-root='.length);
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }
@@ -387,6 +448,7 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
   return {
     productFlowsPath: options.productFlowsPath,
     ...(options.outputDir ? { outputDir: options.outputDir } : {}),
+    ...(options.pathRoot !== undefined ? { pathRoot: options.pathRoot } : {}),
   };
 }
 
@@ -395,6 +457,7 @@ async function main(): Promise<void> {
   const result = await runPostDeployProductSmokeReportProducer({
     productFlowsPath: options.productFlowsPath,
     outputDir: options.outputDir,
+    pathRoot: options.pathRoot,
   });
 
   process.stdout.write(

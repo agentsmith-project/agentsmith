@@ -136,6 +136,10 @@ describe('current gate governance', () => {
     });
     expect(releaseProductFlowsScript).toContain('npm run test:unified-deploy:product-flows --');
     expect(releaseProductFlowsScript).toContain('npm run post-deploy-product-smoke:report --');
+    expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_ROOT="${RELEASE_CAMPAIGN_ROOT:-${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${ROOT_DIR}/artifacts}}"');
+    expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-product-smoke"');
+    expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
+    expect(releaseProductFlowsScript).toContain('--path-root="${POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT}"');
     expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
     expect(releaseProductFlowsScript).toContain('--agent-task-polls=');
     expect(releaseProductFlowsScript).toContain('--agent-task-poll-interval-ms=');

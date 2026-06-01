@@ -2219,6 +2219,39 @@ function productFlowFailureClassFromAggregate(
   return 'evidence_missing';
 }
 
+function isForbiddenLocalProductSmokePath(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith('/')
+    || trimmed.startsWith('\\')
+    || /^file:\/\//iu.test(trimmed)
+    || /^[A-Za-z]:[\\/]/u.test(trimmed);
+}
+
+function productSmokeReportPathIssues(payload: Record<string, unknown>): string[] {
+  const issues: string[] = [];
+  const source = isRecord(payload.source) ? payload.source : {};
+  const productFlowsPath = source.product_flows_path;
+  if (
+    typeof productFlowsPath === 'string'
+    && productFlowsPath.trim().length > 0
+    && isForbiddenLocalProductSmokePath(productFlowsPath)
+  ) {
+    issues.push('source.product_flows_path must be a portable relative path');
+  }
+
+  const paths = isRecord(payload.paths) ? payload.paths : {};
+  const reportPath = paths.report_path;
+  if (
+    typeof reportPath === 'string'
+    && reportPath.trim().length > 0
+    && isForbiddenLocalProductSmokePath(reportPath)
+  ) {
+    issues.push('paths.report_path must be a portable relative path');
+  }
+
+  return issues;
+}
+
 function validateExpectedProductSmokeResults(
   payload: Record<string, unknown>,
   check: CurrentVerificationCampaignEvidenceCheck,
@@ -2229,7 +2262,8 @@ function validateExpectedProductSmokeResults(
     return null;
   }
 
-  if (!isRecord(payload.smoke_results)) {
+  const smokeResults = payload.smoke_results;
+  if (!isRecord(smokeResults)) {
     return unifiedDeployDiagnostic(
       `${path} must include smoke_results object with passed product smoke results for: ${expectedSmokes.join(', ')}.`,
       'product_regression',
@@ -2237,8 +2271,23 @@ function validateExpectedProductSmokeResults(
   }
 
   const invalidSmokes: string[] = [];
+  const pathIssues = productSmokeReportPathIssues(payload);
+  for (const [smoke, smokeResult] of Object.entries(smokeResults)) {
+    if (!isRecord(smokeResult)) {
+      continue;
+    }
+    const sourceEvidencePath = smokeResult.source_evidence_path;
+    if (
+      typeof sourceEvidencePath === 'string'
+      && sourceEvidencePath.trim().length > 0
+      && isForbiddenLocalProductSmokePath(sourceEvidencePath)
+    ) {
+      pathIssues.push(`${smoke} source_evidence_path must be a portable relative path`);
+    }
+  }
+
   for (const smoke of expectedSmokes) {
-    const smokeResult = payload.smoke_results[smoke];
+    const smokeResult = smokeResults[smoke];
     if (!isRecord(smokeResult)) {
       invalidSmokes.push(`${smoke} result must be an object`);
       continue;
@@ -2254,6 +2303,12 @@ function validateExpectedProductSmokeResults(
     }
   }
 
+  if (pathIssues.length > 0) {
+    return unifiedDeployDiagnostic(
+      `${path} product smoke report paths must be release-portable: ${pathIssues.join('; ')}.`,
+      'contract_drift',
+    );
+  }
   if (invalidSmokes.length > 0) {
     return unifiedDeployDiagnostic(
       `${path} must include valid product smoke results: ${invalidSmokes.join('; ')}.`,

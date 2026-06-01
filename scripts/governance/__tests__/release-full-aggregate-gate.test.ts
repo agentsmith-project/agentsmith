@@ -209,7 +209,7 @@ function productSmokeResultsFixture(): Record<string, unknown> {
   ]));
 }
 
-function productSmokeReportFixture(campaignRoot: string, smokeResults: Record<string, unknown>): Record<string, unknown> {
+function productSmokeReportFixture(smokeResults: Record<string, unknown>): Record<string, unknown> {
   return {
     schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
     producer: POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
@@ -218,14 +218,14 @@ function productSmokeReportFixture(campaignRoot: string, smokeResults: Record<st
     status: 'passed',
     generated_at: '2026-04-12T12:00:00.000Z',
     source: {
-      product_flows_path: join(campaignRoot, 'unified-deploy', 'product-flows', 'aggregate.json'),
+      product_flows_path: 'unified-deploy/product-flows/aggregate.json',
       aggregate_schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
       aggregate_producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
     },
     smoke_results: smokeResults,
     failures: [],
     paths: {
-      report_path: materializeCampaignPath(campaignRoot, getProductSmokeReportCheck().path),
+      report_path: `post-deploy-product-smoke/${POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME}`,
     },
   };
 }
@@ -1068,7 +1068,7 @@ describe('release-full aggregate gate', () => {
       const missingSmokeId = POST_DEPLOY_PRODUCT_SMOKE_SPECS[0]?.id ?? 'login_profile';
       delete smokeResults[missingSmokeId];
 
-      writeJson(reportPath, productSmokeReportFixture(campaignRoot, smokeResults));
+      writeJson(reportPath, productSmokeReportFixture(smokeResults));
 
       const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
         .find((record) => record.id === 'post_deploy_product_smoke_report');
@@ -1100,7 +1100,7 @@ describe('release-full aggregate gate', () => {
         source_flow: 'fixture-flow',
       };
 
-      writeJson(reportPath, productSmokeReportFixture(campaignRoot, smokeResults));
+      writeJson(reportPath, productSmokeReportFixture(smokeResults));
 
       const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
         .find((record) => record.id === 'post_deploy_product_smoke_report');
@@ -1114,6 +1114,69 @@ describe('release-full aggregate gate', () => {
       });
       expect(reportRecord?.error).toContain(missingSourceSmokeId);
       expect(reportRecord?.error).toContain('source_evidence_path');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when release-boundary paths are local absolute paths', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-local-path-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const smokeResults = productSmokeResultsFixture();
+      const report = productSmokeReportFixture(smokeResults);
+      recordField(report, 'source').product_flows_path = 'file:///tmp/product-flows.json';
+      recordField(report, 'paths').report_path = '\\tmp\\post-deploy-product-smoke-report.json';
+
+      writeJson(reportPath, report);
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.error).toContain('source.product_flows_path');
+      expect(reportRecord?.error).toContain('paths.report_path');
+      expect(reportRecord?.error).toContain('portable relative path');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when an extra smoke result has a local source path', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-extra-local-path-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const smokeResults = productSmokeResultsFixture();
+      smokeResults.extra_local_path = {
+        id: 'extra_local_path',
+        status: 'passed',
+        label: 'extra local path',
+        source_flow: 'files',
+        source_evidence_path: '\\\\server\\share\\files.json',
+      };
+
+      writeJson(reportPath, productSmokeReportFixture(smokeResults));
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.error).toContain('extra_local_path');
+      expect(reportRecord?.error).toContain('portable relative path');
     } finally {
       rmSync(campaignRoot, { recursive: true, force: true });
     }
@@ -1155,7 +1218,7 @@ describe('release-full aggregate gate', () => {
       const reportCheck = getProductSmokeReportCheck();
       const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
 
-      writeJson(reportPath, productSmokeReportFixture(campaignRoot, productSmokeResultsFixture()));
+      writeJson(reportPath, productSmokeReportFixture(productSmokeResultsFixture()));
 
       const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
         .find((record) => record.id === 'post_deploy_product_smoke_report');

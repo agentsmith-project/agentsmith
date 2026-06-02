@@ -75,6 +75,16 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
+const PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS = [
+  'product-readiness/product-readiness-report.json',
+  'summary.json',
+  'gate-release-full/result.json',
+] as const;
+const PRODUCT_READINESS_ARTIFACT_PATHS = [
+  '${{ env.RELEASE_CAMPAIGN_ROOT }}/**',
+  'test-results/**',
+  'playwright-report/**',
+] as const;
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -461,6 +471,73 @@ function assertProductReadinessArtifactSecretsStayProcessScoped(failures: string
   }
 }
 
+function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[]): void {
+  const workflowPath = PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH;
+  const jobId = PRODUCT_READINESS_ARTIFACT_JOB_ID;
+  const label = `${workflowPath}:${jobId}`;
+  const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find((entry) => entry.path === workflowPath);
+  const job = workflow?.jobs.find((entry) => entry.id === jobId);
+  const steps = collectJobSteps(parseWorkflow(workflowPath), jobId);
+  const handoffStep = steps.find((step) => step.name === 'Verify product readiness handoff files');
+  const uploadStep = steps.find((step) => step.name === 'Upload product readiness artifact');
+  const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+  const uploadWith = asRecord(uploadStep?.with);
+  const uploadPaths = typeof uploadWith.path === 'string'
+    ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
+    : [];
+  const notes = job?.notes ?? '';
+
+  if (job === undefined) {
+    failures.push(`${label} must exist in CURRENT_CI_WORKFLOW_MANIFEST`);
+  } else {
+    assertArrayEqual(
+      job.evidenceFamilies,
+      ['product_readiness_report', 'test_results', 'playwright_report'],
+      `${label} evidence families must include product readiness evidence plus test reports`,
+      failures,
+    );
+    assertArrayEqual(
+      job.artifactPaths,
+      PRODUCT_READINESS_ARTIFACT_PATHS,
+      `${label} artifact paths must upload the whole campaign evidence root and test reports`,
+      failures,
+    );
+    if (!/success-only file check/i.test(notes) || !/not a failed-run verdict/i.test(notes)) {
+      failures.push(`${label} notes must preserve success-only handoff semantics for failed-run evidence uploads`);
+    }
+  }
+
+  if (handoffStep === undefined) {
+    failures.push(`${label} must keep the success-only handoff file check step`);
+  } else {
+    if (handoffStep.if !== 'success()') {
+      failures.push(`${label} handoff file check must run only on success()`);
+    }
+    for (const relativePath of PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS) {
+      if (!handoffRun.includes(`test -f "\${RELEASE_CAMPAIGN_ROOT}/${relativePath}"`)) {
+        failures.push(`${label} handoff file check must require ${relativePath}`);
+      }
+    }
+  }
+
+  if (uploadStep === undefined) {
+    failures.push(`${label} must keep the product readiness artifact upload step`);
+    return;
+  }
+  if (uploadStep.if !== 'always()') {
+    failures.push(`${label} artifact upload must run with if: always() so failed-run evidence is downloadable`);
+  }
+  if (uploadWith['if-no-files-found'] !== 'error') {
+    failures.push(`${label} artifact upload must still fail when no evidence files exist`);
+  }
+  assertArrayEqual(
+    uploadPaths,
+    PRODUCT_READINESS_ARTIFACT_PATHS,
+    `${label} artifact upload paths must include the campaign root and test report directories`,
+    failures,
+  );
+}
+
 function assertJobBuildsRunnerContractBeforeColdExecution(
   parsedWorkflow: Record<string, unknown>,
   workflowPath: string,
@@ -761,6 +838,7 @@ assertQualityGateVisualLaneManualOptIn(
   failures,
 );
 assertProductReadinessArtifactSecretsStayProcessScoped(failures);
+assertProductReadinessArtifactFailureEvidenceUpload(failures);
 
 const runnerContractArtifactWorkflowPath = '.github/workflows/runner-contract-artifact.yml';
 const runnerContractArtifactWorkflow = parseWorkflow(runnerContractArtifactWorkflowPath);

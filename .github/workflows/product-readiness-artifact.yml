@@ -83,6 +83,7 @@ jobs:
           npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"
 
       - name: Verify product readiness handoff files
+        if: success()
         run: |
           set -euo pipefail
           test -f "${RELEASE_CAMPAIGN_ROOT}/product-readiness/product-readiness-report.json"
@@ -90,11 +91,12 @@ jobs:
           test -f "${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json"
 
       - name: Upload product readiness artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: agentsmith-product-readiness
           if-no-files-found: error
           path: |
-            ${{ env.RELEASE_CAMPAIGN_ROOT }}/product-readiness/product-readiness-report.json
-            ${{ env.RELEASE_CAMPAIGN_ROOT }}/summary.json
-            ${{ env.RELEASE_CAMPAIGN_ROOT }}/gate-release-full/result.json
+            ${{ env.RELEASE_CAMPAIGN_ROOT }}/**
+            test-results/**
+            playwright-report/**

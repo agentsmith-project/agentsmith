@@ -102,6 +102,16 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
+const PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS = [
+  'product-readiness/product-readiness-report.json',
+  'summary.json',
+  'gate-release-full/result.json',
+] as const;
+const PRODUCT_READINESS_ARTIFACT_PATHS = [
+  '${{ env.RELEASE_CAMPAIGN_ROOT }}/**',
+  'test-results/**',
+  'playwright-report/**',
+] as const;
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
@@ -1261,6 +1271,34 @@ describe('current workflow governance', () => {
     expect(workflowSource).not.toContain('.env.backend-real');
     expect(runCommands).not.toMatch(/>\s*(?:\.\/)?\.env(?:\.[A-Za-z0-9_-]+)?\b/);
     expect(runCommands).not.toMatch(/\b(?:printf|cat|tee|touch|install|cp|mv)\b[^\n]*(?:\.\/)?\.env\.backend-real\b/);
+  });
+
+  it('keeps product readiness failed-run evidence downloadable without treating it as a passed handoff', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH,
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const parsedWorkflow = parseWorkflow(PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH);
+    const steps = collectJobSteps(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const handoffStep = steps.find((step) => step.name === 'Verify product readiness handoff files');
+    const uploadStep = steps.find((step) => step.name === 'Upload product readiness artifact');
+    const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+    const uploadWith = asRecord(uploadStep?.with);
+    const uploadPaths = typeof uploadWith.path === 'string'
+      ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
+      : [];
+
+    expect(job?.evidenceFamilies).toEqual(['product_readiness_report', 'test_results', 'playwright_report']);
+    expect(job?.artifactPaths).toEqual(PRODUCT_READINESS_ARTIFACT_PATHS);
+    expect(handoffStep?.if).toBe('success()');
+    for (const relativePath of PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS) {
+      expect(handoffRun).toContain(`test -f "\${RELEASE_CAMPAIGN_ROOT}/${relativePath}"`);
+    }
+    expect(uploadStep?.if).toBe('always()');
+    expect(uploadWith['if-no-files-found']).toBe('error');
+    expect(uploadPaths).toEqual(PRODUCT_READINESS_ARTIFACT_PATHS);
+    expect(job?.notes).toMatch(/success-only file check/i);
+    expect(job?.notes).toMatch(/not a failed-run verdict/i);
   });
 
   it('keeps integration e2e pull request paths on active runner surfaces', () => {

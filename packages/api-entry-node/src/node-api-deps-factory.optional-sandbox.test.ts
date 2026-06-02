@@ -21,6 +21,13 @@ async function shutdownSafe(lifecycle: { shutdown: () => Promise<void> | void })
   await lifecycle.shutdown();
 }
 
+function readRuntimeProperty(value: unknown, property: string): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  return property in value ? (value as Record<string, unknown>)[property] : undefined;
+}
+
 describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -111,6 +118,46 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
+  it('passes managed internal agent session readiness timeout env to the pod manager', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
+
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+      ASBCP_SERVICE_KEY: 'svc-key',
+      AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
+      INTERNAL_AGENT_STARTUP_TIMEOUT_MS: '360000',
+      INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS: '300000',
+    });
+
+    try {
+      expect(readRuntimeProperty(deps.internalAgentPodManager, 'startupTimeoutMs')).toBe(360_000);
+      expect(readRuntimeProperty(deps.internalAgentPodManager, 'sessionReadinessTimeoutMs')).toBe(300_000);
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
+  it('keeps managed internal agent session readiness on the startup budget when the session env is invalid', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
+
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      ASBCP_INTERNAL_BASE_URL: 'http://asbcp:8080',
+      ASBCP_SERVICE_KEY: 'svc-key',
+      AGENT_EXECUTION_HTTP_BASE_URL: 'http://10.88.0.1:20000',
+      INTERNAL_AGENT_STARTUP_TIMEOUT_MS: '360000',
+      INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS: 'not-a-number',
+    });
+
+    try {
+      expect(readRuntimeProperty(deps.internalAgentPodManager, 'startupTimeoutMs')).toBe(360_000);
+      expect(readRuntimeProperty(deps.internalAgentPodManager, 'sessionReadinessTimeoutMs')).toBe(360_000);
     } finally {
       await shutdownSafe(lifecycle);
     }

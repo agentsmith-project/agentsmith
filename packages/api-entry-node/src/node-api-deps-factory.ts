@@ -768,6 +768,9 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         internalAgentWsBaseUrl.replace(/\/+$/, ''),
         {
           startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '300000'),
+          ...(env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS?.trim()
+            ? { sessionReadinessTimeoutMs: Number(env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS) }
+            : {}),
         },
       )
     : undefined;

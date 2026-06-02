@@ -1690,6 +1690,71 @@ describe('internal-agent-pod-manager', () => {
     },
   );
 
+  it('uses the startup timeout as the default session readiness budget', async () => {
+    let now = 0;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const deletePod = vi.fn().mockResolvedValue(undefined);
+    const exec = vi.fn().mockResolvedValue({
+      exit_code: 0,
+      stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
+      stderr: '',
+      duration_ms: 8,
+    });
+    const options: ConstructorParameters<typeof InternalAgentPodManagerImpl>[3] = {
+      startupTimeoutMs: 100_000,
+      phasePollIntervalMs: 1,
+      onlinePollIntervalMs: 5_000,
+      sleep: vi.fn(async (delayMs: number) => {
+        now += delayMs;
+      }),
+    };
+
+    try {
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn().mockResolvedValue(buildRunningPodStatus()),
+          createOrEnsurePod: vi.fn(),
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec,
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('offline'),
+        },
+        'ws://api:20000',
+        options,
+      );
+
+      await expect(manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      })).rejects.toMatchObject({
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_startup_timeout',
+        sandboxOperation: 'wait_for_agent_session_online',
+        runnerHealth: expect.objectContaining({
+          status: 'runner_process_found',
+        }),
+      });
+
+      expect(now).toBe(100_000);
+      expect(exec).toHaveBeenCalledTimes(1);
+      expect(deletePod).not.toHaveBeenCalled();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it('preserves a running workload pod when the agentsmith-runner process exists but session dispatch readiness never arrives', async () => {
     let now = 0;
     const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);

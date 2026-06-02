@@ -142,6 +142,13 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeTimeoutOption(value: number | undefined, fallback: number, minimum: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(minimum, Math.floor(value));
+}
+
 function readPositiveIntegerEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -547,10 +554,15 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     private readonly wsBaseUrl: string,
     options?: InternalAgentPodManagerOptions,
   ) {
-    this.startupTimeoutMs = Math.max(10_000, options?.startupTimeoutMs ?? 300_000);
-    this.phasePollIntervalMs = Math.max(200, options?.phasePollIntervalMs ?? 2_000);
-    this.onlinePollIntervalMs = Math.max(100, options?.onlinePollIntervalMs ?? 500);
-    this.sessionReadinessTimeoutMs = Math.max(1, options?.sessionReadinessTimeoutMs ?? 75_000);
+    this.startupTimeoutMs = normalizeTimeoutOption(options?.startupTimeoutMs, 300_000, 10_000);
+    this.phasePollIntervalMs = normalizeTimeoutOption(options?.phasePollIntervalMs, 2_000, 200);
+    this.onlinePollIntervalMs = normalizeTimeoutOption(options?.onlinePollIntervalMs, 500, 100);
+    const sessionReadinessTimeoutMs = normalizeTimeoutOption(
+      options?.sessionReadinessTimeoutMs,
+      this.startupTimeoutMs,
+      1,
+    );
+    this.sessionReadinessTimeoutMs = Math.min(this.startupTimeoutMs, sessionReadinessTimeoutMs);
     this.sleep = options?.sleep ?? defaultSleep;
   }
 

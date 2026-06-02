@@ -647,6 +647,89 @@ describe('internal backend-real gate runtime contract', () => {
     expect(compositeFunction).not.toContain('run_internal_workspace_specs');
   });
 
+  it('collects child internal evidence on failed internal specs without replacing scenario failure classification', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const collector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_child_internal_failure_evidence() {',
+      '\n}\n\nrecord_child_internal_spec_failure()',
+    );
+    const dockerCollector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_asbcp_docker_log_evidence() {',
+      '\n}\n\ncollect_child_internal_failure_evidence()',
+    );
+    const evidenceCommand = sectionBetween(
+      agentTaskGate,
+      '\nrun_child_internal_evidence_command() {',
+      '\n}\n\ncollect_asbcp_docker_log_evidence()',
+    );
+    const redaction = sectionBetween(
+      agentTaskGate,
+      '\nredact_child_internal_known_values() {',
+      '\n}\n\nrun_child_internal_evidence_command()',
+    );
+    const recorder = sectionBetween(
+      agentTaskGate,
+      '\nrecord_child_internal_spec_failure() {',
+      '\n}\n\nif [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]',
+    );
+    const grepFunction = shellFunctionBody(agentTaskGate, 'run_internal_spec_grep');
+    const reclaimFunction = shellFunctionBody(agentTaskGate, 'run_internal_reclaim_spec');
+    const workspaceFunction = shellFunctionBody(agentTaskGate, 'run_internal_workspace_specs');
+    const evidenceSurface = `${collector}\n${dockerCollector}\n${evidenceCommand}`;
+
+    expect(collector).toContain('child-internal-evidence');
+    expect(collector).toContain('collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"');
+    expect(collector).toContain('kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide');
+    expect(collector).not.toContain('describe pods');
+    expect(collector).not.toContain('k8s-pods-describe.txt');
+    expect(evidenceSurface).not.toMatch(/\bkubectl\b[^\n]*\bdescribe\b/);
+    expect(evidenceSurface).not.toMatch(/\bkubectl\b[^\n]*\bget\s+secrets?\b/);
+    expect(evidenceSurface).not.toMatch(/\s-o\s+ya?ml(?:\s|$|["'])/);
+    expect(evidenceSurface).not.toMatch(/\s-o\s+json(?:\s|$|["'])/);
+    expect(evidenceSurface).not.toContain('printenv');
+    expect(collector).toContain('"${evidence_dir}/k8s-pod-status.txt"');
+    expect(collector).toContain('.status.containerStatuses');
+    expect(collector).toContain('.status.initContainerStatuses');
+    expect(collector).toContain('kubectl --request-timeout=15s get events -n "${child_namespace}" --sort-by=.metadata.creationTimestamp');
+    expect(collector).toContain('kubectl command is not available; pod list evidence was not collected.');
+    expect(collector).toContain('kubectl command is not available; pod status evidence was not collected.');
+    expect(evidenceCommand).toContain('| redact_child_internal_evidence');
+    expect(dockerCollector).toContain('docker command is not available; ASBCP docker logs were not collected.');
+    expect(dockerCollector).toContain('ASBCP container id/name could not be resolved; docker logs were not collected.');
+    expect(redaction).toContain('redact_child_internal_known_values | redact_child_internal_secret_patterns');
+    expect(redaction).toContain('secret_name_pattern');
+    expect(redaction).toContain('api[_-]?key');
+    expect(redaction).toContain('([[:alnum:]_]+[_-])?key');
+    expect(redaction).toContain('token');
+    expect(redaction).toContain('password');
+    expect(redaction).toContain('authorization');
+    expect(redaction).toContain('bearer');
+    expect(redaction).toContain('sk-');
+    expect(redaction).toContain('[[:space:]]*[:=]');
+    expect(redaction).toContain('[REDACTED]');
+
+    const failureRecord = 'gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"';
+    const evidenceCollect = 'collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" || true';
+    expect(recorder).toContain(failureRecord);
+    expect(recorder).toContain(evidenceCollect);
+    expect(recorder.indexOf(failureRecord)).toBeLessThan(recorder.indexOf(evidenceCollect));
+
+    expect(grepFunction).toContain(
+      'record_child_internal_spec_failure "${spec_slug}" "${spec} failed with status ${spec_status}" "${spec_state_file}"',
+    );
+    expect(reclaimFunction).toContain(
+      'record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}"',
+    );
+    expect(workspaceFunction).toContain(
+      'record_child_internal_spec_failure "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}" "${workspace_state_file}"',
+    );
+    expect(agentTaskGate).toContain(
+      'record_child_internal_spec_failure "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}" "${VISUAL_REVIEW_STATE_FILE}"',
+    );
+  });
+
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');

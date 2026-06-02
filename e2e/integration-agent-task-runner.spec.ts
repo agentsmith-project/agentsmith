@@ -11,6 +11,7 @@ import {
   createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   createTerminalSessionViaApi,
+  deleteTerminalSessionViaApi,
   expectAgentTaskRunnerEvidenceViaApi,
   expectManagedAgentRunnerImageEvidenceViaApi,
   expectManagedWorkloadPodImage,
@@ -705,35 +706,49 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       content: taskNote,
     });
 
-    const terminalSession = await createTerminalSessionViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      shell: '/usr/bin/bash',
-    });
-    await expectTerminalSessionRunnerEvidenceViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      sessionId: terminalSession.sessionId,
-      runnerId: prepared.runnerId,
-      createdSession: terminalSession,
-    });
+    let terminalSessionId: string | null = null;
+    try {
+      const terminalSession = await createTerminalSessionViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        shell: '/usr/bin/bash',
+      });
+      terminalSessionId = terminalSession.sessionId;
+      await expectTerminalSessionRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
+        runnerId: prepared.runnerId,
+        createdSession: terminalSession,
+      });
 
-    const output = await runTerminalCommandInSession({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      sessionId: terminalSession.sessionId,
-      command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task; printf '${doneMarker}\\n'`,
-      waitFor: [taskNote, doneMarker],
-    });
+      const output = await runTerminalCommandInSession({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
+        command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task; printf '${doneMarker}\\n'`,
+        waitFor: [taskNote, doneMarker],
+      });
 
-    expect(output).toContain(taskNote);
-    expect(output).toContain(doneMarker);
+      expect(output).toContain(taskNote);
+      expect(output).toContain(doneMarker);
+    } finally {
+      if (terminalSessionId) {
+        await deleteTerminalSessionViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId: prepared.projectId,
+          taskId,
+          sessionId: terminalSessionId,
+        });
+      }
+    }
   });
 
   test('rejects shared workspace context writes inside a real Agent Task terminal session resolved by the default Agent Runner', async ({ page }) => {
@@ -748,34 +763,48 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       title: `Agent Task Terminal Shared Read Only ${Date.now()}`,
     });
     const doneMarker = `TERM_SHARED_DONE_${Date.now()}`;
-    const terminalSession = await createTerminalSessionViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      shell: '/usr/bin/bash',
-    });
-    await expectTerminalSessionRunnerEvidenceViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      sessionId: terminalSession.sessionId,
-      runnerId: prepared.runnerId,
-      createdSession: terminalSession,
-    });
+    let terminalSessionId: string | null = null;
+    try {
+      const terminalSession = await createTerminalSessionViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        shell: '/usr/bin/bash',
+      });
+      terminalSessionId = terminalSession.sessionId;
+      await expectTerminalSessionRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
+        runnerId: prepared.runnerId,
+        createdSession: terminalSession,
+      });
 
-    const output = await runTerminalCommandInSession({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      sessionId: terminalSession.sessionId,
-      command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.terminal_attempt --content denied 2>&1 || true; printf '${doneMarker}\\n'`,
-      waitFor: ['context_scope_read_only_for_agent', doneMarker],
-    });
+      const output = await runTerminalCommandInSession({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
+        command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.terminal_attempt --content denied 2>&1 || true; printf '${doneMarker}\\n'`,
+        waitFor: ['context_scope_read_only_for_agent', doneMarker],
+      });
 
-    expect(output.toLowerCase()).toContain('context_scope_read_only_for_agent');
-    expect(output).toContain(doneMarker);
+      expect(output.toLowerCase()).toContain('context_scope_read_only_for_agent');
+      expect(output).toContain(doneMarker);
+    } finally {
+      if (terminalSessionId) {
+        await deleteTerminalSessionViaApi({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId: prepared.projectId,
+          taskId,
+          sessionId: terminalSessionId,
+        });
+      }
+    }
   });
 });

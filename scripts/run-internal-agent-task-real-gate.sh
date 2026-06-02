@@ -534,6 +534,145 @@ record_service() {
   gate_record_service_status "${INTERNAL_REAL_DIR}" "${service_name}" "${status}" "${detail}"
 }
 
+child_internal_evidence_slug() {
+  local raw="${1:-child-spec}"
+  printf '%s\n' "${raw}" | tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/^-+//; s/-+$//; s/-+/-/g' | cut -c1-96
+}
+
+redact_child_internal_known_values() {
+  local line redacted secret
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    redacted="${line}"
+    for secret in \
+      "${ASBCP_SERVICE_KEY_VALUE:-}" \
+      "${ASBCP_SERVICE_KEY:-}" \
+      "${AFSCP_ORCHESTRATOR_TOKEN:-}" \
+      "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}" \
+      "${PRESET_ENDPOINT_API_KEY_VALUE:-}" \
+      "${PRESET_ENDPOINT_API_KEY:-}"; do
+      if [[ "${#secret}" -ge 4 ]]; then
+        redacted="${redacted//${secret}/[REDACTED]}"
+      fi
+    done
+    printf '%s\n' "${redacted}"
+  done
+}
+
+redact_child_internal_secret_patterns() {
+  local secret_name_pattern='([[:alnum:]_]*[_-]?(api[_-]?key|token|secret|password|passwd)|([[:alnum:]_]+[_-])?key)'
+  sed -E \
+    -e "s#(authorization[[:space:]]*:[[:space:]]*bearer[[:space:]]+)[^[:space:]\"',;]+#\\1[REDACTED]#gI" \
+    -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)\"[^\"]*\"#\\1\\2[REDACTED]#gI" \
+    -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)'[^']*'#\\1\\2[REDACTED]#gI" \
+    -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)[^[:space:]\"',;&]+#\\1\\2[REDACTED]#gI" \
+    -e "s#(^|[^[:alnum:]._-])sk-[[:alnum:]][[:alnum:]._-]{8,}#\\1[REDACTED]#g"
+}
+
+redact_child_internal_evidence() {
+  redact_child_internal_known_values | redact_child_internal_secret_patterns
+}
+
+run_child_internal_evidence_command() {
+  local output_file="$1"
+  local timeout_seconds="$2"
+  local command_status
+  shift 2
+  {
+    printf '$'
+    printf ' %q' "$@"
+    printf '\n'
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${timeout_seconds}" "$@" 2>&1 | redact_child_internal_evidence
+      command_status="${PIPESTATUS[0]}"
+    else
+      "$@" 2>&1 | redact_child_internal_evidence
+      command_status="${PIPESTATUS[0]}"
+    fi
+    printf '\n[exit_status=%s]\n' "${command_status}"
+  } > "${output_file}" || true
+}
+
+collect_asbcp_docker_log_evidence() {
+  local output_file="$1"
+  local container_ref="${2:-}"
+  local command_status
+  if ! command -v docker >/dev/null 2>&1; then
+    printf 'docker command is not available; ASBCP docker logs were not collected.\n' > "${output_file}"
+    return 0
+  fi
+  if [[ -z "${container_ref}" ]]; then
+    printf 'ASBCP container id/name could not be resolved; docker logs were not collected.\n' > "${output_file}"
+    return 0
+  fi
+  {
+    printf '$ docker logs %q\n' "${container_ref}"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 30 docker logs "${container_ref}" 2>&1 | redact_child_internal_evidence
+      command_status="${PIPESTATUS[0]}"
+    else
+      docker logs "${container_ref}" 2>&1 | redact_child_internal_evidence
+      command_status="${PIPESTATUS[0]}"
+    fi
+    printf '\n[exit_status=%s]\n' "${command_status}"
+  } > "${output_file}" || true
+}
+
+collect_child_internal_failure_evidence() {
+  local stage="$1"
+  local spec_state_file="${2:-}"
+  local safe_stage evidence_dir
+  safe_stage="$(child_internal_evidence_slug "${stage}")"
+  evidence_dir="${INTERNAL_REAL_DIR}/child-internal-evidence/${safe_stage:-child-spec}"
+  mkdir -p "${evidence_dir}" 2>/dev/null || return 0
+  (
+    set +e
+    set +u
+    set +o pipefail
+    if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+      # shellcheck disable=SC1090
+      source "${spec_state_file}"
+    fi
+    child_namespace="${K8S_NAMESPACE:-${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}}"
+    child_asbcp_container_ref=""
+    if [[ -n "${INTERNAL_REAL_DIR:-}" && -f "${INTERNAL_REAL_DIR}/asbcp.container" ]]; then
+      child_asbcp_container_ref="$(tr -d '[:space:]' < "${INTERNAL_REAL_DIR}/asbcp.container" 2>/dev/null || true)"
+    fi
+    if [[ -z "${child_asbcp_container_ref}" && -n "${ASBCP_CONTAINER_NAME:-}" ]]; then
+      child_asbcp_container_ref="${ASBCP_CONTAINER_NAME}"
+    fi
+    if [[ -z "${child_asbcp_container_ref}" && -n "${INTERNAL_REAL_DIR:-}" ]]; then
+      child_asbcp_container_ref="agentsmith-asbcp-$(basename "${INTERNAL_REAL_DIR}" | tr -cs 'A-Za-z0-9_.-' '-')"
+    fi
+    {
+      printf 'stage=%s\n' "${stage}"
+      printf 'state_file=%s\n' "${spec_state_file:-<none>}"
+      printf 'namespace=%s\n' "${child_namespace}"
+      printf 'asbcp_container_ref=%s\n' "${child_asbcp_container_ref:-<missing>}"
+      printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } > "${evidence_dir}/summary.txt"
+
+    collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
+    if command -v kubectl >/dev/null 2>&1; then
+      run_child_internal_evidence_command "${evidence_dir}/k8s-pods.txt" 20 kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide
+      run_child_internal_evidence_command "${evidence_dir}/k8s-pod-status.txt" 20 kubectl --request-timeout=15s get pods -n "${child_namespace}" -o jsonpath='{range .items[*]}pod={.metadata.name}{"\n"}phase={.status.phase}{"\n"}conditions={range .status.conditions[*]}{.type}:{.status}:{.reason}{";"}{end}{"\n"}containers={range .status.containerStatuses[*]}{.name}|image={.image}|ready={.ready}|restartCount={.restartCount}|waiting={.state.waiting.reason}|terminated={.state.terminated.reason}|exitCode={.state.terminated.exitCode}{";"}{end}{"\n"}init_containers={range .status.initContainerStatuses[*]}{.name}|image={.image}|ready={.ready}|restartCount={.restartCount}|waiting={.state.waiting.reason}|terminated={.state.terminated.reason}|exitCode={.state.terminated.exitCode}{";"}{end}{"\n---\n"}{end}'
+      run_child_internal_evidence_command "${evidence_dir}/k8s-events.txt" 20 kubectl --request-timeout=15s get events -n "${child_namespace}" --sort-by=.metadata.creationTimestamp
+    else
+      printf 'kubectl command is not available; pod list evidence was not collected.\n' > "${evidence_dir}/k8s-pods.txt"
+      printf 'kubectl command is not available; pod status evidence was not collected.\n' > "${evidence_dir}/k8s-pod-status.txt"
+      printf 'kubectl command is not available; event evidence was not collected.\n' > "${evidence_dir}/k8s-events.txt"
+    fi
+  ) || true
+  return 0
+}
+
+record_child_internal_spec_failure() {
+  local stage="$1"
+  local message="$2"
+  local spec_state_file="${3:-}"
+  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
+  collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" || true
+}
+
 if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
   echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
@@ -706,7 +845,7 @@ run_internal_spec_grep() {
   if [[ "${spec_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}" "passed" "${spec}"
   else
-    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${spec_slug}" "${spec} failed with status ${spec_status}"
+    record_child_internal_spec_failure "${spec_slug}" "${spec} failed with status ${spec_status}" "${spec_state_file}"
   fi
   if [[ "${KEEP_FAILED_ENV}" != "1" || "${spec_status}" -eq 0 ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -759,7 +898,7 @@ run_internal_reclaim_spec() {
   if [[ "${reclaim_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
   else
-    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}"
+    record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}"
   fi
   if [[ -n "${reclaim_state_file}" && ( "${KEEP_FAILED_ENV}" != "1" || "${reclaim_status}" -eq 0 ) ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${reclaim_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -792,7 +931,7 @@ run_internal_workspace_specs() {
   if [[ "${workspace_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-agent-task-runner"
   else
-    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}"
+    record_child_internal_spec_failure "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}" "${workspace_state_file}"
   fi
   if [[ "${workspace_status}" -eq 0 ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -866,7 +1005,7 @@ if [[ "${GATE_MODE}" == "visual-review" ]]; then
   if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec" "passed" "integration-visual-review"
   else
-    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}"
+    record_child_internal_spec_failure "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}" "${VISUAL_REVIEW_STATE_FILE}"
   fi
   if [[ -n "${VISUAL_REVIEW_STATE_FILE:-}" && ( "${KEEP_FAILED_ENV}" != "1" || "${VISUAL_REVIEW_STATUS}" -eq 0 ) ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${VISUAL_REVIEW_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true

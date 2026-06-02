@@ -205,6 +205,12 @@ type TerminalBrowserPayload = Record<string, unknown> & {
   terminal_session_id?: string;
 };
 
+type PublicTerminalDispatchError = {
+  errorCode: string;
+  errorMessage: string;
+  closeReason: string;
+};
+
 type TerminalOutputReplayEntry = {
   seq: number;
   chunk: string;
@@ -1126,6 +1132,44 @@ export class NotebookTerminalService {
     session.startupTimer = undefined;
   }
 
+  private readErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      return typeof message === 'string' ? message : '';
+    }
+    return '';
+  }
+
+  private readErrorDiagnostic(error: unknown): Record<string, unknown> {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+      };
+    }
+    return {
+      message: this.readErrorMessage(error) || 'non_error_throwable',
+    };
+  }
+
+  private resolvePublicTerminalDispatchError(error: unknown): PublicTerminalDispatchError {
+    const message = this.readErrorMessage(error);
+    if (message.startsWith('asbcp_error:')) {
+      return {
+        errorCode: 'AGENT_SANDBOX_UNAVAILABLE',
+        errorMessage: 'agent_sandbox_unavailable',
+        closeReason: 'agent_sandbox_unavailable',
+      };
+    }
+    return {
+      errorCode: 'TERMINAL_DISPATCH_FAILED',
+      errorMessage: 'terminal_dispatch_failed',
+      closeReason: 'terminal_dispatch_failed',
+    };
+  }
+
   private bumpDisconnectVersion(session: RegisteredTerminalSession): number {
     session.disconnectVersion = (session.disconnectVersion ?? 0) + 1;
     return session.disconnectVersion;
@@ -1568,6 +1612,7 @@ export class NotebookTerminalService {
       return session.runtime;
     }
     if (!session.runtimeDispatchPromise) {
+      this.armStartupTimer(session);
       const dispatchPromise = (async () => {
         await this.notifyBeforeSessionRuntimeDispatch(session);
         if (!this.sessions.has(session.id) || session.status === 'closed' || session.status === 'failed') {
@@ -1678,7 +1723,6 @@ export class NotebookTerminalService {
 
   private armStartupTimer(session: RegisteredTerminalSession): void {
     if (session.status !== 'pending') return;
-    if (!session.runtime) return;
     if (session.startupTimer) return;
     session.startupTimer = setTimeout(() => {
       session.startupTimer = undefined;
@@ -2643,25 +2687,27 @@ export class NotebookTerminalService {
     try {
       await this.ensureSessionRuntime(session);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'terminal_dispatch_failed';
-      if (!this.isCurrentBrowserBind(session, ws, bindVersion) || message === 'terminal_dispatch_abandoned') {
+      const rawMessage = this.readErrorMessage(error);
+      if (!this.isCurrentBrowserBind(session, ws, bindVersion) || rawMessage === 'terminal_dispatch_abandoned') {
         return;
       }
+      const publicError = this.resolvePublicTerminalDispatchError(error);
       debugTerminal('dispatch_failed', {
         terminal_session_id: session.id,
         task_id: session.taskId,
         agent_runner_id: this.readSessionResolvedRunnerId(session) ?? session.agentId,
         runner_session_id: session.runnerSessionId,
-        error: message,
+        public_error_message: publicError.errorMessage,
+        raw_error: this.readErrorDiagnostic(error),
       });
       this.sendToBrowserSocket(ws, {
         type: 'terminal.error',
         terminal_session_id: session.id,
-        error_code: 'TERMINAL_DISPATCH_FAILED',
-        error_message: message,
+        error_code: publicError.errorCode,
+        error_message: publicError.errorMessage,
       });
-      this.closeBrowserSocket(ws, 1011, 'terminal_dispatch_failed');
-      void this.finishSession(session.id, 'failed', message).catch(() => undefined);
+      this.closeBrowserSocket(ws, 1011, publicError.closeReason);
+      void this.finishSession(session.id, 'failed', publicError.closeReason).catch(() => undefined);
     }
   }
 

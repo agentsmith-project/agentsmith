@@ -967,6 +967,138 @@ describe('NotebookTerminalService', () => {
     });
   });
 
+  it('fails a pending terminal with a public startup error when runtime warmup never reaches dispatch', async () => {
+    const cache = new InMemoryCache();
+    const beforeSessionRuntimeDispatch = vi.fn(() => new Promise<void>(() => undefined));
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never, {
+      startupTimeoutMs: 25,
+    });
+    service.registerLifecycleHooks('terminal_runtime_warmup_timeout_test', {
+      beforeSessionRuntimeDispatch,
+    });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    await waitForAssertion(async () => {
+      expect(beforeSessionRuntimeDispatch).toHaveBeenCalledTimes(1);
+      expect(dispatchTerminalSession).not.toHaveBeenCalled();
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'terminal_start_timeout',
+      });
+    });
+    expect(sentPayloads(ws)).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'TERMINAL_START_TIMEOUT',
+      error_message: 'terminal_start_timeout',
+    });
+    expect(ws.closeCalls.some((call) => call.reason === 'terminal_start_timeout')).toBe(true);
+  });
+
+  it('redacts raw ASBCP dispatch errors from browser frames and persisted close reason while keeping debug diagnostics', async () => {
+    const originalDebug = process.env.DEBUG_NOTEBOOK_TERMINAL;
+    process.env.DEBUG_NOTEBOOK_TERMINAL = '1';
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const cache = new InMemoryCache();
+      const rawUpstreamMessage = 'asbcp_error: ensure_workspace_binding 500 {"request_id":"req_raw_123","body":"persistent volume claim pvc-raw is unavailable"}';
+      const beforeSessionRuntimeDispatch = vi.fn(async () => {
+        throw new Error(rawUpstreamMessage);
+      });
+      const dispatchTerminalSession = vi.fn();
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession,
+      } as never);
+      service.registerLifecycleHooks('terminal_raw_dispatch_error_redaction_test', {
+        beforeSessionRuntimeDispatch,
+      });
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const ws = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
+
+      let updatedSession: Awaited<ReturnType<typeof service.getSession>> = null;
+      await waitForAssertion(async () => {
+        updatedSession = await service.getSession(created.sessionId);
+        expect(updatedSession).toMatchObject({
+          id: created.sessionId,
+          status: 'failed',
+          closeReason: 'agent_sandbox_unavailable',
+        });
+      });
+      const browserPayloads = sentPayloads(ws);
+      expect(browserPayloads).toContainEqual({
+        type: 'terminal.error',
+        terminal_session_id: created.sessionId,
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        error_message: 'agent_sandbox_unavailable',
+      });
+      expect(ws.closeCalls.some((call) => call.reason === 'agent_sandbox_unavailable')).toBe(true);
+
+      const browserAndSessionPublicSurface = JSON.stringify({
+        browserPayloads,
+        closeCalls: ws.closeCalls,
+        closeReason: updatedSession?.closeReason,
+      });
+      expect(browserAndSessionPublicSurface).not.toContain('asbcp_error');
+      expect(browserAndSessionPublicSurface).not.toContain('req_raw_123');
+      expect(browserAndSessionPublicSurface).not.toContain('persistent volume claim');
+      expect(browserAndSessionPublicSurface).not.toContain('pvc-raw');
+
+      const debugOutput = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
+      expect(debugOutput).toContain('[notebook-terminal] dispatch_failed');
+      expect(debugOutput).toContain('agent_sandbox_unavailable');
+      expect(debugOutput).toContain('asbcp_error: ensure_workspace_binding 500');
+      expect(debugOutput).toContain('req_raw_123');
+      expect(debugOutput).toContain('persistent volume claim');
+      expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    } finally {
+      stdoutWrite.mockRestore();
+      if (originalDebug === undefined) {
+        delete process.env.DEBUG_NOTEBOOK_TERMINAL;
+      } else {
+        process.env.DEBUG_NOTEBOOK_TERMINAL = originalDebug;
+      }
+    }
+  });
+
   it('fails closed when runtime events use the legacy session_id field', async () => {
     const cache = new InMemoryCache();
     const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
@@ -3513,7 +3645,7 @@ describe('NotebookTerminalService', () => {
       expect(updated).toMatchObject({
         id: created.sessionId,
         status: 'failed',
-        closeReason: 'invalid_shell',
+        closeReason: 'terminal_dispatch_failed',
       });
     });
     expect(ws.closeCalls.some((call) => call.reason === 'terminal_dispatch_failed')).toBe(true);

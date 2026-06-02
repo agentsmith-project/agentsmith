@@ -42,6 +42,18 @@ function buildAsbcpErrorMessage(operation: string, status: number, responseText:
   return `asbcp_error: ${operation} ${status}${safeText ? ` ${safeText}` : ''}`;
 }
 
+function buildAsbcpHttpErrorMessage(input: {
+  operation: string;
+  status: number;
+  responseText: string;
+  asbcpCode?: string;
+}): string {
+  if (input.status === 503 && input.asbcpCode === 'not_ready') {
+    return 'asbcp_readiness_not_ready';
+  }
+  return buildAsbcpErrorMessage(input.operation, input.status, input.responseText);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -52,6 +64,11 @@ function readNonEmptyString(value: unknown): string | undefined {
 
 function readStringField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): string | undefined {
   return readNonEmptyString(record[snakeKey]) ?? (camelKey ? readNonEmptyString(record[camelKey]) : undefined);
+}
+
+function readBooleanField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): boolean | undefined {
+  const value = record[snakeKey] ?? (camelKey ? record[camelKey] : undefined);
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function isBareSha256Digest(value: string | undefined): boolean {
@@ -87,6 +104,14 @@ function readAsbcpErrorCode(responseText: string): string | undefined {
     ?? readStringField(error, 'error_code', 'errorCode');
 }
 
+function readAsbcpErrorRetryable(responseText: string): boolean | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readBooleanField(error, 'retryable');
+}
+
 function readAsbcpRequestIdFromBody(responseText: string): string | undefined {
   const payload = parseAsbcpJsonObject(responseText);
   if (!payload) {
@@ -105,6 +130,21 @@ function readAsbcpResponseRequestId(resp: Response, responseText: string): strin
   return readNonEmptyString(resp.headers.get('x-request-id'))
     ?? readNonEmptyString(resp.headers.get('x-asbcp-request-id'))
     ?? readAsbcpRequestIdFromBody(responseText);
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1_000);
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.max(0, retryAt - Date.now());
 }
 
 function isAsbcpReleaseDeleteOperation(operation: string): boolean {
@@ -320,7 +360,9 @@ export class AsbcpHttpError extends Error {
   status: number;
   operation: string;
   retryable: boolean;
+  asbcpRetryable?: boolean;
   requestId?: string;
+  retryAfterMs?: number;
 
   constructor(input: {
     status: number;
@@ -329,7 +371,9 @@ export class AsbcpHttpError extends Error {
     code: string;
     asbcpCode?: string;
     retryable?: boolean;
+    asbcpRetryable?: boolean;
     requestId?: string;
+    retryAfterMs?: number;
   }) {
     super(redactAsbcpLogText(input.message));
     this.name = 'AsbcpHttpError';
@@ -340,10 +384,44 @@ export class AsbcpHttpError extends Error {
       this.asbcpCode = input.asbcpCode;
     }
     this.retryable = input.retryable ?? false;
+    if (typeof input.asbcpRetryable === 'boolean') {
+      this.asbcpRetryable = input.asbcpRetryable;
+    }
     if (input.requestId) {
       this.requestId = input.requestId;
     }
+    if (typeof input.retryAfterMs === 'number' && Number.isFinite(input.retryAfterMs) && input.retryAfterMs >= 0) {
+      this.retryAfterMs = Math.floor(input.retryAfterMs);
+    }
   }
+}
+
+export function isAsbcpReadinessNotReadyError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    return false;
+  }
+  const status = typeof error.status === 'number' && Number.isFinite(error.status) ? error.status : undefined;
+  const asbcpCode = typeof error.asbcpCode === 'string'
+    ? error.asbcpCode
+    : (typeof error.asbcp_code === 'string' ? error.asbcp_code : undefined);
+  if (status !== 503 || asbcpCode !== 'not_ready') {
+    return false;
+  }
+  const asbcpRetryable = typeof error.asbcpRetryable === 'boolean'
+    ? error.asbcpRetryable
+    : (typeof error.asbcp_retryable === 'boolean' ? error.asbcp_retryable : undefined);
+  const retryable = typeof error.retryable === 'boolean' ? error.retryable : undefined;
+  return asbcpRetryable !== false && retryable !== false;
+}
+
+export function readAsbcpRetryAfterMs(error: unknown): number | undefined {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  const value = error.retryAfterMs ?? error.retry_after_ms;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
 }
 
 export class AsbcpClient {
@@ -443,9 +521,34 @@ export class AsbcpClient {
     return status === 429 || status === 502 || status === 503 || status === 504;
   }
 
+  private isPreBodyRetryableStatus(status: number): boolean {
+    return status === 429 || status === 502 || status === 504;
+  }
+
   private isRetryableHttpError(status: number, operation: string, responseText: string): boolean {
     return this.isRetryableStatus(status)
       || isAsbcpReleaseUnconfirmedConflict(status, operation, responseText);
+  }
+
+  private buildHttpError(operation: string, resp: Response, responseText: string): AsbcpHttpError {
+    const asbcpRetryable = readAsbcpErrorRetryable(responseText);
+    const asbcpCode = readAsbcpErrorCode(responseText);
+    return new AsbcpHttpError({
+      status: resp.status,
+      operation,
+      code: this.mapErrorCode(resp.status, operation, responseText),
+      asbcpCode,
+      retryable: asbcpRetryable ?? this.isRetryableHttpError(resp.status, operation, responseText),
+      ...(asbcpRetryable !== undefined ? { asbcpRetryable } : {}),
+      requestId: readAsbcpResponseRequestId(resp, responseText),
+      retryAfterMs: parseRetryAfterMs(resp.headers.get('retry-after')),
+      message: buildAsbcpHttpErrorMessage({
+        operation,
+        status: resp.status,
+        responseText,
+        asbcpCode,
+      }),
+    });
   }
 
   private async requestWithRetry(
@@ -461,7 +564,7 @@ export class AsbcpClient {
       }
       try {
         const resp = await request();
-        if (!resp.ok && this.isRetryableStatus(resp.status) && attempt < maxAttempts) {
+        if (!resp.ok && this.isPreBodyRetryableStatus(resp.status) && attempt < maxAttempts) {
           if (signal?.aborted) {
             throw AsbcpClient.buildAbortError(signal.reason);
           }
@@ -496,15 +599,7 @@ export class AsbcpClient {
     const resp = await this.requestWithRetry(operation, request, signal);
     if (resp.ok) return resp;
     const text = await resp.text().catch(() => '');
-    throw new AsbcpHttpError({
-      status: resp.status,
-      operation,
-      code: this.mapErrorCode(resp.status, operation, text),
-      asbcpCode: readAsbcpErrorCode(text),
-      retryable: this.isRetryableHttpError(resp.status, operation, text),
-      requestId: readAsbcpResponseRequestId(resp, text),
-      message: buildAsbcpErrorMessage(operation, resp.status, text),
-    });
+    throw this.buildHttpError(operation, resp, text);
   }
 
   async checkReady(signal?: AbortSignal): Promise<void> {
@@ -541,6 +636,7 @@ export class AsbcpClient {
     projectId: string,
     bindingId: string,
     body: SandboxWorkspaceBindingBody,
+    signal?: AbortSignal,
   ): Promise<SandboxWorkspaceBindingResponse> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -551,8 +647,8 @@ export class AsbcpClient {
       method: 'PUT',
       headers: this.headers(true),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    }));
+      signal: this.buildRequestSignal(60_000, signal),
+    }), signal);
     return await resp.json() as SandboxWorkspaceBindingResponse;
   }
 
@@ -573,15 +669,7 @@ export class AsbcpClient {
     }));
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new AsbcpHttpError({
-        status: resp.status,
-        operation: 'delete_workspace_binding',
-        code: this.mapErrorCode(resp.status, 'delete_workspace_binding', text),
-        asbcpCode: readAsbcpErrorCode(text),
-        retryable: this.isRetryableHttpError(resp.status, 'delete_workspace_binding', text),
-        requestId: readAsbcpResponseRequestId(resp, text),
-        message: buildAsbcpErrorMessage('delete_workspace_binding', resp.status, text),
-      });
+      throw this.buildHttpError('delete_workspace_binding', resp, text);
     }
   }
 
@@ -610,15 +698,7 @@ export class AsbcpClient {
         };
       }
       const text = await resp.text().catch(() => '');
-      throw new AsbcpHttpError({
-        status: resp.status,
-        operation: 'get_pod_status',
-        code: this.mapErrorCode(resp.status, 'get_pod_status', text),
-        asbcpCode: readAsbcpErrorCode(text),
-        retryable: this.isRetryableHttpError(resp.status, 'get_pod_status', text),
-        requestId: readAsbcpResponseRequestId(resp, text),
-        message: buildAsbcpErrorMessage('get_pod_status', resp.status, text),
-      });
+      throw this.buildHttpError('get_pod_status', resp, text);
     }
     return readPodStatusResponse(await resp.json().catch(() => undefined)) ?? { phase: 'unknown' };
   }
@@ -641,15 +721,7 @@ export class AsbcpClient {
     }), signal);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new AsbcpHttpError({
-        status: resp.status,
-        operation: 'delete_pod',
-        code: this.mapErrorCode(resp.status, 'delete_pod', text),
-        asbcpCode: readAsbcpErrorCode(text),
-        retryable: this.isRetryableHttpError(resp.status, 'delete_pod', text),
-        requestId: readAsbcpResponseRequestId(resp, text),
-        message: buildAsbcpErrorMessage('delete_pod', resp.status, text),
-      });
+      throw this.buildHttpError('delete_pod', resp, text);
     }
   }
 

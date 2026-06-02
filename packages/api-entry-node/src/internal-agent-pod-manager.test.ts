@@ -411,6 +411,122 @@ describe('internal-agent-pod-manager', () => {
     expect(getPodStatus).toHaveBeenCalledTimes(3);
   });
 
+  it('retries createOrEnsurePod on ASBCP readiness not_ready and reaches Running', async () => {
+    const getPodStatus = vi.fn().mockResolvedValueOnce({ phase: 'offline' });
+    const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_workload_retry',
+      retryAfterMs: 1_000,
+    });
+    const createOrEnsurePod = vi.fn()
+      .mockRejectedValueOnce(readinessError)
+      .mockResolvedValueOnce({ httpStatus: 201, pod: buildRunningPodStatus() });
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { status: 403, code: 'AGENT_SANDBOX_FORBIDDEN' },
+    { status: 409, code: 'AGENT_SANDBOX_CONFLICT' },
+  ])('does not retry non-readiness createOrEnsurePod status $status', async ({ status, code }) => {
+    const getPodStatus = vi.fn().mockResolvedValueOnce({ phase: 'offline' });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_non_retryable_error'),
+      {
+        code,
+        status,
+        operation: 'create_or_ensure_pod',
+        retryable: false,
+      },
+    ));
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toMatchObject({
+      code,
+      status,
+      operation: 'create_or_ensure_pod',
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).not.toHaveBeenCalled();
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('continues with GET polling after PUT ensure times out when workload id is already known', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })

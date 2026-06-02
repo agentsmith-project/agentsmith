@@ -20,6 +20,10 @@ import { buildTaskHomePaths, buildTaskHomeSegment } from './notebook-task/task-m
 import type { ProjectAfscpResourceOwnershipStore } from './project-afscp-namespace-store.js';
 import type { ProjectStorageBootstrapServicePort } from './project-storage-bootstrap-service.js';
 import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './asbcp-client.js';
+import {
+  DEFAULT_ASBCP_READINESS_RETRY_BUDGET_MS,
+  retryAsbcpReadinessNotReady,
+} from './asbcp-readiness-retry.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 const INTERNAL_AGENT_WORKSPACE_COLLECTION = 'internal_agent_file_library_workspaces';
@@ -96,6 +100,7 @@ interface InternalAgentWorkspaceK8sClient {
     projectId: string,
     bindingId: string,
     body: SandboxWorkspaceBindingBody,
+    signal?: AbortSignal,
   ): Promise<SandboxWorkspaceBindingResponse>;
   deleteWorkspaceBinding(workspaceId: string, projectId: string, bindingId: string): Promise<void>;
 }
@@ -141,6 +146,8 @@ interface InternalAgentWorkspaceProvisionerOptions {
   mappingRepo?: JsonDocProjectFileLibraryAfscpMappingRepo;
   resourceOwnershipStore?: ProjectAfscpResourceOwnershipStore;
   workloadMountLeaseSeconds?: number;
+  readinessRetryBudgetMs?: number;
+  readinessSleep?: (ms: number) => Promise<void>;
 }
 
 interface EnsuredAfscpMountBinding {
@@ -240,6 +247,10 @@ function isRotatableMountBindingStatus(value: AfscpWorkloadMountBindingStatus): 
 
 function mountBindingStatusRetryable(value: AfscpWorkloadMountBindingStatus): boolean {
   return value === 'pending' || value === 'releasing';
+}
+
+function defaultReadinessSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isLocalWorkspaceBindingReleasing(binding: InternalAgentWorkspaceBinding): boolean {
@@ -588,9 +599,15 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     binding.mount_binding_status = mountBinding.status;
     binding.lease_expires_at = mountBinding.lease_expires_at;
     await this.docStore.upsert(collection, input.fileLibraryId, binding);
-    const remoteBinding = await this.k8sClient.ensureWorkspaceBinding(input.workspaceId, input.projectId, mountBinding.mount_binding_id, {
-      namespace_id: mapping.namespace_id,
-      mount_binding_id: mountBinding.mount_binding_id,
+    const remoteBinding = await this.ensureAsbcpWorkspaceBinding({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      bindingId: mountBinding.mount_binding_id,
+      body: {
+        namespace_id: mapping.namespace_id,
+        mount_binding_id: mountBinding.mount_binding_id,
+      },
+      signal: input.signal,
     });
     binding.status = remoteBinding.status || binding.status;
     await this.docStore.upsert(collection, input.fileLibraryId, binding);
@@ -728,6 +745,39 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       return null;
     }
     return binding;
+  }
+
+  private async ensureAsbcpWorkspaceBinding(input: {
+    workspaceId: string;
+    projectId: string;
+    bindingId: string;
+    body: SandboxWorkspaceBindingBody;
+    signal?: AbortSignal;
+  }): Promise<SandboxWorkspaceBindingResponse> {
+    const deadline = Date.now() + Math.max(
+      1,
+      this.options?.readinessRetryBudgetMs ?? DEFAULT_ASBCP_READINESS_RETRY_BUDGET_MS,
+    );
+    return await retryAsbcpReadinessNotReady({
+      operation: 'ensure_workspace_binding',
+      deadline,
+      signal: input.signal,
+      sleep: this.options?.readinessSleep ?? defaultReadinessSleep,
+      invoke: () => input.signal
+        ? this.k8sClient.ensureWorkspaceBinding(
+          input.workspaceId,
+          input.projectId,
+          input.bindingId,
+          input.body,
+          input.signal,
+        )
+        : this.k8sClient.ensureWorkspaceBinding(
+          input.workspaceId,
+          input.projectId,
+          input.bindingId,
+          input.body,
+        ),
+    });
   }
 
   private async requireActiveMapping(input: {

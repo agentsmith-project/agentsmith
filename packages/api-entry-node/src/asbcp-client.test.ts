@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AsbcpClient, AsbcpHttpError } from './asbcp-client.js';
+import {
+  AsbcpClient,
+  AsbcpHttpError,
+  isAsbcpReadinessNotReadyError,
+  readAsbcpRetryAfterMs,
+} from './asbcp-client.js';
 
 const originalFetch = globalThis.fetch;
 const RUNNER_DIGEST_A = `sha256:${'a'.repeat(64)}`;
@@ -223,9 +228,9 @@ describe('AsbcpClient', () => {
     await expect(client.checkReady()).resolves.toBeUndefined();
   });
 
-  it('retries transient 503 and then succeeds', async () => {
+  it('retries transient 502 and then succeeds', async () => {
     globalThis.fetch = vi.fn()
-      .mockResolvedValueOnce(new Response('temporary', { status: 503 }))
+      .mockResolvedValueOnce(new Response('temporary', { status: 502 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ phase: 'Running' }), { status: 200 })) as unknown as typeof fetch;
 
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
@@ -340,6 +345,126 @@ describe('AsbcpClient', () => {
     expect(result.binding_id).toBe('wmb_demo');
     expect(result.namespace_id).toBe('ns_project_1');
     expect(result.mount_binding_id).toBe('wmb_demo');
+  });
+
+  it('preserves ASBCP readiness not_ready retry metadata from Retry-After without client-side response retry', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'not_ready',
+        message: 'workspace binding PVC is still Pending',
+        request_id: 'asbcp_req_binding_not_ready',
+      },
+    }), {
+      status: 503,
+      headers: {
+        'Retry-After': '1',
+      },
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_binding_not_ready',
+      retryAfterMs: 1_000,
+    });
+    expect(isAsbcpReadinessNotReadyError(caught)).toBe(true);
+    expect(readAsbcpRetryAfterMs(caught)).toBe(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails fast and sanitizes ASBCP not_ready when the body explicitly marks it non-retryable', async () => {
+    const rawDetail = 'pvc-prod-raw-claim is permanently invalid';
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'not_ready',
+        message: rawDetail,
+        request_id: 'asbcp_req_binding_not_retryable',
+        retryable: false,
+      },
+    }), {
+      status: 503,
+      headers: {
+        'Retry-After': '2',
+      },
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'not_ready',
+      retryable: false,
+      asbcpRetryable: false,
+      requestId: 'asbcp_req_binding_not_retryable',
+      retryAfterMs: 2_000,
+    });
+    expect(isAsbcpReadinessNotReadyError(caught)).toBe(false);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('asbcp_readiness_not_ready');
+    expect((caught as Error).message).not.toContain(rawDetail);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails fast for non-readiness ASBCP 503 responses', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'sandbox_capacity_unavailable',
+        message: 'capacity temporarily unavailable',
+        request_id: 'asbcp_req_capacity_503',
+      },
+    }), { status: 503 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'sandbox_capacity_unavailable',
+      requestId: 'asbcp_req_capacity_503',
+    });
+    expect(isAsbcpReadinessNotReadyError(caught)).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns a distinguishable error for delete workspace binding 404 instead of treating it as success', async () => {

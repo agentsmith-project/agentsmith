@@ -257,6 +257,87 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     expect(revokeWorkloadMountBinding).not.toHaveBeenCalled();
   });
 
+  it('retries ASBCP workspace binding readiness without recreating the AFSCP mount binding', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const mappingRepo = await seedReadyAfscpLibrary({
+      docStore,
+      libraryId: 'flib_readiness_retry',
+    });
+    const createWorkloadMountBinding = vi.fn().mockResolvedValue({
+      operation_id: 'op_mount_create',
+      operation_state: 'succeeded',
+      resource: { type: 'workload_mount_binding', id: 'wmb_readiness_retry' },
+      result: null,
+      error: null,
+    });
+    const getWorkloadMountBinding = vi.fn().mockResolvedValue({
+      mount_binding_id: 'wmb_readiness_retry',
+      namespace_id: 'ns_project_1',
+      repo_id: 'repo_file_library_1',
+      volume_id: 'vol_shared',
+      mount_path: '/home/task_demo',
+      read_only: false,
+      status: 'issued',
+      lease_expires_at: '2026-03-19T01:00:00.000Z',
+    });
+    const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_binding_retry',
+      retryAfterMs: 1_000,
+    });
+    const ensureWorkspaceBinding = vi.fn()
+      .mockRejectedValueOnce(readinessError)
+      .mockRejectedValueOnce(readinessError)
+      .mockResolvedValue({
+        binding_id: 'wmb_readiness_retry',
+        workspace_id: 'ws_demo',
+        project_id: 'proj_demo',
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_readiness_retry',
+        status: 'ready',
+      });
+    const readinessSleep = vi.fn(async () => undefined);
+    const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+      docStore,
+      {
+        ensureWorkspaceBinding,
+        deleteWorkspaceBinding: vi.fn().mockResolvedValue(undefined),
+      },
+      {
+        afscpProductClient: {
+          createWorkloadMountBinding,
+          getWorkloadMountBinding,
+          revokeWorkloadMountBinding: vi.fn(),
+        },
+        projectStorageBootstrapService: readyProjectStorageService(),
+        mappingRepo,
+        resourceOwnershipStore: new ProjectAfscpResourceOwnershipStore(docStore),
+        readinessSleep,
+      },
+    );
+
+    const result = await provisioner.ensureWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      projectId: 'proj_demo',
+      fileLibraryId: 'flib_readiness_retry',
+      taskId: 'task_demo',
+      actorUserId: 'user_demo',
+      requestId: 'req_binding_retry',
+    });
+
+    expect(createWorkloadMountBinding).toHaveBeenCalledTimes(1);
+    expect(getWorkloadMountBinding).toHaveBeenCalledTimes(1);
+    expect(ensureWorkspaceBinding).toHaveBeenCalledTimes(3);
+    expect(readinessSleep).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+    expect(result.workspaceMount.bindingId).toBe('wmb_readiness_retry');
+    expect(result.binding.status).toBe('ready');
+  });
+
   it('keeps terminal binding truth after AFSCP revoke so the next ensure rotates to the next generation', async () => {
     const docStore = new InMemoryJsonDocStore();
     const mappingRepo = await seedReadyAfscpLibrary({

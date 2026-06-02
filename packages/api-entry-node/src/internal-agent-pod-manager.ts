@@ -8,6 +8,7 @@ import {
   type SandboxPodCreateBody,
   type SandboxPodEnsureResponse,
 } from './asbcp-client.js';
+import { retryAsbcpReadinessNotReady } from './asbcp-readiness-retry.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
@@ -1061,42 +1062,47 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     if (status.phase === 'offline') {
       throwIfAborted(signal);
       let ensureResponse: SandboxPodEnsureResponse | undefined;
+      const createBody: SandboxPodCreateBody = {
+        image: config.image,
+        env: {
+          MBOS_AGENT_WS_URL: wsUrl,
+          MBOS_AGENT_KEY: config.rawKey,
+          MBOS_RUNNER_MODE: 'k8s_internal',
+          MBOS_AGENT_CODEX_YOLO: '1',
+          MBOS_AGENT_RUNNER_DEBUG: '1',
+          MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+          MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
+          MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
+          MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
+          ...(config.env ?? {}),
+          MBOS_AGENT_RUNNER_INSTANCE_ID: buildRunnerInstanceId({
+            agentId: agent.id,
+            workloadId,
+            sessionId,
+          }),
+          TASK_HOME: workspaceMount.taskHomePath,
+          HOME: workspaceMount.taskHomePath,
+          WORKSPACE_PATH: workspaceMount.workspacePath,
+          ARTIFACTS_PATH: workspaceMount.artifactsPath,
+          MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
+        },
+        cpu_request: config.cpuRequest ?? '500m',
+        cpu_limit: config.cpuLimit ?? '2',
+        memory_request: config.memoryRequest ?? '512Mi',
+        memory_limit: config.memoryLimit ?? '4Gi',
+        idle_timeout_sec: idleTimeoutSec,
+        max_lifetime_sec: maxLifetimeSec,
+        workspace_binding_id: workspaceMount.bindingId,
+      };
       try {
-        ensureResponse = await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
-            image: config.image,
-            env: {
-              MBOS_AGENT_WS_URL: wsUrl,
-              MBOS_AGENT_KEY: config.rawKey,
-              MBOS_RUNNER_MODE: 'k8s_internal',
-              MBOS_AGENT_CODEX_YOLO: '1',
-              MBOS_AGENT_RUNNER_DEBUG: '1',
-              MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
-              MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
-              MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
-              MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
-              ...(config.env ?? {}),
-              MBOS_AGENT_RUNNER_INSTANCE_ID: buildRunnerInstanceId({
-                agentId: agent.id,
-                workloadId,
-                sessionId,
-              }),
-              TASK_HOME: workspaceMount.taskHomePath,
-              HOME: workspaceMount.taskHomePath,
-              WORKSPACE_PATH: workspaceMount.workspacePath,
-              ARTIFACTS_PATH: workspaceMount.artifactsPath,
-              MBOS_AGENT_TASK_RUNNER_MODE: INTERNAL_AGENT_TASK_RUNNER_MODE,
-            },
-            cpu_request: config.cpuRequest ?? '500m',
-            cpu_limit: config.cpuLimit ?? '2',
-            memory_request: config.memoryRequest ?? '512Mi',
-            memory_limit: config.memoryLimit ?? '4Gi',
-            idle_timeout_sec: idleTimeoutSec,
-            max_lifetime_sec: maxLifetimeSec,
-            workspace_binding_id: workspaceMount.bindingId,
-          }, rpcSignal),
+        ensureResponse = await this.createOrEnsurePodWithReadinessRetry({
+          workspaceId,
+          projectId,
+          workloadId,
+          body: createBody,
+          deadline,
           signal,
-        );
+        });
       } catch (error) {
         throwIfAborted(signal);
         if (!isCreateOrEnsureTimeoutError(error)) {
@@ -1163,6 +1169,32 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       });
     }
     await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, { config, status }, signal);
+  }
+
+  private async createOrEnsurePodWithReadinessRetry(input: {
+    workspaceId: string;
+    projectId: string;
+    workloadId: string;
+    body: SandboxPodCreateBody;
+    deadline: number;
+    signal?: AbortSignal;
+  }): Promise<SandboxPodEnsureResponse> {
+    return await retryAsbcpReadinessNotReady({
+      operation: 'create_or_ensure_pod',
+      deadline: input.deadline,
+      signal: input.signal,
+      sleep: this.sleep,
+      invoke: () => this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.createOrEnsurePod(
+          input.workspaceId,
+          input.projectId,
+          input.workloadId,
+          input.body,
+          rpcSignal,
+        ),
+        input.signal,
+      ),
+    });
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

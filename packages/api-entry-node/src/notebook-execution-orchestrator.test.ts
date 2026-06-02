@@ -1072,6 +1072,14 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(JSON.stringify((deps.internalAgentPodManager?.ensureAgentReady as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).not.toMatch(
       /metadata_url|storage_endpoint|storage_bucket_url|filesystem_name|juicefs|secret|access_key/i,
     );
+    const ensureWorkspaceBinding = deps.internalAgentWorkspaceBindingManager?.ensureWorkspaceBinding as ReturnType<typeof vi.fn>;
+    const ensureAgentReady = deps.internalAgentPodManager?.ensureAgentReady as ReturnType<typeof vi.fn>;
+    expect(acquireHolder.mock.invocationCallOrder[0]!).toBeLessThan(
+      ensureWorkspaceBinding.mock.invocationCallOrder[0]!,
+    );
+    expect(acquireHolder.mock.invocationCallOrder[0]!).toBeLessThan(
+      ensureAgentReady.mock.invocationCallOrder[0]!,
+    );
     expect(acquireHolder).toHaveBeenCalledWith({
       workspaceId: 'ws_internal',
       projectId: 'proj_internal',
@@ -2623,6 +2631,160 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     }
   });
 
+  it('releases an acquired internal workload holder when ensureAgentReady fails before dispatch', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const callOrder: string[] = [];
+    const holderRef = {
+      workspaceId: 'ws_holder_ready_fail',
+      projectId: 'proj_holder_ready_fail',
+      workloadId: 'task-holder-ready-fail',
+      holderKind: 'notebook_run',
+      holderId: 'run_holder_ready_fail',
+      epoch: 'run_holder_ready_fail',
+    };
+    const acquireHolder = vi.fn(async () => {
+      callOrder.push('acquire');
+    });
+    const releaseHolder = vi.fn(async () => {
+      callOrder.push('release');
+    });
+    const ensureWorkspaceBinding = vi.fn(async () => {
+      callOrder.push('bind');
+      return {
+        workspaceMount: {
+          bindingId: 'wmb_holder_ready_fail',
+          mountPath: '/home/task_holder_ready_fail',
+          taskHomePath: '/home/task_holder_ready_fail',
+          workspacePath: '/home/task_holder_ready_fail/workspace',
+          artifactsPath: '/home/task_holder_ready_fail/workspace/.artifacts',
+        },
+        binding: {
+          file_library_id: 'flib_holder_ready_fail',
+          task_home_binding_id: 'wmb_holder_ready_fail',
+          afscp_mount_binding_id: 'wmb_holder_ready_fail',
+          mount_binding_status: 'issued',
+        },
+      };
+    });
+    const ensureAgentReady = vi.fn(async () => {
+      callOrder.push('ensure');
+      throw Object.assign(new Error('agent_sandbox_unavailable: pod missing'), {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+      });
+    });
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_holder_ready_fail',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_holder_ready_fail',
+          status: 'enabled',
+          runner_provider: 'managed',
+          mode: 'internal',
+          config: {
+            image: NOTEBOOK_EXECUTION_MANAGED_RUNNER_IMAGE,
+          },
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_holder_ready_fail',
+            },
+          },
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+      internalAgentPodManager: {
+        ensureAgentReady,
+        keepalive: vi.fn(async () => undefined),
+      },
+      internalAgentWorkspaceBindingManager: {
+        ensureWorkspaceBinding,
+      },
+      internalWorkloadCoordinator: {
+        acquireHolder,
+        releaseHolder,
+      },
+    } as unknown as NodeApiDeps;
+    const task = {
+      id: 'task_holder_ready_fail',
+      workspace_id: 'ws_holder_ready_fail',
+      project_id: 'proj_holder_ready_fail',
+      owner_user_id: 'user_holder_ready_fail',
+      title: 'holder ready failure task',
+      agent_name: 'internal agent',
+      task_home_segment: 'task_holder_ready_fail',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_holder_ready_fail',
+      workspace_file_library_id: 'flib_holder_ready_fail',
+      workspace_file_library_name: 'Holder Ready Failure Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_holder_ready_fail',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+    const emitted: Array<{ type: string; data: { code?: string } }> = [];
+    await seedReadyTaskWorkspaceLibraryForTask(docStore, task);
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_holder_ready_fail',
+      agentTaskModelTarget: buildResolvedTargetForTest({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        endpointId: 'ep_holder_ready_fail',
+      }),
+      user: { id: 'user_holder_ready_fail', name: 'Holder Ready User', email: 'holder-ready@example.com' },
+      publicBaseUrl: 'http://localhost:20072',
+      buildRunId: () => 'run_holder_ready_fail',
+      buildProxyUsername: () => 'holder_ready_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        emitted.push(payload as { type: string; data: { code?: string } });
+      },
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_holder_ready_fail',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(callOrder).toEqual(['acquire', 'bind', 'ensure', 'release']);
+    expect(acquireHolder).toHaveBeenCalledWith(holderRef);
+    expect(ensureAgentReady).toHaveBeenCalledWith(expect.objectContaining({
+      workloadId: holderRef.workloadId,
+      sessionId: task.id,
+      workspaceMount: expect.objectContaining({
+        bindingId: 'wmb_holder_ready_fail',
+      }),
+    }));
+    expect(releaseHolder).toHaveBeenCalledWith(holderRef);
+    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('AGENT_SANDBOX_UNAVAILABLE');
+  });
+
   it('refuses managed workspace binding when the task file library is not ready', async () => {
     const previousExecutionHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.AGENT_EXECUTION_HTTP_BASE_URL = 'http://10.88.0.1:20000/api/v1';
@@ -2640,6 +2802,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
+    const acquireHolder = vi.fn(async () => undefined);
+    const releaseHolder = vi.fn(async () => undefined);
     const deps = {
       cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
@@ -2684,8 +2848,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         ensureWorkspaceBinding,
       },
       internalWorkloadCoordinator: {
-        acquireHolder: vi.fn(async () => undefined),
-        releaseHolder: vi.fn(async () => undefined),
+        acquireHolder,
+        releaseHolder,
       },
     } as unknown as NodeApiDeps;
     await seedAgentTaskModelSetting(deps.docStore as InMemoryJsonDocStore, {
@@ -2781,6 +2945,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     }
 
     expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+    expect(acquireHolder).not.toHaveBeenCalled();
+    expect(releaseHolder).not.toHaveBeenCalled();
     expect(dispatchStreamingRequest).not.toHaveBeenCalled();
     expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('FILE_LIBRARY_DELETING');
   });

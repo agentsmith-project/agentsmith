@@ -51,6 +51,15 @@ type FileObjectListItem = {
   name: string;
 };
 
+type FileEntriesApiResult = {
+  ok: boolean;
+  status: number;
+  body: string;
+  errorCode: string | null;
+  message: string | null;
+  items: FileObjectListItem[];
+};
+
 type TaskArtifactListItem = {
   id?: string;
   task_relative_path?: string;
@@ -292,6 +301,19 @@ function parseJsonEvidence(body: string): unknown {
   }
 }
 
+function readApiErrorEvidence(body: string): { errorCode: string | null; message: string | null } {
+  const root = asRecord(parseJsonEvidence(body));
+  if (!root) return { errorCode: null, message: null };
+  const nestedError = asRecord(root.error);
+  return {
+    errorCode: readStringField(root, 'error_code')
+      ?? readStringField(root, 'errorCode')
+      ?? (nestedError ? readStringField(nestedError, 'code') : null),
+    message: readStringField(root, 'message')
+      ?? (nestedError ? readStringField(nestedError, 'message') : null),
+  };
+}
+
 function parseKeyValueEvidence(body: string): Record<string, string> {
   const fields: Record<string, string> = {};
   for (const rawLine of body.split(/\r?\n/)) {
@@ -514,6 +536,18 @@ async function listFileEntriesViaApi(args: {
   libraryId: string;
   prefix?: string;
 }): Promise<FileObjectListItem[]> {
+  const result = await listFileEntriesViaApiResult(args);
+  expect(result.ok, result.body).toBe(true);
+  return result.items;
+}
+
+async function listFileEntriesViaApiResult(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  prefix?: string;
+}): Promise<FileEntriesApiResult> {
   const headers = await authHeaders(args.page);
   const query = args.prefix ? `?path=${encodeURIComponent(args.prefix)}` : '';
   const response = await args.page.request.get(
@@ -521,9 +555,49 @@ async function listFileEntriesViaApi(args: {
     { headers },
   );
   const body = await response.text();
-  expect(response.ok(), body).toBe(true);
+  const status = response.status();
+  const { errorCode, message } = readApiErrorEvidence(body);
+  if (!response.ok()) {
+    return { ok: false, status, body, errorCode, message, items: [] };
+  }
   const payload = JSON.parse(body) as { items?: FileObjectListItem[] };
-  return Array.isArray(payload.items) ? payload.items : [];
+  return {
+    ok: true,
+    status,
+    body,
+    errorCode,
+    message,
+    items: Array.isArray(payload.items) ? payload.items : [],
+  };
+}
+
+function isRetryableFileEntriesListResult(result: FileEntriesApiResult): boolean {
+  const errorCode = result.errorCode?.toUpperCase() ?? '';
+  const message = result.message ?? '';
+  if (
+    result.status === 409
+    && (
+      errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+      || errorCode === 'FILE_LIBRARY_STORAGE_NOT_READY'
+      || message === 'file_library_list_pending'
+      || message === 'file_library_afscp_mapping_not_ready'
+      || message === 'file_library_project_storage_not_ready'
+    )
+  ) {
+    return true;
+  }
+  return message === 'file_library_object_not_found'
+    || /file_library_object_not_found/i.test(result.body);
+}
+
+function formatFileEntriesApiResult(result: FileEntriesApiResult | null): string {
+  if (!result) return 'no_response';
+  return [
+    `status=${result.status}`,
+    `errorCode=${result.errorCode ?? 'none'}`,
+    `message=${result.message ?? 'none'}`,
+    `body=${truncateEvidence(result.body)}`,
+  ].join(';');
 }
 
 async function waitForFileEntryViaApi(args: {
@@ -535,20 +609,35 @@ async function waitForFileEntryViaApi(args: {
   timeoutMs?: number;
 }): Promise<void> {
   const { prefix, fileName } = splitFilePath(args.path);
-  await expect.poll(async () => {
-    const entries = await listFileEntriesViaApi({
-      page: args.page,
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      libraryId: args.libraryId,
-      prefix,
-    });
-    return entries.some((item) => item.kind === 'file' && item.name === fileName && item.path === args.path);
-  }, {
-    timeout: args.timeoutMs ?? 120_000,
-    intervals: [1_000, 2_000, 5_000],
-    message: `file entry did not become visible: ${args.path}`,
-  }).toBe(true);
+  let lastResult: FileEntriesApiResult | null = null;
+  try {
+    await expect.poll(async () => {
+      const result = await listFileEntriesViaApiResult({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        libraryId: args.libraryId,
+        prefix,
+      });
+      lastResult = result;
+      if (result.ok) {
+        return result.items.some((item) => item.kind === 'file' && item.name === fileName && item.path === args.path);
+      }
+      if (isRetryableFileEntriesListResult(result)) {
+        return false;
+      }
+      throw new Error(`file_entries_list_failed:${formatFileEntriesApiResult(result)}`);
+    }, {
+      timeout: args.timeoutMs ?? 120_000,
+      intervals: [1_000, 2_000, 5_000],
+      message: `file entry did not become visible: ${args.path}`,
+    }).toBe(true);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `file entry did not become visible: ${args.path}; last=${formatFileEntriesApiResult(lastResult)}; error=${errorMessage}`,
+    );
+  }
 }
 
 async function expectFileEntryMissingViaApi(args: {

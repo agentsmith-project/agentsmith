@@ -1048,10 +1048,27 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.revokeExport).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])('does not retry a WebDAV %s list permission failure', async (status) => {
-    const fetchMock = vi.fn(async () => new Response(status === 401 ? 'unauthorized' : 'forbidden', {
-      status,
-    })) as unknown as typeof fetch;
+  it.each([401, 403])('retries a transient WebDAV %s read export list readiness failure', async (status) => {
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/restored.svg</D:href>',
+      '<D:propstat><D:prop><D:getcontentlength>42</D:getcontentlength><D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(status === 401 ? 'unauthorized' : 'forbidden', { status }))
+      .mockResolvedValueOnce(new Response(xml, {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml' },
+      })) as unknown as typeof fetch;
     const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
 
     await expect(adapter.listEntries({
@@ -1063,11 +1080,52 @@ describe('AFSCP File Library storage adapter', () => {
       sortBy: 'name',
       sortOrder: 'asc',
       requestId: `req_list_permission_${status}`,
-    })).rejects.toThrow('file_library_storage_admin_action_required');
+    })).resolves.toMatchObject({
+      items: [
+        {
+          kind: 'file',
+          path: 'workspace/.artifacts/restored.svg',
+          name: 'restored.svg',
+        },
+      ],
+    });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(client.createExport).toHaveBeenCalledTimes(1);
-    expect(client.revokeExport).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(client.createExport).toHaveBeenCalledTimes(2);
+    expect(client.revokeExport).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps persistent WebDAV read export list 401/403 failures to admin action after bounded retries', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('forbidden', { status: 403 })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    try {
+      const result = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_permission_persistent',
+      });
+      const assertion = expect(result).rejects.toThrow('file_library_storage_admin_action_required');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(client.createExport).toHaveBeenCalledTimes(4);
+      expect(client.revokeExport).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not retry a generic WebDAV list failure', async () => {

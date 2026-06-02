@@ -638,6 +638,20 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         data: buildSandboxStartingEvent(),
       });
       const workloadId = sanitizeWorkloadId(task.id);
+      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+      const workloadHolder: InternalWorkloadHolderRef = {
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        workloadId,
+        holderKind: 'notebook_run',
+        holderId: runId,
+        epoch: runId,
+      };
+      if (!internalWorkloadCoordinator) {
+        throw Object.assign(new Error('internal_workload_coordinator_not_configured'), {
+          code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+        });
+      }
       try {
         await resolveTaskWorkspaceBindingGuard({
           deps,
@@ -657,6 +671,8 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         }
         throw error;
       }
+      await internalWorkloadCoordinator.acquireHolder(workloadHolder);
+      internalWorkloadHolder = workloadHolder;
       const workspaceBinding = await workspaceBindingManager.ensureWorkspaceBinding({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
@@ -678,22 +694,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         signal: startupSignal,
       });
       await throwIfCancellationRequested();
-      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
-      const workloadHolder: InternalWorkloadHolderRef = {
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        workloadId,
-        holderKind: 'notebook_run',
-        holderId: runId,
-        epoch: runId,
-      };
-      if (!internalWorkloadCoordinator) {
-        throw Object.assign(new Error('internal_workload_coordinator_not_configured'), {
-          code: 'AGENT_SANDBOX_NOT_CONFIGURED',
-        });
-      }
-      await internalWorkloadCoordinator.acquireHolder(workloadHolder);
-      internalWorkloadHolder = workloadHolder;
     }
     const wireApi = resolvedTarget.upstreamProtocol;
     const userHandle = buildProxyUsername(user);

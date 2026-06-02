@@ -26,6 +26,7 @@ import { createAbortError } from './object-stream-bridge.js';
 export const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
 const READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
 const READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS = READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS;
+const READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE = 'file_library_read_export_webdav_not_ready';
 
 export type FileLibraryStorageOperationStatus =
   | 'pending'
@@ -807,6 +808,13 @@ function ensureOk(response: Response, fallbackMessage: string): void {
   }
 }
 
+function ensureReadExportListOk(response: Response): void {
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE);
+  }
+  ensureOk(response, 'file_library_list_failed');
+}
+
 function basicAuthorization(access: AfscpExportAccessCredential): string {
   return `Basic ${Buffer.from(`${access.auth.username}:${access.auth.password}`, 'utf8').toString('base64')}`;
 }
@@ -838,13 +846,23 @@ function mapListEntriesStorageMessage(error: unknown): string {
   if (message === 'file_library_export_access_unavailable') {
     return 'file_library_backend_unavailable';
   }
+  if (message === READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE) {
+    return READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE;
+  }
   return safeStorageErrorMessage(error, 'file_library_list_failed');
 }
 
 function isRetryableListEntriesStorageMessage(message: string): boolean {
   return message === 'file_library_list_pending'
     || message === 'file_library_backend_unavailable'
-    || message === 'file_library_object_not_found';
+    || message === 'file_library_object_not_found'
+    || message === READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE;
+}
+
+function publicListEntriesStorageMessage(message: string): string {
+  return message === READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE
+    ? 'file_library_storage_admin_action_required'
+    : message;
 }
 
 export function normalizeAfscpFileLibraryPath(input: string): string {
@@ -1915,7 +1933,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
             headers: { Depth: '1' },
             signal: input.signal,
           });
-          ensureOk(response, 'file_library_list_failed');
+          ensureReadExportListOk(response);
           let items = parseWebdavEntries(await response.text(), path);
           if (input.search) {
             const needle = input.search.toLowerCase();
@@ -1957,7 +1975,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         ) {
           continue;
         }
-        throw new Error(message);
+        throw new Error(publicListEntriesStorageMessage(message));
       }
     }
     throw new Error('file_library_list_failed');

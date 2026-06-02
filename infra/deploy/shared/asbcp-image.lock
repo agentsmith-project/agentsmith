@@ -1,4 +1,4 @@
-asbcp_version=v2.0.14
-asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.14@sha256:f0ee452bdba0373f9b3da75aee4cd650ac55a2af9efaf6d3187d9341846f2f3b
-asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v2.0.14
-asbcp_commit_sha=b875d739572893a4a7442de7c31f7c64d3e1897c
+asbcp_version=v2.0.15
+asbcp_source_image=ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.15@sha256:bd3e677a780a5c2b01fce9f5f5aaf8c23408fe8f61f39392f4314ae66143154a
+asbcp_release_url=https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/v2.0.15
+asbcp_commit_sha=a7c30ab437f901c5d7b07894fd5e102de0844d86

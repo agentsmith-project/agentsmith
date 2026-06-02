@@ -1553,6 +1553,25 @@ const SPEC_COVERAGE = [
     reason:
       "Files management UX spec mutates file library UI state on shared backend-real substrate.",
   }),
+  specCoverage({
+    spec: "e2e/integration-files-user-stories.spec.ts",
+    proposed_shard_id: "files",
+    evidence_owner: "backend-real-files:file-library",
+    isolation_level: "serialized",
+    mutable_resources: [
+      "files",
+      "project",
+      "runner_task",
+      "runner_mount",
+      "task_home_binding",
+      "terminal_session",
+      "provider_quota",
+      "shared_local_substrate",
+    ],
+    lock_ids: BACKEND_REAL_LOCK_IDS,
+    reason:
+      "Files user-stories spec mutates file libraries, Agent task HOME bindings, terminal sessions, and provider-backed task output on shared backend-real substrate.",
+  }),
   grepCoverage({
     spec: "e2e/integration-files-user-stories.spec.ts",
     grep: "same task can continue after Files restore",

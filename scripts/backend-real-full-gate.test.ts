@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +51,11 @@ function stepRoute(story: StoryDefinition, step: StoryStepDefinition): string {
 function shellFunctionBody(source: string, functionName: string): string {
   const match = source.match(new RegExp(`^${functionName}\\(\\) \\{\\n([\\s\\S]*?)^\\}`, 'mu'));
   return match?.[1] ?? '';
+}
+
+function shellFunctionDefinition(source: string, functionName: string): string {
+  const match = source.match(new RegExp(`^${functionName}\\(\\) \\{\\n[\\s\\S]*?^\\}`, 'mu'));
+  return match?.[0] ?? '';
 }
 
 function renderReview(manifest: UxTraceBundleManifest): string {
@@ -951,7 +956,10 @@ describe('backend-real full gate runtime ownership contract', () => {
   it('keeps authoritative release ux traces scoped to release-owned browser specs and isolates visual review traces under a side artifact dir', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
     const visualReviewIndex = script.indexOf("RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review");
-    const browserSpecsIndex = script.indexOf('\nrun_release_browser_trace_specs\n', visualReviewIndex);
+    const browserSpecsIndex = script.indexOf(
+      'run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs',
+      visualReviewIndex,
+    );
     const releaseStoryIndex = script.indexOf("ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh");
 
     expect(script).toContain('AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"');
@@ -968,6 +976,118 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(visualReviewIndex).toBeGreaterThanOrEqual(0);
     expect(browserSpecsIndex).toBeGreaterThan(visualReviewIndex);
     expect(releaseStoryIndex).toBeGreaterThan(browserSpecsIndex);
+  });
+
+  it('records backend-real child step failures as scenario evidence before fail-fast exit', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const body = shellFunctionBody(script, 'run_release_gate_step');
+
+    expect(body).toContain('set +e');
+    expect(body).toContain('(\n    set -e\n    "$@"\n  )');
+    expect(body).toContain('"$@"');
+    expect(body).toContain('gate_record_failure "${LOCAL_READY_LOG_DIR}" "scenario_assertion_failed" "${stage}" "${message}"');
+    expect(body).toContain('exit "${status}"');
+    expect(body).not.toContain('infra_dependency_unready');
+    expect(script).toContain(
+      'run_release_gate_step "backend_real_scenario" "backend-real focused Playwright scenarios failed: npm run backend-real:run" run_real_cmd 20050 3051 "npm run backend-real:run"',
+    );
+    expect(script).toContain(
+      'run_release_gate_step "backend_real_scenario" "backend-real visual review scenario failed: npm run test:visual:backend-real:review" run_real_cmd 20080 3081',
+    );
+    expect(script).toContain(
+      'run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs',
+    );
+  });
+
+  it('preserves run_real_cmd fail-fast cleanup semantics under the gate-step failure wrapper', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'backend-real-full-gate-cleanup-flow-'));
+    const runnerPath = join(fixtureRoot, 'runner.sh');
+    const failureLog = join(fixtureRoot, 'failures.log');
+    const cleanupLog = join(fixtureRoot, 'cleanup.log');
+    const scenarioLog = join(fixtureRoot, 'scenario.log');
+
+    try {
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        `ROOT_DIR="${fixtureRoot}"`,
+        `LOCAL_READY_LOG_DIR="${fixtureRoot}"`,
+        'PRESET_ENDPOINT_API_KEY_VALUE="fixture-key"',
+        'gate_record_failure() {',
+        '  printf "%s|%s|%s\\n" "$2" "$3" "$4" >> "${LOCAL_READY_LOG_DIR}/failures.log"',
+        '}',
+        'cleanup_gate_ports() {',
+        '  printf "cleanup\\n" >> "${LOCAL_READY_LOG_DIR}/cleanup.log"',
+        '  return 37',
+        '}',
+        'info() {',
+        '  printf "%s\\n" "$*" >> "${LOCAL_READY_LOG_DIR}/info.log"',
+        '}',
+        shellFunctionDefinition(script, 'run_real_cmd'),
+        shellFunctionDefinition(script, 'run_release_gate_step'),
+        `run_release_gate_step "backend_real_scenario" "backend-real focused Playwright scenarios failed: npm run backend-real:run" run_real_cmd 20050 3051 "printf scenario-ran > '${scenarioLog}'"`,
+        '',
+      ].join('\n'));
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(37);
+      expect(readFileSync(failureLog, 'utf8')).toBe(
+        'scenario_assertion_failed|backend_real_scenario|backend-real focused Playwright scenarios failed: npm run backend-real:run\n',
+      );
+      expect(readFileSync(cleanupLog, 'utf8')).toBe('cleanup\n');
+      expect(existsSync(scenarioLog)).toBe(false);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('propagates the first failed release browser trace spec under the gate-step failure wrapper', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'backend-real-full-gate-control-flow-'));
+    const runnerPath = join(fixtureRoot, 'runner.sh');
+    const failureLog = join(fixtureRoot, 'failures.log');
+    const specLog = join(fixtureRoot, 'specs.log');
+
+    try {
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        `LOCAL_READY_LOG_DIR="${fixtureRoot}"`,
+        'gate_record_failure() {',
+        '  printf "%s|%s|%s\\n" "$2" "$3" "$4" >> "${LOCAL_READY_LOG_DIR}/failures.log"',
+        '}',
+        'run_release_browser_trace_spec() {',
+        '  local spec_file="$1"',
+        '  printf "%s\\n" "${spec_file}" >> "${LOCAL_READY_LOG_DIR}/specs.log"',
+        '  if [[ "${spec_file}" == "e2e/integration-system-admin-entry.spec.ts" ]]; then',
+        '    return 37',
+        '  fi',
+        '  return 0',
+        '}',
+        shellFunctionDefinition(script, 'run_release_gate_step'),
+        shellFunctionDefinition(script, 'run_release_browser_trace_specs'),
+        'run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs',
+        '',
+      ].join('\n'));
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(37);
+      expect(readFileSync(failureLog, 'utf8')).toBe(
+        'scenario_assertion_failed|backend_real_scenario|release browser UX trace scenarios failed\n',
+      );
+      expect(readFileSync(specLog, 'utf8')).toBe('e2e/integration-system-admin-entry.spec.ts\n');
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it('runs moved release browser trace specs on the parent-owned release stack instead of spawning nested stacks', () => {

@@ -149,6 +149,7 @@ export const SYSTEM_ADMIN_USERNAME =
 export const SYSTEM_ADMIN_PASSWORD =
   process.env.SYSTEM_ADMIN_PASSWORD ?? "mbos-admin";
 const DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS = 300_000;
+const DEFAULT_TERMINAL_SESSION_COMMAND_TIMEOUT_MS = 360_000;
 const DEFAULT_AGENT_TASK_CREATE_TIMEOUT_MS = 90_000;
 const DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRIES = 0;
 const DEFAULT_AGENT_TASK_CREATE_STORAGE_PENDING_RETRY_DELAY_MS = 2_000;
@@ -223,6 +224,16 @@ export function resolveTerminalSessionCreateTimeoutMs(
     env,
     "INTEGRATION_TERMINAL_SESSION_CREATE_TIMEOUT_MS",
     DEFAULT_TERMINAL_SESSION_CREATE_TIMEOUT_MS,
+  );
+}
+
+export function resolveTerminalSessionCommandTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return readPositiveIntegerEnv(
+    env,
+    "INTEGRATION_TERMINAL_SESSION_COMMAND_TIMEOUT_MS",
+    DEFAULT_TERMINAL_SESSION_COMMAND_TIMEOUT_MS,
   );
 }
 
@@ -3322,9 +3333,10 @@ export async function runTerminalCommandViaWs(args: {
   rows?: number;
   afterSeq?: number | null;
 }): Promise<string> {
-  const timeoutMs = args.timeoutMs ?? 120_000;
+  const timeoutMs = args.timeoutMs ?? resolveTerminalSessionCommandTimeoutMs();
   const cols = args.cols ?? 120;
   const rows = args.rows ?? 40;
+  const startedAt = Date.now();
 
   return new Promise<string>((resolve, reject) => {
     const ws = new WebSocket(args.wsUrl);
@@ -3332,6 +3344,22 @@ export async function runTerminalCommandViaWs(args: {
     let done = false;
     let commandSent = false;
     let inputEnabled = false;
+    let lastFrameType: string | null = null;
+    let lastFrameState: string | null = null;
+    let lastFrameInputEnabled: boolean | null = null;
+    const commandDiagnostic = () =>
+      formatTerminalWsCommandDiagnostic({
+        commandSent,
+        inputEnabled,
+        lastFrameType,
+        lastFrameState,
+        lastFrameInputEnabled,
+        outputLength: output.length,
+        waitForCount: args.waitFor.length,
+        matchedCount: countTerminalWsWaitMatches(args.waitFor, output),
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs,
+      });
     const timeout = setTimeout(
       () => {
         if (done) return;
@@ -3340,14 +3368,14 @@ export async function runTerminalCommandViaWs(args: {
         if (!commandSent) {
           reject(
             new Error(
-              `terminal_ws_not_ready:timeout_before_input_enabled:${args.waitFor.join(",")}`,
+              `terminal_ws_not_ready:timeout_before_input_enabled:${commandDiagnostic()}`,
             ),
           );
           return;
         }
         reject(
           new Error(
-            `terminal_ws_timeout:${args.waitFor.join(",")}:${output.slice(-2000)}`,
+            `terminal_ws_timeout:${commandDiagnostic()}`,
           ),
         );
       },
@@ -3390,7 +3418,7 @@ export async function runTerminalCommandViaWs(args: {
         const detail = error instanceof Error ? error.message : String(error);
         fail(
           new Error(
-            `terminal_ws_client_error:${detail}:${output.slice(-2000)}`,
+            `terminal_ws_client_error:${detail}:${commandDiagnostic()}`,
           ),
         );
         return;
@@ -3417,7 +3445,7 @@ export async function runTerminalCommandViaWs(args: {
         const detail = error instanceof Error ? error.message : String(error);
         fail(
           new Error(
-            `terminal_ws_client_error:${detail}:${output.slice(-2000)}`,
+            `terminal_ws_client_error:${detail}:${commandDiagnostic()}`,
           ),
         );
       }
@@ -3441,6 +3469,12 @@ export async function runTerminalCommandViaWs(args: {
       }
 
       const type = readTerminalWsStringField(payload, "type");
+      lastFrameType = type;
+      lastFrameState = readTerminalWsStringField(payload, "state");
+      lastFrameInputEnabled =
+        typeof payload.input_enabled === "boolean"
+          ? payload.input_enabled
+          : null;
       if (type === "error") {
         fail(new Error("legacy_terminal_ws_error_frame_not_supported"));
         return;
@@ -3503,11 +3537,17 @@ export async function runTerminalCommandViaWs(args: {
         return;
       }
       if (!commandSent) {
-        fail(new Error(`terminal_ws_not_ready:${detail}`));
+        fail(
+          new Error(
+            `terminal_ws_not_ready:${detail}:${commandDiagnostic()}`,
+          ),
+        );
         return;
       }
       fail(
-        new Error(`terminal_ws_client_error:${detail}:${output.slice(-2000)}`),
+        new Error(
+          `terminal_ws_client_error:${detail}:${commandDiagnostic()}`,
+        ),
       );
     });
 
@@ -3526,16 +3566,61 @@ export async function runTerminalCommandViaWs(args: {
         return;
       }
       if (!commandSent) {
-        fail(new Error(`terminal_ws_not_ready:${closeDetail}`));
+        fail(
+          new Error(
+            `terminal_ws_not_ready:${closeDetail}:${commandDiagnostic()}`,
+          ),
+        );
         return;
       }
       fail(
         new Error(
-          `terminal_ws_closed_before_match:${args.waitFor.join(",")}:${closeDetail}:${output.slice(-2000)}`,
+          `terminal_ws_closed_before_match:${closeDetail}:${commandDiagnostic()}`,
         ),
       );
     });
   });
+}
+
+function formatTerminalWsCommandDiagnostic(args: {
+  commandSent: boolean;
+  inputEnabled: boolean;
+  lastFrameType: string | null;
+  lastFrameState: string | null;
+  lastFrameInputEnabled: boolean | null;
+  outputLength: number;
+  waitForCount: number;
+  matchedCount: number;
+  elapsedMs: number;
+  timeoutMs: number;
+}): string {
+  const waitForCount = Math.max(0, args.waitForCount);
+  const matchedCount = Math.min(Math.max(0, args.matchedCount), waitForCount);
+  return [
+    `command_sent=${args.commandSent}`,
+    `input_enabled=${args.inputEnabled}`,
+    `last_frame_type=${formatTerminalWsDiagnosticValue(args.lastFrameType)}`,
+    `last_frame_state=${formatTerminalWsDiagnosticValue(args.lastFrameState)}`,
+    `last_frame_input_enabled=${args.lastFrameInputEnabled ?? "unknown"}`,
+    `output_length=${Math.max(0, args.outputLength)}`,
+    `wait_for_count=${waitForCount}`,
+    `matched_count=${matchedCount}`,
+    `missing_count=${waitForCount - matchedCount}`,
+    `elapsed_ms=${Math.max(0, Math.floor(args.elapsedMs))}`,
+    `timeout_ms=${args.timeoutMs}`,
+  ].join(":");
+}
+
+function countTerminalWsWaitMatches(waitFor: string[], output: string): number {
+  return waitFor.reduce(
+    (matchedCount, needle) => matchedCount + (output.includes(needle) ? 1 : 0),
+    0,
+  );
+}
+
+function formatTerminalWsDiagnosticValue(value: string | null): string {
+  if (!value) return "none";
+  return value.replace(/[^A-Za-z0-9_.-]/g, "_");
 }
 
 function closeTerminalCommandSocket(ws: WebSocket): void {
@@ -3591,7 +3676,8 @@ export async function runTerminalCommandInSession(args: {
   waitFor: string[];
   timeoutMs?: number;
 }): Promise<string> {
-  const deadline = Date.now() + (args.timeoutMs ?? 120_000);
+  const timeoutMs = args.timeoutMs ?? resolveTerminalSessionCommandTimeoutMs();
+  const deadline = Date.now() + timeoutMs;
   let attempt = 0;
   let lastError: string | null = null;
   let authRetryUsed = false;

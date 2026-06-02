@@ -8,7 +8,10 @@ import {
   type SandboxPodCreateBody,
   type SandboxPodEnsureResponse,
 } from './asbcp-client.js';
-import { retryAsbcpReadinessNotReady } from './asbcp-readiness-retry.js';
+import {
+  DEFAULT_ASBCP_READINESS_RETRY_BUDGET_MS,
+  retryAsbcpReadinessNotReady,
+} from './asbcp-readiness-retry.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
@@ -552,7 +555,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   }
 
   async checkReady(signal?: AbortSignal): Promise<void> {
-    await this.runAbortableSandboxRpc((rpcSignal) => this.sandboxClient.checkReady(rpcSignal), signal);
+    await this.checkSandboxReadyWithReadinessRetry({
+      deadline: Date.now() + DEFAULT_ASBCP_READINESS_RETRY_BUDGET_MS,
+      signal,
+    });
   }
 
   async ensureAgentReady(input: {
@@ -1018,7 +1024,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     const deadline = Date.now() + this.startupTimeoutMs;
     try {
       throwIfAborted(signal);
-      await this.runAbortableSandboxRpc((rpcSignal) => this.sandboxClient.checkReady(rpcSignal), signal);
+      await this.checkSandboxReadyWithReadinessRetry({
+        deadline,
+        signal,
+      });
       throwIfAborted(signal);
     } catch (error) {
       throwIfAborted(signal);
@@ -1169,6 +1178,27 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       });
     }
     await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, { config, status }, signal);
+  }
+
+  private async checkSandboxReadyWithReadinessRetry(input: {
+    deadline: number;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    try {
+      await retryAsbcpReadinessNotReady({
+        operation: 'readyz',
+        deadline: input.deadline,
+        signal: input.signal,
+        sleep: this.sleep,
+        invoke: () => this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.checkReady(rpcSignal),
+          input.signal,
+        ),
+      });
+    } catch (error) {
+      throwIfAborted(input.signal);
+      throw error;
+    }
   }
 
   private async createOrEnsurePodWithReadinessRetry(input: {

@@ -36,6 +36,7 @@ import {
   selectExpiredWorkloadReleaseTargets,
   resolveIntegrationKeycloakBaseUrl,
   resolveAgentTaskRunnerSocketUrl,
+  resolveTerminalSessionCommandTimeoutMs,
   resolveTerminalSessionCreateTimeoutMs,
   runTerminalCommandInSession,
   runTerminalCommandViaWs,
@@ -129,6 +130,51 @@ async function startRejectedUpgradeServer(statusCode: 401 | 403): Promise<Termin
 
 function parseClientFrame(raw: Buffer): Record<string, unknown> {
   return JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
+}
+
+function writeInvalidWebSocketFrame(socket: ServerWebSocket): void {
+  const rawSocket = Reflect.get(socket, '_socket');
+  if (!isWritableSocket(rawSocket)) {
+    throw new Error('terminal_test_raw_socket_unavailable');
+  }
+  rawSocket.write(Buffer.from([0x83, 0x00]));
+}
+
+function isWritableSocket(value: unknown): value is { write: (chunk: Uint8Array) => unknown } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'write') === 'function'
+  );
+}
+
+async function captureRejectedMessage(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error('expected_promise_to_reject');
+}
+
+function expectSafeTerminalFailureDiagnostic(args: {
+  message: string;
+  outputChunk: string;
+  waitFor: string[];
+  matchedCount: number;
+}): void {
+  expect(args.message).not.toContain('observed_tail=');
+  expect(args.message).not.toContain(args.outputChunk);
+  for (const needle of args.waitFor) {
+    expect(args.message).not.toContain(needle);
+  }
+  expect(args.message).toContain(`output_length=${args.outputChunk.length}`);
+  expect(args.message).toContain(`wait_for_count=${args.waitFor.length}`);
+  expect(args.message).toContain(`matched_count=${args.matchedCount}`);
+  expect(args.message).toContain(
+    `missing_count=${args.waitFor.length - args.matchedCount}`,
+  );
+  expect(args.message).toMatch(/elapsed_ms=\d+/);
 }
 
 async function withMockKubectlPodSnapshot<T>(
@@ -570,6 +616,17 @@ describe('integration-real-helpers', () => {
   });
 
   describe('terminal websocket command helper', () => {
+    it('keeps terminal command default timeout aligned above managed terminal startup wait', () => {
+      expect(resolveTerminalSessionCommandTimeoutMs({})).toBe(360_000);
+      expect(resolveTerminalSessionCommandTimeoutMs({})).toBeGreaterThan(120_000);
+      expect(resolveTerminalSessionCommandTimeoutMs({
+        INTEGRATION_TERMINAL_SESSION_COMMAND_TIMEOUT_MS: '180000',
+      })).toBe(180_000);
+      expect(resolveTerminalSessionCommandTimeoutMs({
+        INTEGRATION_TERMINAL_SESSION_COMMAND_TIMEOUT_MS: 'not-a-number',
+      })).toBe(360_000);
+    });
+
     it('sends terminal.reconnect before resize/stdin and collects terminal.output chunks', async () => {
       const clientFrames: Record<string, unknown>[] = [];
       const server = await startTerminalWsTestServer((socket) => {
@@ -758,6 +815,200 @@ describe('integration-real-helpers', () => {
         'terminal.resize',
         'terminal.stdin',
       ]);
+    });
+
+    it('reports timeout before input is enabled with safe websocket context', async () => {
+      const clientFrames: Record<string, unknown>[] = [];
+      const expectedOnlyMarker = 'EXPECTED_ONLY_MARKER';
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          clientFrames.push(frame);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.state',
+              terminal_session_id: 'term_waiting',
+              state: 'recovering',
+              input_enabled: false,
+            }));
+          }
+        });
+      });
+
+      let message = '';
+      try {
+        await runTerminalCommandViaWs({
+          wsUrl: server.url,
+          terminalSessionId: 'term_waiting',
+          command: 'printf SHOULD_NOT_SEND',
+          waitFor: [expectedOnlyMarker],
+          timeoutMs: 1_000,
+        });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+
+      expect(message).toContain(
+        'terminal_ws_not_ready:timeout_before_input_enabled',
+      );
+      expect(message).toContain('command_sent=false');
+      expect(message).toContain('input_enabled=false');
+      expect(message).toContain('last_frame_type=terminal.state');
+      expect(message).toContain('last_frame_state=recovering');
+      expect(message).toContain('last_frame_input_enabled=false');
+      expect(message).toContain('output_length=0');
+      expect(message).toContain('timeout_ms=1000');
+      expect(message).toContain('wait_for_count=1');
+      expect(message).toContain('matched_count=0');
+      expect(message).toContain('missing_count=1');
+      expect(message).toMatch(/elapsed_ms=\d+/);
+      expect(message).not.toContain(expectedOnlyMarker);
+      expect(message).not.toContain('observed_tail=');
+      expect(clientFrames.map((frame) => frame.type)).toEqual([
+        'terminal.reconnect',
+      ]);
+    });
+
+    it('reports post-command timeout without leaking terminal output or wait targets', async () => {
+      const outputChunk = 'AS_TEST_TOKEN=unit-timeout-output\nTIMEOUT_MATCHED\n';
+      const waitFor = ['TIMEOUT_MATCHED', 'TIMEOUT_SECRET_WAIT_TARGET'];
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_timeout_safe',
+              status: 'complete',
+              gap: false,
+              latest_seq: 0,
+              input_enabled: true,
+            }));
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_timeout_safe',
+              seq: 1,
+              chunk: outputChunk,
+            }));
+          }
+        });
+      });
+
+      const message = await captureRejectedMessage(() => runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_timeout_safe',
+        command: 'printf timeout',
+        waitFor,
+        timeoutMs: 1_000,
+      }));
+
+      expect(message).toContain('terminal_ws_timeout');
+      expect(message).toContain('command_sent=true');
+      expect(message).toContain('input_enabled=true');
+      expectSafeTerminalFailureDiagnostic({
+        message,
+        outputChunk,
+        waitFor,
+        matchedCount: 1,
+      });
+    });
+
+    it('reports post-command close without leaking terminal output or wait targets', async () => {
+      const outputChunk = 'AS_TEST_TOKEN=unit-close-output\nCLOSE_MATCHED\n';
+      const waitFor = ['CLOSE_MATCHED', 'CLOSE_SECRET_WAIT_TARGET'];
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_close_safe',
+              status: 'complete',
+              gap: false,
+              latest_seq: 0,
+              input_enabled: true,
+            }));
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_close_safe',
+              seq: 1,
+              chunk: outputChunk,
+            }));
+            socket.close(1000, 'unit_close_after_output');
+          }
+        });
+      });
+
+      const message = await captureRejectedMessage(() => runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_close_safe',
+        command: 'printf close',
+        waitFor,
+        timeoutMs: 1_000,
+      }));
+
+      expect(message).toContain('terminal_ws_closed_before_match');
+      expect(message).toContain('closed:1000:unit_close_after_output');
+      expect(message).toContain('command_sent=true');
+      expectSafeTerminalFailureDiagnostic({
+        message,
+        outputChunk,
+        waitFor,
+        matchedCount: 1,
+      });
+    });
+
+    it('reports post-command client errors without leaking terminal output or wait targets', async () => {
+      const outputChunk = 'AS_TEST_TOKEN=unit-client-error-output\nCLIENT_ERROR_MATCHED\n';
+      const waitFor = ['CLIENT_ERROR_MATCHED', 'CLIENT_ERROR_SECRET_WAIT_TARGET'];
+      const server = await startTerminalWsTestServer((socket) => {
+        socket.on('message', (raw) => {
+          const frame = parseClientFrame(raw as Buffer);
+          if (frame.type === 'terminal.reconnect') {
+            socket.send(JSON.stringify({
+              type: 'terminal.replay_end',
+              terminal_session_id: 'term_client_error_safe',
+              status: 'complete',
+              gap: false,
+              latest_seq: 0,
+              input_enabled: true,
+            }));
+            return;
+          }
+          if (frame.type === 'terminal.stdin') {
+            socket.send(JSON.stringify({
+              type: 'terminal.output',
+              terminal_session_id: 'term_client_error_safe',
+              seq: 1,
+              chunk: outputChunk,
+            }));
+            writeInvalidWebSocketFrame(socket);
+          }
+        });
+      });
+
+      const message = await captureRejectedMessage(() => runTerminalCommandViaWs({
+        wsUrl: server.url,
+        terminalSessionId: 'term_client_error_safe',
+        command: 'printf client-error',
+        waitFor,
+        timeoutMs: 1_000,
+      }));
+
+      expect(message).toContain('terminal_ws_client_error');
+      expect(message).toContain('command_sent=true');
+      expectSafeTerminalFailureDiagnostic({
+        message,
+        outputChunk,
+        waitFor,
+        matchedCount: 1,
+      });
     });
 
     it('fails explicitly on terminal.error with error code and message', async () => {

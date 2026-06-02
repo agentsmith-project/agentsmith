@@ -180,6 +180,41 @@ describe('internal-agent-pod-manager', () => {
     expect(sanitizeWorkloadId('---')).toBe('workload');
   });
 
+  it('retries public sandbox readyz check on ASBCP readiness not_ready', async () => {
+    const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'readyz',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_readyz_public_retry',
+      retryAfterMs: 1_000,
+    });
+    const checkReady = vi.fn()
+      .mockRejectedValueOnce(readinessError)
+      .mockResolvedValueOnce(undefined);
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady,
+        getPodStatus: vi.fn(),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+      { sleep: readinessSleep },
+    );
+
+    await expect(manager.checkReady()).resolves.toBeUndefined();
+
+    expect(checkReady).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+  });
+
   it('creates pod with image command enabled and waits for online', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
@@ -1004,18 +1039,148 @@ describe('internal-agent-pod-manager', () => {
     });
   });
 
-  it('fails with AGENT_SANDBOX_UNAVAILABLE when sandbox readyz preflight fails', async () => {
+  it('retries sandbox readyz preflight on ASBCP readiness not_ready and reaches Running', async () => {
+    const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'readyz',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_readyz_retry',
+      retryAfterMs: 1_000,
+    });
+    const checkReady = vi.fn()
+      .mockRejectedValueOnce(readinessError)
+      .mockResolvedValueOnce(undefined);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
+    const readinessSleep = vi.fn(async () => undefined);
     const manager = new InternalAgentPodManagerImpl(
       {
-        checkReady: vi.fn().mockRejectedValue(new Error('sandbox_not_ready')),
-        getPodStatus: vi.fn(),
-        createOrEnsurePod: vi.fn(),
+        checkReady,
+        getPodStatus: vi.fn().mockResolvedValueOnce({ phase: 'offline' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(checkReady).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts sandbox readyz preflight readiness retry without continuing to pod ensure', async () => {
+    const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'readyz',
+      asbcpCode: 'not_ready',
+      retryable: true,
+      requestId: 'asbcp_req_readyz_abort',
+      retryAfterMs: 1_000,
+    });
+    const sleepDeferred = createDeferred<void>();
+    const checkReady = vi.fn().mockRejectedValue(readinessError);
+    const getPodStatus = vi.fn();
+    const createOrEnsurePod = vi.fn();
+    const readinessSleep = vi.fn(() => sleepDeferred.promise);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady,
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+    const controller = new AbortController();
+    const result = manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
+      workspaceMount: buildWorkspaceMount(),
+      signal: controller.signal,
+    });
+
+    await vi.waitFor(() => {
+      expect(readinessSleep).toHaveBeenCalledTimes(1);
+    });
+    controller.abort('user_cancel_requested');
+
+    await expect(result).rejects.toMatchObject({
+      code: 'AGENT_CANCELLED',
+      message: 'user_cancel_requested',
+    });
+    expect(checkReady).toHaveBeenCalledTimes(1);
+    expect(getPodStatus).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('fails with AGENT_SANDBOX_UNAVAILABLE when sandbox readyz preflight fails', async () => {
+    const checkReady = vi.fn().mockRejectedValue(Object.assign(
+      new Error('asbcp_readyz_internal_error'),
+      {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        status: 500,
+        operation: 'readyz',
+        asbcpCode: 'internal_error',
+        retryable: false,
+      },
+    ));
+    const getPodStatus = vi.fn();
+    const createOrEnsurePod = vi.fn();
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady,
+        getPodStatus,
+        createOrEnsurePod,
         deletePod: vi.fn(),
         keepalive: vi.fn(),
         exec: buildRunnerHealthFoundExec(),
       },
       { getAgentOnlineState: vi.fn().mockReturnValue(false) },
       'ws://api:20000',
+      {
+        sleep: readinessSleep,
+      },
     );
 
     await expect(
@@ -1027,7 +1192,14 @@ describe('internal-agent-pod-manager', () => {
         agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
         workspaceMount: buildWorkspaceMount(),
       }),
-    ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      message: 'sandbox_not_ready',
+    });
+    expect(checkReady).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).not.toHaveBeenCalled();
+    expect(getPodStatus).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
   it('uses env default resource limits when agent config omits them', async () => {

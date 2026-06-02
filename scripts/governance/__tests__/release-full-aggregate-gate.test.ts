@@ -1764,6 +1764,52 @@ describe('release-full aggregate gate', () => {
     });
   });
 
+  it('classifies failed backend-real native scenarios without requiring later visual or UX evidence', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-backend-real-native-fail-'));
+    seedPassedCampaign(campaignRoot);
+    const gateRelease = getCampaignStep('gate-release');
+
+    rmSync(resolve(campaignRoot, 'gate-release', 'backend-real-visual'), { recursive: true, force: true });
+    writeNativeResult(campaignRoot, gateRelease, {
+      status: 'failed',
+      failure_class: 'product_regression',
+    });
+    writeCampaignEvidencePointer(campaignRoot, gateRelease);
+    writeCampaignGateResult({
+      step: gateRelease,
+      campaignRoot,
+      status: 'failed',
+      failureClass: 'product_regression',
+      stage: 'execute',
+      summary: 'Release campaign step gate-release failed with backend-real focused Playwright scenarios.',
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'product_regression',
+    });
+    expect(terminalResult.summary).toContain('Campaign step gate-release did not pass.');
+    expect(terminalResult.summary).not.toContain('backend_real_ux_trace_reviews');
+    expect(terminalResult.summary).not.toContain('Missing required evidence for campaign step gate-release');
+
+    const terminalEvidence = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'evidence.json'), 'utf8'),
+    ) as { required_paths: Array<{ id: string; path: string }> };
+    expect(terminalEvidence.required_paths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'campaign_step_result:gate-release' }),
+      ]),
+    );
+    expect(terminalEvidence.required_paths.some((record) => record.id === 'campaign_step_evidence_pointer:gate-release')).toBe(false);
+    expect(terminalEvidence.required_paths.some((record) => record.id === 'campaign_step_native_result:gate-release')).toBe(false);
+    expect(terminalEvidence.required_paths.some((record) => record.id.includes('backend_real_ux_trace'))).toBe(false);
+  });
+
   it('fails with contract drift when an automated visual pass omits current build metadata', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-metadata-'));
     seedPassedCampaign(campaignRoot);

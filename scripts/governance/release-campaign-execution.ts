@@ -388,19 +388,72 @@ function schedulerJobs(campaign: CurrentVerificationCampaignDefinition): readonl
 
 function spawnNpmScript(input: {
   npmScript: string;
+  timeoutMs: number;
   cwd: string;
   env: NodeJS.ProcessEnv;
   stdio: StdioOptions;
 }): ReleaseCampaignSpawnResult {
-  return spawnSync('npm', ['run', input.npmScript], {
+  const result = spawnSync('npm', ['run', input.npmScript], {
     cwd: input.cwd,
     env: input.env,
     stdio: input.stdio,
+    timeout: input.timeoutMs,
   });
+  const timedOut = spawnTimedOut(result.error);
+  return {
+    status: result.status,
+    signal: result.signal,
+    ...(result.error ? { error: result.error } : {}),
+    ...(timedOut ? { timedOut: true, timeoutMs: input.timeoutMs } : {}),
+  };
 }
 
 function sha256(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function spawnTimedOut(error: Error | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  return code === 'ETIMEDOUT';
+}
+
+function campaignStepTimeoutSummary(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  timeoutMs: number,
+): string {
+  const nativePath = nativeResultPath(campaignRoot, step);
+  const diagnostics = [
+    `evidence=${join(stepDir(campaignRoot, step), 'evidence.json')}`,
+    ...(nativePath ? [`native_result=${nativePath}`] : []),
+    'ci_log=Run product readiness',
+  ];
+
+  return `Release campaign step ${step.id} timed out after timeout_ms=${String(timeoutMs)} while running ${step.command}; inspect ${diagnostics.join('; ')}.`;
+}
+
+function writeTimedOutStep(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  timeoutMs: number,
+): CampaignStepWriteOutcome {
+  const failureClass = step.defaultFailureClass;
+  writeCampaignEvidencePointer(campaignRoot, step);
+  writeCampaignGateResult({
+    step,
+    campaignRoot,
+    status: 'failed',
+    failureClass,
+    stage: 'execute',
+    summary: campaignStepTimeoutSummary(campaignRoot, step, timeoutMs),
+  });
+  return {
+    passed: false,
+    failureClass,
+  };
 }
 
 function firstLine(value: string): string {
@@ -828,6 +881,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
           if (step.executionMode === 'aggregate_only') {
             const aggregate = spawnNpmScript({
               npmScript: step.npmScript,
+              timeoutMs: step.timeoutMs,
               cwd,
               env: buildReleaseCampaignAggregateEnv({
                 campaignRoot,
@@ -837,11 +891,18 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
               stdio,
             });
 
-            terminalState.outcome = evaluateTerminalAggregateOutcome({
+            const aggregateOutcome = evaluateTerminalAggregateOutcome({
               terminalStepId: step.id,
               hadExecutableStepFailure,
               aggregateResult: aggregate,
             });
+            terminalState.outcome = aggregate.timedOut && aggregate.timeoutMs !== undefined
+              ? {
+                  ...aggregateOutcome,
+                  failureClass: step.defaultFailureClass,
+                  summary: campaignStepTimeoutSummary(campaignRoot, step, aggregate.timeoutMs),
+                }
+              : aggregateOutcome;
             writeTerminalAggregateFallbackResult({
               campaignRoot,
               terminalStep: step,
@@ -863,6 +924,7 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
 
           const result = spawnNpmScript({
             npmScript: step.npmScript,
+            timeoutMs: step.timeoutMs,
             cwd,
             env: buildReleaseCampaignCommandEnv({
               campaignRoot,
@@ -872,6 +934,22 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             }),
             stdio,
           });
+
+          if (result.timedOut && result.timeoutMs !== undefined) {
+            const outcome = writeTimedOutStep(campaignRoot, step, result.timeoutMs);
+            hadExecutableStepFailure = true;
+            recordStageObservation({
+              observations: stageObservations,
+              step,
+              startedMs: stepStartedMs,
+              status: 'failed',
+            });
+            return {
+              status: 'failed',
+              failureClass: outcome.failureClass,
+              summary: campaignStepTimeoutSummary(campaignRoot, step, result.timeoutMs),
+            };
+          }
 
           if (result.status === 0) {
             const outcome = writeCompletedStep(campaignRoot, step, 0);

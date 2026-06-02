@@ -56,6 +56,7 @@ export interface CurrentVerificationCampaignStep {
   gateId: string;
   npmScript: string;
   command: string;
+  timeoutMs: number;
   workflowRole: CurrentVerificationCampaignStepRole;
   executionMode: CurrentVerificationCampaignExecutionMode;
   resultRequired: boolean;
@@ -76,6 +77,15 @@ export interface CurrentVerificationCampaignDefinition {
 }
 
 type CurrentReleaseCampaignEvidenceTopologyKey = keyof typeof CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY;
+
+const MINUTE_MS = 60_000;
+const CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS = {
+  gateFast: 20 * MINUTE_MS,
+  gateDefault: 45 * MINUTE_MS,
+  laneVisual: 45 * MINUTE_MS,
+  gateRelease: 90 * MINUTE_MS,
+  gateReleaseFull: 10 * MINUTE_MS,
+} as const;
 
 function campaignEvidenceChecks(
   key: CurrentReleaseCampaignEvidenceTopologyKey,
@@ -112,6 +122,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
       campaignStep({
         id: 'gate-fast',
         gateId: 'gate-fast',
+        timeoutMs: CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS.gateFast,
         workflowRole: 'preflight',
         executionMode: 'execute',
         resultRequired: true,
@@ -125,6 +136,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
       campaignStep({
         id: 'gate-default',
         gateId: 'gate-default',
+        timeoutMs: CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS.gateDefault,
         workflowRole: 'preflight',
         executionMode: 'execute',
         resultRequired: true,
@@ -138,6 +150,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
       campaignStep({
         id: 'lane-visual',
         gateId: 'lane-visual',
+        timeoutMs: CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS.laneVisual,
         workflowRole: 'evidence_owner',
         executionMode: 'execute',
         resultRequired: true,
@@ -156,6 +169,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
       campaignStep({
         id: 'gate-release',
         gateId: 'gate-release',
+        timeoutMs: CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS.gateRelease,
         workflowRole: 'evidence_owner',
         executionMode: 'execute',
         resultRequired: true,
@@ -174,6 +188,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
       campaignStep({
         id: 'gate-release-full',
         gateId: 'gate-release-full',
+        timeoutMs: CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS.gateReleaseFull,
         workflowRole: 'terminal_verdict',
         executionMode: 'aggregate_only',
         resultRequired: true,

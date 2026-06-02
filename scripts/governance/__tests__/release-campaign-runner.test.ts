@@ -641,6 +641,7 @@ exit 0
               gateId: 'lane-unified-deploy-local-kind-images',
               npmScript: 'lane:unified-deploy:local-kind:images',
               command: 'npm run lane:unified-deploy:local-kind:images',
+              timeoutMs: 60_000,
               workflowRole: 'evidence_owner',
               executionMode: 'execute',
               resultRequired: false,
@@ -656,6 +657,7 @@ exit 0
               gateId: 'gate-release-full',
               npmScript: 'gate:release:full',
               command: 'npm run gate:release:full',
+              timeoutMs: 60_000,
               workflowRole: 'terminal_verdict',
               executionMode: 'aggregate_only',
               resultRequired: false,
@@ -700,6 +702,176 @@ exit 0
         local_kind_cluster_uid: 'cluster-uid-campaign-local-kind',
         local_kind_site_env_digest: sha256(siteEnv),
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast with a clear result when an executable campaign step times out', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-timeout-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:fast" ]]; then
+  exec node -e "setTimeout(() => {}, 5000)"
+fi
+exit 0
+`);
+
+      const timedOutStep = {
+        ...releaseFullStep('gate-fast'),
+        timeoutMs: 50,
+        dependsOn: [],
+      };
+      const terminalStep = {
+        ...releaseFullTerminalStep(),
+        timeoutMs: 5_000,
+        dependsOn: ['gate-fast'],
+        evidenceRequired: false,
+        evidenceChecks: [],
+      };
+      const result = runReleaseCampaignExecution({
+        campaign: {
+          id: 'release-full',
+          description: 'minimal timeout campaign',
+          runRootPattern: '<tmp>',
+          steps: [
+            timedOutStep,
+            terminalStep,
+          ],
+        },
+        campaignRoot: root,
+        runId: 'release-campaign-timeout',
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.terminalOutcome.exitCode).toBe(1);
+      expect(result.terminalOutcome.failureClass).toBe('product_regression');
+      expect(result.terminalOutcome.summary).toContain('executable release campaign step failed');
+      const stepResult = JSON.parse(readFileSync(join(root, 'gate-fast', 'result.json'), 'utf8')) as {
+        status: string;
+        failure_class: string;
+        stage: string;
+        summary: string;
+      };
+      expect(stepResult.status).toBe('failed');
+      expect(stepResult.failure_class).toBe(timedOutStep.defaultFailureClass);
+      expect(stepResult.stage).toBe('execute');
+      expect(stepResult.summary).toContain('Release campaign step gate-fast timed out');
+      expect(stepResult.summary).toContain('timeout_ms=50');
+      expect(stepResult.summary).toContain('npm run gate:fast');
+      expect(stepResult.summary).toContain(`evidence=${join(root, 'gate-fast', 'evidence.json')}`);
+      expect(stepResult.summary).toContain('ci_log=Run product readiness');
+
+      const evidence = JSON.parse(readFileSync(join(root, 'gate-fast', 'evidence.json'), 'utf8')) as {
+        step_id: string;
+        gate_id: string;
+        evidence_dir: string;
+      };
+      expect(evidence.step_id).toBe('gate-fast');
+      expect(evidence.gate_id).toBe('gate-fast');
+      expect(evidence.evidence_dir).toBe(join(root, 'gate-fast'));
+      expect(readFileSync(logPath, 'utf8')).toContain('run gate:fast');
+
+      const terminalPath = join(root, 'gate-release-full', 'result.json');
+      const terminalResult = JSON.parse(readFileSync(terminalPath, 'utf8')) as {
+        status: string;
+        failure_class: string;
+        summary: string;
+      };
+      expect(terminalResult.status).toBe('failed');
+      expect(terminalResult.failure_class).toBe('product_regression');
+      expect(terminalResult.summary).toContain('executable release campaign step failed');
+
+      const status = readReleaseStatus({ campaignRoot: root });
+      expect(status.kind).toBe('ready');
+      if (status.kind === 'ready') {
+        expect(status.summary.product_readiness_verdict).toBe('FAILED');
+        expect(status.summary.failure_class).toBe('product_regression');
+        expect(status.summary.terminal_result_path).toBe(terminalPath);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it('writes terminal aggregate and release status artifacts when the aggregate step times out', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-terminal-timeout-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    const logPath = join(root, 'npm.log');
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${logPath}"
+if [[ "$1" == "run" && "$2" == "gate:release:full" ]]; then
+  exec node -e "setTimeout(() => {}, 5000)"
+fi
+exit 0
+`);
+
+      const terminalStep = {
+        ...releaseFullTerminalStep(),
+        timeoutMs: 50,
+        dependsOn: [],
+        evidenceRequired: false,
+        evidenceChecks: [],
+      };
+      const result = runReleaseCampaignExecution({
+        campaign: {
+          id: 'release-full',
+          description: 'minimal terminal timeout campaign',
+          runRootPattern: '<tmp>',
+          steps: [
+            terminalStep,
+          ],
+        },
+        campaignRoot: root,
+        runId: 'release-campaign-terminal-timeout',
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.terminalOutcome.exitCode).toBe(1);
+      expect(result.terminalOutcome.failureClass).toBe(terminalStep.defaultFailureClass);
+      expect(result.terminalOutcome.summary).toContain('Release campaign step gate-release-full timed out');
+      expect(result.terminalOutcome.summary).toContain('timeout_ms=50');
+
+      const terminalPath = join(root, 'gate-release-full', 'result.json');
+      const terminalResult = JSON.parse(readFileSync(terminalPath, 'utf8')) as {
+        status: string;
+        failure_class: string;
+        summary: string;
+      };
+      expect(terminalResult.status).toBe('failed');
+      expect(terminalResult.failure_class).toBe(terminalStep.defaultFailureClass);
+      expect(terminalResult.summary).toContain('Release campaign step gate-release-full timed out');
+      expect(terminalResult.summary).toContain('timeout_ms=50');
+
+      const status = readReleaseStatus({ campaignRoot: root });
+      expect(status.kind).toBe('ready');
+      if (status.kind === 'ready') {
+        expect(status.summary.product_readiness_verdict).toBe('FAILED');
+        expect(status.summary.failure_class).toBe(terminalStep.defaultFailureClass);
+        expect(status.summary.terminal_result_path).toBe(terminalPath);
+        expect(status.summary.why).toContain('Release campaign step gate-release-full timed out');
+      }
+      expect(readFileSync(logPath, 'utf8')).toContain('run gate:release:full');
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

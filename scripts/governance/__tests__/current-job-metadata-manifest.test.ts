@@ -517,6 +517,7 @@ describe('current job metadata manifest', () => {
 
   it('mirrors derived locks, inputs, timeouts, retry, and cache from release-full step metadata', () => {
     const gateRelease = findCurrentJobMetadataById('gate-release');
+    const gateReleaseStep = releaseFullCampaign().steps.find((step) => step.id === 'gate-release');
 
     expect(gateRelease?.locks).toEqual(
       expect.arrayContaining([
@@ -527,6 +528,8 @@ describe('current job metadata manifest', () => {
     );
     expect(gateRelease?.inputs.required_secret_names).toEqual(['PRESET_ENDPOINT_API_KEY']);
     expect(gateRelease?.timeouts.source).toBe('p2_metadata_schema_static_envelope');
+    expect(gateReleaseStep).toBeDefined();
+    expect(gateRelease?.timeouts.ci_seconds).toBe((gateReleaseStep?.timeoutMs ?? 0) / 1000);
     expect(gateRelease?.retry).toBe('manual_only');
     expect(gateRelease?.cache).toBe('release_campaign_only');
 

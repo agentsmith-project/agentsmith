@@ -74,6 +74,23 @@ describe('current verification campaign manifest', () => {
     }
   });
 
+  it('defines bounded step timeouts before the product readiness job fallback', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    expect(Object.fromEntries(releaseFull.steps.map((step) => [step.id, step.timeoutMs]))).toEqual({
+      'gate-fast': 20 * 60_000,
+      'gate-default': 45 * 60_000,
+      'lane-visual': 45 * 60_000,
+      'gate-release': 90 * 60_000,
+      'gate-release-full': 10 * 60_000,
+    });
+    expect(releaseFull.steps.every((step) => Number.isSafeInteger(step.timeoutMs) && step.timeoutMs > 0)).toBe(true);
+    expect(releaseFull.steps.reduce((total, step) => total + step.timeoutMs, 0)).toBeLessThan(240 * 60_000);
+  });
+
   it('separates executable evidence owners from the aggregate-only readiness check', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {

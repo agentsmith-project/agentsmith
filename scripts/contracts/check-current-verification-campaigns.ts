@@ -38,6 +38,7 @@ function main(): void {
       assert(gate, `Campaign ${campaign.id} references unknown gate id: ${step.gateId}`);
       assert(step.npmScript === gate.npmScript, `Campaign ${campaign.id}/${step.id} npmScript drifted from gate manifest.`);
       assert(step.command === `npm run ${gate.npmScript}`, `Campaign ${campaign.id}/${step.id} command must be derived from npmScript.`);
+      assert(Number.isSafeInteger(step.timeoutMs) && step.timeoutMs > 0, `Campaign ${campaign.id}/${step.id} must define a positive timeoutMs.`);
       assert(packageJson.scripts?.[step.npmScript], `package.json is missing campaign step npm script: ${step.npmScript}`);
       for (const dependency of step.dependsOn) {
         assert(stepIds.has(dependency), `Campaign ${campaign.id}/${step.id} depends on a later or missing step: ${dependency}`);
@@ -99,6 +100,11 @@ function main(): void {
   assert(
     gateReleaseStep?.evidenceChecks.some((check) => check.kind === 'recursive_file' && check.fileName === 'review.md'),
     'gate-release campaign step must require backend-real ux trace review bundles.',
+  );
+  const releaseFullTimeoutTotalMs = releaseFull.steps.reduce((total, step) => total + step.timeoutMs, 0);
+  assert(
+    releaseFullTimeoutTotalMs < 240 * 60 * 1000,
+    'release-full campaign step timeouts must fail before the GitHub product readiness job timeout.',
   );
   assert(packageJson.scripts?.['release:campaign:full'], 'package.json is missing release:campaign:full.');
   assert(

@@ -289,30 +289,10 @@ function requiredSecretNames(step: CurrentVerificationCampaignStep): readonly st
 }
 
 function timeoutsForStep(step: CurrentVerificationCampaignStep): CurrentJobMetadataTimeouts {
-  if (step.executionMode === 'aggregate_only') {
-    return {
-      local_seconds: 300,
-      ci_seconds: 600,
-      source: CAMPAIGN_TIMEOUT_SOURCE,
-    };
-  }
-  if (step.id === 'gate-release' || step.id.includes('unified-deploy')) {
-    return {
-      local_seconds: 3600,
-      ci_seconds: 5400,
-      source: CAMPAIGN_TIMEOUT_SOURCE,
-    };
-  }
-  if (step.id === 'lane-visual' || step.id === 'gate-default') {
-    return {
-      local_seconds: 1800,
-      ci_seconds: 2700,
-      source: CAMPAIGN_TIMEOUT_SOURCE,
-    };
-  }
+  const seconds = Math.ceil(step.timeoutMs / 1000);
   return {
-    local_seconds: 900,
-    ci_seconds: 1200,
+    local_seconds: seconds,
+    ci_seconds: seconds,
     source: CAMPAIGN_TIMEOUT_SOURCE,
   };
 }

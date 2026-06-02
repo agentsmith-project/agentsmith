@@ -59,6 +59,7 @@ function main(): void {
         gate_id: step.gateId,
         npm_script: step.npmScript,
         command: step.command,
+        timeout_ms: step.timeoutMs,
         execution_mode: step.executionMode,
       })),
     }, null, 2)}\n`);

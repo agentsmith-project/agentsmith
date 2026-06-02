@@ -18,6 +18,8 @@ export interface ReleaseCampaignSpawnResult {
   status: SpawnSyncReturns<unknown>['status'];
   signal: SpawnSyncReturns<unknown>['signal'];
   error?: Error;
+  timedOut?: boolean;
+  timeoutMs?: number;
 }
 
 export interface TerminalAggregateOutcome {
@@ -52,6 +54,9 @@ function abnormalAggregateSummary(
   aggregateResult: ReleaseCampaignSpawnResult,
 ): string {
   const details: string[] = [];
+  if (aggregateResult.timedOut && aggregateResult.timeoutMs !== undefined) {
+    details.push(`timeout_ms=${String(aggregateResult.timeoutMs)}`);
+  }
   if (aggregateResult.signal) {
     details.push(`signal ${aggregateResult.signal}`);
   }

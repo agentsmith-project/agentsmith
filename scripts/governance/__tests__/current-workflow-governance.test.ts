@@ -93,6 +93,8 @@ const RUNNER_REPO_CONTRACT_HANDOFF_SCOPE_COMMAND = [
 const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
   'bash scripts/verify-release.sh --contract-consumer --artifact-root "$GITHUB_WORKSPACE/artifacts/runner-contract-download"';
 const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
+const PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH = '.github/workflows/product-readiness-artifact.yml';
+const PRODUCT_READINESS_ARTIFACT_JOB_ID = 'product-readiness';
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
@@ -370,10 +372,7 @@ function collectDirectWorkflowDispatchInputRunInterpolations(
 }
 
 function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
-  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
-  const steps = Array.isArray(job.steps) ? job.steps : [];
-
-  return steps
+  return collectJobSteps(parsedWorkflow, jobId)
     .map((step) => asRecord(step).run)
     .filter((run): run is string => typeof run === 'string')
     .join('\n');
@@ -384,12 +383,15 @@ function collectJobIf(parsedWorkflow: Record<string, unknown>, jobId: string): s
   return typeof job.if === 'string' ? job.if.trim() : '';
 }
 
-function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
+function collectJobSteps(parsedWorkflow: Record<string, unknown>, jobId: string): Record<string, unknown>[] {
   const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
-  const steps = Array.isArray(job.steps) ? job.steps : [];
+  return Array.isArray(job.steps) ? job.steps.map(asRecord) : [];
+}
+
+function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
   const paths: string[] = [];
 
-  for (const step of steps) {
+  for (const step of collectJobSteps(parsedWorkflow, jobId)) {
     const stepRecord = asRecord(step);
     if (stepRecord.uses !== 'actions/upload-artifact@v7') {
       continue;
@@ -1210,6 +1212,34 @@ describe('current workflow governance', () => {
       '.github/workflows/image-publish.yml:publish-images',
       '.github/workflows/product-readiness-artifact.yml:product-readiness',
     ]);
+  });
+
+  it('keeps product readiness artifact secrets process-scoped instead of materializing checkout env files', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH,
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const parsedWorkflow = parseWorkflow(PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH);
+    const workflowSource = readRepoFile(PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH);
+    const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[PRODUCT_READINESS_ARTIFACT_JOB_ID]);
+    const jobEnv = asRecord(parsedJob.env);
+    const runCommands = collectJobRunCommands(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const stepNames = collectJobSteps(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID)
+      .map((step) => step.name)
+      .filter((name): name is string => typeof name === 'string');
+
+    expect(job?.requiresSecrets).toBe(true);
+    expect(job?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
+    expect(jobEnv.PRESET_ENDPOINT_API_KEY).toBe(
+      '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
+    );
+    expect(runCommands).toContain(
+      'npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json',
+    );
+    expect(stepNames).not.toContain('Materialize backend-real endpoint env');
+    expect(workflowSource).not.toContain('.env.backend-real');
+    expect(runCommands).not.toMatch(/>\s*(?:\.\/)?\.env(?:\.[A-Za-z0-9_-]+)?\b/);
+    expect(runCommands).not.toMatch(/\b(?:printf|cat|tee|touch|install|cp|mv)\b[^\n]*(?:\.\/)?\.env\.backend-real\b/);
   });
 
   it('keeps integration e2e pull request paths on active runner surfaces', () => {

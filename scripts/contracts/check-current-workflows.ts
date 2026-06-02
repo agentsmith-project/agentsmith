@@ -66,6 +66,8 @@ const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
 const RUNNER_REPO_CHECKOUT_PATH = 'agentsmith-runner';
 const RUNNER_REPO_REPOSITORY = 'agentsmith-project/agentsmith-runner';
 const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
+const PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH = '.github/workflows/product-readiness-artifact.yml';
+const PRODUCT_READINESS_ARTIFACT_JOB_ID = 'product-readiness';
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -391,6 +393,41 @@ function assertQualityGateVisualLaneManualOptIn(
   }
 }
 
+function assertProductReadinessArtifactSecretsStayProcessScoped(failures: string[]): void {
+  const workflowPath = PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH;
+  const jobId = PRODUCT_READINESS_ARTIFACT_JOB_ID;
+  const label = `${workflowPath}:${jobId}`;
+  const workflowSource = readFileSync(path.join(rootDir, workflowPath), 'utf8');
+  const parsedWorkflow = parseWorkflow(workflowPath);
+  const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const jobEnv = asRecord(parsedJob.env);
+  const runCommands = collectJobRunCommands(parsedWorkflow, jobId);
+  const stepNames = collectJobSteps(parsedWorkflow, jobId)
+    .map((step) => step.name)
+    .filter((name): name is string => typeof name === 'string');
+
+  if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
+    failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
+  }
+  if (!runCommands.includes(
+    'npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json',
+  )) {
+    failures.push(`${label} must run product:ready with the downloaded release contract`);
+  }
+  if (stepNames.includes('Materialize backend-real endpoint env')) {
+    failures.push(`${label} must not materialize backend-real endpoint env into the checkout worktree`);
+  }
+  if (workflowSource.includes('.env.backend-real')) {
+    failures.push(`${label} must not write or read a checkout-relative .env.backend-real in CI`);
+  }
+  if (/>\s*(?:\.\/)?\.env(?:\.[A-Za-z0-9_-]+)?\b/u.test(runCommands)) {
+    failures.push(`${label} must not redirect secrets into checkout-relative .env files`);
+  }
+  if (/\b(?:printf|cat|tee|touch|install|cp|mv)\b[^\n]*(?:\.\/)?\.env\.backend-real\b/u.test(runCommands)) {
+    failures.push(`${label} must keep backend-real endpoint secrets process-scoped, not file-materialized`);
+  }
+}
+
 function assertJobBuildsRunnerContractBeforeColdExecution(
   parsedWorkflow: Record<string, unknown>,
   workflowPath: string,
@@ -690,6 +727,7 @@ assertQualityGateVisualLaneManualOptIn(
   parseWorkflow('.github/workflows/quality-gates.yml'),
   failures,
 );
+assertProductReadinessArtifactSecretsStayProcessScoped(failures);
 
 const runnerContractArtifactWorkflowPath = '.github/workflows/runner-contract-artifact.yml';
 const runnerContractArtifactWorkflow = parseWorkflow(runnerContractArtifactWorkflowPath);

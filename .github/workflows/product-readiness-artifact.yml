@@ -60,12 +60,6 @@ jobs:
             exit 1
           fi
 
-      - name: Materialize backend-real endpoint env
-        run: |
-          set -euo pipefail
-          umask 077
-          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${PRESET_ENDPOINT_API_KEY}" > .env.backend-real
-
       - name: Download release contract artifact
         uses: actions/download-artifact@v7
         with:

@@ -941,6 +941,157 @@ describe('AFSCP File Library storage adapter', () => {
     expect(secondPage.nextContinuationToken).toBeNull();
   });
 
+  it('retries a read export listing when the WebDAV collection is not visible yet', async () => {
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/post-restore.txt</D:href>',
+      '<D:propstat><D:prop>',
+      '<D:getcontentlength>19</D:getcontentlength>',
+      '<D:getcontenttype>text/plain</D:getcontenttype>',
+      '<D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified>',
+      '</D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(xml, {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml' },
+      })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: 'workspace/.artifacts/',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_after_writer_release',
+    })).resolves.toMatchObject({
+      path: 'workspace/.artifacts/',
+      items: [
+        {
+          kind: 'file',
+          path: 'workspace/.artifacts/post-restore.txt',
+          name: 'post-restore.txt',
+        },
+      ],
+      nextContinuationToken: null,
+    });
+
+    expect(client.createExport).toHaveBeenCalledTimes(2);
+    expect(client.revokeExport).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a read export listing when AFSCP reports a repo mutation in progress', async () => {
+    const client = createProductClient();
+    vi.mocked(client.createExport).mockRejectedValueOnce(new AfscpClientError(mapAfscpErrorEnvelope(409, {
+      error: {
+        code: 'REPO_JVS_MUTATION_IN_PROGRESS',
+        message: 'repo mutation is in progress',
+        retryable: true,
+        correlation_id: 'corr_list_busy',
+        operation_id: 'op_list_busy',
+        details: {
+          resource: { type: 'repo', id: 'repo_flib_123' },
+        },
+      },
+    })));
+    const fetchMock = vi.fn(async () => new Response([
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/restored.svg</D:href>',
+      '<D:propstat><D:prop><D:getcontentlength>42</D:getcontentlength><D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join(''), {
+      status: 207,
+      headers: { 'Content-Type': 'application/xml' },
+    })) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ client, fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: 'workspace/.artifacts/',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_repo_busy',
+    })).resolves.toMatchObject({
+      items: [
+        {
+          kind: 'file',
+          path: 'workspace/.artifacts/restored.svg',
+          name: 'restored.svg',
+        },
+      ],
+    });
+
+    expect(client.createExport).toHaveBeenCalledTimes(2);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 403])('does not retry a WebDAV %s list permission failure', async (status) => {
+    const fetchMock = vi.fn(async () => new Response(status === 401 ? 'unauthorized' : 'forbidden', {
+      status,
+    })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: 'workspace/.artifacts/',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: `req_list_permission_${status}`,
+    })).rejects.toThrow('file_library_storage_admin_action_required');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.createExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a generic WebDAV list failure', async () => {
+    const fetchMock = vi.fn(async () => new Response('upstream error', {
+      status: 500,
+    })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: 'workspace/.artifacts/',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_generic_failure',
+    })).rejects.toThrow('file_library_list_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.createExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
+  });
+
   it('releases WebDAV export credentials only after a download stream finishes', async () => {
     const fetchMock = vi.fn(async () => new Response(
       Readable.toWeb(Readable.from(['hello world'])) as unknown as BodyInit,

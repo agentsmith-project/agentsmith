@@ -503,6 +503,60 @@ describe('internal-agent-pod-manager', () => {
     expect(getPodStatus).toHaveBeenCalledTimes(1);
   });
 
+  it.each([502, 503])('retries createOrEnsurePod on generic ASBCP %s unavailable and reaches Running', async (status) => {
+    const getPodStatus = vi.fn().mockResolvedValueOnce({ phase: 'offline' });
+    const transientError = Object.assign(new Error(`asbcp_error: create_or_ensure_pod ${status}`), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status,
+      operation: 'create_or_ensure_pod',
+      retryable: true,
+    });
+    const createOrEnsurePod = vi.fn()
+      .mockRejectedValueOnce(transientError)
+      .mockResolvedValueOnce({ httpStatus: 201, pod: buildRunningPodStatus() });
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     { status: 403, code: 'AGENT_SANDBOX_FORBIDDEN' },
     { status: 409, code: 'AGENT_SANDBOX_CONFLICT' },
@@ -556,6 +610,58 @@ describe('internal-agent-pod-manager', () => {
       status,
       operation: 'create_or_ensure_pod',
     });
+
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).not.toHaveBeenCalled();
+    expect(getPodStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry non-retryable ASBCP internal_error during createOrEnsurePod', async () => {
+    const getPodStatus = vi.fn().mockResolvedValueOnce({ phase: 'offline' });
+    const internalError = Object.assign(new Error('asbcp_internal_error'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      asbcpCode: 'internal_error',
+      retryable: false,
+      asbcpRetryable: false,
+    });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(internalError);
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toBe(internalError);
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
     expect(readinessSleep).not.toHaveBeenCalled();
@@ -626,6 +732,7 @@ describe('internal-agent-pod-manager', () => {
         status: 504,
       },
     ));
+    const readinessSleep = vi.fn(async () => undefined);
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
@@ -649,6 +756,7 @@ describe('internal-agent-pod-manager', () => {
       {
         phasePollIntervalMs: 1,
         onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
       },
     );
 
@@ -665,6 +773,7 @@ describe('internal-agent-pod-manager', () => {
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).not.toHaveBeenCalled();
     expect(getPodStatus).toHaveBeenCalledTimes(3);
   });
 

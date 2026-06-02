@@ -155,6 +155,14 @@ ASBCP_LOG="$(realpath -m "${ASBCP_LOG}")"
 ASBCP_LOG_DIR="$(dirname "${ASBCP_LOG}")"
 mkdir -p "${ASBCP_LOG_DIR}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
+if [[ -n "${INTERNAL_REAL_CHILD_EVIDENCE_DIR:-}" ]]; then
+  CHILD_INTERNAL_EVIDENCE_ROOT="${INTERNAL_REAL_CHILD_EVIDENCE_DIR}"
+elif [[ -n "${RELEASE_REAL_READY_LOG_DIR:-}" ]]; then
+  CHILD_INTERNAL_EVIDENCE_ROOT="$(dirname "$(realpath -m "${RELEASE_REAL_READY_LOG_DIR}")")/child-internal-evidence"
+else
+  CHILD_INTERNAL_EVIDENCE_ROOT="${INTERNAL_REAL_DIR}/child-internal-evidence"
+fi
+CHILD_INTERNAL_EVIDENCE_ROOT="$(realpath -m "${CHILD_INTERNAL_EVIDENCE_ROOT}")"
 KEEP_FAILED_ENV="${INTERNAL_REAL_KEEP_FAILED_ENV:-0}"
 GATE_STATUS=0
 CURRENT_SANDBOX_STATE_FILE=""
@@ -561,7 +569,7 @@ redact_child_internal_known_values() {
 redact_child_internal_secret_patterns() {
   local secret_name_pattern='([[:alnum:]_]*[_-]?(api[_-]?key|token|secret|password|passwd)|([[:alnum:]_]+[_-])?key)'
   sed -E \
-    -e "s#(authorization[[:space:]]*:[[:space:]]*bearer[[:space:]]+)[^[:space:]\"',;]+#\\1[REDACTED]#gI" \
+    -e "s#(authorization[[:space:]]*:[[:space:]]*(bearer|basic)[[:space:]]+)[^[:space:]\"',;]+#\\1[REDACTED]#gI" \
     -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)\"[^\"]*\"#\\1\\2[REDACTED]#gI" \
     -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)'[^']*'#\\1\\2[REDACTED]#gI" \
     -e "s#(^|[^[:alnum:]_])(${secret_name_pattern}[[:space:]]*[:=][[:space:]]*)[^[:space:]\"',;&]+#\\1\\2[REDACTED]#gI" \
@@ -575,6 +583,7 @@ redact_child_internal_evidence() {
 run_child_internal_evidence_command() {
   local output_file="$1"
   local timeout_seconds="$2"
+  local max_lines="${CHILD_INTERNAL_EVIDENCE_TAIL_LINES:-200}"
   local command_status
   shift 2
   {
@@ -582,10 +591,10 @@ run_child_internal_evidence_command() {
     printf ' %q' "$@"
     printf '\n'
     if command -v timeout >/dev/null 2>&1; then
-      timeout "${timeout_seconds}" "$@" 2>&1 | redact_child_internal_evidence
+      timeout "${timeout_seconds}" "$@" 2>&1 | redact_child_internal_evidence | tail -n "${max_lines}"
       command_status="${PIPESTATUS[0]}"
     else
-      "$@" 2>&1 | redact_child_internal_evidence
+      "$@" 2>&1 | redact_child_internal_evidence | tail -n "${max_lines}"
       command_status="${PIPESTATUS[0]}"
     fi
     printf '\n[exit_status=%s]\n' "${command_status}"
@@ -595,6 +604,7 @@ run_child_internal_evidence_command() {
 collect_asbcp_docker_log_evidence() {
   local output_file="$1"
   local container_ref="${2:-}"
+  local max_lines="${CHILD_INTERNAL_EVIDENCE_TAIL_LINES:-200}"
   local command_status
   if ! command -v docker >/dev/null 2>&1; then
     printf 'docker command is not available; ASBCP docker logs were not collected.\n' > "${output_file}"
@@ -605,24 +615,69 @@ collect_asbcp_docker_log_evidence() {
     return 0
   fi
   {
-    printf '$ docker logs %q\n' "${container_ref}"
+    printf '$ docker logs --tail %q %q\n' "${max_lines}" "${container_ref}"
     if command -v timeout >/dev/null 2>&1; then
-      timeout 30 docker logs "${container_ref}" 2>&1 | redact_child_internal_evidence
+      timeout 30 docker logs --tail "${max_lines}" "${container_ref}" 2>&1 | redact_child_internal_evidence
       command_status="${PIPESTATUS[0]}"
     else
-      docker logs "${container_ref}" 2>&1 | redact_child_internal_evidence
+      docker logs --tail "${max_lines}" "${container_ref}" 2>&1 | redact_child_internal_evidence
       command_status="${PIPESTATUS[0]}"
     fi
     printf '\n[exit_status=%s]\n' "${command_status}"
   } > "${output_file}" || true
 }
 
+collect_child_internal_log_tails() {
+  local evidence_dir="$1"
+  local spec_state_file="${2:-}"
+  local output_file="${evidence_dir}/log-tails.txt"
+  local max_lines="${CHILD_INTERNAL_EVIDENCE_TAIL_LINES:-120}"
+  local spec_runtime_dir=""
+  local log_file
+  local collected=0
+  local -a candidates=()
+
+  if [[ -n "${ASBCP_LOG:-}" ]]; then
+    candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+    spec_runtime_dir="$(dirname "${spec_state_file}")"
+    if [[ -d "${spec_runtime_dir}/integration" ]]; then
+      while IFS= read -r log_file; do
+        candidates+=("${log_file}")
+      done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 8)
+    fi
+  fi
+
+  : > "${output_file}"
+  for log_file in "${candidates[@]}"; do
+    if [[ ! -f "${log_file}" ]]; then
+      continue
+    fi
+    {
+      printf '\n===== %s (tail %s lines) =====\n' "${log_file}" "${max_lines}"
+      tail -n "${max_lines}" "${log_file}" 2>&1 | redact_child_internal_evidence
+    } >> "${output_file}"
+    collected=1
+  done
+
+  if [[ "${collected}" -eq 0 ]]; then
+    printf 'No child internal log files were available for tail collection.\n' > "${output_file}"
+  fi
+}
+
 collect_child_internal_failure_evidence() {
   local stage="$1"
   local spec_state_file="${2:-}"
+  local failure_message="${3:-}"
+  local exit_status="${4:-}"
+  local spec="${5:-}"
+  local label="${6:-}"
+  local spec_api_port="${7:-}"
+  local spec_web_port="${8:-}"
   local safe_stage evidence_dir
   safe_stage="$(child_internal_evidence_slug "${stage}")"
-  evidence_dir="${INTERNAL_REAL_DIR}/child-internal-evidence/${safe_stage:-child-spec}"
+  evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
   mkdir -p "${evidence_dir}" 2>/dev/null || return 0
   (
     set +e
@@ -645,12 +700,24 @@ collect_child_internal_failure_evidence() {
     fi
     {
       printf 'stage=%s\n' "${stage}"
+      printf 'gate_mode=%s\n' "${GATE_MODE:-workspace}"
+      printf 'spec=%s\n' "${spec:-<unknown>}"
+      printf 'grep_label=%s\n' "${label:-<none>}"
+      printf 'exit_status=%s\n' "${exit_status:-<unknown>}"
+      printf 'message=%s\n' "${failure_message:-<none>}"
       printf 'state_file=%s\n' "${spec_state_file:-<none>}"
+      printf 'internal_real_dir=%s\n' "${INTERNAL_REAL_DIR:-<unknown>}"
+      printf 'evidence_dir=%s\n' "${evidence_dir}"
       printf 'namespace=%s\n' "${child_namespace}"
       printf 'asbcp_container_ref=%s\n' "${child_asbcp_container_ref:-<missing>}"
+      printf 'api_port=%s\n' "${spec_api_port:-<unknown>}"
+      printf 'web_port=%s\n' "${spec_web_port:-<unknown>}"
+      printf 'asbcp_port=%s\n' "${ASBCP_PORT:-<unknown>}"
+      printf 'kind_context=%s\n' "${KIND_CONTEXT_NAME:-${CONTEXT_NAME:-<unknown>}}"
       printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } > "${evidence_dir}/summary.txt"
 
+    collect_child_internal_log_tails "${evidence_dir}" "${spec_state_file}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
     if command -v kubectl >/dev/null 2>&1; then
       run_child_internal_evidence_command "${evidence_dir}/k8s-pods.txt" 20 kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide
@@ -669,8 +736,23 @@ record_child_internal_spec_failure() {
   local stage="$1"
   local message="$2"
   local spec_state_file="${3:-}"
+  local exit_status="${4:-}"
+  local spec="${5:-}"
+  local label="${6:-}"
+  local spec_api_port="${7:-}"
+  local spec_web_port="${8:-}"
   gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
-  collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" || true
+  collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" "${message}" "${exit_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
+}
+
+internal_spec_evidence_stage() {
+  local spec="$1"
+  local fallback_stage="$2"
+  if [[ "${GATE_MODE}" == "files-restore-continue" && "${spec}" == "e2e/integration-files-user-stories.spec.ts" ]]; then
+    printf 'files_restore_continuation_spec\n'
+    return 0
+  fi
+  printf '%s\n' "${fallback_stage}"
 }
 
 if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
@@ -823,16 +905,30 @@ run_internal_spec_grep() {
   local spec_api_port
   local spec_web_port
   local spec_slug
+  local evidence_stage
   local spec_state_file
   local spec_status
   local resolved_ports
 
+  spec_slug="$(basename "${spec}" .spec.ts)-${preferred_api_port}"
+  evidence_stage="$(internal_spec_evidence_stage "${spec}" "${spec_slug}")"
   if ! resolved_ports="$(resolve_internal_spec_port_pair "${preferred_api_port}" "${preferred_web_port}" "${spec}")"; then
-    return 1
+    spec_status=1
+    record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: unable to resolve isolated ports for preferred api=${preferred_api_port} web=${preferred_web_port}" "" "${spec_status}" "${spec}" "${label}" "${preferred_api_port}" "${preferred_web_port}"
+    return "${spec_status}"
   fi
   read -r spec_api_port spec_web_port <<< "${resolved_ports}"
   spec_slug="$(basename "${spec}" .spec.ts)-${spec_api_port}"
+  evidence_stage="$(internal_spec_evidence_stage "${spec}" "${spec_slug}")"
   spec_state_file="$(prepare_internal_backend_real_spec_runtime "${spec_slug}")"
+  spec_status=$?
+  if [[ "${spec_status}" -ne 0 || -z "${spec_state_file}" ]]; then
+    if [[ "${spec_status}" -eq 0 ]]; then
+      spec_status=1
+    fi
+    record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"
+    return "${spec_status}"
+  fi
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_asbcp" "passed" "port ${ASBCP_PORT}"
   if [[ -n "${label}" ]]; then
     info "running ${spec} --grep ${label}"
@@ -845,7 +941,7 @@ run_internal_spec_grep() {
   if [[ "${spec_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}" "passed" "${spec}"
   else
-    record_child_internal_spec_failure "${spec_slug}" "${spec} failed with status ${spec_status}" "${spec_state_file}"
+    record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"
   fi
   if [[ "${KEEP_FAILED_ENV}" != "1" || "${spec_status}" -eq 0 ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -898,7 +994,7 @@ run_internal_reclaim_spec() {
   if [[ "${reclaim_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
   else
-    record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}"
+    record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}" "${reclaim_status}" "e2e/integration-internal-sandbox-reclaim.spec.ts" "" "${reclaim_api_port}" "${reclaim_web_port}"
   fi
   if [[ -n "${reclaim_state_file}" && ( "${KEEP_FAILED_ENV}" != "1" || "${reclaim_status}" -eq 0 ) ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${reclaim_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -931,7 +1027,7 @@ run_internal_workspace_specs() {
   if [[ "${workspace_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-agent-task-runner"
   else
-    record_child_internal_spec_failure "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}" "${workspace_state_file}"
+    record_child_internal_spec_failure "workspace_spec" "integration-agent-task-runner failed with status ${workspace_status}" "${workspace_state_file}" "${workspace_status}" "e2e/integration-agent-task-runner.spec.ts" "reads task context through mbos-context in a real Agent Task run resolved by the default Agent Runner" "${API_PORT}" "${WEB_PORT}"
   fi
   if [[ "${workspace_status}" -eq 0 ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${workspace_state_file}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true
@@ -1005,7 +1101,7 @@ if [[ "${GATE_MODE}" == "visual-review" ]]; then
   if [[ "${VISUAL_REVIEW_STATUS}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "visual_review_spec" "passed" "integration-visual-review"
   else
-    record_child_internal_spec_failure "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}" "${VISUAL_REVIEW_STATE_FILE}"
+    record_child_internal_spec_failure "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}" "${VISUAL_REVIEW_STATE_FILE}" "${VISUAL_REVIEW_STATUS}" "e2e/integration-visual-review.spec.ts" "" "${API_PORT}" "${WEB_PORT}"
   fi
   if [[ -n "${VISUAL_REVIEW_STATE_FILE:-}" && ( "${KEEP_FAILED_ENV}" != "1" || "${VISUAL_REVIEW_STATUS}" -eq 0 ) ]]; then
     INTERNAL_SANDBOX_REAL_STATE_FILE="${VISUAL_REVIEW_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-asbcp >/dev/null 2>&1 || true

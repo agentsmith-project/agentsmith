@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -30,6 +31,12 @@ function shellFunctionBody(source: string, functionName: string): string {
   const end = endCandidates.length > 0 ? Math.min(...endCandidates) : source.length;
 
   return source.slice(start, end);
+}
+
+function shellFunctionDefinition(source: string, functionName: string): string {
+  const match = source.match(new RegExp(`^${functionName}\\(\\) \\{\\n[\\s\\S]*?^\\}`, 'mu'));
+  expect(match?.[0], `${functionName} definition`).toBeTruthy();
+  return match?.[0] ?? '';
 }
 
 function shellFunctionBefore(source: string, startNeedle: string, nextNeedle: string): string {
@@ -392,6 +399,158 @@ function runPrepareRuntimeWithLegacyRunnerImage(args: {
   }
 }
 
+function runInternalSpecGrepEarlyFailureHarness(): {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  summary: string;
+  internalFailure: string;
+  internalChildEvidenceExists: boolean;
+} {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-evidence-'));
+  const uploadRoot = path.join(tempRoot, 'upload', 'child-internal-evidence');
+  const scriptPath = path.join(tempRoot, 'harness.sh');
+  const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+  const evidenceFunctions = sectionBetween(
+    agentTaskGate,
+    '\nchild_internal_evidence_slug() {',
+    '\nif [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]',
+  );
+  const runGrepFunction = shellFunctionDefinition(agentTaskGate, 'run_internal_spec_grep');
+
+  try {
+    writeFileSync(
+      scriptPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="${repoRoot}"
+TEMP_ROOT="${tempRoot}"
+INTERNAL_REAL_DIR="${tempRoot}/internal"
+CHILD_INTERNAL_EVIDENCE_ROOT="${uploadRoot}"
+GATE_MODE="files-restore-continue"
+KEEP_FAILED_ENV=0
+K8S_NAMESPACE="agentsmith-sandbox"
+KIND_CONTEXT_NAME="kind-agentsmith"
+CONTEXT_NAME="kind-agentsmith"
+ASBCP_PORT=28080
+CONTROL_SCRIPT="${tempRoot}/control.sh"
+mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
+
+gate_record_failure() {
+  mkdir -p "$1"
+  printf '%s|%s|%s\\n' "$2" "$3" "$4" >> "$1/failure-records.txt"
+}
+
+gate_record_preflight_check() {
+  printf 'unexpected preflight: %s\\n' "$*" >> "\${TEMP_ROOT}/calls.txt"
+}
+
+info() { :; }
+timeout() { shift; "$@"; }
+docker() { printf 'docker unavailable in harness\\n'; return 1; }
+kubectl() { printf 'kubectl unavailable in harness\\n'; return 1; }
+resolve_internal_spec_port_pair() { return 1; }
+prepare_internal_backend_real_spec_runtime() {
+  printf 'unexpected prepare\\n' >> "\${TEMP_ROOT}/calls.txt"
+  return 1
+}
+run_internal_spec() {
+  printf 'unexpected run\\n' >> "\${TEMP_ROOT}/calls.txt"
+  return 1
+}
+
+${evidenceFunctions}
+${runGrepFunction}
+
+set +e
+run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121
+status=$?
+set -e
+printf 'status=%s\\n' "\${status}"
+printf 'upload_root=%s\\n' "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
+find "\${CHILD_INTERNAL_EVIDENCE_ROOT}" -maxdepth 2 -type f | sort
+exit 0
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [scriptPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const summaryPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'summary.txt');
+    const internalFailurePath = path.join(tempRoot, 'internal', 'failure-records.txt');
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+      summary: existsSync(summaryPath) ? readFileSync(summaryPath, 'utf8') : '',
+      internalFailure: existsSync(internalFailurePath) ? readFileSync(internalFailurePath, 'utf8') : '',
+      internalChildEvidenceExists: existsSync(path.join(tempRoot, 'internal', 'child-internal-evidence')),
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function runChildInternalEvidenceRedactorHarness(input: string): {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+} {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'child-internal-redactor-'));
+  const scriptPath = path.join(tempRoot, 'redactor.sh');
+  const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+  const redactionFunctions = shellFunctionBefore(
+    agentTaskGate,
+    '\nredact_child_internal_known_values() {',
+    'run_child_internal_evidence_command',
+  );
+
+  try {
+    writeFileSync(
+      scriptPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+ASBCP_SERVICE_KEY_VALUE="known-asbcp-secret"
+ASBCP_SERVICE_KEY=""
+AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
+AFSCP_ORCHESTRATOR_SERVICE_TOKEN=""
+PRESET_ENDPOINT_API_KEY_VALUE="sk-known-provider-secret"
+PRESET_ENDPOINT_API_KEY=""
+
+${redactionFunctions}
+
+redact_child_internal_evidence
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [scriptPath], {
+      cwd: repoRoot,
+      input,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 describe('internal backend-real gate runtime contract', () => {
   it('writes ASBCP sandbox config with the ASBCP main container contract', () => {
     const config = renderInternalBackendSandboxConfig();
@@ -659,6 +818,11 @@ describe('internal backend-real gate runtime contract', () => {
       '\ncollect_asbcp_docker_log_evidence() {',
       '\n}\n\ncollect_child_internal_failure_evidence()',
     );
+    const logTailCollector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_child_internal_log_tails() {',
+      '\n}\n\ncollect_child_internal_failure_evidence()',
+    );
     const evidenceCommand = sectionBetween(
       agentTaskGate,
       '\nrun_child_internal_evidence_command() {',
@@ -677,9 +841,17 @@ describe('internal backend-real gate runtime contract', () => {
     const grepFunction = shellFunctionBody(agentTaskGate, 'run_internal_spec_grep');
     const reclaimFunction = shellFunctionBody(agentTaskGate, 'run_internal_reclaim_spec');
     const workspaceFunction = shellFunctionBody(agentTaskGate, 'run_internal_workspace_specs');
-    const evidenceSurface = `${collector}\n${dockerCollector}\n${evidenceCommand}`;
+    const evidenceSurface = `${collector}\n${dockerCollector}\n${evidenceCommand}\n${logTailCollector}`;
 
-    expect(collector).toContain('child-internal-evidence');
+    expect(agentTaskGate).toContain('CHILD_INTERNAL_EVIDENCE_ROOT="${INTERNAL_REAL_DIR}/child-internal-evidence"');
+    expect(agentTaskGate).toContain('CHILD_INTERNAL_EVIDENCE_ROOT="$(dirname "$(realpath -m "${RELEASE_REAL_READY_LOG_DIR}")")/child-internal-evidence"');
+    expect(collector).toContain('evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"');
+    expect(logTailCollector).toContain('log-tails.txt');
+    expect(collector).toContain('exit_status=%s');
+    expect(collector).toContain('spec=%s');
+    expect(collector).toContain('grep_label=%s');
+    expect(collector).toContain('api_port=%s');
+    expect(collector).toContain('web_port=%s');
     expect(collector).toContain('collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"');
     expect(collector).toContain('kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide');
     expect(collector).not.toContain('describe pods');
@@ -695,9 +867,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(collector).toContain('kubectl --request-timeout=15s get events -n "${child_namespace}" --sort-by=.metadata.creationTimestamp');
     expect(collector).toContain('kubectl command is not available; pod list evidence was not collected.');
     expect(collector).toContain('kubectl command is not available; pod status evidence was not collected.');
-    expect(evidenceCommand).toContain('| redact_child_internal_evidence');
+    expect(evidenceCommand).toContain('| redact_child_internal_evidence | tail -n "${max_lines}"');
     expect(dockerCollector).toContain('docker command is not available; ASBCP docker logs were not collected.');
     expect(dockerCollector).toContain('ASBCP container id/name could not be resolved; docker logs were not collected.');
+    expect(dockerCollector).toContain('docker logs --tail');
     expect(redaction).toContain('redact_child_internal_known_values | redact_child_internal_secret_patterns');
     expect(redaction).toContain('secret_name_pattern');
     expect(redaction).toContain('api[_-]?key');
@@ -706,18 +879,26 @@ describe('internal backend-real gate runtime contract', () => {
     expect(redaction).toContain('password');
     expect(redaction).toContain('authorization');
     expect(redaction).toContain('bearer');
+    expect(redaction).toContain('basic');
     expect(redaction).toContain('sk-');
     expect(redaction).toContain('[[:space:]]*[:=]');
     expect(redaction).toContain('[REDACTED]');
 
     const failureRecord = 'gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"';
-    const evidenceCollect = 'collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" || true';
+    const evidenceCollect = 'collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" "${message}" "${exit_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true';
     expect(recorder).toContain(failureRecord);
     expect(recorder).toContain(evidenceCollect);
     expect(recorder.indexOf(failureRecord)).toBeLessThan(recorder.indexOf(evidenceCollect));
 
+    expect(agentTaskGate).toContain('internal_spec_evidence_stage()');
     expect(grepFunction).toContain(
-      'record_child_internal_spec_failure "${spec_slug}" "${spec} failed with status ${spec_status}" "${spec_state_file}"',
+      'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: unable to resolve isolated ports for preferred api=${preferred_api_port} web=${preferred_web_port}" "" "${spec_status}" "${spec}" "${label}" "${preferred_api_port}" "${preferred_web_port}"',
+    );
+    expect(grepFunction).toContain(
+      'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"',
+    );
+    expect(grepFunction).toContain(
+      'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"',
     );
     expect(reclaimFunction).toContain(
       'record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}"',
@@ -728,6 +909,65 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain(
       'record_child_internal_spec_failure "visual_review_spec" "integration-visual-review failed with status ${VISUAL_REVIEW_STATUS}" "${VISUAL_REVIEW_STATE_FILE}"',
     );
+  });
+
+  it('redacts child internal evidence headers and secret key-value output at runtime', () => {
+    const rawSecrets = [
+      'QWxhZGRpbjpvcGVuIHNlc2FtZQ==',
+      'bearer-token-secret',
+      'case-basic-secret',
+      'plain-token-value',
+      'plain-password-value',
+      'plain-api-key-value',
+      'sk-live-raw-secret123456',
+      'known-asbcp-secret',
+      'known-orchestrator-token',
+      'sk-known-provider-secret',
+    ];
+    const input = [
+      `Authorization: Basic ${rawSecrets[0]}`,
+      `authorization :   bearer ${rawSecrets[1]}`,
+      `AUTHORIZATION: BASIC ${rawSecrets[2]}`,
+      `token=${rawSecrets[3]}`,
+      `password = "${rawSecrets[4]}"`,
+      `service_api_key: '${rawSecrets[5]}'`,
+      `PRESET_ENDPOINT_API_KEY=${rawSecrets[6]}`,
+      `known values ${rawSecrets[7]} ${rawSecrets[8]} ${rawSecrets[9]}`,
+    ].join('\n');
+
+    const result = runChildInternalEvidenceRedactorHarness(`${input}\n`);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    for (const rawSecret of rawSecrets) {
+      expect(result.stdout).not.toContain(rawSecret);
+    }
+    expect(result.stdout).toContain('Authorization: Basic [REDACTED]');
+    expect(result.stdout).toContain('authorization :   bearer [REDACTED]');
+    expect(result.stdout).toContain('AUTHORIZATION: BASIC [REDACTED]');
+    expect(result.stdout).toContain('token=[REDACTED]');
+    expect(result.stdout).toContain('password = [REDACTED]');
+    expect(result.stdout).toContain('service_api_key: [REDACTED]');
+    expect(result.stdout).toContain('PRESET_ENDPOINT_API_KEY=[REDACTED]');
+  });
+
+  it('records files restore continuation early failures into the campaign-uploadable child evidence root', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness();
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=1');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/summary.txt');
+    expect(result.summary).toContain('stage=files_restore_continuation_spec');
+    expect(result.summary).toContain('gate_mode=files-restore-continue');
+    expect(result.summary).toContain('spec=e2e/integration-files-user-stories.spec.ts');
+    expect(result.summary).toContain('grep_label=same task can continue after Files restore');
+    expect(result.summary).toContain('exit_status=1');
+    expect(result.summary).toContain('api_port=21020');
+    expect(result.summary).toContain('web_port=3121');
+    expect(result.summary).toContain('/upload/child-internal-evidence/files_restore_continuation_spec');
+    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalChildEvidenceExists).toBe(false);
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

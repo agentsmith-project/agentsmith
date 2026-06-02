@@ -3,6 +3,7 @@ import {
   AsbcpClient,
   AsbcpHttpError,
   isAsbcpReadinessNotReadyError,
+  isAsbcpStartupTransientUnavailableError,
   readAsbcpRetryAfterMs,
 } from './asbcp-client.js';
 
@@ -465,6 +466,30 @@ describe('AsbcpClient', () => {
     });
     expect(isAsbcpReadinessNotReadyError(caught)).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['network unavailable', { code: 'AGENT_SANDBOX_UNAVAILABLE' }],
+    ['HTTP 502', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 502, retryable: true }],
+    ['HTTP 503', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 503, retryable: true }],
+    ['HTTP 504', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 504, retryable: true }],
+  ])('classifies startup transient unavailable errors for %s', (_label, fields) => {
+    const error = Object.assign(new Error('asbcp transient unavailable'), fields);
+
+    expect(isAsbcpStartupTransientUnavailableError(error)).toBe(true);
+  });
+
+  it('does not classify explicit non-retryable ASBCP internal_error as startup transient', () => {
+    const error = Object.assign(new Error('asbcp internal error'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      asbcpCode: 'internal_error',
+      retryable: false,
+      asbcpRetryable: false,
+    });
+
+    expect(isAsbcpStartupTransientUnavailableError(error)).toBe(false);
   });
 
   it('returns a distinguishable error for delete workspace binding 404 instead of treating it as success', async () => {

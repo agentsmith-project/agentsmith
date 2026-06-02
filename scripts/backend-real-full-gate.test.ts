@@ -332,6 +332,19 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
   });
 
+  it('passes campaign-uploaded child internal evidence root to nested backend-real specs', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const runRealCommand = shellFunctionBody(script, 'run_real_cmd');
+
+    expect(script).toContain(
+      'CHILD_INTERNAL_EVIDENCE_DIR="${RELEASE_REAL_CHILD_INTERNAL_EVIDENCE_DIR:-$(dirname "${LOCAL_READY_LOG_DIR}")/child-internal-evidence}"',
+    );
+    expect(runRealCommand).toContain('export INTERNAL_REAL_CHILD_EVIDENCE_DIR="${CHILD_INTERNAL_EVIDENCE_DIR}"');
+    expect(script).toContain(
+      'run_release_gate_step "backend_real_scenario" "Files restore continuation backend-real scenario failed: npm run test:e2e:integration:files:user-stories:restore-continue" run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"',
+    );
+  });
+
   it('treats a fail-verdict startup report as materialized evidence during pre-ready failure handling when the report file exists', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
     const helperStart = script.indexOf('materialize_pre_ready_failure_evidence()');

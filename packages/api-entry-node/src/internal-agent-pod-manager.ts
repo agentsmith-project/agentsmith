@@ -2,6 +2,7 @@ import type { AgentRecord } from './resource-models.js';
 import { isAbsolute, join, normalize } from 'node:path';
 import { isManagedAgentRunner } from './agent-runner-profile.js';
 import {
+  isAsbcpStartupTransientUnavailableError,
   redactAsbcpLogText,
   type ExecResponse,
   type PodStatusResponse,
@@ -1226,6 +1227,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       deadline: input.deadline,
       signal: input.signal,
       sleep: this.sleep,
+      isRetryableError: (error) => !isCreateOrEnsureTimeoutError(error)
+        && isAsbcpStartupTransientUnavailableError(error),
       invoke: () => this.runAbortableSandboxRpc(
         (rpcSignal) => this.sandboxClient.createOrEnsurePod(
           input.workspaceId,

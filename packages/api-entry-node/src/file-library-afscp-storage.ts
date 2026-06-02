@@ -25,6 +25,7 @@ import { createAbortError } from './object-stream-bridge.js';
 
 export const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
 const READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
+const READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS = READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS;
 
 export type FileLibraryStorageOperationStatus =
   | 'pending'
@@ -334,6 +335,7 @@ const PUBLIC_STORAGE_ERROR_MESSAGES = new Set([
   'file_library_delete_failed',
   'file_library_move_failed',
   'file_library_list_failed',
+  'file_library_list_pending',
   'file_library_meta_failed',
   'file_library_folder_create_failed',
   'file_library_export_access_unavailable',
@@ -628,6 +630,9 @@ function mapAfscpClientErrorToStorageMessage(
     case 'afscp_active_writer_blocks_restore':
       return 'file_library_active_writer_blocked';
     case 'afscp_repo_mutation_in_progress':
+      if (fallback === 'file_library_list_failed') {
+        return 'file_library_list_pending';
+      }
       if (fallback === 'file_library_save_point_list_failed') {
         return 'file_library_save_point_list_pending';
       }
@@ -792,6 +797,9 @@ function ensureOk(response: Response, fallbackMessage: string): void {
     if (response.status === 404) {
       throw new Error('file_library_object_not_found');
     }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('file_library_storage_admin_action_required');
+    }
     if (response.status === 409 || response.status === 412) {
       throw new Error('file_library_destination_exists');
     }
@@ -803,7 +811,7 @@ function basicAuthorization(access: AfscpExportAccessCredential): string {
   return `Basic ${Buffer.from(`${access.auth.username}:${access.auth.password}`, 'utf8').toString('base64')}`;
 }
 
-async function waitForReadExportDownloadRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+async function waitForReadExportRetryDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
   if (delayMs <= 0) return;
   if (signal?.aborted) {
     throw createAbortError(signal.reason, 'file_library_download_aborted');
@@ -820,6 +828,23 @@ async function waitForReadExportDownloadRetry(delayMs: number, signal?: AbortSig
     }, delayMs);
     signal?.addEventListener('abort', handleAbort, { once: true });
   });
+}
+
+function mapListEntriesStorageMessage(error: unknown): string {
+  if (error instanceof AfscpClientError) {
+    return mapAfscpClientErrorToStorageMessage(error, 'file_library_list_failed');
+  }
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'file_library_export_access_unavailable') {
+    return 'file_library_backend_unavailable';
+  }
+  return safeStorageErrorMessage(error, 'file_library_list_failed');
+}
+
+function isRetryableListEntriesStorageMessage(message: string): boolean {
+  return message === 'file_library_list_pending'
+    || message === 'file_library_backend_unavailable'
+    || message === 'file_library_object_not_found';
 }
 
 export function normalizeAfscpFileLibraryPath(input: string): string {
@@ -1881,46 +1906,61 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     nextContinuationToken: string | null;
   }> {
     const path = input.path ? ensureDirectoryPath(input.path) : '';
-    return this.withExport(input, 'read_only', async (context) => {
-      const response = await this.webdavFetch(context.access, path, {
-        method: 'PROPFIND',
-        headers: { Depth: '1' },
-        signal: input.signal,
-      });
-      ensureOk(response, 'file_library_list_failed');
-      let items = parseWebdavEntries(await response.text(), path);
-      if (input.search) {
-        const needle = input.search.toLowerCase();
-        items = items.filter((item) => item.name.toLowerCase().includes(needle));
+    for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
+      await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+      try {
+        return await this.withExport(input, 'read_only', async (context) => {
+          const response = await this.webdavFetch(context.access, path, {
+            method: 'PROPFIND',
+            headers: { Depth: '1' },
+            signal: input.signal,
+          });
+          ensureOk(response, 'file_library_list_failed');
+          let items = parseWebdavEntries(await response.text(), path);
+          if (input.search) {
+            const needle = input.search.toLowerCase();
+            items = items.filter((item) => item.name.toLowerCase().includes(needle));
+          }
+          const direction = input.sortOrder === 'desc' ? -1 : 1;
+          items.sort((left, right) => {
+            if (input.sortBy === 'size_bytes') {
+              const leftSize = left.kind === 'file' ? left.size_bytes : -1;
+              const rightSize = right.kind === 'file' ? right.size_bytes : -1;
+              return (leftSize - rightSize) * direction;
+            }
+            if (input.sortBy === 'modified_at') {
+              const leftModified = left.kind === 'file' ? Date.parse(left.modified_at) : 0;
+              const rightModified = right.kind === 'file' ? Date.parse(right.modified_at) : 0;
+              return (leftModified - rightModified) * direction;
+            }
+            return left.name.localeCompare(right.name) * direction;
+          });
+          const continuationIndex = input.continuationToken
+            ? items.findIndex((item) => item.path === input.continuationToken)
+            : -1;
+          const startIndex = continuationIndex >= 0 ? continuationIndex + 1 : 0;
+          const pageItems = items.slice(startIndex, startIndex + input.pageSize);
+          const nextIndex = startIndex + input.pageSize;
+          return {
+            path,
+            items: pageItems,
+            nextContinuationToken: items.length > nextIndex
+              ? pageItems[pageItems.length - 1]?.path ?? null
+              : null,
+          };
+        });
+      } catch (error) {
+        const message = mapListEntriesStorageMessage(error);
+        if (
+          attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
+          && isRetryableListEntriesStorageMessage(message)
+        ) {
+          continue;
+        }
+        throw new Error(message);
       }
-      const direction = input.sortOrder === 'desc' ? -1 : 1;
-      items.sort((left, right) => {
-        if (input.sortBy === 'size_bytes') {
-          const leftSize = left.kind === 'file' ? left.size_bytes : -1;
-          const rightSize = right.kind === 'file' ? right.size_bytes : -1;
-          return (leftSize - rightSize) * direction;
-        }
-        if (input.sortBy === 'modified_at') {
-          const leftModified = left.kind === 'file' ? Date.parse(left.modified_at) : 0;
-          const rightModified = right.kind === 'file' ? Date.parse(right.modified_at) : 0;
-          return (leftModified - rightModified) * direction;
-        }
-        return left.name.localeCompare(right.name) * direction;
-      });
-      const continuationIndex = input.continuationToken
-        ? items.findIndex((item) => item.path === input.continuationToken)
-        : -1;
-      const startIndex = continuationIndex >= 0 ? continuationIndex + 1 : 0;
-      const pageItems = items.slice(startIndex, startIndex + input.pageSize);
-      const nextIndex = startIndex + input.pageSize;
-      return {
-        path,
-        items: pageItems,
-        nextContinuationToken: items.length > nextIndex
-          ? pageItems[pageItems.length - 1]?.path ?? null
-          : null,
-      };
-    });
+    }
+    throw new Error('file_library_list_failed');
   }
 
   async createFolder(input: FileLibraryStorageLibraryInput & {
@@ -2050,7 +2090,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
   }): Promise<FileLibraryDownloadResult> {
     const objectPath = normalizeAfscpFileLibraryPath(input.objectPath);
     for (let attempt = 0; attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length; attempt += 1) {
-      await waitForReadExportDownloadRetry(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+      await waitForReadExportRetryDelay(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
       const context = await this.createExportContext(input, 'read_only');
       try {
         const response = await this.webdavFetch(context.access, objectPath, {

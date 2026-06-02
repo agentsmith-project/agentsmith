@@ -30,6 +30,7 @@ AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"
 VISUAL_REVIEW_ARTIFACT_DIR="${ARTIFACT_DIR}/visual-review"
 RELEASE_RUN_ROOT="${RELEASE_REAL_RUN_ROOT:-$(BACKEND_REAL_RUN_ID="${RUN_ID}" backend_real_new_run_dir release-real)}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${RELEASE_RUN_ROOT}/release-ready}"
+CHILD_INTERNAL_EVIDENCE_DIR="${RELEASE_REAL_CHILD_INTERNAL_EVIDENCE_DIR:-$(dirname "${LOCAL_READY_LOG_DIR}")/child-internal-evidence}"
 export LOCAL_RUNTIME_RUN_ID="${RUN_ID}"
 export LOCAL_RUNTIME_LINE_KIND="release_backend_real"
 export LOCAL_RUNTIME_OWNER_TOKEN="${RUN_ID}:release_backend_real:$$"
@@ -207,6 +208,7 @@ run_real_cmd() {
     export INTEGRATION_API_PORT="${api_port}"
     export INTEGRATION_WEB_PORT="${web_port}"
     export PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}"
+    export INTERNAL_REAL_CHILD_EVIDENCE_DIR="${CHILD_INTERNAL_EVIDENCE_DIR}"
     eval "${command}"
   )
 }

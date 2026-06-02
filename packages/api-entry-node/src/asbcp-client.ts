@@ -414,6 +414,45 @@ export function isAsbcpReadinessNotReadyError(error: unknown): boolean {
   return asbcpRetryable !== false && retryable !== false;
 }
 
+function readAsbcpErrorObjectCode(error: Record<string, unknown>): string | undefined {
+  return readNonEmptyString(error.asbcpCode)
+    ?? readNonEmptyString(error.asbcp_code);
+}
+
+function readAsbcpErrorObjectRetryable(error: Record<string, unknown>): boolean | undefined {
+  const value = error.asbcpRetryable ?? error.asbcp_retryable;
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+export function isAsbcpStartupTransientUnavailableError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    return false;
+  }
+  const retryable = typeof error.retryable === 'boolean' ? error.retryable : undefined;
+  const asbcpRetryable = readAsbcpErrorObjectRetryable(error);
+  if (retryable === false || asbcpRetryable === false) {
+    return false;
+  }
+  if (isAsbcpReadinessNotReadyError(error)) {
+    return true;
+  }
+
+  const asbcpCode = readAsbcpErrorObjectCode(error);
+  if (asbcpCode === 'internal_error' && asbcpRetryable !== true) {
+    return false;
+  }
+
+  const status = typeof error.status === 'number' && Number.isFinite(error.status)
+    ? error.status
+    : undefined;
+  if (status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+
+  const code = readNonEmptyString(error.code);
+  return code === 'AGENT_SANDBOX_UNAVAILABLE' && status === undefined;
+}
+
 export function readAsbcpRetryAfterMs(error: unknown): number | undefined {
   if (!isRecord(error)) {
     return undefined;

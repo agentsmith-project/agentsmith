@@ -1,5 +1,6 @@
 import {
   isAsbcpReadinessNotReadyError,
+  isAsbcpStartupTransientUnavailableError,
   readAsbcpRetryAfterMs,
 } from './asbcp-client.js';
 
@@ -17,6 +18,17 @@ function readStringField(error: unknown, key: string): string | undefined {
   if (!isRecord(error)) return undefined;
   const value = error[key];
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readNumberField(error: unknown, key: string): number | undefined {
+  if (!isRecord(error)) return undefined;
+  const value = error[key];
+  return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : undefined;
+}
+
+function readAsbcpCode(error: unknown): string | undefined {
+  return readStringField(error, 'asbcpCode')
+    ?? readStringField(error, 'asbcp_code');
 }
 
 function buildAbortError(reason?: unknown): Error {
@@ -78,19 +90,24 @@ async function sleepWithAbort(input: {
   throwIfAborted(signal);
 }
 
-function buildAsbcpReadinessNotReadyError(input: {
+function buildAsbcpStartupTransientUnavailableError(input: {
   operation: string;
   cause: unknown;
 }): Error {
   const requestId = readStringField(input.cause, 'requestId')
     ?? readStringField(input.cause, 'request_id');
   const retryAfterMs = readAsbcpRetryAfterMs(input.cause);
-  const error = Object.assign(new Error('asbcp_readiness_not_ready'), {
+  const status = readNumberField(input.cause, 'status') ?? 503;
+  const asbcpCode = readAsbcpCode(input.cause);
+  const isReadinessNotReady = isAsbcpReadinessNotReadyError(input.cause);
+  const error = Object.assign(new Error(
+    isReadinessNotReady ? 'asbcp_readiness_not_ready' : 'asbcp_startup_unavailable',
+  ), {
     code: 'AGENT_SANDBOX_UNAVAILABLE',
-    status: 503,
+    status,
     operation: input.operation,
-    asbcpCode: 'not_ready',
     retryable: true,
+    ...(asbcpCode ? { asbcpCode } : {}),
     ...(requestId ? { requestId } : {}),
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
   });
@@ -108,29 +125,31 @@ export async function retryAsbcpReadinessNotReady<T>(input: {
   deadline: number;
   signal?: AbortSignal;
   sleep: (ms: number) => Promise<void>;
+  isRetryableError?: (error: unknown) => boolean;
 }): Promise<T> {
-  let lastReadinessError: unknown;
+  let lastTransientError: unknown;
+  const isRetryableError = input.isRetryableError ?? isAsbcpStartupTransientUnavailableError;
   for (;;) {
     throwIfAborted(input.signal);
-    if (lastReadinessError !== undefined && Date.now() >= input.deadline) {
-      throw buildAsbcpReadinessNotReadyError({
+    if (lastTransientError !== undefined && Date.now() >= input.deadline) {
+      throw buildAsbcpStartupTransientUnavailableError({
         operation: input.operation,
-        cause: lastReadinessError,
+        cause: lastTransientError,
       });
     }
     try {
       return await input.invoke();
     } catch (error) {
       throwIfAborted(input.signal);
-      if (!isAsbcpReadinessNotReadyError(error)) {
+      if (!isRetryableError(error)) {
         throw error;
       }
-      lastReadinessError = error;
+      lastTransientError = error;
       const remainingMs = input.deadline - Date.now();
       if (remainingMs <= 0) {
-        throw buildAsbcpReadinessNotReadyError({
+        throw buildAsbcpStartupTransientUnavailableError({
           operation: input.operation,
-          cause: lastReadinessError,
+          cause: lastTransientError,
         });
       }
       await sleepWithAbort({

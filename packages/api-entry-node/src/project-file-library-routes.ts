@@ -473,12 +473,15 @@ function pickLatestVersionOperation(
 
 const PUBLIC_FILE_OPERATION_MESSAGES = new Set([
   'destination_exists',
+  'file_library_afscp_mapping_not_found',
+  'file_library_afscp_mapping_not_ready',
   'file_library_backend_unavailable',
   'file_library_delete_failed',
   'file_library_destination_exists',
   'file_library_download_not_found',
   'file_library_folder_create_failed',
   'file_library_list_failed',
+  'file_library_list_pending',
   'file_library_meta_not_found',
   'file_library_move_failed',
   'file_library_object_not_found',
@@ -3360,6 +3363,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         search: parsed.data.search,
         sortBy: parsed.data.sort_by ?? 'name',
         sortOrder: parsed.data.sort_order ?? 'asc',
+        requestId: readOptionalRequestId(req),
       });
       json(res, 200, {
         path: listed.path,
@@ -3367,9 +3371,10 @@ export async function handleProjectFileLibraryRoutes(args: {
         next_continuation_token: listed.nextContinuationToken,
       });
     } catch (error) {
-      json(res, 502, {
-        error_code: 'FILE_LIBRARY_LIST_FAILED',
-        message: publicFileOperationMessage(error, 'file_library_list_failed'),
+      const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
+      json(res, mapped.statusCode, {
+        error_code: mapped.errorCode,
+        message: mapped.message,
       });
     }
     return true;

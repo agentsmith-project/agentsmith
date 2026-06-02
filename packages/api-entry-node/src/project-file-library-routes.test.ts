@@ -1657,6 +1657,68 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it.each([
+    {
+      storageMessage: 'file_library_project_storage_not_ready',
+      expectedStatus: 409,
+      expectedErrorCode: 'FILE_LIBRARY_STORAGE_NOT_READY',
+    },
+    {
+      storageMessage: 'file_library_afscp_mapping_not_ready',
+      expectedStatus: 409,
+      expectedErrorCode: 'FILE_LIBRARY_STORAGE_NOT_READY',
+    },
+    {
+      storageMessage: 'file_library_list_pending',
+      expectedStatus: 409,
+      expectedErrorCode: 'FILE_LIBRARY_OPERATION_PENDING',
+    },
+    {
+      storageMessage: 'file_library_storage_admin_action_required',
+      expectedStatus: 503,
+      expectedErrorCode: 'FILE_LIBRARY_STORAGE_ADMIN_ACTION_REQUIRED',
+    },
+  ])(
+    'maps entries $storageMessage without collapsing it to an untyped list 502',
+    async ({ storageMessage, expectedStatus, expectedErrorCode }) => {
+      const storageAdapter = createStorageAdapter({
+        listEntries: vi.fn(async () => {
+          throw new Error(storageMessage);
+        }),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+
+      const entriesJson = vi.fn();
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryEntries',
+        method: 'GET',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: {
+          url: '/file-libraries/entries?path=workspace%2F.artifacts',
+          headers: { 'x-request-id': 'req_entries_readiness' },
+        } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: entriesJson,
+        readBody: vi.fn(),
+      });
+
+      expect(storageAdapter.listEntries).toHaveBeenCalledWith(expect.objectContaining({
+        path: 'workspace/.artifacts/',
+        requestId: 'req_entries_readiness',
+      }));
+      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), expectedStatus, {
+        error_code: expectedErrorCode,
+        message: storageMessage,
+      });
+    },
+  );
+
   it('deletes ready libraries through the storage adapter and rolls back when content remains', async () => {
     const nonEmptyAdapter = createStorageAdapter({
       assertEmpty: vi.fn(async () => {

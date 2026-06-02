@@ -10421,6 +10421,147 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('passes the terminal runtime dispatch abort signal into managed terminal readiness dependencies', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const deps = createDefaultNodeApiDeps();
+    const controller = new AbortController();
+    let workspaceBindingSignal: AbortSignal | undefined;
+    let agentReadySignal: AbortSignal | undefined;
+    const ensureWorkspaceBinding = vi.fn(async (input: {
+      workspaceId: string;
+      projectId: string;
+      fileLibraryId: string;
+      taskId: string;
+      signal?: AbortSignal;
+    }) => {
+      workspaceBindingSignal = input.signal;
+      return {
+        binding: {
+          id: 'bind_terminal_signal',
+          workspace_id: input.workspaceId,
+          project_id: input.projectId,
+          file_library_id: input.fileLibraryId,
+          provider: 'afscp',
+          status: 'ready',
+          task_home_binding_id: 'bind_terminal_signal',
+          task_home_path: `/home/${input.taskId}`,
+          workspace_path: `/home/${input.taskId}/workspace`,
+          artifacts_path: `/home/${input.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
+          created_at: '2026-04-05T00:00:00.000Z',
+          updated_at: '2026-04-05T00:00:00.000Z',
+        },
+        workspaceMount: {
+          bindingId: 'bind_terminal_signal',
+          mountPath: `/home/${input.taskId}`,
+          taskHomePath: `/home/${input.taskId}`,
+          workspacePath: `/home/${input.taskId}/workspace`,
+          artifactsPath: `/home/${input.taskId}/workspace/.artifacts`,
+          libraryRootPath: '.',
+        },
+      };
+    });
+    const ensureAgentReady = vi.fn(async (input: { signal?: AbortSignal }) => {
+      agentReadySignal = input.signal;
+    });
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding,
+      deleteWorkspaceBinding: vi.fn(async () => undefined),
+    } as never;
+    deps.internalAgentPodManager = {
+      ensureAgentReady,
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    } as never;
+
+    try {
+      const { runner } = await seedDefaultManagedRunner(deps);
+      const now = new Date().toISOString();
+      await deps.docStore.upsert('project_file_libraries', 'lib_terminal_signal', createFileLibraryCatalogFixture({
+        id: 'lib_terminal_signal',
+        name: 'Terminal Signal Workspace',
+        now,
+      }));
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_signal', {
+        id: 'task_terminal_signal',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Terminal signal task',
+        bound_runner_id: runner.id,
+        bound_runner_kind: 'managed',
+        runner_binding_source: 'default_managed',
+        bound_at: now,
+        bound_by_user_id: 'user_1',
+        workspace_file_library_id: 'lib_terminal_signal',
+        workspace_file_library_name: 'Terminal Signal Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+
+      await expect(handleTaskRoute({
+        route: { kind: 'tasks', workspaceId: 'ws_default', projectId: 'proj_1' } as never,
+        method: 'GET',
+        req: { headers: {}, url: '' } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: vi.fn(),
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      const lifecycleHooks = (deps.notebookTerminalService as unknown as {
+        registeredLifecycleHooks: Map<string, {
+          beforeSessionRuntimeDispatch?: (
+            session: {
+              workspaceId: string;
+              projectId: string;
+              taskId: string;
+              userId: string;
+              agentId: string;
+              runnerSessionId: string;
+              runtimeDispatchContext?: Record<string, unknown>;
+            },
+            context: { signal: AbortSignal },
+          ) => void | Promise<void>;
+        }>;
+      }).registeredLifecycleHooks;
+      const beforeSessionRuntimeDispatch = lifecycleHooks.get(
+        'task_route_handler_internal_terminal_workload',
+      )?.beforeSessionRuntimeDispatch;
+      expect(beforeSessionRuntimeDispatch).toBeTypeOf('function');
+
+      await beforeSessionRuntimeDispatch?.({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_signal',
+        userId: 'user_1',
+        agentId: runner.id,
+        runnerSessionId: 'task_terminal_signal',
+        runtimeDispatchContext: {
+          managedInternalAgent: {
+            workspaceFileLibraryId: 'lib_terminal_signal',
+            taskHomeSegment: 'task_terminal_signal',
+          },
+        },
+      }, {
+        signal: controller.signal,
+      });
+
+      expect(ensureWorkspaceBinding).toHaveBeenCalledTimes(1);
+      expect(ensureAgentReady).toHaveBeenCalledTimes(1);
+      expect(workspaceBindingSignal).toBe(controller.signal);
+      expect(agentReadySignal).toBe(controller.signal);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('serializes terminal close_result as a public field without diagnostic details', async () => {
     const deps = createDefaultNodeApiDeps();
     const session = {

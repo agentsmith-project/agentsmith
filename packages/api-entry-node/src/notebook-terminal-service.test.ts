@@ -950,14 +950,19 @@ describe('NotebookTerminalService', () => {
         status: 'pending',
         input_enabled: false,
       });
-      expect(beforeSessionRuntimeDispatch).toHaveBeenCalledWith(expect.objectContaining({
-        id: created.sessionId,
-        runtimeDispatchContext: {
-          managedInternalAgent: {
-            workspaceFileLibraryId: 'lib_task_1',
+      expect(beforeSessionRuntimeDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: created.sessionId,
+          runtimeDispatchContext: {
+            managedInternalAgent: {
+              workspaceFileLibraryId: 'lib_task_1',
+            },
           },
-        },
-      }));
+        }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
     });
     expect(dispatchTerminalSession).not.toHaveBeenCalled();
 
@@ -1015,6 +1020,148 @@ describe('NotebookTerminalService', () => {
       error_message: 'terminal_start_timeout',
     });
     expect(ws.closeCalls.some((call) => call.reason === 'terminal_start_timeout')).toBe(true);
+  });
+
+  it('uses the managed runtime startup budget for managed internal terminal warmup', async () => {
+    vi.useFakeTimers();
+    const previousInternalStartup = process.env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS;
+    const previousInternalSessionReadiness = process.env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS;
+    const previousManagedTerminalStartup = process.env.NOTEBOOK_MANAGED_TERMINAL_STARTUP_TIMEOUT_MS;
+    process.env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS = '10000';
+    process.env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS = '7500';
+    process.env.NOTEBOOK_MANAGED_TERMINAL_STARTUP_TIMEOUT_MS = '5';
+    try {
+      const cache = new InMemoryCache();
+      const beforeSessionRuntimeDispatch = vi.fn((_session, context: { signal: AbortSignal }) => new Promise<void>((_resolve, reject) => {
+        context.signal.addEventListener('abort', () => {
+          reject(new Error(String(context.signal.reason ?? 'aborted')));
+        }, { once: true });
+      }));
+      const dispatchTerminalSession = vi.fn();
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession,
+      } as never, {
+        startupTimeoutMs: 25,
+      });
+      service.registerLifecycleHooks('managed_terminal_startup_budget_test', {
+        beforeSessionRuntimeDispatch,
+      });
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+        runtimeDispatchContext: {
+          managedInternalAgent: {
+            workspaceFileLibraryId: 'lib_task_1',
+          },
+        },
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const ws = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(beforeSessionRuntimeDispatch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(25);
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'pending',
+      });
+      expect(ws.closeCalls.some((call) => call.reason === 'terminal_start_timeout')).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(19_974);
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'pending',
+      });
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'terminal_start_timeout',
+      });
+      expect(ws.closeCalls.some((call) => call.reason === 'terminal_start_timeout')).toBe(true);
+      expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      if (previousInternalStartup === undefined) delete process.env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS;
+      else process.env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS = previousInternalStartup;
+      if (previousInternalSessionReadiness === undefined) delete process.env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS;
+      else process.env.INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS = previousInternalSessionReadiness;
+      if (previousManagedTerminalStartup === undefined) delete process.env.NOTEBOOK_MANAGED_TERMINAL_STARTUP_TIMEOUT_MS;
+      else process.env.NOTEBOOK_MANAGED_TERMINAL_STARTUP_TIMEOUT_MS = previousManagedTerminalStartup;
+    }
+  });
+
+  it('aborts terminal runtime warmup when the startup timer expires', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new InMemoryCache();
+      let warmupSignal: AbortSignal | undefined;
+      const beforeSessionRuntimeDispatch = vi.fn((_session, context: { signal: AbortSignal }) => {
+        warmupSignal = context.signal;
+        return new Promise<void>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => {
+            reject(new Error(String(context.signal.reason ?? 'aborted')));
+          }, { once: true });
+        });
+      });
+      const dispatchTerminalSession = vi.fn();
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession,
+      } as never, {
+        startupTimeoutMs: 25,
+      });
+      service.registerLifecycleHooks('terminal_runtime_warmup_abort_test', {
+        beforeSessionRuntimeDispatch,
+      });
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        resolvedRunnerId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const ws = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(ws, session!);
+      emitReconnect(ws, created.sessionId);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(warmupSignal).toBeInstanceOf(AbortSignal);
+      expect(warmupSignal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(25);
+      expect(warmupSignal?.aborted).toBe(true);
+      expect(warmupSignal?.reason).toBe('terminal_start_timeout');
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'terminal_start_timeout',
+      });
+      expect(dispatchTerminalSession).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('redacts raw ASBCP dispatch errors from browser frames and persisted close reason while keeping debug diagnostics', async () => {
@@ -1097,6 +1244,132 @@ describe('NotebookTerminalService', () => {
         process.env.DEBUG_NOTEBOOK_TERMINAL = originalDebug;
       }
     }
+  });
+
+  it('maps typed sandbox unavailable dispatch errors without exposing raw ASBCP text', async () => {
+    const cache = new InMemoryCache();
+    const beforeSessionRuntimeDispatch = vi.fn(async () => {
+      throw Object.assign(
+        new Error('asbcp_error: ensure_workspace_binding 500 token=raw-token request_id=req_unavailable_raw'),
+        { code: 'AGENT_SANDBOX_UNAVAILABLE' },
+      );
+    });
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+    service.registerLifecycleHooks('terminal_typed_sandbox_unavailable_test', {
+      beforeSessionRuntimeDispatch,
+    });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    let updatedSession: Awaited<ReturnType<typeof service.getSession>> = null;
+    await waitForAssertion(async () => {
+      updatedSession = await service.getSession(created.sessionId);
+      expect(updatedSession).toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'agent_sandbox_unavailable',
+      });
+    });
+    const browserPayloads = sentPayloads(ws);
+    expect(browserPayloads).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      error_message: 'agent_sandbox_unavailable',
+    });
+    expect(ws.closeCalls.some((call) => call.reason === 'agent_sandbox_unavailable')).toBe(true);
+    const publicSurface = JSON.stringify({
+      browserPayloads,
+      closeCalls: ws.closeCalls,
+      closeReason: updatedSession?.closeReason,
+    });
+    expect(publicSurface).not.toContain('asbcp_error');
+    expect(publicSurface).not.toContain('raw-token');
+    expect(publicSurface).not.toContain('req_unavailable_raw');
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it('maps typed sandbox startup timeout dispatch errors without exposing raw ASBCP text', async () => {
+    const cache = new InMemoryCache();
+    const beforeSessionRuntimeDispatch = vi.fn(async () => {
+      throw Object.assign(
+        new Error('asbcp_error: create_or_ensure_pod 504 token=raw-timeout-token request_id=req_timeout_raw'),
+        { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' },
+      );
+    });
+    const dispatchTerminalSession = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession,
+    } as never);
+    service.registerLifecycleHooks('terminal_typed_sandbox_startup_timeout_test', {
+      beforeSessionRuntimeDispatch,
+    });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      resolvedRunnerId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+    emitReconnect(ws, created.sessionId);
+
+    let updatedSession: Awaited<ReturnType<typeof service.getSession>> = null;
+    await waitForAssertion(async () => {
+      updatedSession = await service.getSession(created.sessionId);
+      expect(updatedSession).toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'agent_sandbox_startup_timeout',
+      });
+    });
+    const browserPayloads = sentPayloads(ws);
+    expect(browserPayloads).toContainEqual({
+      type: 'terminal.error',
+      terminal_session_id: created.sessionId,
+      error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      error_message: 'agent_sandbox_startup_timeout',
+    });
+    expect(ws.closeCalls.some((call) => call.reason === 'agent_sandbox_startup_timeout')).toBe(true);
+    const publicSurface = JSON.stringify({
+      browserPayloads,
+      closeCalls: ws.closeCalls,
+      closeReason: updatedSession?.closeReason,
+    });
+    expect(publicSurface).not.toContain('asbcp_error');
+    expect(publicSurface).not.toContain('raw-timeout-token');
+    expect(publicSurface).not.toContain('req_timeout_raw');
+    expect(dispatchTerminalSession).not.toHaveBeenCalled();
   });
 
   it('fails closed when runtime events use the legacy session_id field', async () => {

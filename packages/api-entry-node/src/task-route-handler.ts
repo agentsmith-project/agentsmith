@@ -2132,6 +2132,7 @@ async function ensureManagedTerminalRuntimeReady(
     runnerSessionId: string;
     runtimeDispatchContext?: Record<string, unknown>;
   },
+  signal?: AbortSignal,
 ): Promise<void> {
   const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);
   if (!runtimeDispatchContext) return;
@@ -2187,6 +2188,7 @@ async function ensureManagedTerminalRuntimeReady(
     }),
     actorUserId: session.userId,
     requestId: session.runnerSessionId,
+    signal,
   });
   await deps.internalAgentPodManager.ensureAgentReady({
     workspaceId: session.workspaceId,
@@ -2195,6 +2197,7 @@ async function ensureManagedTerminalRuntimeReady(
     sessionId: session.runnerSessionId,
     agent,
     workspaceMount: workspaceBinding.workspaceMount,
+    signal,
   });
 }
 
@@ -2522,15 +2525,18 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
         userId: string;
         agentId: string;
       }) => void | Promise<void>;
-      beforeSessionRuntimeDispatch?: (session: {
-        workspaceId: string;
-        projectId: string;
-        taskId: string;
-        userId: string;
-        agentId: string;
-        runnerSessionId: string;
-        runtimeDispatchContext?: Record<string, unknown>;
-      }) => void | Promise<void>;
+      beforeSessionRuntimeDispatch?: (
+        session: {
+          workspaceId: string;
+          projectId: string;
+          taskId: string;
+          userId: string;
+          agentId: string;
+          runnerSessionId: string;
+          runtimeDispatchContext?: Record<string, unknown>;
+        },
+        context: { signal: AbortSignal },
+      ) => void | Promise<void>;
       onSessionClosed?: (session: {
         workspaceId: string;
         projectId: string;
@@ -2548,8 +2554,8 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
     return;
   }
   service.registerLifecycleHooks('task_route_handler_internal_terminal_workload', {
-    beforeSessionRuntimeDispatch: async (session) => {
-      await ensureManagedTerminalRuntimeReady(deps, session);
+    beforeSessionRuntimeDispatch: async (session, context) => {
+      await ensureManagedTerminalRuntimeReady(deps, session, context.signal);
     },
     onSessionClosed: async (session) => {
       const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);

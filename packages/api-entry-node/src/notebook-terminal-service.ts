@@ -26,6 +26,9 @@ const DEFAULT_TERMINAL_WORKSPACE_RETRY_COUNT = 2;
 const DEFAULT_TERMINAL_WORKSPACE_RETRY_DELAY_MS = 750;
 const DEFAULT_TERMINAL_BOOTSTRAP_OVERHEAD_MS = 10_000;
 const DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS = 15_000;
+const DEFAULT_INTERNAL_AGENT_STARTUP_TIMEOUT_MS = 300_000;
+const DEFAULT_INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS = 75_000;
+const DEFAULT_MANAGED_TERMINAL_STARTUP_OVERHEAD_MS = 10_000;
 const DEFAULT_TERMINAL_REENTRY_OVERHEAD_MS = 20_000;
 const DEFAULT_TERMINAL_RECONNECT_GRACE_FLOOR_MS = 90_000;
 const MAX_TERMINAL_RECONNECT_GRACE_MS = 2 * 60_000;
@@ -62,6 +65,24 @@ function resolveDefaultTerminalStartupTimeoutMs(): number {
     + DEFAULT_TERMINAL_BOOTSTRAP_OVERHEAD_MS
   );
   return Math.max(DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS, coldStartBudgetMs);
+}
+
+function resolveDefaultManagedTerminalStartupTimeoutMs(): number {
+  const internalStartupTimeoutMs = Math.max(
+    10_000,
+    parsePositiveIntegerEnv('INTERNAL_AGENT_STARTUP_TIMEOUT_MS') ?? DEFAULT_INTERNAL_AGENT_STARTUP_TIMEOUT_MS,
+  );
+  const internalSessionReadinessTimeoutMs = Math.max(
+    1,
+    parsePositiveIntegerEnv('INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS')
+      ?? DEFAULT_INTERNAL_AGENT_SESSION_READINESS_TIMEOUT_MS,
+  );
+  const managedRuntimeFloorMs = Math.max(
+    internalStartupTimeoutMs,
+    internalSessionReadinessTimeoutMs,
+  ) + DEFAULT_MANAGED_TERMINAL_STARTUP_OVERHEAD_MS;
+  const explicit = parsePositiveIntegerEnv('NOTEBOOK_MANAGED_TERMINAL_STARTUP_TIMEOUT_MS');
+  return Math.max(managedRuntimeFloorMs, explicit ?? managedRuntimeFloorMs);
 }
 
 function resolveDefaultTerminalReconnectGraceMs(): number {
@@ -151,6 +172,7 @@ type RegisteredTerminalSession = {
   runtime?: TerminalRuntime;
   runtimeReady?: boolean;
   runtimeDispatchPromise?: Promise<TerminalRuntime>;
+  runtimeDispatchAbortController?: AbortController;
   disconnectTimer?: NodeJS.Timeout;
   disconnectVersion?: number;
   startupTimer?: NodeJS.Timeout;
@@ -211,6 +233,10 @@ type PublicTerminalDispatchError = {
   closeReason: string;
 };
 
+type NotebookTerminalRuntimeDispatchLifecycleContext = {
+  signal: AbortSignal;
+};
+
 type TerminalOutputReplayEntry = {
   seq: number;
   chunk: string;
@@ -242,7 +268,10 @@ type PersistedTerminalSession = Omit<RegisteredTerminalSession, 'browserSocket'>
 
 type NotebookTerminalLifecycleHooks = {
   onSessionCreated?: (session: RegisteredTerminalSession) => void | Promise<void>;
-  beforeSessionRuntimeDispatch?: (session: RegisteredTerminalSession) => void | Promise<void>;
+  beforeSessionRuntimeDispatch?: (
+    session: RegisteredTerminalSession,
+    context: NotebookTerminalRuntimeDispatchLifecycleContext,
+  ) => void | Promise<void>;
   onSessionClosed?: (session: RegisteredTerminalSession) => void | Promise<void>;
 };
 
@@ -291,6 +320,7 @@ export class NotebookTerminalService {
   private readonly maxSessionsPerTask = 3;
   private readonly sessionTtlSeconds = 24 * 60 * 60;
   private readonly startupTimeoutMs: number;
+  private readonly managedStartupTimeoutMs: number;
   private readonly recoveryTimeoutMs: number;
   private readonly closeTimeoutMs: number;
   private readonly replayMaxChunks: number;
@@ -302,6 +332,7 @@ export class NotebookTerminalService {
     private readonly agentExecutionService: AgentExecutionService,
     options?: {
       startupTimeoutMs?: number;
+      managedStartupTimeoutMs?: number;
       reconnectGraceMs?: number;
       recoveryTimeoutMs?: number;
       closeTimeoutMs?: number;
@@ -313,6 +344,12 @@ export class NotebookTerminalService {
   ) {
     this.wsServer = new WebSocketServer({ noServer: true });
     this.startupTimeoutMs = Math.max(25, options?.startupTimeoutMs ?? resolveDefaultTerminalStartupTimeoutMs());
+    const managedStartupTimeoutMs = resolveDefaultManagedTerminalStartupTimeoutMs();
+    this.managedStartupTimeoutMs = Math.max(
+      this.startupTimeoutMs,
+      managedStartupTimeoutMs,
+      options?.managedStartupTimeoutMs ?? managedStartupTimeoutMs,
+    );
     this.recoveryTimeoutMs = resolveTerminalRecoveryTimeoutMs(options?.recoveryTimeoutMs);
     this.closeTimeoutMs = resolveTerminalCloseTimeoutMs(options?.closeTimeoutMs);
     this.reconnectGraceMs = Math.min(
@@ -367,7 +404,13 @@ export class NotebookTerminalService {
   }
 
   private async notifyBeforeSessionRuntimeDispatch(session: RegisteredTerminalSession): Promise<void> {
-    await this.callLifecycleHooks(session, 'beforeSessionRuntimeDispatch');
+    const controller = session.runtimeDispatchAbortController;
+    if (!controller) {
+      throw new Error('terminal_dispatch_abort_controller_missing');
+    }
+    await this.callLifecycleHooks(session, 'beforeSessionRuntimeDispatch', {
+      signal: controller.signal,
+    });
   }
 
   private async notifySessionClosed(session: RegisteredTerminalSession): Promise<void> {
@@ -475,12 +518,20 @@ export class NotebookTerminalService {
   private async callLifecycleHooks(
     session: RegisteredTerminalSession,
     hookName: keyof NotebookTerminalLifecycleHooks,
+    context?: NotebookTerminalRuntimeDispatchLifecycleContext,
   ): Promise<void> {
     const hooks = [
       this.configuredLifecycleHooks,
       ...this.registeredLifecycleHooks.values(),
     ];
     for (const hooksEntry of hooks) {
+      if (hookName === 'beforeSessionRuntimeDispatch') {
+        if (!context) {
+          throw new Error('terminal_dispatch_lifecycle_context_missing');
+        }
+        await hooksEntry.beforeSessionRuntimeDispatch?.(session, context);
+        continue;
+      }
       await hooksEntry[hookName]?.(session);
     }
   }
@@ -1126,10 +1177,31 @@ export class NotebookTerminalService {
     return resolvedRunnerId || null;
   }
 
+  private isManagedInternalAgentTerminal(session: RegisteredTerminalSession): boolean {
+    const managedInternalAgent = session.runtimeDispatchContext?.managedInternalAgent;
+    return Boolean(
+      managedInternalAgent
+        && typeof managedInternalAgent === 'object'
+        && !Array.isArray(managedInternalAgent),
+    );
+  }
+
+  private resolveSessionStartupTimeoutMs(session: RegisteredTerminalSession): number {
+    return this.isManagedInternalAgentTerminal(session)
+      ? this.managedStartupTimeoutMs
+      : this.startupTimeoutMs;
+  }
+
   private clearStartupTimer(session: RegisteredTerminalSession): void {
     if (!session.startupTimer) return;
     clearTimeout(session.startupTimer);
     session.startupTimer = undefined;
+  }
+
+  private abortRuntimeDispatch(session: RegisteredTerminalSession, reason: string): void {
+    const controller = session.runtimeDispatchAbortController;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort(reason);
   }
 
   private readErrorMessage(error: unknown): string {
@@ -1140,6 +1212,12 @@ export class NotebookTerminalService {
       return typeof message === 'string' ? message : '';
     }
     return '';
+  }
+
+  private readErrorCode(error: unknown): string | null {
+    if (!error || typeof error !== 'object') return null;
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' && code.trim().length > 0 ? code.trim() : null;
   }
 
   private readErrorDiagnostic(error: unknown): Record<string, unknown> {
@@ -1155,6 +1233,21 @@ export class NotebookTerminalService {
   }
 
   private resolvePublicTerminalDispatchError(error: unknown): PublicTerminalDispatchError {
+    const code = this.readErrorCode(error);
+    if (code === 'AGENT_SANDBOX_UNAVAILABLE') {
+      return {
+        errorCode: 'AGENT_SANDBOX_UNAVAILABLE',
+        errorMessage: 'agent_sandbox_unavailable',
+        closeReason: 'agent_sandbox_unavailable',
+      };
+    }
+    if (code === 'AGENT_SANDBOX_STARTUP_TIMEOUT') {
+      return {
+        errorCode: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        errorMessage: 'agent_sandbox_startup_timeout',
+        closeReason: 'agent_sandbox_startup_timeout',
+      };
+    }
     const message = this.readErrorMessage(error);
     if (message.startsWith('asbcp_error:')) {
       return {
@@ -1612,6 +1705,8 @@ export class NotebookTerminalService {
       return session.runtime;
     }
     if (!session.runtimeDispatchPromise) {
+      const dispatchAbortController = new AbortController();
+      session.runtimeDispatchAbortController = dispatchAbortController;
       this.armStartupTimer(session);
       const dispatchPromise = (async () => {
         await this.notifyBeforeSessionRuntimeDispatch(session);
@@ -1649,6 +1744,9 @@ export class NotebookTerminalService {
       }).finally(() => {
         if (session.runtimeDispatchPromise === dispatchPromise) {
           session.runtimeDispatchPromise = undefined;
+        }
+        if (session.runtimeDispatchAbortController === dispatchAbortController) {
+          session.runtimeDispatchAbortController = undefined;
         }
       });
       session.runtimeDispatchPromise = dispatchPromise;
@@ -1728,6 +1826,7 @@ export class NotebookTerminalService {
       session.startupTimer = undefined;
       if (!this.sessions.has(session.id)) return;
       if (session.status !== 'pending') return;
+      this.abortRuntimeDispatch(session, 'terminal_start_timeout');
       this.sendToBrowserSocket(session.browserSocket, {
         type: 'terminal.error',
         terminal_session_id: session.id,
@@ -1737,7 +1836,7 @@ export class NotebookTerminalService {
       this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_start_timeout');
       session.runtime?.close();
       void this.finishSession(session.id, 'failed', 'terminal_start_timeout').catch(() => undefined);
-    }, this.startupTimeoutMs);
+    }, this.resolveSessionStartupTimeoutMs(session));
   }
 
   async createSession(input: {
@@ -2259,6 +2358,7 @@ export class NotebookTerminalService {
     const wasClosing = session.lifecycleStatus === 'closing' || session.status === 'closing';
     this.clearDisconnectTimer(session);
     this.clearStartupTimer(session);
+    this.abortRuntimeDispatch(session, 'terminal_closed_by_user');
     session.status = 'closing';
     session.lifecycleStatus = 'closing';
     session.inputEnabled = false;
@@ -2828,6 +2928,7 @@ export class NotebookTerminalService {
     if (!session) return;
     this.clearDisconnectTimer(session);
     this.clearStartupTimer(session);
+    this.abortRuntimeDispatch(session, closeReason ?? status);
     session.status = status;
     session.lifecycleStatus = status;
     session.runnerConnectionStatus = status === 'closed' ? 'closed' : 'missing';
@@ -2858,6 +2959,7 @@ export class NotebookTerminalService {
     session.runtime = undefined;
     session.runtimeReady = false;
     session.runtimeDispatchPromise = undefined;
+    session.runtimeDispatchAbortController = undefined;
     session.streamBound = false;
     await this.persistAndNotifyFinalSession(session, status);
   }
@@ -2866,6 +2968,7 @@ export class NotebookTerminalService {
     for (const session of this.sessions.values()) {
       this.clearDisconnectTimer(session);
       this.clearStartupTimer(session);
+      this.abortRuntimeDispatch(session, 'server_shutdown');
       this.closeBrowserSocket(session.browserSocket, 1001, 'server_shutdown');
       session.runtime?.close();
       session.browserSocket = undefined;
@@ -2877,6 +2980,7 @@ export class NotebookTerminalService {
       session.runtime = undefined;
       session.runtimeReady = false;
       session.runtimeDispatchPromise = undefined;
+      session.runtimeDispatchAbortController = undefined;
       session.streamBound = false;
     }
     this.sessions.clear();

@@ -1,7 +1,9 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -19,6 +21,18 @@ import { CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX } from './governance/current-rele
 const RUNNER_IMAGE_LOCK_TRUTH_PATH =
   'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock';
 const NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH = 'infra/deploy/shared/agentsmith-runner-image.lock';
+const AFSCP_PROBE_SHELL_VAR_VALUES = {
+  AFSCP_BASE_URL: 'http://shell-var-only-afscp.local:29094',
+  AFSCP_EXPORT_GATEWAY_BASE_URL: 'http://shell-var-only-webdav.local:29095',
+  AFSCP_DEFAULT_VOLUME_ID: 'vol_shell_var_only',
+  AFSCP_CALLER_SERVICE: 'agentsmith-api-shell-var',
+  AFSCP_SERVICE_TOKEN: 'shell-var-product-token',
+  AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap-shell-var',
+  AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'shell-var-bootstrap-token',
+  AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-shell-var',
+  AFSCP_ORCHESTRATOR_SERVICE_TOKEN: 'shell-var-orchestrator-service-token',
+  AFSCP_ORCHESTRATOR_TOKEN: 'shell-var-orchestrator-token',
+};
 
 function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
@@ -769,6 +783,101 @@ async function runAfscpReadExportProbeHarness(options: {
   }
 }
 
+function runAfscpReadExportProbeShellVarHarness(): {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  capturedEnv: string;
+} {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'afscp-read-export-probe-shell-vars-'));
+  const binDir = path.join(tempRoot, 'bin');
+  const capturePath = path.join(tempRoot, 'captured-env.txt');
+  const nodeStubPath = path.join(binDir, 'node');
+  const envKeys = Object.keys(AFSCP_PROBE_SHELL_VAR_VALUES);
+  const captureLines = envKeys.map((key) => `    printf '${key}=%s\\n' "\${${key}:-}"`).join('\n');
+  const shellAssignments = Object.entries(AFSCP_PROBE_SHELL_VAR_VALUES)
+    .map(([key, value]) => `          ${key}=${JSON.stringify(value)}`)
+    .join('\n');
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    REPO_ROOT: repoRoot,
+    TEMP_ROOT: tempRoot,
+    CAPTURE_ENV_FILE: capturePath,
+    REAL_NODE: process.execPath,
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+  };
+  for (const key of envKeys) {
+    delete env[key];
+  }
+
+  try {
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+      nodeStubPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == *"/scripts/lib/afscp-read-export-probe.mjs" ]]; then
+  {
+${captureLines}
+  } > "\${CAPTURE_ENV_FILE}"
+  printf '{"status":"passed","source":"webdav_propfind","webdav_status":207}\\n'
+  exit 0
+fi
+exec "\${REAL_NODE}" "$@"
+`,
+      'utf8',
+    );
+    chmodSync(nodeStubPath, 0o755);
+
+    const result = spawnSync(
+      'bash',
+      [
+        '-lc',
+        `
+          set -euo pipefail
+          ROOT_DIR="$REPO_ROOT"
+          INTERNAL_REAL_DIR="$TEMP_ROOT/internal"
+          mkdir -p "$INTERNAL_REAL_DIR"
+          source "$REPO_ROOT/scripts/lib/internal-backend-real-gate.sh"
+
+          gate_record_failure() {
+            printf 'failure:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+          }
+
+          gate_record_preflight_check() {
+            printf 'preflight:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}"
+          }
+
+${shellAssignments}
+
+          set +e
+          internal_real_gate_probe_afscp_read_export
+          status=$?
+          set -e
+          printf 'status=%s\\n' "$status"
+          exit 0
+        `,
+      ],
+      {
+        cwd: repoRoot,
+        env,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+      capturedEnv: existsSync(capturePath) ? readFileSync(capturePath, 'utf8') : '',
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function runChildInternalEvidenceRedactorHarness(input: string): {
   stdout: string;
   stderr: string;
@@ -849,6 +958,17 @@ describe('internal backend-real gate runtime contract', () => {
     expect(`${result.stdout}\n${result.log}`).not.toContain('fixture-orchestrator-token-secret');
     expect(result.log).toContain('"export_id_fingerprint":"sha256:');
     expect(result.log).not.toContain('export_probe_1');
+  });
+
+  it('passes AFSCP probe runtime env from shell vars even when they are not exported', () => {
+    const result = runAfscpReadExportProbeShellVarHarness();
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=0');
+    for (const [key, value] of Object.entries(AFSCP_PROBE_SHELL_VAR_VALUES)) {
+      expect(result.capturedEnv).toContain(`${key}=${value}`);
+    }
   });
 
   it('uses a unique read-export idempotency key on repeat probes without replaying a revoked WebDAV URL', async () => {
@@ -1034,7 +1154,21 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).toContain('internal_real_gate_start_runtime "${spec_state_file}"');
     expect(helper).toContain('internal_real_gate_probe_afscp_read_export()');
     expect(helper).toContain('AFSCP_READ_EXPORT_PROBE_SHELL_TIMEOUT_SECONDS:-90');
-    expect(helper).toContain('timeout "${probe_shell_timeout}" env AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}"');
+    expect(helper).not.toContain('local -a probe_env=(');
+    expect(helper).toContain('export AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}"');
+    expect(helper).toContain('export AFSCP_BASE_URL="${AFSCP_BASE_URL:-}"');
+    expect(helper).toContain('export AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"');
+    expect(helper).toContain('export AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-}"');
+    expect(helper).toContain('export AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-}"');
+    expect(helper).toContain('export AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-}"');
+    expect(helper).toContain('export AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}"');
+    expect(helper).toContain('export AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}"');
+    expect(helper).toContain('export AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}"');
+    expect(helper).toContain('export AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}"');
+    expect(helper).toContain('export AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN:-}"');
+    expect(helper).toContain('timeout "${probe_shell_timeout}" \\');
+    expect(helper).not.toContain('timeout "${probe_shell_timeout}" env "${probe_env[@]}"');
+    expect(helper).not.toContain('env "${probe_env[@]}"');
     expect(helper).toContain('node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs"');
     expect(helper).toContain('gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "afscp_read_export_probe"');
     expect(prepareRuntimeFunction).toContain('internal_real_gate_probe_afscp_read_export || return 1');

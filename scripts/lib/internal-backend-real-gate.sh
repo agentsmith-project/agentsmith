@@ -502,13 +502,26 @@ internal_real_gate_probe_afscp_read_export() {
   internal_real_gate_info "probing AFSCP read-only export and WebDAV PROPFIND"
 
   set +e
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "${probe_shell_timeout}" env AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}" \
+  (
+    export AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}"
+    export AFSCP_BASE_URL="${AFSCP_BASE_URL:-}"
+    export AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"
+    export AFSCP_DEFAULT_VOLUME_ID="${AFSCP_DEFAULT_VOLUME_ID:-}"
+    export AFSCP_CALLER_SERVICE="${AFSCP_CALLER_SERVICE:-}"
+    export AFSCP_SERVICE_TOKEN="${AFSCP_SERVICE_TOKEN:-}"
+    export AFSCP_BOOTSTRAP_CALLER_SERVICE="${AFSCP_BOOTSTRAP_CALLER_SERVICE:-}"
+    export AFSCP_BOOTSTRAP_SERVICE_TOKEN="${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}"
+    export AFSCP_ORCHESTRATOR_CALLER_SERVICE="${AFSCP_ORCHESTRATOR_CALLER_SERVICE:-}"
+    export AFSCP_ORCHESTRATOR_SERVICE_TOKEN="${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}"
+    export AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN:-}"
+
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${probe_shell_timeout}" \
+        node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs" > "${probe_result}" 2>> "${probe_log}"
+    else
       node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs" > "${probe_result}" 2>> "${probe_log}"
-  else
-    AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}" \
-      node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs" > "${probe_result}" 2>> "${probe_log}"
-  fi
+    fi
+  )
   probe_status=$?
   set -e
   if [[ "${probe_status}" -eq 124 && ! -s "${probe_result}" ]]; then

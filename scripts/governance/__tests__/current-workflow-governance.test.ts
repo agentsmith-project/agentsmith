@@ -95,6 +95,13 @@ const RUNNER_REPO_CONTRACT_HANDOFF_COMMAND =
 const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
 const PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH = '.github/workflows/product-readiness-artifact.yml';
 const PRODUCT_READINESS_ARTIFACT_JOB_ID = 'product-readiness';
+const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-product-readiness/input';
+const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
+  '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
+const PRODUCT_READINESS_RUN_COMMAND =
+  'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
+const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
@@ -1214,7 +1221,7 @@ describe('current workflow governance', () => {
     ]);
   });
 
-  it('keeps product readiness artifact secrets process-scoped instead of materializing checkout env files', () => {
+  it('keeps product readiness artifact preflight inputs out of the checkout worktree', () => {
     const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
       (entry) => entry.path === PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH,
     );
@@ -1223,8 +1230,15 @@ describe('current workflow governance', () => {
     const workflowSource = readRepoFile(PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH);
     const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[PRODUCT_READINESS_ARTIFACT_JOB_ID]);
     const jobEnv = asRecord(parsedJob.env);
+    const steps = collectJobSteps(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const downloadStep = steps.find((step) => step.name === 'Download release contract artifact');
+    const verifyStep = steps.find((step) => step.name === 'Verify release contract input');
+    const runStep = steps.find((step) => step.name === 'Run product readiness');
+    const downloadWith = asRecord(downloadStep?.with);
+    const verifyEnv = asRecord(verifyStep?.env);
+    const runEnv = asRecord(runStep?.env);
     const runCommands = collectJobRunCommands(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID);
-    const stepNames = collectJobSteps(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID)
+    const stepNames = steps
       .map((step) => step.name)
       .filter((name): name is string => typeof name === 'string');
 
@@ -1233,8 +1247,15 @@ describe('current workflow governance', () => {
     expect(jobEnv.PRESET_ENDPOINT_API_KEY).toBe(
       '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
     );
-    expect(runCommands).toContain(
-      'npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json',
+    expect(downloadWith.path).toBe(PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR);
+    expect(String(downloadWith.path ?? '')).not.toMatch(/^artifacts\//);
+    expect(verifyEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH);
+    expect(runEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH);
+    expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runCommands).toContain(PRODUCT_READINESS_RUN_COMMAND);
+    expect(workflowSource).not.toContain(PRODUCT_READINESS_CHECKOUT_INPUT_PATH);
+    expect(runCommands).not.toMatch(
+      /\b(?:printf|cat|tee|touch|install|cp|mv|mkdir)\b[^\n]*(?:artifacts\/product-readiness|agentsmith-release-contract\.json)/,
     );
     expect(stepNames).not.toContain('Materialize backend-real endpoint env');
     expect(workflowSource).not.toContain('.env.backend-real');

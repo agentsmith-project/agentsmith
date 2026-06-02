@@ -68,6 +68,13 @@ const RUNNER_REPO_REPOSITORY = 'agentsmith-project/agentsmith-runner';
 const ENGINEERING_GOVERNANCE_REPORT_CHECKS_ARG = 'REPORT_CHECKS=typecheck,openapi-check,contracts-check';
 const PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH = '.github/workflows/product-readiness-artifact.yml';
 const PRODUCT_READINESS_ARTIFACT_JOB_ID = 'product-readiness';
+const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-product-readiness/input';
+const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
+  '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
+const PRODUCT_READINESS_RUN_COMMAND =
+  'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
+const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -401,18 +408,44 @@ function assertProductReadinessArtifactSecretsStayProcessScoped(failures: string
   const parsedWorkflow = parseWorkflow(workflowPath);
   const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
   const jobEnv = asRecord(parsedJob.env);
+  const steps = collectJobSteps(parsedWorkflow, jobId);
+  const downloadStep = steps.find((step) => step.name === 'Download release contract artifact');
+  const verifyStep = steps.find((step) => step.name === 'Verify release contract input');
+  const runStep = steps.find((step) => step.name === 'Run product readiness');
+  const downloadWith = asRecord(downloadStep?.with);
+  const verifyEnv = asRecord(verifyStep?.env);
+  const runEnv = asRecord(runStep?.env);
   const runCommands = collectJobRunCommands(parsedWorkflow, jobId);
-  const stepNames = collectJobSteps(parsedWorkflow, jobId)
+  const stepNames = steps
     .map((step) => step.name)
     .filter((name): name is string => typeof name === 'string');
 
   if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
     failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
   }
-  if (!runCommands.includes(
-    'npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json',
-  )) {
-    failures.push(`${label} must run product:ready with the downloaded release contract`);
+  if (downloadWith.path !== PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR) {
+    failures.push(`${label} must download release contract input to ${PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR}`);
+  }
+  if (typeof downloadWith.path === 'string' && /^artifacts\//u.test(downloadWith.path)) {
+    failures.push(`${label} must not download release contract input into the checkout worktree`);
+  }
+  if (verifyEnv.RELEASE_CONTRACT_INPUT_PATH !== PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH) {
+    failures.push(`${label} verify step release contract input path must point to runner.temp`);
+  }
+  if (runEnv.RELEASE_CONTRACT_INPUT_PATH !== PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH) {
+    failures.push(`${label} product:ready step release contract input path must point to runner.temp`);
+  }
+  if (!runCommands.includes('test -f "${RELEASE_CONTRACT_INPUT_PATH}"')) {
+    failures.push(`${label} must verify the runner.temp release contract input`);
+  }
+  if (!runCommands.includes(PRODUCT_READINESS_RUN_COMMAND)) {
+    failures.push(`${label} must run product:ready with the runner.temp release contract input path`);
+  }
+  if (workflowSource.includes(PRODUCT_READINESS_CHECKOUT_INPUT_PATH)) {
+    failures.push(`${label} must not reference checkout-relative product readiness input paths before preflight`);
+  }
+  if (/\b(?:printf|cat|tee|touch|install|cp|mv|mkdir)\b[^\n]*(?:artifacts\/product-readiness|agentsmith-release-contract\.json)/u.test(runCommands)) {
+    failures.push(`${label} must not write preflight release contract input files into the checkout worktree`);
   }
   if (stepNames.includes('Materialize backend-real endpoint env')) {
     failures.push(`${label} must not materialize backend-real endpoint env into the checkout worktree`);

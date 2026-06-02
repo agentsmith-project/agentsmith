@@ -65,18 +65,22 @@ jobs:
         with:
           name: ${{ inputs.release_contract_artifact_name }}
           run-id: ${{ inputs.release_contract_run_id }}
-          path: artifacts/product-readiness/input
+          path: ${{ runner.temp }}/agentsmith-product-readiness/input
           github-token: ${{ github.token }}
 
       - name: Verify release contract input
+        env:
+          RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json
         run: |
           set -euo pipefail
-          test -f artifacts/product-readiness/input/agentsmith-release-contract.json
+          test -f "${RELEASE_CONTRACT_INPUT_PATH}"
 
       - name: Run product readiness
+        env:
+          RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json
         run: |
           set -euo pipefail
-          npm run product:ready -- --release-contract artifacts/product-readiness/input/agentsmith-release-contract.json
+          npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"
 
       - name: Verify product readiness handoff files
         run: |

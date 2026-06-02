@@ -32,6 +32,8 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 **工程原则**: Contract First、分层收敛复杂度、拒绝补丁式修复、证据作为一等产物。
 
+**实现原则**: 开发/测试/发布过程及相关代码必须遵守 KISS、DRY、YAGNI；优先最小可理解实现，复用已有能力，避免过度设计、重复实现、为未发生的小概率需求加复杂兜底。Pre-GA/GA 均适用。
+
 **测试原则**: 分层验证（type/contract → unit → integration → e2e → visual → backend-real smoke），mock/backend-real 分离，验收必须有工程检查门禁（engineering gate）。
 
 **治理原则**: 治理是控制面，统一策略引擎，例外必须被治理，Incident 是治理主键，Ownership/SLA 是闭环。

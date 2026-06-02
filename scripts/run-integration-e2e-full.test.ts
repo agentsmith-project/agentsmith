@@ -83,6 +83,11 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
+    writeFileSync(
+      path.join(scriptsLibDir, 'afscp-read-export-probe.mjs'),
+      `process.stdout.write(JSON.stringify({status:"passed",source:"webdav_propfind",webdav_status:207}) + "\\n");\n`,
+      'utf8',
+    );
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'llmup-image-lock.sh'), path.join(scriptsLibDir, 'llmup-image-lock.sh'));
     cpSync(
       path.join(process.cwd(), 'scripts', 'lib', 'universal-proxy-runtime.sh'),
@@ -1118,6 +1123,11 @@ exit 0
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
+    writeFileSync(
+      path.join(scriptsLibDir, 'afscp-read-export-probe.mjs'),
+      `process.stdout.write(JSON.stringify({status:"passed",source:"webdav_propfind",webdav_status:207}) + "\\n");\n`,
+      'utf8',
+    );
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'llmup-image-lock.sh'), path.join(scriptsLibDir, 'llmup-image-lock.sh'));
     cpSync(
       path.join(process.cwd(), 'scripts', 'lib', 'universal-proxy-runtime.sh'),

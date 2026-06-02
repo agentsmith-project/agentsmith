@@ -1271,6 +1271,7 @@ describe('internal-agent-pod-manager', () => {
         operation: 'readyz',
         asbcpCode: 'internal_error',
         retryable: false,
+        requestId: 'asbcp_req_readyz_internal_error',
       },
     ));
     const getPodStatus = vi.fn();
@@ -1304,6 +1305,22 @@ describe('internal-agent-pod-manager', () => {
     ).rejects.toMatchObject({
       code: 'AGENT_SANDBOX_UNAVAILABLE',
       message: 'sandbox_not_ready',
+      sandboxOperation: 'readyz',
+      operation: 'readyz',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      status: 500,
+      asbcpCode: 'internal_error',
+      retryable: false,
+      requestId: 'asbcp_req_readyz_internal_error',
+      readyzDiagnostic: {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        operation: 'readyz',
+        status: 500,
+        asbcpCode: 'internal_error',
+        retryable: false,
+        requestId: 'asbcp_req_readyz_internal_error',
+      },
     });
     expect(checkReady).toHaveBeenCalledTimes(1);
     expect(readinessSleep).not.toHaveBeenCalled();

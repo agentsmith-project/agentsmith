@@ -4495,6 +4495,24 @@ function parseKubernetesEventListPayload(
   return JSON.parse(payloadText || "{}") as KubernetesEventListPayload;
 }
 
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readAsbcpOptionalStringField(
+  input: Record<string, unknown> | undefined,
+  keys: string[],
+): string | null {
+  if (!input) return null;
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
 function eventTimestamp(item: KubernetesEventItem): string {
   return item.lastTimestamp ?? item.eventTime ?? item.metadata?.creationTimestamp ?? "";
 }
@@ -4593,6 +4611,177 @@ async function fetchWorkloadPodSnapshot(args: {
     projectId: args.projectId,
   });
   return selection ? parseWorkloadPodItemSnapshot(selection.item) : null;
+}
+
+function podCandidateScopeValue(
+  item: KubernetesPodItem,
+  annotationKey: string,
+  labelKey: string,
+): string {
+  return readPodAnnotation(item, annotationKey)
+    || item.metadata?.labels?.[labelKey]?.trim()
+    || "<unknown>";
+}
+
+function summarizeManagedWorkloadPodCandidates(
+  payloadText: string,
+  limit = 6,
+): string[] {
+  const payload = parseWorkloadPodListPayloadSafely(payloadText);
+  const items = (payload.items ?? []).filter((item) => {
+    return item.metadata?.labels?.app?.trim() === "managed-workload";
+  });
+  if (items.length === 0) return ["<none>"];
+
+  const summaries = items.slice(0, limit).map((item) => {
+    const snapshot = parseWorkloadPodItemSnapshot(item);
+    const name = readPodName(item) || "<unnamed>";
+    const parts = [
+      `pod=${name}`,
+      `workspaceId=${podCandidateScopeValue(item, "mbos.io/workspace-id", "workspace_id")}`,
+      `projectId=${podCandidateScopeValue(item, "mbos.io/project-id", "project_id")}`,
+      `workloadId=${podCandidateScopeValue(item, "mbos.io/workload-id", "workload_id")}`,
+      snapshot?.phase ? `phase=${snapshot.phase}` : null,
+      typeof snapshot?.ready === "boolean" ? `ready=${snapshot.ready}` : null,
+      snapshot?.readyReason ? `ready_reason=${snapshot.readyReason}` : null,
+      snapshot?.reason ? `reason=${snapshot.reason}` : null,
+      item.metadata?.deletionTimestamp
+        ? `deletion_timestamp=${item.metadata.deletionTimestamp}`
+        : null,
+    ].filter(Boolean);
+    return parts.join(" ");
+  });
+  const remaining = items.length - summaries.length;
+  return remaining > 0
+    ? [...summaries, `<truncated:${remaining}_more>`]
+    : summaries;
+}
+
+function sanitizeDiagnosticLine(value: string, maxLength = 240): string {
+  const compact = redactKubernetesEventMessage(value)
+    .replace(/\s+/g, " ")
+    .trim();
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function sanitizeAsbcpDiagnosticField(value: string | null | undefined, maxLength = 96): string | null {
+  if (!value) return null;
+  const sanitized = sanitizeDiagnosticLine(value, maxLength)
+    .replace(/[\s=]+/g, "_")
+    .trim();
+  return sanitized.length > 0 ? sanitized : null;
+}
+
+async function fetchAsbcpWorkloadStatusSummary(args: {
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+}): Promise<string[] | null> {
+  const asbcpBase = process.env.ASBCP_INTERNAL_BASE_URL?.trim();
+  const serviceKey = process.env.ASBCP_SERVICE_KEY?.trim();
+  if (!asbcpBase || !serviceKey) return null;
+
+  const timeoutMs = 10_000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(
+      `${asbcpBase.replace(/\/+$/, "")}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
+      {
+        headers: {
+          "X-Service-Key": serviceKey,
+        },
+        signal: controller.signal,
+      },
+    );
+    const bodyText = await response.text().catch(() => "");
+    let payload: Record<string, unknown> | undefined;
+    try {
+      const parsed = JSON.parse(bodyText || "{}") as unknown;
+      payload = isRecordValue(parsed) ? parsed : undefined;
+    } catch {
+      payload = undefined;
+    }
+    const errorPayload = isRecordValue(payload?.error)
+      ? payload.error
+      : undefined;
+    const podPayload = isRecordValue(payload?.pod) ? payload.pod : undefined;
+    const requestId = sanitizeAsbcpDiagnosticField(
+      response.headers.get("x-request-id")?.trim()
+        || response.headers.get("x-asbcp-request-id")?.trim()
+        || readAsbcpOptionalStringField(errorPayload, ["request_id", "requestId", "correlation_id", "correlationId"])
+        || readAsbcpOptionalStringField(payload, ["request_id", "requestId", "correlation_id", "correlationId"]),
+    );
+    const status = sanitizeAsbcpDiagnosticField(readAsbcpOptionalStringField(payload, ["status"]));
+    const phase = sanitizeAsbcpDiagnosticField(
+      readAsbcpOptionalStringField(payload, ["phase"])
+        || readAsbcpOptionalStringField(podPayload, ["phase"]),
+    );
+    const podName = sanitizeAsbcpDiagnosticField(
+      readAsbcpOptionalStringField(payload, ["pod_name", "podName"])
+        || readAsbcpOptionalStringField(podPayload, ["pod_name", "podName"]),
+      120,
+    );
+    const asbcpCode = sanitizeAsbcpDiagnosticField(
+      readAsbcpOptionalStringField(errorPayload, ["code", "error_code", "errorCode"])
+        || readAsbcpOptionalStringField(payload, ["code", "error_code", "errorCode"]),
+    );
+    const parts = [
+      `http_status=${response.status}`,
+      requestId ? `request_id=${requestId}` : null,
+      status ? `status=${status}` : null,
+      phase ? `phase=${phase}` : null,
+      podName ? `pod_name=${podName}` : null,
+      asbcpCode ? `asbcp_code=${asbcpCode}` : null,
+    ].filter(Boolean);
+    return [`asbcp_workload_status ${parts.join(" ")}`];
+  } catch (error) {
+    const message = sanitizeDiagnosticLine(
+      error instanceof Error ? error.message : String(error),
+      120,
+    );
+    return [`asbcp_workload_status <unavailable:request_failed:${message || "unknown"}>`];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function collectMissingWorkloadPodOperatorEvidence(args: {
+  namespace?: string;
+  workspaceId: string;
+  projectId: string;
+  workloadId?: string;
+}): Promise<string[]> {
+  if (!args.namespace || !args.workloadId) return [];
+
+  const result = await fetchManagedWorkloadPods(args.namespace);
+  const lines = [
+    `lookup namespace=${args.namespace} workspaceId=${args.workspaceId} projectId=${args.projectId} workloadId=${args.workloadId}`,
+    `kubectl_lookup_exit=${result.code}`,
+    `kubectl_lookup_status=${result.code === 0 ? "ok" : "failed"}`,
+  ];
+  if (result.code !== 0) {
+    const detail = sanitizeDiagnosticLine(result.stderr || result.stdout);
+    if (detail) {
+      lines.push(`kubectl_lookup_error=${detail}`);
+    }
+  } else {
+    lines.push(
+      "candidate_pods:",
+      ...summarizeManagedWorkloadPodCandidates(result.stdout),
+    );
+  }
+
+  const asbcpSummary = await fetchAsbcpWorkloadStatusSummary({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    workloadId: args.workloadId,
+  });
+  if (asbcpSummary) {
+    lines.push(...asbcpSummary);
+  }
+  return lines;
 }
 
 async function fetchWorkloadPodEventSummary(args: {
@@ -4849,6 +5038,14 @@ export async function collectInternalTaskFailureContext(args: {
           podName: pod.name,
         })
       : [];
+  const missingPodEvidence = pod?.name
+    ? []
+    : await collectMissingWorkloadPodOperatorEvidence({
+        namespace: args.namespace,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        workloadId: args.workloadId,
+      });
   const podDetails = [
     args.runnerOutputActivityId
       ? `runner_output_activity_id=${args.runnerOutputActivityId}`
@@ -4880,6 +5077,9 @@ export async function collectInternalTaskFailureContext(args: {
     `pod=${podDetails.length > 0 ? `${podSummary} ${podDetails.join(" ")}` : podSummary}`,
     podEventSummary.length > 0
       ? `pod_events:\n${podEventSummary.join("\n")}`
+      : null,
+    missingPodEvidence.length > 0
+      ? `sandbox_lookup:\n${missingPodEvidence.join("\n")}`
       : null,
   ].filter(Boolean);
   return sections.join("\n\n");

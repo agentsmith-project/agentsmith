@@ -474,6 +474,70 @@ internal_real_gate_reset_runtime() {
   fi
 }
 
+internal_real_gate_probe_result_field() {
+  local result_file="$1"
+  local field="$2"
+  node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+const field = process.argv[2];
+try {
+  const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+  const value = payload[field];
+  if (value !== undefined && value !== null) {
+    process.stdout.write(String(value));
+  }
+} catch {}
+' "${result_file}" "${field}" 2>/dev/null || true
+}
+
+internal_real_gate_probe_afscp_read_export() {
+  local probe_log="${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+  local probe_result="${AFSCP_READ_EXPORT_PROBE_RESULT:-${INTERNAL_REAL_DIR}/afscp-read-export-probe-result.json}"
+  local probe_shell_timeout="${AFSCP_READ_EXPORT_PROBE_SHELL_TIMEOUT_SECONDS:-90}"
+  local probe_status probe_source webdav_status failure_class detail
+
+  mkdir -p "$(dirname "${probe_log}")"
+  : > "${probe_log}"
+  internal_real_gate_info "probing AFSCP read-only export and WebDAV PROPFIND"
+
+  set +e
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${probe_shell_timeout}" env AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}" \
+      node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs" > "${probe_result}" 2>> "${probe_log}"
+  else
+    AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}" \
+      node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs" > "${probe_result}" 2>> "${probe_log}"
+  fi
+  probe_status=$?
+  set -e
+  if [[ "${probe_status}" -eq 124 && ! -s "${probe_result}" ]]; then
+    printf '{"status":"failed","source":"afscp_read_export_probe","fixture_scope":"gate_owned_afscp_read_export_probe","failure_class":"probe_shell_timeout","timeout_seconds":"%s"}\n' "${probe_shell_timeout}" > "${probe_result}"
+  fi
+
+  if [[ "${probe_status}" -eq 0 ]]; then
+    probe_source="$(internal_real_gate_probe_result_field "${probe_result}" source)"
+    webdav_status="$(internal_real_gate_probe_result_field "${probe_result}" webdav_status)"
+    detail="source=${probe_source:-webdav_propfind} webdav_status=${webdav_status:-unknown} log=${probe_log}"
+    if declare -F gate_record_preflight_check >/dev/null 2>&1; then
+      gate_record_preflight_check "${INTERNAL_REAL_DIR}" "afscp_read_export_probe" "passed" "${detail}"
+    fi
+    return 0
+  fi
+
+  probe_source="$(internal_real_gate_probe_result_field "${probe_result}" source)"
+  webdav_status="$(internal_real_gate_probe_result_field "${probe_result}" webdav_status)"
+  failure_class="$(internal_real_gate_probe_result_field "${probe_result}" failure_class)"
+  detail="source=${probe_source:-unknown} failure_class=${failure_class:-unknown} webdav_status=${webdav_status:-n/a} log=${probe_log}"
+  if declare -F gate_record_failure >/dev/null 2>&1; then
+    gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "afscp_read_export_probe" "${detail}"
+  fi
+  echo "[internal-real-gate] AFSCP read-export/WebDAV probe failed: ${detail}" >&2
+  cat "${probe_result}" >&2 2>/dev/null || true
+  tail -n "${AFSCP_READ_EXPORT_PROBE_TAIL_LINES:-80}" "${probe_log}" >&2 2>/dev/null || true
+  return "${probe_status}"
+}
+
 prepare_internal_backend_real_gate_runtime() {
   local rebuild_runner_base_image
   managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE:-}" "[internal-real-gate]" || return 1
@@ -528,6 +592,7 @@ prepare_internal_backend_real_gate_runtime() {
   kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
   ensure_internal_afscp_local_runtime
+  internal_real_gate_probe_afscp_read_export || return 1
   internal_real_gate_write_sandbox_config
 }
 

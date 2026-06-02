@@ -126,6 +126,7 @@ interface DiagnosticError {
   status?: number;
   requestId?: string;
   retryable?: boolean;
+  networkErrorName?: string;
 }
 
 interface RunnerHealthDiagnostic {
@@ -289,6 +290,12 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ? record.requestId.trim()
     : undefined;
   const retryable = typeof record.retryable === 'boolean' ? record.retryable : undefined;
+  const networkErrorName =
+    typeof record.networkErrorName === 'string' && record.networkErrorName.trim().length > 0
+      ? record.networkErrorName.trim()
+      : (typeof record.network_error_name === 'string' && record.network_error_name.trim().length > 0
+        ? record.network_error_name.trim()
+        : undefined);
   return {
     message,
     ...(name ? { name } : {}),
@@ -298,6 +305,7 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ...(status !== undefined ? { status } : {}),
     ...(requestId ? { requestId } : {}),
     ...(retryable !== undefined ? { retryable } : {}),
+    ...(networkErrorName ? { networkErrorName } : {}),
   };
 }
 
@@ -324,6 +332,42 @@ function buildTerminalWorkloadReleaseIncompleteError(error: unknown): Error {
   });
   (releaseError as Error & { cause?: unknown }).cause = error;
   return releaseError;
+}
+
+function buildSandboxNotReadyError(input: {
+  cause: unknown;
+  workloadId: string;
+  sessionId?: string;
+}): Error {
+  const diagnostic = normalizeDiagnosticError(input.cause);
+  const readyzDiagnostic = {
+    code: diagnostic.code ?? 'AGENT_SANDBOX_UNAVAILABLE',
+    operation: diagnostic.operation ?? 'readyz',
+    ...(diagnostic.status !== undefined ? { status: diagnostic.status } : {}),
+    ...(diagnostic.asbcpCode ? { asbcpCode: diagnostic.asbcpCode } : {}),
+    ...(diagnostic.requestId ? { requestId: diagnostic.requestId } : {}),
+    ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
+    ...(diagnostic.networkErrorName ? { networkErrorName: diagnostic.networkErrorName } : {}),
+  };
+  const error = Object.assign(new Error('sandbox_not_ready'), {
+    code: diagnostic.code ?? 'AGENT_SANDBOX_UNAVAILABLE',
+    sandboxOperation: 'readyz',
+    operation: diagnostic.operation ?? 'readyz',
+    workloadId: input.workloadId,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(diagnostic.status !== undefined ? { status: diagnostic.status } : {}),
+    ...(diagnostic.asbcpCode ? { asbcpCode: diagnostic.asbcpCode } : {}),
+    ...(diagnostic.requestId ? { requestId: diagnostic.requestId } : {}),
+    ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
+    ...(diagnostic.networkErrorName ? { networkErrorName: diagnostic.networkErrorName } : {}),
+    readyzDiagnostic,
+  });
+  Object.defineProperty(error, 'cause', {
+    value: input.cause,
+    configurable: true,
+    writable: true,
+  });
+  return error;
 }
 
 function normalizeAgentWebSocketBaseUrl(value: string): string {
@@ -1044,11 +1088,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       throwIfAborted(signal);
     } catch (error) {
       throwIfAborted(signal);
-      const code = error && typeof error === 'object' && 'code' in error
-        ? (error as { code?: unknown }).code
-        : undefined;
-      throw Object.assign(new Error('sandbox_not_ready'), {
-        code: typeof code === 'string' ? code : 'AGENT_SANDBOX_UNAVAILABLE',
+      throw buildSandboxNotReadyError({
+        cause: error,
+        workloadId,
+        sessionId,
       });
     }
     throwIfAborted(signal);

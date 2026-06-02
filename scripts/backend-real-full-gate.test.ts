@@ -868,6 +868,10 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helper).toContain('export PATH="${runtime_dir}/bin:${PATH}"');
     expect(helper).toContain('export LD_LIBRARY_PATH="${runtime_dir}/bin/juicefs-lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"');
     expect(helper).toContain('if [[ "${AFSCP_LOCAL_RUNTIME_MODE}" == "image" && "${runtime_command}" == "ensure_afscp_local_runtime" ]]; then');
+    expect(helper).toContain('probe_afscp_read_export_for_gate()');
+    expect(helper).toContain('AFSCP_READ_EXPORT_PROBE_LOG="${AFSCP_READ_EXPORT_PROBE_LOG:-${runtime_dir}/afscp-read-export-probe.log}"');
+    expect(helper).toContain('node "${AFSCP_LOCAL_RUNTIME_ROOT_DIR}/scripts/lib/afscp-read-export-probe.mjs"');
+    expect(helper).toContain('probe_afscp_read_export_for_gate "${runtime_dir}"');
     expect(helper).toContain('reset_afscp_local_runtime_for_gate()');
     expect(helper).toContain('with_afscp_local_runtime_env "${runtime_dir}" reset_owned_afscp_local_runtime_for_gate');
   });

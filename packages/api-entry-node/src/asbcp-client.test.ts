@@ -216,6 +216,34 @@ describe('AsbcpClient', () => {
     });
   });
 
+  it('adds safe ASBCP operation and network metadata to network unavailable errors', async () => {
+    const networkError = new Error('socket timed out token=raw-network-token');
+    networkError.name = 'TimeoutError';
+    const fetchMock = vi.fn(async () => {
+      throw networkError;
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.keepalive('ws_1', 'proj_1', 'workload_1');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      operation: 'keepalive',
+      retryable: true,
+      networkErrorName: 'TimeoutError',
+      network_error_name: 'TimeoutError',
+    });
+    expect((caught as Error).message).not.toContain('raw-network-token');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('checks readyz with service key header', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe('http://sandbox:8080/readyz');

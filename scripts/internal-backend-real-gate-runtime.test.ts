@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -7,6 +7,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -406,6 +408,8 @@ function runInternalSpecGrepEarlyFailureHarness(): {
   summary: string;
   internalFailure: string;
   internalChildEvidenceExists: boolean;
+  afscpApiLogTail: string;
+  afscpRuntimeFingerprint: string;
 } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-evidence-'));
@@ -434,8 +438,17 @@ K8S_NAMESPACE="agentsmith-sandbox"
 KIND_CONTEXT_NAME="kind-agentsmith"
 CONTEXT_NAME="kind-agentsmith"
 ASBCP_PORT=28080
+AFSCP_BASE_URL="http://127.0.0.1:30090"
+AFSCP_EXPORT_GATEWAY_BASE_URL="http://127.0.0.1:30091"
+AFSCP_DEFAULT_VOLUME_ID="vol_internal_probe"
+AFSCP_SERVICE_TOKEN="known-product-token"
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="known-bootstrap-token"
+AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
 CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
+printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
+printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+printf 'gateway ready token=%s\\n' "\${AFSCP_ORCHESTRATOR_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-export-gateway.log"
 
 gate_record_failure() {
   mkdir -p "$1"
@@ -486,6 +499,12 @@ exit 0
     });
     const summaryPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'summary.txt');
     const internalFailurePath = path.join(tempRoot, 'internal', 'failure-records.txt');
+    const afscpApiLogTailPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'afscp-api-log-tail.txt');
+    const afscpRuntimeFingerprintPath = path.join(
+      uploadRoot,
+      'files_restore_continuation_spec',
+      'afscp-runtime-fingerprint.txt',
+    );
 
     return {
       stdout: result.stdout ?? '',
@@ -494,8 +513,258 @@ exit 0
       summary: existsSync(summaryPath) ? readFileSync(summaryPath, 'utf8') : '',
       internalFailure: existsSync(internalFailurePath) ? readFileSync(internalFailurePath, 'utf8') : '',
       internalChildEvidenceExists: existsSync(path.join(tempRoot, 'internal', 'child-internal-evidence')),
+      afscpApiLogTail: existsSync(afscpApiLogTailPath) ? readFileSync(afscpApiLogTailPath, 'utf8') : '',
+      afscpRuntimeFingerprint: existsSync(afscpRuntimeFingerprintPath)
+        ? readFileSync(afscpRuntimeFingerprintPath, 'utf8')
+        : '',
     };
   } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function listenOnLoopback(server: ReturnType<typeof createServer>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address() as AddressInfo;
+      resolve(address.port);
+    });
+  });
+}
+
+function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+function sendJson(response: ServerResponse, status: number, payload: Record<string, unknown>): void {
+  response.statusCode = status;
+  response.setHeader('Content-Type', 'application/json');
+  response.end(JSON.stringify(payload));
+}
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let body = '';
+    request.on('data', (chunk: Buffer) => {
+      body += chunk.toString('utf8');
+    });
+    request.on('end', () => resolve(body));
+  });
+}
+
+async function runAfscpReadExportProbeHarness(options: {
+  createExportStatus?: number;
+  createExportErrorBody?: Record<string, unknown>;
+  webdavStatus?: number;
+  webdavBody?: string;
+  runs?: number;
+  requestTimeoutMs?: number;
+  accessUrlOverride?: string;
+  hangReadyz?: boolean;
+  hangCreateExport?: boolean;
+  hangWebdav?: boolean;
+  hangRevoke?: boolean;
+} = {}): Promise<{
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  runResults: Array<{ stdout: string; stderr: string; status: number | null }>;
+  log: string;
+  requests: string[];
+  webdavAuthorization: string;
+  webdavAuthorizations: string[];
+  exportIdempotencyKeys: string[];
+  webdavUrls: string[];
+}> {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'afscp-read-export-probe-'));
+  const logPath = path.join(tempRoot, 'probe.log');
+  const requests: string[] = [];
+  const exportIdempotencyKeys: string[] = [];
+  const webdavUrls: string[] = [];
+  const webdavAuthorizations: string[] = [];
+  const exportByIdempotencyKey = new Map<string, { exportId: string; accessUrl: string }>();
+  const revokedWebdavPaths = new Set<string>();
+  let webdavAuthorization = '';
+
+  const webdavServer = createServer((request, response) => {
+    requests.push(`webdav:${request.method ?? ''}:${request.url ?? ''}`);
+    webdavAuthorization = String(request.headers.authorization ?? '');
+    webdavAuthorizations.push(webdavAuthorization);
+    if (options.hangWebdav) {
+      return;
+    }
+    if (revokedWebdavPaths.has(request.url ?? '')) {
+      response.statusCode = 403;
+      response.end('revoked');
+      return;
+    }
+    response.statusCode = options.webdavStatus ?? 207;
+    response.end(options.webdavBody ?? '<multistatus />');
+  });
+
+  const webdavPort = await listenOnLoopback(webdavServer);
+  const webdavUrlForExport = (index: number) => `http://127.0.0.1:${webdavPort}/export_probe_${index}`;
+
+  const operationEnvelope = (operationId: string, resourceType: string, resourceId: string) => ({
+    operation_id: operationId,
+    operation_state: 'succeeded',
+    resource: { type: resourceType, id: resourceId },
+    result: null,
+    error: null,
+  });
+  const exportEnvelope = (exportId: string, accessUrl: string) => ({
+    operation_id: `op_${exportId}`,
+    operation_state: 'succeeded',
+    resource: { type: 'export', id: exportId },
+    result: {
+      export: { export_id: exportId },
+      access: {
+        url: accessUrl,
+        auth: { type: 'basic', username: 'probe-user', password: 'probe-pass' },
+        mode: 'read_only',
+        expires_at: '2026-06-02T00:00:00.000Z',
+      },
+    },
+    error: null,
+  });
+
+  const apiServer = createServer(async (request, response) => {
+    const method = request.method ?? '';
+    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
+    requests.push(`api:${method}:${requestUrl.pathname}`);
+
+    if (method === 'GET' && requestUrl.pathname === '/readyz') {
+      if (options.hangReadyz) {
+        return;
+      }
+      response.statusCode = 200;
+      response.end('ok');
+      return;
+    }
+    await readBody(request);
+    if (method === 'PUT' && /^\/internal\/v1\/namespaces\/[^/]+$/u.test(requestUrl.pathname)) {
+      sendJson(response, 200, operationEnvelope('op_namespace_probe', 'namespace', 'ns_gate_probe_fixture01'));
+      return;
+    }
+    if (method === 'PUT' && requestUrl.pathname.endsWith('/volume-binding')) {
+      sendJson(response, 200, operationEnvelope('op_binding_probe', 'namespace_volume_binding', 'ns_gate_probe_fixture01'));
+      return;
+    }
+    if (method === 'GET' && requestUrl.pathname.startsWith('/internal/v1/operations/')) {
+      const operationId = requestUrl.pathname.split('/').pop() ?? 'op_unknown';
+      sendJson(response, 200, operationEnvelope(operationId, 'operation', operationId));
+      return;
+    }
+    if (method === 'GET' && requestUrl.pathname === '/internal/v1/repos/repo_gate_probe_fixture01') {
+      sendJson(response, 404, { error_code: 'afscp_resource_not_found', message: 'not found' });
+      return;
+    }
+    if (method === 'POST' && requestUrl.pathname === '/internal/v1/repos') {
+      sendJson(response, 200, operationEnvelope('op_repo_probe', 'repo', 'repo_gate_probe_fixture01'));
+      return;
+    }
+    if (method === 'POST' && requestUrl.pathname === '/internal/v1/repos/repo_gate_probe_fixture01/exports') {
+      if (options.hangCreateExport) {
+        return;
+      }
+      const idempotencyKey = String(request.headers['idempotency-key'] ?? '');
+      exportIdempotencyKeys.push(idempotencyKey);
+      const status = options.createExportStatus ?? 200;
+      const existing = exportByIdempotencyKey.get(idempotencyKey);
+      const exportRecord = existing ?? {
+        exportId: `export_probe_${exportByIdempotencyKey.size + 1}`,
+        accessUrl: options.accessUrlOverride ?? webdavUrlForExport(exportByIdempotencyKey.size + 1),
+      };
+      if (!existing) {
+        exportByIdempotencyKey.set(idempotencyKey, exportRecord);
+      }
+      webdavUrls.push(exportRecord.accessUrl);
+      sendJson(response, status, status >= 200 && status < 300
+        ? exportEnvelope(exportRecord.exportId, exportRecord.accessUrl)
+        : options.createExportErrorBody ?? { error_code: 'afscp_backend_unavailable', message: 'unavailable' });
+      return;
+    }
+    if (method === 'DELETE' && requestUrl.pathname.startsWith('/internal/v1/exports/')) {
+      const exportId = decodeURIComponent(requestUrl.pathname.split('/').pop() ?? '');
+      const exportRecord = [...exportByIdempotencyKey.values()].find((record) => record.exportId === exportId);
+      if (exportRecord) {
+        revokedWebdavPaths.add(new URL(exportRecord.accessUrl).pathname);
+      }
+      if (options.hangRevoke) {
+        return;
+      }
+      sendJson(response, 200, operationEnvelope('op_export_revoke', 'export', exportId));
+      return;
+    }
+
+    sendJson(response, 404, { error_code: 'not_found', message: requestUrl.pathname });
+  });
+
+  const apiPort = await listenOnLoopback(apiServer);
+
+  try {
+    const runChild = () => new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve, reject) => {
+      const child = spawn('node', ['scripts/lib/afscp-read-export-probe.mjs'], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          AFSCP_BASE_URL: `http://127.0.0.1:${apiPort}`,
+          AFSCP_EXPORT_GATEWAY_BASE_URL: `http://127.0.0.1:${webdavPort}`,
+          AFSCP_DEFAULT_VOLUME_ID: 'vol_probe_fixture',
+          AFSCP_CALLER_SERVICE: 'agentsmith-api',
+          AFSCP_SERVICE_TOKEN: 'fixture-product-token-secret',
+          AFSCP_BOOTSTRAP_CALLER_SERVICE: 'agentsmith-bootstrap',
+          AFSCP_BOOTSTRAP_SERVICE_TOKEN: 'fixture-bootstrap-token-secret',
+          AFSCP_ORCHESTRATOR_CALLER_SERVICE: 'agentsmith-sandbox-control-plane',
+          AFSCP_ORCHESTRATOR_SERVICE_TOKEN: 'fixture-orchestrator-token-secret',
+          AFSCP_READ_EXPORT_PROBE_MARKER: 'fixture01',
+          AFSCP_READ_EXPORT_PROBE_LOG: logPath,
+          ...(options.requestTimeoutMs === undefined
+            ? {}
+            : { AFSCP_READ_EXPORT_PROBE_REQUEST_TIMEOUT_MS: String(options.requestTimeoutMs) }),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+      child.on('error', reject);
+      child.on('close', (status) => {
+        resolve({ stdout, stderr, status });
+      });
+    });
+    const runResults: Array<{ stdout: string; stderr: string; status: number | null }> = [];
+    for (let runIndex = 0; runIndex < (options.runs ?? 1); runIndex += 1) {
+      runResults.push(await runChild());
+    }
+    const result = runResults[runResults.length - 1] ?? { stdout: '', stderr: '', status: null };
+
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      status: result.status,
+      runResults,
+      log: existsSync(logPath) ? readFileSync(logPath, 'utf8') : '',
+      requests,
+      webdavAuthorization,
+      webdavAuthorizations,
+      exportIdempotencyKeys,
+      webdavUrls,
+    };
+  } finally {
+    await closeServer(apiServer);
+    await closeServer(webdavServer);
     rmSync(tempRoot, { recursive: true, force: true });
   }
 }
@@ -522,6 +791,8 @@ function runChildInternalEvidenceRedactorHarness(input: string): {
 set -euo pipefail
 ASBCP_SERVICE_KEY_VALUE="known-asbcp-secret"
 ASBCP_SERVICE_KEY=""
+AFSCP_SERVICE_TOKEN="known-product-token"
+AFSCP_BOOTSTRAP_SERVICE_TOKEN="known-bootstrap-token"
 AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
 AFSCP_ORCHESTRATOR_SERVICE_TOKEN=""
 PRESET_ENDPOINT_API_KEY_VALUE="sk-known-provider-secret"
@@ -560,11 +831,163 @@ describe('internal backend-real gate runtime contract', () => {
     expect(config).not.toContain('containerName: runner');
   });
 
+  it('passes the AFSCP read-export probe through createExport and WebDAV PROPFIND without logging secrets', async () => {
+    const result = await runAfscpReadExportProbeHarness();
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('"status": "passed"');
+    expect(result.stdout).toContain('"source": "webdav_propfind"');
+    expect(result.stdout).toContain('"fixture_scope": "gate_owned_afscp_read_export_probe"');
+    expect(result.stdout).toContain('"webdav_status": 207');
+    expect(result.requests).toContain('api:POST:/internal/v1/repos/repo_gate_probe_fixture01/exports');
+    expect(result.requests).toContain('webdav:PROPFIND:/export_probe_1');
+    expect(result.webdavAuthorization).toBe(`Basic ${Buffer.from('probe-user:probe-pass', 'utf8').toString('base64')}`);
+    expect(`${result.stdout}\n${result.log}`).not.toContain('probe-pass');
+    expect(`${result.stdout}\n${result.log}`).not.toContain('fixture-product-token-secret');
+    expect(`${result.stdout}\n${result.log}`).not.toContain('fixture-bootstrap-token-secret');
+    expect(`${result.stdout}\n${result.log}`).not.toContain('fixture-orchestrator-token-secret');
+    expect(result.log).toContain('"export_id_fingerprint":"sha256:');
+    expect(result.log).not.toContain('export_probe_1');
+  });
+
+  it('uses a unique read-export idempotency key on repeat probes without replaying a revoked WebDAV URL', async () => {
+    const result = await runAfscpReadExportProbeHarness({ runs: 2 });
+
+    expect(result.runResults).toHaveLength(2);
+    expect(result.runResults.map((run) => run.status)).toEqual([0, 0]);
+    expect(result.exportIdempotencyKeys).toHaveLength(2);
+    expect(new Set(result.exportIdempotencyKeys).size).toBe(2);
+    expect(result.exportIdempotencyKeys[0]).toContain('agentsmith-read-export-probe:fixture01:read-export:');
+    expect(result.webdavUrls).toHaveLength(2);
+    expect(new Set(result.webdavUrls).size).toBe(2);
+    expect(result.requests).toContain('webdav:PROPFIND:/export_probe_1');
+    expect(result.requests).toContain('webdav:PROPFIND:/export_probe_2');
+    expect(result.requests.filter((entry) => entry === 'api:DELETE:/internal/v1/exports/export_probe_1')).toHaveLength(1);
+    expect(result.requests.filter((entry) => entry === 'api:DELETE:/internal/v1/exports/export_probe_2')).toHaveLength(1);
+  });
+
+  it('classifies AFSCP createExport failures with a source discriminant and redacted response details', async () => {
+    const result = await runAfscpReadExportProbeHarness({
+      createExportStatus: 503,
+      createExportErrorBody: {
+        error_code: 'afscp_backend_unavailable',
+        retryable: true,
+        message: 'token=fixture-product-token-secret password=probe-pass',
+      },
+    });
+    const output = `${result.stdout}\n${result.stderr}\n${result.log}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain('"source": "afscp_create_export"');
+    expect(output).toContain('"failure_class": "backend_unavailable"');
+    expect(output).toContain('"http_status": 503');
+    expect(output).toContain('"afscp_error_code": "afscp_backend_unavailable"');
+    expect(output).not.toContain('fixture-product-token-secret');
+    expect(output).not.toContain('probe-pass');
+  });
+
+  it('classifies WebDAV PROPFIND 401, 403, and 5xx without retrying or exposing Basic auth', async () => {
+    const cases: Array<[number, string]> = [
+      [401, 'admin_action_required'],
+      [403, 'admin_action_required'],
+      [503, 'backend_unavailable'],
+    ];
+
+    for (const [status, failureClass] of cases) {
+      const result = await runAfscpReadExportProbeHarness({
+        webdavStatus: status,
+        webdavBody: 'Authorization: Basic should-not-survive password=probe-pass token=fixture-product-token-secret',
+      });
+      const output = `${result.stdout}\n${result.stderr}\n${result.log}`;
+
+      expect(result.status).toBe(1);
+      expect(output).toContain('"source": "webdav_propfind"');
+      expect(output).toContain(`"failure_class": "${failureClass}"`);
+      expect(output).toContain(`"webdav_status": ${status}`);
+      expect(result.requests.filter((entry) => entry.startsWith('webdav:PROPFIND'))).toHaveLength(1);
+      expect(result.requests.filter((entry) => entry === 'api:DELETE:/internal/v1/exports/export_probe_1')).toHaveLength(1);
+      expect(output).not.toContain('probe-pass');
+      expect(output).not.toContain('fixture-product-token-secret');
+      expect(output).not.toContain('should-not-survive');
+    }
+  });
+
+  it('rejects createExport access URLs outside the configured export gateway origin before sending Basic auth', async () => {
+    const result = await runAfscpReadExportProbeHarness({
+      accessUrlOverride: 'http://127.0.0.1:1/export_probe_1',
+    });
+    const output = `${result.stdout}\n${result.stderr}\n${result.log}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain('"source": "afscp_create_export"');
+    expect(output).toContain('"failure_class": "export_gateway_origin_mismatch"');
+    expect(result.requests.filter((entry) => entry.startsWith('webdav:PROPFIND'))).toHaveLength(0);
+    expect(result.webdavAuthorizations).toHaveLength(0);
+    expect(result.requests.filter((entry) => entry === 'api:DELETE:/internal/v1/exports/export_probe_1')).toHaveLength(1);
+    expect(output).not.toContain('probe-pass');
+  });
+
+  it('does not treat generic WebDAV 200 responses as a read-export pass', async () => {
+    const result = await runAfscpReadExportProbeHarness({
+      webdavStatus: 200,
+      webdavBody: 'ok',
+    });
+    const output = `${result.stdout}\n${result.stderr}\n${result.log}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain('"source": "webdav_propfind"');
+    expect(output).toContain('"failure_class": "webdav_multistatus_required"');
+    expect(output).toContain('"webdav_status": 200');
+    expect(result.requests.filter((entry) => entry === 'api:DELETE:/internal/v1/exports/export_probe_1')).toHaveLength(1);
+  });
+
+  it('fails fast with clear source and failure class when AFSCP or WebDAV accepts but never responds', async () => {
+    const cases: Array<{
+      options: NonNullable<Parameters<typeof runAfscpReadExportProbeHarness>[0]>;
+      source: string;
+      failureClass: string;
+    }> = [
+      { options: { hangReadyz: true }, source: 'afscp_runtime_ready', failureClass: 'afscp_request_timeout' },
+      { options: { hangCreateExport: true }, source: 'afscp_create_export', failureClass: 'afscp_request_timeout' },
+      { options: { hangWebdav: true }, source: 'webdav_propfind', failureClass: 'webdav_propfind_timeout' },
+    ];
+
+    for (const testCase of cases) {
+      const startedAt = Date.now();
+      const result = await runAfscpReadExportProbeHarness({
+        ...testCase.options,
+        requestTimeoutMs: 50,
+      });
+      const output = `${result.stdout}\n${result.stderr}\n${result.log}`;
+
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
+      expect(result.status).toBe(1);
+      expect(output).toContain(`"source": "${testCase.source}"`);
+      expect(output).toContain(`"failure_class": "${testCase.failureClass}"`);
+      expect(output).toContain('"timeout_ms": 50');
+    }
+
+    const revokeStartedAt = Date.now();
+    const revokeResult = await runAfscpReadExportProbeHarness({
+      hangRevoke: true,
+      requestTimeoutMs: 50,
+    });
+    expect(Date.now() - revokeStartedAt).toBeLessThan(2_000);
+    expect(revokeResult.status).toBe(0);
+    expect(revokeResult.stdout).toContain('"status": "passed"');
+  });
+
   it('keeps the Agent Task gate aligned on shared internal sandbox bootstrap', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const reclaimSpec = read('e2e/integration-internal-sandbox-reclaim.spec.ts');
     const developmentGuide = read('DEVELOPMENT.md');
+    const prepareRuntimeFunction = sectionBetween(
+      helper,
+      '\nprepare_internal_backend_real_gate_runtime() {',
+      '\n}\n\nprepare_internal_backend_real_spec_runtime()',
+    );
     const secondRunIndex = reclaimSpec.indexOf('const secondRun = await startAgentTaskRunViaApi');
     const secondOutcomeIndex = reclaimSpec.indexOf('runnerOutputActivityId: secondRun.runnerOutputActivityId');
     const asbcpRestartIndex = reclaimSpec.indexOf("await runInternalSandboxControl('stop-asbcp')");
@@ -609,6 +1032,18 @@ describe('internal backend-real gate runtime contract', () => {
     expect(helper).not.toContain('INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).toContain('render_k8s_external_dependency_services \\');
     expect(helper).toContain('internal_real_gate_start_runtime "${spec_state_file}"');
+    expect(helper).toContain('internal_real_gate_probe_afscp_read_export()');
+    expect(helper).toContain('AFSCP_READ_EXPORT_PROBE_SHELL_TIMEOUT_SECONDS:-90');
+    expect(helper).toContain('timeout "${probe_shell_timeout}" env AFSCP_READ_EXPORT_PROBE_LOG="${probe_log}"');
+    expect(helper).toContain('node "${ROOT_DIR:-$(pwd)}/scripts/lib/afscp-read-export-probe.mjs"');
+    expect(helper).toContain('gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "afscp_read_export_probe"');
+    expect(prepareRuntimeFunction).toContain('internal_real_gate_probe_afscp_read_export || return 1');
+    expect(prepareRuntimeFunction.indexOf('ensure_internal_afscp_local_runtime')).toBeLessThan(
+      prepareRuntimeFunction.indexOf('internal_real_gate_probe_afscp_read_export || return 1'),
+    );
+    expect(prepareRuntimeFunction.indexOf('internal_real_gate_probe_afscp_read_export || return 1')).toBeLessThan(
+      prepareRuntimeFunction.indexOf('internal_real_gate_write_sandbox_config'),
+    );
     expect(helper).not.toContain('start-cleaner');
     expect(helper).not.toContain('stop-cleaner');
     expect(helper).not.toContain('with-cleaner');
@@ -847,6 +1282,16 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('CHILD_INTERNAL_EVIDENCE_ROOT="$(dirname "$(realpath -m "${RELEASE_REAL_READY_LOG_DIR}")")/child-internal-evidence"');
     expect(collector).toContain('evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"');
     expect(logTailCollector).toContain('log-tails.txt');
+    expect(logTailCollector).toContain('afscp-api.log');
+    expect(logTailCollector).toContain('afscp-worker.log');
+    expect(logTailCollector).toContain('afscp-export-gateway.log');
+    expect(logTailCollector).toContain('afscp-read-export-probe.log');
+    expect(collector).toContain('collect_afscp_child_evidence "${evidence_dir}"');
+    expect(agentTaskGate).toContain('collect_afscp_child_runtime_fingerprint()');
+    expect(agentTaskGate).toContain('afscp-runtime-fingerprint.txt');
+    expect(agentTaskGate).toContain('afscp-api-log-tail.txt');
+    expect(agentTaskGate).toContain('afscp-worker-log-tail.txt');
+    expect(agentTaskGate).toContain('afscp-export-gateway-log-tail.txt');
     expect(collector).toContain('exit_status=%s');
     expect(collector).toContain('spec=%s');
     expect(collector).toContain('grep_label=%s');
@@ -921,6 +1366,8 @@ describe('internal backend-real gate runtime contract', () => {
       'plain-api-key-value',
       'sk-live-raw-secret123456',
       'known-asbcp-secret',
+      'known-product-token',
+      'known-bootstrap-token',
       'known-orchestrator-token',
       'sk-known-provider-secret',
     ];
@@ -932,7 +1379,7 @@ describe('internal backend-real gate runtime contract', () => {
       `password = "${rawSecrets[4]}"`,
       `service_api_key: '${rawSecrets[5]}'`,
       `PRESET_ENDPOINT_API_KEY=${rawSecrets[6]}`,
-      `known values ${rawSecrets[7]} ${rawSecrets[8]} ${rawSecrets[9]}`,
+      `known values ${rawSecrets[7]} ${rawSecrets[8]} ${rawSecrets[9]} ${rawSecrets[10]} ${rawSecrets[11]}`,
     ].join('\n');
 
     const result = runChildInternalEvidenceRedactorHarness(`${input}\n`);
@@ -958,6 +1405,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('status=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/summary.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-api-log-tail.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
     expect(result.summary).toContain('stage=files_restore_continuation_spec');
     expect(result.summary).toContain('gate_mode=files-restore-continue');
     expect(result.summary).toContain('spec=e2e/integration-files-user-stories.spec.ts');
@@ -968,6 +1417,13 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.summary).toContain('/upload/child-internal-evidence/files_restore_continuation_spec');
     expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
     expect(result.internalChildEvidenceExists).toBe(false);
+    expect(result.afscpApiLogTail).toContain('AFSCP API');
+    expect(result.afscpApiLogTail).toContain('api ready token=[REDACTED]');
+    expect(result.afscpApiLogTail).not.toContain('known-product-token');
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_api_port=30090');
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_export_gateway_port=30091');
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_default_volume_id=vol_internal_probe');
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_api_container=agentsmith-afscp-local-30090-api');
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

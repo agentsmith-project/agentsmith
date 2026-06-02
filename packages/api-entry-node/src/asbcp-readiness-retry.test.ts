@@ -124,6 +124,8 @@ describe('retryAsbcpReadinessNotReady', () => {
     const transientError = Object.assign(new Error(rawDetail), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
       operation: 'create_or_ensure_pod',
+      networkErrorName: 'TimeoutError',
+      network_error_name: 'TimeoutError',
     });
     const sleep = vi.fn(async (delayMs: number) => {
       now += delayMs;
@@ -150,6 +152,8 @@ describe('retryAsbcpReadinessNotReady', () => {
         status: 503,
         operation: 'create_or_ensure_pod',
         retryable: true,
+        networkErrorName: 'TimeoutError',
+        network_error_name: 'TimeoutError',
       });
       expect((caught as Error).message).toBe('asbcp_startup_unavailable');
       expect((caught as Error).message).not.toContain(rawDetail);

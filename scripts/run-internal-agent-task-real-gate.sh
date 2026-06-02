@@ -554,6 +554,8 @@ redact_child_internal_known_values() {
     for secret in \
       "${ASBCP_SERVICE_KEY_VALUE:-}" \
       "${ASBCP_SERVICE_KEY:-}" \
+      "${AFSCP_SERVICE_TOKEN:-}" \
+      "${AFSCP_BOOTSTRAP_SERVICE_TOKEN:-}" \
       "${AFSCP_ORCHESTRATOR_TOKEN:-}" \
       "${AFSCP_ORCHESTRATOR_SERVICE_TOKEN:-}" \
       "${PRESET_ENDPOINT_API_KEY_VALUE:-}" \
@@ -627,6 +629,87 @@ collect_asbcp_docker_log_evidence() {
   } > "${output_file}" || true
 }
 
+child_internal_url_port() {
+  local raw_url="$1"
+  local fallback="$2"
+  node -e '
+const raw = process.argv[1] || "";
+const fallback = process.argv[2] || "";
+try {
+  const parsed = new URL(raw);
+  process.stdout.write(parsed.port || fallback);
+} catch {
+  process.stdout.write(fallback);
+}
+' "${raw_url}" "${fallback}" 2>/dev/null || printf '%s' "${fallback}"
+}
+
+collect_afscp_child_log_tail() {
+  local output_file="$1"
+  local label="$2"
+  local log_file="$3"
+  local max_lines="${CHILD_INTERNAL_EVIDENCE_TAIL_LINES:-120}"
+
+  if [[ -f "${log_file}" ]]; then
+    {
+      printf '===== %s: %s (tail %s lines) =====\n' "${label}" "${log_file}" "${max_lines}"
+      tail -n "${max_lines}" "${log_file}" 2>&1 | redact_child_internal_evidence
+    } > "${output_file}" || true
+    return 0
+  fi
+
+  printf '%s log file was not available: %s\n' "${label}" "${log_file}" > "${output_file}"
+}
+
+collect_afscp_child_runtime_fingerprint() {
+  local evidence_dir="$1"
+  local output_file="${evidence_dir}/afscp-runtime-fingerprint.txt"
+  local api_base="${AFSCP_BASE_URL:-}"
+  local gateway_base="${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"
+  local api_port gateway_port runtime_mode container_prefix
+
+  api_port="$(child_internal_url_port "${api_base}" "<unknown>")"
+  gateway_port="$(child_internal_url_port "${gateway_base}" "<unknown>")"
+  runtime_mode="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
+  container_prefix="${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX:-agentsmith-afscp-local-${api_port}}"
+
+  {
+    printf 'afscp_base_url=%s\n' "${api_base:-<unknown>}"
+    printf 'afscp_api_port=%s\n' "${api_port}"
+    printf 'afscp_export_gateway_base_url=%s\n' "${gateway_base:-<unknown>}"
+    printf 'afscp_export_gateway_port=%s\n' "${gateway_port}"
+    printf 'afscp_default_volume_id=%s\n' "${AFSCP_DEFAULT_VOLUME_ID:-<unknown>}"
+    printf 'afscp_runtime_mode=%s\n' "${runtime_mode}"
+    printf 'afscp_runtime_dir=%s\n' "${INTERNAL_REAL_DIR:-<unknown>}"
+    printf 'afscp_api_log=%s\n' "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR:-}/afscp-api.log}"
+    printf 'afscp_worker_log=%s\n' "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR:-}/afscp-worker.log}"
+    printf 'afscp_export_gateway_log=%s\n' "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR:-}/afscp-export-gateway.log}"
+    if [[ "${runtime_mode}" == "image" ]]; then
+      printf 'afscp_api_container=%s\n' "${AFSCP_API_CONTAINER_NAME:-${container_prefix}-api}"
+      printf 'afscp_worker_container=%s\n' "${AFSCP_WORKER_CONTAINER_NAME:-${container_prefix}-worker}"
+      printf 'afscp_export_gateway_container=%s\n' "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME:-${container_prefix}-export-gateway}"
+    else
+      printf 'afscp_api_process=afscp-api\n'
+      printf 'afscp_worker_process=afscp-worker\n'
+      printf 'afscp_export_gateway_process=afscp-export-gateway\n'
+      printf 'afscp_api_pid_file=%s\n' "${AFSCP_API_PID_FILE:-${INTERNAL_REAL_DIR:-}/afscp-api.pid}"
+      printf 'afscp_worker_pid_file=%s\n' "${AFSCP_WORKER_PID_FILE:-${INTERNAL_REAL_DIR:-}/afscp-worker.pid}"
+      printf 'afscp_export_gateway_pid_file=%s\n' "${AFSCP_EXPORT_GATEWAY_PID_FILE:-${INTERNAL_REAL_DIR:-}/afscp-export-gateway.pid}"
+    fi
+  } | redact_child_internal_evidence > "${output_file}" || true
+}
+
+collect_afscp_child_evidence() {
+  local evidence_dir="$1"
+  local runtime_dir="${INTERNAL_REAL_DIR:-}"
+
+  collect_afscp_child_runtime_fingerprint "${evidence_dir}"
+  collect_afscp_child_log_tail "${evidence_dir}/afscp-api-log-tail.txt" "AFSCP API" "${AFSCP_API_LOG:-${runtime_dir}/afscp-api.log}"
+  collect_afscp_child_log_tail "${evidence_dir}/afscp-worker-log-tail.txt" "AFSCP worker" "${AFSCP_WORKER_LOG:-${runtime_dir}/afscp-worker.log}"
+  collect_afscp_child_log_tail "${evidence_dir}/afscp-export-gateway-log-tail.txt" "AFSCP export gateway" "${AFSCP_EXPORT_GATEWAY_LOG:-${runtime_dir}/afscp-export-gateway.log}"
+  collect_afscp_child_log_tail "${evidence_dir}/afscp-read-export-probe-log-tail.txt" "AFSCP read-export probe" "${AFSCP_READ_EXPORT_PROBE_LOG:-${runtime_dir}/afscp-read-export-probe.log}"
+}
+
 collect_child_internal_log_tails() {
   local evidence_dir="$1"
   local spec_state_file="${2:-}"
@@ -639,6 +722,14 @@ collect_child_internal_log_tails() {
 
   if [[ -n "${ASBCP_LOG:-}" ]]; then
     candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
+    candidates+=(
+      "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+      "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+      "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+      "${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+    )
   fi
   if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
     spec_runtime_dir="$(dirname "${spec_state_file}")"
@@ -718,6 +809,7 @@ collect_child_internal_failure_evidence() {
     } > "${evidence_dir}/summary.txt"
 
     collect_child_internal_log_tails "${evidence_dir}" "${spec_state_file}"
+    collect_afscp_child_evidence "${evidence_dir}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
     if command -v kubectl >/dev/null 2>&1; then
       run_child_internal_evidence_command "${evidence_dir}/k8s-pods.txt" 20 kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide

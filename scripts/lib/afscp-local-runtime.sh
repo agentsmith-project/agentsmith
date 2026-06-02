@@ -117,6 +117,13 @@ with_afscp_local_runtime_env() {
 ensure_afscp_local_runtime_for_gate() {
   local runtime_dir="$1"
   with_afscp_local_runtime_env "${runtime_dir}" ensure_afscp_local_runtime
+  probe_afscp_read_export_for_gate "${runtime_dir}"
+}
+
+probe_afscp_read_export_for_gate() {
+  local runtime_dir="$1"
+  AFSCP_READ_EXPORT_PROBE_LOG="${AFSCP_READ_EXPORT_PROBE_LOG:-${runtime_dir}/afscp-read-export-probe.log}" \
+    with_afscp_local_runtime_env "${runtime_dir}" node "${AFSCP_LOCAL_RUNTIME_ROOT_DIR}/scripts/lib/afscp-read-export-probe.mjs"
 }
 
 stop_afscp_local_runtime_for_gate() {

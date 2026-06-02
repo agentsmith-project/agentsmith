@@ -17,6 +17,7 @@ import {
   API_BASE,
   bindAgentTaskExecutionSocketToTask,
   buildCreateProjectRequestBody,
+  collectInternalTaskFailureContext,
   createAgentTaskRunnerBundleViaApi,
   createAgentTaskViaApi,
   createExternalConnectionViaApi,
@@ -3486,6 +3487,202 @@ describe('integration-real-helpers', () => {
       expect(await readFile(argLogPath, 'utf8')).not.toContain(`workload_id=${workloadId}`);
       expect(page.waitForTimeout).not.toHaveBeenCalled();
     });
+  });
+
+  it('adds operator lookup and ASBCP workload status context when the workload pod is missing', async () => {
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    const taskId = 'task_missing_diag';
+    const workloadId = 'task-missing-diag';
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test/';
+    process.env.ASBCP_SERVICE_KEY = 'service-key-value';
+
+    try {
+      await withMockKubectlPodSnapshot({
+        items: [
+          {
+            metadata: {
+              name: 'workload-other-task',
+              uid: 'pod-uid-other',
+              labels: {
+                app: 'managed-workload',
+                workspace_id: 'ws-default-9f642c763af7',
+                project_id: 'proj-1-e04b05f9bca4',
+                workload_id: 'task-other-15772034fcfa',
+              },
+              annotations: {
+                'mbos.io/workspace-id': 'ws_default',
+                'mbos.io/project-id': 'proj_1',
+                'mbos.io/workload-id': 'task-other',
+              },
+            },
+            status: {
+              phase: 'Pending',
+              conditions: [{ type: 'Ready', status: 'False', reason: 'ContainersNotReady' }],
+              containerStatuses: [
+                {
+                  ready: false,
+                  state: { waiting: { reason: 'ImagePullBackOff' } },
+                },
+              ],
+            },
+          },
+        ],
+      }, async ({ argLogPath }) => {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          expect(String(input)).toBe(
+            `http://asbcp.test/v1/workspaces/ws_default/projects/proj_1/workloads/${workloadId}`,
+          );
+          expect((init?.headers as Record<string, string>)['X-Service-Key']).toBe('service-key-value');
+          return new Response(JSON.stringify({
+            status: 'accepted',
+            pod: {
+              phase: 'Pending',
+              pod_name: 'asbcp-pending-pod',
+            },
+            request_id: 'asbcp_req_status_lookup',
+          }), {
+            status: 202,
+            headers: {
+              'x-request-id': 'asbcp_req_status_header',
+            },
+          });
+        }) as unknown as typeof fetch;
+        const get = vi.fn().mockImplementation(async (url: string) => {
+          if (url.includes('/activity')) {
+            return okResponse([]);
+          }
+          if (url.includes('/traces?')) {
+            return okResponse({ items: [] });
+          }
+          if (url.endsWith(`/tasks/${taskId}`)) {
+            return okResponse({
+              id: taskId,
+              run_state: 'idle',
+              active_run: null,
+            });
+          }
+          throw new Error(`unexpected_get:${url}`);
+        });
+        const page = {
+          evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+          request: { get },
+        } as unknown as Parameters<typeof collectInternalTaskFailureContext>[0]['page'];
+
+        const context = await collectInternalTaskFailureContext({
+          page,
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+          namespace: 'agentsmith-sandbox',
+          workloadId,
+        });
+
+        expect(context).toContain('pod: <missing>');
+        expect(context).toContain('sandbox_lookup:');
+        expect(context).toContain(
+          `lookup namespace=agentsmith-sandbox workspaceId=ws_default projectId=proj_1 workloadId=${workloadId}`,
+        );
+        expect(context).toContain('kubectl_lookup_exit=0');
+        expect(context).toContain('kubectl_lookup_status=ok');
+        expect(context).toContain('candidate_pods:');
+        expect(context).toContain('pod=workload-other-task');
+        expect(context).toContain('workloadId=task-other');
+        expect(context).toContain('phase=Pending');
+        expect(context).toContain('ready=false');
+        expect(context).toContain(
+          'asbcp_workload_status http_status=202 request_id=asbcp_req_status_header status=accepted phase=Pending pod_name=asbcp-pending-pod',
+        );
+        expect(context).not.toContain('service-key-value');
+        expect(await readFile(argLogPath, 'utf8')).toContain(
+          'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
+        );
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
+  });
+
+  it('sanitizes ASBCP workload status fields before adding failure context', async () => {
+    const previousBaseUrl = process.env.ASBCP_INTERNAL_BASE_URL;
+    const previousServiceKey = process.env.ASBCP_SERVICE_KEY;
+    const taskId = 'task_asbcp_sanitize_diag';
+    const workloadId = 'task-asbcp-sanitize-diag';
+    process.env.ASBCP_INTERNAL_BASE_URL = 'http://asbcp.test/';
+    process.env.ASBCP_SERVICE_KEY = 'service-key-value';
+
+    try {
+      await withMockKubectlPodSnapshot({ items: [] }, async () => {
+        globalThis.fetch = vi.fn(async () => {
+          return new Response(JSON.stringify({
+            status: `accepted phase=forged\n${'s'.repeat(160)}`,
+            pod: {
+              phase: `Pending pod_name=forged\n${'p'.repeat(160)}`,
+              pod_name: `asbcp-pending-pod asbcp_code=forged\n${'n'.repeat(160)}`,
+            },
+            error: {
+              code: `image_pull secret=service-key-value\n${'c'.repeat(160)}`,
+            },
+          }), {
+            status: 503,
+            headers: {
+              'x-request-id': `req-header status=forged ${'r'.repeat(160)}`,
+            },
+          });
+        }) as unknown as typeof fetch;
+        const get = vi.fn().mockImplementation(async (url: string) => {
+          if (url.includes('/activity')) {
+            return okResponse([]);
+          }
+          if (url.includes('/traces?')) {
+            return okResponse({ items: [] });
+          }
+          if (url.endsWith(`/tasks/${taskId}`)) {
+            return okResponse({
+              id: taskId,
+              run_state: 'idle',
+              active_run: null,
+            });
+          }
+          throw new Error(`unexpected_get:${url}`);
+        });
+        const page = {
+          evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+          request: { get },
+        } as unknown as Parameters<typeof collectInternalTaskFailureContext>[0]['page'];
+
+        const context = await collectInternalTaskFailureContext({
+          page,
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId,
+          namespace: 'agentsmith-sandbox',
+          workloadId,
+        });
+        const asbcpLine = context.split('\n').find((line) => line.startsWith('asbcp_workload_status ')) ?? '';
+
+        expect(asbcpLine).toContain('http_status=503');
+        expect(asbcpLine).toContain('request_id=req-header_status_forged_');
+        expect(asbcpLine).toContain('status=accepted_phase_forged_');
+        expect(asbcpLine).toContain('phase=Pending_pod_name_forged_');
+        expect(asbcpLine).toContain('pod_name=asbcp-pending-pod_asbcp_code_forged_');
+        expect(asbcpLine).toContain('asbcp_code=image_pull_secret_<redacted>_');
+        expect(asbcpLine.length).toBeLessThan(650);
+        expect(asbcpLine).not.toContain(' status=forged');
+        expect(asbcpLine).not.toContain(' phase=forged');
+        expect(asbcpLine).not.toContain(' pod_name=forged');
+        expect(asbcpLine).not.toContain(' asbcp_code=forged');
+        expect(asbcpLine).not.toContain('service-key-value');
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.ASBCP_INTERNAL_BASE_URL;
+      else process.env.ASBCP_INTERNAL_BASE_URL = previousBaseUrl;
+      if (previousServiceKey === undefined) delete process.env.ASBCP_SERVICE_KEY;
+      else process.env.ASBCP_SERVICE_KEY = previousServiceKey;
+    }
   });
 
   it('observes managed workload pod presence and identity by raw ASBCP annotation truth', async () => {

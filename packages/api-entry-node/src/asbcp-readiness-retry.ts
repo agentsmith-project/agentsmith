@@ -26,6 +26,14 @@ function readNumberField(error: unknown, key: string): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : undefined;
 }
 
+function readFirstStringField(error: unknown, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = readStringField(error, key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
 function readAsbcpCode(error: unknown): string | undefined {
   return readStringField(error, 'asbcpCode')
     ?? readStringField(error, 'asbcp_code');
@@ -99,6 +107,7 @@ function buildAsbcpStartupTransientUnavailableError(input: {
   const retryAfterMs = readAsbcpRetryAfterMs(input.cause);
   const status = readNumberField(input.cause, 'status') ?? 503;
   const asbcpCode = readAsbcpCode(input.cause);
+  const networkErrorName = readFirstStringField(input.cause, ['networkErrorName', 'network_error_name']);
   const isReadinessNotReady = isAsbcpReadinessNotReadyError(input.cause);
   const error = Object.assign(new Error(
     isReadinessNotReady ? 'asbcp_readiness_not_ready' : 'asbcp_startup_unavailable',
@@ -108,6 +117,7 @@ function buildAsbcpStartupTransientUnavailableError(input: {
     operation: input.operation,
     retryable: true,
     ...(asbcpCode ? { asbcpCode } : {}),
+    ...(networkErrorName ? { networkErrorName, network_error_name: networkErrorName } : {}),
     ...(requestId ? { requestId } : {}),
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
   });

@@ -500,6 +500,16 @@ export class AsbcpClient {
     return /(aborted|abort|timeout|timed out)/i.test(message);
   }
 
+  private static readNetworkErrorName(error: unknown): string | undefined {
+    if (error instanceof Error && error.name.trim().length > 0) {
+      return error.name.trim();
+    }
+    if (!isRecord(error)) {
+      return undefined;
+    }
+    return readNonEmptyString(error.name);
+  }
+
   private buildUrl(path: string): string {
     return `${this.normalizedBaseUrl}${path}`;
   }
@@ -625,8 +635,12 @@ export class AsbcpClient {
       }
     }
     const message = redactAsbcpLogText(lastError instanceof Error ? lastError.message : 'unknown_network_error');
+    const networkErrorName = AsbcpClient.readNetworkErrorName(lastError);
     throw Object.assign(new Error(`asbcp_network_error: ${operation} ${message}`), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
+      operation,
+      retryable: true,
+      ...(networkErrorName ? { networkErrorName, network_error_name: networkErrorName } : {}),
     });
   }
 

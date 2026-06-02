@@ -1061,9 +1061,12 @@ exit 0
     const fixture = prepareManagedProxyFixture(tempRoot, { curlMode: 'managed-container', dockerMode: 'pull-fail' });
 
     const result = runManagedProxyFixture(tempRoot, fixture, {});
+    const lockedImage = readLockedLlmupImage();
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('pull_policy=missing');
+    expect(result.stderr).toContain(`image_ref=${lockedImage}`);
+    expect(result.stderr).not.toContain('image_ref=unknown');
     expect(result.stderr).toContain('network access to GHCR');
     expect(result.stderr).not.toContain(ghcrAuthFallbackHint);
     expect(result.stderr).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL');

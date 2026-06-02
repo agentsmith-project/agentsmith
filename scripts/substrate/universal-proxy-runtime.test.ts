@@ -33,6 +33,10 @@ describe('substrate universal proxy runtime contract', () => {
     return image ?? '';
   }
 
+  function writeLlmupImageLock(rootDir: string, lines: string[]): void {
+    writeFileSync(path.join(rootDir, 'infra', 'deploy', 'shared', 'llmup-image.lock'), `${lines.join('\n')}\n`, 'utf8');
+  }
+
   function copyIfPresent(source: string, destination: string): void {
     if (existsSync(source)) {
       cpSync(source, destination);
@@ -693,6 +697,81 @@ MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=stale-admin-token
     expect(config).toContain('upstreams: {}');
     expect(config).toContain('model_aliases: {}');
     expect(config).not.toMatch(/^routes:/m);
+  });
+
+  it('resolves the runtime image from a source lock that includes release metadata', () => {
+    const tempRoot = createIsolatedRepoRoot('runtime-lock-release-metadata');
+    const fixture = prepareRuntimeHelperFixture(tempRoot);
+    const lockedImage = readLockedLlmupImage();
+
+    writeLlmupImageLock(fixture.rootDir, [
+      'llmup_version=v0.2.44',
+      `llmup_source_image=${lockedImage}`,
+      'llmup_release_url=https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/v0.2.44',
+      'llmup_commit_sha=9c8208d3a12e8070c4edb0ee07469d023cfe38ad',
+    ]);
+
+    const result = runRuntimeHelper(
+      fixture,
+      `export ${runtimeEnvPrefix(fixture)}
+       image_ref_file="$(mktemp)"
+       universal_proxy_runtime_resolve_locked_image > "\${image_ref_file}"
+       image_ref="$(cat "\${image_ref_file}")"
+       printf 'image=%s\\nrelease=%s\\ncommit=%s\\n' "\${image_ref}" "\${LLMUP_RELEASE_URL}" "\${LLMUP_COMMIT_SHA}"`,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`image=${lockedImage}`);
+    expect(result.stdout).toContain(
+      'release=https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/v0.2.44',
+    );
+    expect(result.stdout).toContain('commit=9c8208d3a12e8070c4edb0ee07469d023cfe38ad');
+  });
+
+  it('fails fast when the llmup image lock contains an unknown key', () => {
+    const tempRoot = createIsolatedRepoRoot('runtime-lock-unknown-key');
+    const fixture = prepareRuntimeHelperFixture(tempRoot);
+    const lockedImage = readLockedLlmupImage();
+
+    writeLlmupImageLock(fixture.rootDir, [
+      'llmup_version=v0.2.44',
+      `llmup_source_image=${lockedImage}`,
+      'llmup_release_url=https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/v0.2.44',
+      'llmup_commit_sha=9c8208d3a12e8070c4edb0ee07469d023cfe38ad',
+      'llmup_extra_field=unexpected',
+    ]);
+
+    const result = runRuntimeHelper(
+      fixture,
+      `export ${runtimeEnvPrefix(fixture)}
+       universal_proxy_runtime_resolve_locked_image`,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unknown llmup image lock key on line 5: llmup_extra_field');
+  });
+
+  it('fails fast when the llmup image lock duplicates release metadata keys', () => {
+    const tempRoot = createIsolatedRepoRoot('runtime-lock-duplicate-metadata');
+    const fixture = prepareRuntimeHelperFixture(tempRoot);
+    const lockedImage = readLockedLlmupImage();
+
+    writeLlmupImageLock(fixture.rootDir, [
+      'llmup_version=v0.2.44',
+      `llmup_source_image=${lockedImage}`,
+      'llmup_release_url=https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/v0.2.44',
+      'llmup_release_url=https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/v0.2.43',
+      'llmup_commit_sha=9c8208d3a12e8070c4edb0ee07469d023cfe38ad',
+    ]);
+
+    const result = runRuntimeHelper(
+      fixture,
+      `export ${runtimeEnvPrefix(fixture)}
+       universal_proxy_runtime_resolve_locked_image`,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('duplicate llmup image lock entry: llmup_release_url');
   });
 
   it('starts managed containers with client-provider-key auth and bearer admin probes', () => {

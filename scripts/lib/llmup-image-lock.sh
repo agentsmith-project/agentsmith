@@ -24,6 +24,10 @@ llmup_image_lock_parse_key_values() {
   local key=""
   local value=""
   local line_number=0
+  local seen_version=0
+  local seen_source_image=0
+  local seen_release_url=0
+  local seen_commit_sha=0
 
   [[ -f "${lock_path}" ]] || llmup_image_lock_die "missing llmup image lock at ${lock_path}"
 
@@ -43,12 +47,24 @@ llmup_image_lock_parse_key_values() {
     value="$(llmup_image_lock_trim "${line#*=}")"
     case "${key}" in
       llmup_version)
-        [[ -z "${LLMUP_IMAGE_LOCK_VERSION:-}" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_version"
+        [[ "${seen_version}" == "0" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_version"
+        seen_version=1
         LLMUP_IMAGE_LOCK_VERSION="${value}"
         ;;
       llmup_source_image)
-        [[ -z "${LLMUP_IMAGE_LOCK_SOURCE_IMAGE:-}" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_source_image"
+        [[ "${seen_source_image}" == "0" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_source_image"
+        seen_source_image=1
         LLMUP_IMAGE_LOCK_SOURCE_IMAGE="${value}"
+        ;;
+      llmup_release_url)
+        [[ "${seen_release_url}" == "0" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_release_url"
+        seen_release_url=1
+        LLMUP_IMAGE_LOCK_RELEASE_URL="${value}"
+        ;;
+      llmup_commit_sha)
+        [[ "${seen_commit_sha}" == "0" ]] || llmup_image_lock_die "duplicate llmup image lock entry: llmup_commit_sha"
+        seen_commit_sha=1
+        LLMUP_IMAGE_LOCK_COMMIT_SHA="${value}"
         ;;
       *)
         llmup_image_lock_die "unknown llmup image lock key on line ${line_number}: ${key}"
@@ -58,6 +74,8 @@ llmup_image_lock_parse_key_values() {
 
   [[ -n "${LLMUP_IMAGE_LOCK_VERSION:-}" ]] || llmup_image_lock_die "llmup image lock must include llmup_version"
   [[ -n "${LLMUP_IMAGE_LOCK_SOURCE_IMAGE:-}" ]] || llmup_image_lock_die "llmup image lock must include llmup_source_image"
+  [[ -n "${LLMUP_IMAGE_LOCK_RELEASE_URL:-}" ]] || llmup_image_lock_die "llmup image lock must include llmup_release_url"
+  [[ -n "${LLMUP_IMAGE_LOCK_COMMIT_SHA:-}" ]] || llmup_image_lock_die "llmup image lock must include llmup_commit_sha"
 }
 
 llmup_image_lock_validate_source_image() {
@@ -101,6 +119,8 @@ resolve_llmup_image_lock() {
 
   LLMUP_IMAGE_LOCK_VERSION=""
   LLMUP_IMAGE_LOCK_SOURCE_IMAGE=""
+  LLMUP_IMAGE_LOCK_RELEASE_URL=""
+  LLMUP_IMAGE_LOCK_COMMIT_SHA=""
   llmup_image_lock_parse_key_values "${lock_path}"
 
   resolved_version="${LLMUP_VERSION:-${LLMUP_IMAGE_LOCK_VERSION}}"
@@ -110,4 +130,7 @@ resolve_llmup_image_lock() {
 
   LLMUP_VERSION="${resolved_version}"
   LLMUP_SOURCE_IMAGE="${resolved_source_image}"
+  LLMUP_RELEASE_URL="${LLMUP_IMAGE_LOCK_RELEASE_URL}"
+  LLMUP_COMMIT_SHA="${LLMUP_IMAGE_LOCK_COMMIT_SHA}"
+  export LLMUP_VERSION LLMUP_SOURCE_IMAGE LLMUP_RELEASE_URL LLMUP_COMMIT_SHA
 }

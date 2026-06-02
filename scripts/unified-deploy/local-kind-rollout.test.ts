@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import YAML from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -17,7 +18,7 @@ import {
 } from '../governance/run-readiness-state';
 import { asRecord } from './manifest';
 import { DEFAULT_SITE_ENV_PATH } from './render';
-import { parseKubernetesDocuments } from './kubernetes';
+import { parseKubernetesDocuments, type KubernetesDocument } from './kubernetes';
 import {
   LEGACY_ASBCP_CHECKSUM_FRAGMENT,
   LEGACY_ASBCP_CONFIGMAP_NAME,
@@ -55,6 +56,7 @@ const INGRESS_CONTROLLER_DIGEST = 'sha256:dddddddddddddddddddddddddddddddddddddd
 const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const MANAGED_RUNNER_DIGEST = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
 const AFSCP_DIGEST = 'sha256:abababababababababababababababababababababababababababababababab';
+const JUICEFS_MOUNT_PRIORITY_CLASS = 'juicefs-mount-priority-nonpreempting';
 
 function readAsbcpLockDigest(): string {
   const match = /^asbcp_source_image=.*@(sha256:[a-f0-9]{64})$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
@@ -639,6 +641,44 @@ function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
   };
 }
 
+function requireManifestResource(
+  documents: readonly KubernetesDocument[],
+  kind: string,
+  name: string,
+): KubernetesDocument {
+  const resource = documents.find((document) =>
+    document.kind === kind && asRecord(document.metadata).name === name,
+  );
+  if (!resource) {
+    throw new Error(`expected ${kind}/${name} in local-kind JuiceFS CSI manifest`);
+  }
+  return resource;
+}
+
+function requirePodTemplateContainer(resource: KubernetesDocument, containerName: string): Record<string, unknown> {
+  const templateSpec = asRecord(asRecord(asRecord(resource.spec).template).spec);
+  const containers = Array.isArray(templateSpec.containers) ? templateSpec.containers : [];
+  const container = containers.map(asRecord).find((candidate) => candidate.name === containerName);
+  if (!container) {
+    throw new Error(`expected ${String(asRecord(resource.metadata).name)}/${containerName} container`);
+  }
+  return container;
+}
+
+function containerEnvValue(container: Record<string, unknown>, name: string): string | undefined {
+  const env = Array.isArray(container.env) ? container.env : [];
+  const match = env.map(asRecord).find((entry) => entry.name === name);
+  return typeof match?.value === 'string' ? match.value : undefined;
+}
+
+function parseConfigMapYaml(configMap: KubernetesDocument, key: string): Record<string, unknown> {
+  const value = asRecord(configMap.data)[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`expected non-empty ConfigMap data.${key}`);
+  }
+  return asRecord(YAML.parse(value) as unknown);
+}
+
 describe('local-kind JuiceFS CSI manifest contract', () => {
   it('requires fsGroupPolicy File for RWX JuiceFS PVs and restricted non-root workloads', () => {
     const parsed = parseKubernetesDocuments(readFileSync(localKindJuicefsCsiManifestPath, 'utf8'));
@@ -653,6 +693,47 @@ describe('local-kind JuiceFS CSI manifest contract', () => {
       spec.fsGroupPolicy,
       'local-kind JuiceFS RWX PVs must apply fsGroup to root-owned payload mounts so non-root workspace-init can create workspace/.artifacts',
     ).toBe('File');
+  });
+
+  it('sets Mount Pods to non-preempting priority with explicit local-kind resource requests', () => {
+    const parsed = parseKubernetesDocuments(readFileSync(localKindJuicefsCsiManifestPath, 'utf8'));
+
+    expect(parsed.failures).toEqual([]);
+
+    const priorityClass = requireManifestResource(parsed.documents, 'PriorityClass', JUICEFS_MOUNT_PRIORITY_CLASS);
+    expect(priorityClass.apiVersion).toBe('scheduling.k8s.io/v1');
+    expect(priorityClass.value).toBe(1000000000);
+    expect(priorityClass.preemptionPolicy).toBe('Never');
+    expect(priorityClass.globalDefault).toBe(false);
+
+    for (const [kind, name] of [
+      ['StatefulSet', 'juicefs-csi-controller'],
+      ['DaemonSet', 'juicefs-csi-node'],
+    ] as const) {
+      const resource = requireManifestResource(parsed.documents, kind, name);
+      const plugin = requirePodTemplateContainer(resource, 'juicefs-plugin');
+
+      expect(containerEnvValue(plugin, 'JUICEFS_MOUNT_PRIORITY_NAME')).toBe(JUICEFS_MOUNT_PRIORITY_CLASS);
+      expect(containerEnvValue(plugin, 'JUICEFS_MOUNT_PREEMPTION_POLICY')).toBe('Never');
+    }
+
+    const configMap = requireManifestResource(parsed.documents, 'ConfigMap', 'juicefs-csi-driver-config');
+    const config = parseConfigMapYaml(configMap, 'config.yaml');
+    const mountPodPatch = config.mountPodPatch;
+    const mountPodPatches = Array.isArray(mountPodPatch) ? mountPodPatch : [];
+    const resourcePatch = mountPodPatches.map(asRecord).find((patch) => {
+      const requests = asRecord(asRecord(patch.resources).requests);
+      return typeof requests.cpu === 'string' && typeof requests.memory === 'string';
+    });
+    const requests = asRecord(asRecord(resourcePatch?.resources).requests);
+
+    expect(mountPodPatches.length).toBeGreaterThan(0);
+    expect(resourcePatch).toBeDefined();
+    expect('pvcSelector' in asRecord(resourcePatch)).toBe(false);
+    expect(requests).toEqual(expect.objectContaining({
+      cpu: '100m',
+      memory: '128Mi',
+    }));
   });
 });
 

@@ -808,11 +808,22 @@ function ensureOk(response: Response, fallbackMessage: string): void {
   }
 }
 
+function isReadExportWebDavReadinessStatus(response: Response): boolean {
+  return response.status === 401 || response.status === 403 || response.status === 409 || response.status === 412;
+}
+
 function ensureReadExportListOk(response: Response): void {
-  if (response.status === 401 || response.status === 403) {
+  if (isReadExportWebDavReadinessStatus(response)) {
     throw new Error(READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE);
   }
   ensureOk(response, 'file_library_list_failed');
+}
+
+function ensureReadExportObjectOk(response: Response, fallbackMessage: string): void {
+  if (response.status === 409 || response.status === 412) {
+    throw new Error(fallbackMessage);
+  }
+  ensureOk(response, fallbackMessage);
 }
 
 function basicAuthorization(access: AfscpExportAccessCredential): string {
@@ -1924,10 +1935,11 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     nextContinuationToken: string | null;
   }> {
     const path = input.path ? ensureDirectoryPath(input.path) : '';
-    for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
-      await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
-      try {
-        return await this.withExport(input, 'read_only', async (context) => {
+    const context = await this.createReadExportContextForList(input);
+    try {
+      for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
+        await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+        try {
           const response = await this.webdavFetch(context.access, path, {
             method: 'PROPFIND',
             headers: { Depth: '1' },
@@ -1966,7 +1978,30 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
               ? pageItems[pageItems.length - 1]?.path ?? null
               : null,
           };
-        });
+        } catch (error) {
+          const message = mapListEntriesStorageMessage(error);
+          if (
+            attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
+            && isRetryableListEntriesStorageMessage(message)
+          ) {
+            continue;
+          }
+          throw new Error(publicListEntriesStorageMessage(message));
+        }
+      }
+    } finally {
+      await this.revokeExportAfterUse(input, context);
+    }
+    throw new Error('file_library_list_failed');
+  }
+
+  private async createReadExportContextForList(
+    input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string; signal?: AbortSignal },
+  ): Promise<WebdavExportContext> {
+    for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
+      await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+      try {
+        return await this.createExportContext(input, 'read_only');
       } catch (error) {
         const message = mapListEntriesStorageMessage(error);
         if (
@@ -2107,22 +2142,21 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     signal?: AbortSignal;
   }): Promise<FileLibraryDownloadResult> {
     const objectPath = normalizeAfscpFileLibraryPath(input.objectPath);
+    const context = await this.createExportContext(input, 'read_only');
     for (let attempt = 0; attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length; attempt += 1) {
-      await waitForReadExportRetryDelay(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
-      const context = await this.createExportContext(input, 'read_only');
       try {
+        await waitForReadExportRetryDelay(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
         const response = await this.webdavFetch(context.access, objectPath, {
           method: 'GET',
           signal: input.signal,
         });
         if (
-          response.status === 404
+          (response.status === 404 || isReadExportWebDavReadinessStatus(response))
           && attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length - 1
         ) {
-          await this.revokeExportAfterUse(input, context);
           continue;
         }
-        ensureOk(response, 'file_library_download_failed');
+        ensureReadExportObjectOk(response, 'file_library_download_failed');
         if (!response.body) {
           throw new Error('file_library_download_failed');
         }
@@ -2152,6 +2186,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         throw error;
       }
     }
+    await this.revokeExportAfterUse(input, context);
     throw new Error('file_library_object_not_found');
   }
 
@@ -2161,14 +2196,27 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     signal?: AbortSignal;
   }): Promise<FileLibraryObjectMeta> {
     const objectPath = normalizeAfscpFileLibraryPath(input.objectPath);
-    return this.withExport(input, 'read_only', async (context) => {
-      const response = await this.webdavFetch(context.access, objectPath, {
-        method: 'HEAD',
-        signal: input.signal,
-      });
-      ensureOk(response, 'file_library_meta_failed');
-      return responseMeta(objectPath, response);
-    });
+    const context = await this.createExportContext(input, 'read_only');
+    try {
+      for (let attempt = 0; attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length; attempt += 1) {
+        await waitForReadExportRetryDelay(READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+        const response = await this.webdavFetch(context.access, objectPath, {
+          method: 'HEAD',
+          signal: input.signal,
+        });
+        if (
+          (response.status === 404 || isReadExportWebDavReadinessStatus(response))
+          && attempt < READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS.length - 1
+        ) {
+          continue;
+        }
+        ensureReadExportObjectOk(response, 'file_library_meta_failed');
+        return responseMeta(objectPath, response);
+      }
+    } finally {
+      await this.revokeExportAfterUse(input, context);
+    }
+    throw new Error('file_library_object_not_found');
   }
 
   private async reconcilePendingRepoDeleteOperation(input: {

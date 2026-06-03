@@ -989,8 +989,8 @@ describe('AFSCP File Library storage adapter', () => {
       nextContinuationToken: null,
     });
 
-    expect(client.createExport).toHaveBeenCalledTimes(2);
-    expect(client.revokeExport).toHaveBeenCalledTimes(2);
+    expect(client.createExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
   });
 
   it('retries a read export listing when AFSCP reports a repo mutation in progress', async () => {
@@ -1048,7 +1048,7 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.revokeExport).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])('retries a transient WebDAV %s read export list readiness failure', async (status) => {
+  it.each([401, 403, 409, 412])('retries a transient WebDAV %s read export list readiness failure', async (status) => {
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<D:multistatus xmlns:D="DAV:">',
@@ -1091,8 +1091,8 @@ describe('AFSCP File Library storage adapter', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(client.createExport).toHaveBeenCalledTimes(2);
-    expect(client.revokeExport).toHaveBeenCalledTimes(2);
+    expect(client.createExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).toHaveBeenCalledTimes(1);
   });
 
   it('maps persistent WebDAV read export list 401/403 readiness failures to list pending after bounded retries', async () => {
@@ -1121,8 +1121,8 @@ describe('AFSCP File Library storage adapter', () => {
       await assertion;
 
       expect(fetchMock).toHaveBeenCalledTimes(4);
-      expect(client.createExport).toHaveBeenCalledTimes(4);
-      expect(client.revokeExport).toHaveBeenCalledTimes(4);
+      expect(client.createExport).toHaveBeenCalledTimes(1);
+      expect(client.revokeExport).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -1243,17 +1243,17 @@ describe('AFSCP File Library storage adapter', () => {
       requestId: 'req_download_after_writer_release',
     });
 
-    expect(client.createExport).toHaveBeenCalledTimes(2);
-    expect(client.revokeExport).toHaveBeenCalledTimes(1);
-    expect(client.revokeExport).toHaveBeenCalledWith(expect.objectContaining({
-      namespaceId: 'ns_project_1',
-      exportId: 'export_flib_123',
-    }));
+    expect(client.createExport).toHaveBeenCalledTimes(1);
+    expect(client.revokeExport).not.toHaveBeenCalled();
     expect(result.meta.size_bytes).toBe(22);
 
     result.download.stream.resume();
     await finished(result.download.stream);
-    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalledWith(expect.objectContaining({
+      namespaceId: 'ns_project_1',
+      exportId: 'export_flib_123',
+    })));
+    await vi.waitFor(() => expect(client.revokeExport).toHaveBeenCalledTimes(1));
   });
 
   it('admits save point creation without polling terminal clone state or persisting raw ids in public state', async () => {

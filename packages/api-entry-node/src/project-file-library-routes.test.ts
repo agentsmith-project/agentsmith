@@ -94,6 +94,7 @@ function createStorageAdapter(
       ],
       nextContinuationToken: null,
     })),
+    invalidateListReadExport: vi.fn(async () => undefined),
     createFolder: vi.fn(async () => undefined),
     deletePaths: vi.fn(async (input) => input.paths.map((path) => ({ path, status: 'deleted' as const }))),
     moveEntry: vi.fn(async () => undefined),
@@ -1775,6 +1776,12 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       fileLibraryId: libraryId,
     });
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      requestId: 'req_entries_pending_release',
+    });
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
     expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
       path: 'workspace/.artifacts/',
@@ -1838,6 +1845,12 @@ describe('project-file-library-routes', () => {
     expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
       workspaceId: 'ws_default',
       fileLibraryId: libraryId,
+    });
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      requestId: 'req_entries_pending_slow_release',
     });
 
     releaseGate.resolve();

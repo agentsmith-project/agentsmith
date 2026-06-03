@@ -255,6 +255,10 @@ export interface FileLibraryStoragePort {
     items: FileLibraryEntry[];
     nextContinuationToken: string | null;
   }>;
+  invalidateListReadExport?(input: FileLibraryStorageLibraryInput & {
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<void>;
   createFolder(input: FileLibraryStorageLibraryInput & {
     folderPath: string;
     actorUserId: string;
@@ -2059,6 +2063,25 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       });
     }
     throw new Error('file_library_list_failed');
+  }
+
+  async invalidateListReadExport(input: FileLibraryStorageLibraryInput & {
+    requestId?: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    const mapping = await this.requireActiveMapping(input);
+    const cacheKey = readOnlyExportCacheKey(mapping);
+    const entry = this.readOnlyListExportCache.get(cacheKey);
+    if (!entry) {
+      return;
+    }
+    this.readOnlyListExportCache.delete(cacheKey);
+    clearTimer(entry.idleRevokeTimer);
+    entry.idleRevokeTimer = null;
+    entry.invalidated = true;
+    if (entry.activeCount === 0) {
+      await this.revokeExportAfterUse(input, entry.context);
+    }
   }
 
   private async acquireReadExportForList(

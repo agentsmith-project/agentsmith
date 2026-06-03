@@ -883,23 +883,23 @@ describe('current release boundary schema', () => {
     expect(contract.managed_runner_image).toMatchObject({
       id: 'agentsmith-runner',
       image:
-        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
-      digest: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+      digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
     });
     expect(contract.deploy_image_inventory).toContainEqual({
       id: 'managed_runner',
       image:
-        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
-      digest: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+      digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
       source: 'managed_runner_image',
       source_provenance: {
         producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
         normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
-        commit_sha: '35ada93cbba0102e9f099c3d47eeb8a48bc89e6f',
-        tag: 'release-locked-safety-35ada93',
-        run_id: '26714141935',
+        commit_sha: '008dbbd3b232485cb77f3cae585d38955a8bf9fb',
+        tag: 'release-locked-safety-008dbbd',
+        run_id: '26866339967',
         run_attempt: '1',
-        artifact_sha256: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
+        artifact_sha256: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
       },
     });
 
@@ -1995,7 +1995,7 @@ describe('current release boundary schema', () => {
       'gh-artifact://agentsmith-runner/release/501/runner-release-manifest.json';
     expectInvalid(
       validateRunnerReleaseManifest(nonCanonicalManifestArtifactUri),
-      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26714141935/runner-release-manifest.json',
+      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
     );
 
     const nonCanonicalPackageUri = cloneFixture('runner-release-manifest.valid.json');
@@ -2011,7 +2011,7 @@ describe('current release boundary schema', () => {
     const manifest = cloneFixture('runner-release-manifest.valid.json');
     const manifestImage = manifest.image as Record<string, unknown>;
     manifestImage.image =
-      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb';
+      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a';
     expectInvalid(
       validateRunnerReleaseManifest(manifest),
       'image.image tag "latest" is not allowed for canonical runner image refs.',
@@ -2020,7 +2020,7 @@ describe('current release boundary schema', () => {
     const lock = parseRunnerImageLockText(
       readTextFixture('agentsmith-runner-image.lock')
         .replace(
-          'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:',
+          'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:',
           'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:',
         ),
       'latest-agentsmith-runner-image.lock',

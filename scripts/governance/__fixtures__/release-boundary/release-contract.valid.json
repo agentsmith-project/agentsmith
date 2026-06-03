@@ -114,17 +114,17 @@
     },
     {
       "id": "managed_runner",
-      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
-      "digest": "sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
+      "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a",
+      "digest": "sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a",
       "source": "managed_runner_image",
       "source_provenance": {
         "producer_repo": "github.com/agentsmith-project/agentsmith-runner",
         "normalized_remote": "github.com/agentsmith-project/agentsmith-runner",
-        "commit_sha": "35ada93cbba0102e9f099c3d47eeb8a48bc89e6f",
-        "run_id": "26714141935",
+        "commit_sha": "008dbbd3b232485cb77f3cae585d38955a8bf9fb",
+        "run_id": "26866339967",
         "run_attempt": "1",
-        "tag": "release-locked-safety-35ada93",
-        "artifact_sha256": "sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb"
+        "tag": "release-locked-safety-008dbbd",
+        "artifact_sha256": "sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a"
       }
     }
   ],
@@ -246,14 +246,14 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:f84d7074b4ee249504c5972bf0f787a5f7f8220b402eaf47388e12fbe20a1fcf",
+    "subject_sha256": "sha256:4d16edd1f7353ac1d94e0462076af21f3789cd2f718b1c12fc7336c6feb86482",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
     "run_attempt": "1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:6a0219d24f309203ad5d7e7d5b9971423cd2ec60700c2b730a2ffdd5cf3b574f",
+    "artifact_sha256": "sha256:eb1578ed45606cf7ff7005c4f8308364d7461c087981f486cd1ceee8d14127e9",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",
@@ -261,7 +261,7 @@
   },
   "managed_runner_image": {
     "id": "agentsmith-runner",
-    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb",
-    "digest": "sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb"
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a",
+    "digest": "sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a"
   }
 }

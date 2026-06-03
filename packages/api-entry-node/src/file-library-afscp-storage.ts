@@ -34,6 +34,9 @@ const READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS = [
   5_000,
   2_000,
 ] as const;
+const READ_EXPORT_LIST_TTL_SECONDS = 240;
+const READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS = 90_000;
+const READ_EXPORT_LIST_CACHE_MIN_REMAINING_MS = 15_000;
 const READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE = 'file_library_read_export_webdav_not_ready';
 
 export type FileLibraryStorageOperationStatus =
@@ -305,6 +308,20 @@ interface WebdavExportContext {
   exportId: string;
 }
 
+interface CachedReadExportEntry {
+  context: WebdavExportContext;
+  activeCount: number;
+  expiresAtMs: number;
+  idleRevokeTimer: ReturnType<typeof setTimeout> | null;
+  invalidated: boolean;
+}
+
+interface CachedReadExportLease {
+  cacheKey: string;
+  entry: CachedReadExportEntry;
+  context: WebdavExportContext;
+}
+
 interface AfscpFileLibraryStorageAdapterOptions {
   client: AfscpProductClientPort;
   mappingRepo: JsonDocProjectFileLibraryAfscpMappingRepo;
@@ -383,6 +400,17 @@ const WRITER_BLOCKER_OPERATION_CODES = new Set([
 
 function mappingId(input: FileLibraryStorageLibraryInput): string {
   return `${input.workspaceId}:${input.projectId}:${input.libraryId}`;
+}
+
+function readOnlyExportCacheKey(mapping: ProjectFileLibraryAfscpMapping): string {
+  return [
+    mapping.workspace_id,
+    mapping.project_id,
+    mapping.library_id,
+    mapping.namespace_id,
+    mapping.repo_id,
+    String(mapping.project_storage_generation),
+  ].join(':');
 }
 
 function normalizeOperationStatus(value: unknown): FileLibraryStorageOperationStatus {
@@ -838,6 +866,30 @@ function basicAuthorization(access: AfscpExportAccessCredential): string {
   return `Basic ${Buffer.from(`${access.auth.username}:${access.auth.password}`, 'utf8').toString('base64')}`;
 }
 
+function readExportExpiresAtMs(access: AfscpExportAccessCredential): number {
+  const parsed = Date.parse(access.expires_at);
+  return Number.isFinite(parsed)
+    ? parsed
+    : Date.now() + READ_EXPORT_LIST_TTL_SECONDS * 1000;
+}
+
+function clearTimer(timer: ReturnType<typeof setTimeout> | null): void {
+  if (timer) {
+    clearTimeout(timer);
+  }
+}
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (
+    typeof timer === 'object'
+    && timer !== null
+    && 'unref' in timer
+    && typeof timer.unref === 'function'
+  ) {
+    timer.unref();
+  }
+}
+
 async function waitForReadExportRetryDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
   if (delayMs <= 0) return;
   if (signal?.aborted) {
@@ -1159,6 +1211,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
   private readonly projectAfscpNamespaceStore: ProjectAfscpNamespaceStore;
   private readonly resourceOwnershipStore: ProjectAfscpResourceOwnershipStore;
   private readonly fetchFn: typeof fetch;
+  private readonly readOnlyListExportCache = new Map<string, CachedReadExportEntry>();
 
   static disabled(): FileLibraryStoragePort {
     return new DisabledFileLibraryStorageAdapter();
@@ -1943,12 +1996,13 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     nextContinuationToken: string | null;
   }> {
     const path = input.path ? ensureDirectoryPath(input.path) : '';
-    const context = await this.createReadExportContextForList(input);
+    const lease = await this.acquireReadExportForList(input);
+    let keepReadExportAlive = false;
     try {
       for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
         await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
         try {
-          const response = await this.webdavFetch(context.access, path, {
+          const response = await this.webdavFetch(lease.context.access, path, {
             method: 'PROPFIND',
             headers: { Depth: '1' },
             signal: input.signal,
@@ -1994,22 +2048,48 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
           ) {
             continue;
           }
-          throw new Error(publicListEntriesStorageMessage(message));
+          const publicMessage = publicListEntriesStorageMessage(message);
+          keepReadExportAlive = publicMessage === 'file_library_list_pending';
+          throw new Error(publicMessage);
         }
       }
     } finally {
-      await this.revokeExportAfterUse(input, context);
+      await this.releaseReadExportForList(input, lease, {
+        keepAlive: keepReadExportAlive,
+      });
     }
     throw new Error('file_library_list_failed');
   }
 
-  private async createReadExportContextForList(
+  private async acquireReadExportForList(
     input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string; signal?: AbortSignal },
-  ): Promise<WebdavExportContext> {
+  ): Promise<CachedReadExportLease> {
+    const mapping = await this.requireActiveMapping(input);
+    const cacheKey = readOnlyExportCacheKey(mapping);
+    const cached = await this.getUsableReadExportForList(input, cacheKey);
+    if (cached) {
+      return cached;
+    }
     for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
       await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
       try {
-        return await this.createExportContext(input, 'read_only');
+        const context = await this.createExportContext(input, 'read_only', {
+          mapping,
+          ttlSeconds: READ_EXPORT_LIST_TTL_SECONDS,
+        });
+        const entry: CachedReadExportEntry = {
+          context,
+          activeCount: 1,
+          expiresAtMs: readExportExpiresAtMs(context.access),
+          idleRevokeTimer: null,
+          invalidated: false,
+        };
+        this.readOnlyListExportCache.set(cacheKey, entry);
+        return {
+          cacheKey,
+          entry,
+          context,
+        };
       } catch (error) {
         const message = mapListEntriesStorageMessage(error);
         if (
@@ -2022,6 +2102,75 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       }
     }
     throw new Error('file_library_list_failed');
+  }
+
+  private async getUsableReadExportForList(
+    input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string },
+    cacheKey: string,
+  ): Promise<CachedReadExportLease | null> {
+    const entry = this.readOnlyListExportCache.get(cacheKey);
+    if (!entry) {
+      return null;
+    }
+    const hasEnoughTime = entry.expiresAtMs - Date.now() > READ_EXPORT_LIST_CACHE_MIN_REMAINING_MS;
+    if (entry.invalidated || !hasEnoughTime) {
+      this.readOnlyListExportCache.delete(cacheKey);
+      clearTimer(entry.idleRevokeTimer);
+      entry.idleRevokeTimer = null;
+      entry.invalidated = true;
+      if (entry.activeCount === 0) {
+        await this.revokeExportAfterUse(input, entry.context);
+      }
+      return null;
+    }
+    clearTimer(entry.idleRevokeTimer);
+    entry.idleRevokeTimer = null;
+    entry.activeCount += 1;
+    return {
+      cacheKey,
+      entry,
+      context: entry.context,
+    };
+  }
+
+  private async releaseReadExportForList(
+    input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string },
+    lease: CachedReadExportLease,
+    outcome: { keepAlive: boolean },
+  ): Promise<void> {
+    const entry = lease.entry;
+    entry.activeCount = Math.max(0, entry.activeCount - 1);
+    const current = this.readOnlyListExportCache.get(lease.cacheKey);
+    const isCurrent = current === entry;
+    const hasEnoughTime = entry.expiresAtMs - Date.now() > READ_EXPORT_LIST_CACHE_MIN_REMAINING_MS;
+    if (!outcome.keepAlive || !hasEnoughTime || entry.invalidated) {
+      entry.invalidated = true;
+      clearTimer(entry.idleRevokeTimer);
+      entry.idleRevokeTimer = null;
+      if (isCurrent) {
+        this.readOnlyListExportCache.delete(lease.cacheKey);
+      }
+      if (entry.activeCount === 0) {
+        await this.revokeExportAfterUse(input, entry.context);
+      }
+      return;
+    }
+    if (!isCurrent || entry.activeCount > 0) {
+      return;
+    }
+    entry.idleRevokeTimer = setTimeout(() => {
+      if (
+        this.readOnlyListExportCache.get(lease.cacheKey) !== entry
+        || entry.activeCount > 0
+      ) {
+        return;
+      }
+      this.readOnlyListExportCache.delete(lease.cacheKey);
+      entry.invalidated = true;
+      entry.idleRevokeTimer = null;
+      void this.revokeExportAfterUse(input, entry.context);
+    }, READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS);
+    unrefTimer(entry.idleRevokeTimer);
   }
 
   async createFolder(input: FileLibraryStorageLibraryInput & {
@@ -2527,13 +2676,17 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
   private async createExportContext(
     input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string; signal?: AbortSignal },
     mode: AfscpExportMode,
+    options: {
+      mapping?: ProjectFileLibraryAfscpMapping;
+      ttlSeconds?: number;
+    } = {},
   ): Promise<WebdavExportContext> {
-    const mapping = await this.requireActiveMapping(input);
+    const mapping = options.mapping ?? await this.requireActiveMapping(input);
     const exportEnvelope = await this.client.createExport({
       namespaceId: mapping.namespace_id,
       repoId: mapping.repo_id,
       mode,
-      ttlSeconds: 60,
+      ttlSeconds: options.ttlSeconds ?? 60,
       correlationId: resolveCorrelationId(input.requestId, 'file-library-export'),
       idempotencyKey: safeIdempotencyKey(['file-library', input.libraryId, mode, randomUUID().replace(/-/g, '').slice(0, 12)]),
       actor: { type: 'user', id: input.actorUserId ?? 'system' },

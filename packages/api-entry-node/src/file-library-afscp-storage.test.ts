@@ -143,7 +143,7 @@ function createProductClient(
           created_by_actor: { type: 'user', id: 'user_1' },
           created_at: '2026-05-09T00:00:00.000Z',
           updated_at: '2026-05-09T00:00:00.000Z',
-          expires_at: '2026-05-09T01:00:00.000Z',
+          expires_at: '2099-05-09T01:00:00.000Z',
           revoked_at: null,
           last_accessed_at: null,
           active_request_count: 0,
@@ -163,7 +163,7 @@ function createProductClient(
             password: 'one-time-webdav-secret',
           },
           mode: 'read_write',
-          expires_at: '2026-05-09T01:00:00.000Z',
+          expires_at: '2099-05-09T01:00:00.000Z',
         },
       },
       error: null,
@@ -1116,6 +1116,82 @@ describe('AFSCP File Library storage adapter', () => {
       await assertion;
 
       expect(fetchMock).toHaveBeenCalledTimes(6);
+      expect(client.createExport).toHaveBeenCalledTimes(1);
+      expect(client.revokeExport).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(client.revokeExport).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a pending read export warm for the next listing request', async () => {
+    vi.useFakeTimers();
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/restored.svg</D:href>',
+      '<D:propstat><D:prop><D:getcontentlength>42</D:getcontentlength><D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response(xml, {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml' },
+      })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    try {
+      const firstResult = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_permission_first',
+      });
+      const firstAssertion = expect(firstResult).rejects.toThrow('file_library_list_pending');
+      await vi.advanceTimersByTimeAsync(12_000);
+      await firstAssertion;
+
+      expect(client.createExport).toHaveBeenCalledTimes(1);
+      expect(client.revokeExport).not.toHaveBeenCalled();
+
+      await expect(adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_permission_second',
+      })).resolves.toMatchObject({
+        items: [
+          {
+            kind: 'file',
+            path: 'workspace/.artifacts/restored.svg',
+            name: 'restored.svg',
+          },
+        ],
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(7);
       expect(client.createExport).toHaveBeenCalledTimes(1);
       expect(client.revokeExport).toHaveBeenCalledTimes(1);
     } finally {

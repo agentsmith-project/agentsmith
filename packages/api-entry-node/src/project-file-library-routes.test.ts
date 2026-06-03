@@ -1789,6 +1789,73 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('keeps entries pending while slow idle runtime release continues in the background', async () => {
+    const storageAdapter = createStorageAdapter({
+      listEntries: vi.fn(async () => {
+        throw new Error('file_library_list_pending');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_entries_pending_slow_release',
+      title: 'Entries pending slow release task',
+    });
+    const releaseGate = createDeferred<void>();
+    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      await releaseGate.promise;
+      runtimeBinding = null;
+    });
+
+    const entriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_pending_slow_release' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: entriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
+    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_list_pending',
+    });
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+
+    releaseGate.resolve();
+    await flushAsyncWork(5);
+    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      bindingState: 'releasing',
+      correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
+        beginCorrelationId: buildRuntimeAccessReleaseBeginCorrelationId({
+          requestId: 'req_entries_pending_slow_release',
+        }),
+      }),
+    });
+  });
+
   it('deletes ready libraries through the storage adapter and rolls back when content remains', async () => {
     const nonEmptyAdapter = createStorageAdapter({
       assertEmpty: vi.fn(async () => {

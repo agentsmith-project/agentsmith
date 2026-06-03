@@ -1553,6 +1553,8 @@ type RuntimeAccessReleaseRouteResponse = {
   body: Record<string, unknown>;
 };
 
+const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS = 100;
+
 async function continueRuntimeAccessReleaseAfterFence(input: {
   deps: NodeApiDeps;
   bindingRepo: JsonDocTaskFileLibraryBindingRepo;
@@ -2227,6 +2229,23 @@ async function releaseRuntimeAccessForFileLibrary(input: {
 function runtimeAccessReleaseCompleted(response: RuntimeAccessReleaseRouteResponse): boolean {
   return response.statusCode === 200
     && response.body.runtime_access_status === 'released';
+}
+
+async function raceEntriesPendingRuntimeRelease(
+  releasePromise: Promise<RuntimeAccessReleaseRouteResponse>,
+): Promise<RuntimeAccessReleaseRouteResponse | null> {
+  const guardedReleasePromise = releasePromise.catch(() => null);
+  const timeoutPromise = new Promise<null>((resolve) => {
+    const timeout = setTimeout(
+      () => resolve(null),
+      FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS,
+    );
+    const maybeNodeTimeout = timeout as unknown as { unref?: () => void };
+    if (typeof maybeNodeTimeout.unref === 'function') {
+      maybeNodeTimeout.unref();
+    }
+  });
+  return Promise.race([guardedReleasePromise, timeoutPromise]);
 }
 
 function isFileLibraryListPendingRouteError(input: {
@@ -3424,15 +3443,17 @@ export async function handleProjectFileLibraryRoutes(args: {
     } catch (error) {
       let mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
-        const releaseResponse = await releaseRuntimeAccessForFileLibrary({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-          actorUserId: user.id,
-          requestId,
-        });
-        if (runtimeAccessReleaseCompleted(releaseResponse)) {
+        const releaseResponse = await raceEntriesPendingRuntimeRelease(
+          releaseRuntimeAccessForFileLibrary({
+            deps,
+            workspaceId,
+            projectId,
+            libraryId,
+            actorUserId: user.id,
+            requestId,
+          }),
+        );
+        if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
           try {
             const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
             json(res, 200, {

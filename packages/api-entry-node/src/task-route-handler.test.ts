@@ -10421,6 +10421,257 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  async function createManagedTerminalHolderFixture(input: {
+    taskId: string;
+    releasePod?: ReturnType<typeof vi.fn>;
+  }): Promise<{
+    deps: ReturnType<typeof createDefaultNodeApiDeps>;
+    coordinator: InternalWorkloadCoordinator;
+    releasePod: ReturnType<typeof vi.fn>;
+    createTerminalSession: () => Promise<{ terminal_session_id: string }>;
+    closeTerminalSession: (terminalSessionId: string) => Promise<{
+      statusCode: number;
+      end: ReturnType<typeof vi.fn>;
+      json: ReturnType<typeof vi.fn>;
+    }>;
+  }> {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = input.releasePod ?? vi.fn(async () => undefined);
+    const now = new Date().toISOString();
+    const coordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    });
+    deps.internalWorkloadCoordinator = coordinator as never;
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async (bindingInput: {
+        workspaceId: string;
+        projectId: string;
+        fileLibraryId: string;
+        taskId: string;
+      }) => ({
+        binding: {
+          id: `bind_${bindingInput.taskId}`,
+          workspace_id: bindingInput.workspaceId,
+          project_id: bindingInput.projectId,
+          file_library_id: bindingInput.fileLibraryId,
+          provider: 'afscp',
+          status: 'ready',
+          task_home_binding_id: `bind_${bindingInput.taskId}`,
+          task_home_path: `/home/${bindingInput.taskId}`,
+          workspace_path: `/home/${bindingInput.taskId}/workspace`,
+          artifacts_path: `/home/${bindingInput.taskId}/workspace/.artifacts`,
+          library_root_path: '.',
+          created_at: now,
+          updated_at: now,
+        },
+        workspaceMount: {
+          bindingId: `bind_${bindingInput.taskId}`,
+          mountPath: `/home/${bindingInput.taskId}`,
+          taskHomePath: `/home/${bindingInput.taskId}`,
+          workspacePath: `/home/${bindingInput.taskId}/workspace`,
+          artifactsPath: `/home/${bindingInput.taskId}/workspace/.artifacts`,
+          subPath: `agent-tasks/${bindingInput.taskId}`,
+          fileLibraryId: bindingInput.fileLibraryId,
+        },
+      })),
+      deleteWorkspaceBinding: vi.fn(async () => undefined),
+    } as never;
+    const { runner } = await seedDefaultManagedRunner(deps);
+    await grantProjectPermissionsForUser(deps, 'user_1', [
+      'project:agent_task:use',
+      'project:agent_task:terminal',
+    ]);
+    const libraryId = `lib_${input.taskId}`;
+    await deps.docStore.upsert('project_file_libraries', libraryId, createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: `${input.taskId} Workspace`,
+      now,
+    }));
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), input.taskId, {
+      id: input.taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: `${input.taskId} terminal holder task`,
+      bound_runner_id: runner.id,
+      bound_runner_kind: 'managed',
+      runner_binding_source: 'default_managed',
+      bound_at: now,
+      bound_by_user_id: 'user_1',
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: `${input.taskId} Workspace`,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const createTerminalSession = async (): Promise<{ terminal_session_id: string }> => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: input.taskId,
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${input.taskId}/terminal/sessions`,
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
+      })).resolves.toBe(true);
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      return json.mock.calls[0]?.[2] as { terminal_session_id: string };
+    };
+
+    const closeTerminalSession = async (
+      terminalSessionId: string,
+    ): Promise<{ statusCode: number; end: ReturnType<typeof vi.fn>; json: ReturnType<typeof vi.fn> }> => {
+      const res = { statusCode: 0, end: vi.fn() };
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSession',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: input.taskId,
+          terminalSessionId,
+        } as never,
+        method: 'DELETE',
+        req: { headers: {}, url: '' } as never,
+        res: res as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+      return { ...res, json };
+    };
+
+    return {
+      deps,
+      coordinator,
+      releasePod,
+      createTerminalSession,
+      closeTerminalSession,
+    };
+  }
+
+  it('acquires a terminal_session holder when a managed terminal session is created', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const fixture = await createManagedTerminalHolderFixture({
+      taskId: 'task_terminal_holder_acquire',
+    });
+    try {
+      const createdSession = await fixture.createTerminalSession();
+
+      expect(fixture.coordinator.readSnapshotForTests()).toEqual([
+        {
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          workloadId: sanitizeWorkloadId('task_terminal_holder_acquire'),
+          holders: [`terminal_session:${createdSession.terminal_session_id}`],
+          hardTeardownRequested: false,
+        },
+      ]);
+      expect(fixture.releasePod).not.toHaveBeenCalled();
+    } finally {
+      await fixture.coordinator.shutdown();
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('releases the terminal_session holder when a managed terminal session closes', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const fixture = await createManagedTerminalHolderFixture({
+      taskId: 'task_terminal_holder_release',
+    });
+    try {
+      const createdSession = await fixture.createTerminalSession();
+      const res = await fixture.closeTerminalSession(createdSession.terminal_session_id);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(204);
+      expect(fixture.coordinator.readSnapshotForTests()).toEqual([]);
+      expect(fixture.releasePod).toHaveBeenCalledTimes(1);
+      expect(fixture.releasePod).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        sanitizeWorkloadId('task_terminal_holder_release'),
+      );
+    } finally {
+      await fixture.coordinator.shutdown();
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('keeps hard teardown pending while a managed terminal_session holder is live', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const releaseDrain = createDeferred<void>();
+    const releasePod = vi.fn(async () => {
+      await releaseDrain.promise;
+    });
+    const fixture = await createManagedTerminalHolderFixture({
+      taskId: 'task_terminal_holder_blocks_teardown',
+      releasePod,
+    });
+    try {
+      const createdSession = await fixture.createTerminalSession();
+      const teardown = fixture.coordinator.requestHardTeardown({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: sanitizeWorkloadId('task_terminal_holder_blocks_teardown'),
+      });
+
+      await vi.waitFor(() => {
+        expect(fixture.coordinator.readSnapshotForTests()).toEqual([
+          {
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            workloadId: sanitizeWorkloadId('task_terminal_holder_blocks_teardown'),
+            holders: [`terminal_session:${createdSession.terminal_session_id}`],
+            hardTeardownRequested: true,
+          },
+        ]);
+      });
+      expect(releasePod).not.toHaveBeenCalled();
+
+      const closePromise = fixture.closeTerminalSession(createdSession.terminal_session_id);
+      await vi.waitFor(() => {
+        expect(releasePod).toHaveBeenCalledTimes(1);
+      });
+      releaseDrain.resolve();
+      await expect(teardown).resolves.toBeUndefined();
+      const closeResult = await closePromise;
+      expect(closeResult.json).not.toHaveBeenCalled();
+      expect(closeResult.statusCode).toBe(204);
+      expect(fixture.coordinator.readSnapshotForTests()).toEqual([]);
+      expect(releasePod).toHaveBeenCalledTimes(1);
+    } finally {
+      await fixture.coordinator.shutdown();
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('passes the terminal runtime dispatch abort signal into managed terminal readiness dependencies', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';

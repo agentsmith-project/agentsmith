@@ -412,6 +412,22 @@ function isTerminalPodPhase(phase: string | undefined): boolean {
   return phase === 'Failed' || phase === 'Succeeded' || phase === 'Completed';
 }
 
+function isRunningPodStatus(status: PodStatusResponse): boolean {
+  return status.phase === 'Running';
+}
+
+function shouldCreateOrEnsurePodFromStatus(status: PodStatusResponse): boolean {
+  const phase = status.phase.trim().toLowerCase();
+  const message = status.message?.trim().toLowerCase() ?? '';
+  return phase === 'offline'
+    || phase === 'unknown'
+    || phase === 'not_found'
+    || message.includes('pod_not_found')
+    || message.includes('pod missing')
+    || message.includes('current_status_unavailable')
+    || message.includes('current status unavailable');
+}
+
 function requireWorkspaceMount(workspaceMount: InternalAgentWorkspaceMount | undefined): InternalAgentWorkspaceMount {
   const bindingId = typeof workspaceMount?.bindingId === 'string' ? workspaceMount.bindingId.trim() : '';
   if (!bindingId) {
@@ -641,15 +657,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       if (!existing) break;
       await this.waitForExistingLock(existing, signal);
       throwIfAborted(signal);
-      if (await this.isReadyForSession(input.agent.id, input.sessionId)) {
-        await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, input.agent, input.sessionId, undefined, signal);
+      if (await this.tryReadySessionFastPath(workspaceId, projectId, workloadId, input.agent, input.sessionId, signal)) {
         return;
       }
     }
 
     throwIfAborted(signal);
-    if (await this.isReadyForSession(agent.id, input.sessionId)) {
-      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, input.sessionId, undefined, signal);
+    if (await this.tryReadySessionFastPath(workspaceId, projectId, workloadId, agent, input.sessionId, signal)) {
       return;
     }
 
@@ -1052,6 +1066,45 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     return this.agentExecution.getAgentOnlineState(agentId);
   }
 
+  private async tryReadySessionFastPath(
+    workspaceId: string,
+    projectId: string,
+    workloadId: string,
+    agent: AgentRecord,
+    sessionId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (!(await this.isReadyForSession(agent.id, sessionId))) {
+      return false;
+    }
+    throwIfAborted(signal);
+    const config = readInternalConfig(agent);
+    let status: PodStatusResponse;
+    try {
+      status = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+        signal,
+      );
+    } catch {
+      throwIfAborted(signal);
+      return false;
+    }
+    throwIfAborted(signal);
+    if (!isRunningPodStatus(status)) {
+      return false;
+    }
+    await this.assertReadySessionRunnerHealth(
+      workspaceId,
+      projectId,
+      workloadId,
+      agent,
+      sessionId,
+      { config, status },
+      signal,
+    );
+    return true;
+  }
+
   private async doEnsure(
     workspaceId: string,
     projectId: string,
@@ -1062,8 +1115,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal);
-    if (await this.isReadyForSession(agent.id, sessionId)) {
-      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, undefined, signal);
+    if (await this.tryReadySessionFastPath(workspaceId, projectId, workloadId, agent, sessionId, signal)) {
       return;
     }
     throwIfAborted(signal);
@@ -1124,7 +1176,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       status = { phase: 'offline' };
     }
 
-    if (status.phase === 'offline') {
+    if (shouldCreateOrEnsurePodFromStatus(status)) {
       throwIfAborted(signal);
       let ensureResponse: SandboxPodEnsureResponse | undefined;
       const createBody: SandboxPodCreateBody = {

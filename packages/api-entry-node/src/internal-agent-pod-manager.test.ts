@@ -2188,8 +2188,18 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).not.toHaveBeenCalled();
   });
 
-  it('treats local dispatch authority as ready even if the weaker local session-online boolean has not caught up yet', async () => {
-    const createOrEnsurePod = vi.fn();
+  it('does not treat local dispatch authority as ready when ASBCP current workload status is offline', async () => {
+    const offlineCurrentStatus = {
+      phase: 'offline',
+      message: 'pod_not_found_current_status',
+      status_source: 'current_status',
+      delete_terminal_confirmed: false,
+    } as const;
+    const getPodStatus = vi.fn()
+      .mockResolvedValueOnce(offlineCurrentStatus)
+      .mockResolvedValueOnce(offlineCurrentStatus)
+      .mockResolvedValueOnce(offlineCurrentStatus);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
     const exec = vi.fn().mockResolvedValue({
       exit_code: 0,
       stdout: '123 agentsmith-runner --runner-instance-id runner_instance_id=ag_1:task_1:task_1\n',
@@ -2199,7 +2209,7 @@ describe('internal-agent-pod-manager', () => {
     const manager = new InternalAgentPodManagerImpl(
       {
         checkReady: vi.fn().mockResolvedValue(undefined),
-        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        getPodStatus,
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
@@ -2226,8 +2236,9 @@ describe('internal-agent-pod-manager', () => {
         workspaceMount: buildWorkspaceMount(),
       }),
     ).resolves.toBeUndefined();
+    expect(getPodStatus).toHaveBeenCalledTimes(3);
     expect(exec).toHaveBeenCalledTimes(1);
-    expect(createOrEnsurePod).not.toHaveBeenCalled();
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a ready session when the live pod image digest differs from the expected runner image digest', async () => {

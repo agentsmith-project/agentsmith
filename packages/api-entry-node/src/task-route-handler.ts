@@ -2121,6 +2121,86 @@ function readManagedTerminalRuntimeDispatchContext(
   };
 }
 
+type ManagedTerminalLifecycleSession = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+  agentId: string;
+  runtimeDispatchContext?: Record<string, unknown>;
+};
+
+type ManagedTerminalSessionWorkloadHolder = {
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+  holderKind: 'terminal_session';
+  holderId: string;
+};
+
+function buildManagedTerminalSessionWorkloadHolder(
+  session: ManagedTerminalLifecycleSession,
+): ManagedTerminalSessionWorkloadHolder | null {
+  const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);
+  if (!runtimeDispatchContext) return null;
+  return {
+    workspaceId: session.workspaceId,
+    projectId: session.projectId,
+    workloadId: sanitizeWorkloadId(session.taskId),
+    holderKind: 'terminal_session',
+    holderId: session.id,
+  };
+}
+
+async function acquireManagedTerminalSessionWorkloadHolder(
+  deps: NodeApiDeps,
+  session: ManagedTerminalLifecycleSession,
+): Promise<void> {
+  const holder = buildManagedTerminalSessionWorkloadHolder(session);
+  if (!holder) return;
+  await resolveInternalWorkloadCoordinator(deps)?.acquireHolder(holder);
+}
+
+function hasPendingHardTeardownForTerminalHolder(
+  coordinator: ReturnType<typeof resolveInternalWorkloadCoordinator>,
+  holder: ManagedTerminalSessionWorkloadHolder,
+): boolean {
+  const snapshotReader = coordinator as {
+    readSnapshotForTests?: () => Array<{
+      workspaceId: string;
+      projectId: string;
+      workloadId: string;
+      holders: string[];
+      hardTeardownRequested: boolean;
+    }>;
+  } | undefined;
+  if (typeof snapshotReader?.readSnapshotForTests !== 'function') {
+    return false;
+  }
+  const holderKey = `${holder.holderKind}:${holder.holderId}`;
+  return snapshotReader.readSnapshotForTests().some((snapshot) => (
+    snapshot.workspaceId === holder.workspaceId
+    && snapshot.projectId === holder.projectId
+    && snapshot.workloadId === holder.workloadId
+    && snapshot.hardTeardownRequested
+    && snapshot.holders.includes(holderKey)
+  ));
+}
+
+async function releaseManagedTerminalSessionWorkloadHolder(
+  deps: NodeApiDeps,
+  session: ManagedTerminalLifecycleSession,
+): Promise<boolean> {
+  const holder = buildManagedTerminalSessionWorkloadHolder(session);
+  if (!holder) return false;
+  const coordinator = resolveInternalWorkloadCoordinator(deps);
+  if (!coordinator) return false;
+  const hardTeardownWasPending = hasPendingHardTeardownForTerminalHolder(coordinator, holder);
+  await coordinator.releaseHolder(holder);
+  return hardTeardownWasPending;
+}
+
 async function ensureManagedTerminalRuntimeReady(
   deps: NodeApiDeps,
   session: {
@@ -2519,11 +2599,13 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
   const service = deps.notebookTerminalService as NodeApiDeps['notebookTerminalService'] & {
     registerLifecycleHooks?: (key: string, hooks: {
       onSessionCreated?: (session: {
+        id: string;
         workspaceId: string;
         projectId: string;
         taskId: string;
         userId: string;
         agentId: string;
+        runtimeDispatchContext?: Record<string, unknown>;
       }) => void | Promise<void>;
       beforeSessionRuntimeDispatch?: (
         session: {
@@ -2538,6 +2620,7 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
         context: { signal: AbortSignal },
       ) => void | Promise<void>;
       onSessionClosed?: (session: {
+        id: string;
         workspaceId: string;
         projectId: string;
         taskId: string;
@@ -2554,19 +2637,37 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
     return;
   }
   service.registerLifecycleHooks('task_route_handler_internal_terminal_workload', {
+    onSessionCreated: async (session) => {
+      await acquireManagedTerminalSessionWorkloadHolder(deps, session);
+    },
     beforeSessionRuntimeDispatch: async (session, context) => {
       await ensureManagedTerminalRuntimeReady(deps, session, context.signal);
     },
     onSessionClosed: async (session) => {
       const runtimeDispatchContext = readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext);
-      await maybeReleaseInternalAgentWorkload(deps, {
+      const identity = {
         workspaceId: session.workspaceId,
         projectId: session.projectId,
         taskId: session.taskId,
         userId: session.userId,
         agentId: session.agentId,
         workspaceFileLibraryId: runtimeDispatchContext?.managedInternalAgent.workspaceFileLibraryId ?? null,
-      });
+      };
+      const hardTeardownWasPending = await releaseManagedTerminalSessionWorkloadHolder(deps, session);
+      if (hardTeardownWasPending) {
+        try {
+          await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
+        } catch (err) {
+          console.warn(
+            '[sandbox] release internal workspace binding failed for task %s: %s',
+            identity.taskId,
+            safeTaskRouteDiagnosticMessage(err),
+          );
+          throw buildInternalWorkloadReleasePendingError(identity, err);
+        }
+        return;
+      }
+      await maybeReleaseInternalAgentWorkload(deps, identity);
     },
   });
   registeredInternalTerminalLifecycleServices.add(service);

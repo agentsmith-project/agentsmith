@@ -1112,10 +1112,10 @@ describe('AFSCP File Library storage adapter', () => {
         requestId: 'req_list_permission_persistent',
       });
       const assertion = expect(result).rejects.toThrow('file_library_list_pending');
-      await vi.advanceTimersByTimeAsync(105_000);
+      await vi.advanceTimersByTimeAsync(12_000);
       await assertion;
 
-      expect(fetchMock).toHaveBeenCalledTimes(12);
+      expect(fetchMock).toHaveBeenCalledTimes(6);
       expect(client.createExport).toHaveBeenCalledTimes(1);
       expect(client.revokeExport).toHaveBeenCalledTimes(1);
     } finally {

@@ -3443,12 +3443,6 @@ export async function handleProjectFileLibraryRoutes(args: {
     } catch (error) {
       let mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
-        await deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
-          workspaceId,
-          projectId,
-          libraryId,
-          requestId,
-        });
         const releaseResponse = await raceEntriesPendingRuntimeRelease(
           releaseRuntimeAccessForFileLibrary({
             deps,
@@ -3460,6 +3454,12 @@ export async function handleProjectFileLibraryRoutes(args: {
           }),
         );
         if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
+          await deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
+            workspaceId,
+            projectId,
+            libraryId,
+            requestId,
+          });
           try {
             const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
             json(res, 200, {

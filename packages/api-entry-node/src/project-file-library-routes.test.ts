@@ -1796,6 +1796,78 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('keeps the post-release read export alive while entries remain pending', async () => {
+    const storageAdapter = createStorageAdapter({
+      listEntries: vi.fn(async () => {
+        throw new Error('file_library_list_pending');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_entries_post_release_pending',
+      title: 'Entries post release pending task',
+    });
+    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      runtimeBinding = null;
+    });
+
+    const firstEntriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_post_release_pending_first' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: firstEntriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_list_pending',
+    });
+
+    const secondEntriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_post_release_pending_second' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: secondEntriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(3);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_list_pending',
+    });
+  });
+
   it('keeps entries pending while slow idle runtime release continues in the background', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => {
@@ -1846,12 +1918,7 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       fileLibraryId: libraryId,
     });
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      requestId: 'req_entries_pending_slow_release',
-    });
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
 
     releaseGate.resolve();
     await flushAsyncWork(5);

@@ -1719,6 +1719,76 @@ describe('project-file-library-routes', () => {
     },
   );
 
+  it('releases idle task runtime access and retries entries when list is pending', async () => {
+    const storageAdapter = createStorageAdapter({
+      listEntries: vi.fn()
+        .mockRejectedValueOnce(new Error('file_library_list_pending'))
+        .mockResolvedValueOnce({
+          path: 'workspace/.artifacts/',
+          items: [
+            {
+              kind: 'file',
+              path: 'workspace/.artifacts/restored.svg',
+              name: 'restored.svg',
+              size_bytes: 42,
+              content_type: 'image/svg+xml',
+              modified_at: '2026-05-09T00:00:00.000Z',
+            },
+          ],
+          nextContinuationToken: null,
+        }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_entries_pending_release',
+      title: 'Entries pending release task',
+    });
+    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      runtimeBinding = null;
+    });
+
+    const entriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_pending_release' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: entriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: libraryId,
+    });
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
+    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      path: 'workspace/.artifacts/',
+      items: [
+        expect.objectContaining({
+          kind: 'file',
+          path: 'workspace/.artifacts/restored.svg',
+          name: 'restored.svg',
+        }),
+      ],
+      next_continuation_token: null,
+    });
+  });
+
   it('deletes ready libraries through the storage adapter and rolls back when content remains', async () => {
     const nonEmptyAdapter = createStorageAdapter({
       assertEmpty: vi.fn(async () => {

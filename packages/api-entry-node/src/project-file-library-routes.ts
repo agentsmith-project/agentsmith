@@ -2098,6 +2098,147 @@ async function releaseTaskWorkspaceHoldersForRuntimeAccessRelease(input: {
   }
 }
 
+async function releaseRuntimeAccessForFileLibrary(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  actorUserId: string;
+  requestId?: string | null;
+}): Promise<RuntimeAccessReleaseRouteResponse> {
+  await hydrateFileLibraryTaskBindings({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+  });
+  const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(input.deps.docStore);
+  const binding = await bindingRepo.find({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+  });
+  if (!binding) {
+    return {
+      statusCode: 409,
+      body: {
+        error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND',
+        message: 'file_library_runtime_access_not_bound',
+        file_library_id: input.libraryId,
+      },
+    };
+  }
+  const releaseCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+    requestId: input.requestId ?? undefined,
+  });
+  const convergedReleaseFence = await convergeExistingRuntimeAccessReleaseFence({
+    deps: input.deps,
+    bindingRepo,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    binding,
+    actorUserId: input.actorUserId,
+  });
+  if (convergedReleaseFence.handled) {
+    return {
+      statusCode: convergedReleaseFence.statusCode,
+      body: convergedReleaseFence.body,
+    };
+  }
+  const task = await findTaskRecordForBinding({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    binding,
+  });
+  const blockers = await collectRuntimeAccessReleaseBlockers({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    task,
+    binding,
+  });
+  const hardBlockers = runtimeAccessReleaseHardBlockers(blockers);
+  if (hardBlockers.length > 0) {
+    return {
+      statusCode: 409,
+      body: buildRuntimeAccessReleaseBlockedBody({
+        libraryId: input.libraryId,
+        binding,
+        actorUserId: input.actorUserId,
+        blockers: hardBlockers,
+      }),
+    };
+  }
+  if (!task) {
+    return {
+      statusCode: 409,
+      body: buildRuntimeAccessReleaseBlockedBody({
+        libraryId: input.libraryId,
+        binding,
+        actorUserId: input.actorUserId,
+        blockers: ['bound_task_missing'],
+      }),
+    };
+  }
+  const workspaceBindingManager = input.deps.internalAgentWorkspaceBindingManager
+    ?? input.deps.internalAgentWorkspaceProvisioner;
+  if (typeof workspaceBindingManager?.deleteWorkspaceBinding !== 'function') {
+    return {
+      statusCode: 503,
+      body: {
+        error_code: 'SERVICE_UNAVAILABLE',
+        message: 'file_library_runtime_access_release_unavailable',
+        file_library_id: input.libraryId,
+      },
+    };
+  }
+  const releaseFence = await bindingRepo.beginRuntimeAccessRelease({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    fileLibraryId: input.libraryId,
+    taskId: task.id,
+    bindingGeneration: binding.bindingGeneration,
+    correlationId: releaseCorrelationId,
+  });
+  if (!releaseFence.ok) {
+    return {
+      statusCode: 409,
+      body: buildRuntimeAccessReleaseBindingConflictBody({
+        libraryId: input.libraryId,
+        binding: releaseFence.binding,
+        actorUserId: input.actorUserId,
+      }),
+    };
+  }
+  return continueRuntimeAccessReleaseAfterFence({
+    deps: input.deps,
+    bindingRepo,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    binding: releaseFence.binding,
+    task,
+    releaseCorrelationId,
+    actorUserId: input.actorUserId,
+  });
+}
+
+function runtimeAccessReleaseCompleted(response: RuntimeAccessReleaseRouteResponse): boolean {
+  return response.statusCode === 200
+    && response.body.runtime_access_status === 'released';
+}
+
+function isFileLibraryListPendingRouteError(input: {
+  statusCode: number;
+  errorCode: string;
+  message: string;
+}): boolean {
+  return input.statusCode === 409
+    && input.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+    && input.message === 'file_library_list_pending';
+}
+
 export async function handleProjectFileLibraryRoutes(args: {
   routeKind: ProjectFileLibraryRouteKind;
   method: string;
@@ -2557,105 +2698,13 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryRuntimeAccessRelease' && method === 'POST') {
-    await hydrateFileLibraryTaskBindings({ deps, workspaceId, projectId });
-    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
-    const binding = await bindingRepo.find({
+    const releaseResponse = await releaseRuntimeAccessForFileLibrary({
+      deps,
       workspaceId,
       projectId,
-      fileLibraryId: libraryId,
-    });
-    if (!binding) {
-      json(res, 409, {
-        error_code: 'FILE_LIBRARY_RUNTIME_ACCESS_NOT_BOUND',
-        message: 'file_library_runtime_access_not_bound',
-        file_library_id: libraryId,
-      });
-      return true;
-    }
-    const releaseCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      libraryId,
+      actorUserId: user.id,
       requestId: readOptionalRequestId(req),
-    });
-    const convergedReleaseFence = await convergeExistingRuntimeAccessReleaseFence({
-      deps,
-      bindingRepo,
-      workspaceId,
-      projectId,
-      libraryId,
-      binding,
-      actorUserId: user.id,
-    });
-    if (convergedReleaseFence.handled) {
-      json(res, convergedReleaseFence.statusCode, convergedReleaseFence.body);
-      return true;
-    }
-    const task = await findTaskRecordForBinding({
-      deps,
-      workspaceId,
-      projectId,
-      binding,
-    });
-    const blockers = await collectRuntimeAccessReleaseBlockers({
-      deps,
-      workspaceId,
-      projectId,
-      task,
-      binding,
-    });
-    const hardBlockers = runtimeAccessReleaseHardBlockers(blockers);
-    if (hardBlockers.length > 0) {
-      json(res, 409, buildRuntimeAccessReleaseBlockedBody({
-        libraryId,
-        binding,
-        actorUserId: user.id,
-        blockers: hardBlockers,
-      }));
-      return true;
-    }
-    if (!task) {
-      json(res, 409, buildRuntimeAccessReleaseBlockedBody({
-        libraryId,
-        binding,
-        actorUserId: user.id,
-        blockers: ['bound_task_missing'],
-      }));
-      return true;
-    }
-    const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager
-      ?? deps.internalAgentWorkspaceProvisioner;
-    if (typeof workspaceBindingManager?.deleteWorkspaceBinding !== 'function') {
-      json(res, 503, {
-        error_code: 'SERVICE_UNAVAILABLE',
-        message: 'file_library_runtime_access_release_unavailable',
-        file_library_id: libraryId,
-      });
-      return true;
-    }
-    const releaseFence = await bindingRepo.beginRuntimeAccessRelease({
-      workspaceId,
-      projectId,
-      fileLibraryId: libraryId,
-      taskId: task.id,
-      bindingGeneration: binding.bindingGeneration,
-      correlationId: releaseCorrelationId,
-    });
-    if (!releaseFence.ok) {
-      json(res, 409, buildRuntimeAccessReleaseBindingConflictBody({
-        libraryId,
-        binding: releaseFence.binding,
-        actorUserId: user.id,
-      }));
-      return true;
-    }
-    const releaseResponse = await continueRuntimeAccessReleaseAfterFence({
-      deps,
-      bindingRepo,
-      workspaceId,
-      projectId,
-      libraryId,
-      binding: releaseFence.binding,
-      task,
-      releaseCorrelationId,
-      actorUserId: user.id,
     });
     json(res, releaseResponse.statusCode, releaseResponse.body);
     return true;
@@ -3352,26 +3401,55 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
+    const requestId = readOptionalRequestId(req);
+    const listInput = {
+      workspaceId,
+      projectId,
+      libraryId,
+      path: parsed.data.path ? ensureDirectoryPath(parsed.data.path) : '',
+      pageSize: parsed.data.page_size ?? 200,
+      continuationToken: parsed.data.continuation_token,
+      search: parsed.data.search,
+      sortBy: parsed.data.sort_by ?? 'name',
+      sortOrder: parsed.data.sort_order ?? 'asc',
+      requestId,
+    } as const;
     try {
-      const listed = await deps.fileLibraryStorageAdapter.listEntries({
-        workspaceId,
-        projectId,
-        libraryId,
-        path: parsed.data.path ? ensureDirectoryPath(parsed.data.path) : '',
-        pageSize: parsed.data.page_size ?? 200,
-        continuationToken: parsed.data.continuation_token,
-        search: parsed.data.search,
-        sortBy: parsed.data.sort_by ?? 'name',
-        sortOrder: parsed.data.sort_order ?? 'asc',
-        requestId: readOptionalRequestId(req),
-      });
+      const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
       json(res, 200, {
         path: listed.path,
         items: listed.items.map(presentFileLibraryEntry),
         next_continuation_token: listed.nextContinuationToken,
       });
     } catch (error) {
-      const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
+      let mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
+      if (isFileLibraryListPendingRouteError(mapped)) {
+        const releaseResponse = await releaseRuntimeAccessForFileLibrary({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          actorUserId: user.id,
+          requestId,
+        });
+        if (runtimeAccessReleaseCompleted(releaseResponse)) {
+          try {
+            const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
+            json(res, 200, {
+              path: listed.path,
+              items: listed.items.map(presentFileLibraryEntry),
+              next_continuation_token: listed.nextContinuationToken,
+            });
+            return true;
+          } catch (retryError) {
+            mapped = mapFileLibraryControlRouteError(
+              retryError,
+              'FILE_LIBRARY_LIST_FAILED',
+              'file_library_list_failed',
+            );
+          }
+        }
+      }
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode,
         message: mapped.message,

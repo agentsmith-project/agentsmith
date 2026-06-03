@@ -1095,7 +1095,7 @@ describe('AFSCP File Library storage adapter', () => {
     expect(client.revokeExport).toHaveBeenCalledTimes(2);
   });
 
-  it('maps persistent WebDAV read export list 401/403 failures to admin action after bounded retries', async () => {
+  it('maps persistent WebDAV read export list 401/403 readiness failures to list pending after bounded retries', async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .fn()
@@ -1116,7 +1116,7 @@ describe('AFSCP File Library storage adapter', () => {
         sortOrder: 'asc',
         requestId: 'req_list_permission_persistent',
       });
-      const assertion = expect(result).rejects.toThrow('file_library_storage_admin_action_required');
+      const assertion = expect(result).rejects.toThrow('file_library_list_pending');
       await vi.advanceTimersByTimeAsync(5_000);
       await assertion;
 
@@ -1126,6 +1126,37 @@ describe('AFSCP File Library storage adapter', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps explicit AFSCP operator list failures classified as admin action', async () => {
+    const client = createProductClient({
+      createExport: vi.fn(async () => {
+        throw new AfscpClientError({
+          status: 503,
+          code: 'afscp_operator_recovery_required',
+          message: 'afscp_operator_recovery_required',
+          retryable: false,
+          correlation_id: 'corr_list_operator',
+          operation_id: 'op_list_operator',
+          resource_kind: 'operation',
+        });
+      }),
+    });
+    const fetchMock = vi.fn() as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ client, fetchFn: fetchMock });
+
+    await expect(adapter.listEntries({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_123',
+      path: 'workspace/.artifacts/',
+      pageSize: 20,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      requestId: 'req_list_operator',
+    })).rejects.toThrow('file_library_storage_admin_action_required');
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('does not retry a generic WebDAV list failure', async () => {

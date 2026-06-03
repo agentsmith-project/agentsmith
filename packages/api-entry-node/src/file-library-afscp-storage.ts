@@ -861,7 +861,7 @@ function isRetryableListEntriesStorageMessage(message: string): boolean {
 
 function publicListEntriesStorageMessage(message: string): string {
   return message === READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE
-    ? 'file_library_storage_admin_action_required'
+    ? 'file_library_list_pending'
     : message;
 }
 

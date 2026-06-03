@@ -1097,12 +1097,7 @@ describe('AFSCP File Library storage adapter', () => {
 
   it('maps persistent WebDAV read export list 401/403 readiness failures to list pending after bounded retries', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
-      .mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
-      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
-      .mockResolvedValueOnce(new Response('forbidden', { status: 403 })) as unknown as typeof fetch;
+    const fetchMock = vi.fn(async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
     const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
 
     try {
@@ -1117,10 +1112,10 @@ describe('AFSCP File Library storage adapter', () => {
         requestId: 'req_list_permission_persistent',
       });
       const assertion = expect(result).rejects.toThrow('file_library_list_pending');
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(105_000);
       await assertion;
 
-      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock).toHaveBeenCalledTimes(12);
       expect(client.createExport).toHaveBeenCalledTimes(1);
       expect(client.revokeExport).toHaveBeenCalledTimes(1);
     } finally {

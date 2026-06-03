@@ -25,7 +25,21 @@ import { createAbortError } from './object-stream-bridge.js';
 
 export const FILE_LIBRARY_AFSCP_MAPPING_COLLECTION = 'project_file_library_afscp_mappings';
 const READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
-const READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS = READ_EXPORT_DOWNLOAD_NOT_FOUND_RETRY_DELAYS_MS;
+// Keep one read export alive across WebDAV readiness after restore instead of forcing callers to churn exports.
+const READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS = [
+  0,
+  500,
+  1_500,
+  3_000,
+  5_000,
+  5_000,
+  10_000,
+  10_000,
+  15_000,
+  15_000,
+  20_000,
+  20_000,
+] as const;
 const READ_EXPORT_LIST_WEB_DAV_NOT_READY_MESSAGE = 'file_library_read_export_webdav_not_ready';
 
 export type FileLibraryStorageOperationStatus =

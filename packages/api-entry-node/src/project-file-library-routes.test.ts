@@ -1776,12 +1776,13 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       fileLibraryId: libraryId,
     });
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
+      createdBeforeOrAtMs: expect.any(Number),
       requestId: 'req_entries_pending_release_first',
-    });
+    }));
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
@@ -1947,12 +1948,13 @@ describe('project-file-library-routes', () => {
 
     releaseGate.resolve();
     await flushAsyncWork(10);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
+      createdBeforeOrAtMs: expect.any(Number),
       requestId: 'req_entries_pending_slow_release',
-    });
+    }));
     await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
@@ -2038,12 +2040,13 @@ describe('project-file-library-routes', () => {
       }
 
       expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         libraryId,
+        createdBeforeOrAtMs: expect.any(Number),
         requestId: 'req_entries_release_pending_background',
-      });
+      }));
       await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
         workspaceId: 'ws_default',
         projectId: 'proj_1',

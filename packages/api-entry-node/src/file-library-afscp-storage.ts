@@ -256,6 +256,7 @@ export interface FileLibraryStoragePort {
     nextContinuationToken: string | null;
   }>;
   invalidateListReadExport?(input: FileLibraryStorageLibraryInput & {
+    createdBeforeOrAtMs?: number;
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<void>;
@@ -315,6 +316,7 @@ interface WebdavExportContext {
 interface CachedReadExportEntry {
   context: WebdavExportContext;
   activeCount: number;
+  createdAtMs: number;
   expiresAtMs: number;
   idleRevokeTimer: ReturnType<typeof setTimeout> | null;
   invalidated: boolean;
@@ -2066,6 +2068,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
   }
 
   async invalidateListReadExport(input: FileLibraryStorageLibraryInput & {
+    createdBeforeOrAtMs?: number;
     requestId?: string;
     signal?: AbortSignal;
   }): Promise<void> {
@@ -2073,6 +2076,13 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     const cacheKey = readOnlyExportCacheKey(mapping);
     const entry = this.readOnlyListExportCache.get(cacheKey);
     if (!entry) {
+      return;
+    }
+    if (
+      typeof input.createdBeforeOrAtMs === 'number'
+      && Number.isFinite(input.createdBeforeOrAtMs)
+      && entry.createdAtMs > input.createdBeforeOrAtMs
+    ) {
       return;
     }
     this.readOnlyListExportCache.delete(cacheKey);
@@ -2103,6 +2113,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
         const entry: CachedReadExportEntry = {
           context,
           activeCount: 1,
+          createdAtMs: Date.now(),
           expiresAtMs: readExportExpiresAtMs(context.access),
           idleRevokeTimer: null,
           invalidated: false,

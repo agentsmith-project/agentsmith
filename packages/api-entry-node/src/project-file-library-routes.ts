@@ -2304,12 +2304,16 @@ async function invalidateListReadExport(input: {
   workspaceId: string;
   projectId: string;
   libraryId: string;
+  createdBeforeOrAtMs?: number;
   requestId?: string;
 }): Promise<void> {
   await input.storageAdapter.invalidateListReadExport?.({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
+    ...(typeof input.createdBeforeOrAtMs === 'number'
+      ? { createdBeforeOrAtMs: input.createdBeforeOrAtMs }
+      : {}),
     requestId: input.requestId,
   });
 }
@@ -2322,6 +2326,7 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
   projectId: string;
   libraryId: string;
   actorUserId: string;
+  createdBeforeOrAtMs: number;
   requestId?: string;
 }): void {
   void (async () => {
@@ -3557,6 +3562,7 @@ export async function handleProjectFileLibraryRoutes(args: {
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
+        const listPendingObservedAtMs = Date.now();
         const releasePromise = releaseRuntimeAccessForFileLibrary({
           deps,
           workspaceId,
@@ -3572,6 +3578,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             workspaceId,
             projectId,
             libraryId,
+            createdBeforeOrAtMs: listPendingObservedAtMs,
             requestId,
           });
         } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
@@ -3583,6 +3590,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             projectId,
             libraryId,
             actorUserId: user.id,
+            createdBeforeOrAtMs: listPendingObservedAtMs,
             requestId,
           });
         }

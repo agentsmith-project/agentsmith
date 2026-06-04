@@ -69,7 +69,7 @@ Convergence rules:
 - Agent Task sandbox `releasing`: wait for workload release or surface a typed release-incomplete error; do not start a second conflicting task HOME holder.
 - AFSCP workspace binding `releasing` / `release_pending`: continue release convergence through the workspace binding owner until the binding is terminal (`released`, `revoked`, `expired`, or `deleted`) before read export is considered clean.
 - AFSCP workspace binding PVC lookup not ready: ASBCP `ensure_workspace_binding` returning `internal_error` with message `get persistent volume claim failed` is treated as bounded readiness convergence evidence, not as a terminal sandbox-unavailable failure on the first occurrence.
-- Files read export `pending`: return typed pending to the caller, trigger or continue runtime-access release convergence, and invalidate the read export once when this request/background recheck moves runtime access to released.
+- Files read export `pending`: return typed pending to the caller, trigger or continue runtime-access release convergence, and invalidate the read export once when this request/background recheck moves runtime access to released. Background invalidation must be scoped to read exports created at or before the pending observation, so it cannot revoke a newer export created by a later poll.
 - Files read export after a completed runtime-release fence: if the list path is still pending, treat the completed fence as released, keep the pending read export warm for the caller's next poll, and do not do a second synchronous list in the same request; do not turn completed fences into repeated export revoke/create loops.
 
 Evidence rules:

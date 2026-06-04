@@ -106,7 +106,7 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 
 这里的 convergence 指 Files API 为了让读投影、task file attachment、AFSCP workspace binding 回到可读/可释放状态而执行的后台收敛，不是用户可见的新产品流程。
 
-- read export `pending` / `file_library_list_pending`: the list API returns typed pending, starts or continues runtime-access release, and invalidates the read export once when this request/background recheck moves runtime access to released.
+- read export `pending` / `file_library_list_pending`: the list API returns typed pending, starts or continues runtime-access release, and invalidates the read export once when this request/background recheck moves runtime access to released. Background invalidation is scoped to exports created at or before the pending observation so an older recheck cannot revoke a newer export created by a later poll.
 - read export after release: once runtime access transitions to terminally released, the backend invalidates the pre-release list read export before the next successful list response.
 - read export after completed release fence: if Files listing still reports `file_library_list_pending`, the completed fence is treated as released and the backend keeps the pending read export warm for the caller's next poll instead of creating a repeated export revoke/create loop.
 - workspace binding `releasing` / `release_pending`: the backend keeps calling the workspace-binding release path with bounded rechecks until the binding reaches a terminal release state or a typed blocker is returned.

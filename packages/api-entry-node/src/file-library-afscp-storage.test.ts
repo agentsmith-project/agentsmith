@@ -1282,6 +1282,120 @@ describe('AFSCP File Library storage adapter', () => {
     }
   });
 
+  it('does not let stale background invalidation revoke a newer pending read export', async () => {
+    vi.useFakeTimers();
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<D:multistatus xmlns:D="DAV:">',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/</D:href>',
+      '<D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat>',
+      '</D:response>',
+      '<D:response>',
+      '<D:href>/workspace/.artifacts/restored.svg</D:href>',
+      '<D:propstat><D:prop><D:getcontentlength>42</D:getcontentlength><D:getlastmodified>Sat, 09 May 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat>',
+      '</D:response>',
+      '</D:multistatus>',
+    ].join('');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response(xml, {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml' },
+      })) as unknown as typeof fetch;
+    const { client, adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    try {
+      const firstResult = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_stale_cutoff_first',
+      });
+      const firstAssertion = expect(firstResult).rejects.toThrow('file_library_list_pending');
+      await vi.advanceTimersByTimeAsync(12_000);
+      await firstAssertion;
+      const staleCutoffMs = Date.now();
+
+      await adapter.invalidateListReadExport({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        requestId: 'req_list_stale_cutoff_release_transition',
+      });
+      expect(client.revokeExport).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const secondResult = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_stale_cutoff_second',
+      });
+      const secondAssertion = expect(secondResult).rejects.toThrow('file_library_list_pending');
+      await vi.advanceTimersByTimeAsync(12_000);
+      await secondAssertion;
+
+      expect(client.createExport).toHaveBeenCalledTimes(2);
+      expect(client.revokeExport).toHaveBeenCalledTimes(1);
+
+      await adapter.invalidateListReadExport({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        createdBeforeOrAtMs: staleCutoffMs,
+        requestId: 'req_list_stale_cutoff_background',
+      });
+
+      expect(client.revokeExport).toHaveBeenCalledTimes(1);
+
+      await expect(adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_stale_cutoff_third',
+      })).resolves.toMatchObject({
+        items: [
+          {
+            kind: 'file',
+            path: 'workspace/.artifacts/restored.svg',
+            name: 'restored.svg',
+          },
+        ],
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(13);
+      expect(client.createExport).toHaveBeenCalledTimes(2);
+      expect(client.revokeExport).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps explicit AFSCP operator list failures classified as admin action', async () => {
     const client = createProductClient({
       createExport: vi.fn(async () => {

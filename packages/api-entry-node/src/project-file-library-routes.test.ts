@@ -1720,7 +1720,7 @@ describe('project-file-library-routes', () => {
     },
   );
 
-  it('releases idle task runtime access and retries entries when list is pending', async () => {
+  it('releases idle task runtime access and lets the next entries poll use a refreshed export', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn()
         .mockRejectedValueOnce(new Error('file_library_list_pending'))
@@ -1754,7 +1754,7 @@ describe('project-file-library-routes', () => {
       runtimeBinding = null;
     });
 
-    const entriesJson = vi.fn();
+    const firstEntriesJson = vi.fn();
     await handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraryEntries',
       method: 'GET',
@@ -1763,12 +1763,12 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         url: '/file-libraries/entries?path=workspace%2F.artifacts',
-        headers: { 'x-request-id': 'req_entries_pending_release' },
+        headers: { 'x-request-id': 'req_entries_pending_release_first' },
       } as never,
       res: createMockResponse(),
       deps,
       user: OWNER_USER,
-      json: entriesJson,
+      json: firstEntriesJson,
       readBody: vi.fn(),
     });
 
@@ -1780,10 +1780,35 @@ describe('project-file-library-routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId,
-      requestId: 'req_entries_pending_release',
+      requestId: 'req_entries_pending_release_first',
     });
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
+    expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_list_pending',
+    });
+
+    const secondEntriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_pending_release_second' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: secondEntriesJson,
+      readBody: vi.fn(),
+    });
+
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
       path: 'workspace/.artifacts/',
       items: [
         expect.objectContaining({
@@ -1835,7 +1860,7 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
     expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
@@ -1860,7 +1885,7 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(4);
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
     expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
     expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith({
       workspaceId: 'ws_default',

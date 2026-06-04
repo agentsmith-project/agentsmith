@@ -3544,7 +3544,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         next_continuation_token: listed.nextContinuationToken,
       });
     } catch (error) {
-      let mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
+      const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
         const releasePromise = releaseRuntimeAccessForFileLibrary({
           deps,
@@ -3556,28 +3556,13 @@ export async function handleProjectFileLibraryRoutes(args: {
         });
         const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
         if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
-          try {
-            await invalidateListReadExport({
-              storageAdapter: deps.fileLibraryStorageAdapter,
-              workspaceId,
-              projectId,
-              libraryId,
-              requestId,
-            });
-            const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
-            json(res, 200, {
-              path: listed.path,
-              items: listed.items.map(presentFileLibraryEntry),
-              next_continuation_token: listed.nextContinuationToken,
-            });
-            return true;
-          } catch (retryError) {
-            mapped = mapFileLibraryControlRouteError(
-              retryError,
-              'FILE_LIBRARY_LIST_FAILED',
-              'file_library_list_failed',
-            );
-          }
+          await invalidateListReadExport({
+            storageAdapter: deps.fileLibraryStorageAdapter,
+            workspaceId,
+            projectId,
+            libraryId,
+            requestId,
+          });
         } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
           scheduleListReadExportInvalidationAfterRuntimeRelease({
             deps,

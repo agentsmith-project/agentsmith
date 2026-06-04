@@ -1202,6 +1202,57 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
 
+  it('retries transient pod status lookup before creating the managed runner pod', async () => {
+    const statusError = Object.assign(new Error('asbcp status timeout'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      operation: 'get_pod_status',
+      retryable: true,
+      networkErrorName: 'TimeoutError',
+    });
+    const getPodStatus = vi.fn()
+      .mockRejectedValueOnce(statusError)
+      .mockResolvedValueOnce({ phase: 'offline' });
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: buildRunningPodStatus() });
+    const readinessSleep = vi.fn(async () => undefined);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+        sleep: readinessSleep,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({ image: MANAGED_RUNNER_IMAGE_A, _internal_raw_key: 'ask_test' }),
+      workspaceMount: buildWorkspaceMount(),
+    });
+
+    expect(getPodStatus).toHaveBeenCalledTimes(2);
+    expect(readinessSleep).toHaveBeenCalledTimes(1);
+    expect(readinessSleep).toHaveBeenCalledWith(1_000);
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+  });
+
   it('aborts sandbox readyz preflight readiness retry without continuing to pod ensure', async () => {
     const readinessError = Object.assign(new Error('raw pvc pending detail must stay server-side'), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',
@@ -1815,6 +1866,61 @@ describe('internal-agent-pod-manager', () => {
       expect(createOrEnsurePod).not.toHaveBeenCalled();
     },
   );
+
+  it('retries terminal workload release until ASBCP terminal fact is confirmed', async () => {
+    const deletePod = vi.fn()
+      .mockRejectedValueOnce(Object.assign(
+        new Error('asbcp_error: delete_pod 409 release terminal truth missing'),
+        {
+          code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+          asbcpCode: 'workload_release_incomplete',
+          status: 409,
+          operation: 'delete_pod',
+          retryable: true,
+          requestId: 'asbcp_req_delete_first',
+        },
+      ))
+      .mockRejectedValueOnce(Object.assign(
+        new Error('asbcp_error: delete_pod 409 release terminal truth still missing'),
+        {
+          code: 'workload_release_incomplete',
+          status: 409,
+          operation: 'delete_pod',
+          retryable: true,
+          requestId: 'asbcp_req_delete_second',
+        },
+      ))
+      .mockResolvedValueOnce(undefined);
+    const sleepDelaysMs: number[] = [];
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod,
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+      },
+      'ws://api:20000',
+      {
+        sleep: vi.fn(async (delayMs: number) => {
+          sleepDelaysMs.push(delayMs);
+        }),
+      },
+    );
+
+    await expect(manager.releasePod('ws_1', 'proj_1', 'task_1')).resolves.toBeUndefined();
+
+    expect(deletePod).toHaveBeenCalledTimes(3);
+    expect(deletePod).toHaveBeenNthCalledWith(1, 'ws_1', 'proj_1', 'task_1');
+    expect(deletePod).toHaveBeenNthCalledWith(2, 'ws_1', 'proj_1', 'task_1');
+    expect(deletePod).toHaveBeenNthCalledWith(3, 'ws_1', 'proj_1', 'task_1');
+    expect(sleepDelaysMs).toEqual([500, 1_000]);
+  });
 
   it('uses the startup timeout as the default session readiness budget', async () => {
     let now = 0;

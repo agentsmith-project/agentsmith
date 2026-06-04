@@ -144,6 +144,8 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const INTERNAL_AGENT_RELEASE_CONFIRM_RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
+
 function normalizeTimeoutOption(value: number | undefined, fallback: number, minimum: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback;
@@ -686,7 +688,20 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   }
 
   async releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void> {
-    await this.sandboxClient.deletePod(workspaceId, projectId, workloadId);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.sandboxClient.deletePod(workspaceId, projectId, workloadId);
+        return;
+      } catch (error) {
+        if (
+          !isTerminalWorkloadReleaseIncomplete(error)
+          || attempt >= INTERNAL_AGENT_RELEASE_CONFIRM_RETRY_DELAYS_MS.length
+        ) {
+          throw error;
+        }
+        await this.sleep(INTERNAL_AGENT_RELEASE_CONFIRM_RETRY_DELAYS_MS[attempt]!);
+      }
+    }
   }
 
   private checkDeadline(deadline: number): void {
@@ -773,10 +788,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     throwIfAborted(signal);
     while (Date.now() < deadline) {
       throwIfAborted(signal);
-      const status = await this.runAbortableSandboxRpc(
-        (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+      const status = await this.getPodStatusWithStartupRetry({
+        workspaceId,
+        projectId,
+        workloadId,
+        deadline,
         signal,
-      );
+      });
       throwIfAborted(signal);
       if (status.phase === target) return status;
       if (status.phase === 'Failed') {
@@ -1147,10 +1165,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       });
     }
     throwIfAborted(signal);
-    let status = await this.runAbortableSandboxRpc(
-      (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+    let status = await this.getPodStatusWithStartupRetry({
+      workspaceId,
+      projectId,
+      workloadId,
+      deadline,
       signal,
-    );
+    });
     throwIfAborted(signal);
     const wsBaseUrl = normalizeAgentWebSocketBaseUrl(this.wsBaseUrl);
     const wsUrl = `${wsBaseUrl}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}${
@@ -1229,10 +1250,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       throwIfAborted(signal);
       status = ensureResponse?.pod
         ? ensureResponse.pod
-        : await this.runAbortableSandboxRpc(
-          (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+        : await this.getPodStatusWithStartupRetry({
+          workspaceId,
+          projectId,
+          workloadId,
+          deadline,
           signal,
-        );
+        });
       throwIfAborted(signal);
     }
 
@@ -1335,6 +1359,36 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         input.signal,
       ),
     });
+  }
+
+  private async getPodStatusWithStartupRetry(input: {
+    workspaceId: string;
+    projectId: string;
+    workloadId: string;
+    deadline: number;
+    signal?: AbortSignal;
+  }): Promise<PodStatusResponse> {
+    try {
+      return await retryAsbcpReadinessNotReady({
+        operation: 'get_pod_status',
+        deadline: input.deadline,
+        signal: input.signal,
+        sleep: this.sleep,
+        isRetryableError: isAsbcpStartupTransientUnavailableError,
+        invoke: () => this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.getPodStatus(
+            input.workspaceId,
+            input.projectId,
+            input.workloadId,
+            rpcSignal,
+          ),
+          input.signal,
+        ),
+      });
+    } catch (error) {
+      throwIfAborted(input.signal);
+      throw error;
+    }
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

@@ -41,6 +41,7 @@ import {
   DEVELOPER_RUNNER_TASK_HOME_BINDING_UNAVAILABLE_MESSAGE,
   isDeveloperRunnerTaskHomeBindingAvailable,
 } from './developer-runner-workspace-blocker.js';
+import { isAsbcpStartupTransientUnavailableError } from './asbcp-client.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -121,6 +122,95 @@ function buildAgentCancelledError(reason?: unknown): Error {
     error.cause = reason;
   }
   return error;
+}
+
+const MANAGED_AGENT_READY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000] as const;
+
+function readErrorDiagnosticField(error: unknown, key: string): unknown {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  return (error as Record<string, unknown>)[key];
+}
+
+function buildSandboxReadyRetryDiagnostic(error: unknown): Record<string, unknown> {
+  const code = readErrorDiagnosticField(error, 'code');
+  const status = readErrorDiagnosticField(error, 'status');
+  const operation = readErrorDiagnosticField(error, 'operation');
+  const retryable = readErrorDiagnosticField(error, 'retryable');
+  const asbcpCode = readErrorDiagnosticField(error, 'asbcpCode')
+    ?? readErrorDiagnosticField(error, 'asbcp_code');
+  const networkErrorName = readErrorDiagnosticField(error, 'networkErrorName')
+    ?? readErrorDiagnosticField(error, 'network_error_name');
+  const requestId = readErrorDiagnosticField(error, 'requestId')
+    ?? readErrorDiagnosticField(error, 'request_id');
+  return {
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(typeof status === 'number' && Number.isFinite(status) ? { status } : {}),
+    ...(typeof operation === 'string' ? { operation } : {}),
+    ...(typeof retryable === 'boolean' ? { retryable } : {}),
+    ...(typeof asbcpCode === 'string' ? { asbcp_code: asbcpCode } : {}),
+    ...(typeof networkErrorName === 'string' ? { network_error_name: networkErrorName } : {}),
+    ...(typeof requestId === 'string' ? { request_id: requestId } : {}),
+    message: redactSensitiveTraceText(error instanceof Error ? error.message : String(error)),
+  };
+}
+
+async function sleepManagedAgentReadyRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    throw buildAgentCancelledError(signal.reason);
+  }
+  await new Promise<void>((resolve, reject) => {
+    function cleanup() {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+    }
+    function onAbort() {
+      cleanup();
+      reject(buildAgentCancelledError(signal?.reason));
+    }
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function ensureManagedAgentReadyWithStartupRetry(input: {
+  taskId: string;
+  runId: string;
+  agentId: string;
+  signal?: AbortSignal;
+  ensureReady: () => Promise<void>;
+  debugLog: (message: string, extra?: Record<string, unknown>) => void;
+}): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    if (input.signal?.aborted) {
+      throw buildAgentCancelledError(input.signal.reason);
+    }
+    try {
+      await input.ensureReady();
+      return;
+    } catch (error) {
+      if (
+        attempt >= MANAGED_AGENT_READY_RETRY_DELAYS_MS.length
+        || !isAsbcpStartupTransientUnavailableError(error)
+      ) {
+        throw error;
+      }
+      const delayMs = MANAGED_AGENT_READY_RETRY_DELAYS_MS[attempt]!;
+      input.debugLog('sandbox_ready_retry', {
+        task_id: input.taskId,
+        run_id: input.runId,
+        agent_id: input.agentId,
+        attempt: attempt + 1,
+        next_delay_ms: delayMs,
+        ...buildSandboxReadyRetryDiagnostic(error),
+      });
+      await sleepManagedAgentReadyRetry(delayMs, input.signal);
+    }
+  }
 }
 
 type NotebookTaskMessageRecord = {
@@ -557,6 +647,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   const startedAtMs = Date.now();
   let terminalResult: 'ok' | 'error' = 'ok';
   let terminalErrorCode: string | undefined;
+  let terminalErrorDiagnostic: Record<string, unknown> | undefined;
   let usageTokensTotal: number | undefined;
   let requestExecutionId: string | undefined;
   let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
@@ -684,14 +775,21 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         signal: startupSignal,
       });
       await throwIfCancellationRequested();
-      await deps.internalAgentPodManager.ensureAgentReady({
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        workloadId,
-        sessionId: task.id,
-        agent,
-        workspaceMount: workspaceBinding.workspaceMount,
+      await ensureManagedAgentReadyWithStartupRetry({
+        taskId: task.id,
+        runId,
+        agentId,
         signal: startupSignal,
+        debugLog,
+        ensureReady: () => deps.internalAgentPodManager!.ensureAgentReady({
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          workloadId,
+          sessionId: task.id,
+          agent,
+          workspaceMount: workspaceBinding.workspaceMount,
+          signal: startupSignal,
+        }),
       });
       await throwIfCancellationRequested();
     }
@@ -928,6 +1026,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       ? 'AGENT_RUNTIME_UNAVAILABLE'
       : rawCode;
     terminalErrorCode = code;
+    terminalErrorDiagnostic = buildSandboxReadyRetryDiagnostic(error);
     debugLog('execution_dispatch_exception', {
       task_id: task.id,
       run_id: runId,
@@ -935,6 +1034,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       endpoint_id: endpointIdForLog,
       code,
       message,
+      diagnostic: terminalErrorDiagnostic,
     });
     emitTaskEvent(taskId, {
       type: 'error',
@@ -988,6 +1088,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
             reason: 'missing_execution_trace',
             terminal_result: terminalResult,
             error_code: terminalErrorCode ?? null,
+            ...(terminalErrorDiagnostic ? { error_diagnostic: terminalErrorDiagnostic } : {}),
           },
         },
       });

@@ -887,6 +887,14 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       cancel: () => undefined,
       stream: (async function* stream() {})(),
     }));
+    const ensureAgentReady = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('asbcp status timeout'), {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        operation: 'get_pod_status',
+        retryable: true,
+        networkErrorName: 'TimeoutError',
+      }))
+      .mockResolvedValueOnce(undefined);
     const acquireHolder = vi.fn(async () => undefined);
     const releaseHolder = vi.fn(async () => undefined);
     const deps = {
@@ -927,7 +935,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         dispatchStreamingRequest,
       },
       internalAgentPodManager: {
-        ensureAgentReady: vi.fn(async () => undefined),
+        ensureAgentReady,
       },
       internalWorkloadCoordinator: {
         acquireHolder,
@@ -1073,13 +1081,14 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       /metadata_url|storage_endpoint|storage_bucket_url|filesystem_name|juicefs|secret|access_key/i,
     );
     const ensureWorkspaceBinding = deps.internalAgentWorkspaceBindingManager?.ensureWorkspaceBinding as ReturnType<typeof vi.fn>;
-    const ensureAgentReady = deps.internalAgentPodManager?.ensureAgentReady as ReturnType<typeof vi.fn>;
+    const ensureAgentReadyMock = deps.internalAgentPodManager?.ensureAgentReady as ReturnType<typeof vi.fn>;
     expect(acquireHolder.mock.invocationCallOrder[0]!).toBeLessThan(
       ensureWorkspaceBinding.mock.invocationCallOrder[0]!,
     );
     expect(acquireHolder.mock.invocationCallOrder[0]!).toBeLessThan(
-      ensureAgentReady.mock.invocationCallOrder[0]!,
+      ensureAgentReadyMock.mock.invocationCallOrder[0]!,
     );
+    expect(ensureAgentReadyMock).toHaveBeenCalledTimes(2);
     expect(acquireHolder).toHaveBeenCalledWith({
       workspaceId: 'ws_internal',
       projectId: 'proj_internal',
@@ -2670,6 +2679,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       callOrder.push('ensure');
       throw Object.assign(new Error('agent_sandbox_unavailable: pod missing'), {
         code: 'AGENT_SANDBOX_UNAVAILABLE',
+        retryable: false,
       });
     });
     const dispatchStreamingRequest = vi.fn(async () => ({
@@ -2783,6 +2793,19 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(releaseHolder).toHaveBeenCalledWith(holderRef);
     expect(dispatchStreamingRequest).not.toHaveBeenCalled();
     expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('AGENT_SANDBOX_UNAVAILABLE');
+    const traces = await docStore.list<{
+      task_id: string;
+      name: string;
+      details?: {
+        error_diagnostic?: Record<string, unknown>;
+      };
+    }>('ws_holder_ready_fail_agent_task_trace_events', { task_id: task.id });
+    const terminalTrace = traces.find((item) => item.name === 'execution.terminal');
+    expect(terminalTrace?.details?.error_diagnostic).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      retryable: false,
+      message: 'agent_sandbox_unavailable: pod missing',
+    });
   });
 
   it('refuses managed workspace binding when the task file library is not ready', async () => {

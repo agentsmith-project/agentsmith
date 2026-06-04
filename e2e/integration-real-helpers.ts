@@ -3302,6 +3302,17 @@ function isRetryableTerminalSessionReleasePendingResponse(status: number, body: 
     && record.retryable === true;
 }
 
+function summarizeTerminalSessionDeleteRequestError(error: unknown): string {
+  const name = error instanceof Error && error.name.trim().length > 0
+    ? error.name.trim()
+    : "Error";
+  const rawMessage = error instanceof Error
+    ? error.message
+    : String(error);
+  const firstLine = rawMessage.split(/\r?\n/, 1)[0]?.trim() || "request_failed";
+  return `request_error:${name}:${firstLine}`;
+}
+
 export async function deleteTerminalSessionViaApi(args: {
   page: Page;
   workspaceId: string;
@@ -3311,9 +3322,9 @@ export async function deleteTerminalSessionViaApi(args: {
   timeoutMs?: number;
 }): Promise<void> {
   const token = await readStoredAuthToken(args.page);
-  const timeoutMs = args.timeoutMs ?? 60_000;
+  const timeoutMs = args.timeoutMs ?? 180_000;
   const deadline = Date.now() + timeoutMs;
-  const retryIntervalsMs = [500, 1_000, 2_000, 5_000, 10_000];
+  const retryIntervalsMs = [500, 1_000, 2_000, 5_000, 10_000, 15_000];
   let attempt = 0;
   let lastStatus = 0;
   let lastBody = "";
@@ -3324,15 +3335,41 @@ export async function deleteTerminalSessionViaApi(args: {
     `/terminal/sessions/${args.sessionId}`;
 
   while (Date.now() < deadline) {
-    const response = await args.page.request.delete(
-      sessionUrl,
-      {
-        timeout: Math.max(1, deadline - Date.now()),
-        headers: {
-          Authorization: `Bearer ${token}`,
+    let response: Awaited<ReturnType<Page["request"]["delete"]>>;
+    try {
+      response = await args.page.request.delete(
+        sessionUrl,
+        {
+          timeout: Math.min(30_000, Math.max(5_000, deadline - Date.now())),
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      lastStatus = 0;
+      lastBody = summarizeTerminalSessionDeleteRequestError(error);
+      try {
+        await waitForTerminalSessionFinalTruthViaApi({
+          page: args.page,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+          taskId: args.taskId,
+          sessionId: args.sessionId,
+          timeoutMs: 2_000,
+        });
+        return;
+      } catch {
+        // Keep retrying the delete request; the close truth may still be converging.
+      }
+      if (Date.now() >= deadline) {
+        break;
+      }
+      const retryDelayMs = retryIntervalsMs[Math.min(attempt, retryIntervalsMs.length - 1)] ?? 15_000;
+      attempt += 1;
+      await setTimeoutPromise(Math.min(retryDelayMs, Math.max(1, deadline - Date.now())));
+      continue;
+    }
     if (response.status() === 204) {
       await waitForTerminalSessionFinalTruthViaApi({
         page: args.page,
@@ -3350,7 +3387,7 @@ export async function deleteTerminalSessionViaApi(args: {
       break;
     }
 
-    const retryDelayMs = retryIntervalsMs[Math.min(attempt, retryIntervalsMs.length - 1)] ?? 10_000;
+    const retryDelayMs = retryIntervalsMs[Math.min(attempt, retryIntervalsMs.length - 1)] ?? 15_000;
     attempt += 1;
     await setTimeoutPromise(Math.min(retryDelayMs, Math.max(1, deadline - Date.now())));
   }

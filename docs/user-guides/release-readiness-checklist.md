@@ -25,6 +25,7 @@
 5. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 6. 维护者排障语境：`gate:release:full` is aggregate-only readiness verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
 7. `product:ready` / `product:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
+8. Product Readiness 前必须保留 Files restore continuation focused backend-real gate 作为重点证据；它证明 Files restore、read export pending、runtime-access release convergence 没有在完整 readiness 前断链。
 
 ## 环境前提
 

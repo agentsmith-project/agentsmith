@@ -102,6 +102,17 @@ Status fields must not include namespace, repository, volume, export id, credent
 
 AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a04fdfca18bd272e09f43cf` added restore-specific admit preflight. Capability denied from that endpoint is an admission failure and must happen before AgentSmith writes restore start/terminal audit or invokes AFSCP `/restore`.
 
+### Read Export and Workspace Binding Convergence
+
+这里的 convergence 指 Files API 为了让读投影、task file attachment、AFSCP workspace binding 回到可读/可释放状态而执行的后台收敛，不是用户可见的新产品流程。
+
+- read export `pending` / `file_library_list_pending`: the list API returns typed pending, starts or continues runtime-access release, and retries the read export only after release completes.
+- read export after release: once runtime access is terminally released, the backend invalidates the list read export before the next successful list response.
+- workspace binding `releasing` / `release_pending`: the backend keeps calling the workspace-binding release path with bounded rechecks until the binding reaches a terminal release state or a typed blocker is returned.
+- workspace binding `offline` / `not_found`: the state is treated as no active holder for release convergence; creation or reattachment must go through the owning Agent Task sandbox path instead of Files inventing a local connector.
+- workspace binding `pending`: the backend keeps the operation pending/restoring/releasing until AFSCP returns terminal success or a typed failure/blocker.
+- Product Readiness evidence must preserve the Files restore continuation focused backend-real gate before the full Product Readiness campaign, because this slice proves restore can continue through pending read export and release convergence.
+
 ### Task File Templates
 
 - task file templates are published starting file sets for Agent task creation

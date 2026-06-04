@@ -59,6 +59,22 @@ Slice 5 blocked 时必须 fail closed：
 
 Local/manual profiles that exercise the deployment default managed runner must prove the runner has a valid internal sandbox/runtime configuration before task execution. If the sandbox is unavailable, task creation or create-and-start should fail with a clear unavailable/configuration state instead of producing `AGENT_SANDBOX_NOT_CONFIGURED` after dispatch. Any sandbox/pod-internal API base must be reachable from inside that environment and must not rely on browser-host `localhost`.
 
+### Runtime pending/readiness convergence
+
+这里的 runtime pending/readiness 指 Agent task 可执行环境、Files 读投影、AFSCP workspace binding 在进入可读/可执行状态前的后台收敛过程；它是工程收口主题，不按单个偶发 bug 处理。
+
+Convergence rules:
+- Agent Task sandbox `offline` / `not_found`: call ASBCP create-or-ensure for the workload, then continue status checks until `Running`, `Failed`, or timeout.
+- Agent Task sandbox `pending`: keep polling bounded readiness/status checks until `Running`, `Failed`, or timeout; do not treat the first pending status as terminal failure.
+- Agent Task sandbox `releasing`: wait for workload release or surface a typed release-incomplete error; do not start a second conflicting task HOME holder.
+- AFSCP workspace binding `releasing` / `release_pending`: continue release convergence through the workspace binding owner until the binding is terminal (`released`, `revoked`, `expired`, or `deleted`) before read export is considered clean.
+- Files read export `pending`: return typed pending to the caller, trigger or continue runtime-access release convergence, and invalidate the read export when release completes.
+
+Evidence rules:
+- `AGENT_SANDBOX_UNAVAILABLE` backend-real evidence must include the API trace, pod-manager diagnostic summary, ASBCP create/status call summaries, request id, workload id, phase, and error code when those fields are available.
+- A focused gate that first fails with sandbox unavailable and then passes on rerun is recorded as a `runtime flake`. Consecutive sandbox-unavailable failures for the same focused gate are a stability blocker until the runtime owner evidence explains or fixes the repeated failure.
+- Product readiness sign-off keeps the Files restore continuation focused backend-real gate as a key evidence item before running the full Product Readiness campaign.
+
 ## 3. Current operational entrypoints
 
 ### Agent-task runner fast owner diagnostic

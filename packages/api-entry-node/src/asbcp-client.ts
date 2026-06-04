@@ -171,6 +171,7 @@ function isAsbcpReleaseUnconfirmedConflict(
 export interface PodStatusResponse {
   pod_name?: string;
   phase: string;
+  request_id?: string;
   ip?: string;
   image?: string;
   image_ref?: string;
@@ -220,6 +221,7 @@ export interface SandboxWorkspaceBindingResponse {
 export interface SandboxPodEnsureResponse {
   httpStatus: number;
   pod?: PodStatusResponse;
+  requestId?: string;
   workloadId?: string;
   status?: string;
   correlationId?: string;
@@ -681,7 +683,10 @@ export class AsbcpClient {
       body: JSON.stringify(body),
       signal: this.buildRequestSignal(150_000, signal),
     }), signal);
-    return parsePodEnsurePayload(resp.status, await resp.json().catch(() => undefined));
+    const responseText = await resp.text().catch(() => '');
+    const result = parsePodEnsurePayload(resp.status, parseAsbcpJsonObject(responseText));
+    const requestId = readAsbcpResponseRequestId(resp, responseText);
+    return requestId ? { ...result, requestId } : result;
   }
 
   async ensureWorkspaceBinding(
@@ -742,18 +747,23 @@ export class AsbcpClient {
       signal: this.buildRequestSignal(10_000, signal),
     }), signal);
     if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
       if (resp.status === 404) {
+        const requestId = readAsbcpResponseRequestId(resp, text);
         return {
           phase: 'offline',
+          ...(requestId ? { request_id: requestId } : {}),
           message: 'pod_not_found_current_status',
           status_source: 'current_status',
           delete_terminal_confirmed: false,
         };
       }
-      const text = await resp.text().catch(() => '');
       throw this.buildHttpError('get_pod_status', resp, text);
     }
-    return readPodStatusResponse(await resp.json().catch(() => undefined)) ?? { phase: 'unknown' };
+    const responseText = await resp.text().catch(() => '');
+    const status = readPodStatusResponse(parseAsbcpJsonObject(responseText)) ?? { phase: 'unknown' };
+    const requestId = readAsbcpResponseRequestId(resp, responseText);
+    return requestId ? { ...status, request_id: requestId } : status;
   }
 
   async deletePod(

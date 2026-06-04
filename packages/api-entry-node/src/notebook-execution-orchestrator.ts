@@ -133,10 +133,21 @@ function readErrorDiagnosticField(error: unknown, key: string): unknown {
   return (error as Record<string, unknown>)[key];
 }
 
+function readErrorDiagnosticRecordField(error: unknown, key: string): Record<string, unknown> | undefined {
+  const value = readErrorDiagnosticField(error, key);
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
 function buildSandboxReadyRetryDiagnostic(error: unknown): Record<string, unknown> {
   const code = readErrorDiagnosticField(error, 'code');
   const status = readErrorDiagnosticField(error, 'status');
   const operation = readErrorDiagnosticField(error, 'operation');
+  const workloadId = readErrorDiagnosticField(error, 'workloadId');
+  const sessionId = readErrorDiagnosticField(error, 'sessionId');
+  const sandboxOperation = readErrorDiagnosticField(error, 'sandboxOperation');
+  const podPhase = readErrorDiagnosticField(error, 'podPhase');
   const retryable = readErrorDiagnosticField(error, 'retryable');
   const asbcpCode = readErrorDiagnosticField(error, 'asbcpCode')
     ?? readErrorDiagnosticField(error, 'asbcp_code');
@@ -144,16 +155,63 @@ function buildSandboxReadyRetryDiagnostic(error: unknown): Record<string, unknow
     ?? readErrorDiagnosticField(error, 'network_error_name');
   const requestId = readErrorDiagnosticField(error, 'requestId')
     ?? readErrorDiagnosticField(error, 'request_id');
+  const sandboxDiagnostics = readErrorDiagnosticRecordField(error, 'sandboxDiagnostics')
+    ?? readErrorDiagnosticRecordField(error, 'sandbox_diagnostics');
   return {
     ...(typeof code === 'string' ? { code } : {}),
     ...(typeof status === 'number' && Number.isFinite(status) ? { status } : {}),
     ...(typeof operation === 'string' ? { operation } : {}),
+    ...(typeof workloadId === 'string' ? { workload_id: workloadId } : {}),
+    ...(typeof sessionId === 'string' ? { session_id: sessionId } : {}),
+    ...(typeof sandboxOperation === 'string' ? { sandbox_operation: sandboxOperation } : {}),
+    ...(typeof podPhase === 'string' ? { pod_phase: podPhase } : {}),
     ...(typeof retryable === 'boolean' ? { retryable } : {}),
     ...(typeof asbcpCode === 'string' ? { asbcp_code: asbcpCode } : {}),
     ...(typeof networkErrorName === 'string' ? { network_error_name: networkErrorName } : {}),
     ...(typeof requestId === 'string' ? { request_id: requestId } : {}),
+    ...(sandboxDiagnostics ? { sandbox_diagnostics: sandboxDiagnostics } : {}),
     message: redactSensitiveTraceText(error instanceof Error ? error.message : String(error)),
   };
+}
+
+function logSandboxRuntimeReadinessFailure(input: {
+  taskId: string;
+  runId: string;
+  agentId: string;
+  endpointId: string | null;
+  code: string;
+  diagnostic: Record<string, unknown>;
+}): void {
+  const sandboxDiagnostics = readErrorDiagnosticRecordField(input.diagnostic, 'sandbox_diagnostics');
+  if (input.code !== 'AGENT_SANDBOX_UNAVAILABLE' && !sandboxDiagnostics) {
+    return;
+  }
+  const payload = {
+    event: 'runtime_pending_readiness_failure',
+    theme: 'runtime_pending_readiness',
+    api: {
+      task_id: input.taskId,
+      run_id: input.runId,
+      agent_id: input.agentId,
+      endpoint_id: input.endpointId,
+      error_code: input.code,
+    },
+    pod_manager: sandboxDiagnostics ?? null,
+    diagnostic: input.diagnostic,
+  };
+  try {
+    console.warn('[sandbox] runtime_pending_readiness_failure %s', JSON.stringify(payload));
+  } catch {
+    console.warn(
+      '[sandbox] runtime_pending_readiness_failure %s',
+      JSON.stringify({
+        event: 'runtime_pending_readiness_failure',
+        theme: 'runtime_pending_readiness',
+        api: payload.api,
+        diagnostic_serialization: 'failed',
+      }),
+    );
+  }
 }
 
 async function sleepManagedAgentReadyRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
@@ -1027,6 +1085,14 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       : rawCode;
     terminalErrorCode = code;
     terminalErrorDiagnostic = buildSandboxReadyRetryDiagnostic(error);
+    logSandboxRuntimeReadinessFailure({
+      taskId: task.id,
+      runId,
+      agentId,
+      endpointId: endpointIdForLog,
+      code,
+      diagnostic: terminalErrorDiagnostic,
+    });
     debugLog('execution_dispatch_exception', {
       task_id: task.id,
       run_id: runId,

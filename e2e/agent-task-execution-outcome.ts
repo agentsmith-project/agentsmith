@@ -14,6 +14,7 @@ export type AgentTaskOutcomeTrace = {
   status?: string | null;
   name?: string | null;
   summary?: string | null;
+  details?: unknown;
   at?: string | null;
 };
 
@@ -261,6 +262,59 @@ function truncateLine(value: string, maxLength = 160): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readRecordField(record: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const value = record[key];
+  return isRecord(value) ? value : null;
+}
+
+function readTextField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function summarizeSandboxRuntimeStep(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const parts = [
+    readTextField(value, 'operation') || 'step',
+    readTextField(value, 'outcome'),
+    readTextField(value, 'requestId') ? `request_id=${readTextField(value, 'requestId')}` : null,
+    readTextField(value, 'phase') ? `phase=${readTextField(value, 'phase')}` : null,
+    typeof value.status === 'number' ? `status=${value.status}` : null,
+    typeof value.httpStatus === 'number' ? `http_status=${value.httpStatus}` : null,
+    readTextField(value, 'code') ? `code=${readTextField(value, 'code')}` : null,
+    readTextField(value, 'asbcpCode') ? `asbcp_code=${readTextField(value, 'asbcpCode')}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(':') : null;
+}
+
+function summarizeTraceRuntimeDiagnostics(trace: AgentTaskOutcomeTrace): string {
+  if (!isRecord(trace.details)) return '';
+  const errorDiagnostic = readRecordField(trace.details, 'error_diagnostic');
+  if (!errorDiagnostic) return '';
+  const sandboxDiagnostics = readRecordField(errorDiagnostic, 'sandbox_diagnostics');
+  if (!sandboxDiagnostics) return '';
+  const steps = Array.isArray(sandboxDiagnostics.steps)
+    ? sandboxDiagnostics.steps
+    : [];
+  const stepSummary = steps
+    .slice(-3)
+    .map(summarizeSandboxRuntimeStep)
+    .filter(Boolean)
+    .join(' | ');
+  const theme = readTextField(sandboxDiagnostics, 'theme');
+  const workloadId = readTextField(sandboxDiagnostics, 'workloadId');
+  const head = [
+    theme ? `theme=${theme}` : null,
+    workloadId ? `workload_id=${workloadId}` : null,
+  ].filter(Boolean).join(' ');
+  const body = stepSummary ? `steps=${stepSummary}` : '';
+  return [head, body].filter(Boolean).join(' ');
+}
+
 export function summarizeAgentTaskActivity(activity: AgentTaskOutcomeActivity[], limit = 3): string[] {
   return activity
     .slice(-limit)
@@ -278,7 +332,14 @@ export function summarizeAgentTaskTraces(traces: AgentTaskOutcomeTrace[], limit 
       const category = normalizeText(trace.category) || 'unknown';
       const status = normalizeText(trace.status);
       const name = normalizeText(trace.name) || 'trace';
-      const summary = truncateLine(normalizeText(trace.summary) || '<empty>');
+      const runtimeDiagnostics = summarizeTraceRuntimeDiagnostics(trace);
+      const summary = truncateLine(
+        [
+          normalizeText(trace.summary) || '<empty>',
+          runtimeDiagnostics ? `runtime_diagnostics: ${runtimeDiagnostics}` : '',
+        ].filter(Boolean).join(' '),
+        320,
+      );
       return `${category}${status ? `/${status}` : ''} ${name}: ${summary}`;
     });
 }

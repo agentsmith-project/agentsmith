@@ -2680,6 +2680,42 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       throw Object.assign(new Error('agent_sandbox_unavailable: pod missing'), {
         code: 'AGENT_SANDBOX_UNAVAILABLE',
         retryable: false,
+        workloadId: holderRef.workloadId,
+        sessionId: task.id,
+        sandboxOperation: 'create_or_ensure_pod',
+        sandboxDiagnostics: {
+          theme: 'runtime_pending_readiness',
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          workloadId: holderRef.workloadId,
+          sessionId: task.id,
+          convergence: {
+            offline: 'create_or_ensure_pod',
+            not_found: 'create_or_ensure_pod',
+            pending: 'poll_until_running_or_timeout',
+            running: 'verify_runner_session',
+            failed: 'terminal_error',
+          },
+          steps: [
+            {
+              operation: 'get_pod_status',
+              outcome: 'success',
+              workloadId: holderRef.workloadId,
+              requestId: 'asbcp_req_status_before_create',
+              phase: 'offline',
+              message: 'pod_not_found_current_status',
+            },
+            {
+              operation: 'create_or_ensure_pod',
+              outcome: 'error',
+              workloadId: holderRef.workloadId,
+              requestId: 'asbcp_req_create_fail',
+              status: 503,
+              code: 'AGENT_SANDBOX_UNAVAILABLE',
+              asbcpCode: 'sandbox_capacity_unavailable',
+            },
+          ],
+        },
       });
     });
     const dispatchStreamingRequest = vi.fn(async () => ({
@@ -2747,65 +2783,104 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     };
     const emitted: Array<{ type: string; data: { code?: string } }> = [];
     await seedReadyTaskWorkspaceLibraryForTask(docStore, task);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    await runNotebookTaskWithExecutionAgent({
-      deps,
-      task,
-      assistantMessage,
-      agentId: 'agent_holder_ready_fail',
-      agentTaskModelTarget: buildResolvedTargetForTest({
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        endpointId: 'ep_holder_ready_fail',
-      }),
-      user: { id: 'user_holder_ready_fail', name: 'Holder Ready User', email: 'holder-ready@example.com' },
-      publicBaseUrl: 'http://localhost:20072',
-      buildRunId: () => 'run_holder_ready_fail',
-      buildProxyUsername: () => 'holder_ready_user',
-      mapTaskMessagesForExecution: () => [],
-      updateTaskActivity: () => undefined,
-      emitTaskEvent: (_taskId, payload) => {
-        emitted.push(payload as { type: string; data: { code?: string } });
-      },
-      onFinalize: () => undefined,
-      debugLog: () => undefined,
-      taskCollections: {
-        tasks: 'project_tasks',
-        messages: 'project_task_messages',
-      },
-      createTaskArtifact: async () => ({
-        id: 'artifact_holder_ready_fail',
-        task_id: task.id,
-        type: 'file',
-        created_at: new Date().toISOString(),
-      }),
-    });
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_holder_ready_fail',
+        agentTaskModelTarget: buildResolvedTargetForTest({
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          endpointId: 'ep_holder_ready_fail',
+        }),
+        user: { id: 'user_holder_ready_fail', name: 'Holder Ready User', email: 'holder-ready@example.com' },
+        publicBaseUrl: 'http://localhost:20072',
+        buildRunId: () => 'run_holder_ready_fail',
+        buildProxyUsername: () => 'holder_ready_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: (_taskId, payload) => {
+          emitted.push(payload as { type: string; data: { code?: string } });
+        },
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_holder_ready_fail',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
 
-    expect(callOrder).toEqual(['acquire', 'bind', 'ensure', 'release']);
-    expect(acquireHolder).toHaveBeenCalledWith(holderRef);
-    expect(ensureAgentReady).toHaveBeenCalledWith(expect.objectContaining({
-      workloadId: holderRef.workloadId,
-      sessionId: task.id,
-      workspaceMount: expect.objectContaining({
-        bindingId: 'wmb_holder_ready_fail',
-      }),
-    }));
-    expect(releaseHolder).toHaveBeenCalledWith(holderRef);
-    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
-    expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('AGENT_SANDBOX_UNAVAILABLE');
-    const traces = await docStore.list<{
-      task_id: string;
-      name: string;
-      details?: {
-        error_diagnostic?: Record<string, unknown>;
-      };
-    }>('ws_holder_ready_fail_agent_task_trace_events', { task_id: task.id });
-    const terminalTrace = traces.find((item) => item.name === 'execution.terminal');
-    expect(terminalTrace?.details?.error_diagnostic).toMatchObject({
-      code: 'AGENT_SANDBOX_UNAVAILABLE',
-      retryable: false,
-      message: 'agent_sandbox_unavailable: pod missing',
-    });
+      expect(callOrder).toEqual(['acquire', 'bind', 'ensure', 'release']);
+      expect(acquireHolder).toHaveBeenCalledWith(holderRef);
+      expect(ensureAgentReady).toHaveBeenCalledWith(expect.objectContaining({
+        workloadId: holderRef.workloadId,
+        sessionId: task.id,
+        workspaceMount: expect.objectContaining({
+          bindingId: 'wmb_holder_ready_fail',
+        }),
+      }));
+      expect(releaseHolder).toHaveBeenCalledWith(holderRef);
+      expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+      expect(emitted.find((item) => item.type === 'error')?.data.code).toBe('AGENT_SANDBOX_UNAVAILABLE');
+      const traces = await docStore.list<{
+        task_id: string;
+        name: string;
+        details?: {
+          error_diagnostic?: Record<string, unknown>;
+        };
+      }>('ws_holder_ready_fail_agent_task_trace_events', { task_id: task.id });
+      const terminalTrace = traces.find((item) => item.name === 'execution.terminal');
+      expect(terminalTrace?.details?.error_diagnostic).toMatchObject({
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        retryable: false,
+        workload_id: holderRef.workloadId,
+        session_id: task.id,
+        sandbox_operation: 'create_or_ensure_pod',
+        message: 'agent_sandbox_unavailable: pod missing',
+        sandbox_diagnostics: {
+          theme: 'runtime_pending_readiness',
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          workloadId: holderRef.workloadId,
+          sessionId: task.id,
+          steps: [
+            expect.objectContaining({
+              operation: 'get_pod_status',
+              requestId: 'asbcp_req_status_before_create',
+              phase: 'offline',
+            }),
+            expect.objectContaining({
+              operation: 'create_or_ensure_pod',
+              requestId: 'asbcp_req_create_fail',
+              status: 503,
+              code: 'AGENT_SANDBOX_UNAVAILABLE',
+              asbcpCode: 'sandbox_capacity_unavailable',
+            }),
+          ],
+        },
+      });
+      const runtimeLogPayload = warnSpy.mock.calls.find(
+        (call) => call[0] === '[sandbox] runtime_pending_readiness_failure %s',
+      )?.[1];
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"event":"runtime_pending_readiness_failure"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"theme":"runtime_pending_readiness"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"task_id":"task_holder_ready_fail"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"workloadId":"task-holder-ready-fail"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"requestId":"asbcp_req_status_before_create"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"requestId":"asbcp_req_create_fail"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"asbcpCode":"sandbox_capacity_unavailable"'));
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('refuses managed workspace binding when the task file library is not ready', async () => {

@@ -175,7 +175,10 @@ describe('AsbcpClient', () => {
       status: 'accepted',
       correlation_id: 'corr_1',
       operation_id: 'op_1',
-    }), { status: 202 })) as unknown as typeof fetch;
+    }), {
+      status: 202,
+      headers: { 'x-request-id': 'asbcp_req_create_accepted' },
+    })) as unknown as typeof fetch;
 
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
@@ -185,6 +188,7 @@ describe('AsbcpClient', () => {
 
     expect(result).toMatchObject({
       httpStatus: 202,
+      requestId: 'asbcp_req_create_accepted',
       workloadId: 'workload_1',
       status: 'accepted',
       correlationId: 'corr_1',
@@ -194,13 +198,17 @@ describe('AsbcpClient', () => {
   });
 
   it('maps status 404 to offline current status without treating it as delete terminal confirmation', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(async () => new Response('', {
+      status: 404,
+      headers: { 'x-request-id': 'asbcp_req_status_404' },
+    })) as unknown as typeof fetch;
 
     const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
     const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
 
     expect(status).toEqual({
       phase: 'offline',
+      request_id: 'asbcp_req_status_404',
       message: 'pod_not_found_current_status',
       status_source: 'current_status',
       delete_terminal_confirmed: false,

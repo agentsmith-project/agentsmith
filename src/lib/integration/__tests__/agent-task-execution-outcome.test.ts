@@ -138,6 +138,37 @@ describe('agent task outcome summaries', () => {
     expect(
       summarizeAgentTaskTraces([{ category: 'progress', status: 'running', name: 'codex.command', summary: 'running tests' }]),
     ).toEqual(['progress/running codex.command: running tests']);
+    expect(summarizeAgentTaskTraces([{
+      category: 'error',
+      status: 'error',
+      name: 'execution.terminal',
+      summary: 'execution terminal synthesized: AGENT_SANDBOX_UNAVAILABLE',
+      details: {
+        error_diagnostic: {
+          sandbox_diagnostics: {
+            theme: 'runtime_pending_readiness',
+            workloadId: 'task-1',
+            steps: [
+              {
+                operation: 'get_pod_status',
+                outcome: 'success',
+                requestId: 'asbcp_req_status',
+                phase: 'offline',
+              },
+              {
+                operation: 'create_or_ensure_pod',
+                outcome: 'error',
+                requestId: 'asbcp_req_create',
+                status: 503,
+                code: 'AGENT_SANDBOX_UNAVAILABLE',
+              },
+            ],
+          },
+        },
+      },
+    }])).toEqual([
+      'error/error execution.terminal: execution terminal synthesized: AGENT_SANDBOX_UNAVAILABLE runtime_diagnostics: theme=runtime_pending_readiness workload_id=task-1 steps=get_pod_status:success:request_id=asbcp_req_status:phase=offline | create_or_ensure_pod:error:request_id=asbcp_req_create:status=503:code=AGENT_SANDBOX_UNAVAILABLE',
+    ]);
     expect(summarizeAgentTaskPod({ name: 'pod-1', phase: 'Failed', reason: 'Error', exitCode: 143 })).toBe(
       'pod=pod-1 phase=Failed reason=Error exit_code=143',
     );

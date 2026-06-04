@@ -561,7 +561,11 @@ describe('internal-agent-pod-manager', () => {
     { status: 403, code: 'AGENT_SANDBOX_FORBIDDEN' },
     { status: 409, code: 'AGENT_SANDBOX_CONFLICT' },
   ])('does not retry non-readiness createOrEnsurePod status $status', async ({ status, code }) => {
-    const getPodStatus = vi.fn().mockResolvedValueOnce({ phase: 'offline' });
+    const getPodStatus = vi.fn().mockResolvedValueOnce({
+      phase: 'offline',
+      request_id: 'asbcp_req_status_before_create',
+      message: 'pod_not_found_current_status',
+    });
     const createOrEnsurePod = vi.fn().mockRejectedValue(Object.assign(
       new Error('asbcp_non_retryable_error'),
       {
@@ -569,6 +573,7 @@ describe('internal-agent-pod-manager', () => {
         status,
         operation: 'create_or_ensure_pod',
         retryable: false,
+        requestId: `asbcp_req_create_${status}`,
       },
     ));
     const readinessSleep = vi.fn(async () => undefined);
@@ -595,22 +600,63 @@ describe('internal-agent-pod-manager', () => {
       },
     );
 
-    await expect(manager.ensureAgentReady({
-      workspaceId: 'ws_1',
-      projectId: 'proj_1',
-      workloadId: 'task_1',
-      sessionId: 'task_1',
-      agent: buildAgent({
-        image: MANAGED_RUNNER_IMAGE_A,
-        _internal_raw_key: 'ask_xxx',
-      }),
-      workspaceMount: buildWorkspaceMount(),
-    })).rejects.toMatchObject({
+    let caught: unknown;
+    try {
+      await manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: MANAGED_RUNNER_IMAGE_A,
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: buildWorkspaceMount(),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
       code,
       status,
       operation: 'create_or_ensure_pod',
+      sandboxDiagnostics: {
+        theme: 'runtime_pending_readiness',
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        convergence: {
+          offline: 'create_or_ensure_pod',
+          not_found: 'create_or_ensure_pod',
+          pending: 'poll_until_running_or_timeout',
+        },
+        steps: [
+          expect.objectContaining({
+            operation: 'readyz',
+            outcome: 'success',
+            workloadId: 'task_1',
+          }),
+          expect.objectContaining({
+            operation: 'get_pod_status',
+            outcome: 'success',
+            workloadId: 'task_1',
+            requestId: 'asbcp_req_status_before_create',
+            phase: 'offline',
+            message: 'pod_not_found_current_status',
+          }),
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            outcome: 'error',
+            workloadId: 'task_1',
+            requestId: `asbcp_req_create_${status}`,
+            code,
+            status,
+          }),
+        ],
+      },
     });
-
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
     expect(readinessSleep).not.toHaveBeenCalled();
     expect(getPodStatus).toHaveBeenCalledTimes(1);

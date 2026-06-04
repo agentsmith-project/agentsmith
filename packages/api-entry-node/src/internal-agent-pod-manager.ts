@@ -129,6 +129,39 @@ interface DiagnosticError {
   networkErrorName?: string;
 }
 
+type SandboxRuntimeDiagnosticOutcome = 'success' | 'error';
+
+interface SandboxRuntimeDiagnosticStep {
+  operation: string;
+  outcome: SandboxRuntimeDiagnosticOutcome;
+  workloadId?: string;
+  requestId?: string;
+  status?: number;
+  httpStatus?: number;
+  phase?: string;
+  podName?: string;
+  code?: string;
+  asbcpCode?: string;
+  retryable?: boolean;
+  message?: string;
+}
+
+interface SandboxRuntimeDiagnostics {
+  theme: 'runtime_pending_readiness';
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+  sessionId?: string;
+  convergence: {
+    offline: 'create_or_ensure_pod';
+    not_found: 'create_or_ensure_pod';
+    pending: 'poll_until_running_or_timeout';
+    running: 'verify_runner_session';
+    failed: 'terminal_error';
+  };
+  steps: SandboxRuntimeDiagnosticStep[];
+}
+
 interface RunnerHealthDiagnostic {
   status: RunnerHealthStatus;
   command: string[];
@@ -317,6 +350,116 @@ function normalizeRunnerHealthDiagnosticError(error: unknown): DiagnosticError {
     ...diagnostic,
     message: redactRunnerHealthDiagnosticText(diagnostic.message),
   };
+}
+
+function sanitizeSandboxRuntimeDiagnosticText(value: string | undefined, maxLength = 240): string | undefined {
+  const compact = redactAsbcpLogText(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!compact) return undefined;
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function pushSandboxRuntimeDiagnosticStep(
+  steps: SandboxRuntimeDiagnosticStep[],
+  step: SandboxRuntimeDiagnosticStep,
+): void {
+  steps.push(step);
+  if (steps.length > 10) {
+    steps.splice(0, steps.length - 10);
+  }
+}
+
+function buildPodStatusDiagnosticStep(input: {
+  operation: string;
+  workloadId: string;
+  status: PodStatusResponse;
+}): SandboxRuntimeDiagnosticStep {
+  return {
+    operation: input.operation,
+    outcome: 'success',
+    workloadId: input.workloadId,
+    ...(input.status.request_id ? { requestId: input.status.request_id } : {}),
+    phase: input.status.phase,
+    ...(input.status.pod_name ? { podName: input.status.pod_name } : {}),
+    ...(input.status.message ? { message: sanitizeSandboxRuntimeDiagnosticText(input.status.message) } : {}),
+  };
+}
+
+function buildPodEnsureDiagnosticStep(input: {
+  workloadId: string;
+  response: SandboxPodEnsureResponse;
+}): SandboxRuntimeDiagnosticStep {
+  return {
+    operation: 'create_or_ensure_pod',
+    outcome: 'success',
+    workloadId: input.workloadId,
+    httpStatus: input.response.httpStatus,
+    ...(input.response.requestId ? { requestId: input.response.requestId } : {}),
+    ...(input.response.status ? { message: sanitizeSandboxRuntimeDiagnosticText(input.response.status) } : {}),
+    ...(input.response.pod?.phase ? { phase: input.response.pod.phase } : {}),
+    ...(input.response.pod?.pod_name ? { podName: input.response.pod.pod_name } : {}),
+  };
+}
+
+function buildSandboxRuntimeErrorDiagnosticStep(input: {
+  operation: string;
+  workloadId: string;
+  error: unknown;
+}): SandboxRuntimeDiagnosticStep {
+  const diagnostic = normalizeDiagnosticError(input.error);
+  return {
+    operation: input.operation,
+    outcome: 'error',
+    workloadId: input.workloadId,
+    ...(diagnostic.status !== undefined ? { status: diagnostic.status } : {}),
+    ...(diagnostic.requestId ? { requestId: diagnostic.requestId } : {}),
+    ...(diagnostic.code ? { code: diagnostic.code } : {}),
+    ...(diagnostic.asbcpCode ? { asbcpCode: diagnostic.asbcpCode } : {}),
+    ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
+    message: sanitizeSandboxRuntimeDiagnosticText(diagnostic.message),
+  };
+}
+
+function buildSandboxRuntimeDiagnostics(input: {
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+  sessionId?: string;
+  steps: SandboxRuntimeDiagnosticStep[];
+}): SandboxRuntimeDiagnostics {
+  return {
+    theme: 'runtime_pending_readiness',
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    workloadId: input.workloadId,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    convergence: {
+      offline: 'create_or_ensure_pod',
+      not_found: 'create_or_ensure_pod',
+      pending: 'poll_until_running_or_timeout',
+      running: 'verify_runner_session',
+      failed: 'terminal_error',
+    },
+    steps: input.steps.slice(-10),
+  };
+}
+
+function attachSandboxRuntimeDiagnostics(input: {
+  error: unknown;
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+  sessionId?: string;
+  steps: SandboxRuntimeDiagnosticStep[];
+}): Error {
+  const error = input.error instanceof Error ? input.error : new Error(String(input.error));
+  const diagnostics = buildSandboxRuntimeDiagnostics(input);
+  Object.assign(error, {
+    sandboxDiagnostics: diagnostics,
+    sandbox_diagnostics: diagnostics,
+  });
+  return error;
 }
 
 function isTerminalWorkloadReleaseIncomplete(error: unknown): boolean {
@@ -784,6 +927,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     target: string,
     deadline: number,
     signal?: AbortSignal,
+    onStatus?: (status: PodStatusResponse) => void,
   ): Promise<PodStatusResponse> {
     throwIfAborted(signal);
     while (Date.now() < deadline) {
@@ -796,6 +940,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         signal,
       });
       throwIfAborted(signal);
+      onStatus?.(status);
       if (status.phase === target) return status;
       if (status.phase === 'Failed') {
         throw Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' });
@@ -1149,6 +1294,29 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       idleTimeoutSec,
     );
     const deadline = Date.now() + this.startupTimeoutMs;
+    const runtimeDiagnosticSteps: SandboxRuntimeDiagnosticStep[] = [];
+    const pushStatusStep = (operation: string, nextStatus: PodStatusResponse): void => {
+      pushSandboxRuntimeDiagnosticStep(runtimeDiagnosticSteps, buildPodStatusDiagnosticStep({
+        operation,
+        workloadId,
+        status: nextStatus,
+      }));
+    };
+    const pushErrorStep = (operation: string, error: unknown): void => {
+      pushSandboxRuntimeDiagnosticStep(runtimeDiagnosticSteps, buildSandboxRuntimeErrorDiagnosticStep({
+        operation,
+        workloadId,
+        error,
+      }));
+    };
+    const attachRuntimeDiagnostics = (error: unknown): Error => attachSandboxRuntimeDiagnostics({
+      error,
+      workspaceId,
+      projectId,
+      workloadId,
+      ...(sessionId ? { sessionId } : {}),
+      steps: runtimeDiagnosticSteps,
+    });
     try {
       throwIfAborted(signal);
       await this.checkSandboxReadyWithReadinessRetry({
@@ -1156,22 +1324,36 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         signal,
       });
       throwIfAborted(signal);
+      pushSandboxRuntimeDiagnosticStep(runtimeDiagnosticSteps, {
+        operation: 'readyz',
+        outcome: 'success',
+        workloadId,
+      });
     } catch (error) {
       throwIfAborted(signal);
-      throw buildSandboxNotReadyError({
+      pushErrorStep('readyz', error);
+      throw attachRuntimeDiagnostics(buildSandboxNotReadyError({
         cause: error,
         workloadId,
         sessionId,
-      });
+      }));
     }
     throwIfAborted(signal);
-    let status = await this.getPodStatusWithStartupRetry({
-      workspaceId,
-      projectId,
-      workloadId,
-      deadline,
-      signal,
-    });
+    let status: PodStatusResponse;
+    try {
+      status = await this.getPodStatusWithStartupRetry({
+        workspaceId,
+        projectId,
+        workloadId,
+        deadline,
+        signal,
+      });
+      pushStatusStep('get_pod_status', status);
+    } catch (error) {
+      throwIfAborted(signal);
+      pushErrorStep('get_pod_status', error);
+      throw attachRuntimeDiagnostics(error);
+    }
     throwIfAborted(signal);
     const wsBaseUrl = normalizeAgentWebSocketBaseUrl(this.wsBaseUrl);
     const wsUrl = `${wsBaseUrl}/api/v1/agent-execution/ws?agent_runner_id=${encodeURIComponent(agent.id)}${
@@ -1189,12 +1371,15 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       } catch (error) {
         throwIfAborted(signal);
         if (isTerminalWorkloadReleaseIncomplete(error)) {
-          throw buildTerminalWorkloadReleaseIncompleteError(error);
+          pushErrorStep('delete_terminal_workload', error);
+          throw attachRuntimeDiagnostics(buildTerminalWorkloadReleaseIncompleteError(error));
         }
-        throw error;
+        pushErrorStep('delete_terminal_workload', error);
+        throw attachRuntimeDiagnostics(error);
       }
       throwIfAborted(signal);
       status = { phase: 'offline' };
+      pushStatusStep('terminal_phase_deleted', status);
     }
 
     if (shouldCreateOrEnsurePodFromStatus(status)) {
@@ -1241,41 +1426,76 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
           deadline,
           signal,
         });
+        pushSandboxRuntimeDiagnosticStep(runtimeDiagnosticSteps, buildPodEnsureDiagnosticStep({
+          workloadId,
+          response: ensureResponse,
+        }));
       } catch (error) {
         throwIfAborted(signal);
+        pushErrorStep('create_or_ensure_pod', error);
         if (!isCreateOrEnsureTimeoutError(error)) {
-          throw error;
+          throw attachRuntimeDiagnostics(error);
         }
       }
       throwIfAborted(signal);
-      status = ensureResponse?.pod
-        ? ensureResponse.pod
-        : await this.getPodStatusWithStartupRetry({
-          workspaceId,
-          projectId,
-          workloadId,
-          deadline,
-          signal,
-        });
+      if (ensureResponse?.pod) {
+        status = ensureResponse.pod;
+        pushStatusStep('create_or_ensure_pod_result', status);
+      } else {
+        try {
+          status = await this.getPodStatusWithStartupRetry({
+            workspaceId,
+            projectId,
+            workloadId,
+            deadline,
+            signal,
+          });
+          pushStatusStep('get_pod_status_after_create', status);
+        } catch (error) {
+          throwIfAborted(signal);
+          pushErrorStep('get_pod_status_after_create', error);
+          throw attachRuntimeDiagnostics(error);
+        }
+      }
       throwIfAborted(signal);
     }
 
     if (status.phase === 'Failed') {
-      throw Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' });
+      throw attachRuntimeDiagnostics(Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' }));
     }
 
     if (status.phase !== 'Running') {
-      status = await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
+      try {
+        status = await this.waitForPhase(
+          workspaceId,
+          projectId,
+          workloadId,
+          'Running',
+          deadline,
+          signal,
+          (nextStatus) => pushStatusStep('wait_for_running_status', nextStatus),
+        );
+      } catch (error) {
+        throwIfAborted(signal);
+        pushErrorStep('wait_for_running', error);
+        throw attachRuntimeDiagnostics(error);
+      }
     }
 
-    await this.assertLiveRunnerImageMatchesExpected({
-      workspaceId,
-      projectId,
-      workloadId,
-      config,
-      status,
-      signal,
-    });
+    try {
+      await this.assertLiveRunnerImageMatchesExpected({
+        workspaceId,
+        projectId,
+        workloadId,
+        config,
+        status,
+        signal,
+      });
+    } catch (error) {
+      throwIfAborted(signal);
+      pushErrorStep('verify_runner_image', error);
+      throw attachRuntimeDiagnostics(error);
+    }
     throwIfAborted(signal);
 
     throwIfAborted(signal);
@@ -1300,16 +1520,22 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         ? await this.deleteStaleWorkloadPod(workspaceId, projectId, workloadId, signal)
         : {};
       throwIfAborted(signal);
-      throw this.buildSessionReadinessTimeoutError({
+      throw attachRuntimeDiagnostics(this.buildSessionReadinessTimeoutError({
         workloadId,
         sessionId,
         podPhase: status.phase,
         runnerHealth,
         cause: error,
         ...staleCleanup,
-      });
+      }));
     }
-    await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, { config, status }, signal);
+    try {
+      await this.assertReadySessionRunnerHealth(workspaceId, projectId, workloadId, agent, sessionId, { config, status }, signal);
+    } catch (error) {
+      throwIfAborted(signal);
+      pushErrorStep('verify_runner_session', error);
+      throw attachRuntimeDiagnostics(error);
+    }
   }
 
   private async checkSandboxReadyWithReadinessRetry(input: {

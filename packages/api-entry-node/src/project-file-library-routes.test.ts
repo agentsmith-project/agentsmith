@@ -1921,7 +1921,13 @@ describe('project-file-library-routes', () => {
     expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
 
     releaseGate.resolve();
-    await flushAsyncWork(5);
+    await flushAsyncWork(10);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      requestId: 'req_entries_pending_slow_release',
+    });
     await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
       workspaceId: 'ws_default',
       projectId: 'proj_1',

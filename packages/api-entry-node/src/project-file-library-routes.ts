@@ -2248,6 +2248,27 @@ async function raceEntriesPendingRuntimeRelease(
   return Promise.race([guardedReleasePromise, timeoutPromise]);
 }
 
+function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
+  deps: NodeApiDeps;
+  releasePromise: Promise<RuntimeAccessReleaseRouteResponse>;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): void {
+  void input.releasePromise.then(async (releaseResponse) => {
+    if (!runtimeAccessReleaseCompleted(releaseResponse)) {
+      return;
+    }
+    await input.deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      requestId: input.requestId,
+    });
+  }).catch(() => undefined);
+}
+
 function isFileLibraryListPendingRouteError(input: {
   statusCode: number;
   errorCode: string;
@@ -3443,16 +3464,15 @@ export async function handleProjectFileLibraryRoutes(args: {
     } catch (error) {
       let mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
-        const releaseResponse = await raceEntriesPendingRuntimeRelease(
-          releaseRuntimeAccessForFileLibrary({
-            deps,
-            workspaceId,
-            projectId,
-            libraryId,
-            actorUserId: user.id,
-            requestId,
-          }),
-        );
+        const releasePromise = releaseRuntimeAccessForFileLibrary({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          actorUserId: user.id,
+          requestId,
+        });
+        const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
         if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
           await deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
             workspaceId,
@@ -3475,6 +3495,15 @@ export async function handleProjectFileLibraryRoutes(args: {
               'file_library_list_failed',
             );
           }
+        } else if (!releaseResponse) {
+          scheduleListReadExportInvalidationAfterRuntimeRelease({
+            deps,
+            releasePromise,
+            workspaceId,
+            projectId,
+            libraryId,
+            requestId,
+          });
         }
       }
       json(res, mapped.statusCode, {

@@ -53,6 +53,7 @@ import {
   type FileLibraryEntry,
   type FileLibraryOperationProjection,
   type FileLibraryObjectMeta,
+  type FileLibraryStoragePort,
   type FileLibraryStorageOperationStatus,
 } from './file-library-afscp-storage.js';
 import {
@@ -2249,7 +2250,7 @@ async function raceEntriesPendingRuntimeRelease(
 }
 
 function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
-  deps: NodeApiDeps;
+  storageAdapter: FileLibraryStoragePort;
   releasePromise: Promise<RuntimeAccessReleaseRouteResponse>;
   workspaceId: string;
   projectId: string;
@@ -2260,7 +2261,7 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
     if (!runtimeAccessReleaseCompleted(releaseResponse)) {
       return;
     }
-    await input.deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
+    await input.storageAdapter.invalidateListReadExport?.({
       workspaceId: input.workspaceId,
       projectId: input.projectId,
       libraryId: input.libraryId,
@@ -3497,7 +3498,7 @@ export async function handleProjectFileLibraryRoutes(args: {
           }
         } else if (!releaseResponse) {
           scheduleListReadExportInvalidationAfterRuntimeRelease({
-            deps,
+            storageAdapter: deps.fileLibraryStorageAdapter,
             releasePromise,
             workspaceId,
             projectId,

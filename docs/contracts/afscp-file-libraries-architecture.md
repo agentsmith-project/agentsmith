@@ -108,6 +108,7 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 
 - read export `pending` / `file_library_list_pending`: the list API returns typed pending, starts or continues runtime-access release, and retries the read export only after release completes.
 - read export after release: once runtime access is terminally released, the backend invalidates the list read export before the next successful list response.
+- read export after completed release fence: if Files listing still reports `file_library_list_pending`, the completed fence is treated as released and the backend continues invalidating/retrying stale read exports until the listing succeeds or a typed blocker is returned.
 - workspace binding `releasing` / `release_pending`: the backend keeps calling the workspace-binding release path with bounded rechecks until the binding reaches a terminal release state or a typed blocker is returned.
 - workspace binding `offline` / `not_found`: the state is treated as no active holder for release convergence; creation or reattachment must go through the owning Agent Task sandbox path instead of Files inventing a local connector.
 - workspace binding `pending`: the backend keeps the operation pending/restoring/releasing until AFSCP returns terminal success or a typed failure/blocker.

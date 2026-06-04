@@ -1796,7 +1796,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('keeps the post-release read export alive while entries remain pending', async () => {
+  it('keeps invalidating stale post-release read exports while entries remain pending', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => {
         throw new Error('file_library_list_pending');
@@ -1860,8 +1860,14 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(3);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(4);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      requestId: 'req_entries_post_release_pending_second',
+    });
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',

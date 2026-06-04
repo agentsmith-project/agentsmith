@@ -1549,6 +1549,10 @@ function isRuntimeAccessReleaseBeginCorrelation(correlationId: string): boolean 
   return correlationId.startsWith('release:begin:');
 }
 
+function isRuntimeAccessReleaseCompleteCorrelation(correlationId: string): boolean {
+  return correlationId.startsWith('release:complete:');
+}
+
 type RuntimeAccessReleaseRouteResponse = {
   statusCode: number;
   body: Record<string, unknown>;
@@ -1746,8 +1750,21 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
 }> {
   if (
     input.binding.bindingState !== 'releasing'
-    || !isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)
   ) {
+    return { handled: false };
+  }
+  if (isRuntimeAccessReleaseCompleteCorrelation(input.binding.correlationId)) {
+    return {
+      handled: true,
+      statusCode: 200,
+      body: {
+        file_library_id: input.libraryId,
+        released: true,
+        runtime_access_status: 'released',
+      },
+    };
+  }
+  if (!isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)) {
     return { handled: false };
   }
   const workspaceBindingManager = input.deps.internalAgentWorkspaceBindingManager

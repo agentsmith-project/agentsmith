@@ -2166,6 +2166,20 @@ function hasPendingHardTeardownForTerminalHolder(
   coordinator: ReturnType<typeof resolveInternalWorkloadCoordinator>,
   holder: ManagedTerminalSessionWorkloadHolder,
 ): boolean {
+  const debtReader = coordinator as {
+    hasHardTeardownDebt?: (input: {
+      workspaceId: string;
+      projectId: string;
+      workloadId: string;
+    }) => boolean;
+  } | undefined;
+  if (typeof debtReader?.hasHardTeardownDebt === 'function') {
+    return debtReader.hasHardTeardownDebt({
+      workspaceId: holder.workspaceId,
+      projectId: holder.projectId,
+      workloadId: holder.workloadId,
+    });
+  }
   const snapshotReader = coordinator as {
     readSnapshotForTests?: () => Array<{
       workspaceId: string;
@@ -2199,6 +2213,41 @@ async function releaseManagedTerminalSessionWorkloadHolder(
   const hardTeardownWasPending = hasPendingHardTeardownForTerminalHolder(coordinator, holder);
   await coordinator.releaseHolder(holder);
   return hardTeardownWasPending;
+}
+
+function hasInternalWorkloadHardTeardownDebt(
+  deps: NodeApiDeps,
+  identity: Pick<InternalTaskWorkloadIdentity, 'workspaceId' | 'projectId' | 'taskId'>,
+): boolean {
+  const coordinator = resolveInternalWorkloadCoordinator(deps) as (ReturnType<typeof resolveInternalWorkloadCoordinator> & {
+    hasHardTeardownDebt?: (input: {
+      workspaceId: string;
+      projectId: string;
+      workloadId: string;
+    }) => boolean;
+  }) | undefined;
+  if (typeof coordinator?.hasHardTeardownDebt !== 'function') {
+    return false;
+  }
+  return coordinator.hasHardTeardownDebt({
+    workspaceId: identity.workspaceId,
+    projectId: identity.projectId,
+    workloadId: sanitizeWorkloadId(identity.taskId),
+  });
+}
+
+async function retryManagedTerminalSessionReleaseDebt(
+  deps: NodeApiDeps,
+  session: ManagedTerminalLifecycleSession,
+  identity: InternalTaskWorkloadIdentity,
+): Promise<void> {
+  if (!readManagedTerminalRuntimeDispatchContext(session.runtimeDispatchContext)) {
+    return;
+  }
+  if (!hasInternalWorkloadHardTeardownDebt(deps, identity)) {
+    return;
+  }
+  await maybeReleaseInternalAgentWorkload(deps, identity);
 }
 
 async function ensureManagedTerminalRuntimeReady(
@@ -2653,7 +2702,17 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
         agentId: session.agentId,
         workspaceFileLibraryId: runtimeDispatchContext?.managedInternalAgent.workspaceFileLibraryId ?? null,
       };
-      const hardTeardownWasPending = await releaseManagedTerminalSessionWorkloadHolder(deps, session);
+      let hardTeardownWasPending: boolean;
+      try {
+        hardTeardownWasPending = await releaseManagedTerminalSessionWorkloadHolder(deps, session);
+      } catch (err) {
+        console.warn(
+          '[sandbox] release terminal workload holder failed for task %s: %s',
+          identity.taskId,
+          safeTaskRouteDiagnosticMessage(err),
+        );
+        throw buildInternalWorkloadReleasePendingError(identity, err);
+      }
       if (hardTeardownWasPending) {
         try {
           await maybeReleaseInternalAgentWorkspaceBinding(deps, identity);
@@ -4011,6 +4070,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'terminal_runner_unavailable', message: 'terminal_runner_unavailable' });
       return true;
     }
+    const terminalReleaseIdentity = {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+      agentId: existingSession.agentId,
+      workspaceFileLibraryId: typeof task.workspace_file_library_id === 'string'
+        ? task.workspace_file_library_id
+        : null,
+    };
     let deleted: boolean;
     try {
       deleted = await deps.notebookTerminalService.deleteSession({
@@ -4030,6 +4099,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     if (!deleted) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
+      return true;
+    }
+    try {
+      await retryManagedTerminalSessionReleaseDebt(deps, existingSession, terminalReleaseIdentity);
+    } catch (error) {
+      if (!isInternalWorkloadReleasePendingError(error)) {
+        throw error;
+      }
+      json(res, 409, buildInternalWorkloadReleasePendingResponse(route.taskId, error));
       return true;
     }
     res.statusCode = 204;

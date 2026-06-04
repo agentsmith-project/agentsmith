@@ -175,6 +175,10 @@ export class InternalWorkloadCoordinator {
     await this.releaseWorkload(state);
   }
 
+  hasHardTeardownDebt(input: Pick<InternalWorkloadHolderRef, 'workspaceId' | 'projectId' | 'workloadId'>): boolean {
+    return this.workloads.get(buildWorkloadKey(input))?.hardTeardownRequested === true;
+  }
+
   async shutdown(): Promise<void> {
     for (const state of this.workloads.values()) {
       this.stopKeepaliveLoop(state);

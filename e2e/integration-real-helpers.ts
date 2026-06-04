@@ -3287,6 +3287,21 @@ export async function getTerminalSessionWsUrlViaApi(args: {
   return wsUrl;
 }
 
+function isRetryableTerminalSessionReleasePendingResponse(status: number, body: string): boolean {
+  if (status !== 409) {
+    return false;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body) as unknown;
+  } catch {
+    return false;
+  }
+  const record = asRecord(payload);
+  return record?.error_code === "AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING"
+    && record.retryable === true;
+}
+
 export async function deleteTerminalSessionViaApi(args: {
   page: Page;
   workspaceId: string;
@@ -3296,31 +3311,53 @@ export async function deleteTerminalSessionViaApi(args: {
   timeoutMs?: number;
 }): Promise<void> {
   const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.delete(
+  const timeoutMs = args.timeoutMs ?? 60_000;
+  const deadline = Date.now() + timeoutMs;
+  const retryIntervalsMs = [500, 1_000, 2_000, 5_000, 10_000];
+  let attempt = 0;
+  let lastStatus = 0;
+  let lastBody = "";
+  const sessionUrl =
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}` +
-      `/projects/${args.projectId}` +
-      `/tasks/${args.taskId}` +
-      `/terminal/sessions/${args.sessionId}`,
-    {
-      timeout: args.timeoutMs ?? 60_000,
-      headers: {
-        Authorization: `Bearer ${token}`,
+    `/projects/${args.projectId}` +
+    `/tasks/${args.taskId}` +
+    `/terminal/sessions/${args.sessionId}`;
+
+  while (Date.now() < deadline) {
+    const response = await args.page.request.delete(
+      sessionUrl,
+      {
+        timeout: Math.max(1, deadline - Date.now()),
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-  );
-  if (response.status() !== 204) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `delete_terminal_session_failed:${response.status()}:${body}`,
     );
+    if (response.status() === 204) {
+      await waitForTerminalSessionFinalTruthViaApi({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        sessionId: args.sessionId,
+      });
+      return;
+    }
+
+    lastStatus = response.status();
+    lastBody = await response.text().catch(() => "");
+    if (!isRetryableTerminalSessionReleasePendingResponse(lastStatus, lastBody)) {
+      break;
+    }
+
+    const retryDelayMs = retryIntervalsMs[Math.min(attempt, retryIntervalsMs.length - 1)] ?? 10_000;
+    attempt += 1;
+    await setTimeoutPromise(Math.min(retryDelayMs, Math.max(1, deadline - Date.now())));
   }
-  await waitForTerminalSessionFinalTruthViaApi({
-    page: args.page,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    taskId: args.taskId,
-    sessionId: args.sessionId,
-  });
+
+  throw new Error(
+    `delete_terminal_session_failed:${lastStatus}:${lastBody}`,
+  );
 }
 
 export async function runTerminalCommandViaWs(args: {

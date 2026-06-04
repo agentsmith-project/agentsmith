@@ -10672,6 +10672,89 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('returns release pending when closing the final managed terminal holder hits a retryable release debt', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const releaseError = Object.assign(
+      new Error('asbcp_error: delete_pod 500 {"error":{"code":"internal_error","message":"storage flush barrier failed","request_id":"asbcp_req_terminal_holder_500"}}'),
+      {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        status: 500,
+        operation: 'delete_pod',
+        requestId: 'asbcp_req_terminal_holder_500',
+        retryable: false,
+      },
+    );
+    const releasePod = vi.fn()
+      .mockRejectedValueOnce(releaseError)
+      .mockResolvedValueOnce(undefined);
+    const fixture = await createManagedTerminalHolderFixture({
+      taskId: 'task_terminal_holder_release_debt',
+      releasePod,
+    });
+    try {
+      const createdSession = await fixture.createTerminalSession();
+      const teardown = fixture.coordinator.requestHardTeardown({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: sanitizeWorkloadId('task_terminal_holder_release_debt'),
+      });
+      const teardownExpectation = expect(teardown).rejects.toThrow('storage flush barrier failed');
+
+      await vi.waitFor(() => {
+        expect(fixture.coordinator.readSnapshotForTests()).toEqual([
+          {
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            workloadId: sanitizeWorkloadId('task_terminal_holder_release_debt'),
+            holders: [`terminal_session:${createdSession.terminal_session_id}`],
+            hardTeardownRequested: true,
+          },
+        ]);
+      });
+
+      const closeResult = await fixture.closeTerminalSession(createdSession.terminal_session_id);
+
+      expect(closeResult.statusCode).toBe(0);
+      expect(closeResult.end).not.toHaveBeenCalled();
+      expect(closeResult.json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+        error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+        message: 'agent_task_internal_workload_release_pending',
+        task_id: 'task_terminal_holder_release_debt',
+        retryable: true,
+        release_diagnostic: expect.objectContaining({
+          code: 'AGENT_SANDBOX_UNAVAILABLE',
+          status: 500,
+          operation: 'delete_pod',
+          request_id: 'asbcp_req_terminal_holder_500',
+          retryable: false,
+        }),
+      }));
+      await teardownExpectation;
+      expect(releasePod).toHaveBeenCalledTimes(1);
+      expect(fixture.coordinator.readSnapshotForTests()).toEqual([
+        {
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          workloadId: sanitizeWorkloadId('task_terminal_holder_release_debt'),
+          holders: [],
+          hardTeardownRequested: true,
+        },
+      ]);
+
+      const retryCloseResult = await fixture.closeTerminalSession(createdSession.terminal_session_id);
+
+      expect(retryCloseResult.json).not.toHaveBeenCalled();
+      expect(retryCloseResult.statusCode).toBe(204);
+      expect(releasePod).toHaveBeenCalledTimes(2);
+      expect(fixture.coordinator.readSnapshotForTests()).toEqual([]);
+    } finally {
+      await fixture.coordinator.shutdown();
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('passes the terminal runtime dispatch abort signal into managed terminal readiness dependencies', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';

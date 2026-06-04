@@ -1556,6 +1556,7 @@ function isRuntimeAccessReleaseCompleteCorrelation(correlationId: string): boole
 type RuntimeAccessReleaseRouteResponse = {
   statusCode: number;
   body: Record<string, unknown>;
+  invalidateListReadExport?: boolean;
 };
 
 const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS = 100;
@@ -1698,6 +1699,7 @@ async function continueRuntimeAccessReleaseAfterFence(input: {
         released: !releasePending,
         runtime_access_status: releasePending ? 'release_pending' : 'released',
       },
+      invalidateListReadExport: !releasePending,
     };
   } catch (error) {
     if (isWorkspaceBindingActiveWorkloadError(error)) {
@@ -1747,6 +1749,7 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
   handled: true;
   statusCode: number;
   body: Record<string, unknown>;
+  invalidateListReadExport?: boolean;
 }> {
   if (
     input.binding.bindingState !== 'releasing'
@@ -1762,6 +1765,7 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
         released: true,
         runtime_access_status: 'released',
       },
+      invalidateListReadExport: false,
     };
   }
   if (!isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)) {
@@ -1829,6 +1833,7 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
       released: true,
       runtime_access_status: 'released',
     },
+    invalidateListReadExport: true,
   };
 }
 
@@ -2170,6 +2175,7 @@ async function releaseRuntimeAccessForFileLibrary(input: {
     return {
       statusCode: convergedReleaseFence.statusCode,
       body: convergedReleaseFence.body,
+      invalidateListReadExport: convergedReleaseFence.invalidateListReadExport,
     };
   }
   const task = await findTaskRecordForBinding({
@@ -2261,6 +2267,11 @@ function runtimeAccessReleasePending(response: RuntimeAccessReleaseRouteResponse
     && response.body.runtime_access_status === 'release_pending';
 }
 
+function shouldInvalidateListReadExportAfterRuntimeRelease(response: RuntimeAccessReleaseRouteResponse): boolean {
+  return runtimeAccessReleaseCompleted(response)
+    && response.invalidateListReadExport === true;
+}
+
 async function raceEntriesPendingRuntimeRelease(
   releasePromise: Promise<RuntimeAccessReleaseRouteResponse>,
 ): Promise<RuntimeAccessReleaseRouteResponse | null> {
@@ -2319,7 +2330,7 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
       return;
     }
 
-    if (runtimeAccessReleaseCompleted(releaseResponse)) {
+    if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
       await invalidateListReadExport(input);
       return;
     }
@@ -2340,7 +2351,7 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
       if (!releaseResponse) {
         return;
       }
-      if (runtimeAccessReleaseCompleted(releaseResponse)) {
+      if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
         await invalidateListReadExport(input);
         return;
       }
@@ -3555,7 +3566,7 @@ export async function handleProjectFileLibraryRoutes(args: {
           requestId,
         });
         const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
-        if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
+        if (releaseResponse && shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
           await invalidateListReadExport({
             storageAdapter: deps.fileLibraryStorageAdapter,
             workspaceId,

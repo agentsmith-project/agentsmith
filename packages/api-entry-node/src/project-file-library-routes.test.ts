@@ -1821,7 +1821,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('keeps invalidating stale post-release read exports while entries remain pending', async () => {
+  it('keeps a post-release pending read export warm after the release-transition invalidation', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => {
         throw new Error('file_library_list_pending');
@@ -1886,13 +1886,7 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      requestId: 'req_entries_post_release_pending_second',
-    });
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',
@@ -2034,10 +2028,14 @@ describe('project-file-library-routes', () => {
         }),
       });
 
-      await vi.advanceTimersByTimeAsync(0);
+      for (let index = 0; index < 5; index += 1) {
+        await Promise.resolve();
+      }
       runtimeBinding = null;
       await vi.advanceTimersByTimeAsync(1_000);
-      await vi.advanceTimersByTimeAsync(0);
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve();
+      }
 
       expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
       expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith({

@@ -69,8 +69,8 @@ Convergence rules:
 - Agent Task sandbox `releasing`: wait for workload release or surface a typed release-incomplete error; do not start a second conflicting task HOME holder.
 - AFSCP workspace binding `releasing` / `release_pending`: continue release convergence through the workspace binding owner until the binding is terminal (`released`, `revoked`, `expired`, or `deleted`) before read export is considered clean.
 - AFSCP workspace binding PVC lookup not ready: ASBCP `ensure_workspace_binding` returning `internal_error` with message `get persistent volume claim failed` is treated as bounded readiness convergence evidence, not as a terminal sandbox-unavailable failure on the first occurrence.
-- Files read export `pending`: return typed pending to the caller, trigger or continue runtime-access release convergence, and invalidate the read export when release completes.
-- Files read export after a completed runtime-release fence: if the list path is still pending, treat the completed fence as released, invalidate the stale read export, and return typed pending for the caller's next poll instead of doing a second synchronous list in the same request; do not let the completed fence become a silent terminal pending state.
+- Files read export `pending`: return typed pending to the caller, trigger or continue runtime-access release convergence, and invalidate the read export once when this request/background recheck moves runtime access to released.
+- Files read export after a completed runtime-release fence: if the list path is still pending, treat the completed fence as released, keep the pending read export warm for the caller's next poll, and do not do a second synchronous list in the same request; do not turn completed fences into repeated export revoke/create loops.
 
 Evidence rules:
 - `AGENT_SANDBOX_UNAVAILABLE` backend-real evidence must include the API trace, pod-manager diagnostic summary, ASBCP create/status call summaries, request id, workload id, phase, and error code when those fields are available.

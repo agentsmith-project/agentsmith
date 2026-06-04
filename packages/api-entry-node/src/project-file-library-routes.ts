@@ -1555,6 +1555,13 @@ type RuntimeAccessReleaseRouteResponse = {
 };
 
 const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS = 100;
+const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS = [
+  1_000,
+  2_000,
+  5_000,
+  10_000,
+  15_000,
+] as const;
 
 async function continueRuntimeAccessReleaseAfterFence(input: {
   deps: NodeApiDeps;
@@ -2232,6 +2239,11 @@ function runtimeAccessReleaseCompleted(response: RuntimeAccessReleaseRouteRespon
     && response.body.runtime_access_status === 'released';
 }
 
+function runtimeAccessReleasePending(response: RuntimeAccessReleaseRouteResponse): boolean {
+  return response.statusCode === 200
+    && response.body.runtime_access_status === 'release_pending';
+}
+
 async function raceEntriesPendingRuntimeRelease(
   releasePromise: Promise<RuntimeAccessReleaseRouteResponse>,
 ): Promise<RuntimeAccessReleaseRouteResponse | null> {
@@ -2249,25 +2261,77 @@ async function raceEntriesPendingRuntimeRelease(
   return Promise.race([guardedReleasePromise, timeoutPromise]);
 }
 
+async function waitForEntriesPendingRuntimeReleaseRecheck(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, delayMs);
+    const maybeNodeTimeout = timeout as unknown as { unref?: () => void };
+    if (typeof maybeNodeTimeout.unref === 'function') {
+      maybeNodeTimeout.unref();
+    }
+  });
+}
+
+async function invalidateListReadExport(input: {
+  storageAdapter: FileLibraryStoragePort;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<void> {
+  await input.storageAdapter.invalidateListReadExport?.({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    requestId: input.requestId,
+  });
+}
+
 function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
+  deps: NodeApiDeps;
   storageAdapter: FileLibraryStoragePort;
   releasePromise: Promise<RuntimeAccessReleaseRouteResponse>;
   workspaceId: string;
   projectId: string;
   libraryId: string;
+  actorUserId: string;
   requestId?: string;
 }): void {
-  void input.releasePromise.then(async (releaseResponse) => {
-    if (!runtimeAccessReleaseCompleted(releaseResponse)) {
+  void (async () => {
+    let releaseResponse: RuntimeAccessReleaseRouteResponse | null = await input.releasePromise.catch(() => null);
+    if (!releaseResponse) {
       return;
     }
-    await input.storageAdapter.invalidateListReadExport?.({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      requestId: input.requestId,
-    });
-  }).catch(() => undefined);
+
+    if (runtimeAccessReleaseCompleted(releaseResponse)) {
+      await invalidateListReadExport(input);
+      return;
+    }
+    if (!runtimeAccessReleasePending(releaseResponse)) {
+      return;
+    }
+
+    for (const delayMs of FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS) {
+      await waitForEntriesPendingRuntimeReleaseRecheck(delayMs);
+      releaseResponse = await releaseRuntimeAccessForFileLibrary({
+        deps: input.deps,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+      }).catch(() => null);
+      if (!releaseResponse) {
+        return;
+      }
+      if (runtimeAccessReleaseCompleted(releaseResponse)) {
+        await invalidateListReadExport(input);
+        return;
+      }
+      if (!runtimeAccessReleasePending(releaseResponse)) {
+        return;
+      }
+    }
+  })().catch(() => undefined);
 }
 
 function isFileLibraryListPendingRouteError(input: {
@@ -3475,13 +3539,14 @@ export async function handleProjectFileLibraryRoutes(args: {
         });
         const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
         if (releaseResponse && runtimeAccessReleaseCompleted(releaseResponse)) {
-          await deps.fileLibraryStorageAdapter.invalidateListReadExport?.({
-            workspaceId,
-            projectId,
-            libraryId,
-            requestId,
-          });
           try {
+            await invalidateListReadExport({
+              storageAdapter: deps.fileLibraryStorageAdapter,
+              workspaceId,
+              projectId,
+              libraryId,
+              requestId,
+            });
             const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
             json(res, 200, {
               path: listed.path,
@@ -3496,13 +3561,15 @@ export async function handleProjectFileLibraryRoutes(args: {
               'file_library_list_failed',
             );
           }
-        } else if (!releaseResponse) {
+        } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
           scheduleListReadExportInvalidationAfterRuntimeRelease({
+            deps,
             storageAdapter: deps.fileLibraryStorageAdapter,
-            releasePromise,
+            releasePromise: releaseResponse ? Promise.resolve(releaseResponse) : releasePromise,
             workspaceId,
             projectId,
             libraryId,
+            actorUserId: user.id,
             requestId,
           });
         }

@@ -70,6 +70,14 @@ describe('retryAsbcpReadinessNotReady', () => {
     ['HTTP 502', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 502, retryable: true }],
     ['HTTP 503', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 503, retryable: true }],
     ['HTTP 504', { code: 'AGENT_SANDBOX_UNAVAILABLE', status: 504, retryable: true }],
+    ['retryable workspace binding internal_error', {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 500,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'internal_error',
+      retryable: true,
+      asbcpRetryable: true,
+    }],
   ])('retries ASBCP startup transient %s errors within the deadline', async (_label, fields) => {
     const transientError = Object.assign(new Error('asbcp transient unavailable'), {
       operation: 'create_or_ensure_pod',

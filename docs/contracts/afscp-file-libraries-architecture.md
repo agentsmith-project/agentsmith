@@ -111,6 +111,7 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 - workspace binding `releasing` / `release_pending`: the backend keeps calling the workspace-binding release path with bounded rechecks until the binding reaches a terminal release state or a typed blocker is returned.
 - workspace binding `offline` / `not_found`: the state is treated as no active holder for release convergence; creation or reattachment must go through the owning Agent Task sandbox path instead of Files inventing a local connector.
 - workspace binding `pending`: the backend keeps the operation pending/restoring/releasing until AFSCP returns terminal success or a typed failure/blocker.
+- workspace binding PVC lookup not ready: ASBCP `ensure_workspace_binding` returning `internal_error` with message `get persistent volume claim failed` is classified as readiness convergence and retried within the bounded workspace-binding path.
 - Product Readiness evidence must preserve the Files restore continuation focused backend-real gate before the full Product Readiness campaign, because this slice proves restore can continue through pending read export and release convergence.
 
 ### Task File Templates

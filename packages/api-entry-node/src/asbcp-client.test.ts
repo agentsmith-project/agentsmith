@@ -425,6 +425,42 @@ describe('AsbcpClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('classifies workspace binding PVC lookup internal_error as transient readiness', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'internal_error',
+        message: 'get persistent volume claim failed',
+        request_id: 'asbcp_req_pvc_lookup_pending',
+      },
+    }), { status: 500 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'wmb_demo', {
+        namespace_id: 'ns_project_1',
+        mount_binding_id: 'wmb_demo',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 500,
+      operation: 'ensure_workspace_binding',
+      asbcpCode: 'internal_error',
+      retryable: true,
+      asbcpRetryable: true,
+      requestId: 'asbcp_req_pvc_lookup_pending',
+    });
+    expect(isAsbcpReadinessNotReadyError(caught)).toBe(false);
+    expect(isAsbcpStartupTransientUnavailableError(caught)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('fails fast and sanitizes ASBCP not_ready when the body explicitly marks it non-retryable', async () => {
     const rawDetail = 'pvc-prod-raw-claim is permanently invalid';
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({

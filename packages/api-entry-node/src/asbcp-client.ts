@@ -112,6 +112,14 @@ function readAsbcpErrorRetryable(responseText: string): boolean | undefined {
   return readBooleanField(error, 'retryable');
 }
 
+function readAsbcpErrorMessage(responseText: string): string | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readStringField(error, 'message');
+}
+
 function readAsbcpRequestIdFromBody(responseText: string): string | undefined {
   const payload = parseAsbcpJsonObject(responseText);
   if (!payload) {
@@ -166,6 +174,20 @@ function isAsbcpReleaseUnconfirmedConflict(
   }
   const asbcpCode = readAsbcpErrorCode(responseText);
   return asbcpCode !== undefined && ASBCP_RELEASE_INCOMPLETE_ERROR_CODES.has(asbcpCode);
+}
+
+function isWorkspaceBindingPvcReadinessInternalError(
+  status: number,
+  operation: string,
+  responseText: string,
+): boolean {
+  if (status !== 500 || operation !== 'ensure_workspace_binding') {
+    return false;
+  }
+  if (readAsbcpErrorCode(responseText) !== 'internal_error') {
+    return false;
+  }
+  return readAsbcpErrorMessage(responseText)?.trim().toLowerCase() === 'get persistent volume claim failed';
 }
 
 export interface PodStatusResponse {
@@ -440,8 +462,8 @@ export function isAsbcpStartupTransientUnavailableError(error: unknown): boolean
   }
 
   const asbcpCode = readAsbcpErrorObjectCode(error);
-  if (asbcpCode === 'internal_error' && asbcpRetryable !== true) {
-    return false;
+  if (asbcpCode === 'internal_error') {
+    return asbcpRetryable === true;
   }
 
   const status = typeof error.status === 'number' && Number.isFinite(error.status)
@@ -584,13 +606,27 @@ export class AsbcpClient {
   private buildHttpError(operation: string, resp: Response, responseText: string): AsbcpHttpError {
     const asbcpRetryable = readAsbcpErrorRetryable(responseText);
     const asbcpCode = readAsbcpErrorCode(responseText);
+    const inferredReadinessRetryable = isWorkspaceBindingPvcReadinessInternalError(
+      resp.status,
+      operation,
+      responseText,
+    );
+    const retryable = asbcpRetryable ?? (
+      inferredReadinessRetryable
+        ? true
+        : this.isRetryableHttpError(resp.status, operation, responseText)
+    );
     return new AsbcpHttpError({
       status: resp.status,
       operation,
       code: this.mapErrorCode(resp.status, operation, responseText),
       asbcpCode,
-      retryable: asbcpRetryable ?? this.isRetryableHttpError(resp.status, operation, responseText),
-      ...(asbcpRetryable !== undefined ? { asbcpRetryable } : {}),
+      retryable,
+      ...(asbcpRetryable !== undefined
+        ? { asbcpRetryable }
+        : inferredReadinessRetryable
+          ? { asbcpRetryable: true }
+          : {}),
       requestId: readAsbcpResponseRequestId(resp, responseText),
       retryAfterMs: parseRetryAfterMs(resp.headers.get('retry-after')),
       message: buildAsbcpHttpErrorMessage({

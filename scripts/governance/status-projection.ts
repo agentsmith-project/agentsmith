@@ -412,6 +412,20 @@ function nonNegativeInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+function normalizePollRetryCoverage(value: unknown): CurrentStatusProjectionRunObservability['poll_retry_coverage'] {
+  if (value === 'runtime_pending_readiness_adaptive_wait') {
+    return value;
+  }
+  return 'not_covered';
+}
+
+function renderPollRetryCoverage(value: CurrentStatusProjectionRunObservability['poll_retry_coverage']): string {
+  if (value === 'runtime_pending_readiness_adaptive_wait') {
+    return 'runtime pending/readiness adaptive wait';
+  }
+  return 'not covered';
+}
+
 function sanitizeObservabilityText(value: string): string {
   return redactSensitiveText(value).slice(0, 160);
 }
@@ -462,7 +476,7 @@ function readReleaseSummaryObservability(campaignRoot?: string | null): CurrentS
       backend_real_check_session_count: countValue('backend_real_check_session_count'),
       image_import_count: countValue('image_import_count'),
     },
-    poll_retry_coverage: 'not_covered',
+    poll_retry_coverage: normalizePollRetryCoverage(observability.poll_retry_coverage),
     report_size_bytes: nonNegativeInteger(observability.report_size_bytes) ?? 0,
   };
 }
@@ -1049,7 +1063,7 @@ function renderRunObservabilityLines(
     `API/Web starts: ${observability.counts.api_web_start_count}`,
     `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
     `Image imports: ${observability.counts.image_import_count}`,
-    'Poll/retry coverage: not covered',
+    `Poll/retry coverage: ${renderPollRetryCoverage(observability.poll_retry_coverage)}`,
     `Report size: ${observability.report_size_bytes} bytes`,
   ];
 }

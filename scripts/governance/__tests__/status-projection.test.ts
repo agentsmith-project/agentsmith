@@ -97,7 +97,10 @@ function writeAggregateResult(campaignRoot: string, overrides: Partial<{
   return path;
 }
 
-function writeReleaseSummaryWithObservability(campaignRoot: string): void {
+function writeReleaseSummaryWithObservability(
+  campaignRoot: string,
+  pollRetryCoverage: 'not_covered' | 'runtime_pending_readiness_adaptive_wait' = 'runtime_pending_readiness_adaptive_wait',
+): void {
   writeJson(join(campaignRoot, 'summary.json'), {
     schema: 'agentsmith_release_summary/v1',
     campaign_id: 'release-full',
@@ -145,7 +148,7 @@ function writeReleaseSummaryWithObservability(campaignRoot: string): void {
         backend_real_check_session_count: 2,
         image_import_count: 3,
       },
-      poll_retry_coverage: 'not_covered',
+      poll_retry_coverage: pollRetryCoverage,
       report_size_bytes: 987_654,
     },
   });
@@ -431,7 +434,7 @@ describe('current status projection', () => {
           backend_real_check_session_count: 2,
           image_import_count: 3,
         },
-        poll_retry_coverage: 'not_covered',
+        poll_retry_coverage: 'runtime_pending_readiness_adaptive_wait',
         report_size_bytes: 987_654,
       });
       expect(projection.run_observability?.top_slow_stages.map((stage) => stage.id)).toEqual([
@@ -450,11 +453,31 @@ describe('current status projection', () => {
       expect(rendered).toContain('API/Web starts: 1');
       expect(rendered).toContain('Backend real sessions: 2');
       expect(rendered).toContain('Image imports: 3');
-      expect(rendered).toContain('Poll/retry coverage: not covered');
+      expect(rendered).toContain('Poll/retry coverage: runtime pending/readiness adaptive wait');
       expect(rendered).not.toContain('Poll/retry attempts: 0');
       expect(rendered).toContain('Report size: 987654 bytes');
       expect(rendered).toContain('Read-only: product:status does not rerun checks or revalidate evidence.');
       expectCleanReleaseStatusSummary(rendered);
+    });
+  });
+
+  it('keeps legacy not-covered poll retry observability readable', () => {
+    withTempRoot((campaignRoot) => {
+      writeAggregateResult(campaignRoot);
+      writeReleaseSummaryWithObservability(campaignRoot, 'not_covered');
+
+      const projection = buildStatusProjection({
+        goal: 'product-readiness',
+        campaignRoot,
+        currentGitSha: CURRENT_GIT_SHA,
+        evidenceGitSha: EVIDENCE_GIT_SHA,
+        generatedAt: GENERATED_AT,
+      });
+      const rendered = renderStatusProjectionSummary(projection);
+
+      expect(projection.run_observability?.poll_retry_coverage).toBe('not_covered');
+      expect(validateCurrentStatusProjection(projection)).toEqual({ ok: true, value: projection });
+      expect(rendered).toContain('Poll/retry coverage: not covered');
     });
   });
 

@@ -77,6 +77,7 @@ describe('run-local readiness state', () => {
       expect(existsSync(statePath)).toBe(true);
       expect(state.kind).toBe('operational_state');
       expect(state.release_authority).toBe('not_release_authority');
+      expect(state.parent_observations.poll_retry_coverage).toBe('runtime_pending_readiness_adaptive_wait');
       expect(state.env_digest.entries.map((entry) => entry.name)).toEqual([
         'NEXT_PUBLIC_API_BASE',
         'NEXT_PUBLIC_USE_MSW',
@@ -507,6 +508,7 @@ describe('run-local readiness state', () => {
         real_service_start_count: 1,
         api_web_start_count: 1,
       });
+      expect(updated.parent_observations.poll_retry_coverage).toBe('runtime_pending_readiness_adaptive_wait');
     });
   });
 

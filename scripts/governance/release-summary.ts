@@ -93,12 +93,16 @@ export interface ReleaseRunSlowStage {
   status: string;
 }
 
+export type ReleasePollRetryCoverage =
+  | 'not_covered'
+  | 'runtime_pending_readiness_adaptive_wait';
+
 export interface ReleaseRunObservability {
   total_duration_ms: number | null;
   top_slow_stages: readonly ReleaseRunSlowStage[];
   counts_source: 'parent_flow';
   counts: ReleaseRunObservabilityCounts;
-  poll_retry_coverage: 'not_covered';
+  poll_retry_coverage: ReleasePollRetryCoverage;
   report_size_bytes: number;
 }
 
@@ -335,7 +339,7 @@ function normalizeReleaseRunObservability(input: {
     top_slow_stages: topSlowStages,
     counts_source: 'parent_flow',
     counts,
-    poll_retry_coverage: 'not_covered',
+    poll_retry_coverage: 'runtime_pending_readiness_adaptive_wait',
     report_size_bytes: input.reportSizeBytes ?? input.observability?.reportSizeBytes ?? 0,
   };
 }
@@ -375,9 +379,16 @@ function renderReleaseObservabilityLines(observability?: ReleaseRunObservability
     `API/Web starts: ${observability.counts.api_web_start_count}`,
     `Backend real sessions: ${observability.counts.backend_real_check_session_count}`,
     `Image imports: ${observability.counts.image_import_count}`,
-    'Poll/retry coverage: not covered',
+    `Poll/retry coverage: ${renderPollRetryCoverage(observability.poll_retry_coverage)}`,
     `Report size: ${observability.report_size_bytes} bytes`,
   ];
+}
+
+function renderPollRetryCoverage(value: ReleasePollRetryCoverage): string {
+  if (value === 'runtime_pending_readiness_adaptive_wait') {
+    return 'runtime pending/readiness adaptive wait';
+  }
+  return 'not covered';
 }
 
 function renderReleaseContractReference(contract?: ReleaseContractSummary): string | null {
@@ -1050,8 +1061,11 @@ function validateReleaseRunObservability(value: unknown): void {
   if (observability.counts_source !== 'parent_flow') {
     throw new Error('release summary run_observability counts_source must be parent_flow.');
   }
-  if (observability.poll_retry_coverage !== 'not_covered') {
-    throw new Error('release summary run_observability poll_retry_coverage must be not_covered.');
+  if (
+    observability.poll_retry_coverage !== 'not_covered'
+    && observability.poll_retry_coverage !== 'runtime_pending_readiness_adaptive_wait'
+  ) {
+    throw new Error('release summary run_observability poll_retry_coverage is invalid.');
   }
   if (!Array.isArray(observability.top_slow_stages)) {
     throw new Error('release summary run_observability top_slow_stages must be an array.');

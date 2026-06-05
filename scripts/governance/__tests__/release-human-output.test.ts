@@ -49,7 +49,7 @@ function releaseSummary(overrides: Partial<ReleaseSummary> = {}): ReleaseSummary
         backend_real_check_session_count: 1,
         image_import_count: 1,
       },
-      poll_retry_coverage: 'not_covered',
+      poll_retry_coverage: 'runtime_pending_readiness_adaptive_wait',
       report_size_bytes: 123_456,
     },
     ...overrides,
@@ -87,7 +87,7 @@ describe('release human output', () => {
       expect(output).toContain('API/Web starts: 1');
       expect(output).toContain('Backend real sessions: 1');
       expect(output).toContain('Image imports: 1');
-      expect(output).toContain('Poll/retry coverage: not covered');
+      expect(output).toContain('Poll/retry coverage: runtime pending/readiness adaptive wait');
       expect(output).not.toContain('Poll/retry attempts: 0');
       expect(output).toContain('Report size: 123456 bytes');
       expect(output).toContain('common setup warnings (NO_COLOR, already-existing Postgres resources, containerd deprecations) are diagnostic');

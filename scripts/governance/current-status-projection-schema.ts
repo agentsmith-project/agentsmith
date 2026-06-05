@@ -148,7 +148,7 @@ export interface CurrentStatusProjectionRunObservability {
   top_slow_stages: readonly CurrentStatusProjectionSlowStage[];
   counts_source: 'parent_flow';
   counts: CurrentStatusProjectionRunObservabilityCounts;
-  poll_retry_coverage: 'not_covered';
+  poll_retry_coverage: 'not_covered' | 'runtime_pending_readiness_adaptive_wait';
   report_size_bytes: number;
 }
 
@@ -839,8 +839,11 @@ function validateRunObservability(
   if (value.counts_source !== 'parent_flow') {
     pushFailure(failures, `${path}.counts_source`, 'counts_source must be parent_flow.');
   }
-  if (value.poll_retry_coverage !== 'not_covered') {
-    pushFailure(failures, `${path}.poll_retry_coverage`, 'poll_retry_coverage must be not_covered.');
+  if (
+    value.poll_retry_coverage !== 'not_covered'
+    && value.poll_retry_coverage !== 'runtime_pending_readiness_adaptive_wait'
+  ) {
+    pushFailure(failures, `${path}.poll_retry_coverage`, 'poll_retry_coverage is invalid.');
   }
   if (!Array.isArray(value.top_slow_stages)) {
     pushFailure(failures, `${path}.top_slow_stages`, `${path}.top_slow_stages must be an array.`);

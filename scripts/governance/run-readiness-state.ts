@@ -33,6 +33,9 @@ const READINESS_ENV_DIGEST_ALLOWLIST = [
 type ReadinessStateScope = 'verify' | 'release';
 type ReadinessStatus = 'unknown' | 'ready' | 'not_ready';
 type RunReadinessField = keyof RunReadinessState['readiness'];
+type RunReadinessPollRetryCoverage =
+  | 'not_covered'
+  | 'runtime_pending_readiness_adaptive_wait';
 
 const RUN_READINESS_FIELDS = [
   'integration_deps_ready',
@@ -99,7 +102,7 @@ export interface RunReadinessParentObservations {
     api_web_started: ReadinessStatus;
   };
   counts: RunReadinessParentObservationCounts;
-  poll_retry_coverage: 'not_covered';
+  poll_retry_coverage: RunReadinessPollRetryCoverage;
 }
 
 export interface RunReadinessState {
@@ -212,7 +215,7 @@ function defaultParentObservations(): RunReadinessParentObservations {
       backend_real_check_session_count: 0,
       image_import_count: 0,
     },
-    poll_retry_coverage: 'not_covered',
+    poll_retry_coverage: 'runtime_pending_readiness_adaptive_wait',
   };
 }
 
@@ -360,6 +363,10 @@ function validateNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+function validatePollRetryCoverage(value: unknown): value is RunReadinessPollRetryCoverage {
+  return value === 'not_covered' || value === 'runtime_pending_readiness_adaptive_wait';
+}
+
 function validateParentObservations(value: unknown): value is RunReadinessParentObservations {
   if (!isRecord(value) || value.counts_source !== 'parent_flow') {
     return false;
@@ -382,7 +389,7 @@ function validateParentObservations(value: unknown): value is RunReadinessParent
     'backend_real_check_session_count',
     'image_import_count',
   ].every((field) => validateNonNegativeInteger(value.counts[field]))
-    && value.poll_retry_coverage === 'not_covered';
+    && validatePollRetryCoverage(value.poll_retry_coverage);
 }
 
 function parseRunReadinessState(value: unknown): RunReadinessStateValidationResult {
@@ -623,7 +630,7 @@ export function updateRunReadinessStateParentObservations(input: {
         ...validation.state.parent_observations.counts,
         ...(input.counts ?? {}),
       },
-      poll_retry_coverage: 'not_covered',
+      poll_retry_coverage: validation.state.parent_observations.poll_retry_coverage,
     },
   };
   const mergedValidation = parseRunReadinessState(updated);

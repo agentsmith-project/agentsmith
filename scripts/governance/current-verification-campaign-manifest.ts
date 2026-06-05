@@ -28,6 +28,20 @@ export type CurrentVerificationCampaignEvidenceCheckKind =
 export type CurrentVerificationCampaignEvidenceSemantic =
   | 'unified_deploy_evidence'
   | 'ux_trace_bundle';
+export type CurrentVerificationCampaignObservationTheme =
+  | 'runtime_pending_readiness';
+export type CurrentVerificationCampaignObservationBackoff =
+  | 'increasing_after_consecutive_non_terminal';
+export type CurrentVerificationCampaignRuntimeConvergenceSurface =
+  | 'files'
+  | 'agent_task_sandbox'
+  | 'afscp_workspace_binding'
+  | 'read_export';
+export type CurrentVerificationCampaignRuntimeConvergenceState =
+  | 'pending'
+  | 'releasing'
+  | 'offline'
+  | 'not_found';
 
 export interface CurrentVerificationCampaignEvidenceCheck {
   id: string;
@@ -51,6 +65,17 @@ export interface CurrentVerificationCampaignNativeResult {
   path: string;
 }
 
+export interface CurrentVerificationCampaignObservationPolicy {
+  theme: CurrentVerificationCampaignObservationTheme;
+  backoff: CurrentVerificationCampaignObservationBackoff;
+  intervalMs: readonly number[];
+  evidenceFocus: readonly string[];
+  stateConvergence: Readonly<Record<
+    CurrentVerificationCampaignRuntimeConvergenceSurface,
+    Readonly<Record<CurrentVerificationCampaignRuntimeConvergenceState, string>>
+  >>;
+}
+
 export interface CurrentVerificationCampaignStep {
   id: string;
   gateId: string;
@@ -66,6 +91,7 @@ export interface CurrentVerificationCampaignStep {
   dependsOn: readonly string[];
   evidenceHints: readonly string[];
   evidenceChecks: readonly CurrentVerificationCampaignEvidenceCheck[];
+  observationPolicy?: CurrentVerificationCampaignObservationPolicy;
   nativeResult?: CurrentVerificationCampaignNativeResult;
 }
 
@@ -179,6 +205,48 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         dependsOn: ['gate-default'],
         evidenceHints: findCurrentGateDefinitionById('gate-release')?.campaignEvidenceArtifacts ?? [],
         evidenceChecks: campaignEvidenceChecks('gateRelease'),
+        observationPolicy: {
+          theme: 'runtime_pending_readiness',
+          backoff: 'increasing_after_consecutive_non_terminal',
+          intervalMs: [
+            60 * 1_000,
+            90 * 1_000,
+            120 * 1_000,
+            180 * 1_000,
+            300 * 1_000,
+          ],
+          evidenceFocus: [
+            'Files restore continuation focused backend-real gate',
+            'AGENT_SANDBOX_UNAVAILABLE API/pod-manager/ASBCP summaries',
+            'runtime flake versus stability blocker classification',
+          ],
+          stateConvergence: {
+            files: {
+              pending: 'Return typed file_library_list_pending, continue runtime-access release convergence, and recheck without reading a stale projection.',
+              releasing: 'Wait for workspace binding release convergence before creating a read export; return typed pending while release is non-terminal.',
+              offline: 'Treat as no active writer for Files read export and create or read the clean read export through the Files path only.',
+              not_found: 'Treat as no active writer for Files read export; do not synthesize an executable connector.',
+            },
+            agent_task_sandbox: {
+              pending: 'Continue bounded ASBCP status checks until Running, Failed, or timeout.',
+              releasing: 'Wait for workload release or surface a typed release-incomplete error; do not start a second task HOME holder.',
+              offline: 'Call ASBCP create-or-ensure for the workload, then continue status checks until Running, Failed, or timeout.',
+              not_found: 'Call ASBCP create-or-ensure for the workload, then continue status checks until Running, Failed, or timeout.',
+            },
+            afscp_workspace_binding: {
+              pending: 'Return typed runtime readiness pending and recheck through the workspace binding owner before Files read export proceeds.',
+              releasing: 'Continue release convergence through the workspace binding owner until terminal released/revoked/expired/deleted.',
+              offline: 'Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path.',
+              not_found: 'Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path.',
+            },
+            read_export: {
+              pending: 'Return typed pending, trigger or continue runtime-access release, and keep the pending read export warm for the caller next poll.',
+              releasing: 'Wait for runtime release fence or export invalidation, and avoid revoke/create loops while convergence is non-terminal.',
+              offline: 'Create or reuse the read export only after no active writer is observed.',
+              not_found: 'Create a fresh read export if runtime access is clean; otherwise return typed pending.',
+            },
+          },
+        },
         nativeResult: {
           gateId: 'lane-backend-real-release',
           npmScript: 'lane:backend-real:release',

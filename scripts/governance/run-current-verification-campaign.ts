@@ -61,6 +61,17 @@ function main(): void {
         command: step.command,
         timeout_ms: step.timeoutMs,
         execution_mode: step.executionMode,
+        ...(step.observationPolicy
+          ? {
+              observation_policy: {
+                theme: step.observationPolicy.theme,
+                backoff: step.observationPolicy.backoff,
+                interval_ms: step.observationPolicy.intervalMs,
+                evidence_focus: step.observationPolicy.evidenceFocus,
+                state_convergence: step.observationPolicy.stateConvergence,
+              },
+            }
+          : {}),
       })),
     }, null, 2)}\n`);
     return;

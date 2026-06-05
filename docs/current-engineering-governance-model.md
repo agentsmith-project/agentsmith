@@ -52,6 +52,7 @@ Current gate truth:
 - for gate/lane pairs registered in `scripts/governance/current-gate-result-schema.ts`, canonical gate-result artifact location is `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
 - gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
 - `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
+- runtime pending/readiness is a diagnostic and observation theme for Files, Agent Task sandbox, AFSCP workspace binding, and read export convergence. Product Readiness exposes it through the release campaign `observationPolicy` / `observation_policy` and backend-real diagnostic evidence; it is not a new canonical `failure_class`.
 - `gate:default` does not own the full visual lane.
 - `lane:visual` is the internal full visual evidence owner / verification owner; human execution uses clean entrypoints such as `npm run verify -- --goal=visual --run` outside release and `npm run product:ready` for product-side readiness / handoff input completeness.
 

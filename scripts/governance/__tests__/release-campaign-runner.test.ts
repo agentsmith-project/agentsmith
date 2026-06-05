@@ -89,6 +89,51 @@ function runReleaseCampaignWithFakeNpm(
 }
 
 describe('release campaign runner lifecycle contract', () => {
+  it('surfaces runtime pending readiness observation policy in campaign dry-run output', () => {
+    const output = execFileSync(
+      'npx',
+      ['tsx', 'scripts/governance/run-current-verification-campaign.ts', 'release-full', '--dry-run'],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          RELEASE_CAMPAIGN_RUN_ID: 'release-campaign-dry-run-observation-policy',
+        },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const plan = JSON.parse(output) as {
+      steps: Array<{
+        id: string;
+        observation_policy?: {
+          theme: string;
+          backoff: string;
+          interval_ms: number[];
+          evidence_focus: string[];
+          state_convergence?: Record<string, Record<string, string>>;
+        };
+      }>;
+    };
+    const gateRelease = plan.steps.find((step) => step.id === 'gate-release');
+
+    expect(gateRelease?.observation_policy).toMatchObject({
+      theme: 'runtime_pending_readiness',
+      backoff: 'increasing_after_consecutive_non_terminal',
+      interval_ms: [60_000, 90_000, 120_000, 180_000, 300_000],
+    });
+    expect(gateRelease?.observation_policy?.evidence_focus).toContain(
+      'Files restore continuation focused backend-real gate',
+    );
+    expect(Object.keys(gateRelease?.observation_policy?.state_convergence ?? {}).sort()).toEqual([
+      'afscp_workspace_binding',
+      'agent_task_sandbox',
+      'files',
+      'read_export',
+    ]);
+    expect(gateRelease?.observation_policy?.state_convergence?.read_export?.pending).toContain('typed pending');
+  });
+
   it('projects release campaign runtime leases from the current resource lock semantics', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-locks-'));
     try {

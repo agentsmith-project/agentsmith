@@ -91,6 +91,46 @@ describe('current verification campaign manifest', () => {
     expect(releaseFull.steps.reduce((total, step) => total + step.timeoutMs, 0)).toBeLessThan(240 * 60_000);
   });
 
+  it('classifies backend-real release waits as runtime pending readiness with increasing observation intervals', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    const gateRelease = releaseFull.steps.find((step) => step.id === 'gate-release');
+    const policy = gateRelease?.observationPolicy;
+
+    expect(policy).toMatchObject({
+      theme: 'runtime_pending_readiness',
+      backoff: 'increasing_after_consecutive_non_terminal',
+    });
+    expect(policy?.intervalMs).toEqual([60_000, 90_000, 120_000, 180_000, 300_000]);
+    expect(policy?.evidenceFocus).toEqual(
+      expect.arrayContaining([
+        'Files restore continuation focused backend-real gate',
+        'AGENT_SANDBOX_UNAVAILABLE API/pod-manager/ASBCP summaries',
+        'runtime flake versus stability blocker classification',
+      ]),
+    );
+    expect(Object.keys(policy?.stateConvergence ?? {}).sort()).toEqual([
+      'afscp_workspace_binding',
+      'agent_task_sandbox',
+      'files',
+      'read_export',
+    ]);
+    for (const surface of ['files', 'agent_task_sandbox', 'afscp_workspace_binding', 'read_export'] as const) {
+      expect(Object.keys(policy?.stateConvergence?.[surface] ?? {}).sort()).toEqual([
+        'not_found',
+        'offline',
+        'pending',
+        'releasing',
+      ]);
+    }
+    expect(policy?.stateConvergence?.agent_task_sandbox.offline).toContain('ASBCP create-or-ensure');
+    expect(policy?.stateConvergence?.afscp_workspace_binding.releasing).toContain('terminal released/revoked/expired/deleted');
+    expect(policy?.stateConvergence?.read_export.pending).toContain('typed pending');
+  });
+
   it('separates executable evidence owners from the aggregate-only readiness check', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
     if (!releaseFull) {

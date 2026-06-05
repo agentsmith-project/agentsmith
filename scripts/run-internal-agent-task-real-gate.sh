@@ -742,11 +742,42 @@ collect_runtime_readiness_details() {
     return 0
   fi
 
-  node --input-type=module - "${output_file}" "${evidence_dir}/k8s-pod-status.txt" "${candidates[@]}" <<'NODE' || {
+  node --input-type=module - \
+    "${output_file}" \
+    "${evidence_dir}/k8s-pod-status.txt" \
+    "${ROOT_DIR}/scripts/governance/runtime-readiness-policy.json" \
+    "${candidates[@]}" <<'NODE' || {
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [outputFile, podStatusFile, ...candidateFiles] = process.argv.slice(2);
+const [outputFile, podStatusFile, policyFile, ...candidateFiles] = process.argv.slice(2);
+
+function readPolicy(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {
+      schema_version: 'agentsmith.runtime-readiness-policy/v1',
+      theme: 'runtime_pending_readiness',
+      backoff: 'increasing_after_consecutive_non_terminal',
+      interval_ms: [60000, 90000, 120000, 180000, 300000],
+      evidence_focus: [],
+      state_convergence: {},
+      classification_rules: {},
+    };
+  }
+}
+
+function policyEvidence(policy) {
+  return {
+    schema_version: policy.schema_version,
+    theme: policy.theme,
+    backoff: policy.backoff,
+    interval_ms: policy.interval_ms,
+    evidence_focus: policy.evidence_focus,
+    state_convergence: policy.state_convergence,
+  };
+}
 
 function readIfFile(file) {
   try {
@@ -1035,10 +1066,13 @@ function parseK8sPods(file) {
   return pods;
 }
 
+const policy = readPolicy(policyFile);
 const report = {
   schema_version: 'agentsmith.runtime-readiness-details/v1',
-  theme: 'runtime_pending_readiness',
+  theme: policy.theme,
   generated_at: new Date().toISOString(),
+  convergence_policy: policyEvidence(policy),
+  classification_rules: policy.classification_rules,
   signals: parseSignals(candidateFiles),
   k8s_pods: parseK8sPods(podStatusFile)
 };
@@ -1065,7 +1099,8 @@ annotate_runtime_readiness_details() {
     "${stage}" \
     "${GATE_MODE:-workspace}" \
     "${spec}" \
-    "${label}" <<'NODE' || true
+    "${label}" \
+    "${ROOT_DIR}/scripts/governance/runtime-readiness-policy.json" <<'NODE' || true
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -1077,21 +1112,55 @@ const [
   gateMode,
   spec,
   label,
+  policyFile,
 ] = process.argv.slice(2);
+
+function readPolicy(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {
+      schema_version: 'agentsmith.runtime-readiness-policy/v1',
+      theme: 'runtime_pending_readiness',
+      backoff: 'increasing_after_consecutive_non_terminal',
+      interval_ms: [60000, 90000, 120000, 180000, 300000],
+      evidence_focus: [],
+      state_convergence: {},
+      classification_rules: {},
+    };
+  }
+}
+
+function policyEvidence(policy) {
+  return {
+    schema_version: policy.schema_version,
+    theme: policy.theme,
+    backoff: policy.backoff,
+    interval_ms: policy.interval_ms,
+    evidence_focus: policy.evidence_focus,
+    state_convergence: policy.state_convergence,
+  };
+}
 
 let payload = {};
 try {
   payload = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
 } catch {
+  const policy = readPolicy(policyFile);
   payload = {
     schema_version: 'agentsmith.runtime-readiness-details/v1',
-    theme: 'runtime_pending_readiness',
+    theme: policy.theme,
     generated_at: new Date().toISOString(),
+    convergence_policy: policyEvidence(policy),
+    classification_rules: policy.classification_rules,
     signals: [],
     k8s_pods: [],
   };
 }
 
+const policy = readPolicy(policyFile);
+payload.convergence_policy = policyEvidence(policy);
+payload.classification_rules = policy.classification_rules;
 payload.classification = classification;
 payload.outcome = outcome;
 payload.stage ||= stage || null;
@@ -1277,7 +1346,8 @@ collect_child_internal_success_evidence() {
     "${label}" \
     "${spec_state_file:-}" \
     "${spec_api_port:-}" \
-    "${spec_web_port:-}" <<'NODE' || true
+    "${spec_web_port:-}" \
+    "${ROOT_DIR}/scripts/governance/runtime-readiness-policy.json" <<'NODE' || true
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -1290,13 +1360,44 @@ const [
   stateFile,
   apiPort,
   webPort,
+  policyFile,
 ] = process.argv.slice(2);
 
+function readPolicy(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {
+      schema_version: 'agentsmith.runtime-readiness-policy/v1',
+      theme: 'runtime_pending_readiness',
+      backoff: 'increasing_after_consecutive_non_terminal',
+      interval_ms: [60000, 90000, 120000, 180000, 300000],
+      evidence_focus: [],
+      state_convergence: {},
+      classification_rules: {},
+    };
+  }
+}
+
+function policyEvidence(policy) {
+  return {
+    schema_version: policy.schema_version,
+    theme: policy.theme,
+    backoff: policy.backoff,
+    interval_ms: policy.interval_ms,
+    evidence_focus: policy.evidence_focus,
+    state_convergence: policy.state_convergence,
+  };
+}
+
+const policy = readPolicy(policyFile);
 fs.mkdirSync(path.dirname(outputFile), { recursive: true });
 fs.writeFileSync(outputFile, `${JSON.stringify({
   schema_version: 'agentsmith.runtime-readiness-details/v1',
-  theme: 'runtime_pending_readiness',
+  theme: policy.theme,
   generated_at: new Date().toISOString(),
+  convergence_policy: policyEvidence(policy),
+  classification_rules: policy.classification_rules,
   outcome: 'focused_gate_passed',
   classification: 'clean_pass',
   stage,

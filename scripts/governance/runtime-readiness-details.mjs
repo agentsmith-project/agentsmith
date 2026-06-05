@@ -1,5 +1,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+function runtimeReadinessPolicyPath() {
+  try {
+    const policyUrl = new URL('./runtime-readiness-policy.json', import.meta.url);
+    if (policyUrl.protocol === 'file:') {
+      return fileURLToPath(policyUrl);
+    }
+  } catch {
+    // Fall through to the repo-root path used by Vitest's transformed module URLs.
+  }
+  return path.resolve(process.cwd(), 'scripts/governance/runtime-readiness-policy.json');
+}
+
+export const RUNTIME_READINESS_POLICY = JSON.parse(
+  fs.readFileSync(runtimeReadinessPolicyPath(), 'utf8'),
+);
+
+function runtimeReadinessPolicyEvidence() {
+  return {
+    schema_version: RUNTIME_READINESS_POLICY.schema_version,
+    theme: RUNTIME_READINESS_POLICY.theme,
+    backoff: RUNTIME_READINESS_POLICY.backoff,
+    interval_ms: RUNTIME_READINESS_POLICY.interval_ms,
+    evidence_focus: RUNTIME_READINESS_POLICY.evidence_focus,
+    state_convergence: RUNTIME_READINESS_POLICY.state_convergence,
+  };
+}
 
 function readIfFile(file) {
   try {
@@ -295,8 +323,10 @@ export function buildRuntimeReadinessDetails({
   const signals = parseRuntimeReadinessSignals(logFiles);
   return {
     schema_version: 'agentsmith.runtime-readiness-details/v1',
-    theme: 'runtime_pending_readiness',
+    theme: RUNTIME_READINESS_POLICY.theme,
     generated_at: generatedAt,
+    convergence_policy: runtimeReadinessPolicyEvidence(),
+    classification_rules: RUNTIME_READINESS_POLICY.classification_rules,
     signals,
     call_summaries: signals,
     k8s_pods: parseK8sPodsFromText(podStatusText),

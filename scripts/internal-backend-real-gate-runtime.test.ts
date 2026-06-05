@@ -1702,6 +1702,8 @@ describe('internal backend-real gate runtime contract', () => {
     const details = JSON.parse(result.runtimeReadinessDetails) as {
       schema_version: string;
       theme: string;
+      convergence_policy?: { backoff?: string; interval_ms?: number[] };
+      classification_rules?: Record<string, string>;
       outcome: string;
       classification: string;
       stage: string;
@@ -1727,6 +1729,12 @@ describe('internal backend-real gate runtime contract', () => {
       signals: [],
       k8s_pods: [],
     });
+    expect(details.convergence_policy).toMatchObject({
+      backoff: 'increasing_after_consecutive_non_terminal',
+      interval_ms: [60_000, 90_000, 120_000, 180_000, 300_000],
+    });
+    expect(details.classification_rules?.runtime_flake).toContain('passed on rerun');
+    expect(details.classification_rules?.stability_blocker).toContain('consecutive');
   });
 
   it('records focused runtime readiness flake classification in runtime readiness JSON', () => {
@@ -1742,6 +1750,8 @@ describe('internal backend-real gate runtime contract', () => {
       theme: string;
       outcome: string;
       classification: string;
+      convergence_policy?: { state_convergence?: Record<string, unknown> };
+      classification_rules?: Record<string, string>;
       signals: Array<{ source: string; error_code?: string }>;
       call_summaries: Array<{ source: string; error_code?: string }>;
     };
@@ -1751,6 +1761,13 @@ describe('internal backend-real gate runtime contract', () => {
       outcome: 'focused_gate_passed_after_runtime_readiness_marker',
       classification: 'runtime_flake',
     });
+    expect(Object.keys(details.convergence_policy?.state_convergence ?? {}).sort()).toEqual([
+      'afscp_workspace_binding',
+      'agent_task_sandbox',
+      'files',
+      'read_export',
+    ]);
+    expect(details.classification_rules?.runtime_flake).toContain('passed on rerun');
     expect(details.call_summaries).toEqual(details.signals);
     expect(details.call_summaries).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
@@ -1922,11 +1939,15 @@ describe('internal backend-real gate runtime contract', () => {
     const details = JSON.parse(result.runtimeReadinessDetails) as {
       classification?: string;
       outcome?: string;
+      convergence_policy?: { backoff?: string };
+      classification_rules?: Record<string, string>;
     };
     expect(details).toMatchObject({
       classification: 'stability_blocker',
       outcome: 'consecutive_focused_gate_runtime_readiness_failures',
     });
+    expect(details.convergence_policy?.backoff).toBe('increasing_after_consecutive_non_terminal');
+    expect(details.classification_rules?.stability_blocker).toContain('consecutive');
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

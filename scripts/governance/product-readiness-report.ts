@@ -32,6 +32,7 @@ import {
   findCurrentVerificationCampaignById,
   type CurrentVerificationCampaignObservationPolicy,
 } from './current-verification-campaign-manifest';
+import runtimeReadinessPolicy from './runtime-readiness-policy.json';
 
 export const PRODUCT_READINESS_REPORT_SCHEMA_VERSION =
   'agentsmith.product-readiness-report/v1' as const;
@@ -48,6 +49,7 @@ const FILES_RESTORE_RUNTIME_READINESS_DETAILS_RELATIVE_PATH =
   'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json' as const;
 const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-details/v1' as const;
 const RUNTIME_READINESS_THEME = 'runtime_pending_readiness' as const;
+const RUNTIME_READINESS_POLICY_SCHEMA_VERSION = 'agentsmith.runtime-readiness-policy/v1' as const;
 type RuntimeReadinessClassification = 'clean_pass' | 'runtime_flake';
 
 const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_SOURCES = [
@@ -395,6 +397,14 @@ function requiredArrayField(record: Record<string, unknown>, field: string, labe
   return value;
 }
 
+function requiredRecordField(record: Record<string, unknown>, field: string, label: string): Record<string, unknown> {
+  const value = record[field];
+  if (!isRecord(value)) {
+    throw new Error(`${label}.${field} must be a JSON object.`);
+  }
+  return value;
+}
+
 function runtimeReadinessClassification(
   value: string,
   label: string,
@@ -458,6 +468,54 @@ function validateRuntimeReadinessSummary(input: {
   }
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`,
+    ).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function validateRuntimeReadinessPolicyEvidence(payload: Record<string, unknown>, label: string): void {
+  const convergencePolicy = requiredRecordField(payload, 'convergence_policy', label);
+  const classificationRules = requiredRecordField(payload, 'classification_rules', label);
+  const policyLabel = `${label}.convergence_policy`;
+  const policySchemaVersion = requiredStringField(convergencePolicy, 'schema_version', policyLabel);
+  if (policySchemaVersion !== RUNTIME_READINESS_POLICY_SCHEMA_VERSION) {
+    throw new Error(`${policyLabel}.schema_version must be ${RUNTIME_READINESS_POLICY_SCHEMA_VERSION}.`);
+  }
+  if (requiredStringField(convergencePolicy, 'theme', policyLabel) !== RUNTIME_READINESS_THEME) {
+    throw new Error(`${policyLabel}.theme must be ${RUNTIME_READINESS_THEME}.`);
+  }
+  if (requiredStringField(convergencePolicy, 'backoff', policyLabel) !== runtimeReadinessPolicy.backoff) {
+    throw new Error(`${policyLabel}.backoff must be ${runtimeReadinessPolicy.backoff}.`);
+  }
+  const intervalMs = requiredArrayField(convergencePolicy, 'interval_ms', policyLabel);
+  if (!sameJson(intervalMs, runtimeReadinessPolicy.interval_ms)) {
+    throw new Error(`${policyLabel}.interval_ms must use increasing runtime readiness intervals.`);
+  }
+  const evidenceFocus = requiredArrayField(convergencePolicy, 'evidence_focus', policyLabel);
+  if (!sameJson(evidenceFocus, runtimeReadinessPolicy.evidence_focus)) {
+    throw new Error(`${policyLabel}.evidence_focus must preserve Files restore continuation, sandbox unavailable summaries, and flake/blocker classification.`);
+  }
+  const stateConvergence = requiredRecordField(convergencePolicy, 'state_convergence', policyLabel);
+  if (!sameJson(stateConvergence, runtimeReadinessPolicy.state_convergence)) {
+    throw new Error(`${policyLabel}.state_convergence must define the current pending/releasing/offline/not_found convergence rules.`);
+  }
+
+  for (const classification of ['clean_pass', 'runtime_flake', 'stability_blocker'] as const) {
+    requiredStringField(classificationRules, classification, `${label}.classification_rules`);
+  }
+}
+
 function readRuntimeReadinessDetails(input: {
   campaignRoot: string;
   pathRoot: string;
@@ -482,6 +540,7 @@ function readRuntimeReadinessDetails(input: {
   if (theme !== RUNTIME_READINESS_THEME) {
     throw new Error(`${label}.theme must be ${RUNTIME_READINESS_THEME}.`);
   }
+  validateRuntimeReadinessPolicyEvidence(payload, label);
   const classification = runtimeReadinessClassification(
     requiredStringField(payload, 'classification', label),
     label,

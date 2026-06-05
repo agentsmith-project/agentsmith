@@ -34,6 +34,7 @@ import {
   validateRunReadinessStateForConsumer,
 } from '../run-readiness-state';
 import type { ResourceOwnerPreflightResult } from '../resource-owner-preflight';
+import runtimeReadinessPolicy from '../runtime-readiness-policy.json';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -96,6 +97,17 @@ function rehashReleaseContractProjection(contract: Record<string, unknown>): voi
   delete projectionProvenance.artifact_sha256;
   (contract.artifact_provenance as Record<string, unknown>).artifact_sha256 =
     sha256(canonicalReleaseBoundaryJson(projection));
+}
+
+function runtimeReadinessPolicyEvidence(): Record<string, unknown> {
+  return {
+    schema_version: runtimeReadinessPolicy.schema_version,
+    theme: runtimeReadinessPolicy.theme,
+    backoff: runtimeReadinessPolicy.backoff,
+    interval_ms: runtimeReadinessPolicy.interval_ms,
+    evidence_focus: runtimeReadinessPolicy.evidence_focus,
+    state_convergence: runtimeReadinessPolicy.state_convergence,
+  };
 }
 
 type PrecheckOperationStatus = 'reused' | 'started';
@@ -246,6 +258,8 @@ function writeRuntimeReadinessDetails(campaignRoot: string): string {
   writeJson(path, {
     schema_version: 'agentsmith.runtime-readiness-details/v1',
     theme: 'runtime_pending_readiness',
+    convergence_policy: runtimeReadinessPolicyEvidence(),
+    classification_rules: runtimeReadinessPolicy.classification_rules,
     classification: 'clean_pass',
     outcome: 'focused_gate_passed',
     signals: [],

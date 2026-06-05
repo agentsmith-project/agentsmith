@@ -44,6 +44,7 @@ import {
   POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
 } from '../post-deploy-product-smoke/report';
+import runtimeReadinessPolicy from './runtime-readiness-policy.json';
 
 export interface ReleaseCampaignResultInput {
   step: CurrentVerificationCampaignStep;
@@ -1913,6 +1914,7 @@ type UnifiedDeployEvidenceDiagnostic = {
 
 const FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION = 'agentsmith.focused-product-flow.evidence/v1';
 const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-details/v1';
+const RUNTIME_READINESS_POLICY_SCHEMA_VERSION = 'agentsmith.runtime-readiness-policy/v1';
 const SANDBOX_UNAVAILABLE_ERROR_CODE = 'AGENT_SANDBOX_UNAVAILABLE';
 const RELEASE_KIT_FALLBACK_MARKER_FIELDS = [
   'release_contract_digest',
@@ -1991,11 +1993,81 @@ function isCompleteSandboxUnavailableCallSummary(
     && runtimeEvidenceErrorCode(record) === SANDBOX_UNAVAILABLE_ERROR_CODE;
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`,
+    ).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function validateRuntimeReadinessPolicyPayload(
+  payload: Record<string, unknown>,
+  path: string,
+): UnifiedDeployEvidenceDiagnostic | null {
+  const convergencePolicy = payload.convergence_policy;
+  if (!isRecord(convergencePolicy)) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence must include convergence_policy with pending/releasing/offline/not_found rules.`,
+      'contract_drift',
+    );
+  }
+  if (convergencePolicy.schema_version !== RUNTIME_READINESS_POLICY_SCHEMA_VERSION) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness convergence_policy schema_version must be ${RUNTIME_READINESS_POLICY_SCHEMA_VERSION}.`,
+      'contract_drift',
+    );
+  }
+  if (
+    convergencePolicy.theme !== runtimeReadinessPolicy.theme
+    || convergencePolicy.backoff !== runtimeReadinessPolicy.backoff
+    || !sameJson(convergencePolicy.interval_ms, runtimeReadinessPolicy.interval_ms)
+    || !sameJson(convergencePolicy.evidence_focus, runtimeReadinessPolicy.evidence_focus)
+    || !sameJson(convergencePolicy.state_convergence, runtimeReadinessPolicy.state_convergence)
+  ) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness convergence_policy must match the current increasing wait and state convergence rules.`,
+      'contract_drift',
+    );
+  }
+
+  const classificationRules = payload.classification_rules;
+  if (
+    !isRecord(classificationRules)
+    || typeof classificationRules.clean_pass !== 'string'
+    || typeof classificationRules.runtime_flake !== 'string'
+    || typeof classificationRules.stability_blocker !== 'string'
+  ) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence must include clean_pass, runtime_flake, and stability_blocker classification_rules.`,
+      'contract_drift',
+    );
+  }
+  return null;
+}
+
 function validateRuntimeReadinessDetailsPayload(
   payload: Record<string, unknown>,
   path: string,
 ): UnifiedDeployEvidenceDiagnostic | null {
-  if (payload.schema_version !== RUNTIME_READINESS_DETAILS_SCHEMA_VERSION || !hasSandboxUnavailableSignal(payload)) {
+  if (payload.schema_version !== RUNTIME_READINESS_DETAILS_SCHEMA_VERSION) {
+    return null;
+  }
+
+  const policyDiagnostic = validateRuntimeReadinessPolicyPayload(payload, path);
+  if (policyDiagnostic) {
+    return policyDiagnostic;
+  }
+
+  if (!hasSandboxUnavailableSignal(payload)) {
     return null;
   }
 

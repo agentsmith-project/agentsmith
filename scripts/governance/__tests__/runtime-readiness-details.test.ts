@@ -4,6 +4,7 @@ import {
   buildRuntimeReadinessDetails,
   parseK8sPodsFromText,
   parseRuntimeReadinessSignals,
+  RUNTIME_READINESS_POLICY,
 } from '../runtime-readiness-details.mjs';
 
 describe('runtime readiness details evidence', () => {
@@ -132,7 +133,26 @@ describe('runtime readiness details evidence', () => {
       schema_version: 'agentsmith.runtime-readiness-details/v1',
       theme: 'runtime_pending_readiness',
       generated_at: '2026-06-05T12:00:00.000Z',
+      convergence_policy: {
+        schema_version: 'agentsmith.runtime-readiness-policy/v1',
+        theme: 'runtime_pending_readiness',
+        backoff: 'increasing_after_consecutive_non_terminal',
+        interval_ms: [60_000, 90_000, 120_000, 180_000, 300_000],
+      },
+      classification_rules: RUNTIME_READINESS_POLICY.classification_rules,
     });
+    expect(Object.keys(report.convergence_policy.state_convergence).sort()).toEqual([
+      'afscp_workspace_binding',
+      'agent_task_sandbox',
+      'files',
+      'read_export',
+    ]);
+    expect(Object.keys(report.convergence_policy.state_convergence.read_export).sort()).toEqual([
+      'not_found',
+      'offline',
+      'pending',
+      'releasing',
+    ]);
     expect(report.call_summaries).toEqual(report.signals);
     expect(report.call_summaries).toEqual([
       expect.objectContaining({

@@ -75,6 +75,7 @@ import {
   type VisualBaselineReviewEvidenceSnapshot,
   type VisualBaselineScenarioRecord,
 } from '../../../e2e/visual-baseline-support';
+import runtimeReadinessPolicy from '../runtime-readiness-policy.json';
 
 type RunAggregateOptions = {
   env?: NodeJS.ProcessEnv;
@@ -108,6 +109,17 @@ function getCampaignStep(stepId: string): CurrentVerificationCampaignStep {
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function runtimeReadinessPolicyEvidence(): Record<string, unknown> {
+  return {
+    schema_version: runtimeReadinessPolicy.schema_version,
+    theme: runtimeReadinessPolicy.theme,
+    backoff: runtimeReadinessPolicy.backoff,
+    interval_ms: runtimeReadinessPolicy.interval_ms,
+    evidence_focus: runtimeReadinessPolicy.evidence_focus,
+    state_convergence: runtimeReadinessPolicy.state_convergence,
+  };
 }
 
 function recordField(record: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -359,6 +371,8 @@ function createManifestEvidenceForCheck(
       schema_version: check.expectedSchemaVersion,
       theme: check.expectedTheme ?? 'runtime_pending_readiness',
       generated_at: '2026-05-24T12:00:00.000Z',
+      convergence_policy: runtimeReadinessPolicyEvidence(),
+      classification_rules: runtimeReadinessPolicy.classification_rules,
       outcome: 'aggregate_fixture_pass',
       signals: [],
       call_summaries: [],
@@ -1811,6 +1825,41 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('files_restore_continuation_runtime_readiness_details');
   });
 
+  it('fails when Files restore continuation runtime readiness evidence omits convergence policy', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-files-restore-runtime-policy-'));
+    seedPassedCampaign(campaignRoot);
+    writeJson(
+      resolve(
+        campaignRoot,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      ),
+      {
+        schema_version: 'agentsmith.runtime-readiness-details/v1',
+        theme: 'runtime_pending_readiness',
+        generated_at: '2026-05-24T12:00:00.000Z',
+        classification: 'clean_pass',
+        outcome: 'focused_gate_passed',
+        signals: [],
+        call_summaries: [],
+        k8s_pods: [],
+      },
+    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('convergence_policy');
+    expect(terminalResult.summary).toContain('pending/releasing/offline/not_found');
+  });
+
   it('fails when sandbox unavailable runtime readiness evidence lacks owner call summaries', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-sandbox-unavailable-evidence-'));
     seedPassedCampaign(campaignRoot);
@@ -1826,6 +1875,8 @@ describe('release-full aggregate gate', () => {
         schema_version: 'agentsmith.runtime-readiness-details/v1',
         theme: 'runtime_pending_readiness',
         generated_at: '2026-05-24T12:00:00.000Z',
+        convergence_policy: runtimeReadinessPolicyEvidence(),
+        classification_rules: runtimeReadinessPolicy.classification_rules,
         signals: [
           {
             source: 'api',

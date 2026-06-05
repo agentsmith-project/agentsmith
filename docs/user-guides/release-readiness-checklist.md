@@ -28,6 +28,7 @@
 8. Product Readiness 前必须保留 Files restore continuation focused backend-real gate 作为重点证据；它证明 Files restore、read export pending、runtime-access release convergence 没有在完整 readiness 前断链。
 9. 观察 CI/gate 状态时，连续多次 non-terminal 后等待间隔递增；第一次可执行环境 unavailable 后重跑通过记为 runtime flake，连续出现则升级稳定性 blocker。
 10. Files restore continuation focused gate 中，terminal 已有关闭最终态但 workspace-binding release/revoke 仍 pending 时，按 runtime readiness 继续收口；AFSCP revoke 409 conflict 需要作为 retryable readiness 证据记录，不按普通 Files operation failed 处理。
+11. `<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json` 必须携带 runtime readiness convergence policy、classification rules 和 AGENT_SANDBOX_UNAVAILABLE 调用摘要；缺这些字段时不能作为 Product Readiness 前的重点证据。
 
 ## 环境前提
 

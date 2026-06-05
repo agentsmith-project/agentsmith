@@ -30,6 +30,7 @@ import {
   type ProductReadinessReport,
   type ProductReadinessReportSubject,
 } from '../product-readiness-report';
+import runtimeReadinessPolicy from '../runtime-readiness-policy.json';
 
 const VALID_RELEASE_CONTRACT_FIXTURE =
   'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json';
@@ -74,6 +75,17 @@ function writeTerminalResult(
   });
 }
 
+function runtimeReadinessPolicyEvidence(): Record<string, unknown> {
+  return {
+    schema_version: runtimeReadinessPolicy.schema_version,
+    theme: runtimeReadinessPolicy.theme,
+    backoff: runtimeReadinessPolicy.backoff,
+    interval_ms: runtimeReadinessPolicy.interval_ms,
+    evidence_focus: runtimeReadinessPolicy.evidence_focus,
+    state_convergence: runtimeReadinessPolicy.state_convergence,
+  };
+}
+
 function writeRuntimeReadinessDetails(
   campaignRoot: string,
   overrides: Record<string, unknown> = {},
@@ -88,6 +100,8 @@ function writeRuntimeReadinessDetails(
   writeJson(path, {
     schema_version: 'agentsmith.runtime-readiness-details/v1',
     theme: 'runtime_pending_readiness',
+    convergence_policy: runtimeReadinessPolicyEvidence(),
+    classification_rules: runtimeReadinessPolicy.classification_rules,
     classification: 'runtime_flake',
     outcome: 'focused_gate_passed_after_runtime_readiness_marker',
     signals: [
@@ -492,6 +506,37 @@ describe('product readiness report producer', () => {
 
       expect(() => writeProductReadinessReport({ campaignRoot: root }))
         .toThrow(/classification clean_pass must not include runtime readiness signals/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime readiness evidence omits convergence policy', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-policy-missing-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        convergence_policy: null,
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/convergence_policy must be a JSON object/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime readiness evidence drifts from increasing wait policy', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-policy-drift-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        convergence_policy: {
+          ...runtimeReadinessPolicyEvidence(),
+          interval_ms: [60_000, 60_000, 60_000],
+        },
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/interval_ms must use increasing runtime readiness intervals/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

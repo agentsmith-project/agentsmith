@@ -174,6 +174,47 @@ describe('runtime readiness details evidence', () => {
     ]);
   });
 
+  it('normalizes plain text operation and code fields into required call summaries', () => {
+    const signals = parseRuntimeReadinessSignals([{
+      path: '/tmp/plain-runtime.log',
+      content: [
+        'API runtime_pending_readiness operation=create_task_workspace request_id=req-api workload_id=task-restore-2 phase=offline status_code=503 code=AGENT_SANDBOX_UNAVAILABLE',
+        'pod manager operation=create_or_ensure_pod request_id=req-pod workload_id=task-restore-2 phase=offline status=503 code=AGENT_SANDBOX_UNAVAILABLE',
+        'ASBCP operation=create/status request_id=req-asbcp workload_id=task-restore-2 phase=offline status_code=503 code=AGENT_SANDBOX_UNAVAILABLE',
+      ].join('\n'),
+    }]);
+
+    expect(signals).toEqual([
+      expect.objectContaining({
+        source: 'api',
+        call: 'create_task_workspace',
+        request_id: 'req-api',
+        workload_id: 'task-restore-2',
+        phase: 'offline',
+        status_code: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'create_or_ensure_pod',
+        request_id: 'req-pod',
+        workload_id: 'task-restore-2',
+        phase: 'offline',
+        status: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        call: 'create/status',
+        request_id: 'req-asbcp',
+        workload_id: 'task-restore-2',
+        phase: 'offline',
+        status_code: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+    ]);
+  });
+
   it('parses kubernetes pod status text without requiring kubectl in unit tests', () => {
     expect(parseK8sPodsFromText('pod=runner-1\nphase=Running\n---\npod=runner-2\nphase=Failed\n')).toEqual([
       { pod: 'runner-1', phase: 'Running' },

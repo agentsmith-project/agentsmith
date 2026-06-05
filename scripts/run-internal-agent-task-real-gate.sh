@@ -801,10 +801,16 @@ function normalizeKey(key) {
 
 function readFields(line) {
   const fields = {};
-  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|asbcp_code|asbcpCode|pod_name|podName|retryable)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
+  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code|asbcp_code|asbcpCode|pod_name|podName|retryable|operation|call)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
   for (const match of line.matchAll(pattern)) {
     const rawValue = match[2] ?? '';
     fields[normalizeKey(match[1] ?? '')] = rawValue.replace(/^["']|["']$/g, '');
+  }
+  if (fields.code && !fields.error_code) {
+    fields.error_code = fields.code;
+  }
+  if (fields.operation && !fields.call) {
+    fields.call = fields.operation;
   }
   return fields;
 }
@@ -1015,7 +1021,7 @@ function parseSignals(files) {
     }
     const sourceLog = path.basename(file);
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
-      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
+      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
         continue;
       }
       if (appendRuntimeReadinessJsonSignals(line, sourceLog, index + 1, signals, seen)) {

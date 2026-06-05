@@ -126,15 +126,20 @@ GA 发布完成必须同时满足：
 Release-kit 保留一个 operator-facing facade，隐藏 producer catalog：
 
 ```bash
-bash scripts/operator-release.sh online use_existing --operator-inputs <dir|json> ...
-bash scripts/operator-release.sh online install_substrates --operator-inputs <dir|json> --confirm-install-substrates <run-id> ...
-bash scripts/operator-release.sh airgap-bundle use_existing --operator-inputs <dir|json> ...
-bash scripts/operator-release.sh airgap-bundle install_substrates --operator-inputs <dir|json> ...
-bash scripts/operator-release.sh airgap use_existing --operator-inputs <dir|json> ...
-bash scripts/operator-release.sh airgap install_substrates --operator-inputs <dir|json> --confirm-install-substrates <run-id> ...
+bash scripts/operator-release.sh --init-operator-inputs <deployment_path> --output-dir <package-dir>
+bash scripts/operator-release.sh --operator-inputs <package-or-json> --doctor
+bash scripts/operator-release.sh --operator-inputs <package-or-json> --run
+bash scripts/operator-release.sh --ga-report \
+  --operator-inputs <online-use-existing-package> \
+  --operator-inputs <online-install-substrates-package> \
+  --operator-inputs <airgap-use-existing-package> \
+  --operator-inputs <airgap-install-substrates-package> \
+  --product-readiness-report <agentsmith/product-readiness-report.json> \
+  --post-deploy-product-smoke-report <ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
+  --output-dir <dir>
 ```
 
-`airgap-bundle` 是 airgap 发布包制作入口；`airgap` 是离线环境消费/部署入口。
+`deployment_path` 只允许四个 GA operator 选择：`online/use_existing`、`online/install_substrates`、`airgap/use_existing`、`airgap/install_substrates`。Airgap bundle 制作、bundle check、image load、render/check、apply、rollout 和 route smoke 是 package-driven `--operator-inputs <package> --run` 内部 producer/finalizer 步骤；`airgap-bundle/*` 这类历史 positional 命令最多作为 maintainer/internal diagnostic，不是 operator 主路径。
 
 `operator-inputs` 是 operator 的唯一输入包入口。它可以是一个目录或一个 JSON 文件，由 release-kit 的 init/doctor 工具生成或校验，并在内部生成/派生 `render-values.json`、`substrate-truth.json`、`target-prerequisites.json`、image map 和缺项清单。Operator 不需要理解 `target_cluster`、`substrate_source`、`distribution`、`external_declared`、`kit_installed` 等机器值。
 
@@ -272,7 +277,7 @@ GA 的判定是：
 
 任务：
 
-1. 新增 `--ga-release` 聚合入口。
+1. 新增 maintainer `--ga-release` 聚合入口，并由 operator-facing `operator-release.sh --ga-report` facade 包装。
 2. 新增每条 operator path 的 `deployment-path-report.json`，把 surface/adoption/candidate/runbook acceptance 等现有报告降为内部子步骤证据。
 3. 支持四条 required operator paths。
 4. 输出 `ga-release-report.json` 和从它派生的简短 human summary。
@@ -280,7 +285,7 @@ GA 的判定是：
 6. Bootstrap 语义迁移：
    - producer/path 子步骤报告继续可以是 `readiness:false`
    - adoption/candidate/intake 报告不再是 GA 概念，只能作为 path report 内部输入或 `--ga-release --dry-run` 诊断
-   - 只有 `ga-release-report.json` 可以 `status: pass` + `formal_verdict: issued`
+   - 只有 `ga-release-report.json` 可以表达正式结果：通过时 `status: pass` + `formal_verdict: issued`；blocked 时 `status: fail` + `formal_verdict: not_issued` + blockers
    - `target_profiles.required:true` 只在 GA release contract/final gate 模式允许
    - 删除或降级 “full release gate future/not implemented” 这类 operator-facing 文案，保留在 maintainer reference 时必须说明不属于 operator 主路径
 

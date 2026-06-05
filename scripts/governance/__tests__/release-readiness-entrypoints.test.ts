@@ -235,6 +235,26 @@ function writeTerminalResult(campaignRoot: string, overrides: Partial<{
   });
 }
 
+function writeRuntimeReadinessDetails(campaignRoot: string): string {
+  const path = join(
+    campaignRoot,
+    'gate-release',
+    'child-internal-evidence',
+    'files_restore_continuation_spec',
+    'runtime-readiness-details.json',
+  );
+  writeJson(path, {
+    schema_version: 'agentsmith.runtime-readiness-details/v1',
+    theme: 'runtime_pending_readiness',
+    classification: 'clean_pass',
+    outcome: 'focused_gate_passed',
+    signals: [],
+    call_summaries: [],
+    k8s_pods: [],
+  });
+  return path;
+}
+
 function writeSummaryCache(campaignRoot: string, overrides: Partial<Record<string, unknown>> = {}): void {
   writeJson(join(campaignRoot, 'summary.json'), {
     schema: 'agentsmith_release_summary/v1',
@@ -2401,6 +2421,7 @@ exit 0
               throw new Error('expected release contract path in campaign env');
             }
             writeTerminalResult(root);
+            writeRuntimeReadinessDetails(root);
             writeReleaseSummaryForCampaign({
               campaignRoot: root,
               writeLatest: false,
@@ -2418,6 +2439,13 @@ exit 0
       const reportPath = join(root, 'product-readiness', PRODUCT_READINESS_REPORT_FILENAME);
       const summaryPath = join(root, 'summary.json');
       const terminalResultPath = join(root, 'gate-release-full', 'result.json');
+      const runtimeDetailsPath = join(
+        root,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      );
       const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as {
         release_contract?: { path: string; digest: string };
       };
@@ -2440,6 +2468,18 @@ exit 0
         terminal_result_path: 'gate-release-full/result.json',
         terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
       });
+      expect(report.runtime_readiness).toEqual({
+        files_restore_continuation: {
+          path: 'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
+          sha256: sha256Buffer(readFileSync(runtimeDetailsPath)),
+          schema_version: 'agentsmith.runtime-readiness-details/v1',
+          theme: 'runtime_pending_readiness',
+          classification: 'clean_pass',
+          outcome: 'focused_gate_passed',
+          signals_count: 0,
+          call_summaries_count: 0,
+        },
+      });
       expect(report.referenced_files).toEqual([
         {
           id: 'product_readiness_summary',
@@ -2450,6 +2490,11 @@ exit 0
           id: 'terminal_result',
           path: 'gate-release-full/result.json',
           sha256: sha256Buffer(readFileSync(terminalResultPath)),
+        },
+        {
+          id: 'runtime_readiness_details',
+          path: 'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
+          sha256: sha256Buffer(readFileSync(runtimeDetailsPath)),
         },
       ]);
       expect(report.artifact_publication.mode).toBe('local_diagnostics_only');

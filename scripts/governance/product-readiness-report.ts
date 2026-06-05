@@ -40,9 +40,13 @@ export const PRODUCT_READINESS_REPORT_ARTIFACT_URI_ENV =
   'AGENTSMITH_PRODUCT_READINESS_REPORT_ARTIFACT_URI' as const;
 
 const PRODUCT_READINESS_REPORT_SUBJECT_NAME = 'product-readiness-report' as const;
+const FILES_RESTORE_RUNTIME_READINESS_DETAILS_RELATIVE_PATH =
+  'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json' as const;
+const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-details/v1' as const;
+const RUNTIME_READINESS_THEME = 'runtime_pending_readiness' as const;
 
 export interface ProductReadinessReferencedFile {
-  id: 'product_readiness_summary' | 'terminal_result';
+  id: 'product_readiness_summary' | 'terminal_result' | 'runtime_readiness_details';
   path: string;
   sha256: string;
 }
@@ -99,6 +103,18 @@ export interface ProductReadinessReportSubject {
     path_root: string;
     terminal_result_path: string;
     terminal_result_sha256: string;
+  };
+  runtime_readiness: {
+    files_restore_continuation: {
+      path: string;
+      sha256: string;
+      schema_version: typeof RUNTIME_READINESS_DETAILS_SCHEMA_VERSION;
+      theme: typeof RUNTIME_READINESS_THEME;
+      classification: string;
+      outcome: string;
+      signals_count: number;
+      call_summaries_count: number;
+    };
   };
   referenced_files: readonly ProductReadinessReferencedFile[];
   artifact_publication: ProductReadinessArtifactPublication;
@@ -321,6 +337,79 @@ function readReferencedFile(input: {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readJsonRecord(path: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  } catch (error) {
+    throw new Error(`${label} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+function requiredStringField(record: Record<string, unknown>, field: string, label: string): string {
+  const value = record[field];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label}.${field} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function arrayCount(record: Record<string, unknown>, field: string, label: string): number {
+  const value = record[field];
+  if (!Array.isArray(value)) {
+    throw new Error(`${label}.${field} must be an array.`);
+  }
+  return value.length;
+}
+
+function readRuntimeReadinessDetails(input: {
+  campaignRoot: string;
+  pathRoot: string;
+}): {
+  referencedFile: ProductReadinessReferencedFile;
+  details: ProductReadinessReportSubject['runtime_readiness']['files_restore_continuation'];
+} {
+  const label = 'runtime_readiness.files_restore_continuation';
+  const path = join(resolve(input.campaignRoot), FILES_RESTORE_RUNTIME_READINESS_DETAILS_RELATIVE_PATH);
+  const referencedFile = readReferencedFile({
+    id: 'runtime_readiness_details',
+    label: `${label}.path`,
+    path,
+    pathRoot: input.pathRoot,
+  });
+  const payload = readJsonRecord(path, label);
+  const schemaVersion = requiredStringField(payload, 'schema_version', label);
+  if (schemaVersion !== RUNTIME_READINESS_DETAILS_SCHEMA_VERSION) {
+    throw new Error(`${label}.schema_version must be ${RUNTIME_READINESS_DETAILS_SCHEMA_VERSION}.`);
+  }
+  const theme = requiredStringField(payload, 'theme', label);
+  if (theme !== RUNTIME_READINESS_THEME) {
+    throw new Error(`${label}.theme must be ${RUNTIME_READINESS_THEME}.`);
+  }
+
+  return {
+    referencedFile,
+    details: {
+      path: referencedFile.path,
+      sha256: referencedFile.sha256,
+      schema_version: RUNTIME_READINESS_DETAILS_SCHEMA_VERSION,
+      theme: RUNTIME_READINESS_THEME,
+      classification: requiredStringField(payload, 'classification', label),
+      outcome: requiredStringField(payload, 'outcome', label),
+      signals_count: arrayCount(payload, 'signals', label),
+      call_summaries_count: arrayCount(payload, 'call_summaries', label),
+    },
+  };
+}
+
 function requireGitHubArtifactEnv(
   env: Readonly<Record<string, string | undefined>>,
   field: string,
@@ -436,6 +525,8 @@ function buildProductReadinessReport(input: {
   releaseContractFileSha256: string;
   productReadinessSummary: ProductReadinessReferencedFile;
   terminalResult: ProductReadinessReferencedFile;
+  runtimeReadinessDetails: ProductReadinessReportSubject['runtime_readiness']['files_restore_continuation'];
+  runtimeReadinessReferencedFile: ProductReadinessReferencedFile;
   artifactPublication: ProductReadinessArtifactPublication;
   localDiagnostics: ProductReadinessLocalDiagnostics;
   subjectUri: string;
@@ -462,6 +553,8 @@ function buildProductReadinessReportSubject(input: {
   releaseContractFileSha256: string;
   productReadinessSummary: ProductReadinessReferencedFile;
   terminalResult: ProductReadinessReferencedFile;
+  runtimeReadinessDetails: ProductReadinessReportSubject['runtime_readiness']['files_restore_continuation'];
+  runtimeReadinessReferencedFile: ProductReadinessReferencedFile;
   artifactPublication: ProductReadinessArtifactPublication;
 }): ProductReadinessReportSubject {
   return {
@@ -483,9 +576,13 @@ function buildProductReadinessReportSubject(input: {
       terminal_result_path: input.terminalResult.path,
       terminal_result_sha256: input.terminalResult.sha256,
     },
+    runtime_readiness: {
+      files_restore_continuation: input.runtimeReadinessDetails,
+    },
     referenced_files: [
       input.productReadinessSummary,
       input.terminalResult,
+      input.runtimeReadinessReferencedFile,
     ],
     artifact_publication: input.artifactPublication,
   };
@@ -561,6 +658,10 @@ export function writeProductReadinessReport(
     path: summary.terminal_result_path,
     pathRoot,
   });
+  const runtimeReadiness = readRuntimeReadinessDetails({
+    campaignRoot: summary.campaign_root,
+    pathRoot,
+  });
   const subjectUri = requireRootRelativeOutputPath(outputPath, pathRoot, 'artifact_provenance.subject_uri');
   const artifactPublication = buildArtifactPublication({
     env: options.env ?? process.env,
@@ -572,6 +673,8 @@ export function writeProductReadinessReport(
     releaseContractFileSha256,
     productReadinessSummary,
     terminalResult,
+    runtimeReadinessDetails: runtimeReadiness.details,
+    runtimeReadinessReferencedFile: runtimeReadiness.referencedFile,
     artifactPublication,
     localDiagnostics: {
       path_root: pathRoot,

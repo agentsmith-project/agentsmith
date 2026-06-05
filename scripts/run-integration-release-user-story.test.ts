@@ -173,7 +173,7 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(contextFunctionBody).toContain('release_user_story_fail "kind is required for the local release user story diagnostic context ${KIND_CONTEXT_NAME}."');
     expect(contextFunctionBody).toContain('LOCAL_KIND_FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-$(release_user_story_default_kind_kubeconfig_path "${KIND_CLUSTER_NAME}")}"');
     expect(contextFunctionBody).toContain('LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \\');
-    expect(contextFunctionBody).toContain('bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"');
+    expect(contextFunctionBody).toContain('ensure_local_kind_cluster');
     expect(contextFunctionBody).toContain('export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"');
     expect(contextFunctionBody).toContain('release_user_story_require_target_kind_context "release user story rehearsal"');
     expect(contextFunctionBody).toContain('ASBCP_KUBECONFIG_PATH="$(release_user_story_asbcp_kubeconfig_path)"');

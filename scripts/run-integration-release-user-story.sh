@@ -184,7 +184,7 @@ ensure_release_user_story_kubernetes_context() {
   LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   LOCAL_KIND_CONFIG_PATH="${kind_config_path}" \
   LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_NODE_NAME}" \
-    bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${KIND_CLUSTER_NAME}" "${kind_config_path}" "${KIND_NODE_NAME}"
+    ensure_local_kind_cluster
 
   export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
   kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null \

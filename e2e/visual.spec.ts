@@ -443,21 +443,30 @@ async function prepareVisualAuthLane(page: Page, authLane: VisualBaselineAuthLan
   throw new Error(`Unsupported visual auth lane: ${authLane}`);
 }
 
-async function createThirdPartyVisualConnection(page: Page) {
-  await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
-  await page.getByTestId('third-party-accounts__create-btn').click();
-  await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
-  await page.getByTestId('third-party-accounts__custom-domain').fill('api.visual.example.com');
-  await page.getByTestId('third-party-accounts__display-name').fill('Visual Custom Integration');
-  await page.getByTestId('third-party-accounts__note').fill('Visual seed');
-  await page.getByTestId('third-party-accounts__field-key-0').fill('base_url');
-  await page.getByTestId('third-party-accounts__field-value-0').fill('https://api.visual.example.com');
-  await page.getByTestId('third-party-accounts__field-description-0').fill('Base URL');
-  await page.getByTestId('third-party-accounts__add-field').click();
-  await page.getByTestId('third-party-accounts__field-key-1').fill('token');
-  await page.getByTestId('third-party-accounts__field-value-1').fill('tok-visual-secret');
-  await page.getByTestId('third-party-accounts__field-description-1').fill('API token');
-  await page.getByTestId('third-party-accounts__submit-btn').click();
+async function seedThirdPartyVisualConnection(page: Page) {
+  const mockHeaders = {
+    'x-mock-connection-provider': 'custom',
+    'x-mock-connection-kind': 'secret_bundle',
+    'x-mock-connection-display-name': 'Visual Custom Integration',
+    'x-mock-connection-custom-domain': 'api.visual.example.com',
+    'x-mock-connection-note': 'Visual seed',
+    'x-mock-connection-fields': JSON.stringify([
+      { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: true },
+      { key: 'token', value: 'tok-visual-secret', description: 'API token', secret: true },
+    ]),
+  };
+  const installMockHeaders = (headers: Record<string, string>) => {
+    const testWindow = window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> };
+    testWindow.__MBOS_MSW_TEST_HEADERS__ = {
+      ...testWindow.__MBOS_MSW_TEST_HEADERS__,
+      ...headers,
+    };
+  };
+  await page.addInitScript(installMockHeaders, mockHeaders);
+  await page.evaluate(installMockHeaders, mockHeaders).catch(() => {});
+}
+
+async function openSeededThirdPartyVisualConnection(page: Page) {
   const connectionRow = page.locator('[data-testid^="third-party-accounts__row-"]').filter({
     hasText: 'Visual Custom Integration',
   }).first();
@@ -2277,8 +2286,11 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     },
   },
   'third-party-accounts-edit-sheet': {
+    beforeNavigate: async ({ page }) => {
+      await seedThirdPartyVisualConnection(page);
+    },
     afterNavigate: async ({ page }) => {
-      await createThirdPartyVisualConnection(page);
+      await openSeededThirdPartyVisualConnection(page);
     },
   },
   usage: {

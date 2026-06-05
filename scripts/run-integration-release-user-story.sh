@@ -11,6 +11,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
+source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
 source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
@@ -212,6 +213,48 @@ release_user_story_runner_image_reuse_ready() {
     "runner_image_id=${runner_image_id}"
 }
 
+release_user_story_publish_local_runner_image_ref() {
+  local source_image="$1"
+  local image_repository image_tag
+  image_repository="${INTEGRATION_INTERNAL_AGENT_LOCAL_REPOSITORY:-mbos/agentsmith-managed-runner}"
+  image_tag="${INTEGRATION_INTERNAL_AGENT_LOCAL_TAG:-release-user-story-$(managed_runner_image_handoff_tag_text "${RUNTIME_LINE_ID:-${API_PORT}}")}"
+  managed_runner_image_handoff_publish_local_runner_image_ref \
+    "${source_image}" \
+    "${image_repository}" \
+    "${image_tag}" \
+    "[integration-release-user-story]"
+}
+
+release_user_story_preflight_kind_registry_runner_image() {
+  managed_runner_image_handoff_preflight_kind_registry_runner_image \
+    "${RUNNER_IMAGE}" \
+    "${KIND_NODE_NAME}" \
+    "[integration-release-user-story]" \
+    "${ROOT_DIR}"
+}
+
+release_user_story_runner_image_from_kind_registry() {
+  managed_runner_image_handoff_from_kind_registry "${RUNNER_IMAGE}"
+}
+
+prepare_release_user_story_managed_runner_image_handoff() {
+  managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE}" "[integration-release-user-story]" \
+    || release_user_story_fail "internal managed runner image must use the agentsmith-runner image family"
+
+  if managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"; then
+    release_user_story_preflight_kind_registry_runner_image \
+      || release_user_story_fail "failed to preflight managed runner digest image ${RUNNER_IMAGE}"
+    return 0
+  fi
+
+  if ! RUNNER_IMAGE="$(release_user_story_publish_local_runner_image_ref "${RUNNER_IMAGE}")"; then
+    release_user_story_fail "failed to publish managed runner image to local kind registry"
+  fi
+  release_user_story_preflight_kind_registry_runner_image \
+    || release_user_story_fail "failed to preflight managed runner digest image ${RUNNER_IMAGE}"
+  info "using local managed runner digest image ${RUNNER_IMAGE}"
+}
+
 release_user_story_integration_deps_ready() {
   readiness_state_field_ready_with_identity integration_deps_ready \
     "postgres_port=${INTEGRATION_POSTGRES_PORT}" \
@@ -347,6 +390,7 @@ elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2
   exit 1
 fi
+prepare_release_user_story_managed_runner_image_handoff
 
 RELEASE_USER_STORY_AFSCP_LOCAL_RUNTIME_OWNED=0
 cleanup() {
@@ -417,7 +461,9 @@ ensure_afscp_storage_csi() {
 
   info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
   ensure_local_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"
-  ensure_kind_image "${RUNNER_IMAGE}"
+  if ! release_user_story_runner_image_from_kind_registry; then
+    ensure_kind_image "${RUNNER_IMAGE}"
+  fi
   ensure_kind_image "juicedata/juicefs-csi-driver:${AFSCP_STORAGE_CSI_VERSION}"
   ensure_kind_image "juicedata/csi-dashboard:${AFSCP_STORAGE_CSI_VERSION}"
   ensure_kind_image "${AFSCP_STORAGE_CSI_MOUNT_IMAGE}"

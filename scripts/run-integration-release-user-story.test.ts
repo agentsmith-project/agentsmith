@@ -31,6 +31,7 @@ describe('run-integration-release-user-story integration dependency contract', (
   it('honors caller-provided Agent Task runner images without legacy codex runner aliases', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
+    expect(script).toContain('source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"');
     expect(script).toContain('RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"');
     expect(script).toContain(
       'RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"',
@@ -41,6 +42,35 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).toContain('BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_REBUILD_IMAGE:-1}}"');
     expect(script).not.toContain('INTEGRATION_CODEX_RUNNER');
     expect(script).not.toContain(':-notebook');
+  });
+
+  it('hands the release user story managed runner image to ASBCP as a digest-pinned kind registry ref', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const buildEnd = script.indexOf('\nfi\nprepare_release_user_story_managed_runner_image_handoff');
+    const prepareStart = script.indexOf('prepare_release_user_story_managed_runner_image_handoff()');
+    const prepareEnd = script.indexOf('\nrelease_user_story_integration_deps_ready()', prepareStart);
+    const prepareBody = script.slice(prepareStart, prepareEnd);
+    const csiStart = script.indexOf('ensure_afscp_storage_csi()');
+    const csiEnd = script.indexOf('\nensure_release_user_story_integration_deps_for_afscp', csiStart);
+    const csiBody = script.slice(csiStart, csiEnd);
+    const configIndex = script.indexOf('runnerImage: ${RUNNER_IMAGE}');
+    const childIndex = script.indexOf('INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \\');
+
+    expect(script).toContain('release_user_story_publish_local_runner_image_ref()');
+    expect(script).toContain('prepare_release_user_story_managed_runner_image_handoff()');
+    expect(script).toContain('managed_runner_image_handoff_publish_local_runner_image_ref');
+    expect(script).toContain('managed_runner_image_handoff_preflight_kind_registry_runner_image');
+    expect(script).toContain('managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"');
+    expect(script).toContain('managed_runner_image_handoff_reject_legacy_runner_image_ref "${RUNNER_IMAGE}"');
+    expect(script).toContain('RUNNER_IMAGE="$(release_user_story_publish_local_runner_image_ref "${RUNNER_IMAGE}")"');
+    expect(buildEnd).toBeGreaterThanOrEqual(0);
+    expect(prepareStart).toBeGreaterThanOrEqual(0);
+    expect(prepareBody).toContain('failed to publish managed runner image to local kind registry');
+    expect(prepareBody).toContain('failed to preflight managed runner digest image ${RUNNER_IMAGE}');
+    expect(csiBody).toContain('if ! release_user_story_runner_image_from_kind_registry; then');
+    expect(csiBody).toContain('ensure_kind_image "${RUNNER_IMAGE}"');
+    expect(configIndex).toBeGreaterThan(buildEnd);
+    expect(childIndex).toBeGreaterThan(configIndex);
   });
 
   it('keeps internal runner storage bootstrap behind AFSCP substrate env names', () => {

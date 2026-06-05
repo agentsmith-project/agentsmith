@@ -826,12 +826,14 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(body).toContain('trap \'rm -f "${tarball}"\' EXIT');
   });
 
-  it('lets the release user story reuse runner build without reusing local-kind image handoff for CSI imports', () => {
+  it('lets the release user story reuse runner build while handing ASBCP a digest-pinned kind registry image', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const runnerReuseBody = shellFunctionBody(script, 'release_user_story_runner_image_reuse_ready');
     const csiBody = shellFunctionBody(script, 'ensure_afscp_storage_csi');
+    const prepareBody = shellFunctionBody(script, 'prepare_release_user_story_managed_runner_image_handoff');
 
     expect(script).toContain('scripts/lib/run-readiness-state.sh');
+    expect(script).toContain('scripts/lib/managed-runner-image-handoff.sh');
     expect(script).toContain('release_user_story_runner_image_reuse_ready()');
     expect(runnerReuseBody).toContain('runner_image_id="$(release_user_story_runner_image_id)"');
     expect(runnerReuseBody).toContain('[[ -n "${runner_image_id}" ]] || return 1');
@@ -840,8 +842,13 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(runnerReuseBody).toContain('runner_image_id=${runner_image_id}');
     expect(script).toContain('reusing parent-verified runner image digest');
     expect(script).not.toContain('release_user_story_local_kind_image_import_reuse_ready()');
+    expect(script).toContain('prepare_release_user_story_managed_runner_image_handoff');
+    expect(prepareBody).toContain('managed_runner_image_handoff_is_digest_ref "${RUNNER_IMAGE}"');
+    expect(prepareBody).toContain('RUNNER_IMAGE="$(release_user_story_publish_local_runner_image_ref "${RUNNER_IMAGE}")"');
+    expect(prepareBody).toContain('release_user_story_preflight_kind_registry_runner_image');
     expect(csiBody).not.toContain('readiness_state_field_ready_with_identity local_kind_image_import_completed');
     expect(csiBody).not.toContain('reusing parent-verified kind image imports');
+    expect(csiBody).toContain('if ! release_user_story_runner_image_from_kind_registry; then');
     expect(csiBody).toContain('ensure_kind_image "${RUNNER_IMAGE}"');
     expect(csiBody).toContain('wait_for_afscp_storage_csi_ready');
   });

@@ -26,7 +26,7 @@
 6. 维护者排障语境：`gate:release:full` is aggregate-only readiness verification；它只验证已有 campaign evidence，不执行 suite，也不是普通人工入口。
 7. `product:ready` / `product:status` 不清理或改写原始日志；NO_COLOR、Postgres already exists、containerd deprecation 这类常见 setup warning 只有在 summary/evidence 明确列为 blocker 时才影响主结论。
 8. Product Readiness 前必须保留 Files restore continuation focused backend-real gate 作为重点证据；它证明 Files restore、read export pending、runtime-access release convergence 没有在完整 readiness 前断链。
-9. 观察 CI/gate 状态时，连续多次 non-terminal 后等待间隔递增；第一次 sandbox unavailable 后重跑通过记为 runtime flake，连续出现则升级稳定性 blocker。
+9. 观察 CI/gate 状态时，连续多次 non-terminal 后等待间隔递增；第一次可执行环境 unavailable 后重跑通过记为 runtime flake，连续出现则升级稳定性 blocker。
 10. Files restore continuation focused gate 中，terminal 已有关闭最终态但 workspace-binding release/revoke 仍 pending 时，按 runtime readiness 继续收口；AFSCP revoke 409 conflict 需要作为 retryable readiness 证据记录，不按普通 Files operation failed 处理。
 
 ## 环境前提

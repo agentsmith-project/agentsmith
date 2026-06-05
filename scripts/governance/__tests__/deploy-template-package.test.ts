@@ -94,6 +94,12 @@ const RUNNER_IMAGE_LOCK = {
     subject_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
     artifact_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
   },
+  handoff: {
+    report_artifact_uri:
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26714141935/runner-ga-handoff-report.json',
+    manifest_input_sha256: `sha256:${'d'.repeat(64)}`,
+    report_sha256: `sha256:${'e'.repeat(64)}`,
+  },
 } as const satisfies CurrentRunnerImageLock;
 const DEPLOY_TEMPLATE_PACKAGE_SCRIPT = join(REPO_ROOT, 'scripts/governance/deploy-template-package.ts');
 const TSX_LOADER = join(REPO_ROOT, 'node_modules/tsx/dist/loader.mjs');

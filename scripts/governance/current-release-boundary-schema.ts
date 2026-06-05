@@ -450,6 +450,11 @@ export interface CurrentRunnerImageLock {
     subject_sha256: string;
     artifact_sha256: string;
   };
+  handoff: {
+    report_artifact_uri: string;
+    manifest_input_sha256: string;
+    report_sha256: string;
+  };
 }
 
 export interface CurrentTruthMatrixEntry {
@@ -782,6 +787,8 @@ const RUNNER_IMAGE_REF_PATTERN =
   /^ghcr\.io\/agentsmith-project\/agentsmith-runner:([A-Za-z0-9_][A-Za-z0-9._-]{0,127})@sha256:([0-9a-f]{64})$/u;
 const RUNNER_CONTRACT_PACKAGE_URI_PATTERN =
   /^gh-artifact:\/\/agentsmith-project\/agentsmith\/runner-contract-artifact\/[1-9][0-9]*\/[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u;
+const RUNNER_GA_HANDOFF_REPORT_URI_PATTERN =
+  /^gh-artifact:\/\/agentsmith-project\/agentsmith-runner\/runner-ga-handoff\/[1-9][0-9]*\/runner-ga-handoff-report\.json$/u;
 const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeKey(
   entry.target_cluster,
   entry.substrate_source,
@@ -927,6 +934,9 @@ const RUNNER_IMAGE_LOCK_KEYS = new Set([
   'manifest_producer_repo',
   'manifest_subject_sha256',
   'manifest_artifact_sha256',
+  'runner_ga_handoff_uri',
+  'runner_ga_handoff_manifest_input_sha256',
+  'runner_ga_handoff_report_sha256',
 ]);
 const RUNNER_RELEASE_MANIFEST_KEYS = new Set([
   'schema_version',
@@ -1066,6 +1076,11 @@ export function parseRunnerImageLockText(
       producer_repo: values.manifest_producer_repo,
       subject_sha256: values.manifest_subject_sha256,
       artifact_sha256: values.manifest_artifact_sha256,
+    },
+    handoff: {
+      report_artifact_uri: values.runner_ga_handoff_uri,
+      manifest_input_sha256: values.runner_ga_handoff_manifest_input_sha256,
+      report_sha256: values.runner_ga_handoff_report_sha256,
     },
   };
 
@@ -1798,6 +1813,15 @@ export function validateRunnerImageLock(
     });
   } else {
     validateRunnerImageLockManifest(value.manifest, failures);
+  }
+
+  if (!hasOwn(value, 'handoff')) {
+    failures.push({
+      path: 'handoff',
+      reason: 'handoff is required.',
+    });
+  } else {
+    validateRunnerImageLockHandoff(value.handoff, failures);
   }
 
   return finish(value as CurrentRunnerImageLock, failures);
@@ -2697,6 +2721,35 @@ function validateRunnerImageLockManifest(
 
   validateDigest(value.subject_sha256, 'manifest.subject_sha256', failures);
   validateDigest(value.artifact_sha256, 'manifest.artifact_sha256', failures);
+}
+
+function validateRunnerImageLockHandoff(
+  value: unknown,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  if (!isRecord(value)) {
+    failures.push({
+      path: 'handoff',
+      reason: 'handoff must be an object.',
+    });
+    return;
+  }
+
+  const reportArtifactUri = validateRequiredString(
+    value.report_artifact_uri,
+    'handoff.report_artifact_uri',
+    failures,
+  );
+  validateRemoteCiArtifactUri(reportArtifactUri, 'handoff.report_artifact_uri', failures);
+  if (reportArtifactUri && !RUNNER_GA_HANDOFF_REPORT_URI_PATTERN.test(reportArtifactUri)) {
+    failures.push({
+      path: 'handoff.report_artifact_uri',
+      reason:
+        'handoff.report_artifact_uri must be gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/<positive-run-id>/runner-ga-handoff-report.json.',
+    });
+  }
+  validateDigest(value.manifest_input_sha256, 'handoff.manifest_input_sha256', failures);
+  validateDigest(value.report_sha256, 'handoff.report_sha256', failures);
 }
 
 function validateImageArray(

@@ -114,6 +114,12 @@ const RUNNER_IMAGE_LOCK = {
     subject_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
     artifact_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
   },
+  handoff: {
+    report_artifact_uri:
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+    manifest_input_sha256: 'sha256:a7e83fd0cae608d7e7ac8f3483c78ffa2c3ebe25f09c0b4e6e63526d95cfab70',
+    report_sha256: 'sha256:03aafe51bd832b68acc26ed56df05bcd49f2dfb02ad3560d28e0636acb8e612d',
+  },
 } as const satisfies CurrentRunnerImageLock;
 const CANONICAL_RUNNER_IMAGE_LOCK_PATH = join(
   process.cwd(),
@@ -231,10 +237,9 @@ function buildExternalImageSourceProvenance(
         'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
       runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
-      runner_ga_handoff_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
-      runner_ga_handoff_manifest_input_sha256: `sha256:${'d'.repeat(64)}`,
-      runner_ga_handoff_report_sha256: `sha256:${'e'.repeat(64)}`,
+      runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
+      runner_ga_handoff_manifest_input_sha256: RUNNER_IMAGE_LOCK.handoff.manifest_input_sha256,
+      runner_ga_handoff_report_sha256: RUNNER_IMAGE_LOCK.handoff.report_sha256,
     },
   ];
 }
@@ -1895,8 +1900,7 @@ describe('release contract CI artifact producer', () => {
           'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
         runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
         runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
-        runner_ga_handoff_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+        runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
         runner_ga_handoff_manifest_input_sha256: runnerGaHandoffReceipt.manifest_input_sha256,
         runner_ga_handoff_report_sha256: runnerGaHandoffReceipt.report_sha256,
       },
@@ -2011,9 +2015,9 @@ describe('release contract CI artifact producer', () => {
       report_scope: 'runner_ga_handoff_evidence',
       report_status: 'pass',
       report_path: runnerMetadata.handoffReportPath,
-      report_artifact_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
-      manifest_input_sha256: sha256Digest(readFileSync(runnerMetadata.remoteManifestPath, 'utf8')),
+      report_sha256: RUNNER_IMAGE_LOCK.handoff.report_sha256,
+      report_artifact_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
+      manifest_input_sha256: RUNNER_IMAGE_LOCK.handoff.manifest_input_sha256,
       manifest_release_id: RUNNER_IMAGE_LOCK.release_id,
       manifest_git_sha: RUNNER_IMAGE_LOCK.git_sha,
       manifest_artifact_uri:
@@ -2689,6 +2693,40 @@ describe('release contract CI artifact producer', () => {
     expect(exitCode).toBe(1);
     expect(stderr.join('\n')).toContain('runner GA handoff source freshness check failed');
     expect(stderr.join('\n')).toContain('handoff.git_sha');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(runnerGaHandoffReceiptPath)).toBe(false);
+  });
+
+  it('rejects runner GA handoff report digest drift from the canonical lock before writing receipts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const handoff = JSON.parse(readFileSync(runnerMetadata.handoffReportPath, 'utf8')) as Record<string, unknown>;
+    handoff.notes = [
+      ...(Array.isArray(handoff.notes) ? handoff.notes : []),
+      'Digest drift check fixture note.',
+    ];
+    writeFileSync(runnerMetadata.handoffReportPath, `${JSON.stringify(handoff, null, 2)}\n`);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const runnerGaHandoffReceiptPath = join(outputDir, RUNNER_GA_HANDOFF_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: ['--input', inputPath, '--output-dir', outputDir],
+      cwd: root,
+      env: githubReleaseContractEnv(artifactProducerSourceEnv(runnerMetadata, asbcpMetadata)),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain('runner GA handoff source freshness check failed');
+    expect(stderr.join('\n')).toContain('runnerImageLock.handoff.report_sha256');
     expect(existsSync(outputPath)).toBe(false);
     expect(existsSync(runnerManifestReceiptPath)).toBe(false);
     expect(existsSync(runnerGaHandoffReceiptPath)).toBe(false);

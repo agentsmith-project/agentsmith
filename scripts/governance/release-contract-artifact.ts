@@ -444,6 +444,7 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
       remoteManifestPath: config.runnerRemoteManifestPath,
       reportPath: config.runnerGaHandoffPath,
     });
+    assertRunnerGaHandoffReceiptMatchesLock(runnerImageLock, runnerGaHandoffReceipt);
     const llmupImageSourceReceipt = buildDependencyImageSourceReceipt({
       ciEnv,
       config: LLMUP_IMAGE_SOURCE_CONFIG,
@@ -1568,6 +1569,36 @@ function buildRunnerGaHandoffSourceReceipt(input: {
     },
     generated_at: input.ciEnv.generatedAt,
   };
+}
+
+function assertRunnerGaHandoffReceiptMatchesLock(
+  runnerImageLock: CurrentRunnerImageLock,
+  receipt: RunnerGaHandoffSourceReceipt,
+): void {
+  const failures: string[] = [];
+
+  compareString(
+    receipt.report_artifact_uri,
+    runnerImageLock.handoff.report_artifact_uri,
+    'runnerImageLock.handoff.report_artifact_uri',
+    failures,
+  );
+  compareString(
+    receipt.manifest_input_sha256,
+    runnerImageLock.handoff.manifest_input_sha256,
+    'runnerImageLock.handoff.manifest_input_sha256',
+    failures,
+  );
+  compareString(
+    receipt.report_sha256,
+    runnerImageLock.handoff.report_sha256,
+    'runnerImageLock.handoff.report_sha256',
+    failures,
+  );
+
+  if (failures.length > 0) {
+    throw new Error(formatRunnerGaHandoffSourceFailures(failures));
+  }
 }
 
 function buildDependencyImageSourceReceipt(input: {

@@ -236,6 +236,12 @@ describe('current release boundary schema', () => {
     expect(runnerImageLock.ok).toBe(true);
     if (runnerImageLock.ok) {
       expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
+      expect(runnerImageLock.value.handoff).toEqual({
+        report_artifact_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+        manifest_input_sha256: 'sha256:a7e83fd0cae608d7e7ac8f3483c78ffa2c3ebe25f09c0b4e6e63526d95cfab70',
+        report_sha256: 'sha256:03aafe51bd832b68acc26ed56df05bcd49f2dfb02ad3560d28e0636acb8e612d',
+      });
     }
 
     const runnerAdapterInventory = readFixture('runner-adapter-inventory.valid.json');
@@ -916,7 +922,7 @@ describe('current release boundary schema', () => {
         runner_ga_handoff_manifest_input_sha256:
           'sha256:a7e83fd0cae608d7e7ac8f3483c78ffa2c3ebe25f09c0b4e6e63526d95cfab70',
         runner_ga_handoff_report_sha256:
-          'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          'sha256:03aafe51bd832b68acc26ed56df05bcd49f2dfb02ad3560d28e0636acb8e612d',
       },
     });
 
@@ -2091,6 +2097,30 @@ describe('current release boundary schema', () => {
     );
 
     expectInvalid(lock, 'image.id must be "agentsmith-runner"');
+  });
+
+  it('rejects runner image locks without canonical GA handoff evidence', () => {
+    const missingHandoff = parseRunnerImageLockText(
+      readRunnerImageLockText()
+        .split(/\r?\n/u)
+        .filter((line) => !line.startsWith('runner_ga_handoff_report_sha256='))
+        .join('\n'),
+      'missing-runner-ga-handoff.lock',
+    );
+    expectInvalid(missingHandoff, 'handoff.report_sha256 must be a non-empty string.');
+
+    const nonCanonicalHandoffUri = parseRunnerImageLockText(
+      readRunnerImageLockText()
+        .replace(
+          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/handoff/26866339967/report.json',
+        ),
+      'non-canonical-runner-ga-handoff.lock',
+    );
+    expectInvalid(
+      nonCanonicalHandoffUri,
+      'handoff.report_artifact_uri must be gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/<positive-run-id>/runner-ga-handoff-report.json.',
+    );
   });
 
   it('rejects target profiles that mark any deployment target as required', () => {

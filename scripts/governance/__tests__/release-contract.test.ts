@@ -104,6 +104,12 @@ const RUNNER_IMAGE_LOCK = {
     subject_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
     artifact_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
   },
+  handoff: {
+    report_artifact_uri:
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26714141935/runner-ga-handoff-report.json',
+    manifest_input_sha256: `sha256:${'d'.repeat(64)}`,
+    report_sha256: `sha256:${'e'.repeat(64)}`,
+  },
 } as const satisfies CurrentRunnerImageLock;
 
 function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
@@ -221,10 +227,9 @@ function buildImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBindin
         'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26714141935/runner-release-manifest.json',
       runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
-      runner_ga_handoff_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26714141935/runner-ga-handoff-report.json',
-      runner_ga_handoff_manifest_input_sha256: `sha256:${'d'.repeat(64)}`,
-      runner_ga_handoff_report_sha256: `sha256:${'e'.repeat(64)}`,
+      runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
+      runner_ga_handoff_manifest_input_sha256: RUNNER_IMAGE_LOCK.handoff.manifest_input_sha256,
+      runner_ga_handoff_report_sha256: RUNNER_IMAGE_LOCK.handoff.report_sha256,
     },
   ];
 }

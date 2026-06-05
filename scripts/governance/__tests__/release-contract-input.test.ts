@@ -55,20 +55,30 @@ const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-s
 const LLMUP_VERSION = 'v0.2.44';
 const LLMUP_DIGEST = `sha256:${'3'.repeat(64)}`;
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
+const LLMUP_SOURCE_RUN_ID = '30001';
+const LLMUP_SOURCE_RUN_ATTEMPT = '1';
+const LLMUP_SOURCE_SUBJECT_NAME = 'llm-universal-proxy-image';
 const LLMUP_RELEASE_URL =
   `https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/${LLMUP_VERSION}`;
 const AFSCP_VERSION = 'v1.0.7';
 const AFSCP_DIGEST = `sha256:${'5'.repeat(64)}`;
 const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const AFSCP_SOURCE_RUN_ID = '40001';
+const AFSCP_SOURCE_RUN_ATTEMPT = '1';
+const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';
 const AFSCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/${AFSCP_VERSION}`;
 const ASBCP_VERSION = 'v2.0.12';
 const ASBCP_DIGEST = `sha256:${'6'.repeat(64)}`;
 const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
+const ASBCP_SOURCE_RUN_ID = '50001';
+const ASBCP_SOURCE_RUN_ATTEMPT = '1';
+const ASBCP_SOURCE_SUBJECT_NAME = 'agentsmith-sandbox-control-plane-image';
 const ASBCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/${ASBCP_VERSION}`;
 const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json';
 const ASBCP_BREAKING_CHANGE_ID = 'ASBCP-BC-0001';
+const MANAGED_RUNNER_SOURCE_SUBJECT_NAME = 'agentsmith-managed-runner-image';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
   'agentsmith_app',
@@ -155,6 +165,13 @@ function buildExternalImageSourceProvenance(
       tag: LLMUP_VERSION,
       run_id: runId,
       run_attempt: runAttempt,
+      run_url: githubActionsRunAttemptUrl('github.com/agentsmith-project/llm-universal-proxy', runId, runAttempt),
+      subject_name: LLMUP_SOURCE_SUBJECT_NAME,
+      artifact_uri: imageSourceArtifactUri(
+        'github.com/agentsmith-project/llm-universal-proxy',
+        runId,
+        LLMUP_SOURCE_SUBJECT_NAME,
+      ),
       artifact_sha256: LLMUP_DIGEST,
     },
     {
@@ -165,6 +182,13 @@ function buildExternalImageSourceProvenance(
       tag: AFSCP_VERSION,
       run_id: runId,
       run_attempt: runAttempt,
+      run_url: githubActionsRunAttemptUrl('github.com/agentsmith-project/agentsmith-fs-control-plane', runId, runAttempt),
+      subject_name: AFSCP_SOURCE_SUBJECT_NAME,
+      artifact_uri: imageSourceArtifactUri(
+        'github.com/agentsmith-project/agentsmith-fs-control-plane',
+        runId,
+        AFSCP_SOURCE_SUBJECT_NAME,
+      ),
       artifact_sha256: AFSCP_DIGEST,
     },
     {
@@ -175,6 +199,17 @@ function buildExternalImageSourceProvenance(
       tag: asbcpVersion,
       run_id: runId,
       run_attempt: runAttempt,
+      run_url: githubActionsRunAttemptUrl(
+        'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+        runId,
+        runAttempt,
+      ),
+      subject_name: ASBCP_SOURCE_SUBJECT_NAME,
+      artifact_uri: imageSourceArtifactUri(
+        'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
+        runId,
+        ASBCP_SOURCE_SUBJECT_NAME,
+      ),
       artifact_sha256: asbcpDigest,
     },
     {
@@ -185,6 +220,10 @@ function buildExternalImageSourceProvenance(
       tag: 'release-locked-safety-008dbbd',
       run_id: '26866339967',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+      subject_name: MANAGED_RUNNER_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
     },
   ];
@@ -206,6 +245,9 @@ function buildAppImageSourceProvenance(
     tag: imageTagFromRef(image.image),
     run_id: '10001',
     run_attempt: '1',
+    run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1',
+    subject_name: 'agentsmith-app-image',
+    artifact_uri: 'gh-artifact://agentsmith-project/agentsmith/10001/agentsmith-app-image.oci',
     artifact_sha256: image.digest,
   };
 }
@@ -237,8 +279,28 @@ function sourceProvenanceFor(
     tag: binding.tag,
     run_id: binding.run_id,
     run_attempt: binding.run_attempt,
+    run_url: binding.run_url,
+    subject_name: binding.subject_name,
+    artifact_uri: binding.artifact_uri,
     artifact_sha256: binding.artifact_sha256,
   };
+}
+
+function githubActionsRunAttemptUrl(canonicalRepo: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${githubRepoSlug(canonicalRepo)}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
+function imageSourceArtifactUri(canonicalRepo: string, runId: string, subjectName: string): string {
+  return `gh-artifact://${githubRepoSlug(canonicalRepo)}/${runId}/${subjectName}.oci`;
+}
+
+function githubRepoSlug(canonicalRepo: string): string {
+  const prefix = 'github.com/';
+  if (!canonicalRepo.startsWith(prefix)) {
+    throw new Error(`canonical repo must start with ${prefix}`);
+  }
+
+  return canonicalRepo.slice(prefix.length);
 }
 
 function buildAppManifestTarget() {
@@ -301,6 +363,7 @@ function buildDeployTemplatePackage(): CurrentDeployTemplatePackage {
       workflow_name: 'release-contract',
       run_id: '10001',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1',
       job: 'package-deploy-template',
       artifact_uri: subject.package_uri,
       artifact_sha256: subject.package_sha256,
@@ -542,11 +605,20 @@ interface DependencyImageSourceFixtureConfig {
   releaseUrl: string;
   releaseId: number;
   tagObjectSha: string;
+  sourceRunId: string;
+  sourceRunAttempt: string;
+  sourceSubjectName: string;
 }
 
 interface DependencyImageSourceGateFixture {
   provider_id: 'llmup' | 'afscp';
   repo_slug: string;
+  commit_sha: string;
+  run_id: string;
+  run_attempt: string;
+  run_url: string;
+  subject_name: string;
+  artifact_uri: string;
   release_api: Record<string, unknown>;
   tag_ref_api: Record<string, unknown>;
   tag_object_api: Record<string, unknown>;
@@ -734,6 +806,12 @@ function buildDependencyImageSourceGateFixture(
   return {
     provider_id: config.providerId,
     repo_slug: config.repoSlug,
+    commit_sha: config.commitSha,
+    run_id: config.sourceRunId,
+    run_attempt: config.sourceRunAttempt,
+    run_url: `https://github.com/${config.repoSlug}/actions/runs/${config.sourceRunId}/attempts/${config.sourceRunAttempt}`,
+    subject_name: config.sourceSubjectName,
+    artifact_uri: `gh-artifact://${config.repoSlug}/${config.sourceRunId}/${config.sourceSubjectName}.oci`,
     release_api: {
       id: config.releaseId,
       tag_name: config.version,
@@ -799,6 +877,9 @@ function writeDependencyImageSourceGates(root: string): Pick<
       releaseUrl: LLMUP_RELEASE_URL,
       releaseId: 331570298,
       tagObjectSha: '5bac2cd8cc316c27a42a4fbdd21b986600bfaadf',
+      sourceRunId: LLMUP_SOURCE_RUN_ID,
+      sourceRunAttempt: LLMUP_SOURCE_RUN_ATTEMPT,
+      sourceSubjectName: LLMUP_SOURCE_SUBJECT_NAME,
     }),
     afscpSourceGatePath: writeDependencyImageSourceGate(root, {
       providerId: 'afscp',
@@ -810,6 +891,9 @@ function writeDependencyImageSourceGates(root: string): Pick<
       releaseUrl: AFSCP_RELEASE_URL,
       releaseId: 326107668,
       tagObjectSha: '9f4f16a691049da6065a2bd45720c652e6fed171',
+      sourceRunId: AFSCP_SOURCE_RUN_ID,
+      sourceRunAttempt: AFSCP_SOURCE_RUN_ATTEMPT,
+      sourceSubjectName: AFSCP_SOURCE_SUBJECT_NAME,
     }),
   };
 }
@@ -866,6 +950,17 @@ function writeAsbcpFinalManifestSourceMetadata(
   writeFileSync(paths.manifestPath, `${JSON.stringify(metadata.manifest, null, 2)}\n`);
   writeFileSync(paths.releaseApiPath, `${JSON.stringify(metadata.releaseApi, null, 2)}\n`);
   writeFileSync(paths.assetApiPath, `${JSON.stringify(metadata.assetApi, null, 2)}\n`);
+  writeFileSync(join(metadataRoot, 'source-provenance.json'), `${JSON.stringify({
+    repo_slug: 'agentsmith-project/agentsmith-sandbox-control-plane',
+    commit_sha: ASBCP_COMMIT_SHA,
+    run_id: ASBCP_SOURCE_RUN_ID,
+    run_attempt: ASBCP_SOURCE_RUN_ATTEMPT,
+    run_url:
+      `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/${ASBCP_SOURCE_RUN_ID}/attempts/${ASBCP_SOURCE_RUN_ATTEMPT}`,
+    subject_name: ASBCP_SOURCE_SUBJECT_NAME,
+    artifact_uri:
+      `gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/${ASBCP_SOURCE_RUN_ID}/${ASBCP_SOURCE_SUBJECT_NAME}.oci`,
+  }, null, 2)}\n`);
   return paths;
 }
 
@@ -1675,6 +1770,7 @@ describe('release contract CI artifact producer', () => {
       workflow_name: 'Release Contract Artifact',
       run_id: '10001',
       run_attempt: '2',
+      run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/2',
       job: 'generate-release-contract',
       artifact_uri: 'gh-artifact://agentsmith-project/agentsmith/release-contract/10001/agentsmith-release-contract.json',
       generated_at: GENERATED_AT,
@@ -1695,6 +1791,10 @@ describe('release contract CI artifact producer', () => {
         tag: 'release-locked-safety-008dbbd',
         run_id: '26866339967',
         run_attempt: '1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+        subject_name: MANAGED_RUNNER_SOURCE_SUBJECT_NAME,
+        artifact_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
         artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
       },
     });
@@ -1706,6 +1806,9 @@ describe('release contract CI artifact producer', () => {
       tag: `release-${RELEASE_ID}`,
       run_id: '10001',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1',
+      subject_name: 'agentsmith-app-image',
+      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith/10001/agentsmith-app-image.oci',
       artifact_sha256: APP_DIGEST,
     });
     expect(deployInventoryById.get('llmup')?.source_provenance).toEqual({
@@ -1713,8 +1816,13 @@ describe('release contract CI artifact producer', () => {
       normalized_remote: 'github.com/agentsmith-project/llm-universal-proxy',
       commit_sha: LLMUP_COMMIT_SHA,
       tag: LLMUP_VERSION,
-      run_id: '10001',
-      run_attempt: '2',
+      run_id: LLMUP_SOURCE_RUN_ID,
+      run_attempt: LLMUP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/llm-universal-proxy/actions/runs/${LLMUP_SOURCE_RUN_ID}/attempts/${LLMUP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: LLMUP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/llm-universal-proxy/${LLMUP_SOURCE_RUN_ID}/${LLMUP_SOURCE_SUBJECT_NAME}.oci`,
       artifact_sha256: LLMUP_DIGEST,
     });
     expect(deployInventoryById.get('afscp')?.source_provenance).toEqual({
@@ -1722,8 +1830,13 @@ describe('release contract CI artifact producer', () => {
       normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       commit_sha: AFSCP_COMMIT_SHA,
       tag: AFSCP_VERSION,
-      run_id: '10001',
-      run_attempt: '2',
+      run_id: AFSCP_SOURCE_RUN_ID,
+      run_attempt: AFSCP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/${AFSCP_SOURCE_RUN_ID}/attempts/${AFSCP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: AFSCP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/agentsmith-fs-control-plane/${AFSCP_SOURCE_RUN_ID}/${AFSCP_SOURCE_SUBJECT_NAME}.oci`,
       artifact_sha256: AFSCP_DIGEST,
     });
     expect(deployInventoryById.get('asbcp')?.source_provenance).toEqual({
@@ -1731,8 +1844,13 @@ describe('release contract CI artifact producer', () => {
       normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       commit_sha: ASBCP_COMMIT_SHA,
       tag: ASBCP_VERSION,
-      run_id: '10001',
-      run_attempt: '2',
+      run_id: ASBCP_SOURCE_RUN_ID,
+      run_attempt: ASBCP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/${ASBCP_SOURCE_RUN_ID}/attempts/${ASBCP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: ASBCP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/${ASBCP_SOURCE_RUN_ID}/${ASBCP_SOURCE_SUBJECT_NAME}.oci`,
       artifact_sha256: ASBCP_DIGEST,
     });
     expect(runnerManifestReceipt).toMatchObject({
@@ -1801,6 +1919,13 @@ describe('release contract CI artifact producer', () => {
       tag_ref_object_sha: '5bac2cd8cc316c27a42a4fbdd21b986600bfaadf',
       tag_commit_sha: LLMUP_COMMIT_SHA,
       tag_commit_sha_match: true,
+      run_id: LLMUP_SOURCE_RUN_ID,
+      run_attempt: LLMUP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/llm-universal-proxy/actions/runs/${LLMUP_SOURCE_RUN_ID}/attempts/${LLMUP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: LLMUP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/llm-universal-proxy/${LLMUP_SOURCE_RUN_ID}/${LLMUP_SOURCE_SUBJECT_NAME}.oci`,
       observed_ghcr_digest: LLMUP_DIGEST,
       ghcr_digest_match: true,
       check_command:
@@ -1836,6 +1961,13 @@ describe('release contract CI artifact producer', () => {
       tag_ref_object_sha: '9f4f16a691049da6065a2bd45720c652e6fed171',
       tag_commit_sha: AFSCP_COMMIT_SHA,
       tag_commit_sha_match: true,
+      run_id: AFSCP_SOURCE_RUN_ID,
+      run_attempt: AFSCP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/${AFSCP_SOURCE_RUN_ID}/attempts/${AFSCP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: AFSCP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/agentsmith-fs-control-plane/${AFSCP_SOURCE_RUN_ID}/${AFSCP_SOURCE_SUBJECT_NAME}.oci`,
       observed_ghcr_digest: AFSCP_DIGEST,
       ghcr_digest_match: true,
       check_command:
@@ -1869,6 +2001,13 @@ describe('release contract CI artifact producer', () => {
       asset_content_type: 'application/json',
       api_asset_digest_source: 'github_release_asset.digest',
       api_asset_digest_match: true,
+      run_id: ASBCP_SOURCE_RUN_ID,
+      run_attempt: ASBCP_SOURCE_RUN_ATTEMPT,
+      run_url:
+        `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/${ASBCP_SOURCE_RUN_ID}/attempts/${ASBCP_SOURCE_RUN_ATTEMPT}`,
+      subject_name: ASBCP_SOURCE_SUBJECT_NAME,
+      artifact_uri:
+        `gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/${ASBCP_SOURCE_RUN_ID}/${ASBCP_SOURCE_SUBJECT_NAME}.oci`,
       adoption_gate: {
         command:
           'npm run contracts:check-asbcp-adoption -- --manifest asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',

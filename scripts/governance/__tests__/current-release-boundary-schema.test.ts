@@ -900,6 +900,10 @@ describe('current release boundary schema', () => {
         tag: 'release-locked-safety-008dbbd',
         run_id: '26866339967',
         run_attempt: '1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+        subject_name: 'agentsmith-managed-runner-image',
+        artifact_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
         artifact_sha256: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
       },
     });
@@ -1030,6 +1034,40 @@ describe('current release boundary schema', () => {
     expectInvalid(
       validateAgentSmithReleaseContract(repoMismatch),
       'canonical repo identity must be github.com/agentsmith-project/agentsmith-fs-control-plane',
+    );
+
+    const missingRunUrl = cloneFixture('release-contract.valid.json');
+    const llmupMissingRunUrlProvenance = (missingRunUrl.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'llmup',
+    )!.source_provenance as Record<string, unknown>;
+    delete llmupMissingRunUrlProvenance.run_url;
+    rehashReleaseContract(missingRunUrl);
+    expectInvalid(
+      validateAgentSmithReleaseContract(missingRunUrl),
+      'source_provenance.run_url must be a non-empty string',
+    );
+
+    const runUrlRepoMismatch = cloneFixture('release-contract.valid.json');
+    const llmupRunUrlProvenance = (runUrlRepoMismatch.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'llmup',
+    )!.source_provenance as Record<string, unknown>;
+    llmupRunUrlProvenance.run_url =
+      'https://github.com/agentsmith-project/agentsmith/actions/runs/30001/attempts/1';
+    rehashReleaseContract(runUrlRepoMismatch);
+    expectInvalid(
+      validateAgentSmithReleaseContract(runUrlRepoMismatch),
+      'source_provenance.run_url must be for canonical repo github.com/agentsmith-project/llm-universal-proxy',
+    );
+
+    const localArtifactUri = cloneFixture('release-contract.valid.json');
+    const asbcpArtifactProvenance = (localArtifactUri.deploy_image_inventory as Array<Record<string, unknown>>).find(
+      (image) => image.id === 'asbcp',
+    )!.source_provenance as Record<string, unknown>;
+    asbcpArtifactProvenance.artifact_uri = '../dist/asbcp-image.oci';
+    rehashReleaseContract(localArtifactUri);
+    expectInvalid(
+      validateAgentSmithReleaseContract(localArtifactUri),
+      'source_provenance.artifact_uri must be a remote/CI artifact URI',
     );
   });
 

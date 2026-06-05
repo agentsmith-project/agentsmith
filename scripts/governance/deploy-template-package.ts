@@ -438,6 +438,11 @@ function buildDescriptor(
       workflow_name: input.ci_provenance.workflow_name,
       run_id: input.ci_provenance.run_id,
       run_attempt: input.ci_provenance.run_attempt,
+      run_url: githubActionsRunAttemptUrl(
+        AGENTSMITH_CANONICAL_REPO,
+        input.ci_provenance.run_id,
+        input.ci_provenance.run_attempt,
+      ),
       job: input.ci_provenance.job,
       artifact_uri: input.package_uri,
       artifact_sha256: packageSha256,
@@ -447,6 +452,19 @@ function buildDescriptor(
       attestation: input.ci_provenance.attestation,
     },
   };
+}
+
+function githubActionsRunAttemptUrl(canonicalRepo: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${githubRepoSlug(canonicalRepo)}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
+function githubRepoSlug(canonicalRepo: string): string {
+  const prefix = 'github.com/';
+  if (!canonicalRepo.startsWith(prefix) || canonicalRepo.slice(prefix.length).trim().length === 0) {
+    throw new Error(`canonical repo must start with ${prefix}.`);
+  }
+
+  return canonicalRepo.slice(prefix.length);
 }
 
 function assertValidDescriptor(descriptor: CurrentDeployTemplatePackage): void {

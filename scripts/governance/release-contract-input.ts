@@ -244,9 +244,28 @@ function buildAppImageSourceProvenance(
   appTarget: CurrentBuildManifestTarget,
   provenance: CurrentDeployTemplatePackage['artifact_provenance'],
 ): CurrentReleaseImageSourceProvenanceBinding {
+  const producerRepo = requireNonEmptyString(
+    provenance.producer_repo,
+    'deployTemplatePackage.artifact_provenance.producer_repo',
+  );
+  const runId = requireNonEmptyString(provenance.run_id, 'deployTemplatePackage.artifact_provenance.run_id');
+  const runAttempt = requireNonEmptyString(
+    provenance.run_attempt,
+    'deployTemplatePackage.artifact_provenance.run_attempt',
+  );
+  const runUrl = requireNonEmptyString(
+    provenance.run_url,
+    'deployTemplatePackage.artifact_provenance.run_url',
+  );
+  const expectedRunUrl = githubActionsRunAttemptUrl(producerRepo, runId, runAttempt);
+  if (runUrl !== expectedRunUrl) {
+    throw new Error('deployTemplatePackage.artifact_provenance.run_url must match producer repo, run_id, and run_attempt.');
+  }
+  const subjectName = 'agentsmith-app-image';
+
   return {
     image_id: AGENTSMITH_APP_PRODUCT_IMAGE_ID,
-    producer_repo: requireNonEmptyString(provenance.producer_repo, 'deployTemplatePackage.artifact_provenance.producer_repo'),
+    producer_repo: producerRepo,
     normalized_remote: requireNonEmptyString(
       provenance.normalized_remote,
       'deployTemplatePackage.artifact_provenance.normalized_remote',
@@ -256,11 +275,11 @@ function buildAppImageSourceProvenance(
       extractImageReferenceTag(appTarget.release_alias_ref),
       'build manifest app target release_alias_ref tag',
     ),
-    run_id: requireNonEmptyString(provenance.run_id, 'deployTemplatePackage.artifact_provenance.run_id'),
-    run_attempt: requireNonEmptyString(
-      provenance.run_attempt,
-      'deployTemplatePackage.artifact_provenance.run_attempt',
-    ),
+    run_id: runId,
+    run_attempt: runAttempt,
+    run_url: runUrl,
+    subject_name: subjectName,
+    artifact_uri: imageSourceArtifactUri(producerRepo, runId, subjectName),
     artifact_sha256: appTarget.image_digest,
   };
 }
@@ -311,6 +330,23 @@ function requireNonEmptyString(value: unknown, path: string): string {
   }
 
   return value;
+}
+
+function githubActionsRunAttemptUrl(canonicalRepo: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${githubRepoSlug(canonicalRepo)}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
+function imageSourceArtifactUri(canonicalRepo: string, runId: string, subjectName: string): string {
+  return `gh-artifact://${githubRepoSlug(canonicalRepo)}/${runId}/${subjectName}.oci`;
+}
+
+function githubRepoSlug(canonicalRepo: string): string {
+  const prefix = 'github.com/';
+  if (!canonicalRepo.startsWith(prefix) || canonicalRepo.slice(prefix.length).trim().length === 0) {
+    throw new Error(`canonical repo must start with ${prefix}.`);
+  }
+
+  return canonicalRepo.slice(prefix.length);
 }
 
 function resolveExpectedReleaseId(options: BuildProductImagesFromBuildManifestOptions): string {

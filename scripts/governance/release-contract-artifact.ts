@@ -62,21 +62,26 @@ const LLMUP_IMAGE_LOCK_RELATIVE_PATH = 'infra/deploy/shared/llmup-image.lock' as
 const LLMUP_REPO_SLUG = 'agentsmith-project/llm-universal-proxy' as const;
 const LLMUP_CANONICAL_REPO = `github.com/${LLMUP_REPO_SLUG}` as const;
 const LLMUP_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universal-proxy' as const;
+const LLMUP_IMAGE_SOURCE_SUBJECT_NAME = 'llm-universal-proxy-image' as const;
 const AFSCP_IMAGE_LOCK_RELATIVE_PATH = 'infra/deploy/shared/afscp-image.lock' as const;
 const AFSCP_REPO_SLUG = 'agentsmith-project/agentsmith-fs-control-plane' as const;
 const AFSCP_CANONICAL_REPO = `github.com/${AFSCP_REPO_SLUG}` as const;
 const AFSCP_IMAGE_REPOSITORY =
   'ghcr.io/agentsmith-project/agentsmith-fs-control-plane' as const;
+const AFSCP_IMAGE_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image' as const;
 const ASBCP_IMAGE_LOCK_RELATIVE_PATH = 'infra/deploy/shared/asbcp-image.lock' as const;
 const ASBCP_REPO_SLUG = 'agentsmith-project/agentsmith-sandbox-control-plane' as const;
 const ASBCP_CANONICAL_REPO = `github.com/${ASBCP_REPO_SLUG}` as const;
 const ASBCP_IMAGE_REPOSITORY =
   'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane' as const;
+const ASBCP_IMAGE_SOURCE_SUBJECT_NAME = 'agentsmith-sandbox-control-plane-image' as const;
 const ASBCP_RELEASE_URL_PREFIX =
   `https://github.com/${ASBCP_REPO_SLUG}/releases/tag/` as const;
 const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json' as const;
+const ASBCP_SOURCE_PROVENANCE_FILE_NAME = 'source-provenance.json' as const;
 const RUNNER_RELEASE_MANIFEST_ADOPTION_COMMAND =
   `npm run contracts:check-runner-image-lock -- --adoption --manifest ${RUNNER_RELEASE_MANIFEST_RELATIVE_PATH}` as const;
+const MANAGED_RUNNER_IMAGE_SOURCE_SUBJECT_NAME = 'agentsmith-managed-runner-image' as const;
 const PRODUCER_OWNED_INPUT_FIELDS = [
   'sourceGitSha',
   'ci_provenance',
@@ -98,6 +103,7 @@ const LLMUP_IMAGE_SOURCE_CONFIG: DependencyImageProviderConfig = {
   imageRepository: LLMUP_IMAGE_REPOSITORY,
   repoSlug: LLMUP_REPO_SLUG,
   canonicalRepo: LLMUP_CANONICAL_REPO,
+  subjectName: LLMUP_IMAGE_SOURCE_SUBJECT_NAME,
   receiptName: LLMUP_IMAGE_SOURCE_RECEIPT_NAME,
   schemaVersion: LLMUP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
 };
@@ -112,6 +118,7 @@ const AFSCP_IMAGE_SOURCE_CONFIG: DependencyImageProviderConfig = {
   imageRepository: AFSCP_IMAGE_REPOSITORY,
   repoSlug: AFSCP_REPO_SLUG,
   canonicalRepo: AFSCP_CANONICAL_REPO,
+  subjectName: AFSCP_IMAGE_SOURCE_SUBJECT_NAME,
   receiptName: AFSCP_IMAGE_SOURCE_RECEIPT_NAME,
   schemaVersion: AFSCP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION,
 };
@@ -223,6 +230,7 @@ interface DependencyImageProviderConfig {
   imageRepository: typeof LLMUP_IMAGE_REPOSITORY | typeof AFSCP_IMAGE_REPOSITORY;
   repoSlug: typeof LLMUP_REPO_SLUG | typeof AFSCP_REPO_SLUG;
   canonicalRepo: typeof LLMUP_CANONICAL_REPO | typeof AFSCP_CANONICAL_REPO;
+  subjectName: typeof LLMUP_IMAGE_SOURCE_SUBJECT_NAME | typeof AFSCP_IMAGE_SOURCE_SUBJECT_NAME;
   receiptName: typeof LLMUP_IMAGE_SOURCE_RECEIPT_NAME | typeof AFSCP_IMAGE_SOURCE_RECEIPT_NAME;
   schemaVersion: typeof LLMUP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION | typeof AFSCP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION;
 }
@@ -264,6 +272,11 @@ interface DependencyImageSourceReceipt {
   tag_object_sha: string | null;
   tag_commit_sha: string;
   tag_commit_sha_match: true;
+  run_id: string;
+  run_attempt: string;
+  run_url: string;
+  subject_name: typeof LLMUP_IMAGE_SOURCE_SUBJECT_NAME | typeof AFSCP_IMAGE_SOURCE_SUBJECT_NAME;
+  artifact_uri: string;
   observed_ghcr_digest: string;
   ghcr_digest_match: true;
   check_command: string;
@@ -309,6 +322,11 @@ interface AsbcpFinalManifestSourceReceipt {
   api_asset_digest_source: 'github_release_asset.digest' | 'not_provided_by_github';
   downloaded_manifest_sha256: string;
   api_asset_digest_match: true | null;
+  run_id: string;
+  run_attempt: string;
+  run_url: string;
+  subject_name: typeof ASBCP_IMAGE_SOURCE_SUBJECT_NAME;
+  artifact_uri: string;
   adoption_gate: {
     command: string;
     lock_path: typeof ASBCP_IMAGE_LOCK_RELATIVE_PATH;
@@ -987,6 +1005,13 @@ function buildRunnerImageSourceProvenance(input: {
     tag: requireLockedImageTag(input.runnerImageLock.image.image, 'runnerImageLock.image.image'),
     run_id: input.receipt.run_id,
     run_attempt: input.receipt.run_attempt,
+    run_url: githubActionsRunAttemptUrl(input.receipt.producer_repo, input.receipt.run_id, input.receipt.run_attempt),
+    subject_name: MANAGED_RUNNER_IMAGE_SOURCE_SUBJECT_NAME,
+    artifact_uri: imageSourceArtifactUri(
+      input.receipt.producer_repo,
+      input.receipt.run_id,
+      MANAGED_RUNNER_IMAGE_SOURCE_SUBJECT_NAME,
+    ),
     artifact_sha256: input.runnerImageLock.image.digest,
   };
 }
@@ -1000,8 +1025,11 @@ function buildDependencyImageSourceProvenance(
     normalized_remote: receipt.producer_repo,
     commit_sha: receipt.tag_commit_sha,
     tag: receipt.release_tag,
-    run_id: receipt.consumer.run_id,
-    run_attempt: receipt.consumer.run_attempt,
+    run_id: receipt.run_id,
+    run_attempt: receipt.run_attempt,
+    run_url: receipt.run_url,
+    subject_name: receipt.subject_name,
+    artifact_uri: receipt.artifact_uri,
     artifact_sha256: receipt.observed_ghcr_digest,
   };
 }
@@ -1016,8 +1044,11 @@ function buildAsbcpImageSourceProvenance(input: {
     normalized_remote: input.receipt.producer_repo,
     commit_sha: input.receipt.lock_commit_sha,
     tag: input.receipt.release_tag,
-    run_id: input.receipt.consumer.run_id,
-    run_attempt: input.receipt.consumer.run_attempt,
+    run_id: input.receipt.run_id,
+    run_attempt: input.receipt.run_attempt,
+    run_url: input.receipt.run_url,
+    subject_name: input.receipt.subject_name,
+    artifact_uri: input.receipt.artifact_uri,
     artifact_sha256: input.imageLock.digest,
   };
 }
@@ -1271,10 +1302,37 @@ function buildDependencyImageSourceReceipt(input: {
     failures,
   );
   const checkCommand = readString(sourceGateRecord, 'check_command');
+  const sourceRunId = readString(sourceGateRecord, 'run_id');
+  const sourceRunAttempt = readString(sourceGateRecord, 'run_attempt');
+  const sourceRunUrl = readString(sourceGateRecord, 'run_url');
+  const sourceCommitSha = readString(sourceGateRecord, 'commit_sha');
+  const sourceSubjectName = readString(sourceGateRecord, 'subject_name');
+  const sourceArtifactUri = readString(sourceGateRecord, 'artifact_uri');
 
   compareString(readString(sourceGateRecord, 'provider_id'), input.config.providerId, 'source_gate.provider_id', failures);
   compareString(readString(sourceGateRecord, 'repo_slug'), input.config.repoSlug, 'source_gate.repo_slug', failures);
   compareString(checkCommand, expectedCheckCommand, 'source_gate.check_command', failures);
+  compareString(sourceCommitSha, input.imageLock.commitSha, 'source_gate.commit_sha', failures);
+  compareString(sourceSubjectName, input.config.subjectName, 'source_gate.subject_name', failures);
+  requirePositiveIntegerString(sourceRunId, 'source_gate.run_id', failures);
+  requirePositiveIntegerString(sourceRunAttempt, 'source_gate.run_attempt', failures);
+  if (sourceRunId && sourceRunAttempt) {
+    compareString(
+      sourceRunUrl,
+      githubActionsRunAttemptUrl(input.config.canonicalRepo, sourceRunId, sourceRunAttempt),
+      'source_gate.run_url',
+      failures,
+    );
+    compareString(
+      sourceArtifactUri,
+      imageSourceArtifactUri(input.config.canonicalRepo, sourceRunId, input.config.subjectName),
+      'source_gate.artifact_uri',
+      failures,
+    );
+  } else {
+    requireNonEmptyString(sourceRunUrl, 'source_gate.run_url', failures);
+    requireNonEmptyString(sourceArtifactUri, 'source_gate.artifact_uri', failures);
+  }
   if (!isRecord(releaseApi)) {
     failures.push('source_gate.release_api: GitHub release metadata must be a JSON object.');
   }
@@ -1377,6 +1435,11 @@ function buildDependencyImageSourceReceipt(input: {
     tag_object_sha: tagObjectSha,
     tag_commit_sha: tagCommitSha,
     tag_commit_sha_match: true,
+    run_id: sourceRunId,
+    run_attempt: sourceRunAttempt,
+    run_url: sourceRunUrl,
+    subject_name: input.config.subjectName,
+    artifact_uri: sourceArtifactUri,
     observed_ghcr_digest: observedGhrDigest,
     ghcr_digest_match: true,
     check_command: expectedCheckCommand,
@@ -1405,12 +1468,21 @@ function buildAsbcpFinalManifestSourceReceipt(input: {
   const failures: string[] = [];
   const releaseApi = readJson(input.releaseApiPath);
   const assetApi = readJson(input.assetApiPath);
+  const sourceProvenancePath = path.join(path.dirname(input.manifestPath), ASBCP_SOURCE_PROVENANCE_FILE_NAME);
+  const sourceProvenance = existsSync(sourceProvenancePath)
+    ? readJson(sourceProvenancePath)
+    : null;
 
   if (!isRecord(releaseApi)) {
     failures.push('release_api: GitHub release metadata must be a JSON object.');
   }
   if (!isRecord(assetApi)) {
     failures.push('asset_api: GitHub release asset metadata must be a JSON object.');
+  }
+  if (!existsSync(sourceProvenancePath)) {
+    failures.push(`source_provenance_path: ASBCP source provenance sidecar must exist: ${sourceProvenancePath}`);
+  } else if (!isRecord(sourceProvenance)) {
+    failures.push('source_provenance: ASBCP source provenance sidecar must be a JSON object.');
   }
   if (!existsSync(input.manifestPath)) {
     failures.push(`manifest_path: downloaded ASBCP final manifest must exist: ${input.manifestPath}`);
@@ -1421,6 +1493,7 @@ function buildAsbcpFinalManifestSourceReceipt(input: {
 
   const releaseApiRecord = releaseApi as Record<string, unknown>;
   const assetApiRecord = assetApi as Record<string, unknown>;
+  const sourceProvenanceRecord = sourceProvenance as Record<string, unknown>;
   const releaseId = readNumber(releaseApiRecord, 'id');
   const releaseTag = readString(releaseApiRecord, 'tag_name');
   const releaseApiUrl = readString(releaseApiRecord, 'url');
@@ -1481,6 +1554,13 @@ function buildAsbcpFinalManifestSourceReceipt(input: {
   );
   const apiAssetDigest = assetApiDigest ?? releaseAssetDigest;
   const apiAssetDigestPath = assetApiDigest ? 'asset_api.digest' : 'release_api.assets[].digest';
+  const sourceRepoSlug = readString(sourceProvenanceRecord, 'repo_slug');
+  const sourceCommitSha = readString(sourceProvenanceRecord, 'commit_sha');
+  const sourceRunId = readString(sourceProvenanceRecord, 'run_id');
+  const sourceRunAttempt = readString(sourceProvenanceRecord, 'run_attempt');
+  const sourceRunUrl = readString(sourceProvenanceRecord, 'run_url');
+  const sourceSubjectName = readString(sourceProvenanceRecord, 'subject_name');
+  const sourceArtifactUri = readString(sourceProvenanceRecord, 'artifact_uri');
 
   requirePositiveInteger(releaseAssetId, 'release_api.assets[].id', failures);
   requirePositiveInteger(assetId, 'asset_api.id', failures);
@@ -1505,6 +1585,28 @@ function buildAsbcpFinalManifestSourceReceipt(input: {
     failures.push(
       `${apiAssetDigestPath}: release asset digest must match downloaded manifest sha256; expected ${apiAssetDigest}; actual ${downloadedManifestSha256}`,
     );
+  }
+  compareString(sourceRepoSlug, ASBCP_REPO_SLUG, 'source_provenance.repo_slug', failures);
+  compareString(sourceCommitSha, input.imageLock.commitSha, 'source_provenance.commit_sha', failures);
+  compareString(sourceSubjectName, ASBCP_IMAGE_SOURCE_SUBJECT_NAME, 'source_provenance.subject_name', failures);
+  requirePositiveIntegerString(sourceRunId, 'source_provenance.run_id', failures);
+  requirePositiveIntegerString(sourceRunAttempt, 'source_provenance.run_attempt', failures);
+  if (sourceRunId && sourceRunAttempt) {
+    compareString(
+      sourceRunUrl,
+      githubActionsRunAttemptUrl(ASBCP_CANONICAL_REPO, sourceRunId, sourceRunAttempt),
+      'source_provenance.run_url',
+      failures,
+    );
+    compareString(
+      sourceArtifactUri,
+      imageSourceArtifactUri(ASBCP_CANONICAL_REPO, sourceRunId, ASBCP_IMAGE_SOURCE_SUBJECT_NAME),
+      'source_provenance.artifact_uri',
+      failures,
+    );
+  } else {
+    requireNonEmptyString(sourceRunUrl, 'source_provenance.run_url', failures);
+    requireNonEmptyString(sourceArtifactUri, 'source_provenance.artifact_uri', failures);
   }
 
   if (!adoptionResult.ok) {
@@ -1547,6 +1649,11 @@ function buildAsbcpFinalManifestSourceReceipt(input: {
       : 'not_provided_by_github',
     downloaded_manifest_sha256: downloadedManifestSha256,
     api_asset_digest_match: apiAssetDigest ? true : null,
+    run_id: sourceRunId,
+    run_attempt: sourceRunAttempt,
+    run_url: sourceRunUrl,
+    subject_name: ASBCP_IMAGE_SOURCE_SUBJECT_NAME,
+    artifact_uri: sourceArtifactUri,
     adoption_gate: {
       command: formatAsbcpFinalManifestAdoptionCommand(input.manifestRelativePath),
       lock_path: ASBCP_IMAGE_LOCK_RELATIVE_PATH,
@@ -1631,6 +1738,23 @@ function requireNonEmptyField(value: unknown, pathName: string): string {
   }
 
   return value.trim();
+}
+
+function githubActionsRunAttemptUrl(canonicalRepo: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${githubRepoSlug(canonicalRepo)}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
+function imageSourceArtifactUri(canonicalRepo: string, runId: string, subjectName: string): string {
+  return `gh-artifact://${githubRepoSlug(canonicalRepo)}/${runId}/${subjectName}.oci`;
+}
+
+function githubRepoSlug(canonicalRepo: string): string {
+  const prefix = 'github.com/';
+  if (!canonicalRepo.startsWith(prefix) || canonicalRepo.slice(prefix.length).trim().length === 0) {
+    throw new Error(`canonical repo must start with ${prefix}.`);
+  }
+
+  return canonicalRepo.slice(prefix.length);
 }
 
 function requireLockedImageTag(value: string, pathName: string): string {
@@ -1731,6 +1855,12 @@ function requirePositiveInteger(
 function requireNonEmptyString(value: string, pathName: string, failures: string[]): void {
   if (value.trim().length === 0) {
     failures.push(`${pathName}: must be a non-empty string.`);
+  }
+}
+
+function requirePositiveIntegerString(value: string, pathName: string, failures: string[]): void {
+  if (!/^[1-9][0-9]*$/u.test(value)) {
+    failures.push(`${pathName}: must be a positive integer string.`);
   }
 }
 

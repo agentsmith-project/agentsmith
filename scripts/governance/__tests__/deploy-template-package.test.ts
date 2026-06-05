@@ -399,8 +399,11 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       normalized_remote: 'github.com/agentsmith-project/llm-universal-proxy',
       commit_sha: LLMUP_COMMIT_SHA,
       tag: RELEASE_ID,
-      run_id: '10001',
+      run_id: '30001',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/llm-universal-proxy/actions/runs/30001/attempts/1',
+      subject_name: 'llm-universal-proxy-image',
+      artifact_uri: 'gh-artifact://agentsmith-project/llm-universal-proxy/30001/llm-universal-proxy-image.oci',
       artifact_sha256: `sha256:${'3'.repeat(64)}`,
     },
     {
@@ -409,8 +412,11 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       commit_sha: AFSCP_COMMIT_SHA,
       tag: 'v1.0.7',
-      run_id: '10001',
+      run_id: '40001',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/40001/attempts/1',
+      subject_name: 'agentsmith-fs-control-plane-image',
+      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith-fs-control-plane/40001/agentsmith-fs-control-plane-image.oci',
       artifact_sha256: `sha256:${'5'.repeat(64)}`,
     },
     {
@@ -419,8 +425,12 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       commit_sha: ASBCP_COMMIT_SHA,
       tag: 'v2.0.7',
-      run_id: '10001',
+      run_id: '50001',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/50001/attempts/1',
+      subject_name: 'agentsmith-sandbox-control-plane-image',
+      artifact_uri:
+        'gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/50001/agentsmith-sandbox-control-plane-image.oci',
       artifact_sha256: `sha256:${'6'.repeat(64)}`,
     },
     {
@@ -431,6 +441,10 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       tag: 'release-locked-safety-35ada93',
       run_id: '26714141935',
       run_attempt: '1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26714141935/attempts/1',
+      subject_name: 'agentsmith-managed-runner-image',
+      artifact_uri:
+        'gh-artifact://agentsmith-project/agentsmith-runner/26714141935/agentsmith-managed-runner-image.oci',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
     },
   ];
@@ -457,6 +471,8 @@ describe('deploy template package generator', () => {
     expect(validateDeployTemplatePackage(descriptor).ok).toBe(true);
     expect(descriptor.package_uri).toBe(PACKAGE_URI);
     expect(descriptor.package_sha256).toBe(sha256FileDigest(archivePath));
+    expect(descriptor.artifact_provenance.run_url)
+      .toBe('https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1');
     expect(descriptor.artifact_provenance.artifact_uri).toBe(descriptor.package_uri);
     expect(descriptor.artifact_provenance.artifact_sha256).toBe(descriptor.package_sha256);
   });

@@ -108,6 +108,9 @@ export interface CurrentReleaseImageSourceProvenance {
   tag: string;
   run_id: string;
   run_attempt: string;
+  run_url: string;
+  subject_name: string;
+  artifact_uri: string;
   artifact_sha256: string;
 }
 
@@ -248,6 +251,7 @@ export interface CurrentArtifactProvenance {
   workflow_name?: string;
   run_id?: string;
   run_attempt?: string;
+  run_url?: string;
   job?: string;
   operator_run_id?: string;
   operator_identity?: string;
@@ -2619,8 +2623,21 @@ function validateArtifactProvenanceInto(
 
   if (kind === 'ci_artifact') {
     validateRequiredString(value.workflow_name, `${options.path}.workflow_name`, failures);
-    validatePositiveIntegerString(value.run_id, `${options.path}.run_id`, failures);
-    validatePositiveIntegerString(value.run_attempt, `${options.path}.run_attempt`, failures);
+    const runId = validatePositiveIntegerString(value.run_id, `${options.path}.run_id`, failures);
+    const runAttempt = validatePositiveIntegerString(value.run_attempt, `${options.path}.run_attempt`, failures);
+    if (hasOwn(value, 'run_url')) {
+      const runUrl = validateRequiredString(value.run_url, `${options.path}.run_url`, failures);
+      if (runUrl && runId && runAttempt) {
+        validateGitHubActionsRunAttemptUrl(
+          runUrl,
+          options.expectedRepo,
+          runId,
+          runAttempt,
+          `${options.path}.run_url`,
+          failures,
+        );
+      }
+    }
     validateRequiredString(value.job, `${options.path}.job`, failures);
   } else if (kind === 'signed_operator_run') {
     validateRequiredString(value.operator_run_id, `${options.path}.operator_run_id`, failures);
@@ -3020,9 +3037,28 @@ function validateInventoryImageSourceProvenance(
   }
   validateGitSha(value.commit_sha, `${path}.source_provenance.commit_sha`, failures);
   const tag = validateRequiredString(value.tag, `${path}.source_provenance.tag`, failures);
-  validatePositiveIntegerString(value.run_id, `${path}.source_provenance.run_id`, failures);
-  validatePositiveIntegerString(value.run_attempt, `${path}.source_provenance.run_attempt`, failures);
+  const runId = validatePositiveIntegerString(value.run_id, `${path}.source_provenance.run_id`, failures);
+  const runAttempt = validatePositiveIntegerString(value.run_attempt, `${path}.source_provenance.run_attempt`, failures);
+  const runUrl = validateRequiredString(value.run_url, `${path}.source_provenance.run_url`, failures);
+  validateRequiredString(value.subject_name, `${path}.source_provenance.subject_name`, failures);
+  const artifactUri = validateRequiredString(value.artifact_uri, `${path}.source_provenance.artifact_uri`, failures);
+  validateRemoteCiArtifactUri(artifactUri, `${path}.source_provenance.artifact_uri`, failures);
   const artifactSha256 = validateDigest(value.artifact_sha256, `${path}.source_provenance.artifact_sha256`, failures);
+  const runUrlRepo = expectedRepo ?? (
+    typeof value.normalized_remote === 'string'
+      ? normalizeReleaseBoundaryRemote(value.normalized_remote) ?? undefined
+      : undefined
+  );
+  if (runUrl && runId && runAttempt && runUrlRepo) {
+    validateGitHubActionsRunAttemptUrl(
+      runUrl,
+      runUrlRepo,
+      runId,
+      runAttempt,
+      `${path}.source_provenance.run_url`,
+      failures,
+    );
+  }
 
   const imageTag = imageTagFromRef(image.image);
   if (tag && imageTag && tag !== imageTag) {
@@ -3035,6 +3071,64 @@ function validateInventoryImageSourceProvenance(
     failures.push({
       path: `${path}.source_provenance.artifact_sha256`,
       reason: 'source_provenance.artifact_sha256 must match image.digest.',
+    });
+  }
+}
+
+function validateGitHubActionsRunAttemptUrl(
+  value: string,
+  expectedRepo: string,
+  runId: string,
+  runAttempt: string,
+  path: string,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    failures.push({
+      path,
+      reason: `${path} must be a GitHub Actions run attempt URL.`,
+    });
+    return;
+  }
+
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.hostname !== 'github.com'
+    || parsed.search.length > 0
+    || parsed.hash.length > 0
+    || parts.length !== 7
+    || parts[2] !== 'actions'
+    || parts[3] !== 'runs'
+    || parts[5] !== 'attempts'
+  ) {
+    failures.push({
+      path,
+      reason: `${path} must be a GitHub Actions run attempt URL.`,
+    });
+    return;
+  }
+
+  const urlRepo = normalizeReleaseBoundaryRemote(`github.com/${parts[0]}/${parts[1]}`);
+  if (urlRepo !== expectedRepo) {
+    failures.push({
+      path,
+      reason: `${path} must be for canonical repo ${expectedRepo}.`,
+    });
+  }
+  if (parts[4] !== runId) {
+    failures.push({
+      path,
+      reason: `${path} run id must match source_provenance.run_id.`,
+    });
+  }
+  if (parts[6] !== runAttempt) {
+    failures.push({
+      path,
+      reason: `${path} run attempt must match source_provenance.run_attempt.`,
     });
   }
 }

@@ -235,6 +235,11 @@ function buildArtifactProvenance(
     workflow_name: input.ci_provenance.workflow_name,
     run_id: input.ci_provenance.run_id,
     run_attempt: input.ci_provenance.run_attempt,
+    run_url: githubActionsRunAttemptUrl(
+      input.ci_provenance.producer_repo,
+      input.ci_provenance.run_id,
+      input.ci_provenance.run_attempt,
+    ),
     job: input.ci_provenance.job,
     artifact_uri: input.ci_provenance.artifact_uri,
     artifact_sha256: artifactSha256 === GENERATOR_ARTIFACT_SHA256_OMITTED
@@ -245,6 +250,19 @@ function buildArtifactProvenance(
     generator_version: input.ci_provenance.generator_version,
     attestation: input.ci_provenance.attestation,
   };
+}
+
+function githubActionsRunAttemptUrl(canonicalRepo: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${githubRepoSlug(canonicalRepo)}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
+function githubRepoSlug(canonicalRepo: string): string {
+  const prefix = 'github.com/';
+  if (!canonicalRepo.startsWith(prefix) || canonicalRepo.slice(prefix.length).trim().length === 0) {
+    throw new Error(`canonical repo must start with ${prefix}.`);
+  }
+
+  return canonicalRepo.slice(prefix.length);
 }
 
 function resolveSubjectDigest(

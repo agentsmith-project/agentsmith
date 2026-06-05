@@ -112,6 +112,9 @@ export interface CurrentReleaseImageSourceProvenance {
   subject_name: string;
   artifact_uri: string;
   artifact_sha256: string;
+  runner_release_manifest_uri?: string;
+  runner_release_manifest_subject_sha256?: string;
+  runner_release_manifest_artifact_sha256?: string;
 }
 
 export interface CurrentReleaseImageSourceProvenanceBinding extends CurrentReleaseImageSourceProvenance {

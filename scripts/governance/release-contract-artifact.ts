@@ -1013,6 +1013,12 @@ function buildRunnerImageSourceProvenance(input: {
       MANAGED_RUNNER_IMAGE_SOURCE_SUBJECT_NAME,
     ),
     artifact_sha256: input.runnerImageLock.image.digest,
+    runner_release_manifest_uri: requireNonEmptyField(
+      input.manifest.artifact_provenance.artifact_uri,
+      'runner release manifest artifact_provenance.artifact_uri',
+    ),
+    runner_release_manifest_subject_sha256: input.receipt.manifest_subject_sha256,
+    runner_release_manifest_artifact_sha256: input.receipt.manifest_provenance_artifact_sha256,
   };
 }
 

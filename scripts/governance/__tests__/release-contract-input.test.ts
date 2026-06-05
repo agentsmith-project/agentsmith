@@ -225,6 +225,10 @@ function buildExternalImageSourceProvenance(
       artifact_uri:
         'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
+      runner_release_manifest_uri:
+        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+      runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
+      runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
     },
   ];
 }
@@ -283,6 +287,15 @@ function sourceProvenanceFor(
     subject_name: binding.subject_name,
     artifact_uri: binding.artifact_uri,
     artifact_sha256: binding.artifact_sha256,
+    ...(binding.runner_release_manifest_uri === undefined ? {} : {
+      runner_release_manifest_uri: binding.runner_release_manifest_uri,
+    }),
+    ...(binding.runner_release_manifest_subject_sha256 === undefined ? {} : {
+      runner_release_manifest_subject_sha256: binding.runner_release_manifest_subject_sha256,
+    }),
+    ...(binding.runner_release_manifest_artifact_sha256 === undefined ? {} : {
+      runner_release_manifest_artifact_sha256: binding.runner_release_manifest_artifact_sha256,
+    }),
   };
 }
 
@@ -1796,6 +1809,10 @@ describe('release contract CI artifact producer', () => {
         artifact_uri:
           'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
         artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
+        runner_release_manifest_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+        runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
+        runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
       },
     });
     const deployInventoryById = new Map(validation.value.deploy_image_inventory.map((entry) => [entry.id, entry]));

@@ -48,6 +48,7 @@ const FILES_RESTORE_RUNTIME_READINESS_DETAILS_RELATIVE_PATH =
   'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json' as const;
 const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-details/v1' as const;
 const RUNTIME_READINESS_THEME = 'runtime_pending_readiness' as const;
+type RuntimeReadinessClassification = 'clean_pass' | 'runtime_flake';
 
 export interface ProductReadinessReferencedFile {
   id: 'product_readiness_summary' | 'terminal_result' | 'runtime_readiness_details';
@@ -123,7 +124,7 @@ export interface ProductReadinessReportSubject {
       sha256: string;
       schema_version: typeof RUNTIME_READINESS_DETAILS_SCHEMA_VERSION;
       theme: typeof RUNTIME_READINESS_THEME;
-      classification: string;
+      classification: RuntimeReadinessClassification;
       outcome: string;
       signals_count: number;
       call_summaries_count: number;
@@ -383,6 +384,34 @@ function arrayCount(record: Record<string, unknown>, field: string, label: strin
   return value.length;
 }
 
+function runtimeReadinessClassification(
+  value: string,
+  label: string,
+): RuntimeReadinessClassification {
+  if (value !== 'clean_pass' && value !== 'runtime_flake') {
+    throw new Error(`${label}.classification must be clean_pass or runtime_flake.`);
+  }
+  return value;
+}
+
+function validateRuntimeReadinessSummary(input: {
+  label: string;
+  classification: RuntimeReadinessClassification;
+  signalsCount: number;
+  callSummariesCount: number;
+}): void {
+  if (input.classification === 'clean_pass') {
+    if (input.signalsCount !== 0 || input.callSummariesCount !== 0) {
+      throw new Error(`${input.label}.classification clean_pass must not include runtime readiness signals or call summaries.`);
+    }
+    return;
+  }
+
+  if (input.signalsCount < 3 || input.callSummariesCount < 3) {
+    throw new Error(`${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries.`);
+  }
+}
+
 function readRuntimeReadinessDetails(input: {
   campaignRoot: string;
   pathRoot: string;
@@ -407,6 +436,18 @@ function readRuntimeReadinessDetails(input: {
   if (theme !== RUNTIME_READINESS_THEME) {
     throw new Error(`${label}.theme must be ${RUNTIME_READINESS_THEME}.`);
   }
+  const classification = runtimeReadinessClassification(
+    requiredStringField(payload, 'classification', label),
+    label,
+  );
+  const signalsCount = arrayCount(payload, 'signals', label);
+  const callSummariesCount = arrayCount(payload, 'call_summaries', label);
+  validateRuntimeReadinessSummary({
+    label,
+    classification,
+    signalsCount,
+    callSummariesCount,
+  });
 
   return {
     referencedFile,
@@ -415,10 +456,10 @@ function readRuntimeReadinessDetails(input: {
       sha256: referencedFile.sha256,
       schema_version: RUNTIME_READINESS_DETAILS_SCHEMA_VERSION,
       theme: RUNTIME_READINESS_THEME,
-      classification: requiredStringField(payload, 'classification', label),
+      classification,
       outcome: requiredStringField(payload, 'outcome', label),
-      signals_count: arrayCount(payload, 'signals', label),
-      call_summaries_count: arrayCount(payload, 'call_summaries', label),
+      signals_count: signalsCount,
+      call_summaries_count: callSummariesCount,
     },
   };
 }

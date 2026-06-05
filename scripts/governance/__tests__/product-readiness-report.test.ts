@@ -74,7 +74,10 @@ function writeTerminalResult(
   });
 }
 
-function writeRuntimeReadinessDetails(campaignRoot: string): string {
+function writeRuntimeReadinessDetails(
+  campaignRoot: string,
+  overrides: Record<string, unknown> = {},
+): string {
   const path = join(
     campaignRoot,
     'gate-release',
@@ -98,6 +101,7 @@ function writeRuntimeReadinessDetails(campaignRoot: string): string {
       { source: 'asbcp_create_status', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
     ],
     k8s_pods: [],
+    ...overrides,
   });
   return path;
 }
@@ -437,6 +441,37 @@ describe('product readiness report producer', () => {
       expect(() => writeProductReadinessReport({ campaignRoot: root }))
         .toThrow(/campaign terminal result is missing or malformed/u);
       expect(existsSync(join(root, 'product-readiness', PRODUCT_READINESS_REPORT_FILENAME))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime readiness evidence is mislabeled as a clean pass', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-clean-mismatch-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        classification: 'clean_pass',
+        outcome: 'focused_gate_passed',
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/classification clean_pass must not include runtime readiness signals/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime flake evidence drops owner call summary coverage', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-flake-incomplete-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        call_summaries: [
+          { source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
+        ],
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/classification runtime_flake must cover API, pod-manager, and ASBCP call summaries/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

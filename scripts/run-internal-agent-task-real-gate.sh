@@ -738,6 +738,10 @@ collect_runtime_readiness_details() {
     fi
   fi
 
+  if node "${ROOT_DIR}/scripts/governance/runtime-readiness-details.mjs" "${output_file}" "${evidence_dir}/k8s-pod-status.txt" "${candidates[@]}"; then
+    return 0
+  fi
+
   node --input-type=module - "${output_file}" "${evidence_dir}/k8s-pod-status.txt" "${candidates[@]}" <<'NODE' || {
 import fs from 'node:fs';
 import path from 'node:path';

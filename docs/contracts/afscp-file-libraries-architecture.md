@@ -128,6 +128,7 @@ AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a
 - workspace binding PVC lookup not ready: ASBCP `ensure_workspace_binding` returning `internal_error` with message `get persistent volume claim failed` is classified as readiness convergence and retried within the bounded workspace-binding path.
 - focused gate classification: first sandbox-unavailable failure followed by a passing focused rerun is a runtime flake; repeated sandbox-unavailable or release/read-export pending failures are stability blockers until backend-real evidence explains the runtime owner condition.
 - gate observation should use increasing wait intervals after consecutive non-terminal checks; it should not rely on fixed once-per-minute polling.
+- runtime readiness details: `runtime-readiness-details.json` must expose `signals` / `call_summaries` entries for `AGENT_SANDBOX_UNAVAILABLE`, including API, pod-manager, and ASBCP create/status summaries with request id, workload id, phase, status/error codes, and retryability when present in source logs.
 - Product Readiness evidence must preserve the Files restore continuation focused backend-real gate before the full Product Readiness campaign, because this slice proves restore can continue through pending read export and release convergence.
 
 ### Task File Templates

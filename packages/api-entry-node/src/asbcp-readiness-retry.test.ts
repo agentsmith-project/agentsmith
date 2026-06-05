@@ -100,6 +100,41 @@ describe('retryAsbcpReadinessNotReady', () => {
     expect(sleep).toHaveBeenCalledWith(1_000);
   });
 
+  it('increases ASBCP readiness delay after consecutive transient failures', async () => {
+    let now = 0;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const transientError = Object.assign(new Error('asbcp transient unavailable'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      retryable: true,
+    });
+    const invoke = vi.fn()
+      .mockRejectedValueOnce(transientError)
+      .mockRejectedValueOnce(transientError)
+      .mockRejectedValueOnce(transientError)
+      .mockResolvedValueOnce('ready');
+    const sleep = vi.fn(async (delayMs: number) => {
+      now += delayMs;
+    });
+
+    try {
+      await expect(retryAsbcpReadinessNotReady({
+        operation: 'create_or_ensure_pod',
+        deadline: 20_000,
+        sleep,
+        invoke,
+      })).resolves.toBe('ready');
+
+      expect(invoke).toHaveBeenCalledTimes(4);
+      expect(sleep).toHaveBeenNthCalledWith(1, 1_000);
+      expect(sleep).toHaveBeenNthCalledWith(2, 1_500);
+      expect(sleep).toHaveBeenNthCalledWith(3, 2_000);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it('does not retry explicit non-retryable ASBCP internal_error', async () => {
     const internalError = Object.assign(new Error('asbcp_internal_error'), {
       code: 'AGENT_SANDBOX_UNAVAILABLE',

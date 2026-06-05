@@ -75,6 +75,7 @@ Canonical convergence matrix:
 Additional convergence rules:
 - Agent Task sandbox `offline` / `not_found`: call ASBCP create-or-ensure for the workload, then continue status checks until `Running`, `Failed`, or timeout.
 - Agent Task sandbox `pending`: keep polling bounded readiness/status checks until `Running`, `Failed`, or timeout; do not treat the first pending status as terminal failure.
+- ASBCP readiness transient retry uses bounded increasing delays after consecutive non-terminal failures; it must not spin on a fixed interval while the sandbox is still converging.
 - Agent Task sandbox `releasing`: wait for workload release or surface a typed release-incomplete error; do not start a second conflicting task HOME holder.
 - AFSCP workspace binding `releasing` / `release_pending`: continue release convergence through the workspace binding owner until the binding is terminal (`released`, `revoked`, `expired`, or `deleted`) before read export is considered clean.
 - AFSCP workspace binding release retryable infra failure: while Files entries is trying to create a clean read export, retryable sandbox/AFSCP release failures are projected as typed `file_library_list_pending` and rechecked; repeated focused failures with the same evidence become a stability blocker.

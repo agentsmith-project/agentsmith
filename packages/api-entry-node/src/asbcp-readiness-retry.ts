@@ -9,6 +9,13 @@ export const DEFAULT_ASBCP_READINESS_RETRY_BUDGET_MS = 30_000;
 const DEFAULT_ASBCP_READINESS_RETRY_DELAY_MS = 1_000;
 const MIN_ASBCP_READINESS_RETRY_DELAY_MS = 100;
 const MAX_ASBCP_READINESS_RETRY_DELAY_MS = 5_000;
+const ASBCP_READINESS_RETRY_DELAY_MULTIPLIERS = [
+  1,
+  1.5,
+  2,
+  3,
+  5,
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -57,10 +64,17 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
-function readinessRetryDelayMs(error: unknown, remainingMs: number): number {
+function readinessRetryDelayMs(error: unknown, remainingMs: number, consecutiveTransientFailures: number): number {
   const requestedDelayMs = readAsbcpRetryAfterMs(error) ?? DEFAULT_ASBCP_READINESS_RETRY_DELAY_MS;
+  const multiplierIndex = Math.max(0, Math.min(
+    consecutiveTransientFailures - 1,
+    ASBCP_READINESS_RETRY_DELAY_MULTIPLIERS.length - 1,
+  ));
+  const increasedDelayMs = Math.ceil(
+    requestedDelayMs * ASBCP_READINESS_RETRY_DELAY_MULTIPLIERS[multiplierIndex],
+  );
   const boundedDelayMs = Math.min(
-    Math.max(requestedDelayMs, MIN_ASBCP_READINESS_RETRY_DELAY_MS),
+    Math.max(increasedDelayMs, MIN_ASBCP_READINESS_RETRY_DELAY_MS),
     MAX_ASBCP_READINESS_RETRY_DELAY_MS,
   );
   return Math.min(remainingMs, boundedDelayMs);
@@ -138,6 +152,7 @@ export async function retryAsbcpReadinessNotReady<T>(input: {
   isRetryableError?: (error: unknown) => boolean;
 }): Promise<T> {
   let lastTransientError: unknown;
+  let consecutiveTransientFailures = 0;
   const isRetryableError = input.isRetryableError ?? isAsbcpStartupTransientUnavailableError;
   for (;;) {
     throwIfAborted(input.signal);
@@ -155,6 +170,7 @@ export async function retryAsbcpReadinessNotReady<T>(input: {
         throw error;
       }
       lastTransientError = error;
+      consecutiveTransientFailures += 1;
       const remainingMs = input.deadline - Date.now();
       if (remainingMs <= 0) {
         throw buildAsbcpStartupTransientUnavailableError({
@@ -164,7 +180,7 @@ export async function retryAsbcpReadinessNotReady<T>(input: {
       }
       await sleepWithAbort({
         sleep: input.sleep,
-        delayMs: readinessRetryDelayMs(error, remainingMs),
+        delayMs: readinessRetryDelayMs(error, remainingMs, consecutiveTransientFailures),
         signal: input.signal,
       });
     }

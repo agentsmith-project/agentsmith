@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. Legacy `kit_provided` is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.',
+    summary: 'There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. The `kit_provided` compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.',
     binding: 'contract',
   },
   {

@@ -43,7 +43,7 @@ function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
   const summaries: Record<string, string> = {
     'local-real-human-entry': '- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。',
     'serial-local-runtime-switching': '- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。',
-    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。Legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是 GA operator `deployment_path`。',
+    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
     'docker-substrate-k8s-app-boundary': '- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。',
     'api-single-replica-current': '- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。',
   };
@@ -129,7 +129,7 @@ function _renderDocsIndexRuntimeBlock(): string {
     '- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)',
     '  - 当前 local / unified deploy 运行线总表。',
     '- [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)',
-    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是 GA operator `deployment_path`。',
+    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
   ].join('\n');
 }
 
@@ -140,7 +140,7 @@ function renderUserGuidesRuntimeBlock(): string {
     '- [Runtime Lines Matrix](./runtime-lines-matrix.md)',
     '  - 当前 local-real 与统一部署 diagnostic entry 的总表。',
     '- [Unified Deploy Operations](./unified-deploy-operations.md)',
-    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是 GA operator `deployment_path`。',
+    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
   ].join('\n');
 }
 

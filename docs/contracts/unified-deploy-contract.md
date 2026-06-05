@@ -69,9 +69,9 @@ release contract / evidence validation, not a second operator vocabulary.
 
 `install_substrates` does not move substrate lifecycle into the AgentSmith
 product repo, does not create a cloud provider matrix, and does not imply cloud
-cluster/database/bucket/IAM/network provisioning. Legacy `kit_provided` is an
-internal compatibility alias for focused diagnostics only and not a GA operator
-`deployment_path`.
+cluster/database/bucket/IAM/network provisioning. The `kit_provided`
+compatibility alias remains internal to transition-only diagnostics and is not a
+GA operator `deployment_path`.
 
 `kind` is only an optional local substrate/rehearsal option. It is not a formal
 release target, not the production default, and cannot replace existing
@@ -79,8 +79,8 @@ Kubernetes/cloud or airgap evidence.
 
 Old profile vocabulary is not a long-term formal path. The only temporary
 mapping owner is the AgentSmith release-boundary adapter, the deletion trigger
-is the GA cut that hides or removes legacy focused diagnostics after
-release-kit repo-local gates own deployment verdicts, and evidence is
+is the GA cut that hides or removes old transition-only diagnostic surfaces
+after release-kit repo-local gates own deployment verdicts, and evidence is
 `contracts:check-unified-deploy-vocabulary` plus
 `contracts:check-current-verification-campaigns` proving mixed vocabulary and
 synonym drift fail fast.

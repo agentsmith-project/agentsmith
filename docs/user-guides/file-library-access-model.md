@@ -63,7 +63,7 @@ This is expected for members without Files update access. You can still browse a
 Release sign-off uses:
 
 ```bash
-npm run release:ready
+npm run product:ready
 ```
 
 Focused Files diagnostics can help investigate a failure, but they are not release-grade verdicts by themselves.

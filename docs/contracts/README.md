@@ -44,7 +44,7 @@ app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
 和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。
 
 `install_substrates` 需要 release-kit namespace-scoped installer evidence 和
-显式确认；legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是
+显式确认；兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是
 GA operator `deployment_path`。
 
 Release contract handoff must include the required `deploy_template_package`

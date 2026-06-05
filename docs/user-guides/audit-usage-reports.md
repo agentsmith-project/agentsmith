@@ -1,6 +1,6 @@
 # Audit & Usage User Guide
 
-Scope boundary (current MVP): this guide is constrained to project-scoped governance surfaces and endpoint-centric LLM usage evidence. Do not interpret it as organization-wide governance or DevOps release-management capability.
+Scope boundary: this guide is constrained to project-scoped governance surfaces and endpoint-centric LLM usage evidence. Do not interpret it as organization-wide governance or DevOps release-management capability.
 
 ## Overview
 
@@ -216,10 +216,12 @@ Required permissions:
 - Reduce number of active filters
 - Use pagination for large result sets
 
-## Data Retention
+## Data Retention And Export
 
-- **Audit Events**: Retained for 90 days
-- **Usage Metrics**: Aggregated daily, retained for 1 year
+Retention, archival export, and immutable storage guarantees are deployment
+and backend policy concerns. This user guide only describes the current
+project-scoped Audit and Usage surfaces. Use the documented API contract and
+your deployment policy when you need retention or export guarantees.
 
 ## Related Features
 
@@ -232,10 +234,10 @@ Required permissions:
 A: Events are logged in real-time and appear within seconds.
 
 **Q: Can I export all audit history?**
-A: You can export up to 10,000 events per request. Use date ranges for larger exports.
+A: This guide does not define a full-history export guarantee. Use the documented API contract and deployment policy for export requirements.
 
 **Q: Are audit logs tamper-proof?**
-A: Yes, audit logs are write-once and cannot be modified.
+A: This guide does not claim cryptographic immutability. Treat Audit as project-scoped governance evidence backed by the current backend contract and deployment policy.
 
 **Q: Can I access audit logs programmatically?**
 A: Yes, use the Audit API endpoint with proper authentication.

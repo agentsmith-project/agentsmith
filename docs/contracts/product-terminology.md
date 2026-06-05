@@ -235,8 +235,8 @@ present that P0 boundary as a new product capability.
   bind namespace-scoped installer evidence plus explicit operator confirmation.
 - It does not mean AgentSmith deploys substrates, does not create a cloud
   provider matrix, and does not add in-product substrate management.
-- Legacy `kit_provided` is an internal compatibility alias for focused
-  diagnostics only and not a GA operator `deployment_path`.
+- The `kit_provided` compatibility alias remains internal to transition-only
+  diagnostics and is not a GA operator `deployment_path`.
 
 6. `pre-GA diagnostic entry names`
 - `local-kind` and `existing-cluster` are allowed only as pre-GA/local

@@ -19,7 +19,7 @@ Status: current_deploy_contract
 
 Operator-facing release language is online / airgap x use_existing / install_substrates.
 install_substrates maps to internal substrate_source=kit_installed and requires release-kit namespace-scoped installer evidence plus explicit confirmation.
-Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
+The kit_provided compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
 
 ## Runtime
 
@@ -44,14 +44,14 @@ const cleanActiveDoc = `# Active Doc
 AgentSmith deploy exposes local-kind and existing-cluster as pre-GA/local diagnostic entry names.
 Formal release language is online / airgap x use_existing / install_substrates.
 install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
-Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
+The kit_provided compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
 `;
 
 const validP0BoundaryDoc = `# Active Doc
 
 Formal release language is online / airgap x use_existing / install_substrates.
 install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
-Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
+The kit_provided compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
 
 ## Current vs P0 Handoff Boundary
 
@@ -75,7 +75,7 @@ This is the current GA implementation plan for AgentSmith product readiness, rel
 
 GA operator-facing release language is online / airgap x use_existing / install_substrates.
 install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
-Legacy kit_provided remains an internal compatibility alias for focused diagnostics only; it is not a GA operator deployment_path.
+The kit_provided compatibility alias remains internal to transition-only diagnostics; it is not a GA operator deployment_path.
 
 ## GA Target
 

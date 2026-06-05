@@ -1,6 +1,6 @@
 # Personal Connections
 
-This guide reflects the current pre-GA baseline:
+This guide reflects the current GA-scoped behavior:
 - `Personal connections` stores user-owned custom secret bundles.
 - These credentials are user-scoped and are not project endpoint credentials.
 - This surface is not a provider registry and not a generic OAuth system.

@@ -759,7 +759,7 @@ function normalizeKey(key) {
 
 function readFields(line) {
   const fields = {};
-  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status_code|statusCode|error_code|errorCode)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
+  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|asbcp_code|asbcpCode|pod_name|podName|retryable)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
   for (const match of line.matchAll(pattern)) {
     const rawValue = match[2] ?? '';
     fields[normalizeKey(match[1] ?? '')] = rawValue.replace(/^["']|["']$/g, '');
@@ -768,14 +768,14 @@ function readFields(line) {
 }
 
 function classifySource(line) {
+  if (/asbcp_workload_status|ASBCP|create\/status/u.test(line)) {
+    return 'asbcp_create_status';
+  }
   if (/\bAPI\b|\bapi\b/u.test(line)) {
     return 'api';
   }
   if (/pod[ _-]?manager|create_or_ensure_pod|get_pod_status|delete_pod/u.test(line)) {
     return 'pod_manager';
-  }
-  if (/ASBCP|create\/status/u.test(line)) {
-    return 'asbcp_create_status';
   }
   return null;
 }
@@ -798,7 +798,102 @@ function readCall(line, source) {
   if (source === 'asbcp_create_status' && /create\/status/u.test(line)) {
     return 'create/status';
   }
+  if (source === 'asbcp_create_status' && /asbcp_workload_status/u.test(line)) {
+    return 'workload_status';
+  }
   return undefined;
+}
+
+function readJsonPayload(line) {
+  const start = line.indexOf('{');
+  if (start < 0) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(line.slice(start));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringValue(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return undefined;
+}
+
+function addSignal(signals, seen, input) {
+  const signal = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalized = stringValue(value);
+    if (normalized !== undefined) {
+      signal[key] = normalized;
+    }
+  }
+  if (!signal.source) {
+    return;
+  }
+  const key = JSON.stringify(signal);
+  if (seen.has(key)) {
+    return;
+  }
+  seen.add(key);
+  signals.push(signal);
+}
+
+function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals, seen) {
+  const parsed = readJsonPayload(line);
+  const diagnostic = parsed?.diagnostic;
+  if (!diagnostic || typeof diagnostic !== 'object') {
+    return false;
+  }
+  addSignal(signals, seen, {
+    source: 'api',
+    source_log: sourceLog,
+    line_number: lineNumber,
+    request_id: diagnostic.request_id ?? diagnostic.requestId,
+    workload_id: diagnostic.workload_id ?? diagnostic.workloadId,
+    phase: diagnostic.phase,
+    status: typeof diagnostic.status === 'string' ? diagnostic.status : undefined,
+    status_code: typeof diagnostic.status === 'number' ? diagnostic.status : diagnostic.status_code ?? diagnostic.statusCode,
+    error_code: diagnostic.error_code ?? diagnostic.errorCode,
+    mapped_error_code: diagnostic.mapped_error_code ?? diagnostic.mappedErrorCode,
+    operation: diagnostic.operation,
+    call: diagnostic.operation,
+    retryable: diagnostic.retryable,
+  });
+
+  const podManager = diagnostic.pod_manager ?? diagnostic.podManager;
+  const steps = Array.isArray(podManager?.steps) ? podManager.steps : [];
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') {
+      continue;
+    }
+    addSignal(signals, seen, {
+      source: 'pod_manager',
+      source_log: sourceLog,
+      line_number: lineNumber,
+      call: step.operation,
+      outcome: step.outcome,
+      request_id: step.request_id ?? step.requestId,
+      workload_id: step.workload_id ?? step.workloadId ?? podManager?.workload_id ?? podManager?.workloadId ?? diagnostic.workload_id ?? diagnostic.workloadId,
+      phase: step.phase,
+      status: typeof step.status === 'string' ? step.status : undefined,
+      status_code: typeof step.status === 'number' ? step.status : step.status_code ?? step.statusCode,
+      error_code: step.error_code ?? step.errorCode ?? step.code,
+      asbcp_code: step.asbcp_code ?? step.asbcpCode,
+      retryable: step.retryable,
+    });
+  }
+  return true;
 }
 
 function parseSignals(files) {
@@ -811,7 +906,10 @@ function parseSignals(files) {
     }
     const sourceLog = path.basename(file);
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
-      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status_code|statusCode|error_code|errorCode|pod[ _-]?manager|ASBCP|create_or_ensure_pod|get_pod_status/u.test(line)) {
+      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
+        continue;
+      }
+      if (appendRuntimeReadinessJsonSignals(line, sourceLog, index + 1, signals, seen)) {
         continue;
       }
       const source = classifySource(line);
@@ -829,12 +927,7 @@ function parseSignals(files) {
       if (call) {
         signal.call = call;
       }
-      const key = JSON.stringify(signal);
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      signals.push(signal);
+      addSignal(signals, seen, signal);
     }
   }
   return signals.slice(-80);
@@ -1341,11 +1434,14 @@ run_internal_spec() {
   local spec_state_file="$4"
   shift 4
   local spec_log_dir
+  local spec_output_log
   local spec_agent_execution_ws_base_url
   local spec_kubeconfig
   spec_log_dir="$(dirname "${spec_state_file}")/integration"
+  spec_output_log="${spec_log_dir}/playwright-output.log"
   spec_agent_execution_ws_base_url="ws://${KIND_GATEWAY}:${spec_api_port}"
   spec_kubeconfig="$(internal_real_gate_asbcp_kubeconfig_path)"
+  mkdir -p "${spec_log_dir}"
   (
     cd "${ROOT_DIR}" && \
       PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
@@ -1410,7 +1506,8 @@ run_internal_spec() {
       INTEGRATION_BASE_URL="http://localhost:${spec_web_port}" \
       INTEGRATION_LOG_DIR="${spec_log_dir}" \
       bash scripts/run-integration-e2e-full.sh "${spec}" "$@"
-  )
+  ) 2>&1 | tee "${spec_output_log}"
+  return "${PIPESTATUS[0]}"
 }
 
 run_internal_spec_grep() {

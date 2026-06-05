@@ -467,6 +467,10 @@ CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
 printf 'API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" >> "\${INTERNAL_REAL_DIR}/afscp-api.log"
+cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
+[files] runtime_pending_readiness_failure {"event":"runtime_pending_readiness_failure","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_runtime","file_library_id":"flib_runtime","task_id":"task_runtime","workload_id":"workload-runtime-1","request_id":"release:begin:req-runtime-json","operation":"delete_pod","error_code":"AGENT_SANDBOX_UNAVAILABLE","mapped_error_code":"FILE_LIBRARY_OPERATION_FAILED","mapped_message":"file_library_operation_failed","status":502,"retryable":true,"pod_manager":{"theme":"runtime_pending_readiness","workspaceId":"ws_default","projectId":"proj_runtime","workloadId":"workload-runtime-1","steps":[{"operation":"delete_pod","outcome":"error","workloadId":"workload-runtime-1","status":502,"requestId":"req-runtime-json-step","code":"AGENT_SANDBOX_UNAVAILABLE","asbcpCode":"dependency_failure","retryable":true,"message":"asbcp_error: delete_pod 502"}]}}}
+asbcp_workload_status http_status=200 request_id=req-runtime-status workload_id=workload-runtime-1 status=offline phase=offline error_code=INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING
+LOG
 printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
@@ -1545,6 +1549,7 @@ describe('internal backend-real gate runtime contract', () => {
       '\nrecord_child_internal_spec_failure() {',
       '\n}\n\nif [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]',
     );
+    const runSpecFunction = shellFunctionBody(agentTaskGate, 'run_internal_spec');
     const grepFunction = shellFunctionBody(agentTaskGate, 'run_internal_spec_grep');
     const reclaimFunction = shellFunctionBody(agentTaskGate, 'run_internal_reclaim_spec');
     const workspaceFunction = shellFunctionBody(agentTaskGate, 'run_internal_workspace_specs');
@@ -1575,6 +1580,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
     expect(runtimeFlakeCollector).toContain('collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"');
     expect(runtimeFlakeCollector).toContain('gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning"');
+    expect(runSpecFunction).toContain('spec_output_log="${spec_log_dir}/playwright-output.log"');
+    expect(runSpecFunction).toContain('mkdir -p "${spec_log_dir}"');
+    expect(runSpecFunction).toContain(') 2>&1 | tee "${spec_output_log}"');
+    expect(runSpecFunction).toContain('return "${PIPESTATUS[0]}"');
     expect(collector).toContain('kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide');
     expect(collector).not.toContain('describe pods');
     expect(collector).not.toContain('k8s-pods-describe.txt');
@@ -1759,7 +1768,11 @@ describe('internal backend-real gate runtime contract', () => {
       workload_id?: string;
       phase?: string;
       status_code?: string;
+      status?: string;
+      http_status?: string;
       error_code?: string;
+      asbcp_code?: string;
+      retryable?: string;
       call?: string;
       line?: string;
     };
@@ -1793,6 +1806,33 @@ describe('internal backend-real gate runtime contract', () => {
         phase: 'pending',
         status_code: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'api',
+        request_id: 'release:begin:req-runtime-json',
+        workload_id: 'workload-runtime-1',
+        status_code: '502',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        call: 'delete_pod',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'delete_pod',
+        request_id: 'req-runtime-json-step',
+        workload_id: 'workload-runtime-1',
+        status_code: '502',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        asbcp_code: 'dependency_failure',
+        retryable: 'true',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        request_id: 'req-runtime-status',
+        workload_id: 'workload-runtime-1',
+        http_status: '200',
+        status: 'offline',
+        phase: 'offline',
+        error_code: 'INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING',
       }),
     ]));
     expect(result.runtimeReadinessDetails).not.toContain('known-product-token');

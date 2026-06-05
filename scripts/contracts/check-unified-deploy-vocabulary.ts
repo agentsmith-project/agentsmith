@@ -660,7 +660,6 @@ function validateReleaseKitHandoffBoundary(
     /过渡期专项诊断/u,
     /\bnot\b[\s\S]{0,120}\b(?:AgentSmith product gate|AgentSmith release verdict|(?:deployment|deploy)[\s\S]{0,50}package[\s\S]{0,50}operator[\s\S]{0,30}verdict|deploy\/package\/operator verdict)\b|不属于[\s\S]{0,80}(?:AgentSmith 产品门禁|AgentSmith release verdict|AgentSmith product gate)/iu,
     /\brelease[- ]kit\b|\bagentsmith-release-kit\b/iu,
-    /\bfuture\b|\bready\s+后\b|完成后|未来|长期/u,
     /\bdeploy(?:ment)?\b|部署/iu,
     /\bpackage\b|发布包/iu,
     /\boperator\b|\brunbooks?\b|运维|操作手册/iu,
@@ -677,6 +676,14 @@ function validateReleaseKitHandoffBoundary(
       failures,
       path,
       `${path} must state the release-kit handoff boundary: npm run product:ready is AgentSmith product readiness / local complete / current product gate, not a deployment/package/operator verdict; unified deploy/local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断; release-kit owns deploy/package/operator verdict through repo-local gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.`,
+    );
+  }
+
+  if (/release-kit functional repo (?:is )?ready|After the release-kit functional repo is ready|After release-kit functional repo is ready|release-kit functional repo ready 后/iu.test(content)) {
+    addFailure(
+      failures,
+      path,
+      `${path} must describe release-kit deploy/package/operator verdict ownership as a current GA boundary, not a future release-kit-ready condition.`,
     );
   }
 

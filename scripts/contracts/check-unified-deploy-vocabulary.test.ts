@@ -64,7 +64,7 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 
 ## Release Kit Handoff Boundary
 
-npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdict through repo-local gate and evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. Release-kit owns deployment, package, and operator runbook verdict through repo-local final GA gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
 const minimalGaReleasePlanDoc = `# AgentSmith GA Release Plan
@@ -513,6 +513,26 @@ Formal release language is online / airgap x use_existing / kit_provided.
     expect(text).toContain('product readiness / local complete / current product gate');
     expect(text).toContain('transition-only focused diagnostics / 过渡期专项诊断');
     expect(text).toContain('deployment/package/operator verdict');
+  });
+
+  it.each([
+    'docs/user-guides/release-readiness-checklist.md',
+    'docs/user-guides/unified-deploy-operations.md',
+  ])('rejects stale release-kit future handoff wording in %s', (path) => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        [path]: `${validReleaseHandoffBoundaryDoc}
+
+After release-kit functional repo is ready, release-kit owns deployment, package, and operator verdict.
+`,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain(`${path}:`);
+    expect(text).toContain('current GA boundary');
+    expect(text).toContain('future release-kit-ready condition');
   });
 
   it('does not require release-kit split plan positive governance narrative', () => {

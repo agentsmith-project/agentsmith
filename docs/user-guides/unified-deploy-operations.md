@@ -2,7 +2,7 @@
 
 Status: `current`
 
-This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run product:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. `npm run release:ready` / `npm run release:status` remain deprecated transition aliases only; they do not give deployment, package, or operator verdicts. Unified deploy, local-kind, and existing-cluster commands are focused diagnostics. Product-flow has two surfaces: `npm run test:unified-deploy:product-flows` is a focused aggregate diagnostic, while `npm run lane:unified-deploy:product-flows` is the AgentSmith-owned canonical post-deploy product smoke report producer for release-kit `--ga-release` input. Neither surface is part of default `product:ready` / release-full. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run product:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. `npm run release:ready` / `npm run release:status` remain deprecated transition aliases only; they do not give deployment, package, or operator verdicts. Unified deploy, local-kind, and existing-cluster commands are focused diagnostics. Product-flow has two surfaces: `npm run test:unified-deploy:product-flows` is a focused aggregate diagnostic, while `npm run lane:unified-deploy:product-flows` is the AgentSmith-owned canonical post-deploy product smoke report producer for release-kit `--ga-release` input. The lane writes one report per deployed target/run; release-kit final GA requires at least one online report and one airgap report. Neither surface is part of default `product:ready` / release-full. After the release-kit functional repo is ready, release-kit owns deployment, package, and operator runbook verdicts through repo-local gate and evidence. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 The formal release model is not the command names in this guide. Release-kit
 operator-facing language is `online` / `airgap` × `use_existing` /
@@ -125,24 +125,30 @@ This focused command proves the deployed product smoke matrix for diagnosis:
 
 It does not produce the release-kit canonical post-deploy product smoke report and does not run full release verification.
 
-For the AgentSmith-owned canonical post-deploy product smoke report, run the lane producer after the deployment path is available:
+For the AgentSmith-owned canonical post-deploy product smoke report, run the lane producer after each deployment path is available. At minimum, final GA needs one online target/run and one airgap target/run:
 
 ```bash
 UNIFIED_DEPLOY_RELEASE_CONTRACT=<downloaded-agentsmith-release-contract.json> \
-UNIFIED_DEPLOY_RELEASE_SITE_ENV=<site-env-for-deployed-target> \
-UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root> \
+UNIFIED_DEPLOY_RELEASE_SITE_ENV=<online-site-env-for-deployed-target> \
+UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<online-ga-smoke-evidence-root> \
+npm run lane:unified-deploy:product-flows
+
+UNIFIED_DEPLOY_RELEASE_CONTRACT=<downloaded-agentsmith-release-contract.json> \
+UNIFIED_DEPLOY_RELEASE_SITE_ENV=<airgap-site-env-for-deployed-target> \
+UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<airgap-ga-smoke-evidence-root> \
 npm run lane:unified-deploy:product-flows
 ```
 
 `AGENTSMITH_RELEASE_CONTRACT_PATH` may be used instead of `UNIFIED_DEPLOY_RELEASE_CONTRACT`. The release contract must point to the downloaded `agentsmith-release-contract.json`. `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env, and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the evidence root.
 
-The file to pass to release-kit `--ga-release` is:
+The files to pass to release-kit `--ga-release` are:
 
 ```text
-<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json
+<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json
+<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json
 ```
 
-This lane first runs the focused aggregate diagnostic, then binds the result to the release contract and writes the canonical `agentsmith-post-deploy-product-smoke` report. It is not a default `product:ready` / release-full step.
+This lane first runs the focused aggregate diagnostic, then binds the result to the release contract and writes one canonical `agentsmith-post-deploy-product-smoke` report under the selected evidence root. It is not a default `product:ready` / release-full step.
 
 ### Existing Cluster Smoke
 
@@ -176,10 +182,12 @@ Unified deploy producers write evidence under:
 artifacts/unified-deploy/
 ```
 
-When `UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` is set for `npm run lane:unified-deploy:product-flows`, the canonical post-deploy product smoke report is written under:
+When `UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` is set for `npm run lane:unified-deploy:product-flows`, the canonical post-deploy product smoke report for that target/run is written under:
 
 ```text
 <ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json
 ```
+
+For final GA handoff, keep separate online and airgap evidence roots and pass both reports to release-kit.
 
 Focused evidence is valid for its named scope only. It is not part of the current AgentSmith product gate; deploy/package/operator verdict ownership belongs to release-kit repo-local gate/evidence, with no AgentSmith release campaign consumption implied.

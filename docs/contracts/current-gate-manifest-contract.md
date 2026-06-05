@@ -95,14 +95,14 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `lane-unified-deploy-product-flows` (`lane:unified-deploy:product-flows`)
 - these lanes are not `requiredFor: release`
 - start from a clean substrate reset via `substrate-lifecycle.ts reset`
-- transition-only lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run; the product-flow lane also writes the AgentSmith-owned smoke report at `<campaign-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
+- transition-only lane adapters may still write campaign-shaped diagnostic evidence under `<campaign-root>/unified-deploy/` when explicitly run; the product-flow lane also writes one AgentSmith-owned smoke report per target/run at `<campaign-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
 - standalone focused checks write deploy evidence under `artifacts/unified-deploy/`
 - local-kind image handoff proves local registry and immutable image refs before rollout
 - local-kind rollout proves the current Kubernetes deploy topology and ingress route smoke
 - `npm run test:unified-deploy:product-flows` is the focused product-flow aggregate diagnostic; it is not the release-kit canonical report producer
-- `npm run lane:unified-deploy:product-flows` adapts the focused product-flow evidence into the canonical post-deploy product smoke report after rollout
+- `npm run lane:unified-deploy:product-flows` adapts the focused product-flow evidence into one canonical post-deploy product smoke report after rollout
 - the product-flow lane requires a release contract from `UNIFIED_DEPLOY_RELEASE_CONTRACT` or `AGENTSMITH_RELEASE_CONTRACT_PATH`; `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the smoke evidence root
-- the release-kit `--ga-release` input is `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
+- release-kit final GA consumes repeated `--post-deploy-product-smoke-report` inputs and requires at least one online report plus one airgap report, each shaped as `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`
 - the product-flow lane is not part of default `product:ready` / release-full
 - existing-cluster smoke remains an explicit operator deploy smoke when a target cluster is in scope; it is not part of the release campaign
 

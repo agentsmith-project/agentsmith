@@ -135,7 +135,8 @@ bash scripts/operator-release.sh --ga-report \
   --operator-inputs <airgap-use-existing-package> \
   --operator-inputs <airgap-install-substrates-package> \
   --product-readiness-report <agentsmith/product-readiness-report.json> \
-  --post-deploy-product-smoke-report <ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
+  --post-deploy-product-smoke-report <online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
+  --post-deploy-product-smoke-report <airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
   --output-dir <dir>
 ```
 
@@ -156,7 +157,8 @@ bash scripts/verify-release.sh --ga-release \
   --deployment-path-report <airgap/use_existing/deployment-path-report.json> \
   --deployment-path-report <airgap/install_substrates/deployment-path-report.json> \
   --product-readiness-report <agentsmith/product-readiness-report.json> \
-  --post-deploy-product-smoke-report <ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
+  --post-deploy-product-smoke-report <online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
+  --post-deploy-product-smoke-report <airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json \
   --output-dir <dir>
 ```
 
@@ -178,7 +180,7 @@ bash scripts/verify-release.sh --ga-release \
 - airgap bundle manifests, bundle reports, image archive reports, image load reports, offline render reports, checksums/index
 - product readiness artifact reference and digest
 - product runtime readiness observation policy and Files restore continuation backend-real evidence reference
-- post-deploy product smoke artifact reference and digest
+- online and airgap post-deploy product smoke artifact references and digests
 - canonical repos: normalized remote, commit sha, release/tag or CI run URL for the six GA repos
 - embedded `artifact_index`
 - embedded human summary fields
@@ -191,7 +193,7 @@ bash scripts/verify-release.sh --ga-release \
 
 `--ga-release` 只消费 finalized path reports，不重新跑 producer。裸 `operator-release-surface-report.json`、adoption report、candidate intake、operator signoff intake 和 runbook acceptance 只能作为 path report 的内部子步骤证据；不能直接作为 GA verdict 输入，也不能成为 operator 主文档的成功判断对象。
 
-Post-deploy product smoke 的 AgentSmith-owned producer 是 `npm run lane:unified-deploy:product-flows`。它需要下载后的 `agentsmith-release-contract.json`，可通过 `UNIFIED_DEPLOY_RELEASE_CONTRACT` 或 `AGENTSMITH_RELEASE_CONTRACT_PATH` 指向；`UNIFIED_DEPLOY_RELEASE_SITE_ENV` 指向部署目标 site env，`UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` 指向输出根。`npm run test:unified-deploy:product-flows` 只是 focused aggregate diagnostic，不是 release-kit `--ga-release` 的 canonical report producer。该 lane 不加入默认 `product:ready` / release-full；release-kit `--ga-release` 只消费它已经写好的 finalized report。
+Post-deploy product smoke 的 AgentSmith-owned producer 是 `npm run lane:unified-deploy:product-flows`。它需要下载后的 `agentsmith-release-contract.json`，可通过 `UNIFIED_DEPLOY_RELEASE_CONTRACT` 或 `AGENTSMITH_RELEASE_CONTRACT_PATH` 指向；`UNIFIED_DEPLOY_RELEASE_SITE_ENV` 指向部署目标 site env，`UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` 指向输出根。该 lane 每次为一个 deployed target/run 写一份 canonical report；final GA 至少要用不同 site env / evidence root 跑出一份 online report 和一份 airgap report，再用 repeated `--post-deploy-product-smoke-report` 交给 release-kit。`npm run test:unified-deploy:product-flows` 只是 focused aggregate diagnostic，不是 release-kit `--ga-release` 的 canonical report producer。该 lane 不加入默认 `product:ready` / release-full；release-kit `--ga-release` 只消费它已经写好的 finalized reports。
 
 ### 3.3 AgentSmith 保持产品侧入口
 
@@ -217,7 +219,7 @@ npm run product:status
 | online/install_substrates | substrate installer、substrate truth、routability、render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | airgap/use_existing | bundle create/check、image archive materiality、offline image load、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | airgap/install_substrates | bundle create/check、substrate installer bundle、image load、substrate install truth、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
-| Post-deploy product smoke | `npm run lane:unified-deploy:product-flows` 产出的 `<ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`，覆盖 auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
+| Post-deploy product smoke | `npm run lane:unified-deploy:product-flows` 按 deployed target/run 产出的 canonical reports；final GA 至少需要 `<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 和 `<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`，覆盖 auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
 | Runtime pending/readiness | Product Readiness report 中的 `runtime_readiness.observation_policy` 与 Files restore continuation focused backend-real `runtime-readiness-details.json`，覆盖 pending/releasing/offline/not_found 收口规则、AGENT_SANDBOX_UNAVAILABLE 诊断摘要、runtime flake / stability blocker 分类和递增等待间隔 | AgentSmith |
 | Final GA | `--ga-release` aggregate over required reports | release-kit |
 

@@ -135,6 +135,22 @@ describe('release story consumption guards', () => {
     expect(storySource).not.toContain('managed Agent Task 的 .artifacts 已可见');
   });
 
+  it('keeps release user story task deletion convergent after workspace generation conflicts', async () => {
+    const specSource = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),
+      'utf-8',
+    );
+    const deleteStart = specSource.indexOf('async function deleteCurrentTaskViaUi');
+    const deleteEnd = specSource.indexOf('\nasync function openWorkspaceFilesRoot', deleteStart);
+    const deleteBody = specSource.slice(deleteStart, deleteEnd);
+
+    expect(deleteBody).toContain('for (let attempt = 0; attempt < 2; attempt += 1)');
+    expect(deleteBody).toContain('workspace changed|refresh and try again');
+    expect(deleteBody).toContain("conflict.waitFor({ state: 'visible'");
+    expect(deleteBody).toContain("await page.reload({ waitUntil: 'load' })");
+    expect(deleteBody).toContain('await page.waitForURL(listUrl');
+  });
+
   it('keeps backend-real visual review workspace fixtures aligned with directory-backed project creator selection', async () => {
     const source = await readFile(
       path.resolve(process.cwd(), 'e2e/integration-visual-review.spec.ts'),

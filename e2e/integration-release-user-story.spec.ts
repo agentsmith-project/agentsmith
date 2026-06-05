@@ -506,11 +506,24 @@ async function waitForAgentReply(args: {
 }
 
 async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId: string): Promise<void> {
-  await page.getByRole('button', { name: /delete task|^delete$/i }).click();
-  const dialog = page.getByRole('alertdialog');
-  await expect(dialog).toBeVisible({ timeout: 10_000 });
-  await dialog.getByRole('button', { name: /delete task|^delete$/i }).click();
-  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks$`), { timeout: 30_000 });
+  const listUrl = new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks$`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.getByRole('button', { name: /delete task|^delete$/i }).click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole('button', { name: /delete task|^delete$/i }).click();
+    const conflict = dialog.getByText(/workspace changed|refresh and try again/i);
+    const outcome = await Promise.race([
+      page.waitForURL(listUrl, { timeout: 30_000 }).then(() => 'deleted' as const),
+      conflict.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'conflict' as const),
+    ]);
+    if (outcome === 'deleted') {
+      return;
+    }
+    await page.reload({ waitUntil: 'load' });
+    await expect(page.getByRole('button', { name: /delete task|^delete$/i })).toBeVisible({ timeout: 30_000 });
+  }
+  await page.waitForURL(listUrl, { timeout: 1 });
 }
 
 async function openWorkspaceFilesRoot(args: {

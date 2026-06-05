@@ -444,12 +444,13 @@ forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance chec
 
 requireMatch(releaseChecklist, /npm run product:ready/, 'release checklist must define npm run product:ready as the human-facing product readiness / handoff entrypoint', failures);
 requireMatch(releaseChecklist, /npm run product:status/, 'release checklist must define npm run product:status as the read-only status entrypoint', failures);
-requireMatch(releaseChecklist, /npm run test:unified-deploy:local-kind/, 'release checklist must expose local-kind unified deploy diagnostics', failures);
-requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smoke/, 'release checklist must expose existing-cluster unified deploy smoke diagnostics', failures);
-requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow diagnostics', failures);
+requireMatch(releaseChecklist, /Unified Deploy Operations/, 'release checklist must route unified deploy diagnostics to the dedicated operations guide', failures);
+requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must route focused product-flow diagnostics without making them product readiness steps', failures);
 requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that product:ready delegates to internal adapters only after precheck passes', failures);
 requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
+forbidMatch(releaseChecklist, /\bnpm run test:unified-deploy:[a-z0-9:_-]+/, 'release checklist must not duplicate unified deploy focused diagnostic commands', failures);
+forbidMatch(releaseChecklist, /\bnpx tsx scripts\/unified-deploy\/substrate-lifecycle\.ts reset\b/, 'release checklist must not duplicate unified deploy substrate reset commands', failures);
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'release checklist must not present gate:release:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /gate:release:full as the full release command/, 'release checklist must not describe gate:release:full as the full release command', failures);
@@ -460,7 +461,7 @@ requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must i
 requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as required product readiness evidence', failures);
 requireMatch(releaseChecklist, /e2e\/visual-baseline-support\.ts/, 'release checklist must identify the visual scene catalog source', failures);
 requireMatch(releaseChecklist, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'release checklist must identify the backend-real ux trace bundle path', failures);
-requireMatch(releaseChecklist, /substrate-lifecycle\.ts reset|clean reset/, 'release checklist must explain that unified deploy diagnostics can begin from a clean substrate reset', failures);
+requireMatch(releaseChecklist, /transition-only focused diagnostics[\s\S]{0,160}Unified Deploy Operations/i, 'release checklist must route transition-only deploy diagnostics out of the product readiness checklist', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {
   requireMatch(read(relativePath), /(gate|visual|backend-real|manifest|current)/, `${relativePath} must remain populated with current gate truth content`, failures);

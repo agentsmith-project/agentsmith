@@ -215,6 +215,91 @@ describe('runtime readiness details evidence', () => {
     ]);
   });
 
+  it('uses an explicit unknown phase when sandbox unavailable diagnostics omit phase', () => {
+    const diagnostic = {
+      diagnostic: {
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-restore-3',
+        status: 500,
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        operation: 'delete_pod',
+        pod_manager: {
+          workload_id: 'task-restore-3',
+          pod_manager_summary: {
+            latest_operation: 'delete_pod',
+            latest_outcome: 'error',
+            latest_status_code: 500,
+            latest_error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          api_trace: [
+            {
+              operation: 'delete_pod',
+              outcome: 'error',
+              request_id: 'api_req_delete',
+              workload_id: 'task-restore-3',
+              status_code: 500,
+              error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            },
+          ],
+          asbcp_call_summaries: [
+            {
+              operation: 'delete_pod',
+              outcome: 'error',
+              request_id: 'asbcp_req_delete',
+              workload_id: 'task-restore-3',
+              status_code: 500,
+              error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            },
+          ],
+          steps: [
+            {
+              operation: 'delete_pod',
+              outcome: 'error',
+              requestId: 'pod_req_delete',
+              workloadId: 'task-restore-3',
+              status: 500,
+              code: 'AGENT_SANDBOX_UNAVAILABLE',
+            },
+          ],
+        },
+      },
+    };
+
+    const signals = parseRuntimeReadinessSignals([{
+      path: '/tmp/api.log',
+      content: `runtime_pending_readiness_failure ${JSON.stringify(diagnostic)}\n`,
+    }]);
+
+    expect(signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'api',
+          call: 'delete_pod',
+          request_id: 'release:begin:unspecified',
+          workload_id: 'task-restore-3',
+          phase: 'unknown',
+          error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        }),
+        expect.objectContaining({
+          source: 'pod_manager',
+          call: 'delete_pod',
+          request_id: 'pod_req_delete',
+          workload_id: 'task-restore-3',
+          phase: 'unknown',
+          error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        }),
+        expect.objectContaining({
+          source: 'asbcp_create_status',
+          call: 'delete_pod',
+          request_id: 'asbcp_req_delete',
+          workload_id: 'task-restore-3',
+          phase: 'unknown',
+          error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        }),
+      ]),
+    );
+  });
+
   it('parses kubernetes pod status text without requiring kubectl in unit tests', () => {
     expect(parseK8sPodsFromText('pod=runner-1\nphase=Running\n---\npod=runner-2\nphase=Failed\n')).toEqual([
       { pod: 'runner-1', phase: 'Running' },

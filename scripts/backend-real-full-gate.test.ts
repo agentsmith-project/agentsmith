@@ -1021,6 +1021,9 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain(
       'run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs',
     );
+    expect(script).toContain(
+      'run_release_user_story_gate_step "backend_real_scenario" "release user story backend-real scenario failed: scripts/run-integration-release-user-story.sh"',
+    );
   });
 
   it('preserves run_real_cmd fail-fast cleanup semantics under the gate-step failure wrapper', () => {
@@ -1065,6 +1068,52 @@ describe('backend-real full gate runtime ownership contract', () => {
       );
       expect(readFileSync(cleanupLog, 'utf8')).toBe('cleanup\n');
       expect(existsSync(scenarioLog)).toBe(false);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies release user story runtime readiness failures as stability blockers', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'backend-real-full-gate-release-story-runtime-'));
+    const runnerPath = join(fixtureRoot, 'runner.sh');
+    const failureLog = join(fixtureRoot, 'failures.log');
+    const detailsPath = join(
+      fixtureRoot,
+      'child-internal-evidence',
+      'integration_release_user_story',
+      'runtime-readiness-details.json',
+    );
+
+    try {
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        `LOCAL_READY_LOG_DIR="${fixtureRoot}"`,
+        `CHILD_INTERNAL_EVIDENCE_DIR="${fixtureRoot}/child-internal-evidence"`,
+        'gate_record_failure() {',
+        '  printf "%s|%s|%s\\n" "$2" "$3" "$4" >> "${LOCAL_READY_LOG_DIR}/failures.log"',
+        '}',
+        'failing_release_story() {',
+        '  mkdir -p "${CHILD_INTERNAL_EVIDENCE_DIR}/integration_release_user_story"',
+        '  printf \'{"classification":"stability_blocker"}\\n\' > "${CHILD_INTERNAL_EVIDENCE_DIR}/integration_release_user_story/runtime-readiness-details.json"',
+        '  return 43',
+        '}',
+        shellFunctionDefinition(script, 'runtime_readiness_details_classification'),
+        shellFunctionDefinition(script, 'run_release_user_story_gate_step'),
+        'run_release_user_story_gate_step "backend_real_scenario" "release user story backend-real scenario failed: scripts/run-integration-release-user-story.sh" failing_release_story',
+        '',
+      ].join('\n'));
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(43);
+      expect(readFileSync(failureLog, 'utf8')).toBe(
+        `stability_blocker|backend_real_scenario|release user story backend-real scenario failed: scripts/run-integration-release-user-story.sh; runtime readiness stability blocker: ${detailsPath}\n`,
+      );
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

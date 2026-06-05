@@ -346,6 +346,127 @@ stop_release_user_story_afscp_local_runtime() {
   with_release_user_story_afscp_runtime_env stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
 }
 
+release_user_story_tail_evidence_file() {
+  local source_file="$1"
+  local output_file="$2"
+  local max_lines="${3:-200}"
+  if [[ -f "${source_file}" ]]; then
+    tail -n "${max_lines}" "${source_file}" > "${output_file}" 2>&1 || true
+  else
+    printf 'source file not available: %s\n' "${source_file}" > "${output_file}"
+  fi
+}
+
+collect_release_user_story_runtime_readiness_evidence() {
+  local exit_status="${1:-1}"
+  local evidence_root="${INTERNAL_REAL_CHILD_EVIDENCE_DIR:-${RELEASE_REAL_CHILD_INTERNAL_EVIDENCE_DIR:-${INTEGRATION_DIR}/child-internal-evidence}}"
+  local evidence_dir="${evidence_root}/integration_release_user_story"
+  local pod_name phase request_id details_file summary_file
+
+  mkdir -p "${evidence_dir}"
+  summary_file="${evidence_dir}/runtime-readiness-summary.txt"
+  details_file="${evidence_dir}/runtime-readiness-details.json"
+  pod_name=""
+  phase="unknown"
+
+  if command -v kubectl >/dev/null 2>&1; then
+    KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+      kubectl --request-timeout=15s get pods -n "${K8S_NAMESPACE}" -o wide \
+      > "${evidence_dir}/k8s-pods.txt" 2>&1 || true
+    KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+      kubectl --request-timeout=15s get pvc -n "${K8S_NAMESPACE}" -o wide \
+      > "${evidence_dir}/k8s-pvc.txt" 2>&1 || true
+    KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+      kubectl --request-timeout=15s get pv,sc -o wide \
+      > "${evidence_dir}/k8s-pv-storageclass.txt" 2>&1 || true
+    KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+      kubectl --request-timeout=15s get events -n "${K8S_NAMESPACE}" --sort-by=.metadata.creationTimestamp \
+      > "${evidence_dir}/k8s-events.txt" 2>&1 || true
+    KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+      kubectl --request-timeout=15s get pods -n "${K8S_NAMESPACE}" -o jsonpath='{range .items[*]}pod={.metadata.name}{"\n"}phase={.status.phase}{"\n"}conditions={range .status.conditions[*]}{.type}:{.status}:{.reason}{";"}{end}{"\n"}containers={range .status.containerStatuses[*]}{.name}|image={.image}|ready={.ready}|restartCount={.restartCount}|waiting={.state.waiting.reason}|terminated={.state.terminated.reason}|exitCode={.state.terminated.exitCode}{";"}{end}{"\n"}init_containers={range .status.initContainerStatuses[*]}{.name}|image={.image}|ready={.ready}|restartCount={.restartCount}|waiting={.state.waiting.reason}|terminated={.state.terminated.reason}|exitCode={.state.terminated.exitCode}{";"}{end}{"\n---\n"}{end}' \
+      > "${evidence_dir}/k8s-pod-status.txt" 2>&1 || true
+
+    pod_name="$(
+      KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+        kubectl --request-timeout=15s get pods -n "${K8S_NAMESPACE}" \
+          --sort-by=.metadata.creationTimestamp -o name 2>/dev/null \
+        | grep -E '^pod/(workload-|task-|agent-)' \
+        | tail -n1 \
+        | sed 's#^pod/##' \
+        || true
+    )"
+    if [[ -n "${pod_name}" ]]; then
+      phase="$(
+        KUBECONFIG="${ASBCP_KUBECONFIG_PATH}" \
+          kubectl --request-timeout=15s get pod -n "${K8S_NAMESPACE}" "${pod_name}" -o jsonpath='{.status.phase}' 2>/dev/null \
+          || true
+      )"
+    fi
+  else
+    printf 'kubectl command is not available; pod list evidence was not collected.\n' > "${evidence_dir}/k8s-pods.txt"
+    printf 'kubectl command is not available; pod status evidence was not collected.\n' > "${evidence_dir}/k8s-pod-status.txt"
+    printf 'kubectl command is not available; event evidence was not collected.\n' > "${evidence_dir}/k8s-events.txt"
+  fi
+
+  if [[ -z "${pod_name}" ]]; then
+    pod_name="unknown"
+  fi
+  if [[ -z "${phase}" ]]; then
+    phase="unknown"
+  fi
+  request_id="release_user_story:${RUN_ID:-unknown}:runner_output_timeout"
+
+  release_user_story_tail_evidence_file "${ASBCP_LOG}" "${evidence_dir}/asbcp-log-tail.txt" 300
+  release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-api.log" "${evidence_dir}/afscp-api-log-tail.txt" 300
+  release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-worker.log" "${evidence_dir}/afscp-worker-log-tail.txt" 300
+  release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-read-export-probe.log" "${evidence_dir}/afscp-read-export-probe-log-tail.txt" 160
+
+  {
+    printf 'theme=runtime_pending_readiness\n'
+    printf 'classification=stability_blocker\n'
+    printf 'outcome=release_user_story_runtime_pending_failed\n'
+    printf 'stage=integration_release_user_story\n'
+    printf 'exit_status=%s\n' "${exit_status}"
+    printf 'namespace=%s\n' "${K8S_NAMESPACE}"
+    printf 'pod_name=%s\n' "${pod_name}"
+    printf 'workload_id=%s\n' "${pod_name}"
+    printf 'phase=%s\n' "${phase}"
+    printf 'convergence_scope=agent_task_sandbox,afscp_workspace_binding,read_export\n'
+    printf 'convergence_detail=pending sandbox pod did not converge before runner output timeout; inspect PVC/PV/CSI and AFSCP workload mount binding evidence\n'
+    printf 'API call summary request_id=%s workload_id=%s phase=%s call=runner_output_token_timeout status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
+    printf 'pod manager call summary request_id=%s workload_id=%s phase=%s call=get_pod_status status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
+    printf 'ASBCP create/status summary request_id=%s workload_id=%s phase=%s call=create/status status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
+    printf 'k8s_pods=%s\n' "${evidence_dir}/k8s-pods.txt"
+    printf 'k8s_pvc=%s\n' "${evidence_dir}/k8s-pvc.txt"
+    printf 'k8s_events=%s\n' "${evidence_dir}/k8s-events.txt"
+    printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  } > "${summary_file}"
+
+  node "${ROOT_DIR}/scripts/governance/runtime-readiness-details.mjs" \
+    "${details_file}" \
+    "${evidence_dir}/k8s-pod-status.txt" \
+    "${summary_file}" \
+    "${evidence_dir}/asbcp-log-tail.txt" \
+    "${evidence_dir}/afscp-api-log-tail.txt" \
+    "${evidence_dir}/afscp-worker-log-tail.txt" \
+    "${evidence_dir}/afscp-read-export-probe-log-tail.txt" \
+    "${evidence_dir}/k8s-events.txt" >/dev/null 2>&1 || true
+
+  node --input-type=module - "${details_file}" <<'NODE' || true
+import fs from 'node:fs';
+const [file] = process.argv.slice(2);
+try {
+  const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+  payload.classification = 'stability_blocker';
+  payload.outcome = 'release_user_story_runtime_pending_failed';
+  payload.stage = 'integration_release_user_story';
+  fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+} catch {}
+NODE
+
+  echo "[integration-release-user-story] runtime readiness evidence: ${details_file}" >&2
+}
+
 if [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]; then
   echo "[integration-release-user-story] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
@@ -606,7 +727,9 @@ info "starting ASBCP from locked image"
 INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp
 
 info "running full integration release user story"
+set +e
 (
+  set -e
   cd "${ROOT_DIR}" && \
     PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}" \
     BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
@@ -655,5 +778,12 @@ info "running full integration release user story"
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
     bash scripts/run-integration-e2e-full.sh e2e/integration-release-user-story.spec.ts
 )
+release_user_story_status=$?
+set -e
+
+if [[ "${release_user_story_status}" -ne 0 ]]; then
+  collect_release_user_story_runtime_readiness_evidence "${release_user_story_status}" || true
+  exit "${release_user_story_status}"
+fi
 
 info "integration release user story passed"

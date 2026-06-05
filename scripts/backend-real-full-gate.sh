@@ -232,6 +232,38 @@ run_release_gate_step() {
   fi
 }
 
+runtime_readiness_details_classification() {
+  local details_file="$1"
+  [[ -f "${details_file}" ]] || return 1
+  node -e 'const fs = require("node:fs"); const [file] = process.argv.slice(1); try { const payload = JSON.parse(fs.readFileSync(file, "utf8")); const value = typeof payload.classification === "string" ? payload.classification.trim() : ""; if (value) process.stdout.write(value); } catch {}' "${details_file}"
+}
+
+run_release_user_story_gate_step() {
+  local stage="$1"
+  local message="$2"
+  shift 2
+
+  set +e
+  (
+    set -e
+    "$@"
+  )
+  local status=$?
+  set -e
+
+  if [[ "${status}" -ne 0 ]]; then
+    local runtime_details runtime_classification
+    runtime_details="${CHILD_INTERNAL_EVIDENCE_DIR}/integration_release_user_story/runtime-readiness-details.json"
+    runtime_classification="$(runtime_readiness_details_classification "${runtime_details}" || true)"
+    if [[ "${runtime_classification}" == "stability_blocker" ]]; then
+      gate_record_failure "${LOCAL_READY_LOG_DIR}" "stability_blocker" "${stage}" "${message}; runtime readiness stability blocker: ${runtime_details}"
+    else
+      gate_record_failure "${LOCAL_READY_LOG_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
+    fi
+    exit "${status}"
+  fi
+}
+
 run_release_browser_trace_specs() {
   run_release_browser_trace_spec "e2e/integration-system-admin-entry.spec.ts" || return $?
   run_release_browser_trace_spec "e2e/integration-workspace-public-login.spec.ts" || return $?
@@ -313,7 +345,7 @@ run_release_gate_step "backend_real_scenario" "backend-real focused Playwright s
 run_release_gate_step "backend_real_scenario" "Files restore continuation backend-real scenario failed: npm run test:e2e:integration:files:user-stories:restore-continue" run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"
 run_release_gate_step "backend_real_scenario" "backend-real visual review scenario failed: npm run test:visual:backend-real:review" run_real_cmd 20080 3081 "RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
 run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs
-run_release_gate_step "backend_real_scenario" "release user story backend-real scenario failed: scripts/run-integration-release-user-story.sh" run_real_cmd 20074 3074 "ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
+run_release_user_story_gate_step "backend_real_scenario" "release user story backend-real scenario failed: scripts/run-integration-release-user-story.sh" run_real_cmd 20074 3074 "ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
 UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"
 if ! run_cmd "npx tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root --campaign-id release-full --step-id gate-release --path '${AUTHORITATIVE_UX_TRACE_ROOT}' --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then

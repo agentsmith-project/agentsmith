@@ -276,6 +276,26 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(cleanupBody).toContain('stop_release_user_story_afscp_local_runtime');
   });
 
+  it('collects runtime readiness evidence before failing the release user story', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const collectorStart = script.indexOf('collect_release_user_story_runtime_readiness_evidence()');
+    const runStart = script.indexOf('info "running full integration release user story"');
+    const statusIndex = script.indexOf('release_user_story_status=$?', runStart);
+    const collectIndex = script.indexOf('collect_release_user_story_runtime_readiness_evidence "${release_user_story_status}"', statusIndex);
+    const exitIndex = script.indexOf('exit "${release_user_story_status}"', collectIndex);
+
+    expect(collectorStart).toBeGreaterThanOrEqual(0);
+    expect(script).toContain('integration_release_user_story');
+    expect(script).toContain('runtime-readiness-details.json');
+    expect(script).toContain('classification=stability_blocker');
+    expect(script).toContain('error_code=AGENT_SANDBOX_UNAVAILABLE');
+    expect(script).toContain('k8s-pvc.txt');
+    expect(script).toContain('node "${ROOT_DIR}/scripts/governance/runtime-readiness-details.mjs"');
+    expect(statusIndex).toBeGreaterThan(runStart);
+    expect(collectIndex).toBeGreaterThan(statusIndex);
+    expect(exitIndex).toBeGreaterThan(collectIndex);
+  });
+
   it('applies sandbox namespace dependencies only after the wrapper-owned AFSCP reset', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const trapIndex = script.indexOf('trap cleanup EXIT');

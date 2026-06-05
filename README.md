@@ -161,7 +161,7 @@ Use `Local Runtime Flows` for local commands and switching. Use `Unified Deploy 
 make agent-task-no-sandbox-smoke
 ```
 
-This validates the required behavior for MVP deployment without sandbox:
+This validates the no-sandbox fallback diagnostic behavior:
 - current API/Web/Agent task path is healthy (`make local-real-status`)
 - sandbox-backed task path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
@@ -233,7 +233,7 @@ src/
 - [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) — AgentSmith product-side readiness campaign、evidence、story、visual 与 gate conclusion 的执行说明
-- [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
+- [User Guides Index](./docs/user-guides/README.md) — 当前用户操作指南总入口
 - [Personal Connections](./docs/user-guides/personal-connections.md) — 用户级 custom secret bundle 说明
 - [File Library Access Model](./docs/user-guides/file-library-access-model.md) — Files Web/API 与 task HOME 展示模型
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物

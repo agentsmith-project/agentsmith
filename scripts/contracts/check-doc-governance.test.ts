@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findEngineeringIndexCurrentSectionViolations,
   findDocsIndexGaRoutingViolations,
+  findRootReadmeGaWordingViolations,
   findReleaseKitSplitKissPlanViolations,
   isHistoricalDoc,
   SUPERSEDED_RELEASE_GOVERNANCE_TOP_LEVEL_DOCS,
@@ -275,6 +276,32 @@ describe('check-doc-governance historical document detection', () => {
     }
 
     expect(violations).toEqual([]);
+  });
+
+  it('flags MVP wording in the root README user guide and no-sandbox surfaces', () => {
+    const violations = findRootReadmeGaWordingViolations(
+      [
+        '# AgentSmith',
+        '',
+        'This validates the required behavior for MVP deployment without sandbox:',
+        '- [User Guides Index](./docs/user-guides/README.md) - 用户手册总入口（MVP-first）',
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'root-readme-mvp-deployment-smoke' }),
+        expect.objectContaining({ rule: 'root-readme-mvp-user-guides' }),
+      ]),
+    );
+  });
+
+  it('keeps the root README on current GA-scoped user guide wording', () => {
+    const readme = readFileSync(resolve(process.cwd(), 'README.md'), 'utf8');
+
+    expect(findRootReadmeGaWordingViolations(readme)).toEqual([]);
+    expect(readme).toContain('This validates the no-sandbox fallback diagnostic behavior');
+    expect(readme).toContain('当前用户操作指南总入口');
   });
 
   it('flags handoff/refactor/migration entries in the engineering current index section', () => {

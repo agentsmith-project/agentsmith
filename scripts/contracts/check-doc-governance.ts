@@ -581,6 +581,52 @@ function checkDocsIndexGaRouting(): Violation[] {
   return findDocsIndexGaRoutingViolations(fs.readFileSync(absPath, 'utf8'), file);
 }
 
+export function findRootReadmeGaWordingViolations(
+  content: string,
+  file = 'README.md',
+): Violation[] {
+  const violations: Violation[] = [];
+  const forbidden = [
+    {
+      rule: 'root-readme-mvp-user-guides',
+      regex: /MVP-first/u,
+      detail: 'Root README must route user guides as current GA-scoped product operations, not MVP-first docs.',
+    },
+    {
+      rule: 'root-readme-mvp-deployment-smoke',
+      regex: /MVP deployment/u,
+      detail: 'Root README must describe no-sandbox smoke as a diagnostic, not MVP deployment.',
+    },
+  ] as const;
+
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    for (const rule of forbidden) {
+      if (!rule.regex.test(lines[i])) {
+        continue;
+      }
+      violations.push({
+        file,
+        line: i + 1,
+        rule: rule.rule,
+        detail: `${rule.detail} Found: ${lines[i].trim()}`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+function checkRootReadmeGaWording(): Violation[] {
+  const file = 'README.md';
+  const absPath = path.join(ROOT, file);
+  if (!fs.existsSync(absPath)) {
+    return [];
+  }
+
+  return findRootReadmeGaWordingViolations(fs.readFileSync(absPath, 'utf8'), file);
+}
+
 function normalizeBlock(content: string): string {
   return content.replaceAll('`', '').replace(/\s+/gu, ' ').trim();
 }
@@ -641,6 +687,7 @@ function main(): void {
   violations.push(...checkIndexExpectations());
   violations.push(...checkEngineeringIndexCurrentSection());
   violations.push(...checkDocsIndexGaRouting());
+  violations.push(...checkRootReadmeGaWording());
 
   if (violations.length > 0) {
     console.error('[docs-governance] check failed.');

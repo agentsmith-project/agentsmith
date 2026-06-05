@@ -278,10 +278,12 @@ function readTextField(record: Record<string, unknown>, key: string): string {
 
 function summarizeSandboxRuntimeStep(value: unknown): string | null {
   if (!isRecord(value)) return null;
+  const workloadId = readTextField(value, 'workloadId') || readTextField(value, 'workload_id');
   const parts = [
     readTextField(value, 'operation') || 'step',
     readTextField(value, 'outcome'),
     readTextField(value, 'requestId') ? `request_id=${readTextField(value, 'requestId')}` : null,
+    workloadId ? `workload_id=${workloadId}` : null,
     readTextField(value, 'phase') ? `phase=${readTextField(value, 'phase')}` : null,
     typeof value.status === 'number' ? `status=${value.status}` : null,
     typeof value.httpStatus === 'number' ? `http_status=${value.httpStatus}` : null,
@@ -338,7 +340,7 @@ export function summarizeAgentTaskTraces(traces: AgentTaskOutcomeTrace[], limit 
           normalizeText(trace.summary) || '<empty>',
           runtimeDiagnostics ? `runtime_diagnostics: ${runtimeDiagnostics}` : '',
         ].filter(Boolean).join(' '),
-        320,
+        420,
       );
       return `${category}${status ? `/${status}` : ''} ${name}: ${summary}`;
     });

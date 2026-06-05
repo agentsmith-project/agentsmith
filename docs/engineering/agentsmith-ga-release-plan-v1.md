@@ -164,6 +164,7 @@ bash scripts/verify-release.sh --ga-release \
 
 - `ga-release-report.json`
 - `ga-release-summary.md`（从 `ga-release-report.json` 生成的人读视图，不是独立 gate evidence）
+- `ga-evidence-index.json`（从 `ga-release-report.json` 派生的归档索引，不发独立 verdict）
 
 最小字段：
 
@@ -180,6 +181,7 @@ bash scripts/verify-release.sh --ga-release \
 - canonical repos: normalized remote, commit sha, release/tag or CI run URL for the six GA repos
 - embedded `artifact_index`
 - embedded human summary fields
+- derived evidence index source report digest
 - `status: pass|fail`
 - `formal_verdict: issued|not_issued`
 - blocker list
@@ -280,12 +282,13 @@ GA 的判定是：
 1. 新增 maintainer `--ga-release` 聚合入口，并由 operator-facing `operator-release.sh --ga-report` facade 包装。
 2. 新增每条 operator path 的 `deployment-path-report.json`，把 surface/adoption/candidate/runbook acceptance 等现有报告降为内部子步骤证据。
 3. 支持四条 required operator paths。
-4. 输出 `ga-release-report.json` 和从它派生的简短 human summary。
+4. 输出 `ga-release-report.json`、从它派生的简短 human summary，以及归档用 `ga-evidence-index.json`。
 5. Release-kit CI 新增 manual GA workflow；默认 PR/push 仍跑 quick/core，避免重门禁拖慢开发。
 6. Bootstrap 语义迁移：
    - producer/path 子步骤报告继续可以是 `readiness:false`
    - adoption/candidate/intake 报告不再是 GA 概念，只能作为 path report 内部输入或 `--ga-release --dry-run` 诊断
    - 只有 `ga-release-report.json` 可以表达正式结果：通过时 `status: pass` + `formal_verdict: issued`；blocked 时 `status: fail` + `formal_verdict: not_issued` + blockers
+   - `ga-evidence-index.json` 只绑定最终 report digest、path evidence、product readiness、post-deploy smoke 和 blockers，用于归档，不发独立 verdict
    - `target_profiles.required:true` 只在 GA release contract/final gate 模式允许
    - 删除或降级 “full release gate future/not implemented” 这类 operator-facing 文案，保留在 maintainer reference 时必须说明不属于 operator 主路径
 

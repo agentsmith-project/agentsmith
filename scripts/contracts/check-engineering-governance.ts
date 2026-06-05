@@ -425,6 +425,7 @@ forbidMatch(verificationCampaigns, /legacy\/focused diagnostics|legacy focused d
 forbidMatch(verificationCampaigns, /由 release campaign 编排/i, 'verification campaign guide must not say release campaign orchestrates unified deploy producers');
 forbidMatch(verificationCampaigns, /current release[\s\S]{0,80}(?:must|必须)[\s\S]{0,80}unified deploy evidence/i, 'verification campaign guide must not require unified deploy evidence for current release');
 requireMatch(releaseKitSplitPlan, /P2\/P3\/P6[\s\S]{0,120}(?:remove or hide|移除或隐藏)[\s\S]{0,160}AgentSmith active status\/workflow/i, 'release-kit split plan must state the transition-only diagnostics exit condition');
+requireMatch(gaReleasePlan, /ga-evidence-index\.json[\s\S]{0,180}(?:归档|archive)[\s\S]{0,180}(?:不发独立 verdict|does not issue|not issue|不发\s*verdict)/iu, 'GA release plan must list ga-evidence-index.json as a derived archive index, not an independent verdict');
 
 const currentReleaseBoundaryDocs = [
   readme,

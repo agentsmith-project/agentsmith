@@ -103,6 +103,17 @@ describe('check-engineering-governance contract', () => {
     expect(currentReleaseBoundaryDocsBlock).not.toContain('releaseKitSplitPlan');
   });
 
+  it('keeps the GA evidence index as a derived archive output, not another verdict', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'scripts/contracts/check-engineering-governance.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('ga-evidence-index\\.json');
+    expect(source).toContain('derived archive index');
+    expect(source).toContain('not an independent verdict');
+  });
+
   it('rejects internal workflow commands presented as a default command directory', () => {
     const violations = findInternalWorkflowReferenceViolations({
       relativePath: 'README.md',

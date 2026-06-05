@@ -449,7 +449,15 @@ requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must r
 requireMatch(releaseChecklist, /precheck[\s\S]*internal adapter/i, 'release checklist must state that product:ready delegates to internal adapters only after precheck passes', failures);
 requireMatch(releaseChecklist, /gate:release:full[\s\S]*aggregate-only/i, 'release checklist must describe gate:release:full as an aggregate-only internal verifier', failures);
 forbidMatch(releaseChecklist, /\bnpm run (?:gate|lane|backend-real):[a-z0-9:_-]+/, 'release checklist must not present internal gate/lane/backend-real adapters as copyable human defaults', failures);
-forbidMatch(releaseChecklist, /\bnpm run test:unified-deploy:[a-z0-9:_-]+/, 'release checklist must not duplicate unified deploy focused diagnostic commands', failures);
+const releaseChecklistWithoutRequiredUnifiedDeployDiagnostics = releaseChecklist
+  .replace(/\bnpm run test:unified-deploy:local-kind\b/gu, '')
+  .replace(/\bnpm run test:unified-deploy:existing-cluster-smoke\b/gu, '');
+forbidMatch(
+  releaseChecklistWithoutRequiredUnifiedDeployDiagnostics,
+  /\bnpm run test:unified-deploy:[a-z0-9:_-]+/,
+  'release checklist must not duplicate unified deploy focused diagnostic commands',
+  failures,
+);
 forbidMatch(releaseChecklist, /\bnpx tsx scripts\/unified-deploy\/substrate-lifecycle\.ts reset\b/, 'release checklist must not duplicate unified deploy substrate reset commands', failures);
 forbidMatch(releaseChecklist, /\bnpm run release:campaign:full\b/, 'release checklist must not present release:campaign:full as a copyable human default', failures);
 forbidMatch(releaseChecklist, /\bRELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full\b/, 'release checklist must not present gate:release:full as a copyable human default', failures);

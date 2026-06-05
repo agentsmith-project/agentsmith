@@ -32,6 +32,7 @@ describe('run-integration-release-user-story integration dependency contract', (
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
 
     expect(script).toContain('source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"');
+    expect(script).toContain('source "${ROOT_DIR}/scripts/scenarios/common.sh"');
     expect(script).toContain('RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"');
     expect(script).toContain(
       'RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-${INTEGRATION_AGENT_TASK_RUNNER_DOCKER_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}}"',

@@ -15,6 +15,7 @@ source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
 source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
+source "${ROOT_DIR}/scripts/scenarios/common.sh"
 ensure_backend_real_state
 
 ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"

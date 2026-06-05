@@ -4839,6 +4839,118 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('deletes task data and releases a completed runtime release fence for the task workspace', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await seedDefaultManagedRunner(deps);
+    const now = new Date().toISOString();
+    const taskId = 'task_delete_completed_runtime_release';
+    const libraryId = 'lib_delete_completed_runtime_release';
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+      id: libraryId,
+      name: 'Delete Completed Runtime Release Workspace',
+      now,
+    }));
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const acquired = await bindingRepo.acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId,
+      taskTitle: 'Delete completed runtime release task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_delete_completed_release_acquire',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_delete_completed_release_begin',
+    });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+    await expect(bindingRepo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId,
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+      now,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(bindingRepo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId,
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
+      now,
+    })).resolves.toMatchObject({ ok: true });
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Delete completed runtime release task',
+      task_home_segment: taskId,
+      workspace_file_library_id: libraryId,
+      workspace_file_library_name: 'Delete Completed Runtime Release Workspace',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'DELETE',
+      req: { headers: { 'x-request-id': 'req_delete_completed_release' }, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+    await expect(deps.docStore.get(notebookTasksCollection('ws_default'), taskId)).resolves.toBeNull();
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toBeNull();
+    const auditRows = await listAuditEvents(deps.docStore, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      startTime: '1970-01-01T00:00:00.000Z',
+      endTime: '2999-01-01T00:00:00.000Z',
+      page: 1,
+      pageSize: 50,
+    });
+    expect(auditRows.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'agent_task.file_library_binding.release',
+        result: 'ok',
+        resource_id: libraryId,
+        metadata_json: expect.objectContaining({
+          file_library_id: libraryId,
+          task_id: taskId,
+          released: true,
+        }),
+      }),
+    ]));
+  });
+
   it('hard tears down a bound managed internal workload before releasing the task file library binding on delete', async () => {
     const deps = createDefaultNodeApiDeps();
     const { runner } = await seedDefaultManagedRunner(deps);

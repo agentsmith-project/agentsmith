@@ -291,6 +291,62 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     });
   });
 
+  it('releases a completed runtime access release fence for task delete convergence', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({ requestId: 'release_before_task_delete' });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(repo.release({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'task_delete_before_release_complete',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        bindingState: 'releasing',
+        correlationId: beginCorrelationId,
+      },
+    });
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
+    })).resolves.toEqual({ ok: true, released: true });
+
+    await expect(repo.release({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: 'task_delete_after_release_complete',
+    })).resolves.toEqual({ ok: true, released: true });
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+    })).resolves.toBeNull();
+  });
+
   it('does not treat a release begin request id suffix as a completed fence', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);

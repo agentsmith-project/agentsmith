@@ -511,6 +511,18 @@ export class JsonDocTaskFileLibraryBindingRepo {
       return { ok: true, released: false };
     }
     const bindingGeneration = input.bindingGeneration ?? existing.bindingGeneration;
+    const releasableBindingState = existing.bindingState === 'bound'
+      || (
+        existing.bindingState === 'releasing'
+        && isCompletedRuntimeAccessReleaseFenceCorrelationId(existing.correlationId)
+      );
+    if (!releasableBindingState) {
+      return {
+        ok: false,
+        code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        binding: existing,
+      };
+    }
     const result = await this.docStore.deleteIfMatch<TaskFileLibraryBindingRecord>(
       BINDINGS_COLLECTION,
       bindingKey({
@@ -522,7 +534,7 @@ export class JsonDocTaskFileLibraryBindingRepo {
         expected: {
           task_id: input.taskId,
           binding_generation: bindingGeneration,
-          binding_state: 'bound',
+          binding_state: existing.bindingState,
         },
       },
     );

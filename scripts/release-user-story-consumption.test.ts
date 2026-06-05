@@ -156,6 +156,29 @@ describe('release story consumption guards', () => {
     expect(deleteBody).toContain('await page.waitForURL(listUrl');
   });
 
+  it('keeps release user story task workspace reuse gated by file-library binding convergence', async () => {
+    const specSource = await readFile(
+      path.resolve(process.cwd(), 'e2e/integration-release-user-story.spec.ts'),
+      'utf-8',
+    );
+    const helperStart = specSource.indexOf('async function waitForTaskWorkspaceLibraryIdle');
+    const helperEnd = specSource.indexOf('\nasync function createTaskViaUi', helperStart);
+    const helperBody = specSource.slice(helperStart, helperEnd);
+    const createStart = specSource.indexOf('async function createTaskViaUi');
+    const createEnd = specSource.indexOf('\nasync function deleteCurrentTaskViaUi', createStart);
+    const createBody = specSource.slice(createStart, createEnd);
+
+    expect(helperBody).toContain('TASK_WORKSPACE_BINDING_CONVERGENCE_TIMEOUT_MS');
+    expect(helperBody).toContain('delaysMs = [1_000, 2_000, 5_000, 10_000, 15_000, 30_000]');
+    expect(helperBody).toContain('/file-libraries?page=1&page_size=200');
+    expect(helperBody).toContain('[release-story][workspace-binding-convergence]');
+    expect(helperBody).toContain("library?.status === 'ready' && library.task_home_binding_status === 'unbound'");
+    expect(helperBody).toContain('task_workspace_binding_not_idle_timeout');
+    expect(createBody).toContain("workspaceMode === 'use_existing'");
+    expect(createBody).toContain('await waitForTaskWorkspaceLibraryIdle');
+    expect(createBody).toContain('await expect(existingWorkspaceOption).toBeVisible');
+  });
+
   it('keeps backend-real visual review workspace fixtures aligned with directory-backed project creator selection', async () => {
     const source = await readFile(
       path.resolve(process.cwd(), 'e2e/integration-visual-review.spec.ts'),

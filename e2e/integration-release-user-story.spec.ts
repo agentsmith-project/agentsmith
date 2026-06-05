@@ -34,6 +34,7 @@ const MEMBER_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-us
 const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'full';
 const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
+const TASK_WORKSPACE_BINDING_CONVERGENCE_TIMEOUT_MS = 180_000;
 const RELEASE_STORY_BINDING = buildTraceStoryBinding(RELEASE_USER_STORY.storyDefinition);
 
 type ReleaseAgentTaskFlowTurn = {
@@ -50,6 +51,20 @@ type ReleaseAgentTaskFlow = {
 type AgentTaskRunStart = {
   runnerOutputActivityId: string;
   runId?: string;
+};
+
+type ReleaseStoryFileLibrary = {
+  id?: string;
+  name?: string;
+  status?: string;
+  storage_status?: string;
+  storage_next_action?: string | null;
+  status_reason?: string;
+  task_home_binding_status?: string;
+  bound_task_id?: string;
+  bound_task_status?: string;
+  bound_task_visible?: boolean;
+  updated_at?: string;
 };
 
 function resolveReleaseStoryStep(stepId: string) {
@@ -401,6 +416,71 @@ async function openCreateTaskDialog(page: Page, workspaceId: string, projectId: 
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 30_000 });
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function summarizeTaskWorkspaceLibrary(library: ReleaseStoryFileLibrary | null, attempt: number, workspaceName: string): string {
+  if (!library) {
+    return `attempt=${attempt} target=${workspaceName} state=not_found`;
+  }
+  return [
+    `attempt=${attempt}`,
+    `target=${workspaceName}`,
+    `id=${library.id ?? 'unknown'}`,
+    `status=${library.status ?? 'unknown'}`,
+    `binding=${library.task_home_binding_status ?? 'unknown'}`,
+    `bound_task_id=${library.bound_task_id ?? 'none'}`,
+    `bound_task_status=${library.bound_task_status ?? 'none'}`,
+    `storage_status=${library.storage_status ?? 'unknown'}`,
+    `storage_next_action=${library.storage_next_action ?? 'none'}`,
+    `updated_at=${library.updated_at ?? 'unknown'}`,
+  ].join(' ');
+}
+
+async function waitForTaskWorkspaceLibraryIdle(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  workspaceName: string;
+}): Promise<ReleaseStoryFileLibrary> {
+  const { page, workspaceId, projectId, workspaceName } = args;
+  const token = await readStoredAuthToken(page);
+  const delaysMs = [1_000, 2_000, 5_000, 10_000, 15_000, 30_000];
+  const observations: string[] = [];
+  const deadline = Date.now() + TASK_WORKSPACE_BINDING_CONVERGENCE_TIMEOUT_MS;
+
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await page.request.get(
+      `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries?page=1&page_size=200`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok()) {
+      const body = await response.text().catch(() => '');
+      const summary = `attempt=${attempt} target=${workspaceName} api_status=${response.status()} body=${body.slice(0, 300)}`;
+      observations.push(summary);
+      console.info(`[release-story][workspace-binding-convergence] ${summary}`);
+    } else {
+      const payload = (await response.json()) as { items?: ReleaseStoryFileLibrary[] };
+      const library = (payload.items ?? []).find((item) => item.name === workspaceName) ?? null;
+      const summary = summarizeTaskWorkspaceLibrary(library, attempt, workspaceName);
+      observations.push(summary);
+      console.info(`[release-story][workspace-binding-convergence] ${summary}`);
+      if (library?.status === 'ready' && library.task_home_binding_status === 'unbound') {
+        return library;
+      }
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error(
+        `task_workspace_binding_not_idle_timeout:${workspaceName}:observations=${observations.slice(-8).join(' | ')}`,
+      );
+    }
+    await page.waitForTimeout(Math.min(delaysMs[Math.min(attempt - 1, delaysMs.length - 1)], remainingMs));
+  }
+}
+
 async function createTaskViaUi(args: {
   page: Page;
   workspaceId: string;
@@ -411,13 +491,26 @@ async function createTaskViaUi(args: {
   existingWorkspaceName?: string;
 }): Promise<{ taskId: string; workspaceName: string }> {
   const { page, workspaceId, projectId, title, workspaceMode, workspaceName, existingWorkspaceName } = args;
+  if (workspaceMode === 'use_existing') {
+    if (!existingWorkspaceName) {
+      throw new Error('existing_workspace_name_required');
+    }
+    await waitForTaskWorkspaceLibraryIdle({
+      page,
+      workspaceId,
+      projectId,
+      workspaceName: existingWorkspaceName,
+    });
+  }
   await openCreateTaskDialog(page, workspaceId, projectId);
   const dialog = page.getByRole('dialog');
   await dialog.locator('#task-title').fill(title);
   if (workspaceMode === 'use_existing') {
     await dialog.getByRole('radio', { name: /continue an existing task workspace/i }).click();
     await dialog.getByTestId('task-create__file-library').click();
-    await page.getByRole('option', { name: new RegExp((existingWorkspaceName ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
+    const existingWorkspaceOption = page.getByRole('option', { name: new RegExp(escapeRegExp(existingWorkspaceName)) });
+    await expect(existingWorkspaceOption).toBeVisible({ timeout: 30_000 });
+    await existingWorkspaceOption.click();
   } else if (workspaceName) {
     await dialog.locator('#task-workspace-name').fill(workspaceName);
   }

@@ -421,6 +421,13 @@ requireMatch(releaseChecklist, /npm run test:unified-deploy:existing-cluster-smo
 requireMatch(releaseChecklist, /focused product-flow/, 'release checklist must explain focused product-flow deploy diagnostics');
 forbidMatch(releaseChecklist, /local-kind evidence[\s\S]{0,80}(?:part of|belongs to|属于)[\s\S]{0,80}AgentSmith product readiness/i, 'release checklist must not make local-kind evidence part of current AgentSmith product readiness');
 requireMatch(verificationCampaigns, /transition-only focused diagnostics[\s\S]{0,80}过渡期专项诊断/i, 'verification campaign guide must describe unified deploy producers as transition-only focused diagnostics / 过渡期专项诊断');
+requireMatch(verificationCampaigns, /runtime pending\/readiness/i, 'verification campaign guide must classify repeated Files/Agent Task/AFSCP/read export failures as runtime pending/readiness');
+requireMatch(verificationCampaigns, /pending[\s\S]{0,80}releasing[\s\S]{0,80}offline[\s\S]{0,80}not_found/i, 'verification campaign guide must mention runtime readiness convergence states');
+requireMatch(verificationCampaigns, /Files restore continuation focused backend-real gate/i, 'verification campaign guide must keep Files restore continuation focused backend-real gate as Product Readiness evidence');
+requireMatch(verificationCampaigns, /files_restore_continuation_spec\/runtime-readiness-details\.json/i, 'verification campaign guide must document runtime readiness detail evidence path');
+requireMatch(verificationCampaigns, /AGENT_SANDBOX_UNAVAILABLE[\s\S]{0,180}API[\s\S]{0,180}pod-manager[\s\S]{0,180}ASBCP/i, 'verification campaign guide must require AGENT_SANDBOX_UNAVAILABLE owner call summaries');
+requireMatch(verificationCampaigns, /runtime_flake[\s\S]{0,180}stability_blocker/i, 'verification campaign guide must preserve runtime flake versus stability blocker classification');
+requireMatch(verificationCampaigns, /60_000[\s\S]{0,80}90_000[\s\S]{0,80}120_000[\s\S]{0,80}180_000[\s\S]{0,80}300_000/, 'verification campaign guide must document increasing runtime readiness wait intervals');
 forbidMatch(verificationCampaigns, /legacy\/focused diagnostics|legacy focused diagnostics|legacy deploy diagnostics|旧部署诊断/i, 'verification campaign guide must not describe current unified deploy diagnostics as legacy');
 forbidMatch(verificationCampaigns, /由 release campaign 编排/i, 'verification campaign guide must not say release campaign orchestrates unified deploy producers');
 forbidMatch(verificationCampaigns, /current release[\s\S]{0,80}(?:must|必须)[\s\S]{0,80}unified deploy evidence/i, 'verification campaign guide must not require unified deploy evidence for current release');

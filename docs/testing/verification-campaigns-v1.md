@@ -321,6 +321,17 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 | `evidence_missing` | 应该生成的 review、trace、catalog、result 没有完整落盘 | 先查 evidence root、writer、artifact path、run-root，再重跑 evidence owner |
 | `none` | 当前 gate 没有失败 | 继续向下一层 verdict path 推进 |
 
+### Runtime Pending/Readiness 收口主题
+
+最近 release/gate 里的 Files、Agent Task sandbox、AFSCP workspace binding、read export 反复失败，归到 runtime pending/readiness 收口主题。它是 observation/diagnostic theme，不新增 canonical `failure_class`，也不要按单点 Files bug 或 Agent Task bug 各自打散处理。
+
+执行规则：
+- `scripts/governance/runtime-readiness-policy.json` 是当前机器可读规则源；`pending`、`releasing`、`offline`、`not_found` 必须覆盖 Files、Agent Task sandbox、AFSCP workspace binding、read export 四个 surface。
+- Product Readiness 前保留 Files restore continuation focused backend-real gate 作为重点证据；核心路径是 `<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json`。
+- `AGENT_SANDBOX_UNAVAILABLE` 证据必须包含 API、pod-manager、ASBCP create/status 调用摘要，并带 `request_id`、`workload_id`、`phase`、错误码，以及可得的 status/http status。
+- focused gate 第一次遇到 sandbox unavailable 或 runtime readiness marker、重跑通过，记录为 `runtime_flake`；同一 focused gate 连续出现则升级为 `stability_blocker` 诊断分类，canonical gate `failure_class` 仍按 result schema 收敛。
+- release/gate 等待观察不要固定每分钟轮询；连续 non-terminal 后使用递增间隔，当前 policy 是 `60_000, 90_000, 120_000, 180_000, 300_000` ms。
+
 ## 10. 给经验较少开发者的执行步骤
 
 如果你第一次负责一次较大的验证活动，按这个顺序做：

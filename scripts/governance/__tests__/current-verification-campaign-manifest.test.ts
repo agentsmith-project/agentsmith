@@ -129,6 +129,17 @@ describe('current verification campaign manifest', () => {
     expect(policy?.stateConvergence?.agent_task_sandbox.offline).toContain('ASBCP create-or-ensure');
     expect(policy?.stateConvergence?.afscp_workspace_binding.releasing).toContain('terminal released/revoked/expired/deleted');
     expect(policy?.stateConvergence?.read_export.pending).toContain('typed pending');
+    expect(gateRelease?.evidenceChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'files_restore_continuation_runtime_readiness_details',
+          path: '<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
+          kind: 'file',
+          expectedSchemaVersion: 'agentsmith.runtime-readiness-details/v1',
+          expectedTheme: 'runtime_pending_readiness',
+        }),
+      ]),
+    );
   });
 
   it('separates executable evidence owners from the aggregate-only readiness check', () => {

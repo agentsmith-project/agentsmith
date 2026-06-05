@@ -53,6 +53,7 @@ export interface CurrentVerificationCampaignEvidenceCheck {
   expectedSchemaVersion?: string;
   expectedProducer?: string;
   expectedStatus?: string;
+  expectedTheme?: string;
   expectedCommand?: string;
   expectedProfile?: string;
   expectedProductFlows?: readonly string[];

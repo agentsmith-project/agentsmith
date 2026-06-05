@@ -1030,6 +1030,66 @@ collect_child_internal_log_tails() {
   fi
 }
 
+collect_child_internal_success_evidence() {
+  local stage="$1"
+  local spec_state_file="${2:-}"
+  local spec="${3:-}"
+  local label="${4:-}"
+  local spec_api_port="${5:-}"
+  local spec_web_port="${6:-}"
+  local safe_stage evidence_dir output_file
+
+  safe_stage="$(child_internal_evidence_slug "${stage}")"
+  evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
+  output_file="${evidence_dir}/runtime-readiness-details.json"
+  mkdir -p "${evidence_dir}" 2>/dev/null || return 0
+  if [[ -f "${output_file}" ]]; then
+    return 0
+  fi
+
+  node --input-type=module - \
+    "${output_file}" \
+    "${stage}" \
+    "${GATE_MODE:-workspace}" \
+    "${spec}" \
+    "${label}" \
+    "${spec_state_file:-}" \
+    "${spec_api_port:-}" \
+    "${spec_web_port:-}" <<'NODE' || true
+import fs from 'node:fs';
+import path from 'node:path';
+
+const [
+  outputFile,
+  stage,
+  gateMode,
+  spec,
+  label,
+  stateFile,
+  apiPort,
+  webPort,
+] = process.argv.slice(2);
+
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+fs.writeFileSync(outputFile, `${JSON.stringify({
+  schema_version: 'agentsmith.runtime-readiness-details/v1',
+  theme: 'runtime_pending_readiness',
+  generated_at: new Date().toISOString(),
+  outcome: 'focused_gate_passed',
+  classification: 'clean_pass',
+  stage,
+  gate_mode: gateMode,
+  spec,
+  grep_label: label || null,
+  state_file: stateFile || null,
+  api_port: apiPort || null,
+  web_port: webPort || null,
+  signals: [],
+  k8s_pods: [],
+}, null, 2)}\n`);
+NODE
+}
+
 collect_child_internal_runtime_flake_evidence() {
   local stage="$1"
   local spec_state_file="${2:-}"
@@ -1398,6 +1458,7 @@ run_internal_spec_grep() {
   spec_status=$?
   if [[ "${spec_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}" "passed" "${spec}"
+    collect_child_internal_success_evidence "${evidence_stage}" "${spec_state_file}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
     collect_child_internal_runtime_flake_evidence "${evidence_stage}" "${spec_state_file}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
   else
     record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"

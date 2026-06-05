@@ -1876,6 +1876,7 @@ function hasStructuredJsonEvidenceExpectations(check: CurrentVerificationCampaig
     check.expectedSchemaVersion
     || check.expectedProducer
     || check.expectedStatus
+    || check.expectedTheme
     || check.expectedCommand
     || check.expectedProfile
     || stringArray(check.expectedProductFlows).length > 0
@@ -2490,6 +2491,9 @@ function validateUnifiedDeployPayload(
       `${path} status must be ${check.expectedStatus}.`,
       payload.status === 'failed' ? failedPayloadFailureClass(payload, check) : 'contract_drift',
     );
+  }
+  if (check.expectedTheme && payload.theme !== check.expectedTheme) {
+    return unifiedDeployDiagnostic(`${path} theme must be ${check.expectedTheme}.`, 'contract_drift');
   }
   if (check.expectedProducer && payload.producer !== check.expectedProducer) {
     return unifiedDeployDiagnostic(`${path} producer must be ${check.expectedProducer}.`, 'contract_drift');

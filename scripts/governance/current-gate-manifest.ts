@@ -281,6 +281,13 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'file',
     },
     {
+      id: 'files_restore_continuation_runtime_readiness_details',
+      path: '<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
+      kind: 'file',
+      expectedSchemaVersion: 'agentsmith.runtime-readiness-details/v1',
+      expectedTheme: 'runtime_pending_readiness',
+    },
+    {
       id: 'backend_real_ux_trace_index',
       path: '<campaign-root>/gate-release/backend-real-visual/ux-traces/ux-trace-index.json',
       kind: 'file',

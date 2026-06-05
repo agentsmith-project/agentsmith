@@ -354,6 +354,18 @@ function createManifestEvidenceForCheck(
   }
 
   const path = materializeCampaignPath(campaignRoot, check.path);
+  if (check.expectedSchemaVersion === 'agentsmith.runtime-readiness-details/v1') {
+    writeJson(path, {
+      schema_version: check.expectedSchemaVersion,
+      theme: check.expectedTheme ?? 'runtime_pending_readiness',
+      generated_at: '2026-05-24T12:00:00.000Z',
+      outcome: 'aggregate_fixture_pass',
+      signals: [],
+      k8s_pods: [],
+    });
+    return;
+  }
+
   if (kind === 'file') {
     if (!existsSync(path)) {
       createFile(path);
@@ -1469,6 +1481,15 @@ describe('release-full aggregate gate', () => {
       required_paths: Array<Record<string, unknown>>;
     };
     expect(terminalEvidence.required_paths.length).toBeGreaterThan(0);
+    expect(terminalEvidence.required_paths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'files_restore_continuation_runtime_readiness_details',
+          kind: 'file',
+          exists: true,
+        }),
+      ]),
+    );
     for (const record of terminalEvidence.required_paths) {
       expect(record).toMatchObject({
         id: expect.any(String),
@@ -1762,6 +1783,31 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'evidence_missing',
     });
+  });
+
+  it('fails when Files restore continuation runtime readiness evidence is missing', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-files-restore-runtime-evidence-'));
+    seedPassedCampaign(campaignRoot);
+    rmSync(
+      resolve(
+        campaignRoot,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      ),
+      { force: true },
+    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('files_restore_continuation_runtime_readiness_details');
   });
 
   it('classifies failed backend-real native scenarios without requiring later visual or UX evidence', () => {

@@ -572,6 +572,104 @@ exit 0
   }
 }
 
+function runInternalSpecGrepCleanPassHarness(): {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  runtimeReadinessDetails: string;
+} {
+  const repoRoot = process.cwd();
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-clean-pass-'));
+  const uploadRoot = path.join(tempRoot, 'upload', 'child-internal-evidence');
+  const scriptPath = path.join(tempRoot, 'harness.sh');
+  const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+  const evidenceFunctions = sectionBetween(
+    agentTaskGate,
+    '\nchild_internal_evidence_slug() {',
+    '\nif [[ -z "${PRESET_ENDPOINT_API_KEY_VALUE}" ]]',
+  );
+  const runGrepFunction = shellFunctionDefinition(agentTaskGate, 'run_internal_spec_grep');
+
+  try {
+    writeFileSync(
+      scriptPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="${repoRoot}"
+TEMP_ROOT="${tempRoot}"
+INTERNAL_REAL_DIR="${tempRoot}/internal"
+CHILD_INTERNAL_EVIDENCE_ROOT="${uploadRoot}"
+GATE_MODE="files-restore-continue"
+KEEP_FAILED_ENV=0
+ASBCP_PORT=28080
+CONTROL_SCRIPT="${tempRoot}/control.sh"
+mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
+printf '#!/usr/bin/env bash\\nexit 0\\n' > "\${CONTROL_SCRIPT}"
+chmod +x "\${CONTROL_SCRIPT}"
+
+gate_record_failure() {
+  printf 'unexpected failure: %s\\n' "$*" >> "\${TEMP_ROOT}/calls.txt"
+}
+
+gate_record_preflight_check() {
+  printf 'preflight:%s|%s|%s\\n' "\${2:-}" "\${3:-}" "\${4:-}" >> "\${TEMP_ROOT}/calls.txt"
+}
+
+info() { :; }
+runtime_readiness_flake_markers_present() { return 1; }
+resolve_internal_spec_port_pair() { printf '21020 3121\\n'; }
+prepare_internal_backend_real_spec_runtime() {
+  local state_file="\${TEMP_ROOT}/sandbox-control.env"
+  printf 'INTERNAL_AGENT_K8S_NAMESPACE=agentsmith-sandbox\\n' > "\${state_file}"
+  printf '%s\\n' "\${state_file}"
+}
+run_internal_spec() {
+  printf 'run_internal_spec:%s\\n' "$*" >> "\${TEMP_ROOT}/calls.txt"
+  return 0
+}
+
+${evidenceFunctions}
+${runGrepFunction}
+
+set +e
+run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121
+status=$?
+set -e
+printf 'status=%s\\n' "\${status}"
+find "\${CHILD_INTERNAL_EVIDENCE_ROOT}" -maxdepth 2 -type f | sort
+exit 0
+`,
+      'utf8',
+    );
+
+    const result = spawnSync('bash', [scriptPath], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH,
+      },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const runtimeReadinessDetailsPath = path.join(
+      uploadRoot,
+      'files_restore_continuation_spec',
+      'runtime-readiness-details.json',
+    );
+
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      status: result.status,
+      runtimeReadinessDetails: existsSync(runtimeReadinessDetailsPath)
+        ? readFileSync(runtimeReadinessDetailsPath, 'utf8')
+        : '',
+    };
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function listenOnLoopback(server: ReturnType<typeof createServer>): Promise<number> {
   return new Promise((resolve, reject) => {
     server.on('error', reject);
@@ -1578,6 +1676,44 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('password = [REDACTED]');
     expect(result.stdout).toContain('service_api_key: [REDACTED]');
     expect(result.stdout).toContain('PRESET_ENDPOINT_API_KEY=[REDACTED]');
+  });
+
+  it('records Files restore continuation clean-pass runtime readiness evidence for Product Readiness', () => {
+    const result = runInternalSpecGrepCleanPassHarness();
+
+    expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=0');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      schema_version: string;
+      theme: string;
+      outcome: string;
+      classification: string;
+      stage: string;
+      gate_mode: string;
+      spec: string;
+      grep_label: string;
+      api_port: string;
+      web_port: string;
+      signals: unknown[];
+      k8s_pods: unknown[];
+    };
+    expect(details).toMatchObject({
+      schema_version: 'agentsmith.runtime-readiness-details/v1',
+      theme: 'runtime_pending_readiness',
+      outcome: 'focused_gate_passed',
+      classification: 'clean_pass',
+      stage: 'files_restore_continuation_spec',
+      gate_mode: 'files-restore-continue',
+      spec: 'e2e/integration-files-user-stories.spec.ts',
+      grep_label: 'same task can continue after Files restore',
+      api_port: '21020',
+      web_port: '3121',
+      signals: [],
+      k8s_pods: [],
+    });
   });
 
   it('records files restore continuation early failures into the campaign-uploadable child evidence root', () => {

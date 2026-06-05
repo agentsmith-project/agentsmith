@@ -1538,6 +1538,16 @@ describe('internal backend-real gate runtime contract', () => {
       '\ncollect_child_internal_runtime_flake_evidence() {',
       '\n}\n\ncollect_child_internal_failure_evidence()',
     );
+    const runtimeDetailsCollector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_runtime_readiness_details() {',
+      '\n}\n\nannotate_runtime_readiness_details()',
+    );
+    const runtimeSummaryCollector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_runtime_readiness_summary() {',
+      '\n}\n\nruntime_readiness_flake_markers_present()',
+    );
     const evidenceCommand = sectionBetween(
       agentTaskGate,
       '\nrun_child_internal_evidence_command() {',
@@ -1573,6 +1583,11 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('afscp-api-log-tail.txt');
     expect(agentTaskGate).toContain('afscp-worker-log-tail.txt');
     expect(agentTaskGate).toContain('afscp-export-gateway-log-tail.txt');
+    for (const runtimeCollector of [runtimeDetailsCollector, runtimeSummaryCollector]) {
+      expect(runtimeCollector).toContain('"${evidence_dir}/afscp-api-log-tail.txt"');
+      expect(runtimeCollector).toContain('"${evidence_dir}/afscp-worker-log-tail.txt"');
+      expect(runtimeCollector).toContain('"${evidence_dir}/asbcp-docker-logs.txt"');
+    }
     expect(collector).toContain('exit_status=%s');
     expect(collector).toContain('spec=%s');
     expect(collector).toContain('grep_label=%s');

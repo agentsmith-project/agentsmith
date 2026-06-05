@@ -729,6 +729,13 @@ collect_runtime_readiness_details() {
   if [[ -n "${ASBCP_LOG:-}" ]]; then
     candidates+=("${ASBCP_LOG}")
   fi
+  candidates+=(
+    "${evidence_dir}/afscp-api-log-tail.txt"
+    "${evidence_dir}/afscp-worker-log-tail.txt"
+    "${evidence_dir}/afscp-export-gateway-log-tail.txt"
+    "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
+    "${evidence_dir}/asbcp-docker-logs.txt"
+  )
   if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
     spec_runtime_dir="$(dirname "${spec_state_file}")"
     if [[ -d "${spec_runtime_dir}/integration" ]]; then
@@ -1198,6 +1205,13 @@ collect_runtime_readiness_summary() {
   if [[ -n "${ASBCP_LOG:-}" ]]; then
     candidates+=("${ASBCP_LOG}")
   fi
+  candidates+=(
+    "${evidence_dir}/afscp-api-log-tail.txt"
+    "${evidence_dir}/afscp-worker-log-tail.txt"
+    "${evidence_dir}/afscp-export-gateway-log-tail.txt"
+    "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
+    "${evidence_dir}/asbcp-docker-logs.txt"
+  )
   if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
     spec_runtime_dir="$(dirname "${spec_state_file}")"
     if [[ -d "${spec_runtime_dir}/integration" ]]; then

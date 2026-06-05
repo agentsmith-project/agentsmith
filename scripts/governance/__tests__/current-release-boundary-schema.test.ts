@@ -905,6 +905,18 @@ describe('current release boundary schema', () => {
         artifact_uri:
           'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
         artifact_sha256: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+        runner_release_manifest_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+        runner_release_manifest_subject_sha256:
+          'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+        runner_release_manifest_artifact_sha256:
+          'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+        runner_ga_handoff_uri:
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+        runner_ga_handoff_manifest_input_sha256:
+          'sha256:a7e83fd0cae608d7e7ac8f3483c78ffa2c3ebe25f09c0b4e6e63526d95cfab70',
+        runner_ga_handoff_report_sha256:
+          'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
       },
     });
 

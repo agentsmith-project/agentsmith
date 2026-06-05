@@ -38,6 +38,7 @@ import {
 
 export const RELEASE_CONTRACT_ARTIFACT_NAME = 'agentsmith-release-contract.json' as const;
 export const RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME = 'runner-release-manifest-source.json' as const;
+export const RUNNER_GA_HANDOFF_SOURCE_RECEIPT_NAME = 'runner-ga-handoff-source.json' as const;
 export const ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME = 'asbcp-final-manifest-source.json' as const;
 export const LLMUP_IMAGE_SOURCE_RECEIPT_NAME = 'llmup-image-source.json' as const;
 export const AFSCP_IMAGE_SOURCE_RECEIPT_NAME = 'afscp-image-source.json' as const;
@@ -45,6 +46,8 @@ export const RELEASE_CONTRACT_ARTIFACT_GENERATOR_COMMAND = 'npm run release:cont
 export const RELEASE_CONTRACT_ARTIFACT_GENERATOR_VERSION = 'p1.1-release-contract-artifact' as const;
 export const RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION =
   'agentsmith.runner-release-manifest-source/v1' as const;
+export const RUNNER_GA_HANDOFF_SOURCE_RECEIPT_SCHEMA_VERSION =
+  'agentsmith.runner-ga-handoff-source/v1' as const;
 export const ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_SCHEMA_VERSION =
   'agentsmith.asbcp-final-manifest-source/v1' as const;
 export const LLMUP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION =
@@ -81,6 +84,11 @@ const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json' as const;
 const ASBCP_SOURCE_PROVENANCE_FILE_NAME = 'source-provenance.json' as const;
 const RUNNER_RELEASE_MANIFEST_ADOPTION_COMMAND =
   `npm run contracts:check-runner-image-lock -- --adoption --manifest ${RUNNER_RELEASE_MANIFEST_RELATIVE_PATH}` as const;
+const RUNNER_GA_HANDOFF_REPORT_SCHEMA_VERSION =
+  'agentsmith.runner-ga-handoff-report/v1' as const;
+const RUNNER_GA_HANDOFF_SCOPE = 'runner_ga_handoff_evidence' as const;
+const RUNNER_GA_HANDOFF_ARTIFACT_NAME = 'runner-ga-handoff' as const;
+const RUNNER_GA_HANDOFF_REPORT_FILE_NAME = 'runner-ga-handoff-report.json' as const;
 const MANAGED_RUNNER_IMAGE_SOURCE_SUBJECT_NAME = 'agentsmith-managed-runner-image' as const;
 const PRODUCER_OWNED_INPUT_FIELDS = [
   'sourceGitSha',
@@ -136,6 +144,7 @@ interface ReleaseContractArtifactCliConfig {
   outputDir: string;
   runnerManifestPath: string;
   runnerRemoteManifestPath: string;
+  runnerGaHandoffPath: string;
   runnerRunViewPath: string;
   runnerRunApiPath: string;
   runnerArtifactsApiPath: string;
@@ -197,6 +206,43 @@ interface RunnerReleaseManifestSourceReceipt {
     manifest_path: typeof RUNNER_RELEASE_MANIFEST_RELATIVE_PATH;
     ok: true;
   };
+  consumer: {
+    repo: typeof AGENTSMITH_CANONICAL_REPO;
+    workflow_name: string;
+    run_id: string;
+    run_attempt: string;
+    job: string;
+    commit_sha: string;
+  };
+  generated_at: string;
+}
+
+interface RunnerGaHandoffSourceReceipt {
+  schema_version: typeof RUNNER_GA_HANDOFF_SOURCE_RECEIPT_SCHEMA_VERSION;
+  source_kind: 'github_actions_artifact';
+  producer_repo: typeof RUNNER_CANONICAL_REPO;
+  producer_repo_slug: typeof RUNNER_REPO_SLUG;
+  report_schema_version: typeof RUNNER_GA_HANDOFF_REPORT_SCHEMA_VERSION;
+  report_scope: typeof RUNNER_GA_HANDOFF_SCOPE;
+  report_status: 'pass';
+  report_path: string;
+  report_sha256: string;
+  report_artifact_name: typeof RUNNER_GA_HANDOFF_ARTIFACT_NAME;
+  report_artifact_uri: string;
+  manifest_input_sha256: string;
+  manifest_release_id: string;
+  manifest_git_sha: string;
+  manifest_artifact_uri: string;
+  manifest_subject_sha256: string;
+  manifest_provenance_artifact_sha256: string;
+  runner_image_digest: string;
+  contract_package_uri: string;
+  contract_package_sha256: string;
+  contract_descriptor_subject_sha256: string;
+  run_id: string;
+  run_attempt: string;
+  workflow_name: string;
+  head_sha: string;
   consumer: {
     repo: typeof AGENTSMITH_CANONICAL_REPO;
     workflow_name: string;
@@ -352,6 +398,7 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
   const stderr = options.stderr ?? ((message: string) => console.error(message));
   let outputPath: string | undefined;
   let runnerManifestReceiptPath: string | undefined;
+  let runnerGaHandoffReceiptPath: string | undefined;
   let llmupImageSourceReceiptPath: string | undefined;
   let afscpImageSourceReceiptPath: string | undefined;
   let asbcpFinalManifestReceiptPath: string | undefined;
@@ -360,6 +407,7 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
     const config = parseCliArgs(argv, cwd, env);
     outputPath = path.join(config.outputDir, RELEASE_CONTRACT_ARTIFACT_NAME);
     runnerManifestReceiptPath = path.join(config.outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    runnerGaHandoffReceiptPath = path.join(config.outputDir, RUNNER_GA_HANDOFF_SOURCE_RECEIPT_NAME);
     llmupImageSourceReceiptPath = path.join(config.outputDir, LLMUP_IMAGE_SOURCE_RECEIPT_NAME);
     afscpImageSourceReceiptPath = path.join(config.outputDir, AFSCP_IMAGE_SOURCE_RECEIPT_NAME);
     asbcpFinalManifestReceiptPath = path.join(config.outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
@@ -388,6 +436,13 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
       runViewPath: config.runnerRunViewPath,
       runApiPath: config.runnerRunApiPath,
       artifactsApiPath: config.runnerArtifactsApiPath,
+    });
+    const runnerGaHandoffReceipt = buildRunnerGaHandoffSourceReceipt({
+      ciEnv,
+      manifest: runnerReleaseManifest,
+      manifestReceipt: runnerManifestReceipt,
+      remoteManifestPath: config.runnerRemoteManifestPath,
+      reportPath: config.runnerGaHandoffPath,
     });
     const llmupImageSourceReceipt = buildDependencyImageSourceReceipt({
       ciEnv,
@@ -421,6 +476,7 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
         runnerImageLock,
         manifest: runnerReleaseManifest,
         receipt: runnerManifestReceipt,
+        handoffReceipt: runnerGaHandoffReceipt,
       }),
       buildDependencyImageSourceProvenance(llmupImageSourceReceipt),
       buildDependencyImageSourceProvenance(afscpImageSourceReceipt),
@@ -444,11 +500,13 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
 
     writeJsonAtomically(outputPath, contract);
     writeJsonAtomically(runnerManifestReceiptPath, runnerManifestReceipt);
+    writeJsonAtomically(runnerGaHandoffReceiptPath, runnerGaHandoffReceipt);
     writeJsonAtomically(llmupImageSourceReceiptPath, llmupImageSourceReceipt);
     writeJsonAtomically(afscpImageSourceReceiptPath, afscpImageSourceReceipt);
     writeJsonAtomically(asbcpFinalManifestReceiptPath, asbcpFinalManifestReceipt);
     stdout(`release contract artifact: ${outputPath}`);
     stdout(`runner release manifest source receipt: ${runnerManifestReceiptPath}`);
+    stdout(`runner GA handoff source receipt: ${runnerGaHandoffReceiptPath}`);
     stdout(`LLMUP image source receipt: ${llmupImageSourceReceiptPath}`);
     stdout(`AFSCP image source receipt: ${afscpImageSourceReceiptPath}`);
     stdout(`ASBCP final manifest source receipt: ${asbcpFinalManifestReceiptPath}`);
@@ -459,6 +517,9 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
     }
     if (runnerManifestReceiptPath) {
       rmSync(runnerManifestReceiptPath, { force: true });
+    }
+    if (runnerGaHandoffReceiptPath) {
+      rmSync(runnerGaHandoffReceiptPath, { force: true });
     }
     if (llmupImageSourceReceiptPath) {
       rmSync(llmupImageSourceReceiptPath, { force: true });
@@ -725,6 +786,7 @@ function parseCliArgs(
   let outputDir: string | undefined;
   let runnerManifestPath: string | undefined;
   let runnerRemoteManifestPath: string | undefined;
+  let runnerGaHandoffPath: string | undefined;
   let runnerRunViewPath: string | undefined;
   let runnerRunApiPath: string | undefined;
   let runnerArtifactsApiPath: string | undefined;
@@ -751,6 +813,10 @@ function parseCliArgs(
         break;
       case '--runner-remote-manifest':
         runnerRemoteManifestPath = requireArgValue(argv, index);
+        index += 1;
+        break;
+      case '--runner-ga-handoff':
+        runnerGaHandoffPath = requireArgValue(argv, index);
         index += 1;
         break;
       case '--runner-run-view':
@@ -808,6 +874,16 @@ function parseCliArgs(
         env.RUNNER_RELEASE_MANIFEST_SOURCE_REMOTE_MANIFEST_PATH,
         '--runner-remote-manifest',
         'RUNNER_RELEASE_MANIFEST_SOURCE_REMOTE_MANIFEST_PATH',
+      ),
+    ),
+    runnerGaHandoffPath: path.resolve(
+      cwd,
+      requireCliOrEnvPath(
+        runnerGaHandoffPath,
+        env.RUNNER_GA_HANDOFF_SOURCE_REPORT_PATH,
+        '--runner-ga-handoff',
+        'RUNNER_GA_HANDOFF_SOURCE_REPORT_PATH',
+        'runner GA handoff source freshness',
       ),
     ),
     runnerRunViewPath: path.resolve(
@@ -993,6 +1069,7 @@ function buildRunnerImageSourceProvenance(input: {
   runnerImageLock: CurrentRunnerImageLock;
   manifest: CurrentRunnerReleaseManifest;
   receipt: RunnerReleaseManifestSourceReceipt;
+  handoffReceipt: RunnerGaHandoffSourceReceipt;
 }): CurrentReleaseImageSourceProvenanceBinding {
   return {
     image_id: 'managed_runner',
@@ -1019,6 +1096,9 @@ function buildRunnerImageSourceProvenance(input: {
     ),
     runner_release_manifest_subject_sha256: input.receipt.manifest_subject_sha256,
     runner_release_manifest_artifact_sha256: input.receipt.manifest_provenance_artifact_sha256,
+    runner_ga_handoff_uri: input.handoffReceipt.report_artifact_uri,
+    runner_ga_handoff_manifest_input_sha256: input.handoffReceipt.manifest_input_sha256,
+    runner_ga_handoff_report_sha256: input.handoffReceipt.report_sha256,
   };
 }
 
@@ -1267,6 +1347,217 @@ function buildRunnerReleaseManifestSourceReceipt(input: {
       manifest_path: RUNNER_RELEASE_MANIFEST_RELATIVE_PATH,
       ok: true,
     },
+    consumer: {
+      repo: input.ciEnv.canonicalRepo,
+      workflow_name: input.ciEnv.workflowName,
+      run_id: input.ciEnv.runId,
+      run_attempt: input.ciEnv.runAttempt,
+      job: input.ciEnv.job,
+      commit_sha: input.ciEnv.commitSha,
+    },
+    generated_at: input.ciEnv.generatedAt,
+  };
+}
+
+function buildRunnerGaHandoffSourceReceipt(input: {
+  ciEnv: GitHubCiProvenanceEnv;
+  manifest: CurrentRunnerReleaseManifest;
+  manifestReceipt: RunnerReleaseManifestSourceReceipt;
+  remoteManifestPath: string;
+  reportPath: string;
+}): RunnerGaHandoffSourceReceipt {
+  const failures: string[] = [];
+  const report = readJson(input.reportPath);
+  const reportText = readFileSync(input.reportPath, 'utf8');
+  const remoteManifestText = readFileSync(input.remoteManifestPath, 'utf8');
+
+  if (!isRecord(report)) {
+    failures.push('handoff: runner GA handoff report must be a JSON object.');
+    throw new Error(formatRunnerGaHandoffSourceFailures(failures));
+  }
+
+  const reportRecord = report as Record<string, unknown>;
+  const expectedReportArtifactUri =
+    `gh-artifact://${RUNNER_REPO_SLUG}/${RUNNER_GA_HANDOFF_ARTIFACT_NAME}/${input.manifestReceipt.run_id}/${RUNNER_GA_HANDOFF_REPORT_FILE_NAME}`;
+  const expectedChecks = new Set([
+    'runner_release_manifest',
+    'digest_pinned_runner_image',
+    'contract_artifact_binding',
+    'adoption_policy_declared',
+  ]);
+
+  compareString(
+    readString(reportRecord, 'schema_version'),
+    RUNNER_GA_HANDOFF_REPORT_SCHEMA_VERSION,
+    'handoff.schema_version',
+    failures,
+  );
+  compareString(readString(reportRecord, 'scope'), RUNNER_GA_HANDOFF_SCOPE, 'handoff.scope', failures);
+  compareString(readString(reportRecord, 'status'), 'pass', 'handoff.status', failures);
+  if (Object.hasOwn(reportRecord, 'formal_verdict')) {
+    failures.push('handoff.formal_verdict: runner GA handoff must not issue a formal verdict.');
+  }
+  compareString(readString(reportRecord, 'runner'), input.manifest.runner, 'handoff.runner', failures);
+  compareString(readString(reportRecord, 'release_id'), input.manifest.release_id, 'handoff.release_id', failures);
+  compareString(readString(reportRecord, 'git_sha'), input.manifest.git_sha, 'handoff.git_sha', failures);
+  compareString(
+    readString(reportRecord, 'runner_contract_version'),
+    input.manifest.runner_contract_version,
+    'handoff.runner_contract_version',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['image', 'id']),
+    input.manifest.image.id,
+    'handoff.image.id',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['image', 'image']),
+    input.manifest.image.image,
+    'handoff.image.image',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['image', 'digest']),
+    input.manifest.image.digest,
+    'handoff.image.digest',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['contract_artifact', 'package_uri']),
+    input.manifest.contract_artifact.package_uri,
+    'handoff.contract_artifact.package_uri',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['contract_artifact', 'package_sha256']),
+    input.manifest.contract_artifact.package_sha256,
+    'handoff.contract_artifact.package_sha256',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['contract_artifact', 'descriptor_subject_sha256']),
+    input.manifest.contract_artifact.descriptor_subject_sha256,
+    'handoff.contract_artifact.descriptor_subject_sha256',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['manifest', 'input_sha256']),
+    sha256Digest(remoteManifestText),
+    'handoff.manifest.input_sha256',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['manifest', 'artifact_uri']),
+    input.manifest.artifact_provenance.artifact_uri,
+    'handoff.manifest.artifact_uri',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['manifest', 'subject_sha256']),
+    input.manifest.artifact_provenance.subject_sha256,
+    'handoff.manifest.subject_sha256',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['manifest', 'artifact_sha256']),
+    input.manifest.artifact_provenance.artifact_sha256,
+    'handoff.manifest.artifact_sha256',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'producer_repo']),
+    input.manifest.artifact_provenance.producer_repo,
+    'handoff.provenance.producer_repo',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'normalized_remote']),
+    input.manifest.artifact_provenance.normalized_remote,
+    'handoff.provenance.normalized_remote',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'workflow_name']),
+    input.manifestReceipt.workflow_name,
+    'handoff.provenance.workflow_name',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'run_id']),
+    input.manifestReceipt.run_id,
+    'handoff.provenance.run_id',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'run_attempt']),
+    input.manifestReceipt.run_attempt,
+    'handoff.provenance.run_attempt',
+    failures,
+  );
+  compareString(
+    readNestedString(reportRecord, ['provenance', 'commit_sha']),
+    input.manifestReceipt.head_sha,
+    'handoff.provenance.commit_sha',
+    failures,
+  );
+
+  const checks = Array.isArray(reportRecord.checks) ? reportRecord.checks : [];
+  if (!Array.isArray(reportRecord.checks)) {
+    failures.push('handoff.checks: must be an array.');
+  }
+  const seenChecks = new Set<string>();
+  for (const [index, check] of checks.entries()) {
+    if (!isRecord(check)) {
+      failures.push(`handoff.checks[${index}]: must be an object.`);
+      continue;
+    }
+    const name = readString(check, 'name');
+    const status = readString(check, 'status');
+    if (name) {
+      seenChecks.add(name);
+    }
+    if (status !== 'pass') {
+      failures.push(`handoff.checks[${index}].status: expected pass; actual ${status || '<missing>'}`);
+    }
+  }
+  for (const expectedCheck of expectedChecks) {
+    if (!seenChecks.has(expectedCheck)) {
+      failures.push(`handoff.checks: missing ${expectedCheck}.`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(formatRunnerGaHandoffSourceFailures(failures));
+  }
+
+  return {
+    schema_version: RUNNER_GA_HANDOFF_SOURCE_RECEIPT_SCHEMA_VERSION,
+    source_kind: 'github_actions_artifact',
+    producer_repo: RUNNER_CANONICAL_REPO,
+    producer_repo_slug: RUNNER_REPO_SLUG,
+    report_schema_version: RUNNER_GA_HANDOFF_REPORT_SCHEMA_VERSION,
+    report_scope: RUNNER_GA_HANDOFF_SCOPE,
+    report_status: 'pass',
+    report_path: input.reportPath,
+    report_sha256: sha256Digest(reportText),
+    report_artifact_name: RUNNER_GA_HANDOFF_ARTIFACT_NAME,
+    report_artifact_uri: expectedReportArtifactUri,
+    manifest_input_sha256: readNestedString(reportRecord, ['manifest', 'input_sha256']),
+    manifest_release_id: input.manifest.release_id,
+    manifest_git_sha: input.manifest.git_sha,
+    manifest_artifact_uri: input.manifest.artifact_provenance.artifact_uri,
+    manifest_subject_sha256: input.manifest.artifact_provenance.subject_sha256,
+    manifest_provenance_artifact_sha256: input.manifest.artifact_provenance.artifact_sha256,
+    runner_image_digest: input.manifest.image.digest,
+    contract_package_uri: input.manifest.contract_artifact.package_uri,
+    contract_package_sha256: input.manifest.contract_artifact.package_sha256,
+    contract_descriptor_subject_sha256: input.manifest.contract_artifact.descriptor_subject_sha256,
+    run_id: input.manifestReceipt.run_id,
+    run_attempt: input.manifestReceipt.run_attempt,
+    workflow_name: input.manifestReceipt.workflow_name,
+    head_sha: input.manifestReceipt.head_sha,
     consumer: {
       repo: input.ciEnv.canonicalRepo,
       workflow_name: input.ciEnv.workflowName,
@@ -1787,6 +2078,10 @@ function firstNonEmptyString(...values: readonly (string | undefined)[]): string
 
 function formatRunnerManifestSourceFailures(failures: readonly string[]): string {
   return `runner release manifest source freshness check failed:\n${failures.join('\n')}`;
+}
+
+function formatRunnerGaHandoffSourceFailures(failures: readonly string[]): string {
+  return `runner GA handoff source freshness check failed:\n${failures.join('\n')}`;
 }
 
 function formatDependencyImageSourceFailures(

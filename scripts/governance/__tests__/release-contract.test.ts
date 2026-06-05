@@ -221,6 +221,10 @@ function buildImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBindin
         'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26714141935/runner-release-manifest.json',
       runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
+      runner_ga_handoff_uri:
+        'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26714141935/runner-ga-handoff-report.json',
+      runner_ga_handoff_manifest_input_sha256: `sha256:${'d'.repeat(64)}`,
+      runner_ga_handoff_report_sha256: `sha256:${'e'.repeat(64)}`,
     },
   ];
 }
@@ -252,6 +256,15 @@ function sourceProvenanceFor(
     }),
     ...(binding.runner_release_manifest_artifact_sha256 === undefined ? {} : {
       runner_release_manifest_artifact_sha256: binding.runner_release_manifest_artifact_sha256,
+    }),
+    ...(binding.runner_ga_handoff_uri === undefined ? {} : {
+      runner_ga_handoff_uri: binding.runner_ga_handoff_uri,
+    }),
+    ...(binding.runner_ga_handoff_manifest_input_sha256 === undefined ? {} : {
+      runner_ga_handoff_manifest_input_sha256: binding.runner_ga_handoff_manifest_input_sha256,
+    }),
+    ...(binding.runner_ga_handoff_report_sha256 === undefined ? {} : {
+      runner_ga_handoff_report_sha256: binding.runner_ga_handoff_report_sha256,
     }),
   };
 }

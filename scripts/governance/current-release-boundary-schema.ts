@@ -115,6 +115,9 @@ export interface CurrentReleaseImageSourceProvenance {
   runner_release_manifest_uri?: string;
   runner_release_manifest_subject_sha256?: string;
   runner_release_manifest_artifact_sha256?: string;
+  runner_ga_handoff_uri?: string;
+  runner_ga_handoff_manifest_input_sha256?: string;
+  runner_ga_handoff_report_sha256?: string;
 }
 
 export interface CurrentReleaseImageSourceProvenanceBinding extends CurrentReleaseImageSourceProvenance {
@@ -3075,6 +3078,42 @@ function validateInventoryImageSourceProvenance(
       path: `${path}.source_provenance.artifact_sha256`,
       reason: 'source_provenance.artifact_sha256 must match image.digest.',
     });
+  }
+  if (hasOwn(value, 'runner_ga_handoff_uri')) {
+    const handoffUri = validateRequiredString(
+      value.runner_ga_handoff_uri,
+      `${path}.source_provenance.runner_ga_handoff_uri`,
+      failures,
+    );
+    validateRemoteCiArtifactUri(
+      handoffUri,
+      `${path}.source_provenance.runner_ga_handoff_uri`,
+      failures,
+    );
+    if (handoffUri && runId && image.id === CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID) {
+      const expectedHandoffUri =
+        `gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/${runId}/runner-ga-handoff-report.json`;
+      if (handoffUri !== expectedHandoffUri) {
+        failures.push({
+          path: `${path}.source_provenance.runner_ga_handoff_uri`,
+          reason: `${path}.source_provenance.runner_ga_handoff_uri must equal ${expectedHandoffUri}.`,
+        });
+      }
+    }
+  }
+  if (hasOwn(value, 'runner_ga_handoff_manifest_input_sha256')) {
+    validateDigest(
+      value.runner_ga_handoff_manifest_input_sha256,
+      `${path}.source_provenance.runner_ga_handoff_manifest_input_sha256`,
+      failures,
+    );
+  }
+  if (hasOwn(value, 'runner_ga_handoff_report_sha256')) {
+    validateDigest(
+      value.runner_ga_handoff_report_sha256,
+      `${path}.source_provenance.runner_ga_handoff_report_sha256`,
+      failures,
+    );
   }
 }
 

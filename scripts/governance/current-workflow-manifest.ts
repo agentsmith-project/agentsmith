@@ -812,6 +812,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'artifacts/release-contract/deploy-template-package.json',
           'artifacts/release-contract/agentsmith-deploy-template-package.tgz',
           'artifacts/release-contract/runner-release-manifest-source.json',
+          'artifacts/release-contract/runner-ga-handoff-source.json',
           'artifacts/release-contract/llmup-image-source.json',
           'artifacts/release-contract/afscp-image-source.json',
           'artifacts/release-contract/asbcp-final-manifest-source.json',
@@ -1338,7 +1339,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         npmScript: 'release:deploy-template-package',
       },
       {
-        command: 'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --llmup-source-gate <llmup-source-gate.json> --afscp-source-gate <afscp-source-gate.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>',
+        command: 'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-ga-handoff <downloaded-runner-ga-handoff-report.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --llmup-source-gate <llmup-source-gate.json> --afscp-source-gate <afscp-source-gate.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>',
         description: 'internal artifact producer: write the AgentSmith release contract handoff artifact; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:contract:ci-artifact',

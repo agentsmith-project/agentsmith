@@ -51,8 +51,10 @@ jobs:
           runner_repo="agentsmith-project/agentsmith-runner"
           runner_gate_dir="artifacts/release-contract/runner-manifest-source-gate"
           runner_remote_download_dir="${runner_gate_dir}/artifact-download"
+          runner_handoff_download_dir="${runner_gate_dir}/handoff-download"
           mkdir -p "${runner_gate_dir}"
           rm -rf "${runner_remote_download_dir}"
+          rm -rf "${runner_handoff_download_dir}"
 
           npm run contracts:check-runner-image-lock -- --adoption --manifest "${RUNNER_RELEASE_MANIFEST_PATH}"
 
@@ -79,35 +81,47 @@ jobs:
             --repo "${runner_repo}" \
             --name "${runner_artifact_name}" \
             --dir "${runner_remote_download_dir}"
+          gh run download "${runner_run_id}" \
+            --repo "${runner_repo}" \
+            --name "runner-ga-handoff" \
+            --dir "${runner_handoff_download_dir}"
 
           export RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR="${runner_remote_download_dir}"
+          export RUNNER_GA_HANDOFF_DOWNLOAD_DIR="${runner_handoff_download_dir}"
           export RUNNER_REMOTE_MANIFEST_GATE_DIR="${runner_gate_dir}"
           node <<'NODE'
           const { readdirSync, readFileSync, statSync, writeFileSync } = require('node:fs');
           const path = require('node:path');
 
           const downloadDir = process.env.RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR;
+          const handoffDir = process.env.RUNNER_GA_HANDOFF_DOWNLOAD_DIR;
           const gateDir = process.env.RUNNER_REMOTE_MANIFEST_GATE_DIR;
           const manifestSchemaVersion = 'agentsmith.runner-release-manifest/v1';
+          const handoffSchemaVersion = 'agentsmith.runner-ga-handoff-report/v1';
           const fail = (message) => {
             throw new Error(`runner release manifest artifact download failed: ${message}`);
           };
-          if (!downloadDir || !gateDir) {
+          if (!downloadDir || !handoffDir || !gateDir) {
             fail('download and gate directories are required.');
           }
 
-          const files = [];
-          const walk = (dir) => {
-            for (const entry of readdirSync(dir)) {
-              const filePath = path.join(dir, entry);
-              if (statSync(filePath).isDirectory()) {
-                walk(filePath);
-              } else {
-                files.push(filePath);
+          const listFiles = (root) => {
+            const files = [];
+            const walk = (dir) => {
+              for (const entry of readdirSync(dir)) {
+                const filePath = path.join(dir, entry);
+                if (statSync(filePath).isDirectory()) {
+                  walk(filePath);
+                } else {
+                  files.push(filePath);
+                }
               }
-            }
+            };
+            walk(root);
+            return files;
           };
-          walk(downloadDir);
+          const files = listFiles(downloadDir);
+          const handoffFiles = listFiles(handoffDir);
 
           const matches = [];
           for (const filePath of files.filter((candidate) => candidate.endsWith('.json'))) {
@@ -130,7 +144,30 @@ jobs:
           if (matches.length !== 1) {
             fail(`expected exactly one runner release manifest JSON; found ${matches.length}.`);
           }
+          const handoffMatches = [];
+          for (const filePath of handoffFiles.filter((candidate) => candidate.endsWith('.json'))) {
+            try {
+              const json = JSON.parse(readFileSync(filePath, 'utf8'));
+              if (
+                json
+                && typeof json === 'object'
+                && !Array.isArray(json)
+                && json.schema_version === handoffSchemaVersion
+                && json.scope === 'runner_ga_handoff_evidence'
+                && json.status === 'pass'
+              ) {
+                handoffMatches.push(path.resolve(filePath));
+              }
+            } catch {
+              // Non-handoff JSON files are ignored; uniqueness is enforced on parsed handoff candidates.
+            }
+          }
+
+          if (handoffMatches.length !== 1) {
+            fail(`expected exactly one runner GA handoff report JSON; found ${handoffMatches.length}.`);
+          }
           writeFileSync(path.join(gateDir, 'remote-manifest-path.txt'), `${matches[0]}\n`);
+          writeFileSync(path.join(gateDir, 'handoff-report-path.txt'), `${handoffMatches[0]}\n`);
           NODE
 
       - name: Gate ASBCP final manifest source
@@ -857,6 +894,7 @@ jobs:
           RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH="artifacts/release-contract/input/agentsmith-deploy-template-package.tgz"
           RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
           RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "artifacts/release-contract/runner-manifest-source-gate/remote-manifest-path.txt")"
+          RUNNER_GA_HANDOFF_REPORT_PATH="$(cat "artifacts/release-contract/runner-manifest-source-gate/handoff-report-path.txt")"
           RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"
           RUNNER_RELEASE_MANIFEST_RUN_API_PATH="artifacts/release-contract/runner-manifest-source-gate/run-api.json"
           RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH="artifacts/release-contract/runner-manifest-source-gate/artifacts-api.json"
@@ -873,6 +911,7 @@ jobs:
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-ga-handoff-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
@@ -882,6 +921,7 @@ jobs:
           test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"
+          test -f "${RUNNER_GA_HANDOFF_REPORT_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"
           test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"
@@ -896,6 +936,7 @@ jobs:
             --output-dir "${RELEASE_CONTRACT_OUTPUT_DIR}" \
             --runner-manifest "${RUNNER_RELEASE_MANIFEST_PATH}" \
             --runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}" \
+            --runner-ga-handoff "${RUNNER_GA_HANDOFF_REPORT_PATH}" \
             --runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}" \
             --runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}" \
             --runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}" \
@@ -906,6 +947,7 @@ jobs:
             --asbcp-asset-api "${ASBCP_ASSET_API_PATH}"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-release-contract.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"
+          test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-ga-handoff-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"
           test -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"
@@ -951,6 +993,7 @@ jobs:
             artifacts/release-contract/deploy-template-package.json
             artifacts/release-contract/agentsmith-deploy-template-package.tgz
             artifacts/release-contract/runner-release-manifest-source.json
+            artifacts/release-contract/runner-ga-handoff-source.json
             artifacts/release-contract/llmup-image-source.json
             artifacts/release-contract/afscp-image-source.json
             artifacts/release-contract/asbcp-final-manifest-source.json

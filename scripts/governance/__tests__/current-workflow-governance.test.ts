@@ -65,7 +65,7 @@ const HUMAN_ENTRYPOINT_COMMANDS = [
 const DEPLOY_TEMPLATE_PACKAGE_INTERNAL_COMMAND =
   'npm run release:deploy-template-package -- --package-uri <remote-artifact-uri> --git-sha <git-sha> --source-git-sha <source-git-sha> --output-dir <artifact-dir> --ci-workflow-name <workflow-name> --ci-run-id <ci-run-id> --ci-run-attempt <ci-run-attempt> --ci-job <ci-job> --generated-at <generated-at-iso> --generator-command <generator-command> --generator-version <generator-version> --attestation none';
 const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
-  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --llmup-source-gate <llmup-source-gate.json> --afscp-source-gate <afscp-source-gate.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>';
+  'npm run release:contract:ci-artifact -- --input <release-contract-input.json> --output-dir <artifact-dir> --runner-manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --runner-remote-manifest <downloaded-runner-release-manifest.json> --runner-ga-handoff <downloaded-runner-ga-handoff-report.json> --runner-run-view <runner-run-view.json> --runner-run-api <runner-run-api.json> --runner-artifacts-api <runner-artifacts-api.json> --llmup-source-gate <llmup-source-gate.json> --afscp-source-gate <afscp-source-gate.json> --asbcp-final-manifest <downloaded-asbcp-final-manifest.json> --asbcp-release-api <asbcp-release-api.json> --asbcp-asset-api <asbcp-asset-api.json>';
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 const RUNNER_RELEASE_MANIFEST_PATH =
   'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json';
@@ -1549,6 +1549,7 @@ describe('current workflow governance', () => {
       'artifacts/release-contract/deploy-template-package.json',
       'artifacts/release-contract/agentsmith-deploy-template-package.tgz',
       'artifacts/release-contract/runner-release-manifest-source.json',
+      'artifacts/release-contract/runner-ga-handoff-source.json',
       'artifacts/release-contract/llmup-image-source.json',
       'artifacts/release-contract/afscp-image-source.json',
       'artifacts/release-contract/asbcp-final-manifest-source.json',
@@ -1575,6 +1576,7 @@ describe('current workflow governance', () => {
     expect(runnerSourceGateRun).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
     expect(runnerSourceGateRun).toContain('runner_repo="agentsmith-project/agentsmith-runner"');
     expect(runnerSourceGateRun).toContain('runner_remote_download_dir="${runner_gate_dir}/artifact-download"');
+    expect(runnerSourceGateRun).toContain('runner_handoff_download_dir="${runner_gate_dir}/handoff-download"');
     expect(runnerSourceGateRun).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
     expect(runnerSourceGateRun).toContain('runner-manifest-source-gate');
     expect(runnerSourceGateRun).toContain('manifest.artifact_provenance.run_id');
@@ -1588,10 +1590,15 @@ describe('current workflow governance', () => {
     );
     expect(runnerSourceGateRun).toContain('gh run download "${runner_run_id}"');
     expect(runnerSourceGateRun).toContain('--name "${runner_artifact_name}"');
+    expect(runnerSourceGateRun).toContain('--name "runner-ga-handoff"');
     expect(runnerSourceGateRun).toContain('RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR');
+    expect(runnerSourceGateRun).toContain('RUNNER_GA_HANDOFF_DOWNLOAD_DIR');
     expect(runnerSourceGateRun).toContain('agentsmith.runner-release-manifest/v1');
+    expect(runnerSourceGateRun).toContain('agentsmith.runner-ga-handoff-report/v1');
     expect(runnerSourceGateRun).toContain('expected exactly one runner release manifest JSON');
+    expect(runnerSourceGateRun).toContain('expected exactly one runner GA handoff report JSON');
     expect(runnerSourceGateRun).toContain('remote-manifest-path.txt');
+    expect(runnerSourceGateRun).toContain('handoff-report-path.txt');
     expect(asbcpSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
     expect(asbcpSourceGateRun).toContain('asbcp_lock_path="infra/deploy/shared/asbcp-image.lock"');
     expect(asbcpSourceGateRun).toContain('asbcp_repo="agentsmith-project/agentsmith-sandbox-control-plane"');
@@ -1698,6 +1705,9 @@ describe('current workflow governance', () => {
       `RUNNER_RELEASE_MANIFEST_REMOTE_PATH="$(cat "${RUNNER_REMOTE_MANIFEST_PATH_FILE}")"`,
     );
     expect(runCommands).toContain(
+      'RUNNER_GA_HANDOFF_REPORT_PATH="$(cat "artifacts/release-contract/runner-manifest-source-gate/handoff-report-path.txt")"',
+    );
+    expect(runCommands).toContain(
       'RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH="artifacts/release-contract/runner-manifest-source-gate/run-view.json"',
     );
     expect(runCommands).toContain(
@@ -1725,6 +1735,7 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/deploy-template-package.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/agentsmith-deploy-template-package.tgz"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-release-manifest-source.json"');
+    expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/runner-ga-handoff-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/llmup-image-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/afscp-image-source.json"');
     expect(runCommands).toContain('rm -f "${RELEASE_CONTRACT_OUTPUT_DIR}/asbcp-final-manifest-source.json"');
@@ -1734,6 +1745,7 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('test -f "${RELEASE_CONTRACT_DEPLOY_TEMPLATE_TGZ_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
+    expect(runCommands).toContain('test -f "${RUNNER_GA_HANDOFF_REPORT_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
     expect(runCommands).toContain('test -f "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');
@@ -1745,11 +1757,13 @@ describe('current workflow governance', () => {
     expect(runCommands).toContain('sha256sum "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runCommands).toContain('release-contract-input-source.json');
     expect(runCommands).toContain('runner-release-manifest-source.json');
+    expect(runCommands).toContain('runner-ga-handoff-source.json');
     expect(runCommands).toContain('llmup-image-source.json');
     expect(runCommands).toContain('afscp-image-source.json');
     expect(runCommands).toContain('asbcp-final-manifest-source.json');
     expect(runCommands).toContain('--runner-manifest "${RUNNER_RELEASE_MANIFEST_PATH}"');
     expect(runCommands).toContain('--runner-remote-manifest "${RUNNER_RELEASE_MANIFEST_REMOTE_PATH}"');
+    expect(runCommands).toContain('--runner-ga-handoff "${RUNNER_GA_HANDOFF_REPORT_PATH}"');
     expect(runCommands).toContain('--runner-run-view "${RUNNER_RELEASE_MANIFEST_RUN_VIEW_PATH}"');
     expect(runCommands).toContain('--runner-run-api "${RUNNER_RELEASE_MANIFEST_RUN_API_PATH}"');
     expect(runCommands).toContain('--runner-artifacts-api "${RUNNER_RELEASE_MANIFEST_ARTIFACTS_API_PATH}"');

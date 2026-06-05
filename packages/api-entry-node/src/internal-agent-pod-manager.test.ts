@@ -655,6 +655,46 @@ describe('internal-agent-pod-manager', () => {
             status,
           }),
         ],
+        api_trace: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'get_pod_status',
+            outcome: 'success',
+            workload_id: 'task_1',
+            request_id: 'asbcp_req_status_before_create',
+            phase: 'offline',
+          }),
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            outcome: 'error',
+            workload_id: 'task_1',
+            request_id: `asbcp_req_create_${status}`,
+            status_code: status,
+            error_code: code,
+          }),
+        ]),
+        pod_manager_summary: expect.objectContaining({
+          workload_id: 'task_1',
+          operations: expect.arrayContaining(['readyz', 'get_pod_status', 'create_or_ensure_pod']),
+          request_ids: expect.arrayContaining([
+            'asbcp_req_status_before_create',
+            `asbcp_req_create_${status}`,
+          ]),
+          latest_operation: 'create_or_ensure_pod',
+          latest_outcome: 'error',
+          latest_phase: 'offline',
+          latest_status_code: status,
+          latest_error_code: code,
+        }),
+        asbcp_call_summaries: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            outcome: 'error',
+            workload_id: 'task_1',
+            request_id: `asbcp_req_create_${status}`,
+            status_code: status,
+            error_code: code,
+          }),
+        ]),
       },
     });
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);

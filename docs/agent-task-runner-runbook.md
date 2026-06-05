@@ -63,7 +63,16 @@ Local/manual profiles that exercise the deployment default managed runner must p
 
 这里的 runtime pending/readiness 指 Agent task 可执行环境、Files 读投影、AFSCP workspace binding 在进入可读/可执行状态前的后台收敛过程；它是工程收口主题，不按单个偶发 bug 处理。
 
-Convergence rules:
+Canonical convergence matrix:
+
+| Surface | `pending` | `releasing` | `offline` | `not_found` |
+| --- | --- | --- | --- | --- |
+| Files | Return typed `file_library_list_pending`, continue runtime-access release convergence, and recheck without reading a stale projection. | Wait for workspace binding release convergence before creating a read export; keep the caller on typed pending while release is non-terminal. | Treat as no active writer for Files read export and use only the Files read/export path; do not create an executable connector. | Treat as no active writer for Files read export; do not synthesize an executable connector. |
+| Agent Task sandbox | Continue bounded ASBCP status checks until `Running`, `Failed`, or timeout. | Wait for workload release or surface a typed release-incomplete error; do not start a second task HOME holder. | Call ASBCP create-or-ensure for the workload, then continue status checks until `Running`, `Failed`, or timeout. | Call ASBCP create-or-ensure for the workload, then continue status checks until `Running`, `Failed`, or timeout. |
+| AFSCP workspace binding | Return typed runtime readiness pending and recheck through the workspace binding owner before Files read export proceeds. | Continue release convergence through the workspace binding owner until terminal `released`, `revoked`, `expired`, or `deleted`. | Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path. | Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path. |
+| Read export | Return typed pending, trigger or continue runtime-access release, and keep the pending read export warm for the caller's next poll. | Wait for runtime release fence or export invalidation, and avoid revoke/create loops while convergence is non-terminal. | Create or reuse the read export only after no active writer is observed. | Create a fresh read export if runtime access is clean; otherwise return typed pending. |
+
+Additional convergence rules:
 - Agent Task sandbox `offline` / `not_found`: call ASBCP create-or-ensure for the workload, then continue status checks until `Running`, `Failed`, or timeout.
 - Agent Task sandbox `pending`: keep polling bounded readiness/status checks until `Running`, `Failed`, or timeout; do not treat the first pending status as terminal failure.
 - Agent Task sandbox `releasing`: wait for workload release or surface a typed release-incomplete error; do not start a second conflicting task HOME holder.

@@ -872,6 +872,73 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
   });
 
   const podManager = diagnostic.pod_manager ?? diagnostic.podManager;
+  const apiTrace = Array.isArray(diagnostic.api_trace)
+    ? diagnostic.api_trace
+    : (Array.isArray(podManager?.api_trace) ? podManager.api_trace : []);
+  for (const entry of apiTrace) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    addSignal(signals, seen, {
+      source: 'api',
+      source_log: sourceLog,
+      line_number: lineNumber,
+      call: entry.operation,
+      outcome: entry.outcome,
+      request_id: entry.request_id ?? entry.requestId,
+      workload_id: entry.workload_id ?? entry.workloadId ?? podManager?.workload_id ?? podManager?.workloadId ?? diagnostic.workload_id ?? diagnostic.workloadId,
+      phase: entry.phase,
+      status: typeof entry.status === 'string' ? entry.status : undefined,
+      status_code: typeof entry.status_code === 'number' ? entry.status_code : (typeof entry.statusCode === 'number' ? entry.statusCode : (typeof entry.status === 'number' ? entry.status : undefined)),
+      http_status: entry.http_status ?? entry.httpStatus,
+      error_code: entry.error_code ?? entry.errorCode ?? entry.code,
+      asbcp_code: entry.asbcp_code ?? entry.asbcpCode,
+      retryable: entry.retryable,
+    });
+  }
+
+  const podManagerSummary = podManager?.pod_manager_summary ?? podManager?.podManagerSummary;
+  if (podManagerSummary && typeof podManagerSummary === 'object') {
+    addSignal(signals, seen, {
+      source: 'pod_manager',
+      source_log: sourceLog,
+      line_number: lineNumber,
+      call: podManagerSummary.latest_operation ?? podManagerSummary.latestOperation,
+      outcome: podManagerSummary.latest_outcome ?? podManagerSummary.latestOutcome,
+      workload_id: podManagerSummary.workload_id ?? podManagerSummary.workloadId ?? podManager?.workload_id ?? podManager?.workloadId ?? diagnostic.workload_id ?? diagnostic.workloadId,
+      phase: podManagerSummary.latest_phase ?? podManagerSummary.latestPhase,
+      status_code: podManagerSummary.latest_status_code ?? podManagerSummary.latestStatusCode,
+      http_status: podManagerSummary.latest_http_status ?? podManagerSummary.latestHttpStatus,
+      error_code: podManagerSummary.latest_error_code ?? podManagerSummary.latestErrorCode,
+      asbcp_code: podManagerSummary.latest_asbcp_code ?? podManagerSummary.latestAsbcpCode,
+    });
+  }
+
+  const asbcpCallSummaries = Array.isArray(podManager?.asbcp_call_summaries)
+    ? podManager.asbcp_call_summaries
+    : (Array.isArray(podManager?.asbcpCallSummaries) ? podManager.asbcpCallSummaries : []);
+  for (const entry of asbcpCallSummaries) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    addSignal(signals, seen, {
+      source: 'asbcp_create_status',
+      source_log: sourceLog,
+      line_number: lineNumber,
+      call: entry.operation,
+      outcome: entry.outcome,
+      request_id: entry.request_id ?? entry.requestId,
+      workload_id: entry.workload_id ?? entry.workloadId ?? podManager?.workload_id ?? podManager?.workloadId ?? diagnostic.workload_id ?? diagnostic.workloadId,
+      phase: entry.phase,
+      status: typeof entry.status === 'string' ? entry.status : undefined,
+      status_code: typeof entry.status_code === 'number' ? entry.status_code : (typeof entry.statusCode === 'number' ? entry.statusCode : (typeof entry.status === 'number' ? entry.status : undefined)),
+      http_status: entry.http_status ?? entry.httpStatus,
+      error_code: entry.error_code ?? entry.errorCode ?? entry.code,
+      asbcp_code: entry.asbcp_code ?? entry.asbcpCode,
+      retryable: entry.retryable,
+    });
+  }
+
   const steps = Array.isArray(podManager?.steps) ? podManager.steps : [];
   for (const step of steps) {
     if (!step || typeof step !== 'object') {

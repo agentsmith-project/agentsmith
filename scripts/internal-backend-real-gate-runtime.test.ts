@@ -468,7 +468,7 @@ mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
 printf 'API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" >> "\${INTERNAL_REAL_DIR}/afscp-api.log"
 cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
-[files] runtime_pending_readiness_failure {"event":"runtime_pending_readiness_failure","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_runtime","file_library_id":"flib_runtime","task_id":"task_runtime","workload_id":"workload-runtime-1","request_id":"release:begin:req-runtime-json","operation":"delete_pod","error_code":"AGENT_SANDBOX_UNAVAILABLE","mapped_error_code":"FILE_LIBRARY_OPERATION_FAILED","mapped_message":"file_library_operation_failed","status":502,"retryable":true,"pod_manager":{"theme":"runtime_pending_readiness","workspaceId":"ws_default","projectId":"proj_runtime","workloadId":"workload-runtime-1","steps":[{"operation":"delete_pod","outcome":"error","workloadId":"workload-runtime-1","status":502,"requestId":"req-runtime-json-step","code":"AGENT_SANDBOX_UNAVAILABLE","asbcpCode":"dependency_failure","retryable":true,"message":"asbcp_error: delete_pod 502"}]}}}
+[files] runtime_pending_readiness_failure {"event":"runtime_pending_readiness_failure","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_runtime","file_library_id":"flib_runtime","task_id":"task_runtime","workload_id":"workload-runtime-1","request_id":"release:begin:req-runtime-json","operation":"delete_pod","error_code":"AGENT_SANDBOX_UNAVAILABLE","mapped_error_code":"FILE_LIBRARY_OPERATION_FAILED","mapped_message":"file_library_operation_failed","status":502,"retryable":true,"pod_manager":{"theme":"runtime_pending_readiness","workspaceId":"ws_default","projectId":"proj_runtime","workloadId":"workload-runtime-1","api_trace":[{"operation":"delete_pod","outcome":"error","workload_id":"workload-runtime-1","request_id":"req-runtime-json-api-trace","phase":"pending","status_code":502,"error_code":"AGENT_SANDBOX_UNAVAILABLE","asbcp_code":"dependency_failure","retryable":true}],"pod_manager_summary":{"workload_id":"workload-runtime-1","operations":["delete_pod"],"request_ids":["req-runtime-json-step"],"latest_operation":"delete_pod","latest_outcome":"error","latest_phase":"pending","latest_status_code":502,"latest_error_code":"AGENT_SANDBOX_UNAVAILABLE","latest_asbcp_code":"dependency_failure"},"asbcp_call_summaries":[{"operation":"delete_pod","outcome":"error","workload_id":"workload-runtime-1","request_id":"req-runtime-json-asbcp-summary","phase":"pending","status_code":502,"error_code":"AGENT_SANDBOX_UNAVAILABLE","asbcp_code":"dependency_failure","retryable":true}],"steps":[{"operation":"delete_pod","outcome":"error","workloadId":"workload-runtime-1","status":502,"requestId":"req-runtime-json-step","code":"AGENT_SANDBOX_UNAVAILABLE","asbcpCode":"dependency_failure","retryable":true,"message":"asbcp_error: delete_pod 502"}]}}}
 asbcp_workload_status http_status=200 request_id=req-runtime-status workload_id=workload-runtime-1 status=offline phase=offline error_code=INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING
 LOG
 printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
@@ -1820,6 +1820,37 @@ describe('internal backend-real gate runtime contract', () => {
         call: 'delete_pod',
         request_id: 'req-runtime-json-step',
         workload_id: 'workload-runtime-1',
+        status_code: '502',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        asbcp_code: 'dependency_failure',
+        retryable: 'true',
+      }),
+      expect.objectContaining({
+        source: 'api',
+        call: 'delete_pod',
+        request_id: 'req-runtime-json-api-trace',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
+        status_code: '502',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        asbcp_code: 'dependency_failure',
+        retryable: 'true',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'delete_pod',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
+        status_code: '502',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        asbcp_code: 'dependency_failure',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        call: 'delete_pod',
+        request_id: 'req-runtime-json-asbcp-summary',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
         status_code: '502',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
         asbcp_code: 'dependency_failure',

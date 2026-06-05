@@ -146,6 +146,32 @@ interface SandboxRuntimeDiagnosticStep {
   message?: string;
 }
 
+interface SandboxRuntimeApiTraceEntry {
+  operation: string;
+  outcome: SandboxRuntimeDiagnosticOutcome;
+  workload_id: string;
+  request_id?: string;
+  phase?: string;
+  status_code?: number;
+  http_status?: number;
+  error_code?: string;
+  asbcp_code?: string;
+  retryable?: boolean;
+}
+
+interface SandboxRuntimePodManagerSummary {
+  workload_id: string;
+  operations: string[];
+  request_ids: string[];
+  latest_operation?: string;
+  latest_outcome?: SandboxRuntimeDiagnosticOutcome;
+  latest_phase?: string;
+  latest_status_code?: number;
+  latest_http_status?: number;
+  latest_error_code?: string;
+  latest_asbcp_code?: string;
+}
+
 interface SandboxRuntimeDiagnostics {
   theme: 'runtime_pending_readiness';
   workspaceId: string;
@@ -160,6 +186,9 @@ interface SandboxRuntimeDiagnostics {
     failed: 'terminal_error';
   };
   steps: SandboxRuntimeDiagnosticStep[];
+  api_trace: SandboxRuntimeApiTraceEntry[];
+  pod_manager_summary: SandboxRuntimePodManagerSummary;
+  asbcp_call_summaries: SandboxRuntimeApiTraceEntry[];
 }
 
 interface RunnerHealthDiagnostic {
@@ -421,6 +450,63 @@ function buildSandboxRuntimeErrorDiagnosticStep(input: {
   };
 }
 
+function compactUniqueStrings(values: readonly (string | undefined)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0)));
+}
+
+function stepErrorCode(step: SandboxRuntimeDiagnosticStep): string | undefined {
+  return step.code ?? step.asbcpCode;
+}
+
+function buildSandboxRuntimeApiTraceEntry(
+  step: SandboxRuntimeDiagnosticStep,
+  workloadId: string,
+): SandboxRuntimeApiTraceEntry {
+  return {
+    operation: step.operation,
+    outcome: step.outcome,
+    workload_id: step.workloadId ?? workloadId,
+    ...(step.requestId ? { request_id: step.requestId } : {}),
+    ...(step.phase ? { phase: step.phase } : {}),
+    ...(step.status !== undefined ? { status_code: step.status } : {}),
+    ...(step.httpStatus !== undefined ? { http_status: step.httpStatus } : {}),
+    ...(stepErrorCode(step) ? { error_code: stepErrorCode(step) } : {}),
+    ...(step.asbcpCode ? { asbcp_code: step.asbcpCode } : {}),
+    ...(step.retryable !== undefined ? { retryable: step.retryable } : {}),
+  };
+}
+
+function buildSandboxRuntimeApiTrace(
+  steps: readonly SandboxRuntimeDiagnosticStep[],
+  workloadId: string,
+): SandboxRuntimeApiTraceEntry[] {
+  return steps.map((step) => buildSandboxRuntimeApiTraceEntry(step, workloadId));
+}
+
+function buildSandboxRuntimePodManagerSummary(input: {
+  steps: readonly SandboxRuntimeDiagnosticStep[];
+  workloadId: string;
+}): SandboxRuntimePodManagerSummary {
+  const latestStep = input.steps.at(-1);
+  const latestPhase = [...input.steps].reverse().find((step) => step.phase)?.phase;
+  const latestStatusCode = [...input.steps].reverse().find((step) => step.status !== undefined)?.status;
+  const latestHttpStatus = [...input.steps].reverse().find((step) => step.httpStatus !== undefined)?.httpStatus;
+  const latestErrorStep = [...input.steps].reverse().find((step) => stepErrorCode(step));
+  return {
+    workload_id: input.workloadId,
+    operations: compactUniqueStrings(input.steps.map((step) => step.operation)),
+    request_ids: compactUniqueStrings(input.steps.map((step) => step.requestId)),
+    ...(latestStep ? { latest_operation: latestStep.operation, latest_outcome: latestStep.outcome } : {}),
+    ...(latestPhase ? { latest_phase: latestPhase } : {}),
+    ...(latestStatusCode !== undefined ? { latest_status_code: latestStatusCode } : {}),
+    ...(latestHttpStatus !== undefined ? { latest_http_status: latestHttpStatus } : {}),
+    ...(latestErrorStep && stepErrorCode(latestErrorStep)
+      ? { latest_error_code: stepErrorCode(latestErrorStep) }
+      : {}),
+    ...(latestErrorStep?.asbcpCode ? { latest_asbcp_code: latestErrorStep.asbcpCode } : {}),
+  };
+}
+
 function buildSandboxRuntimeDiagnostics(input: {
   workspaceId: string;
   projectId: string;
@@ -428,6 +514,8 @@ function buildSandboxRuntimeDiagnostics(input: {
   sessionId?: string;
   steps: SandboxRuntimeDiagnosticStep[];
 }): SandboxRuntimeDiagnostics {
+  const steps = input.steps.slice(-10);
+  const apiTrace = buildSandboxRuntimeApiTrace(steps, input.workloadId);
   return {
     theme: 'runtime_pending_readiness',
     workspaceId: input.workspaceId,
@@ -441,7 +529,13 @@ function buildSandboxRuntimeDiagnostics(input: {
       running: 'verify_runner_session',
       failed: 'terminal_error',
     },
-    steps: input.steps.slice(-10),
+    steps,
+    api_trace: apiTrace,
+    pod_manager_summary: buildSandboxRuntimePodManagerSummary({
+      steps,
+      workloadId: input.workloadId,
+    }),
+    asbcp_call_summaries: apiTrace,
   };
 }
 

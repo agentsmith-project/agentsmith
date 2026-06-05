@@ -522,11 +522,18 @@ async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId
       return;
     }
     await page.reload({ waitUntil: 'load' });
-    if (await page.getByRole('heading', { name: /task not found/i }).isVisible().catch(() => false)) {
+    const notFoundHeading = page.getByRole('heading', { name: /task not found/i });
+    const deleteButton = page.getByRole('button', { name: /delete task|^delete$/i });
+    await Promise.race([
+      page.waitForURL(listUrl, { timeout: 30_000 }).catch(() => undefined),
+      notFoundHeading.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined),
+      deleteButton.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined),
+    ]);
+    if (listUrl.test(page.url()) || await notFoundHeading.isVisible().catch(() => false)) {
       await gotoWithRetry(page, listPath);
       return;
     }
-    await expect(page.getByRole('button', { name: /delete task|^delete$/i })).toBeVisible({ timeout: 30_000 });
+    await expect(deleteButton).toBeVisible({ timeout: 1_000 });
   }
   await page.waitForURL(listUrl, { timeout: 1 });
 }

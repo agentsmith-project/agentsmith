@@ -149,6 +149,9 @@ describe('release story consumption guards', () => {
     expect(deleteBody).toContain("conflict.waitFor({ state: 'visible'");
     expect(deleteBody).toContain("await page.reload({ waitUntil: 'load' })");
     expect(deleteBody).toContain('/task not found/i');
+    expect(deleteBody).toContain('notFoundHeading.waitFor');
+    expect(deleteBody).toContain('deleteButton.waitFor');
+    expect(deleteBody).toContain('page.waitForURL(listUrl');
     expect(deleteBody).toContain('await gotoWithRetry(page, listPath)');
     expect(deleteBody).toContain('await page.waitForURL(listUrl');
   });

@@ -14,6 +14,7 @@ import {
   POST_DEPLOY_PRODUCT_SMOKE_PRODUCER,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME,
   POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
+  PRODUCT_FLOWS_AGGREGATE_COMMAND,
   PRODUCT_FLOWS_AGGREGATE_PRODUCER,
   PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
   runPostDeployProductSmokeReportProducer,
@@ -136,7 +137,7 @@ function aggregateWithFlows(
     schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
     producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
     status: 'passed',
-    command: 'npm run test:unified-deploy:product-flows',
+    command: PRODUCT_FLOWS_AGGREGATE_COMMAND,
     generated_at: '2026-05-07T00:00:00.000Z',
     source: {
       public_base_url: 'http://agentsmith.localtest.me:29180',
@@ -460,6 +461,21 @@ describe('post-deploy product smoke report producer', () => {
       productFlowsPath: aggregatePath,
       outputDir: join(root, 'out'),
     }))).rejects.toThrow(/producer must be unified-deploy-product-flows; release-kit producers are not accepted/u);
+  });
+
+  it('fails fast for focused diagnostic product-flow aggregates', async () => {
+    const root = tempDir('post-deploy-product-smoke-focused-aggregate-');
+    writeFocusedEvidenceFiles(root);
+    const aggregate = aggregateWithFlows();
+    aggregate.command = 'npm run test:unified-deploy:product-flows';
+    const aggregatePath = writeJson(root, 'product-flows-focused.json', aggregate);
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out'),
+    }))).rejects.toThrow(
+      /product_flows\.command must be npm run lane:unified-deploy:product-flows; focused diagnostic aggregates are not accepted/u,
+    );
   });
 
   it('fails when provider_neutral_endpoint source evidence lacks provider-neutral endpoint proof', async () => {

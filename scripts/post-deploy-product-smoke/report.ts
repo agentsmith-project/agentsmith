@@ -33,6 +33,8 @@ export const PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION =
   'agentsmith.unified-deploy.product-flows.aggregate/v1' as const;
 export const PRODUCT_FLOWS_AGGREGATE_PRODUCER =
   'unified-deploy-product-flows' as const;
+export const PRODUCT_FLOWS_AGGREGATE_COMMAND =
+  'npm run lane:unified-deploy:product-flows' as const;
 export const FOCUSED_PRODUCT_FLOW_EVIDENCE_SCHEMA_VERSION =
   'agentsmith.focused-product-flow.evidence/v1' as const;
 
@@ -81,7 +83,7 @@ export type PostDeployProductSmokeReport = {
     aggregate_schema_version: typeof PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION;
     aggregate_producer: typeof PRODUCT_FLOWS_AGGREGATE_PRODUCER;
     aggregate_generated_at?: string;
-    aggregate_command?: string;
+    aggregate_command: typeof PRODUCT_FLOWS_AGGREGATE_COMMAND;
   };
   release_contract: {
     path: string;
@@ -143,6 +145,11 @@ function requireExactString(
   }
   if (key === 'producer') {
     throw new Error(`${pathLabel}.${key} must be ${expected}; release-kit producers are not accepted.`);
+  }
+  if (pathLabel === 'product_flows' && key === 'command') {
+    throw new Error(
+      `${pathLabel}.${key} must be ${expected}; focused diagnostic aggregates are not accepted for post-deploy product smoke.`,
+    );
   }
   throw new Error(`${pathLabel}.${key} must be ${expected}.`);
 }
@@ -218,6 +225,12 @@ function validateAggregateEnvelope(aggregate: Record<string, unknown>): void {
     aggregate,
     'producer',
     PRODUCT_FLOWS_AGGREGATE_PRODUCER,
+    'product_flows',
+  );
+  requireExactString(
+    aggregate,
+    'command',
+    PRODUCT_FLOWS_AGGREGATE_COMMAND,
     'product_flows',
   );
   requireExactString(aggregate, 'status', 'passed', 'product_flows');
@@ -602,7 +615,6 @@ function buildReport(
   deploymentTarget: DeploymentTargetBinding | undefined,
 ): PostDeployProductSmokeReport {
   const aggregateGeneratedAt = stringValue(aggregate, 'generated_at');
-  const aggregateCommand = stringValue(aggregate, 'command');
 
   return {
     schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
@@ -617,7 +629,7 @@ function buildReport(
       aggregate_schema_version: PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
       aggregate_producer: PRODUCT_FLOWS_AGGREGATE_PRODUCER,
       ...(aggregateGeneratedAt ? { aggregate_generated_at: aggregateGeneratedAt } : {}),
-      ...(aggregateCommand ? { aggregate_command: aggregateCommand } : {}),
+      aggregate_command: PRODUCT_FLOWS_AGGREGATE_COMMAND,
     },
     release_contract: releaseContract,
     ...(deploymentTarget ? { deployment_target: deploymentTarget } : {}),

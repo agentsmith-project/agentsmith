@@ -91,7 +91,7 @@ KISS 边界：
 
 `install_substrates` 是 GA 的 blocking prerequisite。它必须先补齐最小 installer producer，再出现在 operator 主文档里。它只允许创建带 release-kit ownership label 的 namespace-scoped Kubernetes 资源：`Secret`、`ConfigMap`、`Service`、`Deployment`、`StatefulSet`、`Job`、`PVC`。不得创建 CRD、`ClusterRole`、`StorageClass`、Ingress controller、云资源、备份/恢复系统、HA/升级控制器或长期 substrate lifecycle manager。发现同名未归属资源必须 fail fast。外部 OIDC/Keycloak 不得被静默修改；如果 substrate pack 内含 Keycloak，只能初始化 kit-owned realm/client 并输出 secret refs。
 
-`install_substrates` 必须要求显式确认参数，例如 `--confirm-install-substrates <operator-run-id>`，并输出 `substrate-install-report.json`。Airgap 场景必须把 installer manifests、images、checksums、runbook 和 required tools 一起放进离线包。
+`install_substrates` 必须要求 `operator-inputs` 包内的显式安装确认，例如 `install_confirmation.confirmed=true`、`install_confirmation.operator_run_id` 和 `confirm_current_install_parameters=true` 或匹配的 `install_parameters_sha256`，并输出 `substrate-install-report.json`。Airgap 场景必须把 installer manifests、images、checksums、runbook 和 required tools 一起放进离线包。
 
 Team review 记录了一个可选裁剪项：若为了更快 GA 而放弃 substrate 安装，必须由产品明确改口为 “GA 不安装 substrates，只验证 kit-supplied substrate pack/truth”。在没有这个产品裁剪决定前，本计划按用户要求保留 `install_substrates`，同时把它严格限制为上述最小 namespace-scoped installer。
 

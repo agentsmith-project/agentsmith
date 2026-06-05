@@ -710,6 +710,104 @@ collect_afscp_child_evidence() {
   collect_afscp_child_log_tail "${evidence_dir}/afscp-read-export-probe-log-tail.txt" "AFSCP read-export probe" "${AFSCP_READ_EXPORT_PROBE_LOG:-${runtime_dir}/afscp-read-export-probe.log}"
 }
 
+collect_runtime_readiness_summary() {
+  local evidence_dir="$1"
+  local spec_state_file="${2:-}"
+  local output_file="${evidence_dir}/runtime-readiness-summary.txt"
+  local spec_runtime_dir=""
+  local pattern
+  local log_file
+  local -a candidates=()
+
+  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|request_id|workload_id|phase'
+  if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
+    candidates+=(
+      "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+      "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+      "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+      "${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+    )
+  fi
+  if [[ -n "${ASBCP_LOG:-}" ]]; then
+    candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+    spec_runtime_dir="$(dirname "${spec_state_file}")"
+    if [[ -d "${spec_runtime_dir}/integration" ]]; then
+      while IFS= read -r log_file; do
+        candidates+=("${log_file}")
+      done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 12)
+    fi
+  fi
+
+  {
+    printf 'theme=runtime_pending_readiness\n'
+    printf 'classification_hint=single AGENT_SANDBOX_UNAVAILABLE or AGENT_SANDBOX_RATE_LIMITED followed by a passing focused rerun is runtime_flake; repeated focused failures are stability_blocker\n'
+    printf 'convergence_rules=offline/not_found -> create_or_ensure_or_rebind; completed_release_fence -> same_task_owner_rebind; pending/releasing -> wait_and_recheck; failed -> stable_blocker after repeated gate evidence\n'
+    printf '\n===== log excerpts =====\n'
+    for log_file in "${candidates[@]}"; do
+      if [[ ! -f "${log_file}" ]]; then
+        continue
+      fi
+      printf '\n--- %s ---\n' "${log_file}"
+      if command -v rg >/dev/null 2>&1; then
+        rg -n --no-heading "${pattern}" "${log_file}" 2>/dev/null | tail -n 80 | redact_child_internal_evidence || true
+      else
+        grep -nE "${pattern}" "${log_file}" 2>/dev/null | tail -n 80 | redact_child_internal_evidence || true
+      fi
+    done
+    if [[ -f "${evidence_dir}/k8s-pod-status.txt" ]]; then
+      printf '\n===== k8s pod status =====\n'
+      cat "${evidence_dir}/k8s-pod-status.txt" | redact_child_internal_evidence
+    fi
+    if [[ -f "${evidence_dir}/k8s-events.txt" ]]; then
+      printf '\n===== k8s events tail =====\n'
+      tail -n 80 "${evidence_dir}/k8s-events.txt" | redact_child_internal_evidence
+    fi
+  } > "${output_file}" || true
+}
+
+runtime_readiness_flake_markers_present() {
+  local spec_state_file="${1:-}"
+  local spec_runtime_dir=""
+  local marker_pattern
+  local log_file
+  local -a candidates=()
+
+  marker_pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT|IDEMPOTENCY_CONFLICT|file_library_list_pending'
+  if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
+    candidates+=(
+      "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+      "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+      "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+      "${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+    )
+  fi
+  if [[ -n "${ASBCP_LOG:-}" ]]; then
+    candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+    spec_runtime_dir="$(dirname "${spec_state_file}")"
+    if [[ -d "${spec_runtime_dir}/integration" ]]; then
+      while IFS= read -r log_file; do
+        candidates+=("${log_file}")
+      done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 12)
+    fi
+  fi
+
+  for log_file in "${candidates[@]}"; do
+    if [[ ! -f "${log_file}" ]]; then
+      continue
+    fi
+    if command -v rg >/dev/null 2>&1; then
+      rg -q "${marker_pattern}" "${log_file}" 2>/dev/null && return 0
+    else
+      grep -qE "${marker_pattern}" "${log_file}" 2>/dev/null && return 0
+    fi
+  done
+  return 1
+}
+
 collect_child_internal_log_tails() {
   local evidence_dir="$1"
   local spec_state_file="${2:-}"
@@ -755,6 +853,59 @@ collect_child_internal_log_tails() {
   if [[ "${collected}" -eq 0 ]]; then
     printf 'No child internal log files were available for tail collection.\n' > "${output_file}"
   fi
+}
+
+collect_child_internal_runtime_flake_evidence() {
+  local stage="$1"
+  local spec_state_file="${2:-}"
+  local spec="${3:-}"
+  local label="${4:-}"
+  local spec_api_port="${5:-}"
+  local spec_web_port="${6:-}"
+  local safe_stage evidence_dir child_namespace child_asbcp_container_ref
+
+  runtime_readiness_flake_markers_present "${spec_state_file}" || return 0
+  safe_stage="$(child_internal_evidence_slug "${stage}")"
+  evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
+  mkdir -p "${evidence_dir}" 2>/dev/null || return 0
+  (
+    set +e
+    set +u
+    set +o pipefail
+    if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+      # shellcheck disable=SC1090
+      source "${spec_state_file}"
+    fi
+    child_namespace="${K8S_NAMESPACE:-${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}}"
+    child_asbcp_container_ref=""
+    if [[ -n "${INTERNAL_REAL_DIR:-}" && -f "${INTERNAL_REAL_DIR}/asbcp.container" ]]; then
+      child_asbcp_container_ref="$(tr -d '[:space:]' < "${INTERNAL_REAL_DIR}/asbcp.container" 2>/dev/null || true)"
+    fi
+    if [[ -z "${child_asbcp_container_ref}" && -n "${ASBCP_CONTAINER_NAME:-}" ]]; then
+      child_asbcp_container_ref="${ASBCP_CONTAINER_NAME}"
+    fi
+    {
+      printf 'stage=%s\n' "${stage}"
+      printf 'classification=runtime_flake\n'
+      printf 'outcome=focused_gate_passed_after_runtime_readiness_marker\n'
+      printf 'gate_mode=%s\n' "${GATE_MODE:-workspace}"
+      printf 'spec=%s\n' "${spec:-<unknown>}"
+      printf 'grep_label=%s\n' "${label:-<none>}"
+      printf 'state_file=%s\n' "${spec_state_file:-<none>}"
+      printf 'internal_real_dir=%s\n' "${INTERNAL_REAL_DIR:-<unknown>}"
+      printf 'evidence_dir=%s\n' "${evidence_dir}"
+      printf 'api_port=%s\n' "${spec_api_port:-<unknown>}"
+      printf 'web_port=%s\n' "${spec_web_port:-<unknown>}"
+      printf 'namespace=%s\n' "${child_namespace}"
+      printf 'asbcp_container_ref=%s\n' "${child_asbcp_container_ref:-<missing>}"
+      printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } > "${evidence_dir}/runtime-flake-summary.txt"
+    collect_child_internal_log_tails "${evidence_dir}" "${spec_state_file}"
+    collect_afscp_child_evidence "${evidence_dir}"
+    collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
+    collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
+  ) || true
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning" "${evidence_dir}/runtime-readiness-summary.txt"
 }
 
 collect_child_internal_failure_evidence() {
@@ -820,6 +971,7 @@ collect_child_internal_failure_evidence() {
       printf 'kubectl command is not available; pod status evidence was not collected.\n' > "${evidence_dir}/k8s-pod-status.txt"
       printf 'kubectl command is not available; event evidence was not collected.\n' > "${evidence_dir}/k8s-events.txt"
     fi
+    collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
   ) || true
   return 0
 }
@@ -1032,6 +1184,7 @@ run_internal_spec_grep() {
   spec_status=$?
   if [[ "${spec_status}" -eq 0 ]]; then
     gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}" "passed" "${spec}"
+    collect_child_internal_runtime_flake_evidence "${evidence_stage}" "${spec_state_file}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
   else
     record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"
   fi

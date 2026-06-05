@@ -25,6 +25,7 @@ import {
   createManagedAgentRunnerViaApi,
   createProjectInWorkspace,
   createTerminalSessionViaApi,
+  deleteTerminalSessionViaApi,
   expectTerminalSessionRunnerEvidenceViaApi,
   findPreparedTaskWorkspaceRootInRunnerLog,
   parseWorkloadPodSnapshot,
@@ -289,6 +290,15 @@ describe('integration-real-helpers', () => {
   });
 
   describe('terminal session API helper', () => {
+    it('waits on one terminal delete request instead of overlapping release retries', async () => {
+      const source = await readFile(path.resolve(process.cwd(), 'e2e/integration-real-helpers.ts'), 'utf8');
+
+      expect(source).toContain('const timeoutMs = args.timeoutMs ?? 420_000;');
+      expect(source).toContain('const retryIntervalsMs = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 45_000, 75_000];');
+      expect(source).toContain('timeout: Math.max(5_000, deadline - Date.now())');
+      expect(source).not.toContain('Math.min(30_000, Math.max(5_000, deadline - Date.now()))');
+    });
+
     const terminalSessionRecord = (
       overrides: Record<string, unknown> = {},
     ): Record<string, unknown> => ({
@@ -305,6 +315,73 @@ describe('integration-real-helpers', () => {
       cols: 120,
       rows: 40,
       ...overrides,
+    });
+
+    it('treats retryable release pending as runtime continuation after terminal close truth lands', async () => {
+      const deleteRequest = vi.fn().mockResolvedValue({
+        ok: () => false,
+        status: () => 409,
+        json: async () => ({
+          error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+          message: 'agent_task_internal_workload_release_pending',
+          task_id: 'task_1',
+          retryable: true,
+          release_diagnostic: {
+            code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+            operation: 'delete_workspace_binding',
+            status: 409,
+            retryable: false,
+          },
+        }),
+        text: async () => JSON.stringify({
+          error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+          message: 'agent_task_internal_workload_release_pending',
+          task_id: 'task_1',
+          retryable: true,
+          release_diagnostic: {
+            code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+            operation: 'delete_workspace_binding',
+            status: 409,
+            retryable: false,
+          },
+        }),
+      });
+      const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/terminal/sessions')) {
+          return okResponse({
+            total: 0,
+            items: [],
+          });
+        }
+        if (url.endsWith('/terminal/sessions/term_canonical')) {
+          return okResponse(terminalSessionRecord({
+            status: 'closed',
+            close_state: 'closed',
+            close_attempt_id: 'close_attempt_runtime_pending',
+            close_ack_status: 'closed',
+          }));
+        }
+        throw new Error(`unexpected_get:${url}`);
+      });
+      const page = {
+        evaluate: vi.fn().mockResolvedValue(JSON.stringify({ state: { token: 'mock_token' } })),
+        request: {
+          delete: deleteRequest,
+          get,
+        },
+        waitForTimeout: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Parameters<typeof deleteTerminalSessionViaApi>[0]['page'];
+
+      await expect(deleteTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        sessionId: 'term_canonical',
+        timeoutMs: 5_000,
+      })).resolves.toBeUndefined();
+      expect(deleteRequest).toHaveBeenCalledTimes(1);
+      expect(page.waitForTimeout).not.toHaveBeenCalled();
     });
 
     it('uses canonical terminal_session_id from create-session payloads', async () => {

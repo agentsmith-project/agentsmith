@@ -424,6 +424,7 @@ function runInternalSpecGrepEarlyFailureHarness(): {
   internalChildEvidenceExists: boolean;
   afscpApiLogTail: string;
   afscpRuntimeFingerprint: string;
+  runtimeReadinessSummary: string;
 } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-evidence-'));
@@ -519,6 +520,11 @@ exit 0
       'files_restore_continuation_spec',
       'afscp-runtime-fingerprint.txt',
     );
+    const runtimeReadinessSummaryPath = path.join(
+      uploadRoot,
+      'files_restore_continuation_spec',
+      'runtime-readiness-summary.txt',
+    );
 
     return {
       stdout: result.stdout ?? '',
@@ -530,6 +536,9 @@ exit 0
       afscpApiLogTail: existsSync(afscpApiLogTailPath) ? readFileSync(afscpApiLogTailPath, 'utf8') : '',
       afscpRuntimeFingerprint: existsSync(afscpRuntimeFingerprintPath)
         ? readFileSync(afscpRuntimeFingerprintPath, 'utf8')
+        : '',
+      runtimeReadinessSummary: existsSync(runtimeReadinessSummaryPath)
+        ? readFileSync(runtimeReadinessSummaryPath, 'utf8')
         : '',
     };
   } finally {
@@ -1390,6 +1399,11 @@ describe('internal backend-real gate runtime contract', () => {
     const logTailCollector = sectionBetween(
       agentTaskGate,
       '\ncollect_child_internal_log_tails() {',
+      '\n}\n\ncollect_child_internal_runtime_flake_evidence()',
+    );
+    const runtimeFlakeCollector = sectionBetween(
+      agentTaskGate,
+      '\ncollect_child_internal_runtime_flake_evidence() {',
       '\n}\n\ncollect_child_internal_failure_evidence()',
     );
     const evidenceCommand = sectionBetween(
@@ -1432,6 +1446,11 @@ describe('internal backend-real gate runtime contract', () => {
     expect(collector).toContain('api_port=%s');
     expect(collector).toContain('web_port=%s');
     expect(collector).toContain('collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"');
+    expect(runtimeFlakeCollector).toContain('classification=runtime_flake');
+    expect(runtimeFlakeCollector).toContain('focused_gate_passed_after_runtime_readiness_marker');
+    expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
+    expect(runtimeFlakeCollector).toContain('collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"');
+    expect(runtimeFlakeCollector).toContain('gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning"');
     expect(collector).toContain('kubectl --request-timeout=15s get pods -n "${child_namespace}" -o wide');
     expect(collector).not.toContain('describe pods');
     expect(collector).not.toContain('k8s-pods-describe.txt');
@@ -1478,6 +1497,9 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(grepFunction).toContain(
       'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"',
+    );
+    expect(grepFunction).toContain(
+      'collect_child_internal_runtime_flake_evidence "${evidence_stage}" "${spec_state_file}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true',
     );
     expect(reclaimFunction).toContain(
       'record_child_internal_spec_failure "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${reclaim_status}" "${reclaim_state_file}"',
@@ -1541,6 +1563,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/summary.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-api-log-tail.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-summary.txt');
     expect(result.summary).toContain('stage=files_restore_continuation_spec');
     expect(result.summary).toContain('gate_mode=files-restore-continue');
     expect(result.summary).toContain('spec=e2e/integration-files-user-stories.spec.ts');
@@ -1558,6 +1581,12 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.afscpRuntimeFingerprint).toContain('afscp_export_gateway_port=30091');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_default_volume_id=vol_internal_probe');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_api_container=agentsmith-afscp-local-30090-api');
+    expect(result.runtimeReadinessSummary).toContain('theme=runtime_pending_readiness');
+    expect(result.runtimeReadinessSummary).toContain('classification_hint=');
+    expect(result.runtimeReadinessSummary).toContain('AGENT_SANDBOX_RATE_LIMITED');
+    expect(result.runtimeReadinessSummary).toContain('completed_release_fence -> same_task_owner_rebind');
+    expect(result.runtimeReadinessSummary).toContain('api ready token=[REDACTED]');
+    expect(result.runtimeReadinessSummary).not.toContain('known-product-token');
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

@@ -54,6 +54,8 @@ import {
   notebookTasksCollection,
 } from './notebook-task/task-store.js';
 import {
+  buildRuntimeAccessReleaseBeginCorrelationId,
+  buildRuntimeAccessReleaseCompleteCorrelationId,
   JsonDocTaskFileLibraryBindingRepo,
   JsonDocTaskWorkspaceHolderRepo,
   __resetTaskFileLibraryBindingsForTests,
@@ -10415,6 +10417,137 @@ describe('task-route-handler workspace access', () => {
       });
       expect(createdSession.terminal_session_id).toMatch(/^term_/);
       expect(createdSession.ws_url).toContain('terminal_session_id=');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('creates a managed terminal after Files completed runtime release convergence for the same task', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const deps = createDefaultNodeApiDeps();
+    const ensureWorkspaceBinding = vi.fn(async () => {
+      throw new Error('workspace_binding_should_wait_for_terminal_runtime_dispatch');
+    });
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding,
+    } as never;
+
+    try {
+      const { runner } = await seedDefaultManagedRunner(deps);
+      const now = new Date().toISOString();
+      await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(createFileLibraryCatalogFixture({
+        id: 'lib_terminal_runtime_rebind',
+        name: 'Terminal Runtime Rebind Workspace',
+        now,
+      }));
+      const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+      const acquired = await bindingRepo.acquire({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: 'lib_terminal_runtime_rebind',
+        taskId: 'task_terminal_runtime_rebind',
+        taskTitle: 'Terminal runtime rebind task',
+        taskStatus: 'active',
+        ownerUserId: 'user_1',
+        runtimeWritableAffordance: 'task_internal_home',
+        correlationId: 'req_terminal_runtime_rebind_acquire',
+        now,
+      });
+      if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_runtime_rebind', {
+        id: 'task_terminal_runtime_rebind',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Terminal runtime rebind task',
+        bound_runner_id: runner.id,
+        bound_runner_kind: 'managed',
+        runner_binding_source: 'default_managed',
+        bound_at: now,
+        bound_by_user_id: 'user_1',
+        task_home_segment: 'flibhome_terminal_runtime_rebind',
+        workspace_file_library_id: 'lib_terminal_runtime_rebind',
+        workspace_file_library_name: 'Terminal Runtime Rebind Workspace',
+        file_library_binding_generation: acquired.binding.bindingGeneration,
+        runtime_writable_affordance: 'task_internal_home',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+      const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+        requestId: 'req_terminal_runtime_rebind_release',
+      });
+      const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+      await expect(bindingRepo.beginRuntimeAccessRelease({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: 'lib_terminal_runtime_rebind',
+        taskId: 'task_terminal_runtime_rebind',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        correlationId: beginCorrelationId,
+        now,
+      })).resolves.toMatchObject({ ok: true });
+      await expect(bindingRepo.completeRuntimeAccessRelease({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: 'lib_terminal_runtime_rebind',
+        taskId: 'task_terminal_runtime_rebind',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        expectedCorrelationId: beginCorrelationId,
+        correlationId: completeCorrelationId,
+        now,
+      })).resolves.toMatchObject({ ok: true });
+
+      const createSession = vi.spyOn(deps.notebookTerminalService, 'createSession');
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_terminal_runtime_rebind',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: { 'x-request-id': 'req_terminal_runtime_rebind_create' },
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_terminal_runtime_rebind/terminal/sessions',
+        } as never,
+        res: { setHeader: vi.fn() } as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn(async () => ({ cols: 96, rows: 28 })),
+      })).resolves.toBe(true);
+
+      expect(json.mock.calls[0]?.[1]).toBe(201);
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: runner.id,
+        runtimeDispatchContext: expect.objectContaining({
+          managedInternalAgent: expect.objectContaining({
+            workspaceFileLibraryId: 'lib_terminal_runtime_rebind',
+            taskHomeSegment: 'flibhome_terminal_runtime_rebind',
+          }),
+        }),
+      }));
+      expect(ensureWorkspaceBinding).not.toHaveBeenCalled();
+      await expect(bindingRepo.find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: 'lib_terminal_runtime_rebind',
+        now,
+      })).resolves.toMatchObject({
+        bindingState: 'bound',
+        correlationId: 'runtime_access_rebind:task_terminal_runtime_rebind',
+      });
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

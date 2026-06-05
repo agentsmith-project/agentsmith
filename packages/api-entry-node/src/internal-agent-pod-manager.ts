@@ -831,16 +831,28 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   }
 
   async releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void> {
+    const steps: SandboxRuntimeDiagnosticStep[] = [];
     for (let attempt = 0; ; attempt += 1) {
       try {
         await this.sandboxClient.deletePod(workspaceId, projectId, workloadId);
         return;
       } catch (error) {
+        pushSandboxRuntimeDiagnosticStep(steps, buildSandboxRuntimeErrorDiagnosticStep({
+          operation: 'delete_pod',
+          workloadId,
+          error,
+        }));
         if (
           !isTerminalWorkloadReleaseIncomplete(error)
           || attempt >= INTERNAL_AGENT_RELEASE_CONFIRM_RETRY_DELAYS_MS.length
         ) {
-          throw error;
+          throw attachSandboxRuntimeDiagnostics({
+            error,
+            workspaceId,
+            projectId,
+            workloadId,
+            steps,
+          });
         }
         await this.sleep(INTERNAL_AGENT_RELEASE_CONFIRM_RETRY_DELAYS_MS[attempt]!);
       }

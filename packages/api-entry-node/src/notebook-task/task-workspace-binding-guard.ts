@@ -5,6 +5,8 @@ import type { TaskRecord } from './task-models.js';
 import {
   findTaskFileLibraryBinding,
   hydrateTaskFileLibraryBindingsForProject,
+  isCompletedRuntimeAccessReleaseFenceCorrelationId,
+  JsonDocTaskFileLibraryBindingRepo,
   type TaskFileLibraryBinding,
 } from './task-file-library-bindings.js';
 
@@ -133,17 +135,42 @@ export async function resolveTaskWorkspaceBindingGuard(args: {
     projectId: args.task.project_id,
     fileLibraryId,
   });
+  let resolvedBinding = currentBinding;
   if (
-    !currentBinding
-    || currentBinding.bindingState !== 'bound'
-    || currentBinding.taskId !== args.task.id
+    currentBinding
+    && currentBinding.bindingState === 'releasing'
+    && isCompletedRuntimeAccessReleaseFenceCorrelationId(currentBinding.correlationId)
+    && currentBinding.taskId === args.task.id
+    && currentBinding.ownerUserId === args.actorUserId
+    && typeof args.task.file_library_binding_generation === 'number'
+    && currentBinding.bindingGeneration === args.task.file_library_binding_generation
+    && (
+      !args.task.runtime_writable_affordance
+      || currentBinding.runtimeWritableAffordance === args.task.runtime_writable_affordance
+    )
+  ) {
+    const resumed = await new JsonDocTaskFileLibraryBindingRepo(args.deps.docStore).resumeCompletedRuntimeAccessRelease({
+      workspaceId: args.task.workspace_id,
+      projectId: args.task.project_id,
+      fileLibraryId,
+      taskId: args.task.id,
+      bindingGeneration: currentBinding.bindingGeneration,
+      expectedCorrelationId: currentBinding.correlationId,
+      correlationId: `runtime_access_rebind:${args.task.id}`,
+    });
+    resolvedBinding = resumed.ok ? resumed.binding : resumed.binding;
+  }
+  if (
+    !resolvedBinding
+    || resolvedBinding.bindingState !== 'bound'
+    || resolvedBinding.taskId !== args.task.id
     || (
       typeof args.task.file_library_binding_generation === 'number'
-      && currentBinding.bindingGeneration !== args.task.file_library_binding_generation
+      && resolvedBinding.bindingGeneration !== args.task.file_library_binding_generation
     )
     || (
       args.task.runtime_writable_affordance
-      && currentBinding.runtimeWritableAffordance !== args.task.runtime_writable_affordance
+      && resolvedBinding.runtimeWritableAffordance !== args.task.runtime_writable_affordance
     )
   ) {
     throw new TaskWorkspaceBindingGuardError(
@@ -153,13 +180,13 @@ export async function resolveTaskWorkspaceBindingGuard(args: {
       {
         taskId: args.task.id,
         fileLibraryId,
-        bindingGeneration: currentBinding?.bindingGeneration,
+        bindingGeneration: resolvedBinding?.bindingGeneration,
       },
     );
   }
 
   if (
-    currentBinding.runtimeWritableAffordance === 'files_update'
+    resolvedBinding.runtimeWritableAffordance === 'files_update'
     && !(args.canUpdateProjectFiles ? await args.canUpdateProjectFiles() : false)
   ) {
     throw new TaskWorkspaceBindingGuardError(
@@ -173,6 +200,6 @@ export async function resolveTaskWorkspaceBindingGuard(args: {
   return {
     task: args.task,
     library,
-    binding: currentBinding,
+    binding: resolvedBinding,
   };
 }

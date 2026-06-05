@@ -212,13 +212,16 @@ function buildIdempotencyKey(input: {
   taskHomePath: string;
   operation: 'create' | 'revoke';
   mountBindingGeneration?: number;
+  mountBindingId?: string;
 }): string {
   const stableInput = `${input.workspaceId}:${input.projectId}:${input.fileLibraryId}:${input.taskHomePath}`;
   if (input.operation === 'create') {
     const generation = normalizeMountBindingGeneration(input.mountBindingGeneration, 1);
     return `workspace-mount-create:g${generation}:${stableDigest(`${stableInput}:mount-binding-generation:${generation}`)}`;
   }
-  return `workspace-mount-revoke:${stableDigest(stableInput)}`;
+  const generation = normalizeMountBindingGeneration(input.mountBindingGeneration, 1);
+  const mountBindingId = input.mountBindingId?.trim() || `g${generation}`;
+  return `workspace-mount-revoke:g${generation}:${stableDigest(`${stableInput}:mount-binding:${mountBindingId}`)}`;
 }
 
 function buildActor(actorUserId: string | undefined): AfscpActor {
@@ -665,6 +668,8 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
             fileLibraryId: input.fileLibraryId,
             taskHomePath: existing.task_home_path,
             operation: 'revoke',
+            mountBindingGeneration: existing.mount_binding_generation,
+            mountBindingId,
           }),
           actor: { type: 'system', id: 'agentsmith-managed-runner' },
         });

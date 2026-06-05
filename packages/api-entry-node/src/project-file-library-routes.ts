@@ -1485,6 +1485,136 @@ function isWorkspaceBindingActiveWorkloadError(error: unknown): boolean {
   return error.message.includes('workspace binding has active workloads');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readRecordString(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function readRecordNumber(record: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readRecordBoolean(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readNestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function buildRuntimeAccessReleaseFailureDiagnostic(input: {
+  error: unknown;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  task: TaskRecord | null;
+  requestId?: string | null;
+  mappedErrorCode: string;
+  mappedMessage: string;
+}): Record<string, unknown> {
+  const errorRecord = isRecord(input.error) ? input.error : {};
+  const metadata = readNestedRecord(errorRecord, 'metadata');
+  const afscpError = metadata ? readNestedRecord(metadata, 'afscp_error') : undefined;
+  const releaseDiagnostic = readNestedRecord(errorRecord, 'releaseDiagnostic')
+    ?? readNestedRecord(errorRecord, 'release_diagnostic');
+  const sandboxDiagnostics = readNestedRecord(errorRecord, 'sandboxDiagnostics')
+    ?? readNestedRecord(errorRecord, 'sandbox_diagnostics');
+  const directCode = readRecordString(errorRecord, 'code');
+  const afscpCode = afscpError ? readRecordString(afscpError, 'code') : undefined;
+  const releaseCode = releaseDiagnostic ? readRecordString(releaseDiagnostic, 'code') : undefined;
+  const directStatus = readRecordNumber(errorRecord, 'status', 'statusCode');
+  const afscpStatus = afscpError ? readRecordNumber(afscpError, 'status') : undefined;
+  const releaseStatus = releaseDiagnostic ? readRecordNumber(releaseDiagnostic, 'status') : undefined;
+  const directRetryable = readRecordBoolean(errorRecord, 'retryable');
+  const afscpRetryable = afscpError ? readRecordBoolean(afscpError, 'retryable') : undefined;
+  const releaseRetryable = releaseDiagnostic ? readRecordBoolean(releaseDiagnostic, 'retryable') : undefined;
+  const requestId = input.requestId
+    ?? readRecordString(errorRecord, 'requestId', 'request_id')
+    ?? (releaseDiagnostic ? readRecordString(releaseDiagnostic, 'requestId', 'request_id') : undefined)
+    ?? (afscpError ? readRecordString(afscpError, 'correlation_id') : undefined);
+  const operationId = readRecordString(errorRecord, 'operationId', 'operation_id')
+    ?? (afscpError ? readRecordString(afscpError, 'operation_id') : undefined);
+  const status = directStatus ?? releaseStatus ?? afscpStatus;
+  const retryable = directRetryable ?? releaseRetryable ?? afscpRetryable;
+  return {
+    theme: 'runtime_pending_readiness',
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    file_library_id: input.libraryId,
+    ...(input.task ? { task_id: input.task.id, workload_id: sanitizeWorkloadId(input.task.id) } : {}),
+    ...(requestId ? { request_id: requestId } : {}),
+    ...(operationId ? { operation_id: operationId } : {}),
+    operation: readRecordString(errorRecord, 'operation', 'sandboxOperation', 'sandbox_operation')
+      ?? (releaseDiagnostic ? readRecordString(releaseDiagnostic, 'operation') : undefined)
+      ?? 'runtime_access_release',
+    error_code: directCode ?? releaseCode ?? afscpCode ?? input.mappedErrorCode,
+    mapped_error_code: input.mappedErrorCode,
+    mapped_message: input.mappedMessage,
+    ...(status !== undefined ? { status } : {}),
+    ...(retryable !== undefined ? { retryable } : {}),
+    ...(afscpCode ? { afscp_code: afscpCode } : {}),
+    ...(releaseDiagnostic ? { release_diagnostic: releaseDiagnostic } : {}),
+    ...(sandboxDiagnostics ? { pod_manager: sandboxDiagnostics } : {}),
+  };
+}
+
+function logRuntimeAccessReleaseFailure(input: {
+  error: unknown;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  task: TaskRecord | null;
+  requestId?: string | null;
+  mappedErrorCode: string;
+  mappedMessage: string;
+}): void {
+  const payload = {
+    event: 'runtime_pending_readiness_failure',
+    theme: 'runtime_pending_readiness',
+    scope: 'file_library_runtime_access_release',
+    convergence: {
+      pending: 'return_file_library_list_pending_before_read_export',
+      releasing: 'retry_runtime_access_release_before_read_export',
+      offline: 'wait_for_sandbox_or_workspace_binding_recheck',
+      not_found: 'recheck_workspace_binding_before_terminalizing',
+      failed: 'stable_blocker_after_repeated_gate_failure',
+    },
+    diagnostic: buildRuntimeAccessReleaseFailureDiagnostic(input),
+  };
+  try {
+    console.warn('[files] runtime_pending_readiness_failure %s', JSON.stringify(payload));
+  } catch {
+    console.warn('[files] runtime_pending_readiness_failure %s', JSON.stringify({
+      event: payload.event,
+      theme: payload.theme,
+      scope: payload.scope,
+      diagnostic_serialization: 'failed',
+    }));
+  }
+}
+
 function runtimeAccessReleaseHardBlockers(
   blockers: FileLibraryRuntimeAccessReleaseBlockerCode[],
 ): FileLibraryRuntimeAccessReleaseBlockerCode[] {
@@ -1722,6 +1852,16 @@ async function continueRuntimeAccessReleaseAfterFence(input: {
       reason: 'failed',
     }));
     const mapped = mapFileLibraryInfraError(error);
+    logRuntimeAccessReleaseFailure({
+      error,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      task: input.task,
+      requestId: input.releaseCorrelationId,
+      mappedErrorCode: mapped.errorCode,
+      mappedMessage: mapped.message,
+    });
     return {
       statusCode: mapped.statusCode,
       body: {
@@ -2267,6 +2407,40 @@ function runtimeAccessReleasePending(response: RuntimeAccessReleaseRouteResponse
     && response.body.runtime_access_status === 'release_pending';
 }
 
+function runtimeAccessReleasePendingRecheckResponse(libraryId: string): RuntimeAccessReleaseRouteResponse {
+  return {
+    statusCode: 200,
+    body: {
+      file_library_id: libraryId,
+      released: false,
+      runtime_access_status: 'release_pending',
+    },
+  };
+}
+
+function readResponseBodyErrorCode(body: Record<string, unknown>): string | null {
+  const value = body.error_code;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function isRuntimeAccessReleaseReadExportPending(response: RuntimeAccessReleaseRouteResponse): boolean {
+  if (runtimeAccessReleasePending(response)) {
+    return true;
+  }
+  const errorCode = readResponseBodyErrorCode(response.body);
+  if (
+    response.statusCode === 409
+    && (
+      errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
+      || errorCode === 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT'
+    )
+  ) {
+    return true;
+  }
+  return response.statusCode >= 500
+    && errorCode === 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED';
+}
+
 function shouldInvalidateListReadExportAfterRuntimeRelease(response: RuntimeAccessReleaseRouteResponse): boolean {
   return runtimeAccessReleaseCompleted(response)
     && response.invalidateListReadExport === true;
@@ -2375,6 +2549,91 @@ function isFileLibraryListPendingRouteError(input: {
   return input.statusCode === 409
     && input.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
     && input.message === 'file_library_list_pending';
+}
+
+function buildFileLibraryListPendingBody(): Record<string, unknown> {
+  return {
+    error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+    message: 'file_library_list_pending',
+  };
+}
+
+function isRuntimeAccessReleaseBlocked(response: RuntimeAccessReleaseRouteResponse): boolean {
+  return response.statusCode === 409
+    && response.body.message === 'file_library_runtime_access_release_blocked';
+}
+
+async function convergeRuntimeAccessBeforeFileLibraryEntriesList(input: {
+  deps: NodeApiDeps;
+  storageAdapter: FileLibraryStoragePort;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  actorUserId: string;
+  requestId?: string;
+}): Promise<{ handled: false } | { handled: true; statusCode: number; body: Record<string, unknown> }> {
+  const activeWriter = await findActiveRuntimeWriter({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+  });
+  if (!activeWriter?.binding) {
+    return { handled: false };
+  }
+
+  const listPendingObservedAtMs = Date.now();
+  const releasePromise = releaseRuntimeAccessForFileLibrary({
+    deps: input.deps,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    actorUserId: input.actorUserId,
+    requestId: input.requestId,
+  });
+  const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
+  if (!releaseResponse || isRuntimeAccessReleaseReadExportPending(releaseResponse)) {
+    scheduleListReadExportInvalidationAfterRuntimeRelease({
+      deps: input.deps,
+      storageAdapter: input.storageAdapter,
+      releasePromise: releaseResponse
+        ? Promise.resolve(runtimeAccessReleasePendingRecheckResponse(input.libraryId))
+        : releasePromise,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      actorUserId: input.actorUserId,
+      createdBeforeOrAtMs: listPendingObservedAtMs,
+      requestId: input.requestId,
+    });
+    return {
+      handled: true,
+      statusCode: 409,
+      body: buildFileLibraryListPendingBody(),
+    };
+  }
+  if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
+    await invalidateListReadExport({
+      storageAdapter: input.storageAdapter,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      createdBeforeOrAtMs: listPendingObservedAtMs,
+      requestId: input.requestId,
+    });
+    return { handled: false };
+  }
+  if (isRuntimeAccessReleaseBlocked(releaseResponse)) {
+    return { handled: false };
+  }
+  if (releaseResponse.statusCode !== 200) {
+    return {
+      handled: true,
+      statusCode: releaseResponse.statusCode,
+      body: releaseResponse.body,
+    };
+  }
+  return { handled: false };
 }
 
 export async function handleProjectFileLibraryRoutes(args: {
@@ -3552,6 +3811,19 @@ export async function handleProjectFileLibraryRoutes(args: {
       sortOrder: parsed.data.sort_order ?? 'asc',
       requestId,
     } as const;
+    const runtimeAccessConvergence = await convergeRuntimeAccessBeforeFileLibraryEntriesList({
+      deps,
+      storageAdapter: deps.fileLibraryStorageAdapter,
+      workspaceId,
+      projectId,
+      libraryId,
+      actorUserId: user.id,
+      requestId,
+    });
+    if (runtimeAccessConvergence.handled) {
+      json(res, runtimeAccessConvergence.statusCode, runtimeAccessConvergence.body);
+      return true;
+    }
     try {
       const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
       json(res, 200, {

@@ -3322,9 +3322,9 @@ export async function deleteTerminalSessionViaApi(args: {
   timeoutMs?: number;
 }): Promise<void> {
   const token = await readStoredAuthToken(args.page);
-  const timeoutMs = args.timeoutMs ?? 180_000;
+  const timeoutMs = args.timeoutMs ?? 420_000;
   const deadline = Date.now() + timeoutMs;
-  const retryIntervalsMs = [500, 1_000, 2_000, 5_000, 10_000, 15_000];
+  const retryIntervalsMs = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 45_000, 75_000];
   let attempt = 0;
   let lastStatus = 0;
   let lastBody = "";
@@ -3340,7 +3340,7 @@ export async function deleteTerminalSessionViaApi(args: {
       response = await args.page.request.delete(
         sessionUrl,
         {
-          timeout: Math.min(30_000, Math.max(5_000, deadline - Date.now())),
+          timeout: Math.max(5_000, deadline - Date.now()),
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -3385,6 +3385,20 @@ export async function deleteTerminalSessionViaApi(args: {
     lastBody = await response.text().catch(() => "");
     if (!isRetryableTerminalSessionReleasePendingResponse(lastStatus, lastBody)) {
       break;
+    }
+    try {
+      await waitForTerminalSessionFinalTruthViaApi({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        sessionId: args.sessionId,
+        timeoutMs: 2_000,
+      });
+      return;
+    } catch {
+      // The terminal close truth can land before runtime release convergence;
+      // keep waiting when the session is still observable as live/closing.
     }
 
     const retryDelayMs = retryIntervalsMs[Math.min(attempt, retryIntervalsMs.length - 1)] ?? 15_000;

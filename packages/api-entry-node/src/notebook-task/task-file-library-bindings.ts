@@ -293,6 +293,10 @@ function isCompletedRuntimeAccessReleaseFence(record: TaskFileLibraryBindingReco
   return record.correlation_id.startsWith('release:complete:');
 }
 
+export function isCompletedRuntimeAccessReleaseFenceCorrelationId(correlationId: string): boolean {
+  return correlationId.startsWith('release:complete:');
+}
+
 function isExpiredRuntimeAccessReleaseFence(input: {
   record: TaskFileLibraryBindingRecord;
   now: string;
@@ -769,6 +773,79 @@ export class JsonDocTaskFileLibraryBindingRepo {
     }
     const current = recordToBinding(result.current);
     cacheBinding(current);
+    return {
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: current,
+    };
+  }
+
+  async resumeCompletedRuntimeAccessRelease(input: {
+    workspaceId: string;
+    projectId: string;
+    fileLibraryId: string;
+    taskId: string;
+    bindingGeneration: number;
+    expectedCorrelationId: string;
+    correlationId: string;
+    now?: string;
+  }): Promise<{
+    ok: true;
+    resumed: boolean;
+    binding: TaskFileLibraryBinding;
+  } | {
+    ok: false;
+    code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT';
+    binding: TaskFileLibraryBinding | null;
+  }> {
+    if (!isCompletedRuntimeAccessReleaseFenceCorrelationId(input.expectedCorrelationId)) {
+      const current = await this.find(input);
+      return {
+        ok: false,
+        code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        binding: current,
+      };
+    }
+    const now = input.now ?? this.nowIso();
+    const result = await this.docStore.updateIfMatch<TaskFileLibraryBindingRecord>(
+      BINDINGS_COLLECTION,
+      bindingKey(input),
+      {
+        expected: {
+          task_id: input.taskId,
+          binding_generation: input.bindingGeneration,
+          binding_state: 'releasing',
+          correlation_id: input.expectedCorrelationId,
+        },
+        patch: {
+          binding_state: 'bound',
+          updated_at: now,
+          correlation_id: input.correlationId,
+        },
+      },
+    );
+    if (result.ok) {
+      const binding = recordToBinding(result.doc);
+      cacheBinding(binding);
+      return { ok: true, resumed: true, binding };
+    }
+    if (!result.current) {
+      uncacheBinding(input);
+      return {
+        ok: false,
+        code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+        binding: null,
+      };
+    }
+    const current = recordToBinding(result.current);
+    cacheBinding(current);
+    if (
+      current.taskId === input.taskId
+      && current.bindingGeneration === input.bindingGeneration
+      && current.bindingState === 'bound'
+    ) {
+      return { ok: true, resumed: false, binding: current };
+    }
     return {
       ok: false,
       code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',

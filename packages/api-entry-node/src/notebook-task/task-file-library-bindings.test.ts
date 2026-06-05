@@ -333,6 +333,85 @@ describe('JsonDocTaskFileLibraryBindingRepo', () => {
     });
   });
 
+  it('resumes only a completed runtime access release fence for the same task binding', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);
+    const acquired = await repo.acquire(bindingInput());
+    if (!acquired.ok) throw new Error('expected acquire to succeed');
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'release_begin_for_rebind',
+    });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(repo.resumeCompletedRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: 'runtime_access_rebind_before_complete',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_TASK_WORKSPACE_BINDING_CONFLICT',
+      binding: {
+        bindingState: 'releasing',
+        correlationId: beginCorrelationId,
+      },
+    });
+
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(repo.resumeCompletedRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: completeCorrelationId,
+      correlationId: 'runtime_access_rebind_after_complete',
+    })).resolves.toMatchObject({
+      ok: true,
+      resumed: true,
+      binding: {
+        taskId: 'task_1',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        bindingState: 'bound',
+        correlationId: 'runtime_access_rebind_after_complete',
+      },
+    });
+    await expect(repo.resumeCompletedRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'flib_home',
+      taskId: 'task_1',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: completeCorrelationId,
+      correlationId: 'runtime_access_rebind_after_complete',
+    })).resolves.toMatchObject({
+      ok: true,
+      resumed: false,
+      binding: {
+        bindingState: 'bound',
+      },
+    });
+  });
+
   it('does not let release completion overwrite a restore-owned fence claim', async () => {
     const docStore = new InMemoryJsonDocStore();
     const repo = new JsonDocTaskFileLibraryBindingRepo(docStore);

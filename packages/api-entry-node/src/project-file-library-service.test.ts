@@ -7,6 +7,7 @@ import {
   DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT,
   createAndCloneTaskFileTemplateLibrary,
   createAndProvisionProjectFileLibrary,
+  mapFileLibraryInfraError,
 } from './project-file-library-service.js';
 import type { TaskFileTemplateRecord } from './file-library-persistence.js';
 
@@ -84,6 +85,46 @@ function createDeps(input: {
 }
 
 describe('project file library service storage readiness wait', () => {
+  it('maps sandbox rate limiting to retryable runtime readiness conflict', () => {
+    expect(mapFileLibraryInfraError(Object.assign(new Error('rate limited'), {
+      code: 'AGENT_SANDBOX_RATE_LIMITED',
+      status: 429,
+      retryable: true,
+    }))).toEqual({
+      statusCode: 409,
+      errorCode: 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT',
+      message: 'file_library_retryable_infrastructure_conflict',
+      context: {
+        retryable: true,
+        retry_after_ms: 2_000,
+      },
+    });
+  });
+
+  it('maps AFSCP revoke idempotency conflict to retryable runtime readiness conflict', () => {
+    expect(mapFileLibraryInfraError(Object.assign(new Error('afscp revoke conflict'), {
+      code: 'AGENT_WORKSPACE_AFSCP_ERROR',
+      statusCode: 409,
+      retryable: false,
+      metadata: {
+        afscp_error: {
+          status: 409,
+          code: 'conflict',
+          retryable: false,
+          correlation_id: 'req_runtime_revoke_conflict',
+        },
+      },
+    }))).toEqual({
+      statusCode: 409,
+      errorCode: 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT',
+      message: 'file_library_retryable_infrastructure_conflict',
+      context: {
+        retryable: true,
+        retry_after_ms: 2_000,
+      },
+    });
+  });
+
   it('uses a bounded cold-bootstrap wait budget above the e2e request default', () => {
     expect(DEFAULT_FILE_LIBRARY_PROJECT_STORAGE_READY_WAIT).toMatchObject({
       timeoutMs: 45_000,

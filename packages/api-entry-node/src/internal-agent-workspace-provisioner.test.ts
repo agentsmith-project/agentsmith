@@ -727,6 +727,80 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     });
   });
 
+  it('uses a generation-scoped revoke idempotency key for recreated task HOME mounts', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const collection = resolveWorkspaceScopedCollection('internal_agent_file_library_workspaces', 'ws_demo');
+    const baseBinding: InternalAgentWorkspaceBinding = {
+      file_library_id: 'flib_revoke_key',
+      workspace_id: 'ws_demo',
+      project_id: 'proj_demo',
+      provider: 'afscp',
+      task_home_binding_id: 'wmb_revoke_key_g1',
+      afscp_mount_binding_id: 'wmb_revoke_key_g1',
+      afscp_namespace_id: 'ns_project_1',
+      afscp_repo_id: 'repo_file_library_1',
+      afscp_volume_id: 'vol_shared',
+      project_storage_generation: 7,
+      status: 'ready',
+      mount_binding_status: 'issued',
+      mount_binding_generation: 1,
+      lease_expires_at: '2026-03-19T01:00:00.000Z',
+      task_home_path: '/home/task_demo',
+      workspace_path: '/home/task_demo/workspace',
+      artifacts_path: '/home/task_demo/workspace/.artifacts',
+      library_root_path: '.',
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    };
+    await docStore.upsert(collection, baseBinding.file_library_id, baseBinding);
+    const revokeWorkloadMountBinding = vi.fn().mockImplementation(async (input: { mountBindingId: string }) => ({
+      operation_id: `op_revoke_${input.mountBindingId}`,
+      operation_state: 'succeeded',
+      resource: { type: 'workload_mount_binding', id: input.mountBindingId },
+      result: null,
+      error: null,
+    }));
+    const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+      docStore,
+      {
+        ensureWorkspaceBinding: vi.fn(),
+        deleteWorkspaceBinding: vi.fn().mockResolvedValue(undefined),
+      },
+      {
+        afscpProductClient: {
+          createWorkloadMountBinding: vi.fn(),
+          getWorkloadMountBinding: vi.fn(),
+          revokeWorkloadMountBinding,
+        },
+      },
+    );
+
+    await provisioner.deleteWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: baseBinding.file_library_id,
+    });
+    const firstKey = revokeWorkloadMountBinding.mock.calls[0]?.[0].idempotencyKey;
+
+    await docStore.upsert(collection, baseBinding.file_library_id, {
+      ...baseBinding,
+      task_home_binding_id: 'wmb_revoke_key_g2',
+      afscp_mount_binding_id: 'wmb_revoke_key_g2',
+      mount_binding_generation: 2,
+      status: 'ready',
+      mount_binding_status: 'issued',
+      updated_at: '2026-03-19T00:05:00.000Z',
+    });
+    await provisioner.deleteWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      fileLibraryId: baseBinding.file_library_id,
+    });
+    const secondKey = revokeWorkloadMountBinding.mock.calls[1]?.[0].idempotencyKey;
+
+    expect(firstKey).toMatch(/^workspace-mount-revoke:g1:/);
+    expect(secondKey).toMatch(/^workspace-mount-revoke:g2:/);
+    expect(secondKey).not.toBe(firstKey);
+  });
+
   it.each(['released', 'revoked', 'expired', 'deleted'] as const)(
     'treats an existing %s tombstone delete as an idempotent no-op',
     async (status) => {

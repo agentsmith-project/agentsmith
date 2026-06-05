@@ -156,6 +156,103 @@ describe('resolveTaskWorkspaceBindingGuard', () => {
     });
   });
 
+  it('converges a completed runtime release fence for the same task owner before the lease expires', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = '2999-05-09T12:00:00.000Z';
+
+    await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).save(buildFileLibraryRecord({
+      id: 'lib_guard_release_rebind',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      name: 'Guard Release Rebind Library',
+      status: 'ready',
+      createdByUserId: 'user_1',
+      fileLibraryHomeSegment: 'flibhome_guard_release_rebind',
+      now,
+    }));
+
+    const repo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const acquired = await repo.acquire({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_guard_release_rebind',
+      taskId: 'task_guard_release_rebind',
+      taskTitle: 'Guard release rebind task',
+      taskStatus: 'active',
+      ownerUserId: 'user_1',
+      runtimeWritableAffordance: 'task_internal_home',
+      correlationId: 'req_guard_release_rebind',
+      now,
+    });
+    if (!acquired.ok) throw new Error('expected binding acquire to succeed');
+
+    const task = {
+      id: 'task_guard_release_rebind',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Guard release rebind task',
+      task_home_segment: 'task_guard_release_rebind',
+      workspace_file_library_id: 'lib_guard_release_rebind',
+      workspace_file_library_name: 'Guard Release Rebind Library',
+      file_library_binding_generation: acquired.binding.bindingGeneration,
+      runtime_writable_affordance: 'task_internal_home',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    };
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_guard_release_rebind', task);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_guard_release_rebind',
+    });
+    const completeCorrelationId = buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId });
+    await expect(repo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_guard_release_rebind',
+      taskId: 'task_guard_release_rebind',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      correlationId: beginCorrelationId,
+      now,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(repo.completeRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_guard_release_rebind',
+      taskId: 'task_guard_release_rebind',
+      bindingGeneration: acquired.binding.bindingGeneration,
+      expectedCorrelationId: beginCorrelationId,
+      correlationId: completeCorrelationId,
+      now,
+    })).resolves.toMatchObject({ ok: true });
+
+    await expect(resolveTaskWorkspaceBindingGuard({
+      deps,
+      task: task as never,
+      actorUserId: 'user_1',
+      canUpdateProjectFiles: async () => true,
+    })).resolves.toMatchObject({
+      binding: {
+        taskId: 'task_guard_release_rebind',
+        fileLibraryId: 'lib_guard_release_rebind',
+        bindingGeneration: acquired.binding.bindingGeneration,
+        bindingState: 'bound',
+        correlationId: 'runtime_access_rebind:task_guard_release_rebind',
+      },
+    });
+    await expect(repo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: 'lib_guard_release_rebind',
+      now,
+    })).resolves.toMatchObject({
+      bindingState: 'bound',
+      correlationId: 'runtime_access_rebind:task_guard_release_rebind',
+    });
+  });
+
   it('allows workspace access again after a completed runtime release fence lease expires', async () => {
     const deps = createDefaultNodeApiDeps();
     const now = '2026-05-09T12:00:00.000Z';

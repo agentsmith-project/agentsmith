@@ -50,9 +50,38 @@ function readErrorStringField(error: unknown, field: string): string | undefined
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readErrorNumberField(error: unknown, field: string): number | undefined {
+  if (!isObjectRecord(error)) {
+    return undefined;
+  }
+  const value = error[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readNestedErrorRecord(error: unknown, field: string): Record<string, unknown> | undefined {
+  if (!isObjectRecord(error)) {
+    return undefined;
+  }
+  const value = error[field];
+  return isObjectRecord(value) ? value : undefined;
+}
+
+function isAfscpRevokeConflict(error: unknown): boolean {
+  const code = readErrorStringField(error, 'code');
+  if (code !== 'AGENT_WORKSPACE_AFSCP_ERROR') {
+    return false;
+  }
+  const afscpError = readNestedErrorRecord(readNestedErrorRecord(error, 'metadata'), 'afscp_error')
+    ?? readNestedErrorRecord(error, 'afscp_error');
+  return readErrorStringField(afscpError, 'code') === 'conflict'
+    && readErrorNumberField(afscpError, 'status') === 409;
+}
+
 function isRetryableAsbcpInfrastructureConflict(error: unknown): boolean {
   const code = readErrorStringField(error, 'code');
-  return code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+  return code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE'
+    || code === 'AGENT_SANDBOX_RATE_LIMITED'
+    || isAfscpRevokeConflict(error);
 }
 
 export function mapFileLibraryInfraError(error: unknown): {

@@ -857,9 +857,9 @@ When tests fail, inspect:
 
 This is usually faster than changing selectors blindly.
 
-## Manual UAT Runbook (MVP Freeze)
+## Manual UAT Runbook (GA Scope Lock)
 
-When business logic changes are large, run this manual flow once before freeze:
+When business logic changes are large, run this manual flow once before a GA scope-lock handoff:
 
 1. Login and select workspace.
 2. Open projects list, enter a project, verify no unexpected permission denial.
@@ -930,7 +930,7 @@ or project settings actions appear non-responsive, verify fixture identity consi
 
 These ids must match, otherwise project membership permissions are resolved as empty arrays.
 
-Permission gate model (MVP) is token-first:
+Permission gate model for the current GA scope is token-first:
 - Project list visibility checks `workspace:read` and data membership presence.
 - Do not require `project:endpoint:use` as a workspace-level permission token.
 - Project internal routes use project membership permission tokens.

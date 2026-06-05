@@ -617,6 +617,60 @@ export function findRootReadmeGaWordingViolations(
   return violations;
 }
 
+export function findGaScopeLockWordingViolations(
+  files: ReadonlyArray<{ file: string; content: string }>,
+): Violation[] {
+  const rules: Array<{
+    file: string;
+    rule: string;
+    regex: RegExp;
+    detail: string;
+  }> = [
+    {
+      file: 'docs/项目宪法.md',
+      rule: 'constitution-pre-ga-governance-wording',
+      regex: /pre-GA 阶段优先|pre-GA 工程治理克制/u,
+      detail: 'Project constitution must describe GA post-scope-lock governance restraint, not pre-GA governance.',
+    },
+    {
+      file: 'docs/项目宪法.md',
+      rule: 'constitution-mvp-scope-wording',
+      regex: /\bMVP\b|当前 MVP|MVP 对外|MVP 收敛/u,
+      detail: 'Project constitution must express the locked product scope as current GA scope, not MVP scope.',
+    },
+    {
+      file: 'DEVELOPMENT.md',
+      rule: 'development-mvp-freeze-wording',
+      regex: /MVP Freeze|Permission gate model \(MVP\)/u,
+      detail: 'Development guide must use GA scope-lock/current-scope wording, not MVP freeze wording.',
+    },
+  ];
+
+  const violations: Violation[] = [];
+  for (const { file, content } of files) {
+    const matchingRules = rules.filter((rule) => rule.file === file);
+    if (matchingRules.length === 0) {
+      continue;
+    }
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      for (const rule of matchingRules) {
+        if (!rule.regex.test(lines[i])) {
+          continue;
+        }
+        violations.push({
+          file,
+          line: i + 1,
+          rule: rule.rule,
+          detail: `${rule.detail} Found: ${lines[i].trim()}`,
+        });
+      }
+    }
+  }
+
+  return violations;
+}
+
 function checkRootReadmeGaWording(): Violation[] {
   const file = 'README.md';
   const absPath = path.join(ROOT, file);
@@ -688,6 +742,16 @@ function main(): void {
   violations.push(...checkEngineeringIndexCurrentSection());
   violations.push(...checkDocsIndexGaRouting());
   violations.push(...checkRootReadmeGaWording());
+  violations.push(...findGaScopeLockWordingViolations([
+    {
+      file: 'docs/项目宪法.md',
+      content: fs.readFileSync(path.join(ROOT, 'docs/项目宪法.md'), 'utf8'),
+    },
+    {
+      file: 'DEVELOPMENT.md',
+      content: fs.readFileSync(path.join(ROOT, 'DEVELOPMENT.md'), 'utf8'),
+    },
+  ]));
 
   if (violations.length > 0) {
     console.error('[docs-governance] check failed.');

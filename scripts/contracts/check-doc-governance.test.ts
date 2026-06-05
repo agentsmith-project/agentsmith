@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findEngineeringIndexCurrentSectionViolations,
   findDocsIndexGaRoutingViolations,
+  findGaScopeLockWordingViolations,
   findRootReadmeGaWordingViolations,
   findReleaseKitSplitKissPlanViolations,
   isHistoricalDoc,
@@ -302,6 +303,45 @@ describe('check-doc-governance historical document detection', () => {
     expect(findRootReadmeGaWordingViolations(readme)).toEqual([]);
     expect(readme).toContain('This validates the no-sandbox fallback diagnostic behavior');
     expect(readme).toContain('当前用户操作指南总入口');
+  });
+
+  it('flags pre-GA or MVP scope wording in GA scope-lock docs', () => {
+    const violations = findGaScopeLockWordingViolations([
+      {
+        file: 'docs/项目宪法.md',
+        content: [
+          '工程治理克制：pre-GA 阶段优先核心用户路径和功能交付。',
+          '## 八、MVP 收敛与 UX 约束',
+        ].join('\n'),
+      },
+      {
+        file: 'DEVELOPMENT.md',
+        content: [
+          '## Manual UAT Runbook (MVP Freeze)',
+          'Permission gate model (MVP) is token-first:',
+        ].join('\n'),
+      },
+    ]);
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rule: 'constitution-pre-ga-governance-wording' }),
+        expect.objectContaining({ rule: 'constitution-mvp-scope-wording' }),
+        expect.objectContaining({ rule: 'development-mvp-freeze-wording' }),
+      ]),
+    );
+  });
+
+  it('keeps active GA scope-lock docs out of pre-GA and MVP wording', () => {
+    const constitution = readFileSync(resolve(process.cwd(), 'docs/项目宪法.md'), 'utf8');
+    const development = readFileSync(resolve(process.cwd(), 'DEVELOPMENT.md'), 'utf8');
+
+    expect(findGaScopeLockWordingViolations([
+      { file: 'docs/项目宪法.md', content: constitution },
+      { file: 'DEVELOPMENT.md', content: development },
+    ])).toEqual([]);
+    expect(constitution).toContain('GA 后范围锁定与工程治理克制');
+    expect(development).toContain('Manual UAT Runbook (GA Scope Lock)');
   });
 
   it('flags handoff/refactor/migration entries in the engineering current index section', () => {

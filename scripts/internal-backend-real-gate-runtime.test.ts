@@ -576,7 +576,7 @@ exit 0
   }
 }
 
-function runInternalSpecGrepCleanPassHarness(): {
+function runInternalSpecGrepCleanPassHarness(options: { runtimeMarker?: boolean } = {}): {
   stdout: string;
   stderr: string;
   status: number | null;
@@ -610,6 +610,11 @@ CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 printf '#!/usr/bin/env bash\\nexit 0\\n' > "\${CONTROL_SCRIPT}"
 chmod +x "\${CONTROL_SCRIPT}"
+if [[ "${options.runtimeMarker ? '1' : '0'}" == "1" ]]; then
+  printf 'API call summary request_id=req-runtime-pass workload_id=workload-runtime-pass phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${INTERNAL_REAL_DIR}/afscp-api.log"
+  printf 'pod manager create_or_ensure_pod request_id=req-runtime-pass workload_id=workload-runtime-pass phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+  printf 'ASBCP create/status summary request_id=req-runtime-pass workload_id=workload-runtime-pass phase=offline status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+fi
 
 gate_record_failure() {
   printf 'unexpected failure: %s\\n' "$*" >> "\${TEMP_ROOT}/calls.txt"
@@ -620,7 +625,6 @@ gate_record_preflight_check() {
 }
 
 info() { :; }
-runtime_readiness_flake_markers_present() { return 1; }
 resolve_internal_spec_port_pair() { printf '21020 3121\\n'; }
 prepare_internal_backend_real_spec_runtime() {
   local state_file="\${TEMP_ROOT}/sandbox-control.env"
@@ -1725,6 +1729,36 @@ describe('internal backend-real gate runtime contract', () => {
     });
   });
 
+  it('records focused runtime readiness flake classification in runtime readiness JSON', () => {
+    const result = runInternalSpecGrepCleanPassHarness({ runtimeMarker: true });
+
+    expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=0');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-flake-summary.txt');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      schema_version: string;
+      theme: string;
+      outcome: string;
+      classification: string;
+      signals: Array<{ source: string; error_code?: string }>;
+      call_summaries: Array<{ source: string; error_code?: string }>;
+    };
+    expect(details).toMatchObject({
+      schema_version: 'agentsmith.runtime-readiness-details/v1',
+      theme: 'runtime_pending_readiness',
+      outcome: 'focused_gate_passed_after_runtime_readiness_marker',
+      classification: 'runtime_flake',
+    });
+    expect(details.call_summaries).toEqual(details.signals);
+    expect(details.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
+      expect.objectContaining({ source: 'pod_manager', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
+      expect.objectContaining({ source: 'asbcp_create_status', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
+    ]));
+  });
+
   it('records files restore continuation early failures into the campaign-uploadable child evidence root', () => {
     const result = runInternalSpecGrepEarlyFailureHarness();
 
@@ -1884,6 +1918,15 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.runtimeStabilityBlockerSummary).toContain('stage=files_restore_continuation_spec');
     expect(result.runtimeStabilityBlockerSummary).toContain('previous_failure_marker=');
     expect(result.runtimeStabilityBlockerSummary).not.toContain('known-product-token');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      classification?: string;
+      outcome?: string;
+    };
+    expect(details).toMatchObject({
+      classification: 'stability_blocker',
+      outcome: 'consecutive_focused_gate_runtime_readiness_failures',
+    });
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

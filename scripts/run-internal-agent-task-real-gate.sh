@@ -1049,6 +1049,64 @@ NODE
   }
 }
 
+annotate_runtime_readiness_details() {
+  local evidence_dir="$1"
+  local classification="$2"
+  local outcome="$3"
+  local stage="${4:-}"
+  local spec="${5:-}"
+  local label="${6:-}"
+  local output_file="${evidence_dir}/runtime-readiness-details.json"
+
+  node --input-type=module - \
+    "${output_file}" \
+    "${classification}" \
+    "${outcome}" \
+    "${stage}" \
+    "${GATE_MODE:-workspace}" \
+    "${spec}" \
+    "${label}" <<'NODE' || true
+import fs from 'node:fs';
+import path from 'node:path';
+
+const [
+  outputFile,
+  classification,
+  outcome,
+  stage,
+  gateMode,
+  spec,
+  label,
+] = process.argv.slice(2);
+
+let payload = {};
+try {
+  payload = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+} catch {
+  payload = {
+    schema_version: 'agentsmith.runtime-readiness-details/v1',
+    theme: 'runtime_pending_readiness',
+    generated_at: new Date().toISOString(),
+    signals: [],
+    k8s_pods: [],
+  };
+}
+
+payload.classification = classification;
+payload.outcome = outcome;
+payload.stage ||= stage || null;
+payload.gate_mode ||= gateMode || null;
+payload.spec ||= spec || null;
+payload.grep_label ||= label || null;
+if (Array.isArray(payload.signals) && !Array.isArray(payload.call_summaries)) {
+  payload.call_summaries = payload.signals;
+}
+
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+fs.writeFileSync(outputFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
 collect_runtime_readiness_summary() {
   local evidence_dir="$1"
   local spec_state_file="${2:-}"
@@ -1303,6 +1361,7 @@ collect_child_internal_runtime_flake_evidence() {
     collect_afscp_child_evidence "${evidence_dir}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
     collect_runtime_readiness_details "${evidence_dir}" "${spec_state_file}"
+    annotate_runtime_readiness_details "${evidence_dir}" "runtime_flake" "focused_gate_passed_after_runtime_readiness_marker" "${stage}" "${spec}" "${label}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
     rm -f "${evidence_dir}/runtime-readiness-failure.marker" 2>/dev/null || true
   ) || true
@@ -1397,6 +1456,7 @@ collect_child_internal_failure_evidence() {
           printf 'runtime_readiness_summary=%s\n' "${evidence_dir}/runtime-readiness-summary.txt"
           printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         } > "${evidence_dir}/runtime-stability-blocker-summary.txt"
+        annotate_runtime_readiness_details "${evidence_dir}" "stability_blocker" "consecutive_focused_gate_runtime_readiness_failures" "${stage}" "${spec}" "${label}"
         gate_record_failure "${INTERNAL_REAL_DIR}" "stability_blocker" "${stage}_runtime_readiness" "consecutive focused gate runtime readiness failures; see ${evidence_dir}/runtime-stability-blocker-summary.txt"
       fi
       {

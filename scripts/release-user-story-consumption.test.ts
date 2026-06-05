@@ -148,6 +148,8 @@ describe('release story consumption guards', () => {
     expect(deleteBody).toContain('workspace changed|refresh and try again');
     expect(deleteBody).toContain("conflict.waitFor({ state: 'visible'");
     expect(deleteBody).toContain("await page.reload({ waitUntil: 'load' })");
+    expect(deleteBody).toContain('/task not found/i');
+    expect(deleteBody).toContain('await gotoWithRetry(page, listPath)');
     expect(deleteBody).toContain('await page.waitForURL(listUrl');
   });
 

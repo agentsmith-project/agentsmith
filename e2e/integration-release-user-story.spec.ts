@@ -506,6 +506,7 @@ async function waitForAgentReply(args: {
 }
 
 async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId: string): Promise<void> {
+  const listPath = `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks`;
   const listUrl = new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agent-tasks$`);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await page.getByRole('button', { name: /delete task|^delete$/i }).click();
@@ -521,6 +522,10 @@ async function deleteCurrentTaskViaUi(page: Page, workspaceId: string, projectId
       return;
     }
     await page.reload({ waitUntil: 'load' });
+    if (await page.getByRole('heading', { name: /task not found/i }).isVisible().catch(() => false)) {
+      await gotoWithRetry(page, listPath);
+      return;
+    }
     await expect(page.getByRole('button', { name: /delete task|^delete$/i })).toBeVisible({ timeout: 30_000 });
   }
   await page.waitForURL(listUrl, { timeout: 1 });

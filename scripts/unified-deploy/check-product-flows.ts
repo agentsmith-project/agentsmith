@@ -173,6 +173,7 @@ type ProductFlowProducerOptions = {
   ) => Promise<DefaultManagedRunnerSeedResult>;
   fileLibraryFailureEvidenceProvider?: FileLibraryFailureEvidenceProvider;
   now?: () => Date;
+  producerCommand?: string;
   agentTaskPolls?: number;
   agentTaskPollIntervalMs?: number;
   fileLibraryCreateMaxAttempts?: number;
@@ -1066,6 +1067,7 @@ function buildFlowEvidence(input: {
   truth: ProductFlowRuntimeTruth;
   flow: ProductVerificationFlowId;
   status: FlowStatus;
+  command: string;
   startedMs: number;
   generatedAt: string;
   checks: JsonRecord;
@@ -1078,7 +1080,7 @@ function buildFlowEvidence(input: {
     flow: input.flow,
     status: input.status,
     producer: PRODUCT_FLOW_PRODUCER,
-    command: PRODUCT_FLOW_COMMAND,
+    command: input.command,
     source: sourceForEvidence(input.truth),
     generated_at: input.generatedAt,
     duration_ms: Math.max(0, Date.now() - input.startedMs),
@@ -2431,6 +2433,7 @@ async function runSingleFlow(args: {
   flow: ProductVerificationFlowId;
   truth: ProductFlowRuntimeTruth;
   state: ProductFlowState;
+  command: string;
   fetchImpl: ProductFlowFetch;
   seedManagedRunner: (truth: ProductFlowRuntimeTruth, state: ProductFlowState) => Promise<DefaultManagedRunnerSeedResult>;
   now: () => Date;
@@ -2480,6 +2483,7 @@ async function runSingleFlow(args: {
       truth: args.truth,
       flow: args.flow,
       status: 'passed',
+      command: args.command,
       startedMs,
       generatedAt: nowIso(args.now),
       checks,
@@ -2493,6 +2497,7 @@ async function runSingleFlow(args: {
       truth: args.truth,
       flow: args.flow,
       status: 'failed',
+      command: args.command,
       startedMs,
       generatedAt: nowIso(args.now),
       checks: withSchemaPreflightChecks(args.state.schemaPreflight, checksFromError(error)),
@@ -2545,6 +2550,7 @@ function buildDependencyBlockedFlowEvidence(input: {
   truth: ProductFlowRuntimeTruth;
   flow: ProductVerificationFlowId;
   dependency: ProductFlowEvidence;
+  command: string;
   startedMs: number;
   generatedAt: string;
 }): ProductFlowEvidence {
@@ -2562,6 +2568,7 @@ function buildDependencyBlockedFlowEvidence(input: {
     truth: input.truth,
     flow: input.flow,
     status: 'failed',
+    command: input.command,
     startedMs: input.startedMs,
     generatedAt: input.generatedAt,
     checks: {
@@ -2631,11 +2638,20 @@ function resolveFlowIds(input: ProductFlowProducerOptions['flowIds']): ProductVe
   return [...input];
 }
 
+function resolveProducerCommand(input: ProductFlowProducerOptions['producerCommand']): string {
+  const command = input?.trim() || PRODUCT_FLOW_COMMAND;
+  if (command.includes('\n') || command.includes('\r')) {
+    throw new Error('--producer-command must be a single-line command label');
+  }
+  return command;
+}
+
 async function writeAggregateEvidence(args: {
   fs: ProductFlowFs;
   evidenceDir: string;
   prepareEvidenceDir?: ProductFlowEvidenceDirPreparer;
   truth: ProductFlowRuntimeTruth;
+  command: string;
   flows: ProductFlowEvidence[];
   flowPaths: Partial<Record<ProductVerificationFlowId, string>>;
   generatedAt: string;
@@ -2657,7 +2673,7 @@ async function writeAggregateEvidence(args: {
     schema_version: 'agentsmith.unified-deploy.product-flows.aggregate/v1',
     producer: PRODUCT_FLOW_PRODUCER,
     status,
-    command: PRODUCT_FLOW_COMMAND,
+    command: args.command,
     generated_at: args.generatedAt,
     source: {
       ...source,
@@ -2727,6 +2743,7 @@ export async function runUnifiedDeployProductFlowsProducer(
     ?? defaultFileLibraryFailureEvidenceProvider;
   const generatedAt = nowIso(now);
   const flowIds = resolveFlowIds(options.flowIds);
+  const producerCommand = resolveProducerCommand(options.producerCommand);
   let keycloak: KeycloakBootstrapResult;
   let token: string;
   let schemaPreflight: JsonRecord = {};
@@ -2745,6 +2762,7 @@ export async function runUnifiedDeployProductFlowsProducer(
       truth,
       flow,
       status: 'failed',
+      command: producerCommand,
       startedMs: Date.now(),
       generatedAt,
       checks: bootstrapChecks,
@@ -2768,6 +2786,7 @@ export async function runUnifiedDeployProductFlowsProducer(
       evidenceDir,
       prepareEvidenceDir,
       truth,
+      command: producerCommand,
       flows: flowEvidence,
       flowPaths,
       generatedAt,
@@ -2798,6 +2817,7 @@ export async function runUnifiedDeployProductFlowsProducer(
           truth,
           flow,
           dependency: failedDependency,
+          command: producerCommand,
           startedMs: Date.now(),
           generatedAt: nowIso(now),
         })
@@ -2815,6 +2835,7 @@ export async function runUnifiedDeployProductFlowsProducer(
               truth,
               flow,
               status: 'failed',
+              command: producerCommand,
               startedMs,
               generatedAt: nowIso(now),
               checks: withSchemaPreflightChecks(state.schemaPreflight, {}),
@@ -2829,6 +2850,7 @@ export async function runUnifiedDeployProductFlowsProducer(
             flow,
             truth,
             state,
+            command: producerCommand,
             fetchImpl,
             seedManagedRunner,
             now,
@@ -2858,6 +2880,7 @@ export async function runUnifiedDeployProductFlowsProducer(
     evidenceDir,
     prepareEvidenceDir,
     truth,
+    command: producerCommand,
     flows: flowEvidence,
     flowPaths,
     generatedAt,
@@ -2900,6 +2923,8 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       options.workspaceId = arg.slice('--workspace-id='.length);
     } else if (arg.startsWith('--evidence-dir=')) {
       options.evidenceDir = arg.slice('--evidence-dir='.length);
+    } else if (arg.startsWith('--producer-command=')) {
+      options.producerCommand = arg.slice('--producer-command='.length);
     } else if (arg.startsWith('--flow=')) {
       flows.push(parseFlow(arg.slice('--flow='.length)));
     } else if (arg.startsWith('--agent-task-polls=')) {

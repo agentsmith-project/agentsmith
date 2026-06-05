@@ -731,6 +731,34 @@ describe('unified deploy product flow producer', () => {
     expect(JSON.stringify(workspaceFlow?.checks)).not.toContain('projects_table_initialized');
   });
 
+  it('binds lane-produced product-flow evidence to the canonical lane command', async () => {
+    const observed = { chatRequests: 0 };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project'],
+      producerCommand: 'npm run lane:unified-deploy:product-flows',
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.evidence.command).toBe('npm run lane:unified-deploy:product-flows');
+    expect(result.evidence.flows).toHaveLength(1);
+    expect(result.evidence.flows[0]?.command).toBe('npm run lane:unified-deploy:product-flows');
+  });
+
   it('reuses an existing Keycloak user when create reports an email conflict', async () => {
     const result = await runUnifiedDeployProductFlowsProducer({
       siteEnvPath: 'site.env',

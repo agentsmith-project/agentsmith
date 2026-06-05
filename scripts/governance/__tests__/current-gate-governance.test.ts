@@ -139,6 +139,7 @@ describe('current gate governance', () => {
     });
     expect(releaseProductFlowsScript).toContain('npm run test:unified-deploy:product-flows --');
     expect(releaseProductFlowsScript).toContain('npm run post-deploy-product-smoke:report --');
+    expect(releaseProductFlowsScript).toContain('--producer-command="npm run lane:unified-deploy:product-flows"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_ROOT="${RELEASE_CAMPAIGN_ROOT:-${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${ROOT_DIR}/artifacts}}"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-product-smoke"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
@@ -329,6 +330,7 @@ esac
     expect(releaseGate?.campaignEvidenceArtifacts).toEqual([
       '<campaign-root>/gate-release/native/result.json',
       '<campaign-root>/gate-release/backend-real-visual/review.md',
+      '<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
       '<campaign-root>/gate-release/backend-real-visual/ux-traces/ux-trace-index.json',
       '<campaign-root>/gate-release/backend-real-visual/ux-traces',
     ]);

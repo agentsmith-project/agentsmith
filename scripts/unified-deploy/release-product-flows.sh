@@ -31,6 +31,7 @@ product_flow_status=0
 npm run test:unified-deploy:product-flows -- \
   --evidence-dir="${PRODUCT_FLOWS_EVIDENCE_DIR}" \
   --site-env="$(unified_deploy_release_site_env)" \
+  --producer-command="npm run lane:unified-deploy:product-flows" \
   --agent-task-polls="${UNIFIED_DEPLOY_AGENT_TASK_POLLS:-30}" \
   --agent-task-poll-interval-ms="${UNIFIED_DEPLOY_AGENT_TASK_POLL_INTERVAL_MS:-2000}" \
   2>&1 | tee "${product_flow_log}" || product_flow_status="${PIPESTATUS[0]}"

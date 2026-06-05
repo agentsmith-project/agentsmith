@@ -580,6 +580,34 @@ describe('post-deploy product smoke report producer', () => {
     );
   });
 
+  it('fails when chat source evidence carries provider-specific success markers outside the proof object', async () => {
+    const root = tempDir('post-deploy-product-smoke-provider-specific-marker-');
+    writeFocusedEvidenceFiles(root, PRODUCT_VERIFICATION_FLOW_IDS, {
+      chat_via_llmup: {
+        checks: {
+          provider_neutral_endpoint: {
+            endpoint_type: 'custom',
+            provider_family: 'custom',
+            upstream_protocol: 'openai_chat_completions',
+            credential_type: 'api_key',
+            success_path: 'provider_neutral_endpoint',
+          },
+          provider_specific_success: {
+            provider_specific_skill: 'vendor-calendar-skill',
+          },
+        },
+      },
+    });
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out'),
+    }))).rejects.toThrow(
+      /provider-specific SaaS\/OAuth\/skill success markers are not allowed/u,
+    );
+  });
+
   it('fails when flow_evidence_paths is missing or omits a required source flow', async () => {
     const root = tempDir('post-deploy-product-smoke-missing-paths-');
     writeFocusedEvidenceFiles(root);

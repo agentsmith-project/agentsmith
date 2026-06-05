@@ -301,6 +301,57 @@ function requireNestedExpectedString(
   }
 }
 
+const PROVIDER_SPECIFIC_SUCCESS_MARKER_KEYS = new Set([
+  'oauth_provider',
+  'managed_credential_provider',
+  'provider_specific_skill',
+  'provider_specific_success',
+]);
+
+function collectProviderSpecificSuccessMarkers(
+  value: unknown,
+  pathLabel: string,
+  issues: string[],
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      collectProviderSpecificSuccessMarkers(entry, `${pathLabel}[${index}]`, issues);
+    });
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const nestedPath = `${pathLabel}.${key}`;
+    if (PROVIDER_SPECIFIC_SUCCESS_MARKER_KEYS.has(key)) {
+      issues.push(`${nestedPath} is not allowed`);
+    }
+    if (key === 'credential_type' && nestedValue === 'oauth') {
+      issues.push(`${nestedPath}=oauth is not allowed`);
+    }
+    if (key === 'success_path' && nestedValue === 'provider_specific_saas') {
+      issues.push(`${nestedPath}=provider_specific_saas is not allowed`);
+    }
+    collectProviderSpecificSuccessMarkers(nestedValue, nestedPath, issues);
+  }
+}
+
+function assertNoProviderSpecificSuccessMarkers(
+  evidence: Record<string, unknown>,
+  pathLabel: string,
+): void {
+  const issues: string[] = [];
+  collectProviderSpecificSuccessMarkers(evidence, pathLabel, issues);
+  if (issues.length > 0) {
+    throw new Error(
+      `${pathLabel} provider-specific SaaS/OAuth/skill success markers are not allowed in canonical post-deploy product smoke evidence: ${issues.join('; ')}.`,
+    );
+  }
+}
+
 function validateProviderNeutralEndpointEvidence(
   evidence: Record<string, unknown>,
   pathLabel: string,
@@ -439,6 +490,10 @@ async function validateFocusedEvidenceFiles(
     requireExactString(evidence, 'status', 'passed', `product_flows.flow_evidence_paths.${sourceFlow}`);
     if (sourceFlow === 'chat_via_llmup') {
       providerNeutralEndpointProof = validateProviderNeutralEndpointEvidence(
+        evidence,
+        `product_flows.flow_evidence_paths.${sourceFlow}`,
+      );
+      assertNoProviderSpecificSuccessMarkers(
         evidence,
         `product_flows.flow_evidence_paths.${sourceFlow}`,
       );

@@ -58,11 +58,13 @@ npm run product:status
 ### 2. 维护者排障 / Owner Producer Diagnostics
 
 Unified deploy、local-kind、existing-cluster 和 focused product-flow 的
-transition-only diagnostics / 过渡期专项诊断不在本文复制命令。只有 failure
-summary、owner runbook 或 manifest 明确指向这些诊断时，维护者才进入
-[Unified Deploy Operations](./unified-deploy-operations.md) 或对应 owner
-runbook 定位问题；诊断变绿后仍回到 `npm run product:ready` 重新给出
-AgentSmith product-side readiness 结论。
+transition-only diagnostics / 过渡期专项诊断不是默认 Product Readiness
+证据。只有 failure summary、owner runbook 或 manifest 明确指向这些诊断时，
+维护者才进入 [Unified Deploy Operations](./unified-deploy-operations.md)
+或对应 owner runbook 定位问题；常用 focused diagnostics 是
+`npm run test:unified-deploy:local-kind` 和
+`npm run test:unified-deploy:existing-cluster-smoke`。诊断变绿后仍回到
+`npm run product:ready` 重新给出 AgentSmith product-side readiness 结论。
 
 ### 3. 维护者排障 / 机器可读报告 Role Map
 

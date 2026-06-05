@@ -851,6 +851,70 @@ exit 0
     }
   });
 
+  it('records adaptive runtime readiness observation policy when gate-release times out', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-runtime-timeout-'));
+    const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));
+    try {
+      writeFakeNpm(fakeBin, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "gate:release" ]]; then
+  exec node -e "setTimeout(() => {}, 5000)"
+fi
+exit 0
+`);
+
+      const timedOutStep = {
+        ...releaseFullStep('gate-release'),
+        timeoutMs: 50,
+        dependsOn: [],
+      };
+      const terminalStep = {
+        ...releaseFullTerminalStep(),
+        timeoutMs: 5_000,
+        dependsOn: ['gate-release'],
+        evidenceRequired: false,
+        evidenceChecks: [],
+      };
+      const result = runReleaseCampaignExecution({
+        campaign: {
+          id: 'release-full',
+          description: 'runtime readiness timeout campaign',
+          runRootPattern: '<tmp>',
+          steps: [
+            timedOutStep,
+            terminalStep,
+          ],
+        },
+        campaignRoot: root,
+        runId: 'release-campaign-runtime-timeout',
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+      });
+
+      expect(result.exitCode).toBe(1);
+      const gateReleaseResult = JSON.parse(readFileSync(join(root, 'gate-release', 'result.json'), 'utf8')) as {
+        status: string;
+        stage: string;
+        summary: string;
+      };
+      expect(gateReleaseResult.status).toBe('failed');
+      expect(gateReleaseResult.stage).toBe('execute');
+      expect(gateReleaseResult.summary).toContain('Release campaign step gate-release timed out');
+      expect(gateReleaseResult.summary).toContain('observation_policy=runtime_pending_readiness');
+      expect(gateReleaseResult.summary).toContain('backoff=increasing_after_consecutive_non_terminal');
+      expect(gateReleaseResult.summary).toContain('interval_ms=60000,90000,120000,180000,300000');
+      expect(gateReleaseResult.summary).toContain('Files restore continuation focused backend-real gate');
+      expect(gateReleaseResult.summary).toContain('convergence_scopes=afscp_workspace_binding,agent_task_sandbox,files,read_export');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  });
+
   it('writes terminal aggregate and release status artifacts when the aggregate step times out', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-campaign-terminal-timeout-'));
     const fakeBin = mkdtempSync(join(tmpdir(), 'agentsmith-fake-npm-'));

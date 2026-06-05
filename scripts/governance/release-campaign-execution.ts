@@ -252,9 +252,12 @@ function writeCompletedStep(
       status: 'failed',
       failureClass,
       stage: 'evidence',
-      summary: nativeError
-        ? `Release campaign step ${step.id} completed but ${nativeError}.`
-        : `Release campaign step ${step.id} completed but required evidence was missing.`,
+      summary: appendObservationPolicyContext(
+        step,
+        nativeError
+          ? `Release campaign step ${step.id} completed but ${nativeError}.`
+          : `Release campaign step ${step.id} completed but required evidence was missing.`,
+      ),
     });
     return {
       passed: false,
@@ -270,7 +273,10 @@ function writeCompletedStep(
     stage: exitStatus === 0 ? 'complete' : 'execute',
     summary: exitStatus === 0
       ? `Release campaign step ${step.id} passed.`
-      : `Release campaign step ${step.id} failed with exit code ${String(exitStatus)}.`,
+      : appendObservationPolicyContext(
+          step,
+          `Release campaign step ${step.id} failed with exit code ${String(exitStatus)}.`,
+        ),
   });
   return {
     passed: exitStatus === 0,
@@ -430,9 +436,36 @@ function campaignStepTimeoutSummary(
     `evidence=${join(stepDir(campaignRoot, step), 'evidence.json')}`,
     ...(nativePath ? [`native_result=${nativePath}`] : []),
     'ci_log=Run product readiness',
+    ...observationPolicyDiagnostics(step),
   ];
 
   return `Release campaign step ${step.id} timed out after timeout_ms=${String(timeoutMs)} while running ${step.command}; inspect ${diagnostics.join('; ')}.`;
+}
+
+function observationPolicyDiagnostics(step: CurrentVerificationCampaignStep): readonly string[] {
+  const policy = step.observationPolicy;
+  if (!policy) {
+    return [];
+  }
+
+  return [
+    `observation_policy=${policy.theme}`,
+    `backoff=${policy.backoff}`,
+    `interval_ms=${policy.intervalMs.join(',')}`,
+    `evidence_focus=${policy.evidenceFocus.join(' | ')}`,
+    `convergence_scopes=${Object.keys(policy.stateConvergence).sort().join(',')}`,
+  ];
+}
+
+function appendObservationPolicyContext(
+  step: CurrentVerificationCampaignStep,
+  summary: string,
+): string {
+  const diagnostics = observationPolicyDiagnostics(step);
+  if (diagnostics.length === 0) {
+    return summary;
+  }
+  return `${summary} Runtime readiness observation: ${diagnostics.join('; ')}.`;
 }
 
 function writeTimedOutStep(
@@ -988,7 +1021,10 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
             status: 'failed',
             failureClass: nativeResultFailureClass(campaignRoot, step),
             stage: 'execute',
-            summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
+            summary: appendObservationPolicyContext(
+              step,
+              `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
+            ),
           });
           hadExecutableStepFailure = true;
           recordStageObservation({
@@ -1000,7 +1036,10 @@ export function runReleaseCampaignExecution(input: ReleaseCampaignExecutionInput
           return {
             status: 'failed',
             failureClass: writtenFailureClass(campaignRoot, step),
-            summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
+            summary: appendObservationPolicyContext(
+              step,
+              `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
+            ),
           };
         } finally {
           lockManager.releaseMany(leaseResult.leaseIds);

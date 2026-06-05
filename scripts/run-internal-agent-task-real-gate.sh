@@ -904,6 +904,7 @@ collect_child_internal_runtime_flake_evidence() {
     collect_afscp_child_evidence "${evidence_dir}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
+    rm -f "${evidence_dir}/runtime-readiness-failure.marker" 2>/dev/null || true
   ) || true
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning" "${evidence_dir}/runtime-readiness-summary.txt"
 }
@@ -917,10 +918,19 @@ collect_child_internal_failure_evidence() {
   local label="${6:-}"
   local spec_api_port="${7:-}"
   local spec_web_port="${8:-}"
-  local safe_stage evidence_dir
+  local safe_stage evidence_dir runtime_failure_marker had_previous_runtime_readiness_failure current_runtime_readiness_failure
   safe_stage="$(child_internal_evidence_slug "${stage}")"
   evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
   mkdir -p "${evidence_dir}" 2>/dev/null || return 0
+  runtime_failure_marker="${evidence_dir}/runtime-readiness-failure.marker"
+  had_previous_runtime_readiness_failure=0
+  current_runtime_readiness_failure=0
+  if [[ -f "${runtime_failure_marker}" ]]; then
+    had_previous_runtime_readiness_failure=1
+  fi
+  if runtime_readiness_flake_markers_present "${spec_state_file}"; then
+    current_runtime_readiness_failure=1
+  fi
   (
     set +e
     set +u
@@ -972,6 +982,33 @@ collect_child_internal_failure_evidence() {
       printf 'kubectl command is not available; event evidence was not collected.\n' > "${evidence_dir}/k8s-events.txt"
     fi
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
+    if [[ "${current_runtime_readiness_failure}" -eq 1 ]]; then
+      if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then
+        {
+          printf 'stage=%s\n' "${stage}"
+          printf 'classification=stability_blocker\n'
+          printf 'outcome=consecutive_focused_gate_runtime_readiness_failures\n'
+          printf 'gate_mode=%s\n' "${GATE_MODE:-workspace}"
+          printf 'spec=%s\n' "${spec:-<unknown>}"
+          printf 'grep_label=%s\n' "${label:-<none>}"
+          printf 'exit_status=%s\n' "${exit_status:-<unknown>}"
+          printf 'previous_failure_marker=%s\n' "${runtime_failure_marker}"
+          printf 'runtime_readiness_summary=%s\n' "${evidence_dir}/runtime-readiness-summary.txt"
+          printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        } > "${evidence_dir}/runtime-stability-blocker-summary.txt"
+        gate_record_failure "${INTERNAL_REAL_DIR}" "stability_blocker" "${stage}_runtime_readiness" "consecutive focused gate runtime readiness failures; see ${evidence_dir}/runtime-stability-blocker-summary.txt"
+      fi
+      {
+        printf 'stage=%s\n' "${stage}"
+        printf 'gate_mode=%s\n' "${GATE_MODE:-workspace}"
+        printf 'spec=%s\n' "${spec:-<unknown>}"
+        printf 'grep_label=%s\n' "${label:-<none>}"
+        printf 'last_exit_status=%s\n' "${exit_status:-<unknown>}"
+        printf 'last_seen_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      } > "${runtime_failure_marker}"
+    else
+      rm -f "${runtime_failure_marker}" 2>/dev/null || true
+    fi
   ) || true
   return 0
 }

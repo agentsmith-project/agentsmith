@@ -417,7 +417,7 @@ function runPrepareRuntimeWithLegacyRunnerImage(args: {
   }
 }
 
-function runInternalSpecGrepEarlyFailureHarness(): {
+function runInternalSpecGrepEarlyFailureHarness(options: { runs?: number } = {}): {
   stdout: string;
   stderr: string;
   status: number | null;
@@ -427,6 +427,7 @@ function runInternalSpecGrepEarlyFailureHarness(): {
   afscpApiLogTail: string;
   afscpRuntimeFingerprint: string;
   runtimeReadinessSummary: string;
+  runtimeStabilityBlockerSummary: string;
 } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-evidence-'));
@@ -496,11 +497,14 @@ run_internal_spec() {
 ${evidenceFunctions}
 ${runGrepFunction}
 
-set +e
-run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121
-status=$?
-set -e
-printf 'status=%s\\n' "\${status}"
+status=0
+for run_index in $(seq 1 ${options.runs ?? 1}); do
+  set +e
+  run_internal_spec_grep e2e/integration-files-user-stories.spec.ts "same task can continue after Files restore" 21020 3121
+  status=$?
+  set -e
+  printf 'status_%s=%s\\n' "\${run_index}" "\${status}"
+done
 printf 'upload_root=%s\\n' "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 find "\${CHILD_INTERNAL_EVIDENCE_ROOT}" -maxdepth 2 -type f | sort
 exit 0
@@ -530,6 +534,11 @@ exit 0
       'files_restore_continuation_spec',
       'runtime-readiness-summary.txt',
     );
+    const runtimeStabilityBlockerSummaryPath = path.join(
+      uploadRoot,
+      'files_restore_continuation_spec',
+      'runtime-stability-blocker-summary.txt',
+    );
 
     return {
       stdout: result.stdout ?? '',
@@ -544,6 +553,9 @@ exit 0
         : '',
       runtimeReadinessSummary: existsSync(runtimeReadinessSummaryPath)
         ? readFileSync(runtimeReadinessSummaryPath, 'utf8')
+        : '',
+      runtimeStabilityBlockerSummary: existsSync(runtimeStabilityBlockerSummaryPath)
+        ? readFileSync(runtimeStabilityBlockerSummaryPath, 'utf8')
         : '',
     };
   } finally {
@@ -1564,7 +1576,7 @@ describe('internal backend-real gate runtime contract', () => {
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    expect(result.stdout).toContain('status=1');
+    expect(result.stdout).toContain('status_1=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/summary.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-api-log-tail.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
@@ -1595,6 +1607,23 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.runtimeReadinessSummary).toContain('pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).toContain('ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).not.toContain('known-product-token');
+  });
+
+  it('upgrades consecutive focused runtime readiness failures to a stability blocker', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness({ runs: 2 });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status_1=1');
+    expect(result.stdout).toContain('status_2=1');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
+    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('stability_blocker|files_restore_continuation_spec_runtime_readiness|consecutive focused gate runtime readiness failures');
+    expect(result.runtimeStabilityBlockerSummary).toContain('classification=stability_blocker');
+    expect(result.runtimeStabilityBlockerSummary).toContain('outcome=consecutive_focused_gate_runtime_readiness_failures');
+    expect(result.runtimeStabilityBlockerSummary).toContain('stage=files_restore_continuation_spec');
+    expect(result.runtimeStabilityBlockerSummary).toContain('previous_failure_marker=');
+    expect(result.runtimeStabilityBlockerSummary).not.toContain('known-product-token');
   });
 
   it('fails skills-runtime fast when managed runner image env is explicitly provided', () => {

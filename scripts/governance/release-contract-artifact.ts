@@ -60,6 +60,8 @@ const RUNNER_IMAGE_LOCK_RELATIVE_PATH =
   'release/agentsmith-runner-image.lock' as const;
 const RUNNER_RELEASE_MANIFEST_RELATIVE_PATH =
   'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json' as const;
+const RUNNER_GA_HANDOFF_REPORT_RELATIVE_PATH =
+  'scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json' as const;
 const RUNNER_REPO_SLUG = 'agentsmith-project/agentsmith-runner' as const;
 const LLMUP_IMAGE_LOCK_RELATIVE_PATH = 'infra/deploy/shared/llmup-image.lock' as const;
 const LLMUP_REPO_SLUG = 'agentsmith-project/llm-universal-proxy' as const;
@@ -83,7 +85,7 @@ const ASBCP_RELEASE_URL_PREFIX =
 const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json' as const;
 const ASBCP_SOURCE_PROVENANCE_FILE_NAME = 'source-provenance.json' as const;
 const RUNNER_RELEASE_MANIFEST_ADOPTION_COMMAND =
-  `npm run contracts:check-runner-image-lock -- --adoption --manifest ${RUNNER_RELEASE_MANIFEST_RELATIVE_PATH}` as const;
+  `npm run contracts:check-runner-image-lock -- --adoption --manifest ${RUNNER_RELEASE_MANIFEST_RELATIVE_PATH} --handoff-report ${RUNNER_GA_HANDOFF_REPORT_RELATIVE_PATH}` as const;
 const RUNNER_GA_HANDOFF_REPORT_SCHEMA_VERSION =
   'agentsmith.runner-ga-handoff-report/v1' as const;
 const RUNNER_GA_HANDOFF_SCOPE = 'runner_ga_handoff_evidence' as const;

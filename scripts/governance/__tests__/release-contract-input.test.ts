@@ -1988,7 +1988,7 @@ describe('release contract CI artifact producer', () => {
       remote_artifact_zip_digest_source: 'github_actions_artifact.digest',
       adoption_gate: {
         command:
-          'npm run contracts:check-runner-image-lock -- --adoption --manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+          'npm run contracts:check-runner-image-lock -- --adoption --manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json --handoff-report scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json',
         lock_path: 'release/agentsmith-runner-image.lock',
         manifest_path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
         ok: true,

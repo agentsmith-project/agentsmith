@@ -1,0 +1,60 @@
+{
+  "schema_version": "agentsmith.runner-ga-handoff-report/v1",
+  "scope": "runner_ga_handoff_evidence",
+  "status": "pass",
+  "generated_at": "2026-05-23T12:00:00.000Z",
+  "runner": "agentsmith-runner",
+  "release_id": "locked-safety-008dbbd",
+  "git_sha": "008dbbd3b232485cb77f3cae585d38955a8bf9fb",
+  "runner_contract_version": "0.1.0",
+  "supported_protocol_versions": [
+    "1.0"
+  ],
+  "image": {
+    "id": "agentsmith-runner",
+    "image": "ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a",
+    "digest": "sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a"
+  },
+  "contract_artifact": {
+    "package_uri": "gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/26866113545/mbos-agent-runner-contract-0.1.0.tgz",
+    "package_sha256": "sha256:750ee1994aeba5e43e91ceff98b7f0e058bf185ac727d8ff174cc4c6a8a3568f",
+    "descriptor_subject_sha256": "sha256:57ca6080a431f4b0ff55dddf7d415814cfb5c292344d12f24851a45d34bafba2"
+  },
+  "manifest": {
+    "input_sha256": "sha256:a7e83fd0cae608d7e7ac8f3483c78ffa2c3ebe25f09c0b4e6e63526d95cfab70",
+    "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json",
+    "subject_sha256": "sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0",
+    "artifact_sha256": "sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0"
+  },
+  "provenance": {
+    "producer_repo": "github.com/agentsmith-project/agentsmith-runner",
+    "normalized_remote": "github.com/agentsmith-project/agentsmith-runner",
+    "workflow_name": "Runner Image Publish",
+    "job": "publish",
+    "run_id": "26866339967",
+    "run_attempt": "1",
+    "commit_sha": "008dbbd3b232485cb77f3cae585d38955a8bf9fb"
+  },
+  "checks": [
+    {
+      "name": "runner_release_manifest",
+      "status": "pass"
+    },
+    {
+      "name": "digest_pinned_runner_image",
+      "status": "pass"
+    },
+    {
+      "name": "contract_artifact_binding",
+      "status": "pass"
+    },
+    {
+      "name": "adoption_policy_declared",
+      "status": "pass"
+    }
+  ],
+  "notes": [
+    "Runner GA handoff is evidence for AgentSmith adoption and release-kit final aggregation.",
+    "It does not issue formal_verdict and does not update AgentSmith locks."
+  ]
+}

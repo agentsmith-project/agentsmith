@@ -69,10 +69,12 @@ const RELEASE_CONTRACT_CI_ARTIFACT_INTERNAL_COMMAND =
 const RUNNER_CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 const RUNNER_RELEASE_MANIFEST_PATH =
   'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json';
+const RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH =
+  'scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json';
 const RUNNER_REMOTE_MANIFEST_PATH_FILE =
   'artifacts/release-contract/runner-manifest-source-gate/remote-manifest-path.txt';
 const RUNNER_IMAGE_LOCK_ADOPTION_COMMAND =
-  `npm run contracts:check-runner-image-lock -- --adoption --manifest "\${RUNNER_RELEASE_MANIFEST_PATH}"`;
+  `npm run contracts:check-runner-image-lock -- --adoption --manifest "\${RUNNER_RELEASE_MANIFEST_PATH}" --handoff-report "\${RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH}"`;
 const ASBCP_IMAGE_ONLY_COMMAND = 'npm run contracts:check-asbcp-image-only';
 const ASBCP_FINAL_MANIFEST_ADOPTION_MANIFEST_COMMAND =
   'npm run contracts:check-asbcp-adoption -- --manifest <downloaded-asbcp-final-manifest.json>';
@@ -1574,6 +1576,9 @@ describe('current workflow governance', () => {
     expect(generateArtifactStepIndex).toBeGreaterThan(handoffFileCheckStepIndex);
     expect(runnerSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
     expect(runnerSourceGateRun).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
+    expect(runnerSourceGateRun).toContain(
+      `RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH="${RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH}"`,
+    );
     expect(runnerSourceGateRun).toContain('runner_repo="agentsmith-project/agentsmith-runner"');
     expect(runnerSourceGateRun).toContain('runner_remote_download_dir="${runner_gate_dir}/artifact-download"');
     expect(runnerSourceGateRun).toContain('runner_handoff_download_dir="${runner_gate_dir}/handoff-download"');

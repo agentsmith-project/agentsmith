@@ -48,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
+          RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH="scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json"
           runner_repo="agentsmith-project/agentsmith-runner"
           runner_gate_dir="artifacts/release-contract/runner-manifest-source-gate"
           runner_remote_download_dir="${runner_gate_dir}/artifact-download"
@@ -56,7 +57,7 @@ jobs:
           rm -rf "${runner_remote_download_dir}"
           rm -rf "${runner_handoff_download_dir}"
 
-          npm run contracts:check-runner-image-lock -- --adoption --manifest "${RUNNER_RELEASE_MANIFEST_PATH}"
+          npm run contracts:check-runner-image-lock -- --adoption --manifest "${RUNNER_RELEASE_MANIFEST_PATH}" --handoff-report "${RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH}"
 
           runner_run_id="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.run_id || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"
           runner_artifact_name="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.subject_name || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"

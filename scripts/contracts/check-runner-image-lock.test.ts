@@ -23,6 +23,7 @@ import {
 const FIXTURE_ROOT = join(process.cwd(), 'scripts', 'governance', '__fixtures__', 'release-boundary');
 const CANONICAL_LOCK = join(process.cwd(), 'release', 'agentsmith-runner-image.lock');
 const MANIFEST_FIXTURE = join(FIXTURE_ROOT, 'runner-release-manifest.valid.json');
+const HANDOFF_REPORT_FIXTURE = join(FIXTURE_ROOT, 'runner-ga-handoff-report.valid.json');
 
 const roots: string[] = [];
 
@@ -47,6 +48,10 @@ function manifestFixture(): Record<string, unknown> {
   return JSON.parse(readFileSync(MANIFEST_FIXTURE, 'utf8')) as Record<string, unknown>;
 }
 
+function handoffReportFixture(): Record<string, unknown> {
+  return JSON.parse(readFileSync(HANDOFF_REPORT_FIXTURE, 'utf8')) as Record<string, unknown>;
+}
+
 function writeManifest(
   root: string,
   mutate: (manifest: Record<string, unknown>) => void = () => undefined,
@@ -54,6 +59,15 @@ function writeManifest(
   const manifest = manifestFixture();
   mutate(manifest);
   return writeFixture(root, 'runner-release-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function writeHandoffReport(
+  root: string,
+  mutate: (handoffReport: Record<string, unknown>) => void = () => undefined,
+): string {
+  const handoffReport = handoffReportFixture();
+  mutate(handoffReport);
+  return writeFixture(root, 'runner-ga-handoff-report.json', `${JSON.stringify(handoffReport, null, 2)}\n`);
 }
 
 function rehashManifestSubject(manifest: Record<string, unknown>): void {
@@ -81,6 +95,8 @@ describe('checkRunnerImageLock', () => {
       lockPath: CANONICAL_LOCK,
       manifestPath: MANIFEST_FIXTURE,
       requireManifest: true,
+      handoffReportPath: HANDOFF_REPORT_FIXTURE,
+      requireHandoffReport: true,
     });
 
     expect(result).toEqual({ ok: true, failures: [] });
@@ -96,8 +112,15 @@ describe('checkRunnerImageLock', () => {
       ).replace(/image_digest=sha256:[0-9a-f]{64}/u, `image_digest=${digest}`),
     );
     const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('adoption.image.digest');
@@ -108,8 +131,15 @@ describe('checkRunnerImageLock', () => {
     const root = tempRoot();
     const lockPath = writeLock(root, (source) => source.replace('runner_protocol_version=1.0', 'runner_protocol_version=0.9'));
     const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('runner_protocol_version');
@@ -120,8 +150,15 @@ describe('checkRunnerImageLock', () => {
     const root = tempRoot();
     const lockPath = writeLock(root, (source) => source.replace('runner_contract_version=0.1.0', 'runner_contract_version=whatever'));
     const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('runner_contract_version must be a semver string');
@@ -133,8 +170,15 @@ describe('checkRunnerImageLock', () => {
       source.replace('image_id=agentsmith-runner', 'image_id=agent-task-runner'),
     );
     const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('image.id must be "agentsmith-runner"');
@@ -151,8 +195,15 @@ describe('checkRunnerImageLock', () => {
       provenance.producer_repo = producerRepo;
       provenance.normalized_remote = producerRepo;
     });
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('canonical repo identity must be github.com/agentsmith-project/agentsmith-runner');
@@ -167,15 +218,69 @@ describe('checkRunnerImageLock', () => {
       ),
     );
     const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root);
 
-    const result = checkRunnerImageLock({ lockPath, manifestPath, requireManifest: true });
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
 
     expect(result.ok).toBe(false);
     expect(failureText(result)).toContain('lock.manifest.producer_repo');
     expect(failureText(result)).toContain('canonical repo identity must be github.com/agentsmith-project/agentsmith-runner');
   });
 
-  it('fails fast for adoption CLI usage without an explicit runner release manifest', () => {
+  it('rejects adoption when the handoff report image digest differs from the manifest image digest', () => {
+    const root = tempRoot();
+    const digest = `sha256:${'1'.repeat(64)}`;
+    const lockPath = writeLock(root);
+    const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root, (handoffReport) => {
+      const image = handoffReport.image as Record<string, unknown>;
+      image.digest = digest;
+    });
+
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('handoff.image.digest');
+    expect(failureText(result)).toContain('handoff image digest must match runner release manifest image digest');
+  });
+
+  it('rejects adoption when the handoff report digest differs from the canonical lock', () => {
+    const root = tempRoot();
+    const lockPath = writeLock(root);
+    const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root, (handoffReport) => {
+      handoffReport.notes = [
+        ...(Array.isArray(handoffReport.notes) ? handoffReport.notes : []),
+        'Digest drift fixture note.',
+      ];
+    });
+
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('adoption.handoff.report_sha256');
+    expect(failureText(result)).toContain('lock handoff report_sha256 must match the provided runner GA handoff report digest');
+  });
+
+  it('fails fast for adoption CLI usage without explicit runner release handoff inputs', () => {
     const tsxCli = join(process.cwd(), 'node_modules', '.bin', 'tsx');
     const result = spawnSync(tsxCli, [
       'scripts/contracts/check-runner-image-lock.ts',
@@ -188,15 +293,18 @@ describe('checkRunnerImageLock', () => {
       env: {
         ...process.env,
         RUNNER_RELEASE_MANIFEST: '',
+        RUNNER_GA_HANDOFF_REPORT: '',
       },
     });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('missing required --manifest <path> or RUNNER_RELEASE_MANIFEST=<path>');
+    expect(result.stderr).toContain('missing required --handoff-report <path> or RUNNER_GA_HANDOFF_REPORT=<path>');
   });
 
   it.each([
     ['--manifest=', 'cli.manifest'],
+    ['--handoff-report=', 'cli.handoff_report'],
     ['--lock=', 'cli.lock'],
   ])('fails fast for empty %s CLI values', (argument, failureField) => {
     const tsxCli = join(process.cwd(), 'node_modules', '.bin', 'tsx');
@@ -226,6 +334,7 @@ describe('checkRunnerImageLock', () => {
     const env = {
       ...process.env,
       RUNNER_RELEASE_MANIFEST: manifestPath,
+      RUNNER_GA_HANDOFF_REPORT: HANDOFF_REPORT_FIXTURE,
     };
 
     const defaultResult = spawnSync(tsxCli, ['scripts/contracts/check-runner-image-lock.ts'], {

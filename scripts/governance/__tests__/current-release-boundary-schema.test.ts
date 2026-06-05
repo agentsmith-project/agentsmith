@@ -39,6 +39,7 @@ import {
 } from '../../post-deploy-product-smoke/report';
 
 const FIXTURE_ROOT = resolve(process.cwd(), 'scripts/governance/__fixtures__/release-boundary');
+const RUNNER_IMAGE_LOCK_PATH = resolve(process.cwd(), 'release/agentsmith-runner-image.lock');
 
 type ValidationResult = {
   ok: boolean;
@@ -52,8 +53,8 @@ function readFixture(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(FIXTURE_ROOT, name), 'utf8')) as Record<string, unknown>;
 }
 
-function readTextFixture(name: string): string {
-  return readFileSync(join(FIXTURE_ROOT, name), 'utf8');
+function readRunnerImageLockText(): string {
+  return readFileSync(RUNNER_IMAGE_LOCK_PATH, 'utf8');
 }
 
 function expectInvalid(result: ValidationResult, expectedReason: string): void {
@@ -231,7 +232,7 @@ describe('current release boundary schema', () => {
     });
     expect(validateRunnerReleaseManifest(readFixture('runner-release-manifest.valid.json')).ok).toBe(true);
 
-    const runnerImageLock = parseRunnerImageLockText(readTextFixture('agentsmith-runner-image.lock'));
+    const runnerImageLock = parseRunnerImageLockText(readRunnerImageLockText());
     expect(runnerImageLock.ok).toBe(true);
     if (runnerImageLock.ok) {
       expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
@@ -2018,7 +2019,7 @@ describe('current release boundary schema', () => {
     );
 
     const lock = parseRunnerImageLockText(
-      readTextFixture('agentsmith-runner-image.lock')
+      readRunnerImageLockText()
         .replace(
           'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:',
           'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:',
@@ -2034,7 +2035,7 @@ describe('current release boundary schema', () => {
 
   it('rejects legacy runner image ids in image lock text', () => {
     const lock = parseRunnerImageLockText(
-      readTextFixture('agentsmith-runner-image.lock')
+      readRunnerImageLockText()
         .replace('image_id=agentsmith-runner', 'image_id=agent-task-runner'),
       'legacy-agent-task-runner-image.lock',
     );

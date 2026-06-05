@@ -37,7 +37,7 @@ type CliOptions = {
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const DEFAULT_LOCK_PATH = resolve(
   REPO_ROOT,
-  'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+  'release/agentsmith-runner-image.lock',
 );
 const RUNNER_RELEASE_MANIFEST_ENV = 'RUNNER_RELEASE_MANIFEST';
 

@@ -98,7 +98,7 @@ CSI_DRIVER="${AFSCP_STORAGE_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-agent-task}"
 EXPLICIT_INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
-RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock}"
+RUNNER_IMAGE_LOCK_PATH="${RUNNER_IMAGE_LOCK_PATH:-${ROOT_DIR}/release/agentsmith-runner-image.lock}"
 RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 if [[ "${GATE_MODE}" == "runner-projection-smoke" || "${GATE_MODE}" == "runner-locked-runtime-smoke" ]]; then
   BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-0}"
@@ -719,7 +719,7 @@ collect_runtime_readiness_summary() {
   local log_file
   local -a candidates=()
 
-  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|request_id|workload_id|phase'
+  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|API (ready|call|request|status)|api (ready|call|request|status)|pod manager|pod_manager|ASBCP create/status|ASBCP (create|status)|request_id|workload_id|phase|status_code|error_code'
   if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
     candidates+=(
       "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"

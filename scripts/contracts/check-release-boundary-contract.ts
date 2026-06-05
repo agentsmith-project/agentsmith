@@ -32,6 +32,7 @@ const CHECK_SCRIPT_COMMAND = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts
 const RUNNER_IMAGE_LOCK_NPM_SCRIPT = 'contracts:check-runner-image-lock';
 const RUNNER_IMAGE_LOCK_SCRIPT_COMMAND = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts/check-runner-image-lock.ts`;
 const FIXTURE_ROOT = 'scripts/governance/__fixtures__/release-boundary';
+const RUNNER_IMAGE_LOCK_RELATIVE_PATH = 'release/agentsmith-runner-image.lock' as const;
 
 type PackageJson = {
   scripts?: Record<string, string>;
@@ -86,7 +87,7 @@ function readText(rootDir: string, relativePath: string, failures: ReleaseBounda
     return readFileSync(absolutePath, 'utf8');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown read error';
-    addFailure(failures, relativePath, `Failed to read fixture: ${message}`);
+    addFailure(failures, relativePath, `Failed to read file: ${message}`);
     return null;
   }
 }
@@ -246,8 +247,8 @@ function validateReleaseContractFixtureTargetProfiles(
   );
 }
 
-function validateRunnerImageLockFixture(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
-  const relativePath = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
+function validateRunnerImageLockArtifact(rootDir: string, failures: ReleaseBoundaryContractFailure[]): void {
+  const relativePath = RUNNER_IMAGE_LOCK_RELATIVE_PATH;
   const value = readText(rootDir, relativePath, failures);
   if (value === null) {
     return;
@@ -264,7 +265,7 @@ function validateReleaseContractRunnerImageLockAlignment(
   failures: ReleaseBoundaryContractFailure[],
 ): void {
   const contractRelativePath = join(FIXTURE_ROOT, 'release-contract.valid.json');
-  const lockRelativePath = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
+  const lockRelativePath = RUNNER_IMAGE_LOCK_RELATIVE_PATH;
   const manifestRelativePath = join(FIXTURE_ROOT, 'runner-release-manifest.valid.json');
   const contractValue = readJson(rootDir, contractRelativePath, failures);
   const lockValue = readText(rootDir, lockRelativePath, failures);
@@ -376,7 +377,7 @@ function compareRunnerAdoptionString(
 
   addFailure(
     failures,
-    join(FIXTURE_ROOT, 'agentsmith-runner-image.lock'),
+    RUNNER_IMAGE_LOCK_RELATIVE_PATH,
     `${field}: ${message}; expected ${expected}; actual ${actual}`,
   );
 }
@@ -502,7 +503,7 @@ export function checkReleaseBoundaryContract(
   validateFixture(rootDir, 'substrate-connection.kit-installed.valid.json', validateSubstrateConnectionTruth, failures);
   validateFixture(rootDir, 'release-kit-evidence.valid.json', validateReleaseKitEvidenceForAggregate, failures);
   validateFixture(rootDir, 'runner-release-manifest.valid.json', validateRunnerReleaseManifest, failures);
-  validateRunnerImageLockFixture(rootDir, failures);
+  validateRunnerImageLockArtifact(rootDir, failures);
   validateReleaseContractRunnerImageLockAlignment(rootDir, failures);
   validateFixture(
     rootDir,

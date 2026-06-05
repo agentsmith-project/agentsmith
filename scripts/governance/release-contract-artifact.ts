@@ -54,7 +54,7 @@ export const AFSCP_IMAGE_SOURCE_RECEIPT_SCHEMA_VERSION =
 
 const DEFAULT_OUTPUT_DIR = 'artifacts/release-contract';
 const RUNNER_IMAGE_LOCK_RELATIVE_PATH =
-  'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock' as const;
+  'release/agentsmith-runner-image.lock' as const;
 const RUNNER_RELEASE_MANIFEST_RELATIVE_PATH =
   'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json' as const;
 const RUNNER_REPO_SLUG = 'agentsmith-project/agentsmith-runner' as const;

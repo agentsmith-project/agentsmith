@@ -87,28 +87,25 @@ const BUILD_PRODUCER = {
 const RUNNER_IMAGE_LOCK = {
   schema_version: 'agentsmith.runner-image-lock/v1',
   runner: 'agentsmith-runner',
-  release_id: 'locked-safety-35ada93',
-  git_sha: '35ada93cbba0102e9f099c3d47eeb8a48bc89e6f',
+  release_id: 'locked-safety-008dbbd',
+  git_sha: '008dbbd3b232485cb77f3cae585d38955a8bf9fb',
   runner_contract_version: '0.1.0',
   runner_protocol_version: '1.0',
   image: {
     id: 'agentsmith-runner',
     image:
-      'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-35ada93@sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
-    digest: 'sha256:435415e9824550161dc1b0ddcb221fbc4a995b33742e0509879c3ff90f8a0efb',
+      'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+    digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
   },
   manifest: {
     producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
-    subject_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
-    artifact_sha256: 'sha256:d39893f31f6f67200a2b06fe993473956ebbadce479fe502261d3d4394211672',
+    subject_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+    artifact_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
   },
 } as const satisfies CurrentRunnerImageLock;
 const CANONICAL_RUNNER_IMAGE_LOCK_PATH = join(
   process.cwd(),
-  'scripts',
-  'governance',
-  '__fixtures__',
-  'release-boundary',
+  'release',
   'agentsmith-runner-image.lock',
 );
 const CANONICAL_RUNNER_RELEASE_MANIFEST_PATH = join(
@@ -120,10 +117,7 @@ const CANONICAL_RUNNER_RELEASE_MANIFEST_PATH = join(
   'runner-release-manifest.valid.json',
 );
 const CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH = join(
-  'scripts',
-  'governance',
-  '__fixtures__',
-  'release-boundary',
+  'release',
   'agentsmith-runner-image.lock',
 );
 const CANONICAL_RUNNER_RELEASE_MANIFEST_RELATIVE_PATH = join(
@@ -188,8 +182,8 @@ function buildExternalImageSourceProvenance(
       producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
       commit_sha: RUNNER_IMAGE_LOCK.git_sha,
-      tag: 'release-locked-safety-35ada93',
-      run_id: '26714141935',
+      tag: 'release-locked-safety-008dbbd',
+      run_id: '26866339967',
       run_attempt: '1',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
     },
@@ -562,7 +556,7 @@ interface DependencyImageSourceGateFixture {
 
 function writeCanonicalRunnerImageLock(root: string): void {
   const lockPath = join(root, CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH);
-  mkdirSync(join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary'), { recursive: true });
+  mkdirSync(join(lockPath, '..'), { recursive: true });
   writeFileSync(lockPath, readFileSync(CANONICAL_RUNNER_IMAGE_LOCK_PATH, 'utf8'), 'utf8');
 }
 
@@ -1698,8 +1692,8 @@ describe('release contract CI artifact producer', () => {
         producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
         normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
         commit_sha: RUNNER_IMAGE_LOCK.git_sha,
-        tag: 'release-locked-safety-35ada93',
-        run_id: '26714141935',
+        tag: 'release-locked-safety-008dbbd',
+        run_id: '26866339967',
         run_attempt: '1',
         artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
       },
@@ -1755,7 +1749,7 @@ describe('release contract CI artifact producer', () => {
       manifest_git_sha: RUNNER_IMAGE_LOCK.git_sha,
       manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       manifest_provenance_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
-      run_id: '26714141935',
+      run_id: '26866339967',
       run_attempt: '1',
       workflow_name: 'Runner Image Publish',
       workflow_status: 'completed',
@@ -1770,7 +1764,7 @@ describe('release contract CI artifact producer', () => {
       adoption_gate: {
         command:
           'npm run contracts:check-runner-image-lock -- --adoption --manifest scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
-        lock_path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+        lock_path: 'release/agentsmith-runner-image.lock',
         manifest_path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
         ok: true,
       },
@@ -2331,7 +2325,7 @@ describe('release contract CI artifact producer', () => {
       mutate: (metadata: RunnerManifestSourceMetadataFixture) => {
         metadata.runView.headSha = 'ffffffffffffffffffffffffffffffffffffffff';
       },
-      expected: 'run_view.headSha: expected 35ada93cbba0102e9f099c3d47eeb8a48bc89e6f; actual ffffffffffffffffffffffffffffffffffffffff',
+      expected: 'run_view.headSha: expected 008dbbd3b232485cb77f3cae585d38955a8bf9fb; actual ffffffffffffffffffffffffffffffffffffffff',
     },
     {
       name: 'artifact missing',

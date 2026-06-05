@@ -643,7 +643,7 @@ export const CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX: readonly CurrentTruthMatrixE
   {
     truth: 'runner_image_lock',
     owner: 'agentsmith',
-    physical_source: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+    physical_source: 'release/agentsmith-runner-image.lock',
     generator: 'AgentSmith adoption PR',
     validators: [
       'AgentSmith runner image lock checker',

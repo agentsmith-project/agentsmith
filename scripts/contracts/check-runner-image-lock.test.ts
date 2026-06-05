@@ -21,7 +21,7 @@ import {
 } from '../governance/current-release-boundary-schema';
 
 const FIXTURE_ROOT = join(process.cwd(), 'scripts', 'governance', '__fixtures__', 'release-boundary');
-const LOCK_FIXTURE = join(FIXTURE_ROOT, 'agentsmith-runner-image.lock');
+const CANONICAL_LOCK = join(process.cwd(), 'release', 'agentsmith-runner-image.lock');
 const MANIFEST_FIXTURE = join(FIXTURE_ROOT, 'runner-release-manifest.valid.json');
 
 const roots: string[] = [];
@@ -40,7 +40,7 @@ function writeFixture(root: string, path: string, content: string): string {
 }
 
 function writeLock(root: string, mutate: (source: string) => string = (source) => source): string {
-  return writeFixture(root, 'agentsmith-runner-image.lock', mutate(readFileSync(LOCK_FIXTURE, 'utf8')));
+  return writeFixture(root, 'agentsmith-runner-image.lock', mutate(readFileSync(CANONICAL_LOCK, 'utf8')));
 }
 
 function manifestFixture(): Record<string, unknown> {
@@ -76,9 +76,9 @@ afterEach(() => {
 });
 
 describe('checkRunnerImageLock', () => {
-  it('accepts the fixture lock when it matches a valid runner release manifest', () => {
+  it('accepts the canonical lock when it matches a valid runner release manifest', () => {
     const result = checkRunnerImageLock({
-      lockPath: LOCK_FIXTURE,
+      lockPath: CANONICAL_LOCK,
       manifestPath: MANIFEST_FIXTURE,
       requireManifest: true,
     });
@@ -181,7 +181,7 @@ describe('checkRunnerImageLock', () => {
       'scripts/contracts/check-runner-image-lock.ts',
       '--adoption',
       '--lock',
-      LOCK_FIXTURE,
+      CANONICAL_LOCK,
     ], {
       cwd: process.cwd(),
       encoding: 'utf8',

@@ -137,7 +137,7 @@
         "scripts/governance/release-contract-input.ts",
         "scripts/governance/release-contract.ts",
         "scripts/contracts/check-runner-image-lock.ts",
-        "scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock",
+        "release/agentsmith-runner-image.lock",
         "scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
       ],
       "current_role": "Release contract input and runner lock checker are source locations for managed runner image digest adoption wiring.",

@@ -23,6 +23,8 @@ const RELEASE_BOUNDARY_FIXTURE_ROOT = path.join(
   '__fixtures__',
   'release-boundary',
 );
+const RUNNER_IMAGE_LOCK_RELATIVE_PATH = path.join('release', 'agentsmith-runner-image.lock');
+const RUNNER_IMAGE_LOCK_SOURCE_PATH = path.join(process.cwd(), RUNNER_IMAGE_LOCK_RELATIVE_PATH);
 const CONTRACT_BUILD_COMMAND = 'npm run build -w @mbos/agent-runner-contract';
 const CHECK_SCRIPT = `${CONTRACT_BUILD_COMMAND} && tsx scripts/contracts/check-release-boundary-contract.ts`;
 const CHECK_NPM_SCRIPT = 'contracts:check-release-boundary';
@@ -122,6 +124,9 @@ function writeFixtureRoot(): string {
     path.join(process.cwd(), 'scripts', 'governance', 'release-contract-target-profiles.json'),
     path.join(root, 'scripts', 'governance', 'release-contract-target-profiles.json'),
   );
+  const targetRunnerImageLockPath = path.join(root, RUNNER_IMAGE_LOCK_RELATIVE_PATH);
+  mkdirSync(path.dirname(targetRunnerImageLockPath), { recursive: true });
+  cpSync(RUNNER_IMAGE_LOCK_SOURCE_PATH, targetRunnerImageLockPath);
   writePackageJson(root);
   ensureRunnerAdapterInventoryCurrentPaths(root);
 
@@ -365,10 +370,10 @@ describe('check-release-boundary-contract', () => {
     );
   });
 
-  it('reports missing runner image lock fixture from copied fixtures', () => {
+  it('reports missing runner image lock artifact from copied files', () => {
     const root = writeFixtureRoot();
     rmSync(
-      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agentsmith-runner-image.lock'),
+      path.join(root, RUNNER_IMAGE_LOCK_RELATIVE_PATH),
       { force: true },
     );
 
@@ -378,17 +383,17 @@ describe('check-release-boundary-contract', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          path: RUNNER_IMAGE_LOCK_RELATIVE_PATH,
           message: expect.stringContaining('must exist'),
         }),
       ]),
     );
   });
 
-  it('reports malformed runner image lock fixture from copied fixtures', () => {
+  it('reports malformed runner image lock artifact from copied files', () => {
     const root = writeFixtureRoot();
     writeFileSync(
-      path.join(root, 'scripts', 'governance', '__fixtures__', 'release-boundary', 'agentsmith-runner-image.lock'),
+      path.join(root, RUNNER_IMAGE_LOCK_RELATIVE_PATH),
       [
         'schema_version=agentsmith.runner-image-lock/v1',
         'runner=agentsmith-runner',
@@ -413,23 +418,16 @@ describe('check-release-boundary-contract', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          path: RUNNER_IMAGE_LOCK_RELATIVE_PATH,
           message: expect.stringContaining('runner_contract_version must be a semver string'),
         }),
       ]),
     );
   });
 
-  it('reports release contract managed runner digest drift from the canonical lock fixture', () => {
+  it('reports release contract managed runner digest drift from the canonical lock artifact', () => {
     const root = writeFixtureRoot();
-    const lockPath = path.join(
-      root,
-      'scripts',
-      'governance',
-      '__fixtures__',
-      'release-boundary',
-      'agentsmith-runner-image.lock',
-    );
+    const lockPath = path.join(root, RUNNER_IMAGE_LOCK_RELATIVE_PATH);
     const driftDigest = `sha256:${'b'.repeat(64)}`;
     writeFileSync(
       lockPath,
@@ -456,7 +454,7 @@ describe('check-release-boundary-contract', () => {
     );
   });
 
-  it('reports runner release manifest digest drift from the canonical lock fixture', () => {
+  it('reports runner release manifest digest drift from the canonical lock artifact', () => {
     const root = writeFixtureRoot();
     const manifestPath = path.join(
       root,
@@ -480,15 +478,15 @@ describe('check-release-boundary-contract', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          path: RUNNER_IMAGE_LOCK_RELATIVE_PATH,
           message: expect.stringContaining('lock image ref must match runner release manifest image ref'),
         }),
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          path: RUNNER_IMAGE_LOCK_RELATIVE_PATH,
           message: expect.stringContaining('lock image digest must match runner release manifest image digest'),
         }),
         expect.objectContaining({
-          path: 'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock',
+          path: RUNNER_IMAGE_LOCK_RELATIVE_PATH,
           message: expect.stringContaining('lock manifest subject_sha256 must match runner release manifest subject_sha256'),
         }),
       ]),

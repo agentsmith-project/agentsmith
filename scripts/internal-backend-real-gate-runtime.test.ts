@@ -19,6 +19,8 @@ import { describe, expect, it } from 'vitest';
 import { CURRENT_RELEASE_BOUNDARY_TRUTH_MATRIX } from './governance/current-release-boundary-schema';
 
 const RUNNER_IMAGE_LOCK_TRUTH_PATH =
+  'release/agentsmith-runner-image.lock';
+const LEGACY_RUNNER_IMAGE_LOCK_FIXTURE_PATH =
   'scripts/governance/__fixtures__/release-boundary/agentsmith-runner-image.lock';
 const NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH = 'infra/deploy/shared/agentsmith-runner-image.lock';
 const AFSCP_PROBE_SHELL_VAR_VALUES = {
@@ -462,7 +464,10 @@ AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
 CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
+printf 'API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" >> "\${INTERNAL_REAL_DIR}/afscp-api.log"
 printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+printf 'pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+printf 'ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'gateway ready token=%s\\n' "\${AFSCP_ORCHESTRATOR_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-export-gateway.log"
 
 gate_record_failure() {
@@ -1586,6 +1591,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.runtimeReadinessSummary).toContain('AGENT_SANDBOX_RATE_LIMITED');
     expect(result.runtimeReadinessSummary).toContain('completed_release_fence -> same_task_owner_rebind');
     expect(result.runtimeReadinessSummary).toContain('api ready token=[REDACTED]');
+    expect(result.runtimeReadinessSummary).toContain('API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=[REDACTED]');
+    expect(result.runtimeReadinessSummary).toContain('pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE');
+    expect(result.runtimeReadinessSummary).toContain('ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).not.toContain('known-product-token');
   });
 
@@ -2129,9 +2137,15 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(runnerImageLockChecker).toContain(`'${RUNNER_IMAGE_LOCK_TRUTH_PATH}'`);
     expect(runnerImageLockTruth?.physical_source).toBe(RUNNER_IMAGE_LOCK_TRUTH_PATH);
-    expect(releaseBoundaryChecker).toContain(`const FIXTURE_ROOT = '${path.dirname(RUNNER_IMAGE_LOCK_TRUTH_PATH)}';`);
-    expect(releaseBoundaryChecker).toContain("join(FIXTURE_ROOT, 'agentsmith-runner-image.lock')");
+    expect(releaseBoundaryChecker).toContain(
+      `const RUNNER_IMAGE_LOCK_RELATIVE_PATH = '${RUNNER_IMAGE_LOCK_TRUTH_PATH}' as const;`,
+    );
+    expect(releaseBoundaryChecker).not.toContain("join(FIXTURE_ROOT, 'agentsmith-runner-image.lock')");
     expect(releaseContractArtifact).toContain(`'${RUNNER_IMAGE_LOCK_TRUTH_PATH}' as const`);
+    expect(agentTaskGate).not.toContain(LEGACY_RUNNER_IMAGE_LOCK_FIXTURE_PATH);
+    expect(runnerImageLockChecker).not.toContain(LEGACY_RUNNER_IMAGE_LOCK_FIXTURE_PATH);
+    expect(releaseBoundaryChecker).not.toContain(LEGACY_RUNNER_IMAGE_LOCK_FIXTURE_PATH);
+    expect(releaseContractArtifact).not.toContain(LEGACY_RUNNER_IMAGE_LOCK_FIXTURE_PATH);
     expect(agentTaskGate).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
     expect(runnerImageLockChecker).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);
     expect(releaseBoundaryChecker).not.toContain(NON_CANONICAL_RUNNER_IMAGE_LOCK_PATH);

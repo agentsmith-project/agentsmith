@@ -266,6 +266,76 @@ function validateRequiredSourceFlows(flowMap: Map<string, Record<string, unknown
   }
 }
 
+function requireNestedExpectedString(
+  record: Record<string, unknown>,
+  key: string,
+  expected: string,
+  pathLabel: string,
+  issues: string[],
+): void {
+  const value = stringValue(record, key);
+  if (value !== expected) {
+    issues.push(`${pathLabel}.${key} must be ${expected}`);
+  }
+}
+
+function validateProviderNeutralEndpointEvidence(
+  evidence: Record<string, unknown>,
+  pathLabel: string,
+): void {
+  const checks = asRecord(evidence.checks);
+  const providerNeutralEndpoint = asRecord(checks.provider_neutral_endpoint);
+  const issues: string[] = [];
+
+  requireNestedExpectedString(
+    providerNeutralEndpoint,
+    'endpoint_type',
+    'custom',
+    `${pathLabel}.checks.provider_neutral_endpoint`,
+    issues,
+  );
+  requireNestedExpectedString(
+    providerNeutralEndpoint,
+    'provider_family',
+    'custom',
+    `${pathLabel}.checks.provider_neutral_endpoint`,
+    issues,
+  );
+  requireNestedExpectedString(
+    providerNeutralEndpoint,
+    'upstream_protocol',
+    'openai_chat_completions',
+    `${pathLabel}.checks.provider_neutral_endpoint`,
+    issues,
+  );
+  requireNestedExpectedString(
+    providerNeutralEndpoint,
+    'credential_type',
+    'api_key',
+    `${pathLabel}.checks.provider_neutral_endpoint`,
+    issues,
+  );
+  requireNestedExpectedString(
+    providerNeutralEndpoint,
+    'success_path',
+    'provider_neutral_endpoint',
+    `${pathLabel}.checks.provider_neutral_endpoint`,
+    issues,
+  );
+
+  for (const forbiddenField of ['oauth_provider', 'managed_credential_provider', 'provider_specific_skill']) {
+    if (Object.prototype.hasOwnProperty.call(providerNeutralEndpoint, forbiddenField)) {
+      issues.push(`${pathLabel}.checks.provider_neutral_endpoint.${forbiddenField} is not allowed`);
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new Error(
+      `${pathLabel}.checks.provider_neutral_endpoint must prove the provider-neutral Endpoint success path: ${issues.join('; ')}.`,
+    );
+  }
+}
+
 function sourceEvidencePath(
   aggregate: Record<string, unknown>,
   resolvedAggregatePath: string,
@@ -331,6 +401,12 @@ async function validateFocusedEvidenceFiles(
     );
     requireExactString(evidence, 'flow', sourceFlow, `product_flows.flow_evidence_paths.${sourceFlow}`);
     requireExactString(evidence, 'status', 'passed', `product_flows.flow_evidence_paths.${sourceFlow}`);
+    if (sourceFlow === 'chat_via_llmup') {
+      validateProviderNeutralEndpointEvidence(
+        evidence,
+        `product_flows.flow_evidence_paths.${sourceFlow}`,
+      );
+    }
     digests[sourceFlow] = sha256Digest(raw);
   }
 

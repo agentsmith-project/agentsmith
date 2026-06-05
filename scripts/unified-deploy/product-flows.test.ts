@@ -242,6 +242,21 @@ function makeFocusedAgentTaskFetch(observed: {
     if (url.endsWith('/endpoints') && method === 'POST') {
       return responseJson(201, { id: 'ep_focused', model: 'integration-chat-model' });
     }
+    if (url.endsWith('/chat/sessions') && method === 'POST') {
+      return responseJson(201, { id: 'chat_focused' });
+    }
+    if (url.endsWith('/chat/sessions/chat_focused/messages/stream') && method === 'POST') {
+      return responseText(
+        200,
+        [
+          'data: {"choices":[{"delta":{"content":"Hello from unified deploy product flow mock provider."}}]}',
+          '',
+          'data: [DONE]',
+          '',
+        ].join('\n'),
+        'text/event-stream',
+      );
+    }
     if (url.endsWith('/file-libraries') && method === 'POST') {
       return responseJson(201, { id: 'flib_focused' });
     }
@@ -792,10 +807,60 @@ describe('unified deploy product flow producer', () => {
     expect(observed.taskCreatePayloads[0]).not.toHaveProperty('workspace_file_library_id');
     const managedRunnerFlow = result.evidence.flows.find((flow) => flow.flow === 'agent_task_managed_runner');
     expect(managedRunnerFlow?.checks).toMatchObject({
+      endpoint_setup: {
+        provider_neutral_endpoint: {
+          endpoint_type: 'custom',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          credential_type: 'api_key',
+          success_path: 'provider_neutral_endpoint',
+        },
+      },
       task_execution: {
         task_workspace_file_library_id: 'flib_task_created',
       },
     });
+  });
+
+  it('records provider-neutral endpoint proof on the chat source flow evidence', async () => {
+    const observed = { chatRequests: 0 };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project', 'chat_via_llmup'],
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      providerStarter: async () => ({
+        baseUrl: 'http://172.19.0.1:39999/v1',
+        getRequestCount: () => 1,
+        close: async () => undefined,
+      }),
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const chatFlow = result.evidence.flows.find((flow) => flow.flow === 'chat_via_llmup');
+    expect(result.status).toBe('passed');
+    expect(chatFlow?.checks).toMatchObject({
+      provider_neutral_endpoint: {
+        endpoint_type: 'custom',
+        provider_family: 'custom',
+        upstream_protocol: 'openai_chat_completions',
+        credential_type: 'api_key',
+        success_path: 'provider_neutral_endpoint',
+      },
+    });
+    expect(JSON.stringify(chatFlow?.checks)).not.toContain('oauth_provider');
+    expect(JSON.stringify(chatFlow?.checks)).not.toContain('provider_specific_skill');
   });
 
   it('retries file library create on typed project storage pending and records attempts', async () => {

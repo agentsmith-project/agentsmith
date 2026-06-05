@@ -94,6 +94,18 @@ function focusedEvidence(
   flow: ProductVerificationFlowId,
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
+  const providerNeutralChecks = flow === 'chat_via_llmup'
+    ? {
+      provider_neutral_endpoint: {
+        endpoint_type: 'custom',
+        provider_family: 'custom',
+        upstream_protocol: 'openai_chat_completions',
+        credential_type: 'api_key',
+        success_path: 'provider_neutral_endpoint',
+      },
+    }
+    : {};
+
   return {
     schema_version: FOCUSED_PRODUCT_FLOW_EVIDENCE_SCHEMA_VERSION,
     flow,
@@ -102,7 +114,7 @@ function focusedEvidence(
     command: `fixture:${flow}`,
     generated_at: '2026-05-07T00:00:00.000Z',
     duration_ms: 1,
-    checks: {},
+    checks: providerNeutralChecks,
     ...overrides,
   };
 }
@@ -434,6 +446,32 @@ describe('post-deploy product smoke report producer', () => {
       productFlowsPath: aggregatePath,
       outputDir: join(root, 'out'),
     }))).rejects.toThrow(/producer must be unified-deploy-product-flows; release-kit producers are not accepted/u);
+  });
+
+  it('fails when provider_neutral_endpoint source evidence lacks provider-neutral endpoint proof', async () => {
+    const root = tempDir('post-deploy-product-smoke-provider-neutral-proof-');
+    writeFocusedEvidenceFiles(root, PRODUCT_VERIFICATION_FLOW_IDS, {
+      chat_via_llmup: {
+        checks: {
+          provider_neutral_endpoint: {
+            endpoint_type: 'catalog',
+            provider_family: 'openai',
+            upstream_protocol: 'openai_chat_completions',
+            credential_type: 'oauth',
+            success_path: 'provider_specific_saas',
+            oauth_provider: 'openai',
+          },
+        },
+      },
+    });
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregateWithFlows());
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir: join(root, 'out'),
+    }))).rejects.toThrow(
+      /checks\.provider_neutral_endpoint must prove the provider-neutral Endpoint success path/u,
+    );
   });
 
   it('fails when flow_evidence_paths is missing or omits a required source flow', async () => {

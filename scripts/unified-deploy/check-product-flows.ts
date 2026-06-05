@@ -1882,6 +1882,13 @@ async function ensureEndpoint(
     endpoint_id: endpointId,
     endpoint_model: state.endpointModel,
     provider_base_url: state.provider.baseUrl,
+    provider_neutral_endpoint: {
+      endpoint_type: 'custom',
+      provider_family: 'custom',
+      upstream_protocol: 'openai_chat_completions',
+      credential_type: 'api_key',
+      success_path: 'provider_neutral_endpoint',
+    },
   };
 }
 

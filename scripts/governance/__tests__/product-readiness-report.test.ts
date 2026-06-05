@@ -293,11 +293,13 @@ describe('product readiness report producer', () => {
         repository: 'agentsmith-project/agentsmith',
         run_id: '10001',
         run_attempt: '1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1',
       });
       expect(report.artifact_provenance).toMatchObject({
         workflow_name: 'AgentSmith Product Readiness Artifact',
         run_id: '10001',
         run_attempt: '1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1',
         job: 'product-readiness',
         artifact_uri:
           `gh-artifact://agentsmith-project/agentsmith/agentsmith-product-readiness/10001/product-readiness/${PRODUCT_READINESS_REPORT_FILENAME}`,

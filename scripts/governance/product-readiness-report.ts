@@ -55,6 +55,7 @@ export type ProductReadinessArtifactPublication =
       repository: string;
       run_id: string;
       run_attempt: string;
+      run_url: string;
     }
   | {
       mode: 'local_diagnostics_only';
@@ -64,6 +65,7 @@ export type ProductReadinessArtifactPublication =
 
 export type ProductReadinessArtifactProvenance = Omit<CurrentArtifactProvenance, 'artifact_uri'> & {
   artifact_uri?: string;
+  run_url?: string;
 };
 
 export interface ProductReadinessLocalDiagnostics {
@@ -330,6 +332,10 @@ function requireGitHubArtifactEnv(
   return value;
 }
 
+function githubActionsRunUrl(repository: string, runId: string, runAttempt: string): string {
+  return `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`;
+}
+
 function buildArtifactPublication(input: {
   env: Readonly<Record<string, string | undefined>>;
   subjectUri: string;
@@ -374,6 +380,7 @@ function buildArtifactPublication(input: {
     repository,
     run_id: runId,
     run_attempt: runAttempt,
+    run_url: githubActionsRunUrl(repository, runId, runAttempt),
   };
 }
 
@@ -391,6 +398,7 @@ function buildArtifactProvenance(input: {
         workflow_name: requireGitHubArtifactEnv(input.env, 'GITHUB_WORKFLOW'),
         run_id: input.artifactPublication.run_id,
         run_attempt: input.artifactPublication.run_attempt,
+        run_url: input.artifactPublication.run_url,
         job: requireGitHubArtifactEnv(input.env, 'GITHUB_JOB'),
         artifact_uri: input.artifactPublication.artifact_uri,
       }

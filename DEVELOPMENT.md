@@ -69,7 +69,7 @@ npm run product:status
 ```
 <!-- current-workflow:development:end -->
 
-Release boundary note: `npm run product:ready` is the AgentSmith product-side readiness / local complete / contract and handoff input gate, not a deployment/package/operator verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are pre-GA focused diagnostics.
+Release boundary note: `npm run product:ready` is the AgentSmith product-side readiness / local complete / contract and handoff input gate, not a deployment/package/operator verdict. Unified deploy, local-kind, existing-cluster, and product-flow deploy commands are transition-only focused diagnostics.
 
 先选入口，不要混用三条路径：
 
@@ -81,10 +81,10 @@ Release boundary note: `npm run product:ready` is the AgentSmith product-side re
 
 如果只是定位问题，先用 [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) 找最小诊断命令。诊断命令通过后，按范围回到 `npm run verify -- --goal=... --run`；发布级收口回到 `npm run product:ready`。
 
-### Pre-GA 开发提效约定
+### GA 开发提效约定
 
 - 每个改动先定事实源和职责边界：哪个对象由后端、合约、URL、manifest、lock 或本地 fixture 说了算，前端只消费对应真相。
-- pre-GA 旧路径、旧命名、旧脚本和旧计划默认删除、归档或 fail fast；不要为过渡实现增加长期兼容层。
+- GA 旧路径、旧命名、旧脚本和旧计划默认删除、归档或 fail fast；不要为过渡实现增加长期兼容层。
 - 每个 change slice 先用最小 TDD、fixture、focused diagnostic 或 focused e2e 证明局部事实；重门禁不是日常调试工具。
 - focused diagnostic 只能写成 scoped evidence，不能写成 readiness、release、deploy、package 或 operator verdict。
 - active 文档只维护当前边界、下一步、阻断点和验收口径；历史 evidence、流水账和过期决策进入 archive/reference。
@@ -185,7 +185,7 @@ npm run marketing:assets:generate
 
 `.github/workflows/image-publish.yml` is the current GHCR producer. It builds and pushes the single shared `agentsmith-app` image, writes `artifacts/image-publish/build-manifest.json`, and uploads `agentsmith-release-contract-input` for `.github/workflows/release-contract-artifact.yml`.
 
-Pre-GA fail-fast rule: do not invent separate `web`, `api`, `product_schema_bootstrap`, or backend/API image digests in AgentSmith CI. The release-contract input exposes the real `agentsmith_app` product image only; a separate backend/API image must be connected by its owner when that image exists.
+GA fail-fast rule: do not invent separate `web`, `api`, `product_schema_bootstrap`, or backend/API image digests in AgentSmith CI. The release-contract input exposes the real `agentsmith_app` product image only; a separate backend/API image must be connected by its owner when that image exists.
 
 ## Quick Start
 

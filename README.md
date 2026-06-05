@@ -131,7 +131,7 @@ npm run product:status
 
 `Image Publish` is the CI producer for GHCR image handoff. On `main`/tag pushes or manual dispatch it publishes the current shared `ghcr.io/<owner>/agentsmith-app` product image and uploads `agentsmith-release-contract-input` for the release contract artifact workflow.
 
-Pre-GA, AgentSmith does not publish a separate backend/API product image from this repo. Web/API/bootstrap workloads use the shared `agentsmith_app` image truth; a future backend/API owner must add its own image digest instead of reusing or fabricating one here.
+GA scope lock: AgentSmith does not publish a separate backend/API product image from this repo. Web/API/bootstrap workloads use the shared `agentsmith_app` image truth; a later backend/API image owner must add its own digest instead of reusing or fabricating one here.
 
 ## Local Runtime In Plain Words
 

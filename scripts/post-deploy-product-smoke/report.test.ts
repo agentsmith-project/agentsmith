@@ -75,13 +75,16 @@ function fileSha256(path: string): string {
 
 function withReleaseContract(
   root: string,
-  options: Omit<Parameters<typeof runPostDeployProductSmokeReportProducer>[0], 'releaseContractPath'>,
+  options: Omit<Parameters<typeof runPostDeployProductSmokeReportProducer>[0], 'releaseContractPath' | 'pathRoot'> & {
+    pathRoot?: string;
+  },
   releaseContract: {
     overrides?: Record<string, unknown>;
     name?: string;
   } = {},
 ): Parameters<typeof runPostDeployProductSmokeReportProducer>[0] {
   return {
+    pathRoot: root,
     ...options,
     releaseContractPath: writeReleaseContract(
       root,
@@ -128,6 +131,21 @@ function writeFocusedEvidenceFiles(
   for (const flow of flows) {
     writeJson(root, `${flow}.json`, focusedEvidence(flow, overrides[flow]));
   }
+  writeText(
+    root,
+    'site.env',
+    [
+      'UNIFIED_DEPLOY_PROFILE=local-kind',
+      'PUBLIC_BASE_URL=http://agentsmith.localtest.me:29180',
+      'PUBLIC_API_BASE_URL=http://agentsmith.localtest.me:29180/api/v1',
+      'RUNNER_PUBLIC_API_BASE_URL=ws://agentsmith.localtest.me:29180/api/v1',
+      '',
+    ].join('\n'),
+  );
+  writeJson(root, 'substrate-truth.json', {
+    schema_version: 'fixture.substrate-truth/v1',
+    target: 'local-kind',
+  });
 }
 
 function aggregateWithFlows(
@@ -142,6 +160,9 @@ function aggregateWithFlows(
     source: {
       public_base_url: 'http://agentsmith.localtest.me:29180',
       api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
+      runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
+      site_env_path: 'site.env',
+      substrate_truth_path: 'substrate-truth.json',
     },
     flows: flows.map((flow) => ({
       ...focusedEvidence(flow),
@@ -193,6 +214,7 @@ describe('post-deploy product smoke report producer', () => {
       productFlowsPath: aggregatePath,
       releaseContractPath,
       outputDir,
+      pathRoot: root,
       now: () => new Date('2026-05-08T00:00:00.000Z'),
     });
 
@@ -208,13 +230,13 @@ describe('post-deploy product smoke report producer', () => {
       status: 'passed',
     });
     expect(report.release_contract).toMatchObject({
-      path: releaseContractPath,
+      path: 'release-contract/agentsmith-release-contract.json',
       input_sha256: fileSha256(releaseContractPath),
       release_id: RELEASE_CONTRACT_RELEASE_ID,
       git_sha: RELEASE_CONTRACT_GIT_SHA,
     });
     expect(report.source).toMatchObject({
-      product_flows_path: aggregatePath,
+      product_flows_path: 'product-flows.json',
       product_flows_sha256: fileSha256(aggregatePath),
     });
     expect(report.deployment_target).toMatchObject({
@@ -223,11 +245,11 @@ describe('post-deploy product smoke report producer', () => {
       api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
       runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
       site_env: {
-        path: siteEnvPath,
+        path: 'site.env',
         sha256: fileSha256(siteEnvPath),
       },
       substrate_truth: {
-        path: substrateTruthPath,
+        path: 'substrate-truth.json',
         sha256: fileSha256(substrateTruthPath),
       },
     });
@@ -236,7 +258,7 @@ describe('post-deploy product smoke report producer', () => {
     expect(Object.keys(smokeResults)).not.toContain('chat_via_llmup');
     expect(smokeResults.provider_neutral_endpoint).toMatchObject({
       source_flow: 'chat_via_llmup',
-      source_evidence_path: join(root, 'chat_via_llmup.json'),
+      source_evidence_path: 'chat_via_llmup.json',
       source_evidence_sha256: fileSha256(join(root, 'chat_via_llmup.json')),
       status: 'passed',
       proof: {
@@ -248,8 +270,9 @@ describe('post-deploy product smoke report producer', () => {
       },
     });
     for (const smokeResult of Object.values(smokeResults) as Record<string, unknown>[]) {
-      expect(smokeResult.source_evidence_path).toEqual(expect.stringMatching(root));
-      expect(smokeResult.source_evidence_sha256).toEqual(fileSha256(smokeResult.source_evidence_path as string));
+      const sourceEvidencePath = smokeResult.source_evidence_path as string;
+      expect(sourceEvidencePath).not.toMatch(/^\/|\\/u);
+      expect(smokeResult.source_evidence_sha256).toEqual(fileSha256(join(root, sourceEvidencePath)));
     }
   });
 
@@ -307,6 +330,58 @@ describe('post-deploy product smoke report producer', () => {
       expect(sourceEvidencePath).toEqual(expect.any(String));
       expect(sourceEvidencePath).not.toMatch(/^\/|\\/u);
     }
+  });
+
+  it('fails when pathRoot is missing because release-kit canonical reports require portable paths', async () => {
+    const root = tempDir('post-deploy-product-smoke-missing-path-root-');
+    const outputDir = join(root, 'out');
+    writeFocusedEvidenceFiles(root);
+    const siteEnvPath = writeText(
+      root,
+      'site.env',
+      [
+        'UNIFIED_DEPLOY_PROFILE=local-kind',
+        'PUBLIC_BASE_URL=http://agentsmith.localtest.me:29180',
+        'PUBLIC_API_BASE_URL=http://agentsmith.localtest.me:29180/api/v1',
+        '',
+      ].join('\n'),
+    );
+    const substrateTruthPath = writeJson(root, 'substrate-truth.json', {
+      schema_version: 'fixture.substrate-truth/v1',
+      target: 'local-kind',
+    });
+    const aggregate = aggregateWithFlows();
+    aggregate.source = {
+      ...(aggregate.source as Record<string, unknown>),
+      site_env_path: siteEnvPath,
+      substrate_truth_path: substrateTruthPath,
+    };
+    const aggregatePath = writeJson(root, 'product-flows.json', aggregate);
+
+    await expect(runPostDeployProductSmokeReportProducer({
+      productFlowsPath: aggregatePath,
+      releaseContractPath: writeReleaseContract(root),
+      outputDir,
+    })).rejects.toThrow(/--path-root is required for canonical post-deploy product smoke reports/u);
+    expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+  });
+
+  it('fails when deployment target source bindings are incomplete', async () => {
+    const root = tempDir('post-deploy-product-smoke-missing-target-bindings-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const aggregate = aggregateWithFlows();
+    delete (aggregate.source as Record<string, unknown>).site_env_path;
+    delete (aggregate.source as Record<string, unknown>).substrate_truth_path;
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregate);
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: root,
+    }))).rejects.toThrow(/deployment_target.site_env.path is required/u);
+    expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
   });
 
   it('fails fast when pathRoot serialization would point outside the campaign root', async () => {
@@ -389,6 +464,7 @@ describe('post-deploy product smoke report producer', () => {
       productFlowsPath: aggregatePath,
       releaseContractPath: '   ',
       outputDir: join(root, 'out-empty'),
+      pathRoot: root,
     })).rejects.toThrow(/releaseContractPath is required/u);
   });
 
@@ -609,11 +685,18 @@ describe('post-deploy product smoke report producer', () => {
     expect(result.report).not.toHaveProperty('formal_verdict');
     expect(result.report.source.product_flows_sha256).toBe(fileSha256(aggregatePath));
     expect(result.report.deployment_target).toMatchObject({
+      profile: 'local-kind',
       public_base_url: 'http://agentsmith.localtest.me:29180',
       api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
+      site_env: {
+        path: 'site.env',
+        sha256: fileSha256(join(root, 'site.env')),
+      },
+      substrate_truth: {
+        path: 'substrate-truth.json',
+        sha256: fileSha256(join(root, 'substrate-truth.json')),
+      },
     });
-    expect(result.report.deployment_target).not.toHaveProperty('site_env');
-    expect(result.report.deployment_target).not.toHaveProperty('substrate_truth');
     const report = readReport(result.reportPath);
     expect(report).not.toHaveProperty('formal_verdict');
     for (const legacyField of [

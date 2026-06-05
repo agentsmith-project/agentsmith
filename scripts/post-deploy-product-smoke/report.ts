@@ -62,12 +62,12 @@ type EvidenceFileDigest = {
 };
 
 type DeploymentTargetBinding = {
-  profile?: string;
-  public_base_url?: string;
-  api_base_url?: string;
+  profile: string;
+  public_base_url: string;
+  api_base_url: string;
   runner_public_api_base_url?: string;
-  site_env?: EvidenceFileDigest;
-  substrate_truth?: EvidenceFileDigest;
+  site_env: EvidenceFileDigest;
+  substrate_truth: EvidenceFileDigest;
 };
 
 export type PostDeployProductSmokeReport = {
@@ -91,7 +91,7 @@ export type PostDeployProductSmokeReport = {
     release_id: string;
     git_sha: string;
   };
-  deployment_target?: DeploymentTargetBinding;
+  deployment_target: DeploymentTargetBinding;
   smoke_results: Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
   failures: [];
   paths: {
@@ -103,7 +103,7 @@ export type PostDeployProductSmokeReportOptions = {
   productFlowsPath: string;
   releaseContractPath: string;
   outputDir?: string;
-  pathRoot?: string;
+  pathRoot: string;
   now?: () => Date;
 };
 
@@ -117,7 +117,7 @@ type CliOptions = {
   productFlowsPath: string;
   releaseContractPath: string;
   outputDir?: string;
-  pathRoot?: string;
+  pathRoot: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -477,9 +477,9 @@ function buildSmokeResults(
   })) as Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
 }
 
-function resolveOptionalPathRoot(pathRoot: string | undefined): string | undefined {
+function resolveRequiredPathRoot(pathRoot: string | undefined): string {
   if (pathRoot === undefined) {
-    return undefined;
+    throw new Error('--path-root is required for canonical post-deploy product smoke reports.');
   }
   if (pathRoot.trim().length === 0) {
     throw new Error('--path-root must be a non-empty path.');
@@ -495,16 +495,13 @@ function pathRelativeToRoot(pathRoot: string, absolutePath: string, label: strin
   return relativePath.replace(/\\/g, '/');
 }
 
-function serializePathForReport(absolutePath: string, pathRoot: string | undefined, label: string): string {
-  if (!pathRoot) {
-    return absolutePath;
-  }
+function serializePathForReport(absolutePath: string, pathRoot: string, label: string): string {
   return pathRelativeToRoot(pathRoot, absolutePath, label);
 }
 
 function serializeEvidencePathsForReport(
   evidencePaths: Record<ProductVerificationFlowId, string>,
-  pathRoot: string | undefined,
+  pathRoot: string,
 ): Record<ProductVerificationFlowId, string> {
   return Object.fromEntries(POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => [
     spec.source_flow,
@@ -529,17 +526,17 @@ function resolveAggregateSourcePath(
     : path.resolve(path.dirname(resolvedAggregatePath), rawPath);
 }
 
-async function readOptionalAggregateSourceFileBinding(
+async function readRequiredAggregateSourceFileBinding(
   aggregate: Record<string, unknown>,
   sourceKey: string,
   resolvedAggregatePath: string,
-  pathRoot: string | undefined,
+  pathRoot: string,
   reportPathLabel: string,
-): Promise<SourceFileBinding | undefined> {
+): Promise<SourceFileBinding> {
   const source = asRecord(aggregate.source);
   const rawPath = stringValue(source, sourceKey).trim();
   if (!rawPath) {
-    return undefined;
+    throw new Error(`${reportPathLabel} is required.`);
   }
 
   const resolvedPath = resolveAggregateSourcePath(rawPath, resolvedAggregatePath);
@@ -582,24 +579,31 @@ function parseEnvValue(source: string, key: string): string {
 
 function buildDeploymentTargetBinding(
   aggregate: Record<string, unknown>,
-  siteEnv: SourceFileBinding | undefined,
-  substrateTruth: SourceFileBinding | undefined,
-): DeploymentTargetBinding | undefined {
+  siteEnv: SourceFileBinding,
+  substrateTruth: SourceFileBinding,
+): DeploymentTargetBinding {
   const source = asRecord(aggregate.source);
-  const profile = siteEnv ? parseEnvValue(siteEnv.source, 'UNIFIED_DEPLOY_PROFILE') : '';
+  const profile = parseEnvValue(siteEnv.source, 'UNIFIED_DEPLOY_PROFILE');
   const publicBaseUrl = stringValue(source, 'public_base_url');
   const apiBaseUrl = stringValue(source, 'api_base_url');
   const runnerPublicApiBaseUrl = stringValue(source, 'runner_public_api_base_url');
-  const deploymentTarget: DeploymentTargetBinding = {
-    ...(profile ? { profile } : {}),
-    ...(publicBaseUrl ? { public_base_url: publicBaseUrl } : {}),
-    ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+  if (!profile) {
+    throw new Error('deployment_target.profile is required from deployment_target.site_env.path.');
+  }
+  if (!publicBaseUrl) {
+    throw new Error('deployment_target.public_base_url is required.');
+  }
+  if (!apiBaseUrl) {
+    throw new Error('deployment_target.api_base_url is required.');
+  }
+  return {
+    profile,
+    public_base_url: publicBaseUrl,
+    api_base_url: apiBaseUrl,
     ...(runnerPublicApiBaseUrl ? { runner_public_api_base_url: runnerPublicApiBaseUrl } : {}),
-    ...(siteEnv ? { site_env: { path: siteEnv.path, sha256: siteEnv.sha256 } } : {}),
-    ...(substrateTruth ? { substrate_truth: { path: substrateTruth.path, sha256: substrateTruth.sha256 } } : {}),
+    site_env: { path: siteEnv.path, sha256: siteEnv.sha256 },
+    substrate_truth: { path: substrateTruth.path, sha256: substrateTruth.sha256 },
   };
-
-  return Object.keys(deploymentTarget).length > 0 ? deploymentTarget : undefined;
 }
 
 function buildReport(
@@ -612,7 +616,7 @@ function buildReport(
   evidencePaths: Record<ProductVerificationFlowId, string>,
   evidenceSha256: Record<ProductVerificationFlowId, string>,
   providerNeutralEndpointProof: ProviderNeutralEndpointProof,
-  deploymentTarget: DeploymentTargetBinding | undefined,
+  deploymentTarget: DeploymentTargetBinding,
 ): PostDeployProductSmokeReport {
   const aggregateGeneratedAt = stringValue(aggregate, 'generated_at');
 
@@ -632,7 +636,7 @@ function buildReport(
       aggregate_command: PRODUCT_FLOWS_AGGREGATE_COMMAND,
     },
     release_contract: releaseContract,
-    ...(deploymentTarget ? { deployment_target: deploymentTarget } : {}),
+    deployment_target: deploymentTarget,
     smoke_results: buildSmokeResults(evidencePaths, evidenceSha256, providerNeutralEndpointProof),
     failures: [],
     paths: {
@@ -652,7 +656,7 @@ export async function runPostDeployProductSmokeReportProducer(
   const resolvedReleaseContractPath = path.resolve(options.releaseContractPath);
   const outputDir = path.resolve(options.outputDir ?? path.dirname(resolvedProductFlowsPath));
   const reportPath = path.join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME);
-  const resolvedPathRoot = resolveOptionalPathRoot(options.pathRoot);
+  const resolvedPathRoot = resolveRequiredPathRoot(options.pathRoot);
   const reportProductFlowsPath = serializePathForReport(
     resolvedProductFlowsPath,
     resolvedPathRoot,
@@ -684,14 +688,14 @@ export async function runPostDeployProductSmokeReportProducer(
   const evidencePaths = resolveFocusedEvidencePaths(aggregate, resolvedProductFlowsPath);
   const reportEvidencePaths = serializeEvidencePathsForReport(evidencePaths, resolvedPathRoot);
   const focusedEvidence = await validateFocusedEvidenceFiles(evidencePaths);
-  const siteEnv = await readOptionalAggregateSourceFileBinding(
+  const siteEnv = await readRequiredAggregateSourceFileBinding(
     aggregate,
     'site_env_path',
     resolvedProductFlowsPath,
     resolvedPathRoot,
     'deployment_target.site_env.path',
   );
-  const substrateTruth = await readOptionalAggregateSourceFileBinding(
+  const substrateTruth = await readRequiredAggregateSourceFileBinding(
     aggregate,
     'substrate_truth_path',
     resolvedProductFlowsPath,
@@ -766,12 +770,15 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
   if (!options.releaseContractPath || options.releaseContractPath.trim().length === 0) {
     throw new Error('--release-contract is required.');
   }
+  if (!options.pathRoot || options.pathRoot.trim().length === 0) {
+    throw new Error('--path-root is required for canonical post-deploy product smoke reports.');
+  }
 
   return {
     productFlowsPath: options.productFlowsPath,
     releaseContractPath: options.releaseContractPath,
     ...(options.outputDir ? { outputDir: options.outputDir } : {}),
-    ...(options.pathRoot !== undefined ? { pathRoot: options.pathRoot } : {}),
+    pathRoot: options.pathRoot,
   };
 }
 

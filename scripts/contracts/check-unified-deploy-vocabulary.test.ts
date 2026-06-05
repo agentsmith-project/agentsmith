@@ -17,9 +17,9 @@ const validDeployContract = `# Unified Deploy Contract
 
 Status: current_deploy_contract
 
-Operator-facing release language is online / airgap x use_existing / kit_provided.
-kit_provided maps to internal substrate_source=kit_installed for kit-supplied substrate pack, truth, routability, and materiality validation only.
-install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
+Operator-facing release language is online / airgap x use_existing / install_substrates.
+install_substrates maps to internal substrate_source=kit_installed and requires release-kit namespace-scoped installer evidence plus explicit confirmation.
+Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
 
 ## Runtime
 
@@ -42,14 +42,16 @@ It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff suppo
 const cleanActiveDoc = `# Active Doc
 
 AgentSmith deploy exposes local-kind and existing-cluster as pre-GA/local diagnostic entry names.
-Formal release language is online / airgap x use_existing / kit_provided.
-install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
+Formal release language is online / airgap x use_existing / install_substrates.
+install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
+Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
 `;
 
 const validP0BoundaryDoc = `# Active Doc
 
-Formal release language is online / airgap x use_existing / kit_provided.
-install_substrates is a future release-kit capability after an independent installer producer and explicit installer confirmation flag.
+Formal release language is online / airgap x use_existing / install_substrates.
+install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
+Legacy kit_provided is an internal compatibility alias for focused diagnostics only and not a GA operator deployment_path.
 
 ## Current vs P0 Handoff Boundary
 
@@ -71,13 +73,13 @@ Status: implementation-ready
 
 This is the current GA implementation plan for AgentSmith product readiness, release-kit final GA verdict, runner adoption, dependency image locks, operator runbooks, and deployment verification.
 
-Current implemented operator-facing release language remains online / airgap x use_existing / kit_provided until the release-kit installer producer lands.
-kit_provided remains a pre-GA pack, truth, routability, and materiality validation fail-fast path; it does not install substrates.
-install_substrates is a GA target and blocking prerequisite that requires an independent installer producer and explicit installer confirmation flag before it can become an operator path.
+GA operator-facing release language is online / airgap x use_existing / install_substrates.
+install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
+Legacy kit_provided remains an internal compatibility alias for focused diagnostics only; it is not a GA operator deployment_path.
 
 ## GA Target
 
-The GA plan may define online/install_substrates and airgap/install_substrates as target deployment paths, but they are not current implemented operator paths.
+The GA plan defines online/install_substrates and airgap/install_substrates as required deployment paths through operator-inputs.
 `;
 
 const minimalReleaseKitSplitPlanDoc = `# Release Kit Split Plan
@@ -268,9 +270,9 @@ describe('checkUnifiedDeployVocabulary', () => {
   });
 
   it.each([
-    '`install_substrates` 当前可执行，无需安装器',
-    'install_substrates is not future; available now',
-  ])('rejects GA install_substrates implemented-state wording: %s', (implementedClaim) => {
+    'Current operator-facing release language remains online / airgap x use_existing / kit_provided.',
+    'Formal release language is online / airgap x use_existing / kit_provided.',
+  ])('rejects GA kit_provided current operator-path wording: %s', (implementedClaim) => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
         [GA_RELEASE_PLAN_PATH]: `${minimalGaReleasePlanDoc}
@@ -283,20 +285,19 @@ ${implementedClaim}
     });
 
     expect(failureText(root)).toContain(
-      'GA release plan must not describe install_substrates as an already implemented operator path.',
+      'GA release plan must not describe kit_provided as the current operator-facing path.',
     );
   });
 
-  it('allows GA install_substrates wording that negates current implementation claims', () => {
+  it('allows GA install_substrates wording that keeps installer evidence explicit', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
         [GA_RELEASE_PLAN_PATH]: `${minimalGaReleasePlanDoc}
 
 ## Boundary
 
-install_substrates is not implemented yet.
-install_substrates 不是当前已实现路径。
-不得写成当前可执行: install_substrates。
+install_substrates is current only through operator-inputs packages, namespace-scoped installer evidence, and explicit confirmation.
+install_substrates 当前只允许通过 operator-inputs、namespace-scoped installer evidence 和显式确认进入 GA 路径。
 `,
       },
     });
@@ -476,12 +477,12 @@ This intentionally omits the concrete deployment decisions.
     'docs/user-guides/unified-deploy-operations.md',
     'docs/contracts/README.md',
     'DEVELOPMENT.md',
-  ])('rejects install_substrates as a current operator-facing success path in %s', (path) => {
+  ])('rejects kit_provided as a current operator-facing success path in %s', (path) => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
         [path]: `${validP0BoundaryDoc}
 
-Formal release language is online / airgap x use_existing / install_substrates.
+Formal release language is online / airgap x use_existing / kit_provided.
 `,
       },
     });
@@ -489,7 +490,7 @@ Formal release language is online / airgap x use_existing / install_substrates.
     const text = failureText(root);
 
     expect(text).toContain('current operator-facing substrate strategy');
-    expect(text).toContain('kit_provided');
+    expect(text).toContain('install_substrates');
   });
 
   it.each([

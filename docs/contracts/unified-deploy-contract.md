@@ -27,9 +27,9 @@ level:
 | Operator selection | Internal machine values |
 | --- | --- |
 | `online` + `use_existing` | `target_cluster=existing_kubernetes`, `substrate_source=external_declared`, `distribution=online` |
-| `online` + `kit_provided` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=online` |
+| `online` + `install_substrates` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=online` |
 | `airgap` + `use_existing` | `target_cluster=existing_kubernetes`, `substrate_source=external_declared`, `distribution=airgap` |
-| `airgap` + `kit_provided` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=airgap` |
+| `airgap` + `install_substrates` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=airgap` |
 
 Pre-GA diagnostic names such as `local-kind` and `existing-cluster` are not
 authoritative release axes. They can appear only as temporary AgentSmith
@@ -59,32 +59,29 @@ choice: `online` / `airgap` distribution against both substrate strategies:
 - `use_existing`: connect to operator-provided substrates or cloud interfaces
   such as PostgreSQL/pgvector, MongoDB, Redis, S3-compatible storage, and
   Keycloak/OIDC.
-- `kit_provided`: the release-kit-supplied minimal/adjacent substrate pack,
-  connection truth, routability proof, and materiality validation. It does not
-  install substrates.
+- `install_substrates`: run the release-kit namespace-scoped installer,
+  consume its generated substrate truth, and bind the deployment path to the
+  installer report plus explicit operator confirmation.
 
 The corresponding internal machine values are `distribution=online|airgap` and
 `substrate_source=external_declared|kit_installed`. These machine values are for
 release contract / evidence validation, not a second operator vocabulary.
 
-`kit_provided` does not mean AgentSmith or release-kit installs substrates, does
-not move substrate lifecycle into the AgentSmith product repo, does not create a
-cloud provider matrix, and does not imply cloud cluster/database/bucket/IAM/network
-provisioning. It is the current release-kit provided validation path for a
-minimal adjacent substrate pack plus connection truth, pod-routability proof, and
-materiality proof. A real `install_substrates` path is a future capability and
-requires a separate release-kit installer producer plus an explicit installer
-confirmation flag.
+`install_substrates` does not move substrate lifecycle into the AgentSmith
+product repo, does not create a cloud provider matrix, and does not imply cloud
+cluster/database/bucket/IAM/network provisioning. Legacy `kit_provided` is an
+internal compatibility alias for focused diagnostics only and not a GA operator
+`deployment_path`.
 
 `kind` is only an optional local substrate/rehearsal option. It is not a formal
 release target, not the production default, and cannot replace existing
 Kubernetes/cloud or airgap evidence.
 
-Because the project is still pre-GA, old profile vocabulary is not a long-term
-formal path. The only temporary mapping owner is the AgentSmith release-boundary
-adapter, the deletion trigger is P2/P6 removal or hiding of these active
-diagnostic workflows after release-kit repo-local gates own deployment verdicts,
-and evidence is `contracts:check-unified-deploy-vocabulary` plus
+Old profile vocabulary is not a long-term formal path. The only temporary
+mapping owner is the AgentSmith release-boundary adapter, the deletion trigger
+is the GA cut that hides or removes legacy focused diagnostics after
+release-kit repo-local gates own deployment verdicts, and evidence is
+`contracts:check-unified-deploy-vocabulary` plus
 `contracts:check-current-verification-campaigns` proving mixed vocabulary and
 synonym drift fail fast.
 
@@ -345,10 +342,11 @@ paths, import product packages, or create a second image inventory.
 
 Release kit owns online/airgap publishing, release package tests, deploy gates,
 operator runbooks, and the deployment/package/operator verdict. For both
-`online` and `airgap`, release-kit gates must cover both substrate strategies,
-`use_existing` and `kit_provided`. Each release run must explicitly select
-the intended strategy; neither strategy may silently fall back to Docker-only
-local diagnostics.
+`online` and `airgap`, release-kit gates must cover both GA operator substrate
+strategies, `use_existing` and `install_substrates`. Each release run must
+explicitly select the intended strategy; neither strategy may silently fall
+back to Docker-only local diagnostics. `install_substrates` must carry
+namespace-scoped installer evidence and explicit confirmation.
 
 In machine artifacts this selection is represented only by
 `target_cluster` / `substrate_source` / `distribution`. Pre-GA names such as

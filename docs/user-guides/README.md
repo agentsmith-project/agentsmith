@@ -23,7 +23,7 @@
 - [Runtime Lines Matrix](./runtime-lines-matrix.md)
   - 当前 local-real 与统一部署 diagnostic entry 的总表。
 - [Unified Deploy Operations](./unified-deploy-operations.md)
-  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前公开 release 成功路径看 `online` / `airgap` × `use_existing` / `kit_provided`。`kit_provided` 表示 kit-supplied substrate pack/truth/routability/materiality validation，不安装 substrates；真正 `install_substrates` 是未来能力，需要 independent installer producer + explicit installer confirmation flag。
+  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是 GA operator `deployment_path`。
 <!-- current-runtime-lines:user-guides-index:end -->
 
 runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
@@ -32,7 +32,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 - [Release Readiness Checklist](./release-readiness-checklist.md)
   - human product-side readiness / handoff input completeness entrypoint: `npm run product:ready`
 - [Unified Deploy Operations](./unified-deploy-operations.md)
-  - pre-GA/local diagnostic entrypoint for `local-kind` and `existing-cluster`; current public release success paths are `online` / `airgap` × `use_existing` / `kit_provided`; `kit_provided` is kit-supplied substrate pack/truth/routability/materiality validation, not substrate installation; real `install_substrates` requires a future independent installer producer plus an explicit installer confirmation flag
+  - pre-GA/local diagnostic entrypoint for `local-kind` and `existing-cluster`; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`; `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation; legacy `kit_provided` is an internal compatibility alias for focused diagnostics only and not a GA operator `deployment_path`
 
 ### 日常排障
 - [Troubleshooting Guide](../troubleshooting-guide-v1.md)

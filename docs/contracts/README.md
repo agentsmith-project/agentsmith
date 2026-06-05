@@ -34,17 +34,18 @@ Kubernetes, cloud, or airgap handoff support.
 
 状态：`current_deploy_contract`。
 
-该合同定义当前部署合同：one `AgentSmith deploy`，当前公开 release 成功路径是
-`online` / `airgap` × `use_existing` / `kit_provided`；内部机器轴是
+该合同定义当前部署合同：one `AgentSmith deploy`，当前 GA operator-facing
+release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`；
+内部机器轴是
 `target_cluster` / `substrate_source` / `distribution`。`local-kind` /
 `existing-cluster` 只能作为 pre-GA/local diagnostic entry names，不是 release
 target。合同同时记录 Docker-only diagnostic substrate、Keycloak substrate、
 app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
 和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。
 
-`kit_provided` 指 kit-supplied substrate pack、truth、routability 和 materiality
-validation，不表示安装 substrates。真正 `install_substrates` 是未来能力，需要
-independent installer producer + explicit installer confirmation flag。
+`install_substrates` 需要 release-kit namespace-scoped installer evidence 和
+显式确认；legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是
+GA operator `deployment_path`。
 
 Release contract handoff must include the required `deploy_template_package`
 field; release kit consumes that package instead of reading AgentSmith source

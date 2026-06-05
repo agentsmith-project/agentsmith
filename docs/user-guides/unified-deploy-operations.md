@@ -6,12 +6,11 @@ This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡�
 
 The formal release model is not the command names in this guide. Release-kit
 operator-facing language is `online` / `airgap` × `use_existing` /
-`kit_provided`; internal machine artifacts use `target_cluster` /
-`substrate_source` / `distribution`. `kit_provided` means kit-supplied
-substrate pack, truth, routability, and materiality validation, not installing
-substrates. `install_substrates` is only future / fail-fast language for a real
-installer path; it requires an independent installer producer and explicit
-installer confirmation flag.
+`install_substrates`; internal machine artifacts use `target_cluster` /
+`substrate_source` / `distribution`. `install_substrates` requires release-kit
+namespace-scoped installer evidence plus explicit confirmation. Legacy
+`kit_provided` is only an internal compatibility alias for focused diagnostics
+and not a GA operator `deployment_path`.
 
 This guide still exposes two pre-GA diagnostic entry names:
 

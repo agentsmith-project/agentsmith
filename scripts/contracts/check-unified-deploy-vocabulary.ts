@@ -92,51 +92,28 @@ const CURRENT_RELEASE_SUBSTRATE_STRATEGY_FILES = new Set<string>([
 ]);
 
 const CURRENT_OPERATOR_STRATEGY_PATTERN =
-  /\bonline\b[\s\S]{0,80}\bairgap\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\bkit_provided\b|\buse_existing\b[\s\S]{0,80}\bkit_provided\b[\s\S]{0,120}\bonline\b[\s\S]{0,80}\bairgap\b/iu;
+  /\bonline\b[\s\S]{0,80}\bairgap\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\binstall_substrates\b|\buse_existing\b[\s\S]{0,80}\binstall_substrates\b[\s\S]{0,120}\bonline\b[\s\S]{0,80}\bairgap\b/iu;
 
-const FUTURE_INSTALL_SUBSTRATES_PATTERN =
-  /\binstall_substrates\b[\s\S]{0,200}(?:\b(?:future|installer\s+producer|installer\s+confirmation|confirmation\s+flag|fail[- ]?fast|not\s+current|future\s+capability)\b|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式))|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式)[\s\S]{0,120}\binstall_substrates\b/iu;
+const INSTALL_SUBSTRATES_EVIDENCE_PATTERN =
+  /\binstall_substrates\b[\s\S]{0,240}(?:namespace[- ]scoped|installer\s+evidence|installer\s+report|explicit\s+confirmation|operator-inputs|confirm(?:ation)?)|(?:namespace[- ]scoped|installer\s+evidence|installer\s+report|explicit\s+confirmation|operator-inputs|显式确认|安装器证据|安装器报告)[\s\S]{0,240}\binstall_substrates\b/iu;
 
-const ALLOWED_FUTURE_INSTALL_SUBSTRATES_LINE =
-  /\b(?:future|installer\s+producer|installer\s+confirmation|confirmation\s+flag|fail[- ]?fast|not\s+current|future\s+capability)\b|(?:未来|后续|不是当前|当前不|失败|安装器|确认\s*flag|显式)/iu;
+const LEGACY_KIT_PROVIDED_ALIAS_PATTERN =
+  /\bkit_provided\b[\s\S]{0,240}(?:legacy|internal|compatibility|focused\s+diagnostics?|not\s+a\s+GA\s+operator|not\s+an?\s+operator|not\s+a\s+GA\s+deployment_path|alias|历史|内部|兼容|诊断|不是\s*GA|不是\s*operator|不是部署路径)|(?:legacy|internal|compatibility|focused\s+diagnostics?|not\s+a\s+GA\s+operator|not\s+an?\s+operator|not\s+a\s+GA\s+deployment_path|alias|历史|内部|兼容|诊断|不是\s*GA|不是\s*operator|不是部署路径)[\s\S]{0,240}\bkit_provided\b/iu;
 
-const FORBIDDEN_CURRENT_INSTALL_SUBSTRATES_LINES = [
-  /\bformal\s+release\s+language\b[\s\S]{0,120}\binstall_substrates\b/iu,
-  /正式\s*release\s*语言[\s\S]{0,120}\binstall_substrates\b/iu,
-  /\boperator-facing\b[\s\S]{0,120}\binstall_substrates\b/iu,
-  /operator-facing\s*发布语言[\s\S]{0,120}\binstall_substrates\b/iu,
-  /\b(?:online|airgap)\b`?\s*(?:\+|\/|和|与)\s*`?\binstall_substrates\b/iu,
-  /\buse_existing\b`?\s*(?:\/|和|与)\s*`?\binstall_substrates\b/iu,
-  /\b(?:cover|covers|covering)\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\binstall_substrates\b/iu,
-  /覆盖[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\binstall_substrates\b/iu,
+const ALLOWED_LEGACY_KIT_PROVIDED_LINE =
+  /\b(?:legacy|internal|compatibility|focused\s+diagnostics?|not\s+a\s+GA\s+operator|not\s+an?\s+operator|not\s+a\s+GA\s+deployment_path|alias)\b|(?:历史|内部|兼容|诊断|不是\s*GA|不是\s*operator|不是部署路径)/iu;
+
+const FORBIDDEN_CURRENT_KIT_PROVIDED_LINES = [
+  /\b(?:operator-facing|formal|current(?:ly)?|public\s+release\s+success\s+paths?|release\s+language)\b[\s\S]{0,160}\bkit_provided\b/iu,
+  /(?:当前公开|正式|operator-facing)[^。；;\n]{0,160}\bkit_provided\b/u,
+  /\bonline\b[\s\S]{0,80}\bairgap\b[\s\S]{0,120}\buse_existing\b[\s\S]{0,80}\bkit_provided\b/iu,
+  /\buse_existing\b[\s\S]{0,80}\bkit_provided\b[\s\S]{0,120}\bonline\b[\s\S]{0,80}\bairgap\b/iu,
 ] as const;
 
 const GA_INSTALL_SUBSTRATES_TARGET_PATTERN =
-  /\binstall_substrates\b[\s\S]{0,240}\b(?:GA|target|prerequisite|blocking|installer\s+producer|installer\s+confirmation|confirmation\s+flag)\b|\b(?:GA|target|prerequisite|blocking|installer\s+producer|installer\s+confirmation|confirmation\s+flag)\b[\s\S]{0,240}\binstall_substrates\b|(?:目标|前提|先补齐|确认\s*参数|显式确认|安装器)[\s\S]{0,180}\binstall_substrates\b|\binstall_substrates\b[\s\S]{0,180}(?:目标|前提|先补齐|确认\s*参数|显式确认|安装器)/iu;
+  /\binstall_substrates\b[\s\S]{0,240}\b(?:GA|target|prerequisite|blocking|required|operator-inputs|installer\s+evidence|installer\s+producer|installer\s+confirmation|confirmation\s+flag)\b|\b(?:GA|target|prerequisite|blocking|required|operator-inputs|installer\s+evidence|installer\s+producer|installer\s+confirmation|confirmation\s+flag)\b[\s\S]{0,240}\binstall_substrates\b|(?:目标|前提|必需|先补齐|确认\s*参数|显式确认|安装器)[\s\S]{0,180}\binstall_substrates\b|\binstall_substrates\b[\s\S]{0,180}(?:目标|前提|必需|先补齐|确认\s*参数|显式确认|安装器)/iu;
 
-const GA_KIT_PROVIDED_CURRENT_BOUNDARY_PATTERN =
-  /\bkit_provided\b[\s\S]{0,240}(?:pre-GA|pack\/truth|pack,\s*truth|validation|fail[- ]?fast|alias|not\s+install|current\s+implemented|当前内部\/历史词|迁移说明|不表示安装|只验证|失败)|(?:pre-GA|pack\/truth|pack,\s*truth|validation|fail[- ]?fast|alias|not\s+install|current\s+implemented|当前内部\/历史词|迁移说明|不表示安装|只验证|失败)[\s\S]{0,240}\bkit_provided\b/iu;
-
-const GA_INSTALL_SUBSTRATES_IMPLEMENTED_CLAIMS = [
-  {
-    kind: 'implemented-state',
-    pattern:
-      /\b(?:already\s+implemented|implemented\s+today|available\s+now|ready\s+(?:today|now)|currently\s+(?:implemented|available|ready)|current\s+(?:implemented|available|ready|path|(?:operator[- ]facing\s+)?operator\s+path)|(?:is|are|remain|remains)\s+(?:already\s+)?(?:implemented|available|ready|current)|(?:has|have)\s+been\s+implemented|now\s+(?:implemented|available|ready))\b/iu,
-  },
-  {
-    kind: 'no-installer-required',
-    pattern:
-      /\b(?:(?:does\s+not|doesn't)\s+require|requires?\s+no|needs?\s+no|without)\s+(?:an?\s+)?(?:installer|installer\s+producer|confirmation|confirmation\s+flag)\b|\bno\s+(?:installer|installer\s+producer|confirmation|confirmation\s+flag)\s+(?:required|needed)\b/iu,
-  },
-  {
-    kind: 'implemented-state',
-    pattern: /(?:当前已实现|已经实现|现已可用|已经可用|当前可执行|当前可用|已实现)/iu,
-  },
-  {
-    kind: 'no-installer-required',
-    pattern: /(?:无需安装器|无需确认|不需要安装器|不需要确认)/iu,
-  },
-] as const;
+const GA_KIT_PROVIDED_LEGACY_BOUNDARY_PATTERN = LEGACY_KIT_PROVIDED_ALIAS_PATTERN;
 
 const FORBIDDEN_SPLIT_DEPLOY_TERMS = [
   {
@@ -439,91 +416,6 @@ function asGlobalRegExp(pattern: RegExp): RegExp {
   );
 }
 
-type GaInstallSubstratesImplementedClaimKind =
-  (typeof GA_INSTALL_SUBSTRATES_IMPLEMENTED_CLAIMS)[number]['kind'];
-
-function installSubstratesRanges(line: string): Array<{ start: number; end: number }> {
-  return [...line.matchAll(/\binstall_substrates\b/giu)].map((match) => {
-    const start = match.index ?? 0;
-    return { start, end: start + match[0].length };
-  });
-}
-
-function hasNearbyInstallSubstrates(
-  line: string,
-  claimIndex: number,
-  claimLength: number,
-): boolean {
-  return installSubstratesRanges(line).some((range) => {
-    if (claimIndex >= range.start && claimIndex <= range.end) {
-      return true;
-    }
-
-    const distance = claimIndex < range.start
-      ? range.start - (claimIndex + claimLength)
-      : claimIndex - range.end;
-
-    return distance <= 180;
-  });
-}
-
-function isImplementedStateClaimNegated(line: string, claimIndex: number): boolean {
-  const prefix = line.slice(Math.max(0, claimIndex - 60), claimIndex);
-
-  return (
-    /\b(?:not|never|no)\s+(?:yet\s+)?(?:an?\s+)?$/iu.test(prefix)
-    || /\b(?:isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t)\s+(?:yet\s+)?(?:an?\s+)?$/iu.test(prefix)
-    || /(?:不是|并非|尚未|还未|未|没有)\s*$/u.test(prefix)
-  );
-}
-
-function isImplementedClaimBoundaryInstruction(line: string, claimIndex: number): boolean {
-  const beforeClaim = line.slice(Math.max(0, claimIndex - 180), claimIndex);
-
-  return (
-    /\b(?:must|should|do|does)\s+not\s+(?:describe|state|write|treat|mark|claim|label|present|document)\b[\s\S]{0,140}$/iu.test(beforeClaim)
-    || /\b(?:forbidden|rejects?|disallow(?:s|ed)?|must\s+not|should\s+not)\b[\s\S]{0,140}\binstall_substrates\b[\s\S]{0,80}$/iu.test(beforeClaim)
-    || /(?:不得|不要|不能|不应|禁止)[^。；;\n]{0,140}(?:写成|描述为|表述为|声称|宣称|标成|当成)[^。；;\n]{0,120}$/u.test(beforeClaim)
-    || /(?:不得|不要|不能|不应|禁止)[^。；;\n]{0,140}\binstall_substrates\b[^。；;\n]{0,120}$/u.test(beforeClaim)
-  );
-}
-
-function isAllowedGaInstallSubstratesImplementedBoundary(
-  line: string,
-  claimIndex: number,
-  kind: GaInstallSubstratesImplementedClaimKind,
-): boolean {
-  if (isImplementedClaimBoundaryInstruction(line, claimIndex)) {
-    return true;
-  }
-
-  return kind === 'implemented-state' && isImplementedStateClaimNegated(line, claimIndex);
-}
-
-function findGaInstallSubstratesImplementedClaim(line: string): string | null {
-  if (!/\binstall_substrates\b/iu.test(line)) {
-    return null;
-  }
-
-  for (const claim of GA_INSTALL_SUBSTRATES_IMPLEMENTED_CLAIMS) {
-    const pattern = asGlobalRegExp(claim.pattern);
-    for (const match of line.matchAll(pattern)) {
-      const claimIndex = match.index ?? 0;
-      const matchText = match[0];
-      if (!hasNearbyInstallSubstrates(line, claimIndex, matchText.length)) {
-        continue;
-      }
-      if (isAllowedGaInstallSubstratesImplementedBoundary(line, claimIndex, claim.kind)) {
-        continue;
-      }
-
-      return matchText;
-    }
-  }
-
-  return null;
-}
-
 function isAllowedLegacyDenylistMatch(args: {
   path: string;
   forbiddenLabel: string;
@@ -582,30 +474,38 @@ function validateCurrentReleaseSubstrateStrategy(
     addFailure(
       failures,
       path,
-      `${path} must state the current operator-facing substrate strategy as online/airgap x use_existing/kit_provided.`,
+      `${path} must state the current operator-facing substrate strategy as online/airgap x use_existing/install_substrates.`,
     );
   }
 
-  if (!FUTURE_INSTALL_SUBSTRATES_PATTERN.test(content)) {
+  if (!INSTALL_SUBSTRATES_EVIDENCE_PATTERN.test(content)) {
     addFailure(
       failures,
       path,
-      `${path} must keep install_substrates as a future capability that requires an independent installer producer and explicit installer confirmation flag.`,
+      `${path} must state that install_substrates requires release-kit installer evidence and explicit confirmation.`,
+    );
+  }
+
+  if (!LEGACY_KIT_PROVIDED_ALIAS_PATTERN.test(content)) {
+    addFailure(
+      failures,
+      path,
+      `${path} must demote kit_provided to a legacy/internal diagnostic alias, not a GA operator path.`,
     );
   }
 
   const lines = content.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    for (const pattern of FORBIDDEN_CURRENT_INSTALL_SUBSTRATES_LINES) {
-      if (!pattern.test(line) || ALLOWED_FUTURE_INSTALL_SUBSTRATES_LINE.test(line)) {
+    for (const pattern of FORBIDDEN_CURRENT_KIT_PROVIDED_LINES) {
+      if (!pattern.test(line) || ALLOWED_LEGACY_KIT_PROVIDED_LINE.test(line)) {
         continue;
       }
 
       addFailure(
         failures,
         path,
-        'current operator-facing substrate strategy must use kit_provided, not install_substrates.',
+        'current operator-facing substrate strategy must use install_substrates, not kit_provided.',
         index + 1,
         line,
       );
@@ -833,25 +733,28 @@ function validateGaReleasePlan(
     );
   }
 
-  if (!GA_KIT_PROVIDED_CURRENT_BOUNDARY_PATTERN.test(content)) {
+  if (!GA_KIT_PROVIDED_LEGACY_BOUNDARY_PATTERN.test(content)) {
     addFailure(
       failures,
       GA_RELEASE_PLAN_PATH,
-      'GA release plan must preserve kit_provided as the current pre-GA pack/truth validation boundary until installer work lands.',
+      'GA release plan must demote kit_provided to a legacy/internal diagnostic alias.',
     );
   }
 
   const lines = content.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const implementedClaim = findGaInstallSubstratesImplementedClaim(line);
-    if (implementedClaim !== null) {
+    for (const pattern of FORBIDDEN_CURRENT_KIT_PROVIDED_LINES) {
+      if (!pattern.test(line) || ALLOWED_LEGACY_KIT_PROVIDED_LINE.test(line)) {
+        continue;
+      }
+
       addFailure(
         failures,
         GA_RELEASE_PLAN_PATH,
-        'GA release plan must not describe install_substrates as an already implemented operator path.',
+        'GA release plan must not describe kit_provided as the current operator-facing path.',
         index + 1,
-        implementedClaim,
+        line,
       );
     }
   }

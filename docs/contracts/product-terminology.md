@@ -206,7 +206,7 @@ present that P0 boundary as a new product capability.
 1. `AgentSmith deploy`
 - Operator-facing deployment workflow.
 - Formal release language is `online` / `airgap` distribution crossed with
-  `use_existing` / `kit_provided` substrate strategy.
+  `use_existing` / `install_substrates` substrate strategy.
 - Internal machine values are `target_cluster`, `substrate_source`, and
   `distribution`; they are not a second operator vocabulary.
 - It is not a current frontend page or sidebar object unless a later UI/IA
@@ -219,7 +219,7 @@ present that P0 boundary as a new product capability.
 
 3. `Substrate strategy`
 - Operator-facing choice for dependency ownership at deploy time.
-- Current values are `use_existing` and `kit_provided`.
+- Current GA operator values are `use_existing` and `install_substrates`.
 - It must not be expanded into a provider matrix in product-facing language.
 
 4. `use_existing`
@@ -228,15 +228,15 @@ present that P0 boundary as a new product capability.
 - Internal machine value: `substrate_source=external_declared`.
 - Release kit validates the declared truth; it does not create cloud resources.
 
-5. `kit_provided`
-- Kit-supplied minimal/adjacent substrate pack, truth, routability, and
-  materiality validation. It does not install substrates.
+5. `install_substrates`
+- Release-kit namespace-scoped substrate installer path.
 - Internal machine value: `substrate_source=kit_installed`.
-- It emits the same connection truth shape used by `use_existing`.
+- It emits the same connection truth shape used by `use_existing`, and must
+  bind namespace-scoped installer evidence plus explicit operator confirmation.
 - It does not mean AgentSmith deploys substrates, does not create a cloud
   provider matrix, and does not add in-product substrate management.
-- A real `install_substrates` strategy is a future capability and requires an
-  independent installer producer plus an explicit installer confirmation flag.
+- Legacy `kit_provided` is an internal compatibility alias for focused
+  diagnostics only and not a GA operator `deployment_path`.
 
 6. `pre-GA diagnostic entry names`
 - `local-kind` and `existing-cluster` are allowed only as pre-GA/local

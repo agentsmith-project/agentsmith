@@ -17,7 +17,7 @@ Detailed commands live in:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；当前公开 release 成功路径是 `online` / `airgap` × `use_existing` / `kit_provided`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`kit_provided` 表示 kit-supplied substrate pack、truth、routability 和 materiality validation，不表示安装 substrates。真正 `install_substrates` 是未来能力，需要 independent installer producer + explicit installer confirmation flag。
+1. 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。Legacy `kit_provided` 只是 focused diagnostics 的内部兼容 alias，不是 GA operator `deployment_path`。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 

@@ -20,13 +20,11 @@ truth. `external_declared` in P0 is schema, fixture, validator, and evidence
 boundary only. It does not mean P2/P3 completed real Kubernetes, cloud, or
 airgap handoff support.
 
-Current implementation docs may still mention `kit_provided` as a pre-GA
-substrate pack/truth validation path. The active GA plan intentionally
-collapses operator-facing language to `online` / `airgap` × `use_existing` /
-`install_substrates`. During P0/P3, `kit_provided` must either become a
-short-lived alias with a removal date, or be deleted from operator-facing
-docs after the installer producer lands. It must not survive as a second
-operator mental model.
+Current GA operator-facing language is `online` / `airgap` × `use_existing` /
+`install_substrates`. `install_substrates` requires release-kit
+namespace-scoped installer evidence plus explicit confirmation. Legacy
+`kit_provided` is only an internal compatibility alias for focused diagnostics
+and must not survive as a second operator mental model.
 
 旧命名、旧路径、旧职责默认删除或 fail fast；只允许带 owner、删除条件和验收证据的短期待删项，不作为长期兼容承诺。
 

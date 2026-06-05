@@ -107,6 +107,7 @@ function writeRuntimeReadinessDetails(
     signals: [
       {
         source: 'api',
+        call: 'create_task_workspace',
         request_id: 'api_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -114,6 +115,7 @@ function writeRuntimeReadinessDetails(
       },
       {
         source: 'pod_manager',
+        call: 'create_or_ensure_pod',
         request_id: 'pod_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -121,6 +123,7 @@ function writeRuntimeReadinessDetails(
       },
       {
         source: 'asbcp_create_status',
+        call: 'create/status',
         request_id: 'asbcp_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -130,6 +133,7 @@ function writeRuntimeReadinessDetails(
     call_summaries: [
       {
         source: 'api',
+        call: 'create_task_workspace',
         request_id: 'api_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -137,6 +141,7 @@ function writeRuntimeReadinessDetails(
       },
       {
         source: 'pod_manager',
+        call: 'create_or_ensure_pod',
         request_id: 'pod_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -144,6 +149,7 @@ function writeRuntimeReadinessDetails(
       },
       {
         source: 'asbcp_create_status',
+        call: 'create/status',
         request_id: 'asbcp_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
@@ -549,6 +555,7 @@ describe('product readiness report producer', () => {
         call_summaries: [
           {
             source: 'api',
+            call: 'create_task_workspace',
             request_id: 'api_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
@@ -556,6 +563,7 @@ describe('product readiness report producer', () => {
           },
           {
             source: 'api',
+            call: 'get_pod_status',
             request_id: 'api_req_restore_2',
             workload_id: 'workload_restore_1',
             phase: 'offline',
@@ -563,6 +571,7 @@ describe('product readiness report producer', () => {
           },
           {
             source: 'api',
+            call: 'create/status',
             request_id: 'api_req_restore_3',
             workload_id: 'workload_restore_1',
             phase: 'offline',
@@ -585,6 +594,7 @@ describe('product readiness report producer', () => {
         call_summaries: [
           {
             source: 'api',
+            call: 'create_task_workspace',
             request_id: 'api_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
@@ -598,6 +608,7 @@ describe('product readiness report producer', () => {
           },
           {
             source: 'asbcp_create_status',
+            call: 'create/status',
             request_id: 'asbcp_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
@@ -607,7 +618,7 @@ describe('product readiness report producer', () => {
       });
 
       expect(() => writeProductReadinessReport({ campaignRoot: root }))
-        .toThrow(/request_id, workload_id, phase, and error_code; missing pod-manager/u);
+        .toThrow(/call, request_id, workload_id, phase, and error_code; missing pod-manager/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

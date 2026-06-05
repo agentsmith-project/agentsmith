@@ -1987,6 +1987,7 @@ function isCompleteSandboxUnavailableCallSummary(
   source: 'api' | 'pod_manager' | 'asbcp_create_status',
 ): boolean {
   return textField(record, 'source') === source
+    && Boolean(textField(record, 'call'))
     && Boolean(textField(record, 'request_id'))
     && Boolean(textField(record, 'workload_id'))
     && Boolean(textField(record, 'phase'))
@@ -2086,7 +2087,7 @@ function validateRuntimeReadinessDetailsPayload(
   }
 
   return unifiedDeployDiagnostic(
-    `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+    `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
     'contract_drift',
   );
 }

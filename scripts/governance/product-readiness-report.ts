@@ -58,6 +58,7 @@ const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_SOURCES = [
   { source: 'asbcp_create_status', label: 'ASBCP create/status' },
 ] as const;
 const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_FIELDS = [
+  'call',
   'request_id',
   'workload_id',
   'phase',
@@ -463,7 +464,7 @@ function validateRuntimeReadinessSummary(input: {
     .map(({ label }) => label);
   if (missingSources.length > 0) {
     throw new Error(
-      `${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries with request_id, workload_id, phase, and error_code; missing ${missingSources.join(', ')}.`,
+      `${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries with call, request_id, workload_id, phase, and error_code; missing ${missingSources.join(', ')}.`,
     );
   }
 }

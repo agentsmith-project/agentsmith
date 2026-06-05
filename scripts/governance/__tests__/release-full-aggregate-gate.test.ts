@@ -1891,7 +1891,6 @@ describe('release-full aggregate gate', () => {
         call_summaries: [
           {
             source: 'api',
-            call: 'create_task_workspace',
             request_id: 'api_req_create_task',
             workload_id: 'task-restore-1',
             phase: 'offline',
@@ -1912,6 +1911,8 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('AGENT_SANDBOX_UNAVAILABLE');
+    expect(terminalResult.summary).toContain('API');
+    expect(terminalResult.summary).toContain('call');
     expect(terminalResult.summary).toContain('pod-manager');
     expect(terminalResult.summary).toContain('ASBCP create/status');
   });

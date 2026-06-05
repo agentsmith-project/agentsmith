@@ -1975,6 +1975,10 @@ function runtimeEvidenceErrorCode(record: Record<string, unknown>): string {
     || textField(record, 'asbcp_code');
 }
 
+function hasRuntimeEvidenceErrorCode(record: Record<string, unknown>): boolean {
+  return Boolean(runtimeEvidenceErrorCode(record));
+}
+
 function hasSandboxUnavailableSignal(payload: Record<string, unknown>): boolean {
   return [
     ...runtimeEvidenceRecords(payload, 'signals'),
@@ -1992,6 +1996,18 @@ function isCompleteSandboxUnavailableCallSummary(
     && Boolean(textField(record, 'workload_id'))
     && Boolean(textField(record, 'phase'))
     && runtimeEvidenceErrorCode(record) === SANDBOX_UNAVAILABLE_ERROR_CODE;
+}
+
+function isCompleteRuntimeReadinessCallSummary(
+  record: Record<string, unknown>,
+  source: 'api' | 'pod_manager' | 'asbcp_create_status',
+): boolean {
+  return textField(record, 'source') === source
+    && Boolean(textField(record, 'call'))
+    && Boolean(textField(record, 'request_id'))
+    && Boolean(textField(record, 'workload_id'))
+    && Boolean(textField(record, 'phase'))
+    && hasRuntimeEvidenceErrorCode(record);
 }
 
 function canonicalJson(value: unknown): string {
@@ -2068,28 +2084,78 @@ function validateRuntimeReadinessDetailsPayload(
     return policyDiagnostic;
   }
 
-  if (!hasSandboxUnavailableSignal(payload)) {
-    return null;
-  }
-
+  const classification = textField(payload, 'classification');
+  const outcome = textField(payload, 'outcome');
+  const signals = runtimeEvidenceRecords(payload, 'signals');
   const callSummaries = runtimeEvidenceRecords(payload, 'call_summaries');
-  const expectedSources = [
-    ['api', 'API'],
-    ['pod_manager', 'pod-manager'],
-    ['asbcp_create_status', 'ASBCP create/status'],
-  ] as const;
-  const missing = expectedSources
-    .filter(([source]) => !callSummaries.some((record) => isCompleteSandboxUnavailableCallSummary(record, source)))
-    .map(([, label]) => label);
+  if (
+    classification !== 'clean_pass'
+    && classification !== 'runtime_flake'
+    && classification !== 'stability_blocker'
+  ) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence must classify as clean_pass, runtime_flake, or stability_blocker.`,
+      'contract_drift',
+    );
+  }
+  if (!outcome) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence must include outcome for the focused backend-real gate.`,
+      'contract_drift',
+    );
+  }
+  if (classification === 'clean_pass' && (signals.length > 0 || callSummaries.length > 0)) {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence is classified clean_pass but includes runtime readiness signals or call_summaries.`,
+      'contract_drift',
+    );
+  }
+  if (classification === 'stability_blocker') {
+    return unifiedDeployDiagnostic(
+      `${path} runtime readiness evidence is a stability_blocker; repeated focused gate runtime readiness failures must be fixed before Product Readiness.`,
+      'infra_setup_failure',
+    );
+  }
 
-  if (missing.length === 0) {
+  if (!hasSandboxUnavailableSignal(payload)) {
+    if (classification === 'runtime_flake') {
+      const expectedSources = [
+        ['api', 'API'],
+        ['pod_manager', 'pod-manager'],
+        ['asbcp_create_status', 'ASBCP create/status'],
+      ] as const;
+      const missing = expectedSources
+        .filter(([source]) => !callSummaries.some((record) => isCompleteRuntimeReadinessCallSummary(record, source)))
+        .map(([, label]) => label);
+      if (missing.length > 0) {
+        return unifiedDeployDiagnostic(
+          `${path} runtime_flake evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+          'contract_drift',
+        );
+      }
+    }
     return null;
   }
 
-  return unifiedDeployDiagnostic(
-    `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
-    'contract_drift',
-  );
+  {
+    const expectedSources = [
+      ['api', 'API'],
+      ['pod_manager', 'pod-manager'],
+      ['asbcp_create_status', 'ASBCP create/status'],
+    ] as const;
+    const missing = expectedSources
+      .filter(([source]) => !callSummaries.some((record) => isCompleteSandboxUnavailableCallSummary(record, source)))
+      .map(([, label]) => label);
+
+    if (missing.length > 0) {
+      return unifiedDeployDiagnostic(
+        `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+        'contract_drift',
+      );
+    }
+  }
+
+  return null;
 }
 
 function hasOwnField(value: Record<string, unknown>, field: string): boolean {

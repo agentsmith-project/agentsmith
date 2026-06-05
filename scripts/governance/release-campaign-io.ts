@@ -1912,6 +1912,8 @@ type UnifiedDeployEvidenceDiagnostic = {
 };
 
 const FOCUSED_PRODUCT_FLOW_SCHEMA_VERSION = 'agentsmith.focused-product-flow.evidence/v1';
+const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-details/v1';
+const SANDBOX_UNAVAILABLE_ERROR_CODE = 'AGENT_SANDBOX_UNAVAILABLE';
 const RELEASE_KIT_FALLBACK_MARKER_FIELDS = [
   'release_contract_digest',
   'release_kit_version',
@@ -1953,6 +1955,68 @@ function unifiedDeployDiagnostic(
   failureClass: CurrentGateResultFailureClass,
 ): UnifiedDeployEvidenceDiagnostic {
   return { message, failureClass };
+}
+
+function textField(record: Record<string, unknown>, field: string): string {
+  const value = record[field];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function runtimeEvidenceRecords(payload: Record<string, unknown>, field: 'signals' | 'call_summaries'): Record<string, unknown>[] {
+  const value = payload[field];
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function runtimeEvidenceErrorCode(record: Record<string, unknown>): string {
+  return textField(record, 'error_code')
+    || textField(record, 'code')
+    || textField(record, 'asbcp_code');
+}
+
+function hasSandboxUnavailableSignal(payload: Record<string, unknown>): boolean {
+  return [
+    ...runtimeEvidenceRecords(payload, 'signals'),
+    ...runtimeEvidenceRecords(payload, 'call_summaries'),
+  ].some((record) => runtimeEvidenceErrorCode(record) === SANDBOX_UNAVAILABLE_ERROR_CODE);
+}
+
+function isCompleteSandboxUnavailableCallSummary(
+  record: Record<string, unknown>,
+  source: 'api' | 'pod_manager' | 'asbcp_create_status',
+): boolean {
+  return textField(record, 'source') === source
+    && Boolean(textField(record, 'request_id'))
+    && Boolean(textField(record, 'workload_id'))
+    && Boolean(textField(record, 'phase'))
+    && runtimeEvidenceErrorCode(record) === SANDBOX_UNAVAILABLE_ERROR_CODE;
+}
+
+function validateRuntimeReadinessDetailsPayload(
+  payload: Record<string, unknown>,
+  path: string,
+): UnifiedDeployEvidenceDiagnostic | null {
+  if (payload.schema_version !== RUNTIME_READINESS_DETAILS_SCHEMA_VERSION || !hasSandboxUnavailableSignal(payload)) {
+    return null;
+  }
+
+  const callSummaries = runtimeEvidenceRecords(payload, 'call_summaries');
+  const expectedSources = [
+    ['api', 'API'],
+    ['pod_manager', 'pod-manager'],
+    ['asbcp_create_status', 'ASBCP create/status'],
+  ] as const;
+  const missing = expectedSources
+    .filter(([source]) => !callSummaries.some((record) => isCompleteSandboxUnavailableCallSummary(record, source)))
+    .map(([, label]) => label);
+
+  if (missing.length === 0) {
+    return null;
+  }
+
+  return unifiedDeployDiagnostic(
+    `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+    'contract_drift',
+  );
 }
 
 function hasOwnField(value: Record<string, unknown>, field: string): boolean {
@@ -2503,6 +2567,11 @@ function validateUnifiedDeployPayload(
   }
   if (check.expectedProfile && payload.profile !== check.expectedProfile) {
     return unifiedDeployDiagnostic(`${path} profile must be ${check.expectedProfile}.`, 'contract_drift');
+  }
+
+  const runtimeReadinessDiagnostic = validateRuntimeReadinessDetailsPayload(payload, path);
+  if (runtimeReadinessDiagnostic) {
+    return runtimeReadinessDiagnostic;
   }
 
   const productSmokeDiagnostic = validateExpectedProductSmokeResults(payload, check, path);

@@ -361,6 +361,7 @@ function createManifestEvidenceForCheck(
       generated_at: '2026-05-24T12:00:00.000Z',
       outcome: 'aggregate_fixture_pass',
       signals: [],
+      call_summaries: [],
       k8s_pods: [],
     });
     return;
@@ -1808,6 +1809,60 @@ describe('release-full aggregate gate', () => {
       failure_class: 'evidence_missing',
     });
     expect(terminalResult.summary).toContain('files_restore_continuation_runtime_readiness_details');
+  });
+
+  it('fails when sandbox unavailable runtime readiness evidence lacks owner call summaries', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-sandbox-unavailable-evidence-'));
+    seedPassedCampaign(campaignRoot);
+    writeJson(
+      resolve(
+        campaignRoot,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      ),
+      {
+        schema_version: 'agentsmith.runtime-readiness-details/v1',
+        theme: 'runtime_pending_readiness',
+        generated_at: '2026-05-24T12:00:00.000Z',
+        signals: [
+          {
+            source: 'api',
+            call: 'create_task_workspace',
+            request_id: 'api_req_create_task',
+            workload_id: 'task-restore-1',
+            phase: 'offline',
+            status_code: '503',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+        ],
+        call_summaries: [
+          {
+            source: 'api',
+            call: 'create_task_workspace',
+            request_id: 'api_req_create_task',
+            workload_id: 'task-restore-1',
+            phase: 'offline',
+            status_code: '503',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+        ],
+        k8s_pods: [],
+      },
+    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('AGENT_SANDBOX_UNAVAILABLE');
+    expect(terminalResult.summary).toContain('pod-manager');
+    expect(terminalResult.summary).toContain('ASBCP create/status');
   });
 
   it('classifies failed backend-real native scenarios without requiring later visual or UX evidence', () => {

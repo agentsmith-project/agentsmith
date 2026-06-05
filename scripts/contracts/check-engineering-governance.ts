@@ -24,6 +24,7 @@ import {
   DEFAULT_WORKFLOW_SURFACE_DOC_PATHS,
   findInternalWorkflowReferenceViolations,
 } from './engineering-governance-doc-guard';
+import { findUserGuideGaBoundaryViolations } from './user-guide-ga-boundary';
 
 const rootDir = process.cwd();
 
@@ -38,6 +39,9 @@ const baseline = read('docs/CURRENT_BASELINE.md');
 const constitution = read('docs/项目宪法.md');
 const docsIndex = read('docs/README.md');
 const userGuidesIndex = read('docs/user-guides/README.md');
+const alertCenterGuide = read('docs/user-guides/alert-center.md');
+const auditUsageReportsGuide = read('docs/user-guides/audit-usage-reports.md');
+const personalConnectionsGuide = read('docs/user-guides/personal-connections.md');
 const releaseChecklist = read('docs/user-guides/release-readiness-checklist.md');
 const testingIndex = read('docs/testing/README.md');
 const verificationCampaigns = read('docs/testing/verification-campaigns-v1.md');
@@ -627,6 +631,12 @@ const requiredProductTerminologyChecks: Array<{ pattern: RegExp; message: string
 for (const check of requiredProductTerminologyChecks) {
   requireMatch(productTerminology, check.pattern, check.message);
 }
+
+failures.push(...findUserGuideGaBoundaryViolations({
+  alertCenter: alertCenterGuide,
+  auditUsageReports: auditUsageReportsGuide,
+  personalConnections: personalConnectionsGuide,
+}));
 
 requireMatch(
   productTerminology,

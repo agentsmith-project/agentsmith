@@ -7,6 +7,7 @@ import {
   DEFAULT_WORKFLOW_SURFACE_DOC_PATHS,
   findInternalWorkflowReferenceViolations,
 } from './engineering-governance-doc-guard';
+import { findUserGuideGaBoundaryViolations } from './user-guide-ga-boundary';
 
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
@@ -112,6 +113,50 @@ describe('check-engineering-governance contract', () => {
     expect(source).toContain('ga-evidence-index\\.json');
     expect(source).toContain('derived archive index');
     expect(source).toContain('not an independent verdict');
+  });
+
+  it('rejects GA user-guide overclaims for alerts, audit, and personal connections', () => {
+    const violations = findUserGuideGaBoundaryViolations({
+      alertCenter: [
+        '# Alert Center',
+        '',
+        'Alert Center email notification delivery is supported by default.',
+        'Budget enforcement is available for every project.',
+        'Automatic dismissal is guaranteed.',
+      ].join('\n'),
+      auditUsageReports: [
+        '# Audit',
+        '',
+        'Audit logs are tamper-proof.',
+        'Full-history export is supported for all deployments.',
+      ].join('\n'),
+      personalConnections: [
+        '# Personal Connections',
+        '',
+        'Personal connections is a provider registry for model providers.',
+        'OAuth refresh is supported as a success path.',
+        'Project endpoint credentials should be stored here.',
+      ].join('\n'),
+    });
+
+    expect(violations.join('\n')).toContain('email, webhook, chat, incident, or external notification delivery');
+    expect(violations.join('\n')).toContain('budget-management or budget-enforcement behavior');
+    expect(violations.join('\n')).toContain('automatic dismissal behavior');
+    expect(violations.join('\n')).toContain('tamper-proof audit logs');
+    expect(violations.join('\n')).toContain('full-history export');
+    expect(violations.join('\n')).toContain('provider registry');
+    expect(violations.join('\n')).toContain('OAuth or credential-refresh success paths');
+    expect(violations.join('\n')).toContain('project endpoint credentials');
+  });
+
+  it('accepts the active GA user-guide boundaries', () => {
+    const readGuide = (relativePath: string): string => readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+
+    expect(findUserGuideGaBoundaryViolations({
+      alertCenter: readGuide('docs/user-guides/alert-center.md'),
+      auditUsageReports: readGuide('docs/user-guides/audit-usage-reports.md'),
+      personalConnections: readGuide('docs/user-guides/personal-connections.md'),
+    })).toEqual([]);
   });
 
   it('rejects internal workflow commands presented as a default command directory', () => {

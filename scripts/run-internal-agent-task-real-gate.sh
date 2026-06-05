@@ -710,6 +710,181 @@ collect_afscp_child_evidence() {
   collect_afscp_child_log_tail "${evidence_dir}/afscp-read-export-probe-log-tail.txt" "AFSCP read-export probe" "${AFSCP_READ_EXPORT_PROBE_LOG:-${runtime_dir}/afscp-read-export-probe.log}"
 }
 
+collect_runtime_readiness_details() {
+  local evidence_dir="$1"
+  local spec_state_file="${2:-}"
+  local output_file="${evidence_dir}/runtime-readiness-details.json"
+  local spec_runtime_dir=""
+  local log_file
+  local -a candidates=()
+
+  if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
+    candidates+=(
+      "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+      "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+      "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+      "${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+    )
+  fi
+  if [[ -n "${ASBCP_LOG:-}" ]]; then
+    candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+    spec_runtime_dir="$(dirname "${spec_state_file}")"
+    if [[ -d "${spec_runtime_dir}/integration" ]]; then
+      while IFS= read -r log_file; do
+        candidates+=("${log_file}")
+      done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 12)
+    fi
+  fi
+
+  node --input-type=module - "${output_file}" "${evidence_dir}/k8s-pod-status.txt" "${candidates[@]}" <<'NODE' || {
+import fs from 'node:fs';
+import path from 'node:path';
+
+const [outputFile, podStatusFile, ...candidateFiles] = process.argv.slice(2);
+
+function readIfFile(file) {
+  try {
+    const stat = fs.statSync(file);
+    return stat.isFile() ? fs.readFileSync(file, 'utf8') : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeKey(key) {
+  return key.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`).toLowerCase();
+}
+
+function readFields(line) {
+  const fields = {};
+  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status_code|statusCode|error_code|errorCode)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
+  for (const match of line.matchAll(pattern)) {
+    const rawValue = match[2] ?? '';
+    fields[normalizeKey(match[1] ?? '')] = rawValue.replace(/^["']|["']$/g, '');
+  }
+  return fields;
+}
+
+function classifySource(line) {
+  if (/\bAPI\b|\bapi\b/u.test(line)) {
+    return 'api';
+  }
+  if (/pod[ _-]?manager|create_or_ensure_pod|get_pod_status|delete_pod/u.test(line)) {
+    return 'pod_manager';
+  }
+  if (/ASBCP|create\/status/u.test(line)) {
+    return 'asbcp_create_status';
+  }
+  return null;
+}
+
+function readCall(line, source) {
+  const calls = [
+    'create_or_ensure_pod',
+    'get_pod_status',
+    'delete_pod',
+    'createWorkloadMountBinding',
+    'getWorkloadMountBinding',
+    'releaseWorkloadMountBinding',
+    'revokeWorkloadMountBinding',
+    'delete_workspace_binding'
+  ];
+  const found = calls.find((call) => line.includes(call));
+  if (found) {
+    return found;
+  }
+  if (source === 'asbcp_create_status' && /create\/status/u.test(line)) {
+    return 'create/status';
+  }
+  return undefined;
+}
+
+function parseSignals(files) {
+  const signals = [];
+  const seen = new Set();
+  for (const file of files) {
+    const content = readIfFile(file);
+    if (!content) {
+      continue;
+    }
+    const sourceLog = path.basename(file);
+    for (const [index, line] of content.split(/\r?\n/u).entries()) {
+      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status_code|statusCode|error_code|errorCode|pod[ _-]?manager|ASBCP|create_or_ensure_pod|get_pod_status/u.test(line)) {
+        continue;
+      }
+      const source = classifySource(line);
+      if (!source) {
+        continue;
+      }
+      const fields = readFields(line);
+      const signal = {
+        source,
+        source_log: sourceLog,
+        line_number: index + 1,
+        ...fields
+      };
+      const call = readCall(line, source);
+      if (call) {
+        signal.call = call;
+      }
+      const key = JSON.stringify(signal);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      signals.push(signal);
+    }
+  }
+  return signals.slice(-80);
+}
+
+function parseK8sPods(file) {
+  const content = readIfFile(file);
+  if (!content) {
+    return [];
+  }
+  const pods = [];
+  let current = {};
+  for (const line of content.split(/\r?\n/u)) {
+    if (line === '---') {
+      if (current.pod || current.phase) {
+        pods.push(current);
+      }
+      current = {};
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator);
+    const value = line.slice(separator + 1);
+    if (key === 'pod' || key === 'phase' || key === 'conditions' || key === 'containers' || key === 'init_containers') {
+      current[key] = value;
+    }
+  }
+  if (current.pod || current.phase) {
+    pods.push(current);
+  }
+  return pods;
+}
+
+const report = {
+  schema_version: 'agentsmith.runtime-readiness-details/v1',
+  theme: 'runtime_pending_readiness',
+  generated_at: new Date().toISOString(),
+  signals: parseSignals(candidateFiles),
+  k8s_pods: parseK8sPods(podStatusFile)
+};
+
+fs.writeFileSync(outputFile, `${JSON.stringify(report, null, 2)}\n`);
+NODE
+    printf '{\n  "schema_version": "agentsmith.runtime-readiness-details/v1",\n  "theme": "runtime_pending_readiness",\n  "signals": [],\n  "k8s_pods": [],\n  "collection_error": "runtime readiness detail collection failed"\n}\n' > "${output_file}"
+  }
+}
+
 collect_runtime_readiness_summary() {
   local evidence_dir="$1"
   local spec_state_file="${2:-}"
@@ -903,6 +1078,7 @@ collect_child_internal_runtime_flake_evidence() {
     collect_child_internal_log_tails "${evidence_dir}" "${spec_state_file}"
     collect_afscp_child_evidence "${evidence_dir}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"
+    collect_runtime_readiness_details "${evidence_dir}" "${spec_state_file}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
     rm -f "${evidence_dir}/runtime-readiness-failure.marker" 2>/dev/null || true
   ) || true
@@ -981,6 +1157,7 @@ collect_child_internal_failure_evidence() {
       printf 'kubectl command is not available; pod status evidence was not collected.\n' > "${evidence_dir}/k8s-pod-status.txt"
       printf 'kubectl command is not available; event evidence was not collected.\n' > "${evidence_dir}/k8s-events.txt"
     fi
+    collect_runtime_readiness_details "${evidence_dir}" "${spec_state_file}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
     if [[ "${current_runtime_readiness_failure}" -eq 1 ]]; then
       if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then

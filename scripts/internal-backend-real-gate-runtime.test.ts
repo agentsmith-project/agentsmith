@@ -427,6 +427,7 @@ function runInternalSpecGrepEarlyFailureHarness(options: { runs?: number } = {})
   afscpApiLogTail: string;
   afscpRuntimeFingerprint: string;
   runtimeReadinessSummary: string;
+  runtimeReadinessDetails: string;
   runtimeStabilityBlockerSummary: string;
 } {
   const repoRoot = process.cwd();
@@ -534,6 +535,11 @@ exit 0
       'files_restore_continuation_spec',
       'runtime-readiness-summary.txt',
     );
+    const runtimeReadinessDetailsPath = path.join(
+      uploadRoot,
+      'files_restore_continuation_spec',
+      'runtime-readiness-details.json',
+    );
     const runtimeStabilityBlockerSummaryPath = path.join(
       uploadRoot,
       'files_restore_continuation_spec',
@@ -553,6 +559,9 @@ exit 0
         : '',
       runtimeReadinessSummary: existsSync(runtimeReadinessSummaryPath)
         ? readFileSync(runtimeReadinessSummaryPath, 'utf8')
+        : '',
+      runtimeReadinessDetails: existsSync(runtimeReadinessDetailsPath)
+        ? readFileSync(runtimeReadinessDetailsPath, 'utf8')
         : '',
       runtimeStabilityBlockerSummary: existsSync(runtimeStabilityBlockerSummaryPath)
         ? readFileSync(runtimeStabilityBlockerSummaryPath, 'utf8')
@@ -1581,6 +1590,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-api-log-tail.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-summary.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
     expect(result.summary).toContain('stage=files_restore_continuation_spec');
     expect(result.summary).toContain('gate_mode=files-restore-continue');
     expect(result.summary).toContain('spec=e2e/integration-files-user-stories.spec.ts');
@@ -1607,6 +1617,49 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.runtimeReadinessSummary).toContain('pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).toContain('ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).not.toContain('known-product-token');
+    type RuntimeReadinessSignal = {
+      source: string;
+      request_id?: string;
+      workload_id?: string;
+      phase?: string;
+      status_code?: string;
+      error_code?: string;
+      call?: string;
+      line?: string;
+    };
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      schema_version: string;
+      theme: string;
+      signals: RuntimeReadinessSignal[];
+    };
+    expect(details.schema_version).toBe('agentsmith.runtime-readiness-details/v1');
+    expect(details.theme).toBe('runtime_pending_readiness');
+    expect(details.signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'api',
+        request_id: 'req-runtime-1',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'create_or_ensure_pod',
+        request_id: 'req-runtime-1',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        request_id: 'req-runtime-1',
+        workload_id: 'workload-runtime-1',
+        phase: 'pending',
+        status_code: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+    ]));
+    expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
   });
 
   it('upgrades consecutive focused runtime readiness failures to a stability blocker', () => {

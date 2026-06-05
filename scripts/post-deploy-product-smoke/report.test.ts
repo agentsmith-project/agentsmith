@@ -238,6 +238,13 @@ describe('post-deploy product smoke report producer', () => {
       source_evidence_path: join(root, 'chat_via_llmup.json'),
       source_evidence_sha256: fileSha256(join(root, 'chat_via_llmup.json')),
       status: 'passed',
+      proof: {
+        endpoint_type: 'custom',
+        provider_family: 'custom',
+        upstream_protocol: 'openai_chat_completions',
+        credential_type: 'api_key',
+        success_path: 'provider_neutral_endpoint',
+      },
     });
     for (const smokeResult of Object.values(smokeResults) as Record<string, unknown>[]) {
       expect(smokeResult.source_evidence_path).toEqual(expect.stringMatching(root));
@@ -286,6 +293,13 @@ describe('post-deploy product smoke report producer', () => {
     expect(smokeResults.provider_neutral_endpoint).toMatchObject({
       source_flow: 'chat_via_llmup',
       source_evidence_path: 'unified-deploy/product-flows/chat_via_llmup.json',
+      proof: {
+        endpoint_type: 'custom',
+        provider_family: 'custom',
+        upstream_protocol: 'openai_chat_completions',
+        credential_type: 'api_key',
+        success_path: 'provider_neutral_endpoint',
+      },
     });
     for (const smokeResult of Object.values(smokeResults)) {
       const sourceEvidencePath = smokeResult.source_evidence_path;

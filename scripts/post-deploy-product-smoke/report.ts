@@ -36,6 +36,14 @@ export const PRODUCT_FLOWS_AGGREGATE_PRODUCER =
 export const FOCUSED_PRODUCT_FLOW_EVIDENCE_SCHEMA_VERSION =
   'agentsmith.focused-product-flow.evidence/v1' as const;
 
+export type ProviderNeutralEndpointProof = {
+  endpoint_type: 'custom';
+  provider_family: 'custom';
+  upstream_protocol: 'openai_chat_completions';
+  credential_type: 'api_key';
+  success_path: 'provider_neutral_endpoint';
+};
+
 export type PostDeployProductSmokeResult = {
   id: PostDeployProductSmokeId;
   status: 'passed';
@@ -43,6 +51,7 @@ export type PostDeployProductSmokeResult = {
   source_flow: ProductVerificationFlowId;
   source_evidence_path: string;
   source_evidence_sha256: string;
+  proof?: ProviderNeutralEndpointProof;
 };
 
 type EvidenceFileDigest = {
@@ -282,7 +291,7 @@ function requireNestedExpectedString(
 function validateProviderNeutralEndpointEvidence(
   evidence: Record<string, unknown>,
   pathLabel: string,
-): void {
+): ProviderNeutralEndpointProof {
   const checks = asRecord(evidence.checks);
   const providerNeutralEndpoint = asRecord(checks.provider_neutral_endpoint);
   const issues: string[] = [];
@@ -334,6 +343,14 @@ function validateProviderNeutralEndpointEvidence(
       `${pathLabel}.checks.provider_neutral_endpoint must prove the provider-neutral Endpoint success path: ${issues.join('; ')}.`,
     );
   }
+
+  return {
+    endpoint_type: 'custom',
+    provider_family: 'custom',
+    upstream_protocol: 'openai_chat_completions',
+    credential_type: 'api_key',
+    success_path: 'provider_neutral_endpoint',
+  };
 }
 
 function sourceEvidencePath(
@@ -365,10 +382,16 @@ function resolveFocusedEvidencePaths(
   ])) as Record<ProductVerificationFlowId, string>;
 }
 
+type FocusedEvidenceValidation = {
+  digests: Record<ProductVerificationFlowId, string>;
+  providerNeutralEndpointProof: ProviderNeutralEndpointProof;
+};
+
 async function validateFocusedEvidenceFiles(
   evidencePaths: Record<ProductVerificationFlowId, string>,
-): Promise<Record<ProductVerificationFlowId, string>> {
+): Promise<FocusedEvidenceValidation> {
   const digests: Partial<Record<ProductVerificationFlowId, string>> = {};
+  let providerNeutralEndpointProof: ProviderNeutralEndpointProof | undefined;
   for (const sourceFlow of PRODUCT_VERIFICATION_FLOW_IDS) {
     const evidencePath = evidencePaths[sourceFlow];
     let evidence: Record<string, unknown>;
@@ -402,7 +425,7 @@ async function validateFocusedEvidenceFiles(
     requireExactString(evidence, 'flow', sourceFlow, `product_flows.flow_evidence_paths.${sourceFlow}`);
     requireExactString(evidence, 'status', 'passed', `product_flows.flow_evidence_paths.${sourceFlow}`);
     if (sourceFlow === 'chat_via_llmup') {
-      validateProviderNeutralEndpointEvidence(
+      providerNeutralEndpointProof = validateProviderNeutralEndpointEvidence(
         evidence,
         `product_flows.flow_evidence_paths.${sourceFlow}`,
       );
@@ -410,12 +433,20 @@ async function validateFocusedEvidenceFiles(
     digests[sourceFlow] = sha256Digest(raw);
   }
 
-  return digests as Record<ProductVerificationFlowId, string>;
+  if (!providerNeutralEndpointProof) {
+    throw new Error('product_flows.flow_evidence_paths.chat_via_llmup must include provider-neutral endpoint proof.');
+  }
+
+  return {
+    digests: digests as Record<ProductVerificationFlowId, string>,
+    providerNeutralEndpointProof,
+  };
 }
 
 function buildSmokeResults(
   evidencePaths: Record<ProductVerificationFlowId, string>,
   evidenceSha256: Record<ProductVerificationFlowId, string>,
+  providerNeutralEndpointProof: ProviderNeutralEndpointProof,
 ): Record<PostDeployProductSmokeId, PostDeployProductSmokeResult> {
   return Object.fromEntries(POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => {
     return [
@@ -427,6 +458,7 @@ function buildSmokeResults(
         source_flow: spec.source_flow,
         source_evidence_path: evidencePaths[spec.source_flow],
         source_evidence_sha256: evidenceSha256[spec.source_flow],
+        ...(spec.id === 'provider_neutral_endpoint' ? { proof: providerNeutralEndpointProof } : {}),
       },
     ];
   })) as Record<PostDeployProductSmokeId, PostDeployProductSmokeResult>;
@@ -566,6 +598,7 @@ function buildReport(
   generatedAt: string,
   evidencePaths: Record<ProductVerificationFlowId, string>,
   evidenceSha256: Record<ProductVerificationFlowId, string>,
+  providerNeutralEndpointProof: ProviderNeutralEndpointProof,
   deploymentTarget: DeploymentTargetBinding | undefined,
 ): PostDeployProductSmokeReport {
   const aggregateGeneratedAt = stringValue(aggregate, 'generated_at');
@@ -588,7 +621,7 @@ function buildReport(
     },
     release_contract: releaseContract,
     ...(deploymentTarget ? { deployment_target: deploymentTarget } : {}),
-    smoke_results: buildSmokeResults(evidencePaths, evidenceSha256),
+    smoke_results: buildSmokeResults(evidencePaths, evidenceSha256, providerNeutralEndpointProof),
     failures: [],
     paths: {
       report_path: reportPath,
@@ -638,7 +671,7 @@ export async function runPostDeployProductSmokeReportProducer(
   validateRequiredSourceFlows(flowMap);
   const evidencePaths = resolveFocusedEvidencePaths(aggregate, resolvedProductFlowsPath);
   const reportEvidencePaths = serializeEvidencePathsForReport(evidencePaths, resolvedPathRoot);
-  const evidenceSha256 = await validateFocusedEvidenceFiles(evidencePaths);
+  const focusedEvidence = await validateFocusedEvidenceFiles(evidencePaths);
   const siteEnv = await readOptionalAggregateSourceFileBinding(
     aggregate,
     'site_env_path',
@@ -664,7 +697,8 @@ export async function runPostDeployProductSmokeReportProducer(
     reportReportPath,
     (options.now ?? (() => new Date()))().toISOString(),
     reportEvidencePaths,
-    evidenceSha256,
+    focusedEvidence.digests,
+    focusedEvidence.providerNeutralEndpointProof,
     deploymentTarget,
   );
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');

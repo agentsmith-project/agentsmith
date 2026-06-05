@@ -2469,6 +2469,44 @@ exit 0
         terminal_result_sha256: sha256Buffer(readFileSync(terminalResultPath)),
       });
       expect(report.runtime_readiness).toEqual({
+        observation_policy: {
+          step_id: 'gate-release',
+          gate_id: 'gate-release',
+          theme: 'runtime_pending_readiness',
+          backoff: 'increasing_after_consecutive_non_terminal',
+          interval_ms: [60_000, 90_000, 120_000, 180_000, 300_000],
+          evidence_focus: [
+            'Files restore continuation focused backend-real gate',
+            'AGENT_SANDBOX_UNAVAILABLE API/pod-manager/ASBCP summaries',
+            'runtime flake versus stability blocker classification',
+          ],
+          state_convergence: {
+            files: {
+              pending: expect.stringContaining('file_library_list_pending'),
+              releasing: expect.stringContaining('workspace binding release convergence'),
+              offline: expect.stringContaining('no active writer'),
+              not_found: expect.stringContaining('no active writer'),
+            },
+            agent_task_sandbox: {
+              pending: expect.stringContaining('bounded ASBCP status checks'),
+              releasing: expect.stringContaining('release-incomplete'),
+              offline: expect.stringContaining('ASBCP create-or-ensure'),
+              not_found: expect.stringContaining('ASBCP create-or-ensure'),
+            },
+            afscp_workspace_binding: {
+              pending: expect.stringContaining('workspace binding owner'),
+              releasing: expect.stringContaining('terminal released/revoked/expired/deleted'),
+              offline: expect.stringContaining('no active writer'),
+              not_found: expect.stringContaining('no active writer'),
+            },
+            read_export: {
+              pending: expect.stringContaining('typed pending'),
+              releasing: expect.stringContaining('runtime release fence'),
+              offline: expect.stringContaining('no active writer'),
+              not_found: expect.stringContaining('fresh read export'),
+            },
+          },
+        },
         files_restore_continuation: {
           path: 'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',
           sha256: sha256Buffer(readFileSync(runtimeDetailsPath)),

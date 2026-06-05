@@ -28,6 +28,10 @@ import {
 import {
   assertReleaseCampaignRootNotSymlink,
 } from './release-campaign-io';
+import {
+  findCurrentVerificationCampaignById,
+  type CurrentVerificationCampaignObservationPolicy,
+} from './current-verification-campaign-manifest';
 
 export const PRODUCT_READINESS_REPORT_SCHEMA_VERSION =
   'agentsmith.product-readiness-report/v1' as const;
@@ -105,6 +109,15 @@ export interface ProductReadinessReportSubject {
     terminal_result_sha256: string;
   };
   runtime_readiness: {
+    observation_policy: {
+      step_id: string;
+      gate_id: string;
+      theme: CurrentVerificationCampaignObservationPolicy['theme'];
+      backoff: CurrentVerificationCampaignObservationPolicy['backoff'];
+      interval_ms: readonly number[];
+      evidence_focus: readonly string[];
+      state_convergence: CurrentVerificationCampaignObservationPolicy['stateConvergence'];
+    };
     files_restore_continuation: {
       path: string;
       sha256: string;
@@ -410,6 +423,25 @@ function readRuntimeReadinessDetails(input: {
   };
 }
 
+function runtimeReadinessObservationPolicy(): ProductReadinessReportSubject['runtime_readiness']['observation_policy'] {
+  const campaign = findCurrentVerificationCampaignById('release-full');
+  const gateRelease = campaign?.steps.find((step) => step.id === 'gate-release');
+  const policy = gateRelease?.observationPolicy;
+  if (!gateRelease || !policy) {
+    throw new Error('release-full gate-release observationPolicy is required for product readiness runtime convergence evidence.');
+  }
+
+  return {
+    step_id: gateRelease.id,
+    gate_id: gateRelease.gateId,
+    theme: policy.theme,
+    backoff: policy.backoff,
+    interval_ms: [...policy.intervalMs],
+    evidence_focus: [...policy.evidenceFocus],
+    state_convergence: policy.stateConvergence,
+  };
+}
+
 function requireGitHubArtifactEnv(
   env: Readonly<Record<string, string | undefined>>,
   field: string,
@@ -577,6 +609,7 @@ function buildProductReadinessReportSubject(input: {
       terminal_result_sha256: input.terminalResult.sha256,
     },
     runtime_readiness: {
+      observation_policy: runtimeReadinessObservationPolicy(),
       files_restore_continuation: input.runtimeReadinessDetails,
     },
     referenced_files: [

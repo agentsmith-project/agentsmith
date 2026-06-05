@@ -1076,10 +1076,11 @@ const report = {
   signals: parseSignals(candidateFiles),
   k8s_pods: parseK8sPods(podStatusFile)
 };
+report.call_summaries = report.signals;
 
 fs.writeFileSync(outputFile, `${JSON.stringify(report, null, 2)}\n`);
 NODE
-    printf '{\n  "schema_version": "agentsmith.runtime-readiness-details/v1",\n  "theme": "runtime_pending_readiness",\n  "signals": [],\n  "k8s_pods": [],\n  "collection_error": "runtime readiness detail collection failed"\n}\n' > "${output_file}"
+    printf '{\n  "schema_version": "agentsmith.runtime-readiness-details/v1",\n  "theme": "runtime_pending_readiness",\n  "signals": [],\n  "call_summaries": [],\n  "k8s_pods": [],\n  "collection_error": "runtime readiness detail collection failed"\n}\n' > "${output_file}"
   }
 }
 
@@ -1408,6 +1409,7 @@ fs.writeFileSync(outputFile, `${JSON.stringify({
   api_port: apiPort || null,
   web_port: webPort || null,
   signals: [],
+  call_summaries: [],
   k8s_pods: [],
 }, null, 2)}\n`);
 NODE

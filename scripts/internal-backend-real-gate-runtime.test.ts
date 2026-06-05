@@ -1713,6 +1713,7 @@ describe('internal backend-real gate runtime contract', () => {
       api_port: string;
       web_port: string;
       signals: unknown[];
+      call_summaries: unknown[];
       k8s_pods: unknown[];
     };
     expect(details).toMatchObject({
@@ -1727,6 +1728,7 @@ describe('internal backend-real gate runtime contract', () => {
       api_port: '21020',
       web_port: '3121',
       signals: [],
+      call_summaries: [],
       k8s_pods: [],
     });
     expect(details.convergence_policy).toMatchObject({

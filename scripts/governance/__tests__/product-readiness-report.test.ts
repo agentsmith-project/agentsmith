@@ -91,14 +91,50 @@ function writeRuntimeReadinessDetails(
     classification: 'runtime_flake',
     outcome: 'focused_gate_passed_after_runtime_readiness_marker',
     signals: [
-      { source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
-      { source: 'pod_manager', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
-      { source: 'asbcp_create_status', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
+      {
+        source: 'api',
+        request_id: 'api_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'pod_manager',
+        request_id: 'pod_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'asbcp_create_status',
+        request_id: 'asbcp_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
     ],
     call_summaries: [
-      { source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
-      { source: 'pod_manager', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
-      { source: 'asbcp_create_status', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
+      {
+        source: 'api',
+        request_id: 'api_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'pod_manager',
+        request_id: 'pod_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'asbcp_create_status',
+        request_id: 'asbcp_req_restore_1',
+        workload_id: 'workload_restore_1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
     ],
     k8s_pods: [],
     ...overrides,
@@ -466,12 +502,67 @@ describe('product readiness report producer', () => {
     try {
       writeRuntimeReadinessDetails(root, {
         call_summaries: [
-          { source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' },
+          {
+            source: 'api',
+            request_id: 'api_req_restore_1',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'api',
+            request_id: 'api_req_restore_2',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'api',
+            request_id: 'api_req_restore_3',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
         ],
       });
 
       expect(() => writeProductReadinessReport({ campaignRoot: root }))
-        .toThrow(/classification runtime_flake must cover API, pod-manager, and ASBCP call summaries/u);
+        .toThrow(/missing pod-manager, ASBCP create\/status/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime flake call summaries omit required diagnostic fields', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-flake-fields-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        call_summaries: [
+          {
+            source: 'api',
+            request_id: 'api_req_restore_1',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'pod_manager',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'asbcp_create_status',
+            request_id: 'asbcp_req_restore_1',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+        ],
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/request_id, workload_id, phase, and error_code; missing pod-manager/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

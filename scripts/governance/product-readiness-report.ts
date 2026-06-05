@@ -50,6 +50,17 @@ const RUNTIME_READINESS_DETAILS_SCHEMA_VERSION = 'agentsmith.runtime-readiness-d
 const RUNTIME_READINESS_THEME = 'runtime_pending_readiness' as const;
 type RuntimeReadinessClassification = 'clean_pass' | 'runtime_flake';
 
+const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_SOURCES = [
+  { source: 'api', label: 'API' },
+  { source: 'pod_manager', label: 'pod-manager' },
+  { source: 'asbcp_create_status', label: 'ASBCP create/status' },
+] as const;
+const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_FIELDS = [
+  'request_id',
+  'workload_id',
+  'phase',
+] as const;
+
 export interface ProductReadinessReferencedFile {
   id: 'product_readiness_summary' | 'terminal_result' | 'runtime_readiness_details';
   path: string;
@@ -376,12 +387,12 @@ function requiredStringField(record: Record<string, unknown>, field: string, lab
   return value;
 }
 
-function arrayCount(record: Record<string, unknown>, field: string, label: string): number {
+function requiredArrayField(record: Record<string, unknown>, field: string, label: string): readonly unknown[] {
   const value = record[field];
   if (!Array.isArray(value)) {
     throw new Error(`${label}.${field} must be an array.`);
   }
-  return value.length;
+  return value;
 }
 
 function runtimeReadinessClassification(
@@ -394,11 +405,37 @@ function runtimeReadinessClassification(
   return value;
 }
 
+function hasNonEmptyStringField(record: Record<string, unknown>, field: string): boolean {
+  const value = record[field];
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasRuntimeReadinessErrorCode(record: Record<string, unknown>): boolean {
+  return hasNonEmptyStringField(record, 'error_code')
+    || hasNonEmptyStringField(record, 'asbcp_code')
+    || hasNonEmptyStringField(record, 'mapped_error_code');
+}
+
+function callSummaryCoversRuntimeUnavailableSource(
+  callSummaries: readonly unknown[],
+  source: string,
+): boolean {
+  return callSummaries.some((entry) => {
+    if (!isRecord(entry) || entry.source !== source) {
+      return false;
+    }
+    return RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_FIELDS.every((field) =>
+      hasNonEmptyStringField(entry, field),
+    ) && hasRuntimeReadinessErrorCode(entry);
+  });
+}
+
 function validateRuntimeReadinessSummary(input: {
   label: string;
   classification: RuntimeReadinessClassification;
   signalsCount: number;
   callSummariesCount: number;
+  callSummaries: readonly unknown[];
 }): void {
   if (input.classification === 'clean_pass') {
     if (input.signalsCount !== 0 || input.callSummariesCount !== 0) {
@@ -409,6 +446,15 @@ function validateRuntimeReadinessSummary(input: {
 
   if (input.signalsCount < 3 || input.callSummariesCount < 3) {
     throw new Error(`${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries.`);
+  }
+
+  const missingSources = RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_SOURCES
+    .filter(({ source }) => !callSummaryCoversRuntimeUnavailableSource(input.callSummaries, source))
+    .map(({ label }) => label);
+  if (missingSources.length > 0) {
+    throw new Error(
+      `${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries with request_id, workload_id, phase, and error_code; missing ${missingSources.join(', ')}.`,
+    );
   }
 }
 
@@ -440,13 +486,16 @@ function readRuntimeReadinessDetails(input: {
     requiredStringField(payload, 'classification', label),
     label,
   );
-  const signalsCount = arrayCount(payload, 'signals', label);
-  const callSummariesCount = arrayCount(payload, 'call_summaries', label);
+  const signals = requiredArrayField(payload, 'signals', label);
+  const callSummaries = requiredArrayField(payload, 'call_summaries', label);
+  const signalsCount = signals.length;
+  const callSummariesCount = callSummaries.length;
   validateRuntimeReadinessSummary({
     label,
     classification,
     signalsCount,
     callSummariesCount,
+    callSummaries,
   });
 
   return {

@@ -4,10 +4,23 @@ import path from 'node:path';
 import { findCurrentGateDefinitionById } from '../governance/current-gate-manifest';
 import {
   CURRENT_VERIFICATION_CAMPAIGN_MANIFEST,
+  currentObservationWaitSchedule,
   findCurrentVerificationCampaignById,
 } from '../governance/current-verification-campaign-manifest';
 
 const rootDir = process.cwd();
+const RUNTIME_READINESS_SURFACES = [
+  'files',
+  'agent_task_sandbox',
+  'afscp_workspace_binding',
+  'read_export',
+] as const;
+const RUNTIME_READINESS_STATES = [
+  'pending',
+  'releasing',
+  'offline',
+  'not_found',
+] as const;
 
 function readJson(relativePath: string): unknown {
   return JSON.parse(readFileSync(path.join(rootDir, relativePath), 'utf8')) as unknown;
@@ -19,8 +32,21 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertStringField(
+  record: Record<string, unknown>,
+  field: string,
+  message: string,
+): asserts record is Record<string, string> {
+  assert(typeof record[field] === 'string' && record[field].trim().length > 0, message);
+}
+
 const packageJson = readJson('package.json') as { scripts?: Record<string, string> };
 const releaseCampaignIo = readFileSync(path.join(rootDir, 'scripts/governance/release-campaign-io.ts'), 'utf8');
+const runtimeReadinessPolicy = readJson('scripts/governance/runtime-readiness-policy.json');
 
 function main(): void {
   assert(CURRENT_VERIFICATION_CAMPAIGN_MANIFEST.length > 0, 'Expected current verification campaign manifest to be populated.');
@@ -93,9 +119,71 @@ function main(): void {
     gateReleaseStep?.dependsOn.join(',') === 'gate-default',
     'gate-release must depend only on gate-default; visual evidence is aggregated by gate-release-full.',
   );
+  assert(gateReleaseStep.observationPolicy, 'gate-release must carry runtime pending/readiness observation policy.');
+  assert(
+    gateReleaseStep.observationPolicy.theme === 'runtime_pending_readiness',
+    'gate-release observation policy must classify repeated release/backend-real waits as runtime pending/readiness.',
+  );
+  assert(
+    gateReleaseStep.observationPolicy.backoff === 'increasing_after_consecutive_non_terminal',
+    'gate-release observation policy must use increasing waits after consecutive non-terminal checks.',
+  );
+  assert(
+    currentObservationWaitSchedule(gateReleaseStep.observationPolicy, 4).join(',') !== [
+      60_000,
+      60_000,
+      60_000,
+      60_000,
+    ].join(','),
+    'gate-release observation policy must not drift back to fixed one-minute polling.',
+  );
+  assert(isRecord(runtimeReadinessPolicy), 'runtime readiness policy JSON must be an object.');
+  assert(
+    JSON.stringify(gateReleaseStep.observationPolicy.intervalMs) === JSON.stringify(runtimeReadinessPolicy.interval_ms),
+    'gate-release observation wait intervals must match scripts/governance/runtime-readiness-policy.json.',
+  );
+  assert(
+    gateReleaseStep.observationPolicy.evidenceFocus.includes('Files restore continuation focused backend-real gate')
+      && gateReleaseStep.observationPolicy.evidenceFocus.includes('AGENT_SANDBOX_UNAVAILABLE API/pod-manager/ASBCP summaries')
+      && gateReleaseStep.observationPolicy.evidenceFocus.includes('runtime flake versus stability blocker classification'),
+    'gate-release runtime readiness evidence focus must preserve Files restore continuation, sandbox-unavailable summaries, and flake/blocker classification.',
+  );
+  for (const surface of RUNTIME_READINESS_SURFACES) {
+    const convergence = gateReleaseStep.observationPolicy.stateConvergence[surface];
+    assert(convergence, `runtime readiness convergence must cover ${surface}.`);
+    for (const state of RUNTIME_READINESS_STATES) {
+      assert(
+        typeof convergence[state] === 'string' && convergence[state].trim().length > 0,
+        `runtime readiness convergence must define ${surface}.${state}.`,
+      );
+    }
+  }
+  const classificationRules = runtimeReadinessPolicy.classification_rules;
+  assert(isRecord(classificationRules), 'runtime readiness policy must define classification_rules.');
+  for (const field of ['clean_pass', 'runtime_flake', 'stability_blocker']) {
+    assertStringField(
+      classificationRules,
+      field,
+      `runtime readiness classification_rules must define ${field}.`,
+    );
+  }
+  assert(
+    classificationRules.runtime_flake.includes('passed on rerun')
+      && classificationRules.stability_blocker.includes('consecutive'),
+    'runtime readiness classification rules must keep first-pass-rerun as runtime_flake and consecutive failures as stability_blocker.',
+  );
   assert(
     gateReleaseStep?.evidenceChecks.some((check) => check.path.includes('backend-real-visual/review.md')),
     'gate-release campaign step must require the backend-real visual review summary.',
+  );
+  assert(
+    gateReleaseStep.evidenceChecks.some((check) =>
+      check.id === 'files_restore_continuation_runtime_readiness_details'
+      && check.path === '<campaign-root>/gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json'
+      && check.expectedSchemaVersion === 'agentsmith.runtime-readiness-details/v1'
+      && check.expectedTheme === 'runtime_pending_readiness',
+    ),
+    'gate-release must require Files restore continuation runtime readiness details before Product Readiness.',
   );
   assert(
     gateReleaseStep?.evidenceChecks.some((check) => check.kind === 'recursive_file' && check.fileName === 'review.md'),

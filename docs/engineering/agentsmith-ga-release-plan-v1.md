@@ -458,8 +458,8 @@ GA 的判定是：
 
 | Repo | 近十几天信号 | 取舍判断 |
 | --- | --- | --- |
-| `agentsmith` | 约 370+ 个非 merge commit，集中在 product readiness、release boundary、runner contract、runtime pending/readiness、docs/gates；当前 `package.json` 约 199 个 scripts，`scripts/governance/` 与 `current-*` 家族体量偏高 | 真实 runtime/readiness 收口要继续；新增治理对象、manifest/schema 家族要冻结 |
-| `agentsmith-release-kit` | 约 246 个非 merge commit，集中在 operator facade、final GA report、deployment path reports、airgap/offline、provenance；`scripts/` 约 84 个文件，历史 surface/adoption/candidate/signoff/intake/runbook acceptance 面偏多 | final GA authority 必须保留；后续优先合并/隐藏/删除旧 producer 面，而不是新增解释层 |
+| `agentsmith` | 约 397 个非 merge commit，集中在 product readiness、release boundary、runner contract、runtime pending/readiness、docs/gates；当前 `package.json` 约 199 个 scripts，`scripts/` 约 550 个文件，其中 `scripts/governance/` 约 136 个、`scripts/contracts/` 约 54 个，`current-*` 家族体量偏高 | 真实 runtime/readiness 收口要继续；新增治理对象、manifest/schema 家族要冻结 |
+| `agentsmith-release-kit` | 约 248 个非 merge commit，集中在 operator facade、final GA report、deployment path reports、airgap/offline、provenance；`scripts/` 约 84 个文件，历史 surface/adoption/candidate/signoff/intake/runbook acceptance 面偏多 | final GA authority 必须保留；后续优先合并/隐藏/删除旧 producer 面，而不是新增解释层 |
 | `agentsmith-runner` | 约 50 个非 merge commit，多数服务 runner image、secret scrub、source boundary、handoff manifest | 相对健康；runner 只产出 downstream evidence，不升级为第三个 GA verdict |
 | `llm-universal-proxy`、AFSCP、ASBCP | 变更少，主要是 pinned image、repo-local gate wording 或真实 runtime 修复 | 保持 repo-local 最小 release gate；不要把它们扩成 AgentSmith 顶层治理矩阵 |
 
@@ -498,6 +498,7 @@ GA 的判定是：
 明确不做：
 
 - 不新增 canonical `failure_class`、gate/report/dashboard、readiness layer 或 “runtime governance” 命令族。
+- 不把 runtime pending/readiness 做成新的产品对象、治理 taxonomy 或独立 dashboard；它只作为既有 evidence path 的 observation / diagnostic fact。
 - 不把 focused backend-real gate 写成 Product Readiness 终局 verdict；它只产出重点证据。
 - 不为一次 flake 做大重构；连续失败才按稳定性 blocker 推进 owner 修复。
 - 不把 ASBCP / AFSCP owner repo 的幂等缺口用 AgentSmith wrapper 长期掩盖；AgentSmith 只做最小调用收口和证据补强。

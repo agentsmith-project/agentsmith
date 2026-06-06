@@ -1765,6 +1765,14 @@ describe('internal backend-real gate runtime contract', () => {
     expect(details.classification_rules?.stability_blocker).toContain('consecutive');
   });
 
+  it('sources runtime readiness wait intervals from the shared policy file', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+
+    expect(agentTaskGate).toContain('scripts/governance/runtime-readiness-policy.json');
+    expect(agentTaskGate).toContain('runtime readiness policy is required');
+    expect(agentTaskGate).not.toContain('interval_ms: [60000, 90000, 120000, 180000, 300000]');
+  });
+
   it('records focused runtime readiness flake classification in runtime readiness JSON', () => {
     const result = runInternalSpecGrepCleanPassHarness({ runtimeMarker: true });
 

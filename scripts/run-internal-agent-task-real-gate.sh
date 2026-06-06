@@ -762,16 +762,8 @@ const [outputFile, podStatusFile, policyFile, ...candidateFiles] = process.argv.
 function readPolicy(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return {
-      schema_version: 'agentsmith.runtime-readiness-policy/v1',
-      theme: 'runtime_pending_readiness',
-      backoff: 'increasing_after_consecutive_non_terminal',
-      interval_ms: [60000, 90000, 120000, 180000, 300000],
-      evidence_focus: [],
-      state_convergence: {},
-      classification_rules: {},
-    };
+  } catch (error) {
+    throw new Error(`runtime readiness policy is required: ${error.message}`);
   }
 }
 
@@ -1140,16 +1132,8 @@ const [
 function readPolicy(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return {
-      schema_version: 'agentsmith.runtime-readiness-policy/v1',
-      theme: 'runtime_pending_readiness',
-      backoff: 'increasing_after_consecutive_non_terminal',
-      interval_ms: [60000, 90000, 120000, 180000, 300000],
-      evidence_focus: [],
-      state_convergence: {},
-      classification_rules: {},
-    };
+  } catch (error) {
+    throw new Error(`runtime readiness policy is required: ${error.message}`);
   }
 }
 
@@ -1395,16 +1379,8 @@ const [
 function readPolicy(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return {
-      schema_version: 'agentsmith.runtime-readiness-policy/v1',
-      theme: 'runtime_pending_readiness',
-      backoff: 'increasing_after_consecutive_non_terminal',
-      interval_ms: [60000, 90000, 120000, 180000, 300000],
-      evidence_focus: [],
-      state_convergence: {},
-      classification_rules: {},
-    };
+  } catch (error) {
+    throw new Error(`runtime readiness policy is required: ${error.message}`);
   }
 }
 

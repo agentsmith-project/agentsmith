@@ -5840,7 +5840,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('re-invokes runtime access release when a begin fence survives with a releasing runtime binding', async () => {
+  it('re-invokes runtime access release when a begin fence survives before a release operation is recorded', async () => {
     const deps = createDeps();
     const created = await createReadyLibrary(deps);
     const libraryId = String(created.id);
@@ -5866,7 +5866,6 @@ describe('project-file-library-routes', () => {
       ...activeRuntimeBinding(libraryId),
       status: 'releasing',
       mount_binding_status: 'releasing',
-      release_operation_id: 'op_release_begin_releasing_retry',
     };
     deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
@@ -5906,6 +5905,72 @@ describe('project-file-library-routes', () => {
       bindingGeneration: seededTask.bindingGeneration,
       bindingState: 'releasing',
       correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({ beginCorrelationId }),
+    });
+  });
+
+  it('keeps a begin fence pending when a releasing runtime binding already has a release operation', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_begin_releasing_operation_pending',
+      title: 'Release begin releasing operation pending task',
+    });
+    const bindingRepo = new JsonDocTaskFileLibraryBindingRepo(deps.docStore);
+    const beginCorrelationId = buildRuntimeAccessReleaseBeginCorrelationId({
+      requestId: 'req_release_begin_releasing_operation_pending',
+    });
+    await expect(bindingRepo.beginRuntimeAccessRelease({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      correlationId: beginCorrelationId,
+    })).resolves.toMatchObject({ ok: true });
+    const runtimeBinding: InternalAgentWorkspaceBinding = {
+      ...activeRuntimeBinding(libraryId),
+      status: 'releasing',
+      mount_binding_status: 'releasing',
+      release_operation_id: 'op_release_begin_releasing_operation_pending',
+    };
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw new Error('unexpected runtime workspace release retry');
+    });
+
+    const releaseJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryRuntimeAccessRelease',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_release_begin_releasing_operation_converge' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: releaseJson,
+      readBody: vi.fn().mockResolvedValue({}),
+    })).resolves.toBe(true);
+
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      file_library_id: libraryId,
+      released: false,
+      runtime_access_status: 'release_pending',
+    });
+    await expect(bindingRepo.find({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      fileLibraryId: libraryId,
+    })).resolves.toMatchObject({
+      taskId: seededTask.taskId,
+      bindingGeneration: seededTask.bindingGeneration,
+      bindingState: 'releasing',
+      correlationId: beginCorrelationId,
     });
   });
 

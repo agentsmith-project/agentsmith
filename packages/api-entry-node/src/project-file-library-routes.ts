@@ -1657,6 +1657,11 @@ function isReleasingRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBindi
     || status === 'release_pending';
 }
 
+function hasRuntimeWorkspaceReleaseOperation(binding: InternalAgentWorkspaceBinding): boolean {
+  return typeof binding.release_operation_id === 'string'
+    && binding.release_operation_id.trim().length > 0;
+}
+
 function isTerminalRuntimeWorkspaceBinding(binding: InternalAgentWorkspaceBinding): boolean {
   if (isTerminalRuntimeWorkspaceStatus(binding.mount_binding_status)) return true;
   const status = binding.status.trim().toLowerCase();
@@ -1921,6 +1926,21 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
     fileLibraryId: input.libraryId,
   });
   if (runtimeBinding && !isTerminalRuntimeWorkspaceBinding(runtimeBinding)) {
+    if (
+      isReleasingRuntimeWorkspaceBinding(runtimeBinding)
+      && hasRuntimeWorkspaceReleaseOperation(runtimeBinding)
+    ) {
+      return {
+        handled: true,
+        statusCode: 200,
+        body: {
+          file_library_id: input.libraryId,
+          released: false,
+          runtime_access_status: 'release_pending',
+        },
+        invalidateListReadExport: false,
+      };
+    }
     const task = await findTaskRecordForBinding({
       deps: input.deps,
       workspaceId: input.workspaceId,

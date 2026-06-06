@@ -1979,6 +1979,16 @@ function hasRuntimeEvidenceErrorCode(record: Record<string, unknown>): boolean {
   return Boolean(runtimeEvidenceErrorCode(record));
 }
 
+function hasRuntimeEvidenceStatus(record: Record<string, unknown>): boolean {
+  return ['status', 'status_code', 'http_status'].some((field) => {
+    const value = record[field];
+    if (typeof value === 'string') {
+      return value.trim().length > 0;
+    }
+    return typeof value === 'number' && Number.isFinite(value);
+  });
+}
+
 function hasSandboxUnavailableSignal(payload: Record<string, unknown>): boolean {
   return [
     ...runtimeEvidenceRecords(payload, 'signals'),
@@ -1995,6 +2005,7 @@ function isCompleteSandboxUnavailableCallSummary(
     && Boolean(textField(record, 'request_id'))
     && Boolean(textField(record, 'workload_id'))
     && Boolean(textField(record, 'phase'))
+    && hasRuntimeEvidenceStatus(record)
     && runtimeEvidenceErrorCode(record) === SANDBOX_UNAVAILABLE_ERROR_CODE;
 }
 
@@ -2007,6 +2018,7 @@ function isCompleteRuntimeReadinessCallSummary(
     && Boolean(textField(record, 'request_id'))
     && Boolean(textField(record, 'workload_id'))
     && Boolean(textField(record, 'phase'))
+    && hasRuntimeEvidenceStatus(record)
     && hasRuntimeEvidenceErrorCode(record);
 }
 
@@ -2129,7 +2141,7 @@ function validateRuntimeReadinessDetailsPayload(
         .map(([, label]) => label);
       if (missing.length > 0) {
         return unifiedDeployDiagnostic(
-          `${path} runtime_flake evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+          `${path} runtime_flake evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, error code, and status/http status; missing or incomplete: ${missing.join(', ')}.`,
           'contract_drift',
         );
       }
@@ -2149,7 +2161,7 @@ function validateRuntimeReadinessDetailsPayload(
 
     if (missing.length > 0) {
       return unifiedDeployDiagnostic(
-        `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, and error code; missing or incomplete: ${missing.join(', ')}.`,
+        `${path} AGENT_SANDBOX_UNAVAILABLE runtime readiness evidence must include API, pod-manager, and ASBCP create/status call_summaries with call, request id, workload id, phase, error code, and status/http status; missing or incomplete: ${missing.join(', ')}.`,
         'contract_drift',
       );
     }

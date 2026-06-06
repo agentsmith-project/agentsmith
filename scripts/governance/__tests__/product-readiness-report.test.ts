@@ -111,6 +111,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'api_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        status_code: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
       {
@@ -119,6 +120,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'pod_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        status_code: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
       {
@@ -127,6 +129,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'asbcp_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        http_status: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
     ],
@@ -137,6 +140,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'api_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        status_code: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
       {
@@ -145,6 +149,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'pod_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        status_code: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
       {
@@ -153,6 +158,7 @@ function writeRuntimeReadinessDetails(
         request_id: 'asbcp_req_restore_1',
         workload_id: 'workload_restore_1',
         phase: 'offline',
+        http_status: '503',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
       },
     ],
@@ -559,6 +565,7 @@ describe('product readiness report producer', () => {
             request_id: 'api_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
+            status_code: '503',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
           {
@@ -567,6 +574,7 @@ describe('product readiness report producer', () => {
             request_id: 'api_req_restore_2',
             workload_id: 'workload_restore_1',
             phase: 'offline',
+            status_code: '503',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
           {
@@ -575,6 +583,7 @@ describe('product readiness report producer', () => {
             request_id: 'api_req_restore_3',
             workload_id: 'workload_restore_1',
             phase: 'offline',
+            status_code: '503',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
         ],
@@ -598,10 +607,53 @@ describe('product readiness report producer', () => {
             request_id: 'api_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
+            status_code: '503',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
           {
             source: 'pod_manager',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            status_code: '503',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'asbcp_create_status',
+            call: 'create/status',
+            request_id: 'asbcp_req_restore_1',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            http_status: '503',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+        ],
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/call, request_id, workload_id, phase, error_code, and status\/http_status; missing pod-manager/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when runtime flake call summaries omit status diagnostics', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-flake-status-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        call_summaries: [
+          {
+            source: 'api',
+            call: 'create_task_workspace',
+            request_id: 'api_req_restore_1',
+            workload_id: 'workload_restore_1',
+            phase: 'offline',
+            status_code: '503',
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+          {
+            source: 'pod_manager',
+            call: 'create_or_ensure_pod',
+            request_id: 'pod_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
@@ -612,13 +664,14 @@ describe('product readiness report producer', () => {
             request_id: 'asbcp_req_restore_1',
             workload_id: 'workload_restore_1',
             phase: 'offline',
+            http_status: '503',
             error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
         ],
       });
 
       expect(() => writeProductReadinessReport({ campaignRoot: root }))
-        .toThrow(/call, request_id, workload_id, phase, and error_code; missing pod-manager/u);
+        .toThrow(/status\/http_status; missing pod-manager/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

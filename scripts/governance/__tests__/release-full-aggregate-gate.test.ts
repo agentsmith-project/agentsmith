@@ -1920,6 +1920,72 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('ASBCP create/status');
   });
 
+  it('fails when sandbox unavailable runtime readiness evidence lacks status summaries', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-sandbox-unavailable-status-evidence-'));
+    const callSummaries = [
+      {
+        source: 'api',
+        call: 'create_task_workspace',
+        request_id: 'api_req_create_task',
+        workload_id: 'task-restore-1',
+        phase: 'offline',
+        status_code: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'pod_manager',
+        call: 'create_or_ensure_pod',
+        request_id: 'pod_mgr_create',
+        workload_id: 'task-restore-1',
+        phase: 'offline',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+      {
+        source: 'asbcp_create_status',
+        call: 'create/status',
+        request_id: 'asbcp_req_create',
+        workload_id: 'task-restore-1',
+        phase: 'offline',
+        http_status: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      },
+    ];
+    seedPassedCampaign(campaignRoot);
+    writeJson(
+      resolve(
+        campaignRoot,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      ),
+      {
+        schema_version: 'agentsmith.runtime-readiness-details/v1',
+        theme: 'runtime_pending_readiness',
+        generated_at: '2026-05-24T12:00:00.000Z',
+        convergence_policy: runtimeReadinessPolicyEvidence(),
+        classification_rules: runtimeReadinessPolicy.classification_rules,
+        classification: 'runtime_flake',
+        outcome: 'focused_gate_passed_after_runtime_readiness_marker',
+        signals: callSummaries,
+        call_summaries: callSummaries,
+        k8s_pods: [],
+      },
+    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('AGENT_SANDBOX_UNAVAILABLE');
+    expect(terminalResult.summary).toContain('status/http status');
+    expect(terminalResult.summary).toContain('pod-manager');
+  });
+
   it('fails when runtime readiness evidence is a stability blocker', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-runtime-stability-blocker-'));
     const runtimeBlockerCallSummaries = [

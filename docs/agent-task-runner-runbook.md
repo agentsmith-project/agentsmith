@@ -89,7 +89,7 @@ Additional convergence rules:
 - Files read export after a completed runtime-release fence: if the list path is still pending, treat the completed fence as released, keep the pending read export warm for the caller's next poll, and do not do a second synchronous list in the same request; do not turn completed fences into repeated export revoke/create loops.
 
 Evidence rules:
-- `AGENT_SANDBOX_UNAVAILABLE` backend-real evidence must include the API trace, pod-manager diagnostic summary, ASBCP create/status call summaries, request id, workload id, phase, and error code when those fields are available.
+- `AGENT_SANDBOX_UNAVAILABLE` backend-real evidence must include the API trace, pod-manager diagnostic summary, ASBCP create/status call summaries, request id, workload id, phase, error code, and available status/http status.
 - Focused backend-real failure evidence must preserve `runtime-readiness-summary.txt`, AFSCP API log tail, ASBCP docker log tail, and k8s pod/status/events so release/read export failures can be classified as convergence pending, runtime flake, or stability blocker.
 - A focused gate that first fails with sandbox unavailable and then passes on rerun is recorded as a `runtime flake`. Consecutive sandbox-unavailable failures for the same focused gate are a stability blocker until the runtime owner evidence explains or fixes the repeated failure.
 - Gate observation should use increasing wait intervals after consecutive non-terminal checks; do not poll every minute indefinitely.

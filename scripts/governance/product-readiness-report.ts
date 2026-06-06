@@ -63,6 +63,11 @@ const RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_FIELDS = [
   'workload_id',
   'phase',
 ] as const;
+const RUNTIME_READINESS_STATUS_FIELDS = [
+  'status',
+  'status_code',
+  'http_status',
+] as const;
 
 export interface ProductReadinessReferencedFile {
   id: 'product_readiness_summary' | 'terminal_result' | 'runtime_readiness_details';
@@ -426,10 +431,22 @@ function hasNonEmptyStringField(record: Record<string, unknown>, field: string):
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function hasNonEmptyDiagnosticField(record: Record<string, unknown>, field: string): boolean {
+  const value = record[field];
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function hasRuntimeReadinessErrorCode(record: Record<string, unknown>): boolean {
   return hasNonEmptyStringField(record, 'error_code')
     || hasNonEmptyStringField(record, 'asbcp_code')
     || hasNonEmptyStringField(record, 'mapped_error_code');
+}
+
+function hasRuntimeReadinessStatus(record: Record<string, unknown>): boolean {
+  return RUNTIME_READINESS_STATUS_FIELDS.some((field) => hasNonEmptyDiagnosticField(record, field));
 }
 
 function callSummaryCoversRuntimeUnavailableSource(
@@ -442,7 +459,7 @@ function callSummaryCoversRuntimeUnavailableSource(
     }
     return RUNTIME_READINESS_REQUIRED_CALL_SUMMARY_FIELDS.every((field) =>
       hasNonEmptyStringField(entry, field),
-    ) && hasRuntimeReadinessErrorCode(entry);
+    ) && hasRuntimeReadinessErrorCode(entry) && hasRuntimeReadinessStatus(entry);
   });
 }
 
@@ -469,7 +486,7 @@ function validateRuntimeReadinessSummary(input: {
     .map(({ label }) => label);
   if (missingSources.length > 0) {
     throw new Error(
-      `${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries with call, request_id, workload_id, phase, and error_code; missing ${missingSources.join(', ')}.`,
+      `${input.label}.classification runtime_flake must cover API, pod-manager, and ASBCP call summaries with call, request_id, workload_id, phase, error_code, and status/http_status; missing ${missingSources.join(', ')}.`,
     );
   }
 }

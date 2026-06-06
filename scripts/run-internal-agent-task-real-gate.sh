@@ -886,6 +886,14 @@ function addSignal(signals, seen, input) {
       signal[key] = normalized;
     }
   }
+  const errorCode = signal.error_code ?? signal.code ?? signal.asbcp_code;
+  if (
+    errorCode === 'AGENT_SANDBOX_UNAVAILABLE'
+    && (signal.source === 'api' || signal.source === 'pod_manager' || signal.source === 'asbcp_create_status')
+    && !signal.phase
+  ) {
+    signal.phase = 'unknown';
+  }
   if (!signal.source) {
     return;
   }

@@ -1608,6 +1608,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
     expect(runtimeFlakeCollector).toContain('collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"');
     expect(runtimeFlakeCollector).toContain('gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning"');
+    expect(runtimeDetailsCollector).toContain("errorCode === 'AGENT_SANDBOX_UNAVAILABLE'");
+    expect(runtimeDetailsCollector).toContain("signal.phase = 'unknown';");
     expect(runSpecFunction).toContain('spec_output_log="${spec_log_dir}/playwright-output.log"');
     expect(runSpecFunction).toContain('mkdir -p "${spec_log_dir}"');
     expect(runSpecFunction).toContain(') 2>&1 | tee "${spec_output_log}"');
@@ -1899,6 +1901,7 @@ describe('internal backend-real gate runtime contract', () => {
         source: 'api',
         request_id: 'release:begin:req-runtime-json',
         workload_id: 'workload-runtime-1',
+        phase: 'unknown',
         status_code: '502',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
         call: 'delete_pod',
@@ -1908,6 +1911,7 @@ describe('internal backend-real gate runtime contract', () => {
         call: 'delete_pod',
         request_id: 'req-runtime-json-step',
         workload_id: 'workload-runtime-1',
+        phase: 'unknown',
         status_code: '502',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
         asbcp_code: 'dependency_failure',

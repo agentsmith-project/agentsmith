@@ -11781,6 +11781,82 @@ describe('task-route-handler workspace access', () => {
     expect((res as { end: ReturnType<typeof vi.fn> }).end).not.toHaveBeenCalled();
   });
 
+  it('maps sandbox-unavailable terminal close release debt to typed pending', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const deleteSession = vi.fn(async () => {
+      throw Object.assign(
+        new Error('asbcp_error: delete_pod 500 {"error":{"code":"internal_error","message":"storage flush barrier failed","request_id":"asbcp_req_terminal_close_500"}}'),
+        {
+          code: 'AGENT_SANDBOX_UNAVAILABLE',
+          status: 500,
+          operation: 'delete_pod',
+          retryable: false,
+          requestId: 'asbcp_req_terminal_close_500',
+        },
+      );
+    });
+    deps.notebookTerminalService = {
+      getSessionWithinScope: vi.fn(async () => ({
+        id: 'term_close_release_500',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_close_release_500',
+        userId: 'user_1',
+        resolvedRunnerId: 'agent_terminal_close_release_500',
+      })),
+      deleteSession,
+    } as never;
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_close_release_500', {
+      id: 'task_terminal_close_release_500',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Terminal close release 500 task',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    const res = { statusCode: 0, end: vi.fn() } as never;
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskTerminalSession',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_close_release_500',
+        terminalSessionId: 'term_close_release_500',
+      } as never,
+      method: 'DELETE',
+      req: { headers: { 'x-request-id': 'req_terminal_close_release_500' }, url: '' } as never,
+      res,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 409, expect.objectContaining({
+      error_code: 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING',
+      message: 'agent_task_internal_workload_release_pending',
+      task_id: 'task_terminal_close_release_500',
+      retryable: true,
+      release_diagnostic: expect.objectContaining({
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        status: 500,
+        operation: 'delete_pod',
+        request_id: 'asbcp_req_terminal_close_500',
+      }),
+    }));
+    expect(deleteSession).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(0);
+    expect((res as { end: ReturnType<typeof vi.fn> }).end).not.toHaveBeenCalled();
+  });
+
   it('does not route archive or delete hard teardown from legacy task agent fields', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);

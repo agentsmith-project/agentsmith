@@ -1946,6 +1946,12 @@ function readDiagnosticNumber(record: Record<string, unknown>, key: string): num
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function readDiagnosticMessage(error: unknown, record: Record<string, unknown>): string {
+  if (error instanceof Error) return error.message;
+  const message = record.message;
+  return typeof message === 'string' ? message : '';
+}
+
 function buildSafeInternalWorkloadReleaseDiagnostic(error: unknown): Record<string, unknown> | undefined {
   const errorRecord = isObjectRecord(error) ? error : {};
   const releaseDiagnostic = isObjectRecord(errorRecord.releaseDiagnostic)
@@ -1988,9 +1994,25 @@ function isInternalWorkloadReleasePendingError(error: unknown): boolean {
   if (!isObjectRecord(error)) {
     return false;
   }
-  const code = readDiagnosticString(error, 'code');
+  const releaseDiagnostic = isObjectRecord(error.releaseDiagnostic)
+    ? error.releaseDiagnostic
+    : error;
+  const code = readDiagnosticString(releaseDiagnostic, 'code');
+  const operation = readDiagnosticString(releaseDiagnostic, 'operation');
+  const status = readDiagnosticNumber(releaseDiagnostic, 'status');
+  const message = readDiagnosticMessage(error, releaseDiagnostic);
+  const deletePodReleaseDebt = operation === 'delete_pod'
+    || /\basbcp_error:\s*delete_pod\b/u.test(message);
   return code === 'AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING'
-    || code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
+    || code === 'AGENT_SANDBOX_RELEASE_INCOMPLETE'
+    || (
+      deletePodReleaseDebt
+      && (
+        code === 'AGENT_SANDBOX_UNAVAILABLE'
+        || code === 'AGENT_SANDBOX_RATE_LIMITED'
+        || (typeof status === 'number' && status >= 500)
+      )
+    );
 }
 
 function buildInternalWorkloadReleasePendingResponse(

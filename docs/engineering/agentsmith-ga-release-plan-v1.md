@@ -458,7 +458,7 @@ GA 的判定是：
 
 | Repo | 近十几天信号 | 取舍判断 |
 | --- | --- | --- |
-| `agentsmith` | 约 385 个非 merge commit，集中在 product readiness、release boundary、runner contract、runtime pending/readiness、docs/gates；当前 `package.json` 约 199 个 scripts，`scripts/governance/` 与 `current-*` 家族体量偏高 | 真实 runtime/readiness 收口要继续；新增治理对象、manifest/schema 家族要冻结 |
+| `agentsmith` | 约 370+ 个非 merge commit，集中在 product readiness、release boundary、runner contract、runtime pending/readiness、docs/gates；当前 `package.json` 约 199 个 scripts，`scripts/governance/` 与 `current-*` 家族体量偏高 | 真实 runtime/readiness 收口要继续；新增治理对象、manifest/schema 家族要冻结 |
 | `agentsmith-release-kit` | 约 246 个非 merge commit，集中在 operator facade、final GA report、deployment path reports、airgap/offline、provenance；`scripts/` 约 84 个文件，历史 surface/adoption/candidate/signoff/intake/runbook acceptance 面偏多 | final GA authority 必须保留；后续优先合并/隐藏/删除旧 producer 面，而不是新增解释层 |
 | `agentsmith-runner` | 约 50 个非 merge commit，多数服务 runner image、secret scrub、source boundary、handoff manifest | 相对健康；runner 只产出 downstream evidence，不升级为第三个 GA verdict |
 | `llm-universal-proxy`、AFSCP、ASBCP | 变更少，主要是 pinned image、repo-local gate wording 或真实 runtime 修复 | 保持 repo-local 最小 release gate；不要把它们扩成 AgentSmith 顶层治理矩阵 |
@@ -481,6 +481,26 @@ GA 的判定是：
 7. 新文档优先补进 active doc；超过约 150 行的新说明应同时删除、归档或降级等量旧说明。这个数字只是工程判断，不做自动 gate。
 8. 新增 guard/report/script 的理由应能在提交说明、PR 摘要或本轮工作总结里顺手说明：它替代、合并或降级了什么；不新增模板、看板或审批。
 9. 重 gate 只放在阶段收口、最终交付、合并/发布/部署前；小切片继续用 focused check 和 dry-run/plan 先定位风险。
+
+### 7.2 Runtime pending/readiness 架构反馈采纳边界
+
+2026-06-06 team member review 采纳架构反馈：最近反复阻挡 Product Readiness / gate 的 Files、Agent Task sandbox、AFSCP workspace binding 和 read export 问题，应按 runtime pending/readiness 收口处理，不按单点 Files bug、terminal bug 或 AFSCP bug 打散。
+
+采纳的指导：
+
+- Files runtime access release 必须绑定稳定 release fence / operation id；后续 list、restore continuation、background recheck 观察并推进同一 fence。
+- `pending` / `releasing` / `release_pending` 是正常中间态，只递增等待或 recheck；`offline` / `not_found` 先回查 runtime/binding truth，再决定 rebind 或 terminalize。
+- 只有 `released` / `revoked` / `deleted` / 明确 terminal 状态才 complete fence，并 invalidate read export。
+- `delete_pod` 遇 sandbox unavailable、rate limited 或同类 retryable release debt 时，保留 release fence 并返回 typed pending，不 rollback 后让下一次 Files list 从头释放。
+- ASBCP / AFSCP release/revoke 的幂等维度必须围绕 workload、mount binding、generation、operation 稳定生成；AgentSmith 只补 owner boundary 内的 adapter/调用语义，不在前端仓新造控制层。
+- Product Readiness 前保留 Files restore continuation focused backend-real gate 作为重点证据；首次 unavailable 后重跑通过记 `runtime_flake`，同 focused gate 连续失败升级为 `stability_blocker`。
+
+明确不做：
+
+- 不新增 canonical `failure_class`、gate/report/dashboard、readiness layer 或 “runtime governance” 命令族。
+- 不把 focused backend-real gate 写成 Product Readiness 终局 verdict；它只产出重点证据。
+- 不为一次 flake 做大重构；连续失败才按稳定性 blocker 推进 owner 修复。
+- 不把 ASBCP / AFSCP owner repo 的幂等缺口用 AgentSmith wrapper 长期掩盖；AgentSmith 只做最小调用收口和证据补强。
 
 ## 8. Implementation readiness
 

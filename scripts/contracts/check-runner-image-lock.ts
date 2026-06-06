@@ -3,7 +3,6 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  canonicalReleaseBoundaryJson,
   parseRunnerImageLockText,
   sha256Digest,
   validateRunnerReleaseManifest,
@@ -285,6 +284,7 @@ function compareLockToManifest(
 function compareLockAndManifestToHandoffReport(
   lock: CurrentRunnerImageLock,
   manifest: CurrentRunnerReleaseManifest,
+  manifestSource: string,
   report: Record<string, unknown>,
   reportSource: string,
   failures: RunnerImageLockFailure[],
@@ -292,7 +292,7 @@ function compareLockAndManifestToHandoffReport(
   const manifestRunId = manifest.artifact_provenance.run_id ?? '';
   const expectedReportArtifactUri =
     `gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/${manifestRunId}/runner-ga-handoff-report.json`;
-  const expectedManifestInputSha256 = sha256Digest(`${canonicalReleaseBoundaryJson(manifest)}\n`);
+  const expectedManifestInputSha256 = sha256Digest(manifestSource);
   const reportSha256 = sha256Digest(reportSource);
 
   compareReportString(
@@ -377,7 +377,7 @@ function compareLockAndManifestToHandoffReport(
     report,
     ['manifest', 'input_sha256'],
     expectedManifestInputSha256,
-    'handoff manifest input_sha256 must match the canonical runner release manifest digest',
+    'handoff manifest input_sha256 must match the raw runner release manifest digest',
   );
   compareReportString(
     failures,
@@ -545,8 +545,8 @@ export function checkRunnerImageLock(
   if (lock && manifest) {
     compareLockToManifest(lock, manifest, failures);
   }
-  if (lock && manifest && handoffReport && handoffReportSource !== null) {
-    compareLockAndManifestToHandoffReport(lock, manifest, handoffReport, handoffReportSource, failures);
+  if (lock && manifest && manifestSource !== null && handoffReport && handoffReportSource !== null) {
+    compareLockAndManifestToHandoffReport(lock, manifest, manifestSource, handoffReport, handoffReportSource, failures);
   }
 
   return {

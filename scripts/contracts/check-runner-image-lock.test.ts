@@ -256,6 +256,30 @@ describe('checkRunnerImageLock', () => {
     expect(failureText(result)).toContain('handoff image digest must match runner release manifest image digest');
   });
 
+  it('rejects adoption when the handoff report uses a canonical manifest digest instead of the raw artifact digest', () => {
+    const root = tempRoot();
+    const manifest = manifestFixture();
+    const canonicalManifestDigest = sha256Digest(`${canonicalReleaseBoundaryJson(manifest)}\n`);
+    const lockPath = writeLock(root);
+    const manifestPath = writeManifest(root);
+    const handoffReportPath = writeHandoffReport(root, (handoffReport) => {
+      const handoffManifest = handoffReport.manifest as Record<string, unknown>;
+      handoffManifest.input_sha256 = canonicalManifestDigest;
+    });
+
+    const result = checkRunnerImageLock({
+      lockPath,
+      manifestPath,
+      requireManifest: true,
+      handoffReportPath,
+      requireHandoffReport: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(failureText(result)).toContain('handoff.manifest.input_sha256');
+    expect(failureText(result)).toContain('handoff manifest input_sha256 must match the raw runner release manifest digest');
+  });
+
   it('rejects adoption when the handoff report digest differs from the canonical lock', () => {
     const root = tempRoot();
     const lockPath = writeLock(root);

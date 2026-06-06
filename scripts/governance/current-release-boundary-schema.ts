@@ -137,7 +137,7 @@ export interface CurrentDeploymentTargetProfile {
   target_cluster: CurrentDeploymentTargetCluster;
   substrate_source: CurrentDeploymentSubstrateSource;
   distribution: CurrentDeploymentDistribution;
-  required: false;
+  required: true;
   prerequisites: {
     namespace: string;
     rbac: string;
@@ -181,13 +181,13 @@ export const CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES = [
   'target_cluster' | 'substrate_source' | 'distribution'
 >[];
 
-// Formal pre-GA handoff: real Kubernetes/cloud targets. kind_rehearsal remains local/dev only.
+// Formal GA handoff: real Kubernetes/cloud targets. kind_rehearsal remains local/dev only.
 export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
   {
     target_cluster: 'existing_kubernetes',
     substrate_source: 'external_declared',
     distribution: 'online',
-    required: false,
+    required: true,
     prerequisites: {
       namespace: 'agentsmith',
       rbac: 'namespace_admin',
@@ -202,7 +202,7 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
     target_cluster: 'existing_kubernetes',
     substrate_source: 'kit_installed',
     distribution: 'online',
-    required: false,
+    required: true,
     prerequisites: {
       namespace: 'agentsmith',
       rbac: 'namespace_admin',
@@ -217,7 +217,7 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
     target_cluster: 'existing_kubernetes',
     substrate_source: 'external_declared',
     distribution: 'airgap',
-    required: false,
+    required: true,
     prerequisites: {
       namespace: 'agentsmith',
       rbac: 'namespace_admin',
@@ -232,7 +232,7 @@ export const CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES = [
     target_cluster: 'existing_kubernetes',
     substrate_source: 'kit_installed',
     distribution: 'airgap',
-    required: false,
+    required: true,
     prerequisites: {
       namespace: 'agentsmith',
       rbac: 'namespace_admin',
@@ -3600,10 +3600,10 @@ function validateTargetProfiles(value: unknown, failures: CurrentReleaseBoundary
       });
     }
 
-    if (entry.required !== false) {
+    if (entry.required !== true) {
       failures.push({
         path: `${path}.required`,
-        reason: 'target profile required must be false for AgentSmith pre-GA handoff candidates.',
+        reason: 'target profile required must be true for AgentSmith GA release contract handoff targets.',
       });
     }
 

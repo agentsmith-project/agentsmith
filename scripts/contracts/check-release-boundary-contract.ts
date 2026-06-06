@@ -157,11 +157,11 @@ function validateHandoffTargetProfiles(
         'release contract handoff target profiles must not include kind_rehearsal; kind is local/dev rehearsal only.',
       );
     }
-    if (profile.required !== false) {
+    if (profile.required !== true) {
       addFailure(
         failures,
         relativePath,
-        'AgentSmith pre-GA release contract handoff target profiles must not be required targets.',
+        'AgentSmith GA release contract handoff target profiles must be required targets.',
       );
     }
   }

@@ -202,7 +202,7 @@
       "target_cluster": "existing_kubernetes",
       "substrate_source": "external_declared",
       "distribution": "online",
-      "required": false,
+      "required": true,
       "prerequisites": {
         "namespace": "agentsmith",
         "rbac": "namespace_admin",
@@ -217,7 +217,7 @@
       "target_cluster": "existing_kubernetes",
       "substrate_source": "kit_installed",
       "distribution": "online",
-      "required": false,
+      "required": true,
       "prerequisites": {
         "namespace": "agentsmith",
         "rbac": "namespace_admin",
@@ -232,7 +232,7 @@
       "target_cluster": "existing_kubernetes",
       "substrate_source": "external_declared",
       "distribution": "airgap",
-      "required": false,
+      "required": true,
       "prerequisites": {
         "namespace": "agentsmith",
         "rbac": "namespace_admin",
@@ -247,7 +247,7 @@
       "target_cluster": "existing_kubernetes",
       "substrate_source": "kit_installed",
       "distribution": "airgap",
-      "required": false,
+      "required": true,
       "prerequisites": {
         "namespace": "agentsmith",
         "rbac": "namespace_admin",
@@ -268,7 +268,7 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:001b7d84b2b870659d43dd823af14ad3c08335af030fe38e40d1945086a48620",
+    "subject_sha256": "sha256:4dbe27b3685580242d83f9f0765b3e525abe2a000423ffc7fdf8a77fb98b92ff",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
@@ -276,7 +276,7 @@
     "run_url": "https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:29881d7917e8d473b1ccfdba413ecfc300773a1edf96b53e8574917f39c254a1",
+    "artifact_sha256": "sha256:96eec759369887f0284dbc709ecce7566a5e7763209cdb1f56ae764e032952c2",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

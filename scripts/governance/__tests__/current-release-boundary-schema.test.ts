@@ -374,7 +374,7 @@ describe('current release boundary schema', () => {
     const profileKeys = profiles.map(targetProfileKey);
     const canonicalCandidateKeys = CURRENT_RELEASE_KIT_CANONICAL_DECLARABLE_TARGET_PROFILE_TUPLES.map(targetProfileKey);
 
-    expect(profiles.every((profile) => profile.required === false)).toBe(true);
+    expect(profiles.every((profile) => profile.required === true)).toBe(true);
     expect(profileKeys).toEqual([
       'existing_kubernetes|external_declared|online',
       'existing_kubernetes|kit_installed|online',
@@ -2181,17 +2181,17 @@ describe('current release boundary schema', () => {
     );
   });
 
-  it('rejects target profiles that mark any deployment target as required', () => {
+  it('rejects target profiles that leave any GA deployment target optional', () => {
     const contract = cloneFixture('release-contract.valid.json');
     const profiles = contract.target_profiles as Record<string, unknown>[];
     profiles[0] = {
       ...profiles[0],
-      required: true,
+      required: false,
     };
 
     expectInvalid(
       validateAgentSmithReleaseContract(contract),
-      'target profile required must be false for AgentSmith pre-GA handoff candidates',
+      'target profile required must be true for AgentSmith GA release contract handoff targets',
     );
   });
 
@@ -2238,7 +2238,7 @@ describe('current release boundary schema', () => {
     const duplicateProfiles = duplicateContract.target_profiles as Record<string, unknown>[];
     duplicateProfiles.push({
       ...duplicateProfiles[0],
-      required: false,
+      required: true,
     });
 
     expectInvalid(
@@ -2253,7 +2253,7 @@ describe('current release boundary schema', () => {
 
     expectInvalid(
       validateAgentSmithReleaseContract(supportLevelOnlyContract),
-      'target profile required must be false for AgentSmith pre-GA handoff candidates',
+      'target profile required must be true for AgentSmith GA release contract handoff targets',
     );
 
     const supportLevelWithRequiredContract = cloneFixture('release-contract.valid.json');

@@ -3,7 +3,7 @@
     "target_cluster": "existing_kubernetes",
     "substrate_source": "external_declared",
     "distribution": "online",
-    "required": false,
+    "required": true,
     "prerequisites": {
       "namespace": "agentsmith",
       "rbac": "namespace_admin",
@@ -18,7 +18,7 @@
     "target_cluster": "existing_kubernetes",
     "substrate_source": "kit_installed",
     "distribution": "online",
-    "required": false,
+    "required": true,
     "prerequisites": {
       "namespace": "agentsmith",
       "rbac": "namespace_admin",
@@ -33,7 +33,7 @@
     "target_cluster": "existing_kubernetes",
     "substrate_source": "external_declared",
     "distribution": "airgap",
-    "required": false,
+    "required": true,
     "prerequisites": {
       "namespace": "agentsmith",
       "rbac": "namespace_admin",
@@ -48,7 +48,7 @@
     "target_cluster": "existing_kubernetes",
     "substrate_source": "kit_installed",
     "distribution": "airgap",
-    "required": false,
+    "required": true,
     "prerequisites": {
       "namespace": "agentsmith",
       "rbac": "namespace_admin",

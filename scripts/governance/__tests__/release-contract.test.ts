@@ -376,7 +376,7 @@ describe('release contract generator', () => {
     expect(expectedHandoffKeys).not.toEqual(canonicalCandidateKeys);
     expect(targetProfilesFixture).toEqual(CURRENT_RELEASE_CONTRACT_HANDOFF_TARGET_PROFILES);
     expect(targetProfilesFixture.map(targetProfileKey)).toEqual(expectedHandoffKeys);
-    expect(targetProfilesFixture.every((profile) => profile.required === false)).toBe(true);
+    expect(targetProfilesFixture.every((profile) => profile.required === true)).toBe(true);
     expect(workflowSource).toContain("readJson('scripts/governance/release-contract-target-profiles.json')");
     expect(workflowSource).toContain('target_profiles: targetProfiles');
   });

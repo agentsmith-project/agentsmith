@@ -321,6 +321,22 @@ install_substrates 当前只允许通过 operator-inputs、namespace-scoped inst
     });
   });
 
+  it('rejects pre-GA phase wording in active deploy truth docs', () => {
+    const root = writeFixtureRoot({
+      activeDocOverrides: {
+        'docs/contracts/product-terminology.md': `${validP0BoundaryDoc}
+
+Current Docker-only local-kind unified deploy remains the current pre-GA focused diagnostic baseline.
+`,
+      },
+    });
+
+    const text = failureText(root);
+
+    expect(text).toContain('docs/contracts/product-terminology.md');
+    expect(text).toContain('must use GA/current or transition-only wording');
+  });
+
   it('requires the current unified deploy contract document and marker', () => {
     const missingRoot = writeFixtureRoot({ deployContract: null });
 

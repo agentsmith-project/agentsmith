@@ -10,10 +10,11 @@ This document is the current deployment contract for AgentSmith. It defines the
 deployment topology, deployment vocabulary, address truth, and release evidence
 shape used by the current development line.
 
-AgentSmith has one deployment model: `AgentSmith deploy`. In the pre-GA split,
-AgentSmith owns only its product image closure, managed runner image adoption
-truth, local complete test evidence, and handoff readiness inputs. AgentSmith
-does not produce a deployment/package/operator release verdict.
+AgentSmith has one deployment model: `AgentSmith deploy`. In the current GA
+handoff boundary, AgentSmith owns only its product image closure, managed
+runner image adoption truth, local complete test evidence, and handoff
+readiness inputs. AgentSmith does not produce a deployment/package/operator
+release verdict.
 
 The formal release contract vocabulary is three machine axes:
 
@@ -31,18 +32,19 @@ level:
 | `airgap` + `use_existing` | `target_cluster=existing_kubernetes`, `substrate_source=external_declared`, `distribution=airgap` |
 | `airgap` + `install_substrates` | `target_cluster=existing_kubernetes`, `substrate_source=kit_installed`, `distribution=airgap` |
 
-Pre-GA diagnostic names such as `local-kind` and `existing-cluster` are not
-authoritative release axes. They can appear only as temporary AgentSmith
-diagnostic entry names or migration references, and must map into the machine
-axes above before release-kit evidence or handoff artifacts are produced.
+Transition-only diagnostic names such as `local-kind` and `existing-cluster`
+are not authoritative release axes. They can appear only as temporary
+AgentSmith diagnostic entry names or migration references, and must map into
+the machine axes above before release-kit evidence or handoff artifacts are
+produced.
 
 ## Formal Release Model And P0 Handoff Boundary
 
 Current Docker-only local-kind unified deploy remains only the current
-AgentSmith pre-GA/local diagnostic rehearsal baseline, not a formal release
-target and not long-term deployment truth. `external_declared` in P0 is schema,
-fixture, validator, and evidence boundary only. It does not mean P2/P3 completed
-real Kubernetes, cloud, or airgap handoff support.
+AgentSmith transition-only focused diagnostic rehearsal baseline, not a formal
+release target and not long-term deployment truth. `external_declared` in P0 is
+schema, fixture, validator, and evidence boundary only. It does not mean P2/P3
+completed real Kubernetes, cloud, or airgap handoff support.
 
 The current `local-kind`, `existing-cluster`, and product-flow deploy evidence
 chain is transition-only focused diagnostic evidence / 过渡期专项诊断 only.
@@ -197,9 +199,10 @@ Minimal focused diagnostics after a lock/adoption change are:
 - `npm run test:unified-deploy:render -- --profile=existing-cluster --site-env=<generated-existing-cluster-site-env>` when proving existing-cluster image adoption against generated digest refs
 - `npm run test:unified-deploy:address-truth`
 
-The `local-kind` / `existing-cluster` names in these commands are pre-GA
-diagnostic entry names only. They do not define release-kit handoff authority;
-formal artifacts must use `target_cluster` / `substrate_source` / `distribution`.
+The `local-kind` / `existing-cluster` names in these commands are
+transition-only diagnostic entry names only. They do not define release-kit
+handoff authority; formal artifacts must use `target_cluster` /
+`substrate_source` / `distribution`.
 
 Ordinary lock adoption does not require rerunning the Agent task/workload main
 chain.
@@ -350,9 +353,9 @@ back to Docker-only local diagnostics. `install_substrates` must carry
 namespace-scoped installer evidence and explicit confirmation.
 
 In machine artifacts this selection is represented only by
-`target_cluster` / `substrate_source` / `distribution`. Pre-GA names such as
-`local-kind` and `existing-cluster` are not formal authority for release-kit
-handoff or deployment evidence.
+`target_cluster` / `substrate_source` / `distribution`. Transition-only names
+such as `local-kind` and `existing-cluster` are not formal authority for
+release-kit handoff or deployment evidence.
 
 ## Completion Evidence
 
@@ -367,9 +370,9 @@ Deploy diagnostic evidence separates these sections:
   consumption, `/health` readiness/liveness, and rollout status;
 - product verification matrix.
 
-The pre-GA `existing-cluster` smoke producer proves diagnostic routing and
-rollout ownership only. It is not a formal release target and is not sufficient
-product verification.
+The transition-only `existing-cluster` smoke producer proves diagnostic routing
+and rollout ownership only. It is not a formal release target and is not
+sufficient product verification.
 
 The current deploy diagnostic product proof is passed only when focused
 evidence exists for the canonical seven-flow deployed product smoke matrix. It

@@ -333,8 +333,8 @@ export function runProductTerminologyCheck(): string[] {
   );
   requireMatch(
     terminologyDoc,
-    /Pre-GA target contracts reject and remove old runtime\/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views/,
-    "product-terminology.md must state that pre-GA contracts reject/remove old runtime/API surfaces instead of keeping compatibility layers",
+    /Current target contracts reject and remove old runtime\/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views/,
+    "product-terminology.md must state that current contracts reject/remove old runtime/API surfaces instead of keeping compatibility layers",
     failures,
   );
   requireMatch(

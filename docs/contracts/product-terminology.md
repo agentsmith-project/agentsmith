@@ -22,8 +22,8 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 - This terminology contract defines product-facing names and IA boundaries.
   Deploy vocabulary for release handoff lives in
   `docs/contracts/unified-deploy-contract.md`; this file mirrors only the
-  product/operator-facing names and does not promote pre-GA diagnostic entry
-  names into product concepts.
+  product/operator-facing names and does not promote transition-only diagnostic
+  entry names into product concepts.
 
 ## 1. Canonical product-facing terms
 
@@ -196,12 +196,12 @@ Do not use this contract to rename machine-readable API fields, OpenAPI tags, ba
 These terms belong to `docs/contracts/unified-deploy-contract.md` and define the
 current deploy vocabulary.
 
-Current Docker-only local-kind unified deploy remains the current pre-GA
-focused diagnostic baseline, not formal release target vocabulary and not
-long-term deployment truth. `external_declared` in P0 is schema, fixture,
-validator, and evidence boundary only. It does not mean P2/P3 completed real
-Kubernetes, cloud, or airgap handoff support. Product-facing terms must not
-present that P0 boundary as a new product capability.
+Current Docker-only local-kind unified deploy remains the current
+transition-only focused diagnostic baseline, not formal release target
+vocabulary and not long-term deployment truth. `external_declared` in P0 is
+schema, fixture, validator, and evidence boundary only. It does not mean P2/P3
+completed real Kubernetes, cloud, or airgap handoff support. Product-facing
+terms must not present that P0 boundary as a new product capability.
 
 1. `AgentSmith deploy`
 - Operator-facing deployment workflow.
@@ -238,8 +238,8 @@ present that P0 boundary as a new product capability.
 - The `kit_provided` compatibility alias remains internal to transition-only
   diagnostics and is not a GA operator `deployment_path`.
 
-6. `pre-GA diagnostic entry names`
-- `local-kind` and `existing-cluster` are allowed only as pre-GA/local
+6. `transition-only diagnostic entry names`
+- `local-kind` and `existing-cluster` are allowed only as transition-only
   diagnostic entry names, migration references, or negative-test vocabulary.
 - They are not release targets, not product capabilities, and not operator
   choices in the formal four-quadrant release model.
@@ -319,7 +319,7 @@ The following terms are not allowed as primary product-facing names in current U
 1. Current route slugs are part of the target model when listed in active route contracts.
 - Example: route slug `use-guide` is the current technical slug while the user-facing label is `Access guide`.
 
-2. Pre-GA target contracts reject and remove old runtime/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views.
+2. Current target contracts reject and remove old runtime/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views.
 - Public OpenAPI paths, route-kind maps, SDK exports, generated client types, route manifests, navigation, i18n, user docs, and module maps must use the current names and paths.
 - Old route paths, payload fields, terminal views, and public API names may appear only in breaking allowlists, negative contract tests, or one-shot cleanup/assertion evidence that explicitly proves they are forbidden or removed.
 - Any such allowlist or cleanup evidence must be exact and owned, with a deletion trigger and a contract/doc check proving it cannot become an active route, alias, bridge, or compatibility layer.

@@ -62,6 +62,29 @@ const PRE_GA_DEPLOY_REFERENCE_FILES = [
   RELEASE_KIT_SPLIT_PLAN_PATH,
 ] as const;
 
+const ACTIVE_CURRENT_PHASE_DOC_FILES = new Set<string>([
+  'README.md',
+  DEPLOY_CONTRACT_PATH,
+  'docs/engineering/README.md',
+  'docs/contracts/README.md',
+  'docs/contracts/product-terminology.md',
+  'docs/CURRENT_BASELINE.md',
+  'docs/README.md',
+  'docs/current-engineering-governance-model.md',
+  'docs/testing/verification-campaigns-v1.md',
+  'docs/user-guides/README.md',
+  'docs/user-guides/local-runtime-flows.md',
+  'docs/user-guides/release-readiness-checklist.md',
+  'docs/user-guides/runtime-lines-matrix.md',
+  'docs/user-guides/uxui-review-runbook.md',
+  'docs/user-guides/unified-deploy-operations.md',
+  'docs/agent-task-runner-runbook.md',
+  'DEVELOPMENT.md',
+]);
+
+const ALLOWED_PRE_GA_REFERENCE_LINE =
+  /\bpre-GA\b[\s\S]{0,140}\b(?:reference|historical context|split background|historical|background)\b|\b(?:reference|historical context|split background|historical|background)\b[\s\S]{0,140}\bpre-GA\b/iu;
+
 const P0_HANDOFF_BOUNDARY_FILES = new Set<string>([
   'docs/engineering/README.md',
   DEPLOY_CONTRACT_PATH,
@@ -615,7 +638,7 @@ function validateP0HandoffBoundary(
     /\bDocker[- ]only\b/iu,
     /\blocal-kind\b/iu,
     /\bunified deploy\b/iu,
-    /\bmainline\b|主线|\b(?:pre-GA|focused diagnostic|diagnostic baseline|diagnostic)\b|过渡期专项诊断|诊断/iu,
+    /\bmainline\b|主线|\b(?:transition-only|focused diagnostic|diagnostic baseline|diagnostic)\b|过渡期专项诊断|诊断/iu,
     /\bexternal[-_ ]declared\b/iu,
     /\bP0\b/u,
     /\bschema\b/iu,
@@ -655,7 +678,7 @@ function validateReleaseKitHandoffBoundary(
     /\bterminal aggregate\b/iu,
     /\bunified deploy\b/iu,
     /\blocal-kind\b/iu,
-    /\btransition-only\b|\bpre-GA\b/iu,
+    /\btransition-only\b/iu,
     /\bfocused diagnostics?\b/iu,
     /过渡期专项诊断/u,
     /\bnot\b[\s\S]{0,120}\b(?:AgentSmith product gate|AgentSmith release verdict|(?:deployment|deploy)[\s\S]{0,50}package[\s\S]{0,50}operator[\s\S]{0,30}verdict|deploy\/package\/operator verdict)\b|不属于[\s\S]{0,80}(?:AgentSmith 产品门禁|AgentSmith release verdict|AgentSmith product gate)/iu,
@@ -693,6 +716,28 @@ function validateReleaseKitHandoffBoundary(
       failures,
       path,
       `${path} must not describe current unified deploy diagnostics as legacy; use transition-only focused diagnostics / 过渡期专项诊断.`,
+    );
+  }
+}
+
+function validateNoActivePreGaPhaseWording(
+  path: string,
+  content: string,
+  failures: UnifiedDeployVocabularyFailure[],
+): void {
+  const lines = content.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/\bpre-GA\b|\bpre GA\b/iu.test(line) || ALLOWED_PRE_GA_REFERENCE_LINE.test(line)) {
+      continue;
+    }
+
+    addFailure(
+      failures,
+      path,
+      `${path} must use GA/current or transition-only wording for active deploy truth; pre-GA wording is allowed only when routing historical/reference plans.`,
+      index + 1,
+      line,
     );
   }
 }
@@ -877,6 +922,9 @@ export function checkUnifiedDeployVocabulary(
     }
 
     validateNoSplitDeployVocabulary(path, content, failures);
+    if (ACTIVE_CURRENT_PHASE_DOC_FILES.has(path)) {
+      validateNoActivePreGaPhaseWording(path, content, failures);
+    }
     validateCurrentReleaseSubstrateStrategy(path, content, failures);
     if (P0_HANDOFF_BOUNDARY_FILES.has(path)) {
       validateP0HandoffBoundary(path, content, failures);

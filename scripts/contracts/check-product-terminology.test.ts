@@ -43,7 +43,7 @@ describe("check-product-terminology contract", () => {
     expect(terminology).toMatch(/`Agent tasks`/);
     expect(terminology).toMatch(/`Agent Runners`/);
     expect(terminology).toMatch(
-      /Pre-GA target contracts reject and remove old runtime\/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views/,
+      /Current target contracts reject and remove old runtime\/API surfaces instead of keeping aliases, bridges, double-read paths, fallback APIs, or compatibility views/,
     );
     expect(terminology).toMatch(
       /Old route paths, payload fields, terminal views, and public API names may appear only in breaking allowlists, negative contract tests, or one-shot cleanup\/assertion evidence/,

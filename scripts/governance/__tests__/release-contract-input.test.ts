@@ -1854,6 +1854,7 @@ describe('release contract CI artifact producer', () => {
     const expectedRunnerManifestCanonicalSha256 = sha256Digest(
       canonicalReleaseBoundaryJson(JSON.parse(readFileSync(runnerMetadata.manifestPath, 'utf8'))),
     );
+    const expectedRemoteRunnerManifestSha256 = sha256Digest(readFileSync(runnerMetadata.remoteManifestPath, 'utf8'));
     const validation = validateAgentSmithReleaseContract(contract);
     expect(validation.ok).toBe(true);
     if (!validation.ok) {
@@ -1966,6 +1967,8 @@ describe('release contract CI artifact producer', () => {
       producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
       producer_repo_slug: 'agentsmith-project/agentsmith-runner',
       manifest_path: 'scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+      remote_manifest_path: runnerMetadata.remoteManifestPath,
+      remote_manifest_sha256: expectedRemoteRunnerManifestSha256,
       manifest_digest_kind: 'stable_json_canonical_sha256',
       local_manifest_canonical_sha256: expectedRunnerManifestCanonicalSha256,
       remote_manifest_canonical_sha256: expectedRunnerManifestCanonicalSha256,
@@ -2017,6 +2020,8 @@ describe('release contract CI artifact producer', () => {
       report_path: runnerMetadata.handoffReportPath,
       report_sha256: RUNNER_IMAGE_LOCK.handoff.report_sha256,
       report_artifact_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
+      remote_manifest_path: runnerMetadata.remoteManifestPath,
+      remote_manifest_sha256: expectedRemoteRunnerManifestSha256,
       manifest_input_sha256: RUNNER_IMAGE_LOCK.handoff.manifest_input_sha256,
       manifest_release_id: RUNNER_IMAGE_LOCK.release_id,
       manifest_git_sha: RUNNER_IMAGE_LOCK.git_sha,
@@ -2586,6 +2591,56 @@ describe('release contract CI artifact producer', () => {
       '--runner-run-view or RUNNER_RELEASE_MANIFEST_SOURCE_RUN_VIEW_PATH is required',
     );
     expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'remote runner manifest',
+      mutate: (paths: RunnerManifestSourceMetadataPaths) => ({
+        ...paths,
+        remoteManifestPath: paths.manifestPath,
+      }),
+      expected:
+        'remote runner release manifest artifact content must be downloaded artifact evidence, not canonical fixture scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json',
+    },
+    {
+      name: 'runner GA handoff report',
+      mutate: (paths: RunnerManifestSourceMetadataPaths) => ({
+        ...paths,
+        handoffReportPath: join(
+          paths.manifestPath,
+          '..',
+          'runner-ga-handoff-report.valid.json',
+        ),
+      }),
+      expected:
+        'runner GA handoff source report must be downloaded artifact evidence, not canonical fixture scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json',
+    },
+  ])('rejects canonical fixture alias for downloaded $name evidence', ({ mutate, expected }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-contract-artifact-'));
+    writeCanonicalRunnerImageLock(root);
+    const runnerMetadata = writeRunnerManifestSourceMetadata(root);
+    const asbcpMetadata = writeAsbcpFinalManifestSourceMetadata(root);
+    const inputPath = writeArtifactProducerInput(root, buildArtifactProducerInput());
+    const outputDir = join(root, 'artifacts', 'release-contract');
+    const outputPath = join(outputDir, 'agentsmith-release-contract.json');
+    const runnerManifestReceiptPath = join(outputDir, RUNNER_RELEASE_MANIFEST_SOURCE_RECEIPT_NAME);
+    const runnerGaHandoffReceiptPath = join(outputDir, RUNNER_GA_HANDOFF_SOURCE_RECEIPT_NAME);
+
+    const stderr: string[] = [];
+    const exitCode = runReleaseContractArtifactCli({
+      argv: artifactProducerArgv(inputPath, outputDir, mutate(runnerMetadata), asbcpMetadata),
+      cwd: root,
+      env: githubReleaseContractEnv(),
+      stdout: () => undefined,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain(expected);
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(runnerManifestReceiptPath)).toBe(false);
+    expect(existsSync(runnerGaHandoffReceiptPath)).toBe(false);
   });
 
   it('rejects expired runner release manifest source artifacts before writing receipts', () => {

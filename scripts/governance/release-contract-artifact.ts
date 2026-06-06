@@ -179,6 +179,8 @@ interface RunnerReleaseManifestSourceReceipt {
   producer_repo: typeof RUNNER_CANONICAL_REPO;
   producer_repo_slug: typeof RUNNER_REPO_SLUG;
   manifest_path: typeof RUNNER_RELEASE_MANIFEST_RELATIVE_PATH;
+  remote_manifest_path: string;
+  remote_manifest_sha256: string;
   manifest_digest_kind: 'stable_json_canonical_sha256';
   local_manifest_canonical_sha256: string;
   remote_manifest_canonical_sha256: string;
@@ -231,6 +233,8 @@ interface RunnerGaHandoffSourceReceipt {
   report_sha256: string;
   report_artifact_name: typeof RUNNER_GA_HANDOFF_ARTIFACT_NAME;
   report_artifact_uri: string;
+  remote_manifest_path: string;
+  remote_manifest_sha256: string;
   manifest_input_sha256: string;
   manifest_release_id: string;
   manifest_git_sha: string;
@@ -415,6 +419,18 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
     asbcpFinalManifestReceiptPath = path.join(config.outputDir, ASBCP_FINAL_MANIFEST_SOURCE_RECEIPT_NAME);
     const runnerManifestRelativePath = assertCanonicalRunnerManifestPath(cwd, config.runnerManifestPath);
     assertCanonicalRunnerManifestAdoption(cwd, config.runnerManifestPath);
+    assertDownloadedSourceDoesNotAliasCanonicalFixture(
+      cwd,
+      config.runnerRemoteManifestPath,
+      RUNNER_RELEASE_MANIFEST_RELATIVE_PATH,
+      'remote runner release manifest artifact content',
+    );
+    assertDownloadedSourceDoesNotAliasCanonicalFixture(
+      cwd,
+      config.runnerGaHandoffPath,
+      RUNNER_GA_HANDOFF_REPORT_RELATIVE_PATH,
+      'runner GA handoff source report',
+    );
     const runnerReleaseManifest = readCanonicalRunnerReleaseManifest(config.runnerManifestPath);
     const remoteRunnerReleaseManifest = readRemoteRunnerReleaseManifest(config.runnerRemoteManifestPath);
     const llmupImageLock = readCanonicalDependencyImageLockSource(cwd, LLMUP_IMAGE_SOURCE_CONFIG);
@@ -435,6 +451,7 @@ export function runReleaseContractArtifactCli(options: ReleaseContractArtifactCl
       manifest: runnerReleaseManifest,
       manifestRelativePath: runnerManifestRelativePath,
       remoteManifest: remoteRunnerReleaseManifest,
+      remoteManifestPath: config.runnerRemoteManifestPath,
       runViewPath: config.runnerRunViewPath,
       runApiPath: config.runnerRunApiPath,
       artifactsApiPath: config.runnerArtifactsApiPath,
@@ -777,6 +794,18 @@ function assertCanonicalRunnerManifestAdoption(cwd: string, manifestPath: string
     throw new Error(
       `runner release manifest adoption gate failed:\n${formatRunnerImageLockFailures(result.failures)}`,
     );
+  }
+}
+
+function assertDownloadedSourceDoesNotAliasCanonicalFixture(
+  cwd: string,
+  sourcePath: string,
+  forbiddenRelativePath: typeof RUNNER_RELEASE_MANIFEST_RELATIVE_PATH | typeof RUNNER_GA_HANDOFF_REPORT_RELATIVE_PATH,
+  label: string,
+): void {
+  const relativePath = toPortableRelativePath(cwd, sourcePath, label);
+  if (relativePath === forbiddenRelativePath) {
+    throw new Error(`${label} must be downloaded artifact evidence, not canonical fixture ${forbiddenRelativePath}.`);
   }
 }
 
@@ -1198,6 +1227,7 @@ function buildRunnerReleaseManifestSourceReceipt(input: {
   manifest: CurrentRunnerReleaseManifest;
   manifestRelativePath: typeof RUNNER_RELEASE_MANIFEST_RELATIVE_PATH;
   remoteManifest: CurrentRunnerReleaseManifest;
+  remoteManifestPath: string;
   runViewPath: string;
   runApiPath: string;
   artifactsApiPath: string;
@@ -1319,6 +1349,8 @@ function buildRunnerReleaseManifestSourceReceipt(input: {
     producer_repo: RUNNER_CANONICAL_REPO,
     producer_repo_slug: RUNNER_REPO_SLUG,
     manifest_path: input.manifestRelativePath,
+    remote_manifest_path: input.remoteManifestPath,
+    remote_manifest_sha256: sha256Digest(readFileSync(input.remoteManifestPath, 'utf8')),
     manifest_digest_kind: 'stable_json_canonical_sha256',
     local_manifest_canonical_sha256: localManifestCanonicalSha256,
     remote_manifest_canonical_sha256: remoteManifestCanonicalSha256,
@@ -1547,6 +1579,8 @@ function buildRunnerGaHandoffSourceReceipt(input: {
     report_sha256: sha256Digest(reportText),
     report_artifact_name: RUNNER_GA_HANDOFF_ARTIFACT_NAME,
     report_artifact_uri: expectedReportArtifactUri,
+    remote_manifest_path: input.remoteManifestPath,
+    remote_manifest_sha256: sha256Digest(remoteManifestText),
     manifest_input_sha256: readNestedString(reportRecord, ['manifest', 'input_sha256']),
     manifest_release_id: input.manifest.release_id,
     manifest_git_sha: input.manifest.git_sha,

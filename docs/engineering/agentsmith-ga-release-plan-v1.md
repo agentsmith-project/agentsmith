@@ -450,6 +450,38 @@ GA 的判定是：
 | 服务商绑定回流 | provider-specific SaaS skills/OAuth/credential 不进入 success path |
 | 治理继续膨胀 | 只新增 final GA gate 和必要 source/contract checks；不新增看板/审批/产品治理对象；不新增 `current-*` manifest/gate 家族 |
 
+### 7.1 近十几天治理投入产出复盘
+
+本节记录 2026-05-23 到 2026-06-06 的 team member review 与本地 spot check 结论，用作后续工作取舍指导。它不是新 gate、不是新报告、不是新审批，也不要求以后为“反过度治理”再开独立流程。
+
+观察：
+
+| Repo | 近十几天信号 | 取舍判断 |
+| --- | --- | --- |
+| `agentsmith` | 约 385 个非 merge commit，集中在 product readiness、release boundary、runner contract、runtime pending/readiness、docs/gates；当前 `package.json` 约 199 个 scripts，`scripts/governance/` 与 `current-*` 家族体量偏高 | 真实 runtime/readiness 收口要继续；新增治理对象、manifest/schema 家族要冻结 |
+| `agentsmith-release-kit` | 约 246 个非 merge commit，集中在 operator facade、final GA report、deployment path reports、airgap/offline、provenance；`scripts/` 约 84 个文件，历史 surface/adoption/candidate/signoff/intake/runbook acceptance 面偏多 | final GA authority 必须保留；后续优先合并/隐藏/删除旧 producer 面，而不是新增解释层 |
+| `agentsmith-runner` | 约 50 个非 merge commit，多数服务 runner image、secret scrub、source boundary、handoff manifest | 相对健康；runner 只产出 downstream evidence，不升级为第三个 GA verdict |
+| `llm-universal-proxy`、AFSCP、ASBCP | 变更少，主要是 pinned image、repo-local gate wording 或真实 runtime 修复 | 保持 repo-local 最小 release gate；不要把它们扩成 AgentSmith 顶层治理矩阵 |
+
+结论：
+
+- 这两周不是单纯治理膨胀：runtime pending/readiness、artifact freshness/provenance、airgap offline closure、secret/redaction、source boundary、post-deploy product smoke 都是在关闭真实 GA 风险。
+- 但 AgentSmith 与 release-kit 的工程发布治理成本已经偏高，尤其是脚本入口、`current-*` manifest/schema、历史 surface/adoption/candidate/signoff/intake/report 族。后续新增前必须先考虑合并或删除。
+- 这里缩减的是工程发布治理 overhead，不是产品内的资源策略、审计、成员权限等客户可见治理能力。
+- 面向 operator 的心智模型保持四件事：deployment path、input/credential refs、one command、final report。任何新概念不能进入这四件事之外的主路径。
+
+后续 ROI 判断尺：
+
+1. 新 evidence 必须服务至少一个真实风险：部署可执行、traceability/provenance、离线可执行、secret/redaction、source boundary、runtime convergence 或 post-deploy product smoke。
+2. 新 check 必须能阻止已出现的 GA blocker，或保护高成本 release invariant；只维护命名一致性的检查应合并进现有 doc/vocabulary guard。
+3. 新 report 默认并入 Product Readiness、deployment-path-report、ga-release-report 或各仓既有 `verify-release`；除非能证明现有 final consumer 无法表达该事实。
+4. 新 root/package script 必须替代一个旧入口，或被 top-level human entrypoint / CI 直接消费；focused diagnostic 不能使用 readiness/verdict/signoff 词汇。
+5. 新 `current-*` schema/manifest 默认拒绝；例外必须替换或删除同等真相来源，不能只为治理系统新增治理元数据。
+6. 历史 alias 只做兼容，不出现在 operator 主文档、final report 顶层字段或成功判断里。
+7. 新文档优先补进 active doc；超过约 150 行的新说明应同时删除、归档或降级等量旧说明。这个数字只是工程判断，不做自动 gate。
+8. 新增 guard/report/script 的理由应能在提交说明、PR 摘要或本轮工作总结里顺手说明：它替代、合并或降级了什么；不新增模板、看板或审批。
+9. 重 gate 只放在阶段收口、最终交付、合并/发布/部署前；小切片继续用 focused check 和 dry-run/plan 先定位风险。
+
 ## 8. Implementation readiness
 
 本计划已进入开发实施。实施前置条件：
@@ -458,5 +490,5 @@ GA 的判定是：
 2. Team review 记录了 `install_substrates` 可作为功能裁剪项；当前计划按用户要求保留，并同意其 KISS 边界。
 3. Team review 同意 final release-kit verdict 归 release-kit，不回流 AgentSmith。
 4. Team review 同意最小文档包。
-5. Team review 同意治理瘦身方向：operator 只看输入包、入口命令和最终报告；surface/adoption/candidate/report taxonomy 回到内部证据。
+5. Team review 同意治理瘦身方向与近十几天 ROI 复盘：operator 只看输入包、入口命令和最终报告；surface/adoption/candidate/report taxonomy 回到内部证据；新增 guard/report/script 必须替代、合并或降级旧负担。
 6. 本计划状态已改为 `implementation-ready`。

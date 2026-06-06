@@ -579,6 +579,8 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
   const handoffStep = steps.find((step) => step.name === 'Verify post-deploy product smoke handoff file');
   const uploadStep = steps.find((step) => step.name === 'Upload post-deploy product smoke artifact');
+  const verifyEnv = asRecord(verifyStep?.env);
+  const runEnv = asRecord(runStep?.env);
   const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
   const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
   const uploadWith = asRecord(uploadStep?.with);
@@ -632,11 +634,16 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
     failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
   }
-  if (jobEnv.RELEASE_CONTRACT_INPUT_PATH !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH) {
-    failures.push(`${label} release contract env must point to runner.temp`);
+  if (Object.hasOwn(jobEnv, 'RELEASE_CONTRACT_INPUT_PATH') || Object.hasOwn(jobEnv, 'SITE_ENV_INPUT_DIR')) {
+    failures.push(`${label} runner.temp-derived paths must not live in job env because runner context is unavailable before job dispatch`);
   }
-  if (jobEnv.SITE_ENV_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
-    failures.push(`${label} site env input dir must point to runner.temp`);
+  if (verifyEnv.RELEASE_CONTRACT_INPUT_PATH !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH
+    || runEnv.RELEASE_CONTRACT_INPUT_PATH !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH) {
+    failures.push(`${label} release contract step env must point to runner.temp`);
+  }
+  if (verifyEnv.SITE_ENV_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR
+    || runEnv.SITE_ENV_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
+    failures.push(`${label} site env step env must point to runner.temp`);
   }
   if (releaseContractDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR) {
     failures.push(`${label} must download release contract input to ${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR}`);
@@ -663,6 +670,7 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (!runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"')
     || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"')
     || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"')
+    || !runStepCommand.includes('SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"')
     || !runCommands.includes(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND)) {
     failures.push(`${label} must run ${POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND} with downloaded release contract, site env, and output root env`);
   }

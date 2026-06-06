@@ -51,8 +51,6 @@ jobs:
       AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_NAME: ${{ inputs.smoke_artifact_name }}
       PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
       POST_DEPLOY_PRODUCT_SMOKE_ROOT: artifacts/release-runs/post-deploy-product-smoke-${{ github.run_id }}
-      RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
-      SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
       SITE_ENV_FILENAME: ${{ inputs.site_env_filename }}
     steps:
       - name: Checkout
@@ -114,16 +112,22 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Verify handoff inputs
+        env:
+          RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
+          SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
         run: |
           set -euo pipefail
           SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${SITE_ENV_INPUT_PATH}"
-          printf 'SITE_ENV_INPUT_PATH=%s\n' "${SITE_ENV_INPUT_PATH}" >> "${GITHUB_ENV}"
 
       - name: Run post-deploy product smoke
+        env:
+          RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
+          SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
         run: |
           set -euo pipefail
+          SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
           UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}" \
           UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}" \
           UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}" \

@@ -1343,6 +1343,8 @@ describe('current workflow governance', () => {
     const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
     const handoffStep = steps.find((step) => step.name === 'Verify post-deploy product smoke handoff file');
     const uploadStep = steps.find((step) => step.name === 'Upload post-deploy product smoke artifact');
+    const verifyEnv = asRecord(verifyStep?.env);
+    const runEnv = asRecord(runStep?.env);
     const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
     const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
     const uploadWith = asRecord(uploadStep?.with);
@@ -1371,8 +1373,12 @@ describe('current workflow governance', () => {
     expect(jobEnv.PRESET_ENDPOINT_API_KEY).toBe(
       '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
     );
-    expect(jobEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
-    expect(jobEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(jobEnv).not.toHaveProperty('RELEASE_CONTRACT_INPUT_PATH');
+    expect(jobEnv).not.toHaveProperty('SITE_ENV_INPUT_DIR');
+    expect(verifyEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
+    expect(runEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
+    expect(verifyEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(runEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
     expect(releaseContractDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR);
     expect(siteEnvDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
     expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
@@ -1383,6 +1389,7 @@ describe('current workflow governance', () => {
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
+    expect(runStepCommand).toContain('SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"');
     expect(runCommands).toContain(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND);
     expect(handoffStep?.if).toBe('success()');
     expect(handoffRun).toContain(

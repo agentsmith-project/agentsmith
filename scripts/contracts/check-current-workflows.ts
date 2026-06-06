@@ -85,6 +85,25 @@ const PRODUCT_READINESS_ARTIFACT_PATHS = [
   'test-results/**',
   'playwright-report/**',
 ] as const;
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH =
+  '.github/workflows/post-deploy-product-smoke-artifact.yml';
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID = 'post-deploy-product-smoke';
+const POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME =
+  'agentsmith-post-deploy-product-smoke-report';
+const POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME =
+  'agentsmith-post-deploy-product-smoke-airgap-report';
+const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract';
+const POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env';
+const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json';
+const POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND = 'npm run lane:unified-deploy:product-flows';
+const POST_DEPLOY_PRODUCT_SMOKE_HANDOFF_RELATIVE_PATH =
+  'post-deploy-product-smoke/post-deploy-product-smoke-report.json';
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS = [
+  '${{ env.POST_DEPLOY_PRODUCT_SMOKE_ROOT }}/**',
+] as const;
 
 const WORKFLOWS_WITH_HUMAN_MARKDOWN_ONLY_PUSH_IGNORES = new Set([
   '.github/workflows/image-publish.yml',
@@ -538,6 +557,146 @@ function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[])
   );
 }
 
+function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
+  const workflowPath = POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH;
+  const jobId = POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID;
+  const label = `${workflowPath}:${jobId}`;
+  const workflowSource = readFileSync(path.join(rootDir, workflowPath), 'utf8');
+  const parsedWorkflow = parseWorkflow(workflowPath);
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
+  const smokeArtifactInput = asRecord(asRecord(workflowDispatch.inputs).smoke_artifact_name);
+  const smokeArtifactOptions = asStringArray(smokeArtifactInput.options);
+  const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find((entry) => entry.path === workflowPath);
+  const job = workflow?.jobs.find((entry) => entry.id === jobId);
+  const steps = collectJobSteps(parsedWorkflow, jobId);
+  const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const jobEnv = asRecord(parsedJob.env);
+  const releaseContractDownloadStep = steps.find((step) => step.name === 'Download release contract artifact');
+  const siteEnvDownloadStep = steps.find((step) => step.name === 'Download site env artifact');
+  const validateStep = steps.find((step) => step.name === 'Validate required secrets and inputs');
+  const verifyStep = steps.find((step) => step.name === 'Verify handoff inputs');
+  const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
+  const handoffStep = steps.find((step) => step.name === 'Verify post-deploy product smoke handoff file');
+  const uploadStep = steps.find((step) => step.name === 'Upload post-deploy product smoke artifact');
+  const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
+  const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
+  const uploadWith = asRecord(uploadStep?.with);
+  const uploadPaths = typeof uploadWith.path === 'string'
+    ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
+    : [];
+  const runCommands = collectJobRunCommands(parsedWorkflow, jobId);
+  const validateRun = typeof validateStep?.run === 'string' ? validateStep.run : '';
+  const verifyRun = typeof verifyStep?.run === 'string' ? verifyStep.run : '';
+  const runStepCommand = typeof runStep?.run === 'string' ? runStep.run : '';
+  const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+  const notes = job?.notes ?? '';
+
+  if (smokeArtifactInput.type !== 'choice') {
+    failures.push(`${label} smoke_artifact_name must be a choice input`);
+  }
+  assertArrayEqual(
+    smokeArtifactOptions,
+    [POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME, POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME],
+    `${label} smoke_artifact_name choices must stay on the canonical online/airgap GA artifact names`,
+    failures,
+  );
+  if (smokeArtifactInput.default !== POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME) {
+    failures.push(`${label} smoke_artifact_name default must be ${POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME}`);
+  }
+  if (job === undefined) {
+    failures.push(`${label} must exist in CURRENT_CI_WORKFLOW_MANIFEST`);
+  } else {
+    if (job.laneId !== 'lane-unified-deploy-product-flows') {
+      failures.push(`${label} must bind to lane-unified-deploy-product-flows for traceable evidence`);
+    }
+    if (job.requiresSecrets !== true || !job.requiredSecrets.includes('PRESET_ENDPOINT_API_KEY')) {
+      failures.push(`${label} must require PRESET_ENDPOINT_API_KEY for backend-real product smoke`);
+    }
+    assertArrayEqual(
+      job.evidenceFamilies,
+      ['post_deploy_product_smoke_report'],
+      `${label} evidence families must identify the post-deploy product smoke report`,
+      failures,
+    );
+    assertArrayEqual(
+      job.artifactPaths,
+      POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS,
+      `${label} artifact paths must upload only the post-deploy product smoke evidence root`,
+      failures,
+    );
+    if (!/online or airgap GA handoff artifact/i.test(notes) || !/not an AgentSmith product readiness verdict/i.test(notes)) {
+      failures.push(`${label} notes must keep product smoke as a handoff producer, not a product readiness verdict`);
+    }
+  }
+  if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
+    failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
+  }
+  if (jobEnv.RELEASE_CONTRACT_INPUT_PATH !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH) {
+    failures.push(`${label} release contract env must point to runner.temp`);
+  }
+  if (jobEnv.SITE_ENV_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
+    failures.push(`${label} site env input dir must point to runner.temp`);
+  }
+  if (releaseContractDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR) {
+    failures.push(`${label} must download release contract input to ${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR}`);
+  }
+  if (siteEnvDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
+    failures.push(`${label} must download site env input to ${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR}`);
+  }
+  if (workflowSource.includes('artifacts/post-deploy-product-smoke/input')) {
+    failures.push(`${label} must not use checkout-relative post-deploy product smoke input paths`);
+  }
+  if (!validateRun.includes(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME)
+    || !validateRun.includes(POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME)) {
+    failures.push(`${label} validation step must enforce both canonical product smoke artifact names`);
+  }
+  if (!validateRun.includes('site_env_filename must be a simple filename')) {
+    failures.push(`${label} validation step must keep site_env_filename constrained to a simple filename`);
+  }
+  if (!verifyRun.includes('test -f "${RELEASE_CONTRACT_INPUT_PATH}"')) {
+    failures.push(`${label} must verify the runner.temp release contract input`);
+  }
+  if (!verifyRun.includes('test -f "${SITE_ENV_INPUT_PATH}"')) {
+    failures.push(`${label} must verify the runner.temp site env input`);
+  }
+  if (!runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"')
+    || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"')
+    || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"')
+    || !runCommands.includes(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND)) {
+    failures.push(`${label} must run ${POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND} with downloaded release contract, site env, and output root env`);
+  }
+  if (handoffStep === undefined) {
+    failures.push(`${label} must keep the success-only post-deploy product smoke handoff file check step`);
+  } else {
+    if (handoffStep.if !== 'success()') {
+      failures.push(`${label} handoff file check must run only on success()`);
+    }
+    if (!handoffRun.includes(`test -f "\${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/${POST_DEPLOY_PRODUCT_SMOKE_HANDOFF_RELATIVE_PATH}"`)) {
+      failures.push(`${label} handoff file check must require ${POST_DEPLOY_PRODUCT_SMOKE_HANDOFF_RELATIVE_PATH}`);
+    }
+  }
+  if (uploadStep === undefined) {
+    failures.push(`${label} must keep the post-deploy product smoke artifact upload step`);
+    return;
+  }
+  if (uploadStep.if !== 'always()') {
+    failures.push(`${label} artifact upload must run with if: always() so failed-run evidence is downloadable`);
+  }
+  if (uploadWith.name !== '${{ inputs.smoke_artifact_name }}') {
+    failures.push(`${label} artifact upload name must come from the canonical smoke_artifact_name choice input`);
+  }
+  if (uploadWith['if-no-files-found'] !== 'error') {
+    failures.push(`${label} artifact upload must still fail when no evidence files exist`);
+  }
+  assertArrayEqual(
+    uploadPaths,
+    POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS,
+    `${label} artifact upload paths must include only the post-deploy product smoke evidence root`,
+    failures,
+  );
+}
+
 function assertJobBuildsRunnerContractBeforeColdExecution(
   parsedWorkflow: Record<string, unknown>,
   workflowPath: string,
@@ -839,6 +998,7 @@ assertQualityGateVisualLaneManualOptIn(
 );
 assertProductReadinessArtifactSecretsStayProcessScoped(failures);
 assertProductReadinessArtifactFailureEvidenceUpload(failures);
+assertPostDeployProductSmokeArtifactHandoff(failures);
 
 const runnerContractArtifactWorkflowPath = '.github/workflows/runner-contract-artifact.yml';
 const runnerContractArtifactWorkflow = parseWorkflow(runnerContractArtifactWorkflowPath);

@@ -114,6 +114,25 @@ const PRODUCT_READINESS_ARTIFACT_PATHS = [
   'test-results/**',
   'playwright-report/**',
 ] as const;
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH =
+  '.github/workflows/post-deploy-product-smoke-artifact.yml';
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID = 'post-deploy-product-smoke';
+const POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME =
+  'agentsmith-post-deploy-product-smoke-report';
+const POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME =
+  'agentsmith-post-deploy-product-smoke-airgap-report';
+const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract';
+const POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env';
+const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json';
+const POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND = 'npm run lane:unified-deploy:product-flows';
+const POST_DEPLOY_PRODUCT_SMOKE_HANDOFF_RELATIVE_PATH =
+  'post-deploy-product-smoke/post-deploy-product-smoke-report.json';
+const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS = [
+  '${{ env.POST_DEPLOY_PRODUCT_SMOKE_ROOT }}/**',
+] as const;
 const HISTORICAL_UNIFIED_DEPLOY_MILESTONE_BASENAME =
   'agentsmith-unified-deploy-and-docker-substrate-milestone-plan-v1.md';
 
@@ -1176,6 +1195,7 @@ describe('current workflow governance', () => {
       '.github/workflows/engineering-gate.yml',
       '.github/workflows/image-publish.yml',
       '.github/workflows/integration-e2e.yml',
+      '.github/workflows/post-deploy-product-smoke-artifact.yml',
       '.github/workflows/product-readiness-artifact.yml',
       '.github/workflows/quality-gates.yml',
       '.github/workflows/release-contract-artifact.yml',
@@ -1230,6 +1250,7 @@ describe('current workflow governance', () => {
     expect(handoffJobs).toEqual([
       '.github/workflows/image-publish.yml:publish-images',
       '.github/workflows/product-readiness-artifact.yml:product-readiness',
+      '.github/workflows/post-deploy-product-smoke-artifact.yml:post-deploy-product-smoke',
     ]);
   });
 
@@ -1301,6 +1322,76 @@ describe('current workflow governance', () => {
     expect(uploadPaths).toEqual(PRODUCT_READINESS_ARTIFACT_PATHS);
     expect(job?.notes).toMatch(/success-only file check/i);
     expect(job?.notes).toMatch(/not a failed-run verdict/i);
+  });
+
+  it('keeps post-deploy product smoke as a canonical online or airgap handoff artifact producer', () => {
+    const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (entry) => entry.path === POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH,
+    );
+    const job = workflow?.jobs.find((entry) => entry.id === POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID);
+    const parsedWorkflow = parseWorkflow(POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH);
+    const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+    const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
+    const smokeArtifactInput = asRecord(asRecord(workflowDispatch.inputs).smoke_artifact_name);
+    const steps = collectJobSteps(parsedWorkflow, POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID);
+    const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID]);
+    const jobEnv = asRecord(parsedJob.env);
+    const releaseContractDownloadStep = steps.find((step) => step.name === 'Download release contract artifact');
+    const siteEnvDownloadStep = steps.find((step) => step.name === 'Download site env artifact');
+    const validateStep = steps.find((step) => step.name === 'Validate required secrets and inputs');
+    const verifyStep = steps.find((step) => step.name === 'Verify handoff inputs');
+    const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
+    const handoffStep = steps.find((step) => step.name === 'Verify post-deploy product smoke handoff file');
+    const uploadStep = steps.find((step) => step.name === 'Upload post-deploy product smoke artifact');
+    const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
+    const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
+    const uploadWith = asRecord(uploadStep?.with);
+    const uploadPaths = typeof uploadWith.path === 'string'
+      ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
+      : [];
+    const validateRun = typeof validateStep?.run === 'string' ? validateStep.run : '';
+    const verifyRun = typeof verifyStep?.run === 'string' ? verifyStep.run : '';
+    const runStepCommand = typeof runStep?.run === 'string' ? runStep.run : '';
+    const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+    const runCommands = collectJobRunCommands(parsedWorkflow, POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID);
+
+    expect(smokeArtifactInput.type).toBe('choice');
+    expect(smokeArtifactInput.default).toBe(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
+    expect(asStringArray(smokeArtifactInput.options).sort()).toEqual([
+      POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME,
+      POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME,
+    ].sort());
+    expect(job?.laneId).toBe('lane-unified-deploy-product-flows');
+    expect(job?.requiresSecrets).toBe(true);
+    expect(job?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
+    expect(job?.evidenceFamilies).toEqual(['post_deploy_product_smoke_report']);
+    expect(job?.artifactPaths).toEqual(POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS);
+    expect(job?.notes).toMatch(/online or airgap GA handoff artifact/i);
+    expect(job?.notes).toMatch(/not an AgentSmith product readiness verdict/i);
+    expect(jobEnv.PRESET_ENDPOINT_API_KEY).toBe(
+      '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
+    );
+    expect(jobEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
+    expect(jobEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(releaseContractDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR);
+    expect(siteEnvDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
+    expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME);
+    expect(validateRun).toContain('site_env_filename must be a simple filename');
+    expect(verifyRun).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(verifyRun).toContain('test -f "${SITE_ENV_INPUT_PATH}"');
+    expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"');
+    expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
+    expect(runCommands).toContain(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND);
+    expect(handoffStep?.if).toBe('success()');
+    expect(handoffRun).toContain(
+      `test -f "\${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/${POST_DEPLOY_PRODUCT_SMOKE_HANDOFF_RELATIVE_PATH}"`,
+    );
+    expect(uploadStep?.if).toBe('always()');
+    expect(uploadWith.name).toBe('${{ inputs.smoke_artifact_name }}');
+    expect(uploadWith['if-no-files-found']).toBe('error');
+    expect(uploadPaths).toEqual(POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS);
   });
 
   it('keeps integration e2e pull request paths on active runner surfaces', () => {

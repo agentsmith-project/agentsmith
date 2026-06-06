@@ -1,0 +1,145 @@
+name: Post-deploy Product Smoke Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_contract_artifact_name:
+        description: "GitHub Actions artifact name containing agentsmith-release-contract.json"
+        required: true
+        default: "agentsmith-release-contract"
+        type: string
+      release_contract_run_id:
+        description: "GitHub Actions run id that produced the release contract artifact"
+        required: true
+        type: string
+      site_env_artifact_name:
+        description: "GitHub Actions artifact name containing the deployed target site.env"
+        required: true
+        type: string
+      site_env_run_id:
+        description: "GitHub Actions run id that produced the deployed target site.env artifact"
+        required: true
+        type: string
+      site_env_filename:
+        description: "Filename inside the site env artifact"
+        required: true
+        default: "site.env"
+        type: string
+      smoke_artifact_name:
+        description: "Canonical GA handoff artifact name to upload for this deployed target"
+        required: true
+        default: "agentsmith-post-deploy-product-smoke-report"
+        type: choice
+        options:
+          - "agentsmith-post-deploy-product-smoke-report"
+          - "agentsmith-post-deploy-product-smoke-airgap-report"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: post-deploy-product-smoke-artifact-${{ github.workflow }}-${{ github.ref }}-${{ inputs.smoke_artifact_name }}
+  cancel-in-progress: false
+
+jobs:
+  post-deploy-product-smoke:
+    name: post-deploy-product-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_NAME: ${{ inputs.smoke_artifact_name }}
+      PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
+      POST_DEPLOY_PRODUCT_SMOKE_ROOT: artifacts/release-runs/post-deploy-product-smoke-${{ github.run_id }}
+      RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
+      SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
+      SITE_ENV_FILENAME: ${{ inputs.site_env_filename }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runner contract
+        run: npm run build -w @mbos/agent-runner-contract
+
+      - name: Validate required secrets and inputs
+        run: |
+          set -euo pipefail
+          if [[ -z "${PRESET_ENDPOINT_API_KEY:-}" ]]; then
+            echo "PRESET_ENDPOINT_API_KEY secret is required for post-deploy product smoke artifact generation; BACKEND_REAL_API_KEY is accepted only as a temporary GitHub Actions secret rename fallback." >&2
+            exit 1
+          fi
+          case "${AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_NAME}" in
+            agentsmith-post-deploy-product-smoke-report|agentsmith-post-deploy-product-smoke-airgap-report) ;;
+            *)
+              echo "smoke_artifact_name must be one of the canonical GA handoff artifact names." >&2
+              exit 1
+              ;;
+          esac
+          if [[ -z "${SITE_ENV_FILENAME}" || "${SITE_ENV_FILENAME}" == */* || "${SITE_ENV_FILENAME}" == *\\* || "${SITE_ENV_FILENAME}" == "." || "${SITE_ENV_FILENAME}" == ".." ]]; then
+            echo "site_env_filename must be a simple filename inside the downloaded site env artifact." >&2
+            exit 1
+          fi
+          mkdir -p "${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"
+          printf 'workflow=%s\nrun_id=%s\nartifact_name=%s\n' \
+            "${GITHUB_WORKFLOW}" \
+            "${GITHUB_RUN_ID}" \
+            "${AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_NAME}" \
+            > "${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/workflow-scope.txt"
+
+      - name: Download release contract artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.release_contract_artifact_name }}
+          run-id: ${{ inputs.release_contract_run_id }}
+          path: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract
+          github-token: ${{ github.token }}
+
+      - name: Download site env artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.site_env_artifact_name }}
+          run-id: ${{ inputs.site_env_run_id }}
+          path: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
+          github-token: ${{ github.token }}
+
+      - name: Verify handoff inputs
+        run: |
+          set -euo pipefail
+          SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
+          test -f "${RELEASE_CONTRACT_INPUT_PATH}"
+          test -f "${SITE_ENV_INPUT_PATH}"
+          printf 'SITE_ENV_INPUT_PATH=%s\n' "${SITE_ENV_INPUT_PATH}" >> "${GITHUB_ENV}"
+
+      - name: Run post-deploy product smoke
+        run: |
+          set -euo pipefail
+          UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}" \
+          UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}" \
+          UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}" \
+          npm run lane:unified-deploy:product-flows
+
+      - name: Verify post-deploy product smoke handoff file
+        if: success()
+        run: |
+          set -euo pipefail
+          test -f "${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-product-smoke/post-deploy-product-smoke-report.json"
+
+      - name: Upload post-deploy product smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.smoke_artifact_name }}
+          if-no-files-found: error
+          path: |
+            ${{ env.POST_DEPLOY_PRODUCT_SMOKE_ROOT }}/**

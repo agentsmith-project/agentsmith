@@ -141,6 +141,8 @@ npm run lane:unified-deploy:product-flows
 
 `AGENTSMITH_RELEASE_CONTRACT_PATH` may be used instead of `UNIFIED_DEPLOY_RELEASE_CONTRACT`. The release contract must point to the downloaded `agentsmith-release-contract.json`. `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env, and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the evidence root.
 
+The GitHub Actions workflow `Post-deploy Product Smoke Artifact` runs the same AgentSmith-owned producer after downloading the release contract artifact and one deployed target `site.env` artifact into runner temp. Run it once for the online deployed target with artifact name `agentsmith-post-deploy-product-smoke-report`, and once for the airgap deployed target with artifact name `agentsmith-post-deploy-product-smoke-airgap-report`. Failed runs still upload their evidence root for diagnosis; the canonical handoff file is checked only on successful runs.
+
 The files to pass to release-kit `--ga-release` are:
 
 ```text

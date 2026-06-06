@@ -410,6 +410,11 @@ function runtimeReadinessClassification(
   value: string,
   label: string,
 ): RuntimeReadinessClassification {
+  if (value === 'stability_blocker') {
+    throw new Error(
+      `${label}.classification stability_blocker blocks product readiness handoff; consecutive focused gate runtime readiness failures must be resolved before writing product-readiness-report.json.`,
+    );
+  }
   if (value !== 'clean_pass' && value !== 'runtime_flake') {
     throw new Error(`${label}.classification must be clean_pass or runtime_flake.`);
   }

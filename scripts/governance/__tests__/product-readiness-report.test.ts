@@ -624,6 +624,21 @@ describe('product readiness report producer', () => {
     }
   });
 
+  it('fails fast when runtime readiness evidence is a stability blocker', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-blocker-');
+    try {
+      writeRuntimeReadinessDetails(root, {
+        classification: 'stability_blocker',
+        outcome: 'consecutive_focused_gate_runtime_readiness_failures',
+      });
+
+      expect(() => writeProductReadinessReport({ campaignRoot: root }))
+        .toThrow(/stability_blocker blocks product readiness handoff/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails fast when the product readiness summary did not pass', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-product-readiness-report-failed-'));
     const contractPath = join(root, 'inputs', 'agentsmith-release-contract.json');

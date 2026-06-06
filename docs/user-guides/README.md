@@ -24,6 +24,8 @@
   - 当前 local-real 与统一部署 diagnostic entry 的总表。
 - [Unified Deploy Operations](./unified-deploy-operations.md)
   - Maintainer deploy diagnostics and AgentSmith-owned post-deploy smoke producer reference; GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates` in the release-kit runbook.
+  - `install_substrates` requires release-kit namespace-scoped installer evidence, `substrate-install-report.json`, substrate truth, and explicit operator confirmation in `operator-inputs`.
+  - `kit_provided` is only a legacy/internal focused diagnostic alias for transition compatibility; it is not a GA operator path or `deployment_path`.
 <!-- current-runtime-lines:user-guides-index:end -->
 
 runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
@@ -33,6 +35,8 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
   - human product-side readiness / handoff input completeness entrypoint: `npm run product:ready`
 - [Unified Deploy Operations](./unified-deploy-operations.md)
   - maintainer deploy diagnostics and AgentSmith-owned post-deploy smoke producer reference; GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates` in the release-kit runbook
+  - `install_substrates` requires release-kit namespace-scoped installer evidence, `substrate-install-report.json`, substrate truth, and explicit operator confirmation in `operator-inputs`
+  - `kit_provided` is only a legacy/internal focused diagnostic alias for transition compatibility; it is not a GA operator path or `deployment_path`
 
 ### 日常排障
 - [Troubleshooting Guide](../troubleshooting-guide-v1.md)

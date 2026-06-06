@@ -12,6 +12,10 @@ on:
         required: true
         type: string
         default: "agentsmith-release-contract-input"
+      runner_release_run_id:
+        description: "GitHub Actions run ID from agentsmith-runner runner-image-publish that uploaded runner-release-manifest and runner-ga-handoff"
+        required: true
+        type: string
 
 concurrency:
   group: release-contract-artifact-${{ github.workflow }}-${{ github.ref }}
@@ -45,11 +49,15 @@ jobs:
       - name: Gate runner release manifest source
         env:
           GH_TOKEN: ${{ github.token }}
+          RUNNER_RELEASE_RUN_ID: ${{ inputs.runner_release_run_id }}
         run: |
           set -euo pipefail
           RUNNER_RELEASE_MANIFEST_PATH="scripts/governance/__fixtures__/release-boundary/runner-release-manifest.valid.json"
           RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH="scripts/governance/__fixtures__/release-boundary/runner-ga-handoff-report.valid.json"
           runner_repo="agentsmith-project/agentsmith-runner"
+          runner_run_id="${RUNNER_RELEASE_RUN_ID}"
+          runner_artifact_name="runner-release-manifest"
+          runner_handoff_artifact_name="runner-ga-handoff"
           runner_gate_dir="artifacts/release-contract/runner-manifest-source-gate"
           runner_remote_download_dir="${runner_gate_dir}/artifact-download"
           runner_handoff_download_dir="${runner_gate_dir}/handoff-download"
@@ -59,14 +67,8 @@ jobs:
 
           npm run contracts:check-runner-image-lock -- --adoption --manifest "${RUNNER_RELEASE_MANIFEST_PATH}" --handoff-report "${RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH}"
 
-          runner_run_id="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.run_id || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"
-          runner_artifact_name="$(node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(manifest.artifact_provenance.subject_name || ''));" "${RUNNER_RELEASE_MANIFEST_PATH}")"
           if [[ ! "${runner_run_id}" =~ ^[0-9]+$ ]]; then
-            echo "runner release manifest artifact_provenance.run_id must be a GitHub Actions numeric run id." >&2
-            exit 1
-          fi
-          if [[ -z "${runner_artifact_name}" ]]; then
-            echo "runner release manifest artifact_provenance.subject_name is required." >&2
+            echo "runner_release_run_id must be a GitHub Actions numeric run id." >&2
             exit 1
           fi
 
@@ -84,7 +86,7 @@ jobs:
             --dir "${runner_remote_download_dir}"
           gh run download "${runner_run_id}" \
             --repo "${runner_repo}" \
-            --name "runner-ga-handoff" \
+            --name "${runner_handoff_artifact_name}" \
             --dir "${runner_handoff_download_dir}"
 
           export RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR="${runner_remote_download_dir}"

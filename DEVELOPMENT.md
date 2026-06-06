@@ -183,7 +183,7 @@ npm run marketing:assets:generate
 
 ### CI Image Publishing
 
-`.github/workflows/image-publish.yml` is the current GHCR producer. It builds and pushes the single shared `agentsmith-app` image, writes `artifacts/image-publish/build-manifest.json`, and uploads `agentsmith-release-contract-input` for `.github/workflows/release-contract-artifact.yml`.
+`.github/workflows/image-publish.yml` is the current GHCR producer. It builds and pushes the single shared `agentsmith-app` image, writes `artifacts/image-publish/build-manifest.json`, and uploads `agentsmith-release-contract-input` for `.github/workflows/release-contract-artifact.yml`. The release contract artifact workflow also requires `runner_release_run_id` from the current `agentsmith-runner` `runner-image-publish` run, then downloads the canonical `runner-release-manifest` and `runner-ga-handoff` artifacts from that run.
 
 GA fail-fast rule: do not invent separate `web`, `api`, `product_schema_bootstrap`, or backend/API image digests in AgentSmith CI. The release-contract input exposes the real `agentsmith_app` product image only; a separate backend/API image must be connected by its owner when that image exists.
 

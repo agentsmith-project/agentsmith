@@ -1508,6 +1508,7 @@ describe('current workflow governance', () => {
     expect(collectWorkflowDispatchStringInputNames(releaseContractWorkflow)).toEqual([
       'release_contract_input_artifact_name',
       'release_contract_input_run_id',
+      'runner_release_run_id',
     ]);
     expect(asRecord(releaseContractInputs.release_contract_input_run_id)).toMatchObject({
       required: true,
@@ -1517,6 +1518,10 @@ describe('current workflow governance', () => {
       required: true,
       type: 'string',
       default: 'agentsmith-release-contract-input',
+    });
+    expect(asRecord(releaseContractInputs.runner_release_run_id)).toMatchObject({
+      required: true,
+      type: 'string',
     });
     expect(releaseContractInputs).not.toHaveProperty('release_contract_input_path');
     expect(failures).toEqual([]);
@@ -1666,18 +1671,23 @@ describe('current workflow governance', () => {
     expect(handoffFileCheckStepIndex).toBeGreaterThan(downloadStepIndex);
     expect(generateArtifactStepIndex).toBeGreaterThan(handoffFileCheckStepIndex);
     expect(runnerSourceGateEnv.GH_TOKEN).toBe('${{ github.token }}');
+    expect(runnerSourceGateEnv.RUNNER_RELEASE_RUN_ID).toBe('${{ inputs.runner_release_run_id }}');
     expect(runnerSourceGateRun).toContain(`RUNNER_RELEASE_MANIFEST_PATH="${RUNNER_RELEASE_MANIFEST_PATH}"`);
     expect(runnerSourceGateRun).toContain(
       `RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH="${RUNNER_GA_HANDOFF_REPORT_FIXTURE_PATH}"`,
     );
     expect(runnerSourceGateRun).toContain('runner_repo="agentsmith-project/agentsmith-runner"');
+    expect(runnerSourceGateRun).toContain('runner_run_id="${RUNNER_RELEASE_RUN_ID}"');
+    expect(runnerSourceGateRun).toContain('runner_artifact_name="runner-release-manifest"');
+    expect(runnerSourceGateRun).toContain('runner_handoff_artifact_name="runner-ga-handoff"');
     expect(runnerSourceGateRun).toContain('runner_remote_download_dir="${runner_gate_dir}/artifact-download"');
     expect(runnerSourceGateRun).toContain('runner_handoff_download_dir="${runner_gate_dir}/handoff-download"');
     expect(runnerSourceGateRun).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
     expect(runnerSourceGateRun).toContain('runner-manifest-source-gate');
-    expect(runnerSourceGateRun).toContain('manifest.artifact_provenance.run_id');
-    expect(runnerSourceGateRun).toContain('manifest.artifact_provenance.subject_name');
-    expect(runnerSourceGateRun).toContain('runner release manifest artifact_provenance.subject_name is required.');
+    expect(runnerSourceGateRun).not.toContain('manifest.artifact_provenance.run_id');
+    expect(runnerSourceGateRun).not.toContain('manifest.artifact_provenance.subject_name');
+    expect(runnerSourceGateRun).not.toContain('runner release manifest artifact_provenance.subject_name is required.');
+    expect(runnerSourceGateRun).toContain('runner_release_run_id must be a GitHub Actions numeric run id.');
     expect(runnerSourceGateRun).toContain('gh run view "${runner_run_id}"');
     expect(runnerSourceGateRun).toContain('--json conclusion,databaseId,headSha,status,url,workflowName');
     expect(runnerSourceGateRun).toContain('gh api "repos/${runner_repo}/actions/runs/${runner_run_id}"');
@@ -1686,7 +1696,7 @@ describe('current workflow governance', () => {
     );
     expect(runnerSourceGateRun).toContain('gh run download "${runner_run_id}"');
     expect(runnerSourceGateRun).toContain('--name "${runner_artifact_name}"');
-    expect(runnerSourceGateRun).toContain('--name "runner-ga-handoff"');
+    expect(runnerSourceGateRun).toContain('--name "${runner_handoff_artifact_name}"');
     expect(runnerSourceGateRun).toContain('RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR');
     expect(runnerSourceGateRun).toContain('RUNNER_GA_HANDOFF_DOWNLOAD_DIR');
     expect(runnerSourceGateRun).toContain('agentsmith.runner-release-manifest/v1');

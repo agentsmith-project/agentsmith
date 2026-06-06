@@ -80,7 +80,7 @@ Kubernetes/cloud or airgap evidence.
 Old profile vocabulary is not a long-term formal path. The only temporary
 mapping owner is the AgentSmith release-boundary adapter, the deletion trigger
 is the GA cut that hides or removes old transition-only diagnostic surfaces
-after release-kit repo-local gates own deployment verdicts, and evidence is
+after the release-kit final GA gate owns deployment evidence consumption, and evidence is
 `contracts:check-unified-deploy-vocabulary` plus
 `contracts:check-current-verification-campaigns` proving mixed vocabulary and
 synonym drift fail fast.
@@ -341,7 +341,8 @@ artifacts, and operator inputs. It must not infer AgentSmith product source
 paths, import product packages, or create a second image inventory.
 
 Release kit owns online/airgap publishing, release package tests, deploy gates,
-operator runbooks, and the deployment/package/operator verdict. For both
+operator runbooks, and the final GA verdict over deployment/package/operator
+evidence. For both
 `online` and `airgap`, release-kit gates must cover both GA operator substrate
 strategies, `use_existing` and `install_substrates`. Each release run must
 explicitly select the intended strategy; neither strategy may silently fall

@@ -64,7 +64,7 @@ const validReleaseHandoffBoundaryDoc = `# Active Release Doc
 
 ## Release Kit Handoff Boundary
 
-npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. Release-kit owns deployment, package, and operator runbook verdict through repo-local final GA gate/evidence; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+npm run product:ready is AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. Unified deploy and local-kind deploy commands are transition-only focused diagnostics / 过渡期专项诊断. Release-kit owns the final GA verdict through repo-local gate/evidence over deployment/package/operator inputs; AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 `;
 
 const minimalGaReleasePlanDoc = `# AgentSmith GA Release Plan
@@ -512,7 +512,7 @@ Formal release language is online / airgap x use_existing / kit_provided.
     expect(text).toContain('release-kit handoff boundary');
     expect(text).toContain('product readiness / local complete / current product gate');
     expect(text).toContain('transition-only focused diagnostics / 过渡期专项诊断');
-    expect(text).toContain('deployment/package/operator verdict');
+    expect(text).toContain('release-kit owns the final GA verdict');
   });
 
   it.each([
@@ -523,7 +523,7 @@ Formal release language is online / airgap x use_existing / kit_provided.
       activeDocOverrides: {
         [path]: `${validReleaseHandoffBoundaryDoc}
 
-After release-kit functional repo is ready, release-kit owns deployment, package, and operator verdict.
+After release-kit functional repo is ready, release-kit owns the final GA verdict over deployment, package, and operator evidence.
 `,
       },
     });

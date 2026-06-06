@@ -45,7 +45,7 @@ GA 只保留两类正式 verdict：
 | Repo | 本地路径 | GA 责任 |
 | --- | --- | --- |
 | `agentsmith` | `/home/percy/works/mbos-v1/agentsmith` | 产品代码、产品合同、product readiness、app image、release contract、deploy template package、runner contract artifact、外部镜像锁 |
-| `agentsmith-release-kit` | `/home/percy/works/mbos-v1/agentsmith-release-kit` | online/airgap 发布执行、airgap 包、部署验证、operator runbook、deployment/package/operator GA verdict |
+| `agentsmith-release-kit` | `/home/percy/works/mbos-v1/agentsmith-release-kit` | online/airgap 发布执行、airgap 包、部署验证、operator runbook、final GA verdict |
 | `agentsmith-runner` | `/home/percy/works/mbos-v1/agentsmith-runner` | managed runner 执行进程、runner image、runner release manifest、runner 侧 GA gate |
 | `llm-universal-proxy` | `/home/percy/works/mbos-v1/llm-universal-proxy` | AgentSmith 依赖的 llmup pinned image release |
 | `agentsmith-fs-control-plane` | `/home/percy/works/mbos-v1/agentsmith-fs-control-plane` | AgentSmith Files/task HOME 依赖的 AFSCP pinned image release |
@@ -366,7 +366,7 @@ GA 的判定是：
 | `docs/CURRENT_BASELINE.md` | GA 当前事实路由；隐藏 pre-GA 主叙事 |
 | `docs/README.md` | 指向 GA 计划和 operator 文档，不让读者先读历史计划 |
 | `docs/engineering/README.md` | 本计划为 active；pre-GA split plan 为 reference |
-| `docs/contracts/unified-deploy-contract.md` | release-kit 是 GA deployment/package/operator verdict authority |
+| `docs/contracts/unified-deploy-contract.md` | release-kit 是 final GA verdict authority；deployment/package/operator evidence 只作为 final GA 输入 |
 | `docs/user-guides/release-readiness-checklist.md` | 只讲 AgentSmith product readiness，不混部署 runbook |
 | `docs/user-guides/unified-deploy-operations.md` | local-kind/existing-cluster 降为 maintainer diagnostic |
 | `docs/user-guides/file-library-access-model.md` | `release:ready` 改为 `product:ready` 或部署后 smoke |

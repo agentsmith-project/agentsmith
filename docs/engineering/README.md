@@ -10,9 +10,9 @@ This index is not a deployment truth source; canonical deploy details stay in
 the unified deploy contract and release-kit final GA gate. Current Docker-only
 / local-kind unified deploy is only a pre-GA focused diagnostic baseline, not
 long-term deployment truth. AgentSmith does not give a deployment, package, or
-operator release verdict. The release-kit repo owns online/airgap deployment
-verdict through its own final GA gate and evidence; kind/local-kind remains
-local diagnostic support only.
+operator release verdict. The release-kit repo owns the final GA verdict through
+its own final GA gate and evidence over online/airgap deployment inputs;
+kind/local-kind remains local diagnostic support only.
 
 Current vs P0 handoff boundary: the Docker-only/local-kind unified deploy path
 is the current pre-GA focused diagnostic baseline, not a long-term deployment
@@ -34,7 +34,7 @@ Current active plan:
 
 Current next focus:
 
-- Execute the GA plan in small slices; keep AgentSmith product readiness, release-kit deployment/package/operator verdict, runner image adoption, and dependency image locks as separate responsibilities.
+- Execute the GA plan in small slices; keep AgentSmith product readiness, release-kit final GA verdict, runner image adoption, and dependency image locks as separate responsibilities.
 - Reduce active governance weight while implementing the GA plan: hide producer/adoption/candidate taxonomy from operator docs, keep owner diagnostics behind runbooks, and avoid new gate families unless they replace or delete old burden.
 - release-kit scoped evidence and runner locked safety are completed focused/candidate items; they remain focused evidence, not deployment/package/operator verdict or release readiness.
 - backend-real / full runtime semantics, formal verdict, and airgap readiness are release-kit GA implementation work, not AgentSmith product-side blockers.

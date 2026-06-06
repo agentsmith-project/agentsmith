@@ -143,6 +143,51 @@ describe('runtime readiness details evidence', () => {
     );
   });
 
+  it('derives pod manager summary request id from request_ids when no step record is present', () => {
+    const diagnostic = {
+      diagnostic: {
+        request_id: 'api_req_restore',
+        workload_id: 'task-restore-summary',
+        phase: 'offline',
+        status: 503,
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        operation: 'create_task_workspace',
+        pod_manager: {
+          workload_id: 'task-restore-summary',
+          pod_manager_summary: {
+            workload_id: 'task-restore-summary',
+            operations: ['readyz', 'get_pod_status', 'create_or_ensure_pod'],
+            request_ids: ['pod_mgr_readyz', 'pod_mgr_status', 'pod_mgr_create'],
+            latest_operation: 'create_or_ensure_pod',
+            latest_outcome: 'error',
+            latest_phase: 'offline',
+            latest_status_code: 503,
+            latest_error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          },
+        },
+      },
+    };
+
+    const signals = parseRuntimeReadinessSignals([{
+      path: '/tmp/api.log',
+      content: `runtime_pending_readiness_failure ${JSON.stringify(diagnostic)}\n`,
+    }]);
+
+    expect(signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'pod_manager',
+          call: 'create_or_ensure_pod',
+          request_id: 'pod_mgr_create',
+          workload_id: 'task-restore-summary',
+          phase: 'offline',
+          status_code: '503',
+          error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        }),
+      ]),
+    );
+  });
+
   it('keeps the runtime readiness report schema stable while exposing call_summaries', () => {
     const report = buildRuntimeReadinessDetails({
       generatedAt: '2026-06-05T12:00:00.000Z',

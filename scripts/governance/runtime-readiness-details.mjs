@@ -121,6 +121,32 @@ function stringValue(value) {
   return undefined;
 }
 
+function lastStringValue(value) {
+  if (Array.isArray(value)) {
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+      const candidate = stringValue(value[index]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return undefined;
+  }
+  return stringValue(value);
+}
+
+function podManagerSummaryRequestId(podManagerSummary, podManager, diagnostic) {
+  return stringValue(podManagerSummary.latest_request_id)
+    ?? stringValue(podManagerSummary.latestRequestId)
+    ?? stringValue(podManagerSummary.request_id)
+    ?? stringValue(podManagerSummary.requestId)
+    ?? lastStringValue(podManagerSummary.request_ids)
+    ?? lastStringValue(podManagerSummary.requestIds)
+    ?? lastStringValue(podManager?.request_ids)
+    ?? lastStringValue(podManager?.requestIds)
+    ?? stringValue(diagnostic.request_id)
+    ?? stringValue(diagnostic.requestId);
+}
+
 function addSignal(signals, seen, input) {
   const signal = {};
   for (const [key, value] of Object.entries(input)) {
@@ -204,6 +230,7 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       line_number: lineNumber,
       call: podManagerSummary.latest_operation ?? podManagerSummary.latestOperation,
       outcome: podManagerSummary.latest_outcome ?? podManagerSummary.latestOutcome,
+      request_id: podManagerSummaryRequestId(podManagerSummary, podManager, diagnostic),
       workload_id: podManagerSummary.workload_id ?? podManagerSummary.workloadId ?? podManager?.workload_id ?? podManager?.workloadId ?? diagnostic.workload_id ?? diagnostic.workloadId,
       phase: podManagerSummary.latest_phase ?? podManagerSummary.latestPhase,
       status_code: podManagerSummary.latest_status_code ?? podManagerSummary.latestStatusCode,

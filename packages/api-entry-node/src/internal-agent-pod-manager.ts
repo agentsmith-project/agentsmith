@@ -165,6 +165,7 @@ interface SandboxRuntimePodManagerSummary {
   request_ids: string[];
   latest_operation?: string;
   latest_outcome?: SandboxRuntimeDiagnosticOutcome;
+  latest_request_id?: string;
   latest_phase?: string;
   latest_status_code?: number;
   latest_http_status?: number;
@@ -488,6 +489,7 @@ function buildSandboxRuntimePodManagerSummary(input: {
   workloadId: string;
 }): SandboxRuntimePodManagerSummary {
   const latestStep = input.steps.at(-1);
+  const latestRequestId = [...input.steps].reverse().find((step) => step.requestId)?.requestId;
   const latestPhase = [...input.steps].reverse().find((step) => step.phase)?.phase;
   const latestStatusCode = [...input.steps].reverse().find((step) => step.status !== undefined)?.status;
   const latestHttpStatus = [...input.steps].reverse().find((step) => step.httpStatus !== undefined)?.httpStatus;
@@ -497,6 +499,7 @@ function buildSandboxRuntimePodManagerSummary(input: {
     operations: compactUniqueStrings(input.steps.map((step) => step.operation)),
     request_ids: compactUniqueStrings(input.steps.map((step) => step.requestId)),
     ...(latestStep ? { latest_operation: latestStep.operation, latest_outcome: latestStep.outcome } : {}),
+    ...(latestRequestId ? { latest_request_id: latestRequestId } : {}),
     ...(latestPhase ? { latest_phase: latestPhase } : {}),
     ...(latestStatusCode !== undefined ? { latest_status_code: latestStatusCode } : {}),
     ...(latestHttpStatus !== undefined ? { latest_http_status: latestHttpStatus } : {}),

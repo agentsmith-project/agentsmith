@@ -681,6 +681,7 @@ describe('internal-agent-pod-manager', () => {
           ]),
           latest_operation: 'create_or_ensure_pod',
           latest_outcome: 'error',
+          latest_request_id: `asbcp_req_create_${status}`,
           latest_phase: 'offline',
           latest_status_code: status,
           latest_error_code: code,

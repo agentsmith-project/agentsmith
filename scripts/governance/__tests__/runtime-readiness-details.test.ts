@@ -8,6 +8,24 @@ import {
 } from '../runtime-readiness-details.mjs';
 
 describe('runtime readiness details evidence', () => {
+  it('defines convergence rules for each runtime surface and non-terminal state', () => {
+    const requiredSurfaces = [
+      'files',
+      'agent_task_sandbox',
+      'afscp_workspace_binding',
+      'read_export',
+    ] as const;
+    const requiredStates = ['pending', 'releasing', 'offline', 'not_found'] as const;
+
+    for (const surface of requiredSurfaces) {
+      const rules = RUNTIME_READINESS_POLICY.state_convergence[surface];
+      expect(rules, `${surface} convergence rules`).toBeTruthy();
+      for (const state of requiredStates) {
+        expect(rules[state], `${surface}.${state}`).toEqual(expect.stringMatching(/\S/u));
+      }
+    }
+  });
+
   it('keeps runtime readiness observation intervals increasing after consecutive waits', () => {
     const intervals = RUNTIME_READINESS_POLICY.interval_ms;
 

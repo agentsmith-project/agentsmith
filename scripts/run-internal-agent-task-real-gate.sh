@@ -735,6 +735,12 @@ collect_runtime_readiness_details() {
     "${evidence_dir}/afscp-export-gateway-log-tail.txt"
     "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
     "${evidence_dir}/asbcp-docker-logs.txt"
+    "${evidence_dir}/previous-log-tails.txt"
+    "${evidence_dir}/previous-afscp-api-log-tail.txt"
+    "${evidence_dir}/previous-afscp-worker-log-tail.txt"
+    "${evidence_dir}/previous-afscp-export-gateway-log-tail.txt"
+    "${evidence_dir}/previous-afscp-read-export-probe-log-tail.txt"
+    "${evidence_dir}/previous-asbcp-docker-logs.txt"
   )
   if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
     spec_runtime_dir="$(dirname "${spec_state_file}")"
@@ -1209,6 +1215,12 @@ collect_runtime_readiness_summary() {
     "${evidence_dir}/afscp-export-gateway-log-tail.txt"
     "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
     "${evidence_dir}/asbcp-docker-logs.txt"
+    "${evidence_dir}/previous-log-tails.txt"
+    "${evidence_dir}/previous-afscp-api-log-tail.txt"
+    "${evidence_dir}/previous-afscp-worker-log-tail.txt"
+    "${evidence_dir}/previous-afscp-export-gateway-log-tail.txt"
+    "${evidence_dir}/previous-afscp-read-export-probe-log-tail.txt"
+    "${evidence_dir}/previous-asbcp-docker-logs.txt"
   )
   if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
     spec_runtime_dir="$(dirname "${spec_state_file}")"
@@ -1426,11 +1438,18 @@ collect_child_internal_runtime_flake_evidence() {
   local label="${4:-}"
   local spec_api_port="${5:-}"
   local spec_web_port="${6:-}"
-  local safe_stage evidence_dir child_namespace child_asbcp_container_ref
+  local safe_stage evidence_dir runtime_failure_marker previous_runtime_readiness_failure child_namespace child_asbcp_container_ref
 
-  runtime_readiness_flake_markers_present "${spec_state_file}" || return 0
   safe_stage="$(child_internal_evidence_slug "${stage}")"
   evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
+  runtime_failure_marker="${evidence_dir}/runtime-readiness-failure.marker"
+  previous_runtime_readiness_failure=0
+  if [[ -f "${runtime_failure_marker}" ]]; then
+    previous_runtime_readiness_failure=1
+  fi
+  if [[ "${previous_runtime_readiness_failure}" -ne 1 ]] && ! runtime_readiness_flake_markers_present "${spec_state_file}"; then
+    return 0
+  fi
   mkdir -p "${evidence_dir}" 2>/dev/null || return 0
   (
     set +e
@@ -1458,12 +1477,27 @@ collect_child_internal_runtime_flake_evidence() {
       printf 'state_file=%s\n' "${spec_state_file:-<none>}"
       printf 'internal_real_dir=%s\n' "${INTERNAL_REAL_DIR:-<unknown>}"
       printf 'evidence_dir=%s\n' "${evidence_dir}"
+      printf 'previous_runtime_readiness_failure=%s\n' "${previous_runtime_readiness_failure}"
+      printf 'previous_failure_marker=%s\n' "${runtime_failure_marker}"
       printf 'api_port=%s\n' "${spec_api_port:-<unknown>}"
       printf 'web_port=%s\n' "${spec_web_port:-<unknown>}"
       printf 'namespace=%s\n' "${child_namespace}"
       printf 'asbcp_container_ref=%s\n' "${child_asbcp_container_ref:-<missing>}"
       printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } > "${evidence_dir}/runtime-flake-summary.txt"
+    if [[ "${previous_runtime_readiness_failure}" -eq 1 ]]; then
+      for previous_file in \
+        log-tails.txt \
+        afscp-api-log-tail.txt \
+        afscp-worker-log-tail.txt \
+        afscp-export-gateway-log-tail.txt \
+        afscp-read-export-probe-log-tail.txt \
+        asbcp-docker-logs.txt; do
+        if [[ -f "${evidence_dir}/${previous_file}" ]]; then
+          cp -p "${evidence_dir}/${previous_file}" "${evidence_dir}/previous-${previous_file}" 2>/dev/null || true
+        fi
+      done
+    fi
     collect_child_internal_log_tails "${evidence_dir}" "${spec_state_file}"
     collect_afscp_child_evidence "${evidence_dir}"
     collect_asbcp_docker_log_evidence "${evidence_dir}/asbcp-docker-logs.txt" "${child_asbcp_container_ref}"

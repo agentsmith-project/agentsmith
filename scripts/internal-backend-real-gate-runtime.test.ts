@@ -585,7 +585,10 @@ exit 0
   }
 }
 
-function runInternalSpecGrepCleanPassHarness(options: { runtimeMarker?: boolean } = {}): {
+function runInternalSpecGrepCleanPassHarness(options: {
+  runtimeMarker?: boolean;
+  previousRuntimeFailureMarker?: boolean;
+} = {}): {
   stdout: string;
   stderr: string;
   status: number | null;
@@ -619,6 +622,20 @@ CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
 printf '#!/usr/bin/env bash\\nexit 0\\n' > "\${CONTROL_SCRIPT}"
 chmod +x "\${CONTROL_SCRIPT}"
+if [[ "${options.previousRuntimeFailureMarker ? '1' : '0'}" == "1" ]]; then
+  previous_evidence_dir="\${CHILD_INTERNAL_EVIDENCE_ROOT}/files_restore_continuation_spec"
+  mkdir -p "\${previous_evidence_dir}"
+  cat > "\${previous_evidence_dir}/runtime-readiness-failure.marker" <<'MARKER'
+stage=files_restore_continuation_spec
+gate_mode=files-restore-continue
+spec=e2e/integration-files-user-stories.spec.ts
+grep_label=same task can continue after Files restore
+last_exit_status=1
+MARKER
+  printf 'API call summary request_id=req-runtime-previous workload_id=workload-runtime-previous phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${previous_evidence_dir}/afscp-api-log-tail.txt"
+  printf 'pod manager create_or_ensure_pod request_id=req-runtime-previous workload_id=workload-runtime-previous phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${previous_evidence_dir}/afscp-worker-log-tail.txt"
+  printf 'ASBCP create/status summary request_id=req-runtime-previous workload_id=workload-runtime-previous phase=offline status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${previous_evidence_dir}/afscp-worker-log-tail.txt"
+fi
 if [[ "${options.runtimeMarker ? '1' : '0'}" == "1" ]]; then
   printf 'API call summary request_id=req-runtime-pass workload_id=workload-runtime-pass phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${INTERNAL_REAL_DIR}/afscp-api.log"
   printf 'pod manager create_or_ensure_pod request_id=req-runtime-pass workload_id=workload-runtime-pass phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE\\n' > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
@@ -1606,6 +1623,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(runtimeFlakeCollector).toContain('classification=runtime_flake');
     expect(runtimeFlakeCollector).toContain('focused_gate_passed_after_runtime_readiness_marker');
     expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
+    expect(runtimeFlakeCollector).toContain('previous_runtime_readiness_failure=1');
+    expect(runtimeFlakeCollector).toContain('previous_failure_marker=%s');
+    expect(runtimeFlakeCollector).toContain('"${evidence_dir}/previous-${previous_file}"');
+    expect(runtimeDetailsCollector).toContain('"${evidence_dir}/previous-afscp-api-log-tail.txt"');
     expect(runtimeFlakeCollector).toContain('collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"');
     expect(runtimeFlakeCollector).toContain('gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${safe_stage:-child-spec}_runtime_flake" "warning"');
     expect(runtimeDetailsCollector).toContain("errorCode === 'AGENT_SANDBOX_UNAVAILABLE'");
@@ -1809,6 +1830,43 @@ describe('internal backend-real gate runtime contract', () => {
       expect.objectContaining({ source: 'api', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
       expect.objectContaining({ source: 'pod_manager', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
       expect.objectContaining({ source: 'asbcp_create_status', error_code: 'AGENT_SANDBOX_UNAVAILABLE' }),
+    ]));
+  });
+
+  it('records focused runtime readiness flake classification after a clean passing rerun with a previous marker', () => {
+    const result = runInternalSpecGrepCleanPassHarness({ previousRuntimeFailureMarker: true });
+
+    expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=0');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-flake-summary.txt');
+    expect(result.stdout).not.toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-failure.marker');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      outcome: string;
+      classification: string;
+      call_summaries: Array<{ source: string; request_id?: string; error_code?: string }>;
+    };
+    expect(details).toMatchObject({
+      outcome: 'focused_gate_passed_after_runtime_readiness_marker',
+      classification: 'runtime_flake',
+    });
+    expect(details.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'api',
+        request_id: 'req-runtime-previous',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        request_id: 'req-runtime-previous',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        request_id: 'req-runtime-previous',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      }),
     ]));
   });
 

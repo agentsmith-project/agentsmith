@@ -425,6 +425,9 @@ function runInternalSpecGrepEarlyFailureHarness(options: { runs?: number } = {})
   internalFailure: string;
   internalChildEvidenceExists: boolean;
   afscpApiLogTail: string;
+  asbcpDockerLogs: string;
+  k8sPodStatus: string;
+  k8sEvents: string;
   afscpRuntimeFingerprint: string;
   runtimeReadinessSummary: string;
   runtimeReadinessDetails: string;
@@ -529,6 +532,9 @@ exit 0
     const summaryPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'summary.txt');
     const internalFailurePath = path.join(tempRoot, 'internal', 'failure-records.txt');
     const afscpApiLogTailPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'afscp-api-log-tail.txt');
+    const asbcpDockerLogsPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'asbcp-docker-logs.txt');
+    const k8sPodStatusPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'k8s-pod-status.txt');
+    const k8sEventsPath = path.join(uploadRoot, 'files_restore_continuation_spec', 'k8s-events.txt');
     const afscpRuntimeFingerprintPath = path.join(
       uploadRoot,
       'files_restore_continuation_spec',
@@ -558,6 +564,9 @@ exit 0
       internalFailure: existsSync(internalFailurePath) ? readFileSync(internalFailurePath, 'utf8') : '',
       internalChildEvidenceExists: existsSync(path.join(tempRoot, 'internal', 'child-internal-evidence')),
       afscpApiLogTail: existsSync(afscpApiLogTailPath) ? readFileSync(afscpApiLogTailPath, 'utf8') : '',
+      asbcpDockerLogs: existsSync(asbcpDockerLogsPath) ? readFileSync(asbcpDockerLogsPath, 'utf8') : '',
+      k8sPodStatus: existsSync(k8sPodStatusPath) ? readFileSync(k8sPodStatusPath, 'utf8') : '',
+      k8sEvents: existsSync(k8sEventsPath) ? readFileSync(k8sEventsPath, 'utf8') : '',
       afscpRuntimeFingerprint: existsSync(afscpRuntimeFingerprintPath)
         ? readFileSync(afscpRuntimeFingerprintPath, 'utf8')
         : '',
@@ -1801,6 +1810,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('status_1=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/summary.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-api-log-tail.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/asbcp-docker-logs.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/k8s-pod-status.txt');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/k8s-events.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-summary.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
@@ -1817,6 +1829,12 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.afscpApiLogTail).toContain('AFSCP API');
     expect(result.afscpApiLogTail).toContain('api ready token=[REDACTED]');
     expect(result.afscpApiLogTail).not.toContain('known-product-token');
+    expect(result.asbcpDockerLogs).toContain('$ docker logs --tail');
+    expect(result.asbcpDockerLogs).toContain('docker unavailable in harness');
+    expect(result.k8sPodStatus).toContain('kubectl --request-timeout=15s get pods');
+    expect(result.k8sPodStatus).toContain('kubectl unavailable in harness');
+    expect(result.k8sEvents).toContain('kubectl --request-timeout=15s get events');
+    expect(result.k8sEvents).toContain('kubectl unavailable in harness');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_api_port=30090');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_export_gateway_port=30091');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_default_volume_id=vol_internal_probe');
@@ -1829,6 +1847,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.runtimeReadinessSummary).toContain('API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=[REDACTED]');
     expect(result.runtimeReadinessSummary).toContain('pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(result.runtimeReadinessSummary).toContain('ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE');
+    expect(result.runtimeReadinessSummary).toContain('===== k8s pod status =====');
+    expect(result.runtimeReadinessSummary).toContain('===== k8s events tail =====');
     expect(result.runtimeReadinessSummary).not.toContain('known-product-token');
     type RuntimeReadinessSignal = {
       source: string;

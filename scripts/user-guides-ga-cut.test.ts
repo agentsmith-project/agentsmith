@@ -14,6 +14,13 @@ describe('GA user guide cut', () => {
     expect(guide).not.toContain('npm run release:ready');
   });
 
+  it('keeps the user guides index on current GA entrypoints instead of transition aliases', () => {
+    const guide = read('docs/user-guides/README.md');
+
+    expect(guide).toContain('online` / `airgap` × `use_existing` / `install_substrates');
+    expect(guide).not.toMatch(/pre-GA\/local diagnostic|local-kind|existing-cluster|kit_provided/i);
+  });
+
   it('removes MVP and pre-GA baseline wording from GA-scoped user guides', () => {
     const docs = [
       'docs/user-guides/identity-and-permission-model.md',

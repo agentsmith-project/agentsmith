@@ -129,7 +129,7 @@ function _renderDocsIndexRuntimeBlock(): string {
     '- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)',
     '  - 当前 local / unified deploy 运行线总表。',
     '- [Unified Deploy Operations](./user-guides/unified-deploy-operations.md)',
-    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
+    '  - Maintainer deploy diagnostics and AgentSmith-owned post-deploy smoke producer reference; GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates` in the release-kit runbook.',
   ].join('\n');
 }
 
@@ -140,7 +140,7 @@ function renderUserGuidesRuntimeBlock(): string {
     '- [Runtime Lines Matrix](./runtime-lines-matrix.md)',
     '  - 当前 local-real 与统一部署 diagnostic entry 的总表。',
     '- [Unified Deploy Operations](./unified-deploy-operations.md)',
-    '  - 当前 pre-GA/local diagnostic 入口：one AgentSmith deploy，`local-kind` / `existing-cluster` entry names，Docker substrate，Kubernetes app；当前 GA operator-facing release 路径看 `online` / `airgap` × `use_existing` / `install_substrates`。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认；兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
+    '  - Maintainer deploy diagnostics and AgentSmith-owned post-deploy smoke producer reference; GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates` in the release-kit runbook.',
   ].join('\n');
 }
 

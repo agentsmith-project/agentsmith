@@ -2264,6 +2264,111 @@ describe('project-file-library-routes', () => {
     }
   });
 
+  it('continues sandbox-unavailable entries runtime access in the background before invalidating read export', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const storageAdapter = createStorageAdapter({
+        listEntries: vi.fn(async () => {
+          throw new Error('file_library_list_pending');
+        }),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+      await seedBoundTask({
+        deps,
+        libraryId,
+        taskId: 'task_entries_sandbox_release_pending_background',
+        title: 'Entries sandbox release pending background task',
+      });
+      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+      deps.internalAgentPodManager.releasePod = vi.fn()
+        .mockRejectedValueOnce(Object.assign(
+          new Error('asbcp_error: delete_pod 502 secret=raw-secret-token dependency failure'),
+          {
+            code: 'AGENT_SANDBOX_UNAVAILABLE',
+            status: 502,
+            operation: 'delete_pod',
+            retryable: true,
+            requestId: 'asbcp_req_entries_sandbox_release_pending',
+          },
+        ))
+        .mockResolvedValue(undefined);
+      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+        runtimeBinding = null;
+      });
+
+      const entriesJson = vi.fn();
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryEntries',
+        method: 'GET',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: {
+          url: '/file-libraries/entries?path=workspace%2F.artifacts',
+          headers: { 'x-request-id': 'req_entries_sandbox_release_pending_background' },
+        } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: entriesJson,
+        readBody: vi.fn(),
+      });
+
+      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+        message: 'file_library_list_pending',
+      });
+      expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
+      expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledTimes(1);
+      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+      })).resolves.toMatchObject({
+        bindingState: 'releasing',
+        correlationId: buildRuntimeAccessReleaseBeginCorrelationId({
+          requestId: 'req_entries_sandbox_release_pending_background',
+        }),
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve();
+      }
+
+      expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledTimes(2);
+      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
+      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        createdBeforeOrAtMs: expect.any(Number),
+        requestId: 'req_entries_sandbox_release_pending_background',
+      }));
+      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+      })).resolves.toMatchObject({
+        bindingState: 'releasing',
+        correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
+          beginCorrelationId: buildRuntimeAccessReleaseBeginCorrelationId({
+            requestId: 'req_entries_sandbox_release_pending_background',
+          }),
+        }),
+      });
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/raw-secret-token|secret=/);
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('deletes ready libraries through the storage adapter and rolls back when content remains', async () => {
     const nonEmptyAdapter = createStorageAdapter({
       assertEmpty: vi.fn(async () => {
@@ -5560,6 +5665,73 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(
       /raw-secret-token|secret=|wmb_|ns_|repo_|mount|credential|control_root/,
     );
+  });
+
+  it('keeps the release fence pending when sandbox workload release is unavailable', async () => {
+    const deps = createDeps();
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    const seededTask = await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_release_runtime_sandbox_unavailable',
+      title: 'Release runtime sandbox unavailable task',
+    });
+    deps.internalAgentPodManager.releasePod = vi.fn(async () => {
+      throw Object.assign(new Error('asbcp_error: delete_pod 502 secret=raw-secret-token dependency failure'), {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        status: 502,
+        operation: 'delete_pod',
+        retryable: true,
+        requestId: 'asbcp_req_file_runtime_release_502',
+      });
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const releaseJson = vi.fn();
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryRuntimeAccessRelease',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: { headers: { 'x-request-id': 'req_file_runtime_release_502' } } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: releaseJson,
+        readBody: vi.fn().mockResolvedValue({}),
+      })).resolves.toBe(true);
+
+      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+      expect(releaseJson).toHaveBeenCalledWith(expect.anything(), 200, {
+        file_library_id: libraryId,
+        released: false,
+        runtime_access_status: 'release_pending',
+      });
+      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        fileLibraryId: libraryId,
+      })).resolves.toMatchObject({
+        taskId: seededTask.taskId,
+        bindingGeneration: seededTask.bindingGeneration,
+        bindingState: 'releasing',
+        correlationId: buildRuntimeAccessReleaseBeginCorrelationId({
+          requestId: 'req_file_runtime_release_502',
+        }),
+      });
+      expect(JSON.stringify(releaseJson.mock.calls)).not.toMatch(
+        /raw-secret-token|secret=|wmb_|ns_|repo_|mount|credential|control_root/,
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[files] runtime_pending_readiness_failure %s',
+        expect.stringContaining('"request_id":"release:begin:req_file_runtime_release_502"'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it.each(['ready', 'releasing', 'release_pending'] as const)(

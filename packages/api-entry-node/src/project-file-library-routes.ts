@@ -1524,6 +1524,22 @@ function readNestedRecord(record: Record<string, unknown>, key: string): Record<
   return isRecord(value) ? value : undefined;
 }
 
+function isRuntimeAccessSandboxReleasePendingError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  const code = readRecordString(error, 'code');
+  const operation = readRecordString(error, 'operation', 'sandboxOperation', 'sandbox_operation');
+  const status = readRecordNumber(error, 'status', 'statusCode');
+  if (
+    code === 'AGENT_SANDBOX_UNAVAILABLE'
+    && operation === 'delete_pod'
+    && (status === undefined || status >= 500)
+  ) {
+    return true;
+  }
+  return code === 'AGENT_SANDBOX_RATE_LIMITED'
+    && operation === 'delete_pod';
+}
+
 function buildRuntimeAccessReleaseFailureDiagnostic(input: {
   error: unknown;
   workspaceId: string;
@@ -1852,11 +1868,32 @@ async function continueRuntimeAccessReleaseAfterFence(input: {
         }),
       };
     }
+    const mapped = mapFileLibraryInfraError(error);
+    if (isRuntimeAccessSandboxReleasePendingError(error)) {
+      logRuntimeAccessReleaseFailure({
+        error,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        task: input.task,
+        requestId: input.releaseCorrelationId,
+        mappedErrorCode: mapped.errorCode,
+        mappedMessage: mapped.message,
+      });
+      return {
+        statusCode: 200,
+        body: {
+          file_library_id: input.libraryId,
+          released: false,
+          runtime_access_status: 'release_pending',
+        },
+        invalidateListReadExport: false,
+      };
+    }
     await rollbackReleaseFence(buildRuntimeAccessReleaseRollbackCorrelationId({
       beginCorrelationId: input.releaseCorrelationId,
       reason: 'failed',
     }));
-    const mapped = mapFileLibraryInfraError(error);
     logRuntimeAccessReleaseFailure({
       error,
       workspaceId: input.workspaceId,

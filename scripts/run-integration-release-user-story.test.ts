@@ -1,6 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+function shellFunctionDefinition(source: string, functionName: string): string {
+  const match = source.match(new RegExp(`^${functionName}\\(\\) \\{\\n[\\s\\S]*?^\\}`, 'mu'));
+  return match?.[0] ?? '';
+}
 
 describe('run-integration-release-user-story integration dependency contract', () => {
   it('preserves caller-selected integration and substrate ports through backend-real env loading', () => {
@@ -280,20 +288,63 @@ describe('run-integration-release-user-story integration dependency contract', (
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const collectorStart = script.indexOf('collect_release_user_story_runtime_readiness_evidence()');
     const runStart = script.indexOf('info "running full integration release user story"');
-    const statusIndex = script.indexOf('release_user_story_status=$?', runStart);
+    const statusIndex = script.indexOf('release_user_story_status=${PIPESTATUS[0]}', runStart);
     const collectIndex = script.indexOf('collect_release_user_story_runtime_readiness_evidence "${release_user_story_status}"', statusIndex);
     const exitIndex = script.indexOf('exit "${release_user_story_status}"', collectIndex);
 
     expect(collectorStart).toBeGreaterThanOrEqual(0);
     expect(script).toContain('integration_release_user_story');
     expect(script).toContain('runtime-readiness-details.json');
+    expect(script).toContain('scenario-failure-summary.txt');
+    expect(script).toContain('release_user_story_failure_has_runtime_marker()');
+    expect(script).toContain('RELEASE_USER_STORY_RUN_LOG="${INTEGRATION_DIR}/release-user-story-run.log"');
+    expect(script).toContain('release_user_story_status=${PIPESTATUS[0]}');
     expect(script).toContain('classification=stability_blocker');
-    expect(script).toContain('error_code=AGENT_SANDBOX_UNAVAILABLE');
+    expect(script).toContain('error_code=RUNTIME_READINESS_MARKER_OBSERVED');
+    expect(script).not.toContain('call=runner_output_token_timeout status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE');
     expect(script).toContain('k8s-pvc.txt');
+    expect(script).toContain('release-user-story-run-log-tail.txt');
     expect(script).toContain('node "${ROOT_DIR}/scripts/governance/runtime-readiness-details.mjs"');
     expect(statusIndex).toBeGreaterThan(runStart);
     expect(collectIndex).toBeGreaterThan(statusIndex);
     expect(exitIndex).toBeGreaterThan(collectIndex);
+  });
+
+  it('does not classify runner output token mismatch as a runtime readiness marker', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'release-user-story-runtime-marker-'));
+    const runnerPath = join(fixtureRoot, 'runner.sh');
+    const mismatchLog = join(fixtureRoot, 'runner-output-mismatch.log');
+    const runtimeLog = join(fixtureRoot, 'runtime-marker.log');
+
+    try {
+      writeFileSync(mismatchLog, [
+        'Error: runner_output_token_timeout:task_1',
+        'runner/runner_output: MANAGED_CONTIN_T2_OK',
+        'pod=workload-release-story phase=Running ready=true',
+        '',
+      ].join('\n'));
+      writeFileSync(runtimeLog, [
+        'Error: runner_output_token_timeout:task_1',
+        'API call summary request_id=req workload_id=workload phase=offline error_code=AGENT_SANDBOX_UNAVAILABLE',
+        '',
+      ].join('\n'));
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        shellFunctionDefinition(script, 'release_user_story_failure_has_runtime_marker'),
+        'release_user_story_failure_has_runtime_marker "$1"',
+        '',
+      ].join('\n'));
+
+      const mismatch = spawnSync('bash', [runnerPath, mismatchLog], { encoding: 'utf8' });
+      const runtime = spawnSync('bash', [runnerPath, runtimeLog], { encoding: 'utf8' });
+
+      expect(mismatch.status).toBe(1);
+      expect(runtime.status).toBe(0);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it('applies sandbox namespace dependencies only after the wrapper-owned AFSCP reset', () => {

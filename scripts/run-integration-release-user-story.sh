@@ -357,15 +357,28 @@ release_user_story_tail_evidence_file() {
   fi
 }
 
+release_user_story_failure_has_runtime_marker() {
+  local file
+  for file in "$@"; do
+    [[ -f "${file}" ]] || continue
+    if grep -Eq 'runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding' "${file}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 collect_release_user_story_runtime_readiness_evidence() {
   local exit_status="${1:-1}"
   local evidence_root="${INTERNAL_REAL_CHILD_EVIDENCE_DIR:-${RELEASE_REAL_CHILD_INTERNAL_EVIDENCE_DIR:-${INTEGRATION_DIR}/child-internal-evidence}}"
   local evidence_dir="${evidence_root}/integration_release_user_story"
-  local pod_name phase request_id details_file summary_file
+  local pod_name phase request_id details_file summary_file scenario_summary_file run_log_tail_file
 
   mkdir -p "${evidence_dir}"
   summary_file="${evidence_dir}/runtime-readiness-summary.txt"
+  scenario_summary_file="${evidence_dir}/scenario-failure-summary.txt"
   details_file="${evidence_dir}/runtime-readiness-details.json"
+  run_log_tail_file="${evidence_dir}/release-user-story-run-log-tail.txt"
   pod_name=""
   phase="unknown"
 
@@ -420,6 +433,33 @@ collect_release_user_story_runtime_readiness_evidence() {
   release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-api.log" "${evidence_dir}/afscp-api-log-tail.txt" 300
   release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-worker.log" "${evidence_dir}/afscp-worker-log-tail.txt" 300
   release_user_story_tail_evidence_file "${INTEGRATION_AFSCP_DIR}/afscp-read-export-probe.log" "${evidence_dir}/afscp-read-export-probe-log-tail.txt" 160
+  release_user_story_tail_evidence_file "${RELEASE_USER_STORY_RUN_LOG:-}" "${run_log_tail_file}" 300
+
+  if ! release_user_story_failure_has_runtime_marker \
+    "${RELEASE_USER_STORY_RUN_LOG:-}" \
+    "${evidence_dir}/asbcp-log-tail.txt" \
+    "${evidence_dir}/afscp-api-log-tail.txt" \
+    "${evidence_dir}/afscp-worker-log-tail.txt" \
+    "${evidence_dir}/k8s-events.txt"; then
+    rm -f "${summary_file}" "${details_file}"
+    {
+      printf 'classification=scenario_assertion_failed\n'
+      printf 'outcome=release_user_story_failed_without_runtime_readiness_marker\n'
+      printf 'stage=integration_release_user_story\n'
+      printf 'exit_status=%s\n' "${exit_status}"
+      printf 'namespace=%s\n' "${K8S_NAMESPACE}"
+      printf 'pod_name=%s\n' "${pod_name}"
+      printf 'workload_id=%s\n' "${pod_name}"
+      printf 'phase=%s\n' "${phase}"
+      printf 'run_log=%s\n' "${run_log_tail_file}"
+      printf 'k8s_pods=%s\n' "${evidence_dir}/k8s-pods.txt"
+      printf 'k8s_pvc=%s\n' "${evidence_dir}/k8s-pvc.txt"
+      printf 'k8s_events=%s\n' "${evidence_dir}/k8s-events.txt"
+      printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } > "${scenario_summary_file}"
+    echo "[integration-release-user-story] scenario failure evidence: ${scenario_summary_file}" >&2
+    return 0
+  fi
 
   {
     printf 'theme=runtime_pending_readiness\n'
@@ -432,10 +472,11 @@ collect_release_user_story_runtime_readiness_evidence() {
     printf 'workload_id=%s\n' "${pod_name}"
     printf 'phase=%s\n' "${phase}"
     printf 'convergence_scope=agent_task_sandbox,afscp_workspace_binding,read_export\n'
-    printf 'convergence_detail=pending sandbox pod did not converge before runner output timeout; inspect PVC/PV/CSI and AFSCP workload mount binding evidence\n'
-    printf 'API call summary request_id=%s workload_id=%s phase=%s call=runner_output_token_timeout status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
-    printf 'pod manager call summary request_id=%s workload_id=%s phase=%s call=get_pod_status status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
-    printf 'ASBCP create/status summary request_id=%s workload_id=%s phase=%s call=create/status status_code=timeout error_code=AGENT_SANDBOX_UNAVAILABLE\n' "${request_id}" "${pod_name}" "${phase}"
+    printf 'convergence_detail=release user story observed runtime readiness markers before failing; inspect run log, PVC/PV/CSI, AFSCP, and ASBCP evidence\n'
+    printf 'API call summary request_id=%s workload_id=%s phase=%s call=release_user_story_failure status=failed error_code=RUNTIME_READINESS_MARKER_OBSERVED\n' "${request_id}" "${pod_name}" "${phase}"
+    printf 'pod manager call summary request_id=%s workload_id=%s phase=%s call=get_pod_status status=%s error_code=RUNTIME_READINESS_MARKER_OBSERVED\n' "${request_id}" "${pod_name}" "${phase}" "${phase}"
+    printf 'ASBCP create/status summary request_id=%s workload_id=%s phase=%s call=create/status status=%s error_code=RUNTIME_READINESS_MARKER_OBSERVED\n' "${request_id}" "${pod_name}" "${phase}" "${phase}"
+    printf 'run_log=%s\n' "${run_log_tail_file}"
     printf 'k8s_pods=%s\n' "${evidence_dir}/k8s-pods.txt"
     printf 'k8s_pvc=%s\n' "${evidence_dir}/k8s-pvc.txt"
     printf 'k8s_events=%s\n' "${evidence_dir}/k8s-events.txt"
@@ -446,6 +487,7 @@ collect_release_user_story_runtime_readiness_evidence() {
     "${details_file}" \
     "${evidence_dir}/k8s-pod-status.txt" \
     "${summary_file}" \
+    "${run_log_tail_file}" \
     "${evidence_dir}/asbcp-log-tail.txt" \
     "${evidence_dir}/afscp-api-log-tail.txt" \
     "${evidence_dir}/afscp-worker-log-tail.txt" \
@@ -727,6 +769,7 @@ info "starting ASBCP from locked image"
 INTERNAL_SANDBOX_REAL_STATE_FILE="${ASBCP_STATE_FILE}" ASBCP_SERVICE_KEY_VALUE="${ASBCP_SERVICE_KEY_VALUE}" AFSCP_ORCHESTRATOR_TOKEN="${AFSCP_ORCHESTRATOR_TOKEN_VALUE}" bash "${CONTROL_SCRIPT}" start-asbcp
 
 info "running full integration release user story"
+RELEASE_USER_STORY_RUN_LOG="${INTEGRATION_DIR}/release-user-story-run.log"
 set +e
 (
   set -e
@@ -777,8 +820,8 @@ set +e
     INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
     bash scripts/run-integration-e2e-full.sh e2e/integration-release-user-story.spec.ts
-)
-release_user_story_status=$?
+) 2>&1 | tee "${RELEASE_USER_STORY_RUN_LOG}"
+release_user_story_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${release_user_story_status}" -ne 0 ]]; then

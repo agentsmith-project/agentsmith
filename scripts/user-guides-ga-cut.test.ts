@@ -18,7 +18,10 @@ describe('GA user guide cut', () => {
     const guide = read('docs/user-guides/README.md');
 
     expect(guide).toContain('online` / `airgap` × `use_existing` / `install_substrates');
-    expect(guide).not.toMatch(/pre-GA\/local diagnostic|local-kind|existing-cluster|kit_provided/i);
+    expect(guide).toContain('`kit_provided` is only a legacy/internal focused diagnostic alias');
+    expect(guide).toContain('it is not a GA operator path or `deployment_path`');
+    expect(guide).not.toMatch(/pre-GA\/local diagnostic|local-kind|existing-cluster/i);
+    expect(guide).not.toMatch(/GA operator-facing release paths[\s\S]{0,160}`kit_provided`/i);
   });
 
   it('removes MVP and pre-GA baseline wording from GA-scoped user guides', () => {

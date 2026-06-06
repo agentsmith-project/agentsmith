@@ -6,7 +6,24 @@ import {
   currentObservationWaitMsForConsecutiveNonTerminal,
   currentObservationWaitSchedule,
   findCurrentVerificationCampaignById,
+  validateRuntimeReadinessObservationPolicy,
 } from '../current-verification-campaign-manifest';
+
+function validRuntimeReadinessPolicyInput(): Record<string, unknown> {
+  const releaseFull = findCurrentVerificationCampaignById('release-full');
+  const policy = releaseFull?.steps.find((step) => step.id === 'gate-release')?.observationPolicy;
+  if (!policy) {
+    throw new Error('Missing gate-release observation policy.');
+  }
+
+  return {
+    theme: policy.theme,
+    backoff: policy.backoff,
+    interval_ms: [...policy.intervalMs],
+    evidence_focus: [...policy.evidenceFocus],
+    state_convergence: JSON.parse(JSON.stringify(policy.stateConvergence)) as Record<string, unknown>,
+  };
+}
 
 describe('current verification campaign manifest', () => {
   it('defines release-full as the AgentSmith product-side readiness campaign truth', () => {
@@ -171,6 +188,21 @@ describe('current verification campaign manifest', () => {
       60_000,
       60_000,
     ]);
+  });
+
+  it('fails closed when runtime readiness policy drifts back to fixed waits or incomplete states', () => {
+    const fixedMinuteWaits = validRuntimeReadinessPolicyInput();
+    fixedMinuteWaits.interval_ms = [60_000, 60_000, 60_000];
+
+    expect(() => validateRuntimeReadinessObservationPolicy(fixedMinuteWaits))
+      .toThrow(/interval_ms must be strictly increasing/u);
+
+    const missingState = validRuntimeReadinessPolicyInput();
+    const stateConvergence = missingState.state_convergence as Record<string, Record<string, unknown>>;
+    delete stateConvergence.read_export.pending;
+
+    expect(() => validateRuntimeReadinessObservationPolicy(missingState))
+      .toThrow(/state_convergence\.read_export\.pending/u);
   });
 
   it('separates executable evidence owners from the aggregate-only readiness check', () => {

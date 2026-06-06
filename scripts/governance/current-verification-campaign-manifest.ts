@@ -107,6 +107,19 @@ export interface CurrentVerificationCampaignDefinition {
 type CurrentReleaseCampaignEvidenceTopologyKey = keyof typeof CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY;
 
 const MINUTE_MS = 60_000;
+const RUNTIME_READINESS_CONVERGENCE_SURFACES = [
+  'files',
+  'agent_task_sandbox',
+  'afscp_workspace_binding',
+  'read_export',
+] as const satisfies readonly CurrentVerificationCampaignRuntimeConvergenceSurface[];
+const RUNTIME_READINESS_CONVERGENCE_STATES = [
+  'pending',
+  'releasing',
+  'offline',
+  'not_found',
+] as const satisfies readonly CurrentVerificationCampaignRuntimeConvergenceState[];
+
 const CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS = {
   gateFast: 20 * MINUTE_MS,
   gateDefault: 45 * MINUTE_MS,
@@ -115,13 +128,104 @@ const CURRENT_RELEASE_FULL_CAMPAIGN_STEP_TIMEOUT_MS = {
   gateReleaseFull: 10 * MINUTE_MS,
 } as const;
 
-const RUNTIME_READINESS_OBSERVATION_POLICY: CurrentVerificationCampaignObservationPolicy = {
-  theme: runtimeReadinessPolicy.theme as CurrentVerificationCampaignObservationTheme,
-  backoff: runtimeReadinessPolicy.backoff as CurrentVerificationCampaignObservationBackoff,
-  intervalMs: runtimeReadinessPolicy.interval_ms,
-  evidenceFocus: runtimeReadinessPolicy.evidence_focus,
-  stateConvergence: runtimeReadinessPolicy.state_convergence as CurrentVerificationCampaignObservationPolicy['stateConvergence'],
-};
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function requireStringArray(value: unknown, label: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`);
+  }
+  return value.map((entry, index) => requireString(entry, `${label}[${String(index)}]`));
+}
+
+function requireIncreasingRuntimeReadinessIntervals(value: unknown, label: string): readonly number[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`);
+  }
+  if (value.length < 3) {
+    throw new Error(`${label} must define at least three increasing wait intervals.`);
+  }
+
+  return value.map((entry, index, entries) => {
+    if (typeof entry !== 'number' || !Number.isSafeInteger(entry) || entry <= 0) {
+      throw new Error(`${label}[${String(index)}] must be a positive safe integer.`);
+    }
+    const previous = entries[index - 1];
+    if (index > 0 && typeof previous === 'number' && entry <= previous) {
+      throw new Error(`${label} must be strictly increasing after consecutive runtime readiness waits.`);
+    }
+    return entry;
+  });
+}
+
+function requireRuntimeReadinessStateConvergence(
+  value: unknown,
+): CurrentVerificationCampaignObservationPolicy['stateConvergence'] {
+  const raw = requireRecord(value, 'runtime readiness state_convergence');
+  const result: Partial<Record<
+    CurrentVerificationCampaignRuntimeConvergenceSurface,
+    Record<CurrentVerificationCampaignRuntimeConvergenceState, string>
+  >> = {};
+
+  for (const surface of RUNTIME_READINESS_CONVERGENCE_SURFACES) {
+    const rawSurface = requireRecord(
+      raw[surface],
+      `runtime readiness state_convergence.${surface}`,
+    );
+    const surfaceResult: Partial<Record<CurrentVerificationCampaignRuntimeConvergenceState, string>> = {};
+
+    for (const state of RUNTIME_READINESS_CONVERGENCE_STATES) {
+      surfaceResult[state] = requireString(
+        rawSurface[state],
+        `runtime readiness state_convergence.${surface}.${state}`,
+      );
+    }
+
+    result[surface] = surfaceResult as Record<CurrentVerificationCampaignRuntimeConvergenceState, string>;
+  }
+
+  return result as CurrentVerificationCampaignObservationPolicy['stateConvergence'];
+}
+
+export function validateRuntimeReadinessObservationPolicy(
+  value: unknown,
+): CurrentVerificationCampaignObservationPolicy {
+  const raw = requireRecord(value, 'runtime readiness policy');
+  const theme = requireString(raw.theme, 'runtime readiness policy theme');
+  if (theme !== 'runtime_pending_readiness') {
+    throw new Error('runtime readiness policy theme must be runtime_pending_readiness.');
+  }
+  const backoff = requireString(raw.backoff, 'runtime readiness policy backoff');
+  if (backoff !== 'increasing_after_consecutive_non_terminal') {
+    throw new Error('runtime readiness policy backoff must be increasing_after_consecutive_non_terminal.');
+  }
+
+  return {
+    theme,
+    backoff,
+    intervalMs: requireIncreasingRuntimeReadinessIntervals(
+      raw.interval_ms,
+      'runtime readiness policy interval_ms',
+    ),
+    evidenceFocus: requireStringArray(raw.evidence_focus, 'runtime readiness policy evidence_focus'),
+    stateConvergence: requireRuntimeReadinessStateConvergence(raw.state_convergence),
+  };
+}
+
+const RUNTIME_READINESS_OBSERVATION_POLICY = validateRuntimeReadinessObservationPolicy(
+  runtimeReadinessPolicy,
+);
 
 function campaignEvidenceChecks(
   key: CurrentReleaseCampaignEvidenceTopologyKey,

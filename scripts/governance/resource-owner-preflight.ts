@@ -454,7 +454,7 @@ function recoveryForOwner(ownerKind: ResourceOwnerKind, port: number): ResourceO
     return { kind: 'fix', command: 'npx tsx scripts/unified-deploy/substrate-lifecycle.ts down' };
   }
   if (ownerKind === 'kind-local-registry') {
-    return { kind: 'inspect', command: 'docker ps --filter name=kind-registry' };
+    return { kind: 'fix', command: 'make local-real-down' };
   }
   return { kind: 'inspect', command: `lsof -nP -iTCP:${port} -sTCP:LISTEN` };
 }

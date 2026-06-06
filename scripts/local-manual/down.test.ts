@@ -35,6 +35,7 @@ describe('local-manual down', () => {
     const substrateConfigFile = path.join(tempRoot, 'substrate.env');
     const envFile = path.join(tempRoot, '.env.local-manual');
     const dockerLog = path.join(tempRoot, 'docker.log');
+    const kindLog = path.join(tempRoot, 'kind.log');
     const activeScenarioLock = path.join(scenarioRuntimeRoot, 'active-scenario.lock');
 
     mkdirSync(binDir, { recursive: true });
@@ -68,6 +69,20 @@ set -euo pipefail
 exit 0
 `,
     );
+    writeExecutable(
+      path.join(binDir, 'kind'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'kind'
+  for arg in "$@"; do
+    printf ' %s' "\${arg}"
+  done
+  printf '\\n'
+} >> "${kindLog}"
+exit 0
+`,
+    );
 
     const result = spawnSync('bash', [path.join(repoRoot, 'scripts/local-manual/down.sh')], {
       cwd: repoRoot,
@@ -89,6 +104,8 @@ exit 0
     expect(existsSync(path.join(substrateStateRoot, 'connection.env'))).toBe(false);
     expect(existsSync(activeScenarioLock)).toBe(false);
     expect(readFileSync(dockerLog, 'utf8')).toContain('docker compose');
+    expect(readFileSync(dockerLog, 'utf8')).toContain('docker rm -f kind-registry');
+    expect(readFileSync(kindLog, 'utf8')).toContain('kind delete cluster --name agentsmith');
     expect(readFileSync(path.join(backendRealStateDir, 'state.json'), 'utf8')).toContain('"workspace"');
   });
 

@@ -290,8 +290,8 @@ describe('resource owner preflight', () => {
         hostPort: 5001,
         containerPort: 5000,
         ownerKind: 'kind-local-registry',
-        recoveryKind: 'inspect',
-        command: 'docker ps --filter name=kind-registry',
+        recoveryKind: 'fix',
+        command: 'make local-real-down',
       },
     ] as const;
 

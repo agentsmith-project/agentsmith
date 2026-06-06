@@ -452,6 +452,13 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       artifact_uri:
         'gh-artifact://agentsmith-project/agentsmith-runner/26714141935/agentsmith-managed-runner-image.oci',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
+      runner_release_manifest_uri:
+        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26714141935/runner-release-manifest.json',
+      runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
+      runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
+      runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
+      runner_ga_handoff_manifest_input_sha256: RUNNER_IMAGE_LOCK.handoff.manifest_input_sha256,
+      runner_ga_handoff_report_sha256: RUNNER_IMAGE_LOCK.handoff.report_sha256,
     },
   ];
 }

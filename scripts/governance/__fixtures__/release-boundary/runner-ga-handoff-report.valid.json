@@ -2,7 +2,7 @@
   "schema_version": "agentsmith.runner-ga-handoff-report/v1",
   "scope": "runner_ga_handoff_evidence",
   "status": "pass",
-  "generated_at": "2026-05-23T12:00:00.000Z",
+  "generated_at": "2026-06-03T05:51:41.335Z",
   "runner": "agentsmith-runner",
   "release_id": "locked-safety-008dbbd",
   "git_sha": "008dbbd3b232485cb77f3cae585d38955a8bf9fb",

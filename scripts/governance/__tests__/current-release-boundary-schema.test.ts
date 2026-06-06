@@ -240,7 +240,7 @@ describe('current release boundary schema', () => {
         report_artifact_uri:
           'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
         manifest_input_sha256: 'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
-        report_sha256: 'sha256:b06045e12c115a326f87793aa643d2f1c068d23a67cdf3b1e80d6067b93e9f49',
+        report_sha256: 'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
       });
     }
 
@@ -922,7 +922,7 @@ describe('current release boundary schema', () => {
         runner_ga_handoff_manifest_input_sha256:
           'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
         runner_ga_handoff_report_sha256:
-          'sha256:b06045e12c115a326f87793aa643d2f1c068d23a67cdf3b1e80d6067b93e9f49',
+          'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
       },
     });
 

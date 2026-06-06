@@ -47,6 +47,7 @@ import { runReleaseContractAssembleCli } from '../release-contract-assemble';
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
+const RUNNER_GA_HANDOFF_GENERATED_AT = '2026-06-03T05:51:41.335Z';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
 const CLI_SOURCE_ARGV = ['--source-git-sha', GIT_SHA] as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -118,7 +119,7 @@ const RUNNER_IMAGE_LOCK = {
     report_artifact_uri:
       'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
     manifest_input_sha256: 'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
-    report_sha256: 'sha256:b06045e12c115a326f87793aa643d2f1c068d23a67cdf3b1e80d6067b93e9f49',
+    report_sha256: 'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
   },
 } as const satisfies CurrentRunnerImageLock;
 const CANONICAL_RUNNER_IMAGE_LOCK_PATH = join(
@@ -767,7 +768,7 @@ function buildRunnerGaHandoffReport(
     schema_version: 'agentsmith.runner-ga-handoff-report/v1',
     scope: 'runner_ga_handoff_evidence',
     status: 'pass',
-    generated_at: GENERATED_AT,
+    generated_at: RUNNER_GA_HANDOFF_GENERATED_AT,
     runner: manifest.runner,
     release_id: manifest.release_id,
     git_sha: manifest.git_sha,

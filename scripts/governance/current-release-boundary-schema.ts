@@ -787,6 +787,8 @@ const RUNNER_IMAGE_REF_PATTERN =
   /^ghcr\.io\/agentsmith-project\/agentsmith-runner:([A-Za-z0-9_][A-Za-z0-9._-]{0,127})@sha256:([0-9a-f]{64})$/u;
 const RUNNER_CONTRACT_PACKAGE_URI_PATTERN =
   /^gh-artifact:\/\/agentsmith-project\/agentsmith\/runner-contract-artifact\/[1-9][0-9]*\/[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u;
+const RUNNER_RELEASE_MANIFEST_ARTIFACT_URI_PATTERN =
+  /^gh-artifact:\/\/agentsmith-project\/agentsmith-runner\/runner-release-manifest\/[1-9][0-9]*\/runner-release-manifest\.json$/u;
 const RUNNER_GA_HANDOFF_REPORT_URI_PATTERN =
   /^gh-artifact:\/\/agentsmith-project\/agentsmith-runner\/runner-ga-handoff\/[1-9][0-9]*\/runner-ga-handoff-report\.json$/u;
 const MODE_KEY_SET = new Set(CURRENT_DEPLOYMENT_MODE_MATRIX.map((entry) => modeKey(
@@ -3132,6 +3134,9 @@ function validateInventoryImageSourceProvenance(
       reason: 'source_provenance.artifact_sha256 must match image.digest.',
     });
   }
+  if (image.id === CURRENT_MANAGED_RUNNER_RELEASE_INVENTORY_IMAGE_ID) {
+    validateManagedRunnerSourceProvenance(value, path, runId, failures);
+  }
   if (hasOwn(value, 'runner_ga_handoff_uri')) {
     const handoffUri = validateRequiredString(
       value.runner_ga_handoff_uri,
@@ -3168,6 +3173,126 @@ function validateInventoryImageSourceProvenance(
       failures,
     );
   }
+}
+
+function validateManagedRunnerSourceProvenance(
+  value: Record<string, unknown>,
+  path: string,
+  runId: string | undefined,
+  failures: CurrentReleaseBoundaryValidationFailure[],
+): void {
+  const provenancePath = `${path}.source_provenance`;
+  const missingRunnerReleaseManifest = [
+    'runner_release_manifest_uri',
+    'runner_release_manifest_subject_sha256',
+    'runner_release_manifest_artifact_sha256',
+  ].some((field) => !hasOwn(value, field));
+  if (missingRunnerReleaseManifest) {
+    failures.push({
+      path: provenancePath,
+      reason: 'runner release manifest provenance is required for managed runner image adoption.',
+    });
+  }
+
+  const manifestUri = validateRequiredString(
+    value.runner_release_manifest_uri,
+    `${provenancePath}.runner_release_manifest_uri`,
+    failures,
+  );
+  validateRemoteCiArtifactUri(
+    manifestUri,
+    `${provenancePath}.runner_release_manifest_uri`,
+    failures,
+  );
+  if (manifestUri && !RUNNER_RELEASE_MANIFEST_ARTIFACT_URI_PATTERN.test(manifestUri)) {
+    failures.push({
+      path: `${provenancePath}.runner_release_manifest_uri`,
+      reason:
+        `${provenancePath}.runner_release_manifest_uri must be gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/<positive-run-id>/runner-release-manifest.json.`,
+    });
+  }
+  if (manifestUri && runId) {
+    const expectedManifestUri =
+      `gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/${runId}/runner-release-manifest.json`;
+    if (manifestUri !== expectedManifestUri) {
+      failures.push({
+        path: `${provenancePath}.runner_release_manifest_uri`,
+        reason: `${provenancePath}.runner_release_manifest_uri must equal ${expectedManifestUri}.`,
+      });
+    }
+  }
+
+  const manifestSubjectSha256 = validateDigest(
+    value.runner_release_manifest_subject_sha256,
+    `${provenancePath}.runner_release_manifest_subject_sha256`,
+    failures,
+  );
+  const manifestArtifactSha256 = validateDigest(
+    value.runner_release_manifest_artifact_sha256,
+    `${provenancePath}.runner_release_manifest_artifact_sha256`,
+    failures,
+  );
+  if (
+    manifestSubjectSha256
+    && manifestArtifactSha256
+    && manifestSubjectSha256 !== manifestArtifactSha256
+  ) {
+    failures.push({
+      path: `${provenancePath}.runner_release_manifest_artifact_sha256`,
+      reason: 'runner release manifest artifact sha256 must match runner release manifest subject sha256.',
+    });
+  }
+
+  const missingRunnerGaHandoff = [
+    'runner_ga_handoff_uri',
+    'runner_ga_handoff_manifest_input_sha256',
+    'runner_ga_handoff_report_sha256',
+  ].some((field) => !hasOwn(value, field));
+  if (missingRunnerGaHandoff) {
+    failures.push({
+      path: provenancePath,
+      reason: 'runner GA handoff provenance is required for managed runner image adoption.',
+    });
+  }
+
+  const handoffUri = validateRequiredString(
+    value.runner_ga_handoff_uri,
+    `${provenancePath}.runner_ga_handoff_uri`,
+    failures,
+  );
+  validateRemoteCiArtifactUri(
+    handoffUri,
+    `${provenancePath}.runner_ga_handoff_uri`,
+    failures,
+  );
+  if (handoffUri && !RUNNER_GA_HANDOFF_REPORT_URI_PATTERN.test(handoffUri)) {
+    failures.push({
+      path: `${provenancePath}.runner_ga_handoff_uri`,
+      reason:
+        `${provenancePath}.runner_ga_handoff_uri must be gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/<positive-run-id>/runner-ga-handoff-report.json.`,
+    });
+  }
+  if (handoffUri && runId) {
+    const expectedHandoffUri =
+      `gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/${runId}/runner-ga-handoff-report.json`;
+    if (handoffUri !== expectedHandoffUri) {
+      failures.push({
+        path: `${provenancePath}.runner_ga_handoff_uri`,
+        reason: `${provenancePath}.runner_ga_handoff_uri must equal ${expectedHandoffUri}.`,
+      });
+    }
+  }
+
+  validateDigest(
+    value.runner_ga_handoff_manifest_input_sha256,
+    `${provenancePath}.runner_ga_handoff_manifest_input_sha256`,
+    failures,
+  );
+  validateDigest(
+    value.runner_ga_handoff_report_sha256,
+    `${provenancePath}.runner_ga_handoff_report_sha256`,
+    failures,
+  );
 }
 
 function validateGitHubActionsRunAttemptUrl(

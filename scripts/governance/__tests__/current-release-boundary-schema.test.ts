@@ -956,6 +956,64 @@ describe('current release boundary schema', () => {
       validateAgentSmithReleaseContract(valueException),
       'deploy image inventory entry must match the declared image source',
     );
+
+    const missingRunnerReleaseManifestProvenance = cloneFixture('release-contract.valid.json');
+    const managedRunnerProvenance = (
+      (missingRunnerReleaseManifestProvenance.deploy_image_inventory as Array<Record<string, unknown>>).find(
+        (image) => image.id === 'managed_runner',
+      )!.source_provenance as Record<string, unknown>
+    );
+    delete managedRunnerProvenance.runner_release_manifest_uri;
+    delete managedRunnerProvenance.runner_release_manifest_subject_sha256;
+    delete managedRunnerProvenance.runner_release_manifest_artifact_sha256;
+    rehashReleaseContract(missingRunnerReleaseManifestProvenance);
+    expectInvalid(
+      validateAgentSmithReleaseContract(missingRunnerReleaseManifestProvenance),
+      'runner release manifest provenance is required for managed runner image adoption.',
+    );
+
+    const missingRunnerGaHandoffProvenance = cloneFixture('release-contract.valid.json');
+    const managedRunnerHandoffProvenance = (
+      (missingRunnerGaHandoffProvenance.deploy_image_inventory as Array<Record<string, unknown>>).find(
+        (image) => image.id === 'managed_runner',
+      )!.source_provenance as Record<string, unknown>
+    );
+    delete managedRunnerHandoffProvenance.runner_ga_handoff_uri;
+    delete managedRunnerHandoffProvenance.runner_ga_handoff_manifest_input_sha256;
+    delete managedRunnerHandoffProvenance.runner_ga_handoff_report_sha256;
+    rehashReleaseContract(missingRunnerGaHandoffProvenance);
+    expectInvalid(
+      validateAgentSmithReleaseContract(missingRunnerGaHandoffProvenance),
+      'runner GA handoff provenance is required for managed runner image adoption.',
+    );
+
+    const runnerReleaseManifestRunDrift = cloneFixture('release-contract.valid.json');
+    const runnerReleaseManifestRunDriftProvenance = (
+      (runnerReleaseManifestRunDrift.deploy_image_inventory as Array<Record<string, unknown>>).find(
+        (image) => image.id === 'managed_runner',
+      )!.source_provenance as Record<string, unknown>
+    );
+    runnerReleaseManifestRunDriftProvenance.runner_release_manifest_uri =
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/999/runner-release-manifest.json';
+    rehashReleaseContract(runnerReleaseManifestRunDrift);
+    expectInvalid(
+      validateAgentSmithReleaseContract(runnerReleaseManifestRunDrift),
+      'runner_release_manifest_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+    );
+
+    const runnerReleaseManifestDigestDrift = cloneFixture('release-contract.valid.json');
+    const runnerReleaseManifestDigestDriftProvenance = (
+      (runnerReleaseManifestDigestDrift.deploy_image_inventory as Array<Record<string, unknown>>).find(
+        (image) => image.id === 'managed_runner',
+      )!.source_provenance as Record<string, unknown>
+    );
+    runnerReleaseManifestDigestDriftProvenance.runner_release_manifest_artifact_sha256 =
+      `sha256:${'f'.repeat(64)}`;
+    rehashReleaseContract(runnerReleaseManifestDigestDrift);
+    expectInvalid(
+      validateAgentSmithReleaseContract(runnerReleaseManifestDigestDrift),
+      'runner release manifest artifact sha256 must match runner release manifest subject sha256.',
+    );
   });
 
   it('rejects deploy template required image ids that are missing, unsorted, duplicated, or outside inventory', () => {

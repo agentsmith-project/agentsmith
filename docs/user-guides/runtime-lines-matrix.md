@@ -17,16 +17,16 @@ Detailed commands live in:
 
 ## 持续生效的 runtime contract
 
-1. 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。
+1. 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 transition-only focused diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。
 2. Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。
 3. 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。
 
 ## Current vs P0 Handoff Boundary
 
-The Docker-only local-kind unified deploy diagnostic path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy diagnostic path is the current transition-only focused diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 
-AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA diagnostic entry names 写成正式部署模型。
+AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 transition-only diagnostic entry names 写成正式部署模型。
 
 ## 运行线矩阵
 

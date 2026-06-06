@@ -34,14 +34,14 @@ The kit_provided compatibility alias remains internal to transition-only diagnos
 
 ## Current vs P0 Handoff Boundary
 
-The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy path is the current transition-only focused diagnostic baseline, not a long-term deployment truth.
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 `;
 
 const cleanActiveDoc = `# Active Doc
 
-AgentSmith deploy exposes local-kind and existing-cluster as pre-GA/local diagnostic entry names.
+AgentSmith deploy exposes local-kind and existing-cluster as transition-only focused diagnostic entry names.
 Formal release language is online / airgap x use_existing / install_substrates.
 install_substrates requires release-kit namespace-scoped installer evidence plus explicit confirmation.
 The kit_provided compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
@@ -55,7 +55,7 @@ The kit_provided compatibility alias remains internal to transition-only diagnos
 
 ## Current vs P0 Handoff Boundary
 
-The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy path is the current transition-only focused diagnostic baseline, not a long-term deployment truth.
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 It does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.
 `;
@@ -405,7 +405,7 @@ install_substrates 当前只允许通过 operator-inputs、namespace-scoped inst
   it('allows current existing-cluster diagnostic entry wording', () => {
     const root = writeFixtureRoot({
       activeDocOverrides: {
-        'scripts/contracts/check-current-runtime-lines.ts': 'current deploy runtime truth must expose exactly local-kind and existing-cluster pre-GA/local diagnostic entry names',
+        'scripts/contracts/check-current-runtime-lines.ts': 'current deploy runtime truth must expose exactly local-kind and existing-cluster transition-only focused diagnostic entry names',
       },
     });
 
@@ -649,7 +649,7 @@ release-kit focused evidence does not become AgentSmith release readiness.
       activeDocOverrides: {
         'docs/user-guides/runtime-lines-matrix.md': `# Active Doc
 
-The Docker-only local-kind unified deploy path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy path is the current transition-only focused diagnostic baseline, not a long-term deployment truth.
 
 \`external_declared\` in P0 is schema, fixture, validator, and evidence boundary only.
 

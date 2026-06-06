@@ -43,7 +43,7 @@ function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
   const summaries: Record<string, string> = {
     'local-real-human-entry': '- `local-real` 是开发机上的正式人类入口；`local-manual` 只保留为底层 maintainer adapter。',
     'serial-local-runtime-switching': '- `local-real` 与 unified deploy substrate 共享默认本地 substrate 端口，在同一开发机上必须串行切换。',
-    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 pre-GA/local diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
+    'one-agentsmith-deploy': '- 只有一个 AgentSmith deploy 模型；当前 GA operator-facing release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`。`local-kind` 与 `existing-cluster` 是 transition-only focused diagnostic entry names，不是 release targets、不是两套产品，也不是 `product:ready` 的部署结论。`install_substrates` 需要 release-kit namespace-scoped installer evidence 和显式确认。兼容 alias `kit_provided` 只保留在 transition-only diagnostics 内部，不是 GA operator `deployment_path`。',
     'docker-substrate-k8s-app-boundary': '- Substrates 保持在 app namespace 外部，由 Docker 或运维提供的服务承载；AgentSmith app 工作负载运行在 Kubernetes。',
     'api-single-replica-current': '- 当前里程碑 `api replicas=1`，直到引入明确的多副本 execution routing 设计。',
   };
@@ -160,7 +160,7 @@ function renderLocalRuntimeFlowsBlock(): string {
     '',
     '## 一句话基线',
     '',
-    '`local-real` 用来开发和手测；unified deploy 只作为 pre-GA/local deploy diagnostic / wiring rehearsal，用来检查部署 wiring 与证据路径，不给 deployment/package/operator verdict，也不属于 AgentSmith release readiness。两者在一台开发机上串行切换。',
+    '`local-real` 用来开发和手测；unified deploy 只作为 transition-only focused deploy diagnostic / wiring rehearsal，用来检查部署 wiring 与证据路径，不给 deployment/package/operator verdict，也不属于 AgentSmith release readiness。两者在一台开发机上串行切换。',
     '',
     '## 当前操作基线',
     '',
@@ -193,7 +193,7 @@ function renderLocalRuntimeFlowsBlock(): string {
     'npm run test:unified-deploy:product-flows',
     '```',
     '',
-    '统一部署证据统一写到 `artifacts/unified-deploy/`；这些证据只服务 pre-GA/local deploy diagnostic / wiring rehearsal，不给 deployment/package/operator verdict。',
+    '统一部署证据统一写到 `artifacts/unified-deploy/`；这些证据只服务 transition-only focused deploy diagnostic / wiring rehearsal，不给 deployment/package/operator verdict。',
   ].join('\n');
 }
 
@@ -218,7 +218,7 @@ function renderRuntimeLinesMatrixBlock(): string {
     CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.currentMainline,
     CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY.externalDeclared,
     '',
-    'AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 pre-GA diagnostic entry names 写成正式部署模型。',
+    'AgentSmith deploy 只有一套 formal release vocabulary；运行线矩阵不再把 transition-only diagnostic entry names 写成正式部署模型。',
     '',
     '## 运行线矩阵',
     '',

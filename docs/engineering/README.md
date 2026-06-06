@@ -8,14 +8,14 @@ This directory holds engineering-side guidance that supports implementation and 
 
 This index is not a deployment truth source; canonical deploy details stay in
 the unified deploy contract and release-kit final GA gate. Current Docker-only
-/ local-kind unified deploy is only a pre-GA focused diagnostic baseline, not
+/ local-kind unified deploy is only a transition-only focused diagnostic baseline, not
 long-term deployment truth. AgentSmith does not give a deployment, package, or
 operator release verdict. The release-kit repo owns the final GA verdict through
 its own final GA gate and evidence over online/airgap deployment inputs;
 kind/local-kind remains local diagnostic support only.
 
 Current vs P0 handoff boundary: the Docker-only/local-kind unified deploy path
-is the current pre-GA focused diagnostic baseline, not a long-term deployment
+is the current transition-only focused diagnostic baseline, not a long-term deployment
 truth. `external_declared` in P0 is schema, fixture, validator, and evidence
 boundary only. It does not mean P2/P3 completed real Kubernetes, cloud, or
 airgap handoff support.

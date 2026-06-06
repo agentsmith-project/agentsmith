@@ -81,7 +81,7 @@ const currentRuntimeLineWordingFiles = [
 const forbiddenCurrentRuntimeLineWording = [
   {
     snippet: 'unified deploy 用来证明部署',
-    message: 'unified deploy must be described as a pre-GA/local deploy diagnostic or wiring rehearsal, not deployment proof',
+    message: 'unified deploy must be described as a transition-only focused deploy diagnostic or wiring rehearsal, not deployment proof',
   },
   {
     snippet: 'Unified deploy is the supported deployment runtime.',
@@ -210,7 +210,7 @@ if (localLine?.surface !== 'local-flow' || !/local-real/.test(localLine.external
 
 const deployLines = CURRENT_RUNTIME_LINE_MANIFEST.filter((line) => line.surface === 'deploy-profile');
 if (deployLines.length !== 2) {
-  failures.push('current deploy runtime truth must expose exactly local-kind and existing-cluster pre-GA/local diagnostic entry names');
+  failures.push('current deploy runtime truth must expose exactly local-kind and existing-cluster transition-only focused diagnostic entry names');
 }
 for (const deployLine of deployLines) {
   if (deployLine.guidePath !== 'docs/user-guides/unified-deploy-operations.md') {
@@ -274,8 +274,12 @@ if (!/serially|串行/.test(localRuntimeFlows) || !/serially|串行/.test(runtim
 if (!/api replicas?=1|api replicas stay at 1|api replicas fixed at 1/i.test(unifiedDeployOperations + runtimeLinesMatrix)) {
   failures.push('runtime-line docs must state the current api replicas=1 deployment constraint');
 }
-if (!/not separate products|不是两套产品|not two products/i.test(runtimeLinesMatrix + unifiedDeployOperations)) {
-  failures.push('runtime-line docs must state that local-kind/existing-cluster are pre-GA/local diagnostic entry names, not separate products');
+if (
+  !/transition-only focused diagnostic entry names|transition-only diagnostic entry names|过渡期专项诊断/i
+    .test(runtimeLinesMatrix + unifiedDeployOperations)
+  || !/not separate products|不是两套产品|not two products/i.test(runtimeLinesMatrix + unifiedDeployOperations)
+) {
+  failures.push('runtime-line docs must state that local-kind/existing-cluster are transition-only diagnostic entry names, not separate products');
 }
 
 if (failures.length > 0) {

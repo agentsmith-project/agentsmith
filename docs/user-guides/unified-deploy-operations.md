@@ -2,7 +2,7 @@
 
 Status: `current`
 
-This guide is the current pre-GA AgentSmith focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run product:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. `npm run release:ready` / `npm run release:status` remain deprecated transition aliases only; they do not give deployment, package, or operator verdicts. Unified deploy, local-kind, and existing-cluster commands are focused diagnostics. Product-flow has two surfaces: `npm run test:unified-deploy:product-flows` is a focused aggregate diagnostic, while `npm run lane:unified-deploy:product-flows` is the AgentSmith-owned canonical post-deploy product smoke report producer for release-kit `--ga-release` input. The lane writes one report per deployed target/run; release-kit final GA requires at least one online report and one airgap report. Neither surface is part of default `product:ready` / release-full. Release-kit owns the final GA verdict through repo-local gate/evidence over deployment/package/operator inputs. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
+This guide is the current AgentSmith transition-only focused deploy diagnostics / 过渡期专项诊断 entrypoint. `npm run product:ready` is the AgentSmith product readiness / local complete / current product gate: product evidence, full visual, backend-real release, and terminal aggregate evidence. It is not a future deployment, package, or operator release verdict. `npm run release:ready` / `npm run release:status` remain deprecated transition aliases only; they do not give deployment, package, or operator verdicts. Unified deploy, local-kind, and existing-cluster commands are focused diagnostics. Product-flow has two surfaces: `npm run test:unified-deploy:product-flows` is a focused aggregate diagnostic, while `npm run lane:unified-deploy:product-flows` is the AgentSmith-owned canonical post-deploy product smoke report producer for release-kit `--ga-release` input. The lane writes one report per deployed target/run; release-kit final GA requires at least one online report and one airgap report. Neither surface is part of default `product:ready` / release-full. Release-kit owns the final GA verdict through repo-local gate/evidence over deployment/package/operator inputs. AgentSmith retains product readiness, images/release contract, local full test, and thin adapter.
 
 The formal release model is not the command names in this guide. Release-kit
 operator-facing language is `online` / `airgap` × `use_existing` /
@@ -12,7 +12,7 @@ namespace-scoped installer evidence plus explicit confirmation. Legacy
 `kit_provided` is only an internal compatibility alias for focused diagnostics
 and not a GA operator `deployment_path`.
 
-This guide still exposes two pre-GA diagnostic entry names:
+This guide still exposes two transition-only diagnostic entry names:
 
 - `local-kind`: local diagnostic rehearsal on a developer machine, with Docker
   substrate services and a local kind app cluster.
@@ -25,12 +25,12 @@ transition alias for product readiness.
 
 ## Current vs P0 Handoff Boundary
 
-The Docker-only local-kind unified deploy path is the current pre-GA diagnostic baseline, not a long-term deployment truth.
+The Docker-only local-kind unified deploy path is the current transition-only diagnostic baseline, not a long-term deployment truth.
 `external_declared` in P0 is schema, fixture, validator, and evidence boundary
 only. It does not mean P2/P3 completed real Kubernetes, cloud, or airgap
 handoff support.
 
-For this guide, `existing-cluster` smoke proves pre-GA diagnostic deployment
+For this guide, `existing-cluster` smoke proves transition-only diagnostic deployment
 wiring, routing smoke, and handoff evidence for an operator-owned cluster. It is
 not part of the AgentSmith product gate. Product flows still come from
 AgentSmith focused evidence, and release-kit repo checks require the explicit
@@ -154,7 +154,7 @@ This lane first runs the focused aggregate diagnostic, then binds the result to 
 
 ### Existing Cluster Smoke
 
-`existing-cluster` smoke proves the current pre-GA diagnostic app deploy wiring, rollout, and routing smoke for the real-cluster diagnostic entry. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith product gate.
+`existing-cluster` smoke proves the current transition-only diagnostic app deploy wiring, rollout, and routing smoke for the real-cluster diagnostic entry. It is transition-only focused diagnostic evidence / 过渡期专项诊断 only: online/airgap deploy execution and operator runbooks belong to release-kit, and this smoke is not part of the AgentSmith product gate.
 
 ```bash
 npm run test:unified-deploy:existing-cluster-smoke -- \

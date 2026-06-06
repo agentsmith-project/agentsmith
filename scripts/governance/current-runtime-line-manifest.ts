@@ -65,7 +65,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   },
   {
     id: 'one-agentsmith-deploy',
-    summary: 'There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. The `kit_provided` compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.',
+    summary: 'There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are transition-only focused diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. The `kit_provided` compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.',
     binding: 'contract',
   },
   {
@@ -81,7 +81,7 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
 ] as const;
 
 export const CURRENT_RUNTIME_P0_HANDOFF_BOUNDARY = {
-  currentMainline: 'The Docker-only local-kind unified deploy diagnostic path is the current pre-GA focused diagnostic baseline, not a long-term deployment truth.',
+  currentMainline: 'The Docker-only local-kind unified deploy diagnostic path is the current transition-only focused diagnostic baseline, not a long-term deployment truth.',
   externalDeclared: '`external_declared` in P0 is schema, fixture, validator, and evidence boundary only; it does not mean P2/P3 completed real Kubernetes, cloud, or airgap handoff support.',
 } as const;
 

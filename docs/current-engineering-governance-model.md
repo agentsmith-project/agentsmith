@@ -82,7 +82,7 @@ Current local operational baseline:
 - local-real and unified deploy substrate share default local substrate ports, so run them serially on one development host.
 
 Still-binding runtime contracts:
-- There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are pre-GA/local diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. The `kit_provided` compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
+- There is one AgentSmith deploy model; current GA operator-facing release paths are `online` / `airgap` × `use_existing` / `install_substrates`. `local-kind` and `existing-cluster` are transition-only focused diagnostic entry names, not release targets, not separate products, and outside `product:ready` product readiness / handoff scope. `install_substrates` requires release-kit namespace-scoped installer evidence plus explicit confirmation. The `kit_provided` compatibility alias remains internal to transition-only diagnostics and is not a GA operator deployment_path.
 - Substrates stay outside the app namespace as Docker or operator-provided services; AgentSmith app workloads run in Kubernetes.
 - api replicas stay at 1 until a dedicated multi-replica execution routing design is introduced.
 

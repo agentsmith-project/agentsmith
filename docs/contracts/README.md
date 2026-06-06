@@ -9,8 +9,8 @@ contract 导航；部署真相以当前 deploy contract 为准。
 
 ## Current vs P0 Handoff Boundary
 
-Current Docker-only local-kind unified deploy remains the current pre-GA
-focused diagnostic baseline, not formal release target vocabulary and not
+Current Docker-only local-kind unified deploy remains the current
+transition-only focused diagnostic baseline, not formal release target vocabulary and not
 long-term deployment truth. `external_declared` in P0 is schema, fixture,
 validator, and evidence boundary only. It does not mean P2/P3 completed real
 Kubernetes, cloud, or airgap handoff support.
@@ -38,7 +38,7 @@ Kubernetes, cloud, or airgap handoff support.
 release 路径是 `online` / `airgap` × `use_existing` / `install_substrates`；
 内部机器轴是
 `target_cluster` / `substrate_source` / `distribution`。`local-kind` /
-`existing-cluster` 只能作为 pre-GA/local diagnostic entry names，不是 release
+`existing-cluster` 只能作为 transition-only focused diagnostic entry names，不是 release
 target。合同同时记录 Docker-only diagnostic substrate、Keycloak substrate、
 app-managed K8s `llmup`、`api replicas=1`、`/api/v1 -> api`、`/api/public`
 和 `/api/system -> web`，without execution-gateway or Kubernetes substrate。

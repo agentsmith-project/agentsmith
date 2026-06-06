@@ -24,6 +24,17 @@ describe('GA user guide cut', () => {
     expect(guide).not.toMatch(/GA operator-facing release paths[\s\S]{0,160}`kit_provided`/i);
   });
 
+  it('keeps local deploy diagnostics out of pre-GA phase wording', () => {
+    const docs = [
+      'docs/user-guides/local-runtime-flows.md',
+      'docs/user-guides/runtime-lines-matrix.md',
+      'docs/user-guides/unified-deploy-operations.md',
+    ].map((path) => `${path}\n${read(path)}`).join('\n');
+
+    expect(docs).toContain('transition-only focused diagnostic');
+    expect(docs).not.toMatch(/pre-GA\/local deploy diagnostic|pre-GA\/local diagnostic entry|current pre-GA diagnostic|current pre-GA focused diagnostic|pre-GA diagnostic baseline/i);
+  });
+
   it('removes MVP and pre-GA baseline wording from GA-scoped user guides', () => {
     const docs = [
       'docs/user-guides/identity-and-permission-model.md',

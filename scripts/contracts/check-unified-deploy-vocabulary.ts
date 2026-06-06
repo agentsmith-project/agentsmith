@@ -635,7 +635,7 @@ function validateP0HandoffBoundary(
     addFailure(
       failures,
       path,
-      `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy is a pre-GA focused diagnostic baseline, not a long-term deployment truth; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
+      `${path} must state the P0/vNext handoff boundary: current Docker-only/local-kind unified deploy is a transition-only focused diagnostic baseline, not a long-term deployment truth; external_declared is P0 schema/fixture/validator/evidence boundary only; P2/P3 real Kubernetes/cloud/airgap handoff is not complete.`,
     );
   }
 }

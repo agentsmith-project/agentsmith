@@ -1,4 +1,5 @@
 import {
+  currentObservationWaitSchedule,
   findCurrentVerificationCampaignById,
 } from './current-verification-campaign-manifest';
 import {
@@ -67,6 +68,8 @@ function main(): void {
                 theme: step.observationPolicy.theme,
                 backoff: step.observationPolicy.backoff,
                 interval_ms: step.observationPolicy.intervalMs,
+                next_wait_after_consecutive_non_terminal_ms:
+                  currentObservationWaitSchedule(step.observationPolicy),
                 evidence_focus: step.observationPolicy.evidenceFocus,
                 state_convergence: step.observationPolicy.stateConvergence,
               },

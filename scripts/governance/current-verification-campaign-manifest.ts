@@ -255,6 +255,40 @@ export function listCurrentVerificationCampaigns(): readonly CurrentVerification
   return CURRENT_VERIFICATION_CAMPAIGN_MANIFEST;
 }
 
+export function currentObservationWaitMsForConsecutiveNonTerminal(
+  policy: CurrentVerificationCampaignObservationPolicy,
+  consecutiveNonTerminalCount: number,
+): number {
+  if (!Number.isSafeInteger(consecutiveNonTerminalCount) || consecutiveNonTerminalCount < 1) {
+    throw new Error('consecutive non-terminal count must be a positive safe integer');
+  }
+  if (policy.intervalMs.length === 0) {
+    throw new Error(`observation policy ${policy.theme} must define at least one interval`);
+  }
+
+  const index = Math.min(consecutiveNonTerminalCount - 1, policy.intervalMs.length - 1);
+  const waitMs = policy.intervalMs[index];
+  if (!Number.isSafeInteger(waitMs) || waitMs <= 0) {
+    throw new Error(
+      `observation policy ${policy.theme} has an invalid interval at index ${String(index)}`,
+    );
+  }
+  return waitMs;
+}
+
+export function currentObservationWaitSchedule(
+  policy: CurrentVerificationCampaignObservationPolicy,
+  sampleCount = policy.intervalMs.length + 1,
+): readonly number[] {
+  if (!Number.isSafeInteger(sampleCount) || sampleCount < 1) {
+    throw new Error('observation wait schedule sample count must be a positive safe integer');
+  }
+
+  return Array.from({ length: sampleCount }, (_, index) =>
+    currentObservationWaitMsForConsecutiveNonTerminal(policy, index + 1),
+  );
+}
+
 export function findCurrentVerificationCampaignById(
   id: string,
 ): CurrentVerificationCampaignDefinition | undefined {

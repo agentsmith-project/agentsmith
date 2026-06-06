@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { findCurrentGateDefinitionById } from '../current-gate-manifest';
 import {
   CURRENT_VERIFICATION_CAMPAIGN_MANIFEST,
+  currentObservationWaitMsForConsecutiveNonTerminal,
+  currentObservationWaitSchedule,
   findCurrentVerificationCampaignById,
 } from '../current-verification-campaign-manifest';
 
@@ -140,6 +142,35 @@ describe('current verification campaign manifest', () => {
         }),
       ]),
     );
+  });
+
+  it('maps consecutive non-terminal runtime observations to a bounded increasing wait schedule', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+    const policy = releaseFull.steps.find((step) => step.id === 'gate-release')?.observationPolicy;
+    if (!policy) {
+      throw new Error('Missing gate-release observation policy.');
+    }
+
+    expect(currentObservationWaitSchedule(policy)).toEqual([
+      60_000,
+      90_000,
+      120_000,
+      180_000,
+      300_000,
+      300_000,
+    ]);
+    expect(currentObservationWaitMsForConsecutiveNonTerminal(policy, 1)).toBe(60_000);
+    expect(currentObservationWaitMsForConsecutiveNonTerminal(policy, 3)).toBe(120_000);
+    expect(currentObservationWaitMsForConsecutiveNonTerminal(policy, 7)).toBe(300_000);
+    expect(currentObservationWaitSchedule(policy, 4)).not.toEqual([
+      60_000,
+      60_000,
+      60_000,
+      60_000,
+    ]);
   });
 
   it('separates executable evidence owners from the aggregate-only readiness check', () => {

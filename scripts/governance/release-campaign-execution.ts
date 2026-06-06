@@ -4,9 +4,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
-import type {
-  CurrentVerificationCampaignDefinition,
-  CurrentVerificationCampaignStep,
+import {
+  currentObservationWaitSchedule,
+  type CurrentVerificationCampaignDefinition,
+  type CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
 import {
   listCurrentResourceLocks,
@@ -452,6 +453,7 @@ function observationPolicyDiagnostics(step: CurrentVerificationCampaignStep): re
     `observation_policy=${policy.theme}`,
     `backoff=${policy.backoff}`,
     `interval_ms=${policy.intervalMs.join(',')}`,
+    `next_wait_after_consecutive_non_terminal_ms=${currentObservationWaitSchedule(policy).join(',')}`,
     `evidence_focus=${policy.evidenceFocus.join(' | ')}`,
     `convergence_scopes=${Object.keys(policy.stateConvergence).sort().join(',')}`,
   ];

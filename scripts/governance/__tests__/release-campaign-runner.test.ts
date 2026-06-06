@@ -110,6 +110,7 @@ describe('release campaign runner lifecycle contract', () => {
           theme: string;
           backoff: string;
           interval_ms: number[];
+          next_wait_after_consecutive_non_terminal_ms: number[];
           evidence_focus: string[];
           state_convergence?: Record<string, Record<string, string>>;
         };
@@ -121,6 +122,7 @@ describe('release campaign runner lifecycle contract', () => {
       theme: 'runtime_pending_readiness',
       backoff: 'increasing_after_consecutive_non_terminal',
       interval_ms: [60_000, 90_000, 120_000, 180_000, 300_000],
+      next_wait_after_consecutive_non_terminal_ms: [60_000, 90_000, 120_000, 180_000, 300_000, 300_000],
     });
     expect(gateRelease?.observation_policy?.evidence_focus).toContain(
       'Files restore continuation focused backend-real gate',
@@ -907,6 +909,7 @@ exit 0
       expect(gateReleaseResult.summary).toContain('observation_policy=runtime_pending_readiness');
       expect(gateReleaseResult.summary).toContain('backoff=increasing_after_consecutive_non_terminal');
       expect(gateReleaseResult.summary).toContain('interval_ms=60000,90000,120000,180000,300000');
+      expect(gateReleaseResult.summary).toContain('next_wait_after_consecutive_non_terminal_ms=60000,90000,120000,180000,300000,300000');
       expect(gateReleaseResult.summary).toContain('Files restore continuation focused backend-real gate');
       expect(gateReleaseResult.summary).toContain('convergence_scopes=afscp_workspace_binding,agent_task_sandbox,files,read_export');
     } finally {

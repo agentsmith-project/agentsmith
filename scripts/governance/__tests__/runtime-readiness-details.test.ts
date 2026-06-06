@@ -8,6 +8,17 @@ import {
 } from '../runtime-readiness-details.mjs';
 
 describe('runtime readiness details evidence', () => {
+  it('keeps runtime readiness observation intervals increasing after consecutive waits', () => {
+    const intervals = RUNTIME_READINESS_POLICY.interval_ms;
+
+    expect(RUNTIME_READINESS_POLICY.backoff).toBe('increasing_after_consecutive_non_terminal');
+    expect(intervals.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(intervals).size).toBe(intervals.length);
+    for (let index = 1; index < intervals.length; index += 1) {
+      expect(intervals[index]).toBeGreaterThan(intervals[index - 1]);
+    }
+  });
+
   it('records API, pod manager, and ASBCP call summaries for sandbox unavailable failures', () => {
     const diagnostic = {
       diagnostic: {

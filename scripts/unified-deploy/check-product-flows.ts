@@ -373,6 +373,7 @@ function sourceForEvidence(truth: ProductFlowRuntimeTruth): ProductFlowEvidence[
   return {
     public_base_url: truth.publicBaseUrl,
     api_base_url: truth.apiBaseUrl,
+    ...(truth.runnerPublicApiBaseUrl ? { runner_public_api_base_url: truth.runnerPublicApiBaseUrl } : {}),
     site_env_path: truth.siteEnvPath,
     substrate_truth_path: truth.substrateTruthPath,
     ...(truth.provider.baseUrl ? { provider_base_url: truth.provider.baseUrl } : {}),

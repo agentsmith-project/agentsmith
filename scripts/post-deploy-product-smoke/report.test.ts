@@ -384,6 +384,62 @@ describe('post-deploy product smoke report producer', () => {
     expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
   });
 
+  it.each([
+    [
+      'public base URL',
+      'public_base_url',
+      'https://wrong.example.com',
+      /deployment_target\.public_base_url must match PUBLIC_BASE_URL/u,
+    ],
+    [
+      'API base URL',
+      'api_base_url',
+      'https://wrong.example.com/api/v1',
+      /deployment_target\.api_base_url must match PUBLIC_API_BASE_URL/u,
+    ],
+    [
+      'runner public API URL',
+      'runner_public_api_base_url',
+      'wss://wrong.example.com/api/v1',
+      /deployment_target\.runner_public_api_base_url must match RUNNER_PUBLIC_API_BASE_URL/u,
+    ],
+  ] as const)('fails when aggregate %s drifts from site env', async (_label, field, value, expectedError) => {
+    const root = tempDir('post-deploy-product-smoke-target-drift-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const aggregate = aggregateWithFlows();
+    (aggregate.source as Record<string, unknown>)[field] = value;
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregate);
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: root,
+    }))).rejects.toThrow(expectedError);
+    expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
+  });
+
+  it('binds runner public API URL from site env when the aggregate omits the optional source field', async () => {
+    const root = tempDir('post-deploy-product-smoke-runner-url-fallback-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const aggregate = aggregateWithFlows();
+    delete (aggregate.source as Record<string, unknown>).runner_public_api_base_url;
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregate);
+
+    const result = await runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: root,
+      now: () => new Date('2026-05-08T00:00:00.000Z'),
+    }));
+
+    expect(result.report.deployment_target.runner_public_api_base_url)
+      .toBe('ws://agentsmith.localtest.me:29180/api/v1');
+  });
+
   it('fails fast when pathRoot serialization would point outside the campaign root', async () => {
     const productFlowsRoot = tempDir('post-deploy-product-smoke-outside-product-root-');
     const outsideProductFlowsRoot = tempDir('post-deploy-product-smoke-outside-product-source-');

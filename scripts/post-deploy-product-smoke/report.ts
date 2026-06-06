@@ -632,6 +632,31 @@ function parseEnvValue(source: string, key: string): string {
   return '';
 }
 
+function normalizeUrlBinding(value: string): string {
+  return value.trim().replace(/\/+$/u, '');
+}
+
+function requireSiteEnvValue(source: string, key: string, label: string): string {
+  const value = parseEnvValue(source, key);
+  if (!value) {
+    throw new Error(`${label} must be backed by ${key} from deployment_target.site_env.path.`);
+  }
+  return value;
+}
+
+function assertSiteEnvUrlMatchesSource(input: {
+  label: string;
+  sourceValue: string;
+  envKey: string;
+  envValue: string;
+}): void {
+  if (normalizeUrlBinding(input.sourceValue) !== normalizeUrlBinding(input.envValue)) {
+    throw new Error(
+      `${input.label} must match ${input.envKey} from deployment_target.site_env.path.`,
+    );
+  }
+}
+
 function buildDeploymentTargetBinding(
   aggregate: Record<string, unknown>,
   siteEnv: SourceFileBinding,
@@ -642,6 +667,13 @@ function buildDeploymentTargetBinding(
   const publicBaseUrl = stringValue(source, 'public_base_url');
   const apiBaseUrl = stringValue(source, 'api_base_url');
   const runnerPublicApiBaseUrl = stringValue(source, 'runner_public_api_base_url');
+  const siteEnvPublicBaseUrl = requireSiteEnvValue(
+    siteEnv.source,
+    'PUBLIC_BASE_URL',
+    'deployment_target.public_base_url',
+  );
+  const siteEnvApiBaseUrl = parseEnvValue(siteEnv.source, 'PUBLIC_API_BASE_URL');
+  const siteEnvRunnerPublicApiBaseUrl = parseEnvValue(siteEnv.source, 'RUNNER_PUBLIC_API_BASE_URL');
   if (!profile) {
     throw new Error('deployment_target.profile is required from deployment_target.site_env.path.');
   }
@@ -651,11 +683,36 @@ function buildDeploymentTargetBinding(
   if (!apiBaseUrl) {
     throw new Error('deployment_target.api_base_url is required.');
   }
+  assertSiteEnvUrlMatchesSource({
+    label: 'deployment_target.public_base_url',
+    sourceValue: publicBaseUrl,
+    envKey: 'PUBLIC_BASE_URL',
+    envValue: siteEnvPublicBaseUrl,
+  });
+  if (siteEnvApiBaseUrl) {
+    assertSiteEnvUrlMatchesSource({
+      label: 'deployment_target.api_base_url',
+      sourceValue: apiBaseUrl,
+      envKey: 'PUBLIC_API_BASE_URL',
+      envValue: siteEnvApiBaseUrl,
+    });
+  }
+  if (runnerPublicApiBaseUrl && siteEnvRunnerPublicApiBaseUrl) {
+    assertSiteEnvUrlMatchesSource({
+      label: 'deployment_target.runner_public_api_base_url',
+      sourceValue: runnerPublicApiBaseUrl,
+      envKey: 'RUNNER_PUBLIC_API_BASE_URL',
+      envValue: siteEnvRunnerPublicApiBaseUrl,
+    });
+  }
+  const boundRunnerPublicApiBaseUrl = runnerPublicApiBaseUrl || siteEnvRunnerPublicApiBaseUrl;
   return {
     profile,
     public_base_url: publicBaseUrl,
     api_base_url: apiBaseUrl,
-    ...(runnerPublicApiBaseUrl ? { runner_public_api_base_url: runnerPublicApiBaseUrl } : {}),
+    ...(boundRunnerPublicApiBaseUrl
+      ? { runner_public_api_base_url: normalizeUrlBinding(boundRunnerPublicApiBaseUrl) }
+      : {}),
     site_env: { path: siteEnv.path, sha256: siteEnv.sha256 },
     substrate_truth: { path: substrateTruth.path, sha256: substrateTruth.sha256 },
   };

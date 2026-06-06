@@ -572,6 +572,13 @@ describe('unified deploy product flow producer', () => {
         status: 'failed',
       }),
     ]));
+    const aggregate = evidencePayloads.find((payload) =>
+      payload.schema_version === 'agentsmith.unified-deploy.product-flows.aggregate/v1');
+    expect(aggregate?.source).toMatchObject({
+      public_base_url: 'http://agentsmith.localtest.me:29180',
+      api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
+      runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
+    });
   });
 
   it('reads env files as UTF-8 through the default fs adapter', async () => {

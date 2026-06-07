@@ -51,7 +51,7 @@ const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universa
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
-const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const AFSCP_COMMIT_SHA = '31da1e82a3e6e4593811d96502d9d57530f57664';
 const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
@@ -355,7 +355,7 @@ function buildReleaseContractAssemblyInput(
       },
       {
         id: 'afscp',
-        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.7@sha256:${'5'.repeat(64)}`,
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.8@sha256:${'5'.repeat(64)}`,
         digest: `sha256:${'5'.repeat(64)}`,
       },
       {
@@ -417,7 +417,7 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       commit_sha: AFSCP_COMMIT_SHA,
-      tag: 'v1.0.7',
+      tag: 'v1.0.8',
       run_id: '40001',
       run_attempt: '1',
       run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/40001/attempts/1',

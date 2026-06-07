@@ -162,7 +162,7 @@ if (!existsSync(path.join(rootDir, afscpRuntimeHelperPath))) {
   if (!afscpRuntimeHelper.includes('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"')) {
     failures.push('backend-real AFSCP startup must default to the pinned image runtime, not sibling source');
   }
-  if (!afscpRuntimeHelper.includes('agentsmith-fs-control-plane:v1.0.7@sha256:876af31e5b8d02d4d795d28bd330c52c4b7580a4e177fa18f446b1ed51b148f2')) {
+  if (!afscpRuntimeHelper.includes('agentsmith-fs-control-plane:v1.0.8@sha256:a059b2e4e2549a1ea4efdeda5bc5e0f606750065ad9b7fd86abf581a2d274511')) {
     failures.push('backend-real AFSCP startup must pin the current released AFSCP image digest');
   }
 }

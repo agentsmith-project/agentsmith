@@ -63,9 +63,9 @@ const LLMUP_SOURCE_RUN_ATTEMPT = '1';
 const LLMUP_SOURCE_SUBJECT_NAME = 'llm-universal-proxy-image';
 const LLMUP_RELEASE_URL =
   `https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/${LLMUP_VERSION}`;
-const AFSCP_VERSION = 'v1.0.7';
+const AFSCP_VERSION = 'v1.0.8';
 const AFSCP_DIGEST = `sha256:${'5'.repeat(64)}`;
-const AFSCP_COMMIT_SHA = '0fec35424500b6b5d9075edafb997778f1803e19';
+const AFSCP_COMMIT_SHA = '31da1e82a3e6e4593811d96502d9d57530f57664';
 const AFSCP_SOURCE_RUN_ID = '40001';
 const AFSCP_SOURCE_RUN_ATTEMPT = '1';
 const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';

@@ -353,9 +353,9 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(result.evidence.images.managed_runner.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-managed-runner:test-tag');
     expect(result.evidence.images.managed_runner.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
     expect(result.evidence.images.managed_runner.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-managed-runner@${MANAGED_RUNNER_DIGEST}`);
-    expect(result.evidence.images.afscp.source_ref).toContain('ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:');
-    expect(result.evidence.images.afscp.host_ref).toBe('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.7');
-    expect(result.evidence.images.afscp.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-fs-control-plane:v1.0.7');
+    expect(result.evidence.images.afscp.source_ref).toContain('ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.8@sha256:');
+    expect(result.evidence.images.afscp.host_ref).toBe('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.8');
+    expect(result.evidence.images.afscp.k8s_tag_ref).toBe('kind-registry:5000/mbos/agentsmith-fs-control-plane:v1.0.8');
     expect(result.evidence.images.afscp.host_digest_ref).toBe(`localhost:5001/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(result.evidence.images.afscp.k8s_ref).toBe(`kind-registry:5000/mbos/agentsmith-fs-control-plane@${AFSCP_DIGEST}`);
     expect(result.evidence.images.llmup.source_ref).toContain('@sha256:');
@@ -461,9 +461,9 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:');
     expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v0.1.0@sha256:');
     expect(commandText).toContain('localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
-    expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:');
-    expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.7@sha256:');
-    expect(commandText).toContain('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.7');
+    expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.8@sha256:');
+    expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.8@sha256:');
+    expect(commandText).toContain('localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.8');
     expect(commandText).toContain('docker image inspect ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:');
     expect(commandText).toContain('docker tag ghcr.io/agentsmith-project/llm-universal-proxy:v0.2.44@sha256:');
     expect(commandText).toContain('localhost:5001/mbos/llm-universal-proxy:v0.2.44');
@@ -476,7 +476,7 @@ asbcp_commit_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-app:order-tag');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-sandbox-control-plane:v0.1.0');
     expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-managed-runner:order-tag');
-    expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.7');
+    expect(commandText).toContain('docker push localhost:5001/mbos/agentsmith-fs-control-plane:v1.0.8');
     expect(commandText).toContain('docker push localhost:5001/mbos/llm-universal-proxy:v0.2.44');
     expect(commandText).toContain('docker push localhost:5001/mbos/ingress-nginx-controller:v1.15.1');
     expect(commandText).toContain('docker push localhost:5001/mbos/ingress-nginx-kube-webhook-certgen:v1.6.9');

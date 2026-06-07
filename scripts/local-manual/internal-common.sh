@@ -2599,11 +2599,15 @@ afscp_docker_bind_root() {
 afscp_docker_run() {
   local rm_flag="$1"
   local bind_root
+  local docker_user_args=()
   shift
   bind_root="$(afscp_docker_bind_root)" || return 1
+  if [[ "${AFSCP_DOCKER_INHERIT_IMAGE_USER:-0}" != "1" ]]; then
+    docker_user_args=(--user "$(id -u):$(id -g)")
+  fi
   docker run "${rm_flag}" \
     --network host \
-    --user "$(id -u):$(id -g)" \
+    "${docker_user_args[@]}" \
     --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
     --volume "${bind_root}:${bind_root}:rw" \
     "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@"
@@ -2613,18 +2617,26 @@ afscp_docker_start() {
   local container_id_file="$1"
   local container_name="$2"
   local bind_root
+  local docker_user_args=()
   shift 2
   bind_root="$(afscp_docker_bind_root)" || return 1
+  if [[ "${AFSCP_DOCKER_INHERIT_IMAGE_USER:-0}" != "1" ]]; then
+    docker_user_args=(--user "$(id -u):$(id -g)")
+  fi
 
   docker rm -f "${container_name}" >/dev/null 2>&1 || true
   rm -f "${container_id_file}" "${container_id_file}.logs.pid"
   docker run -d \
     --name "${container_name}" \
     --network host \
-    --user "$(id -u):$(id -g)" \
+    "${docker_user_args[@]}" \
     --env-file "${AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE}" \
     --volume "${bind_root}:${bind_root}:rw" \
     "${AFSCP_LOCAL_RUNTIME_IMAGE}" "$@" > "${container_id_file}"
+}
+
+afscp_docker_start_inherit_image_user() {
+  AFSCP_DOCKER_INHERIT_IMAGE_USER=1 afscp_docker_start "$@"
 }
 
 afscp_follow_container_logs() {
@@ -2749,7 +2761,7 @@ start_afscp_export_gateway_image() {
   rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
   wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
   internal_info "starting AFSCP export gateway from pinned image at ${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
-  afscp_docker_start "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve --listen-addr "${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
+  afscp_docker_start_inherit_image_user "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve --listen-addr "${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
   afscp_follow_container_logs "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" "${AFSCP_EXPORT_GATEWAY_LOG}"
   afscp_wait_for_gateway_listener 120
 }

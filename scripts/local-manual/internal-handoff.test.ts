@@ -347,7 +347,7 @@ describe('local-manual internal handoff', () => {
     expect(common).toContain('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
     expect(common).toContain('AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.11@sha256:6ccaabe69d8761d071a130a0c4793662371f74b4d4a56a7e975e28acc5c65709}}"');
     expect(common).toContain('afscp_docker_run --rm /usr/local/bin/afscp-worker --run-once');
-    expect(common).toContain('afscp_docker_start "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve');
+    expect(common).toContain('afscp_docker_start_inherit_image_user "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve');
     expect(common).toContain('afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve');
     expect(common).toContain('afscp_docker_start "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" /usr/local/bin/afscp-worker --loop');
     expect(common).toContain('AFSCP_API_MODE="${AFSCP_API_MODE:-internal}"');
@@ -1817,6 +1817,50 @@ SH
     expect(result.stdout).toContain('/runtime:/');
     expect(result.stdout).not.toContain('/afscp-volume-root:/');
     expect(result.stdout).not.toContain('/afscp-jvs-cwd:/');
+  });
+
+  it('lets the AFSCP export gateway inherit the image user while non-gateway image runs keep the host user override', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      runtime_root="\${SNIPPET_TEMP_ROOT}/runtime"
+      mkdir -p "$bin" "$runtime_root/afscp-volume-root" "$runtime_root/afscp-jvs-cwd"
+      cat > "$bin/docker" <<'SH'
+#!/usr/bin/env bash
+printf 'docker' >> "$SNIPPET_TEMP_ROOT/docker.log"
+for arg in "$@"; do
+  printf ' <%s>' "$arg" >> "$SNIPPET_TEMP_ROOT/docker.log"
+done
+printf '\\n' >> "$SNIPPET_TEMP_ROOT/docker.log"
+exit 0
+SH
+      chmod +x "$bin/docker"
+      export PATH="$bin:$PATH"
+      INTERNAL_REAL_DIR="$runtime_root"
+      AFSCP_VOLUME_ROOT="$runtime_root/afscp-volume-root"
+      AFSCP_JVS_CWD="$runtime_root/afscp-jvs-cwd"
+      AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE="$runtime_root/afscp.env"
+      AFSCP_LOCAL_RUNTIME_IMAGE="example/afscp:test"
+      printf 'AFSCP_ENVIRONMENT=local-real\\n' > "$AFSCP_LOCAL_RUNTIME_DOCKER_ENV_FILE"
+      afscp_docker_start_inherit_image_user "$runtime_root/gateway.cid" "gateway" /usr/local/bin/afscp-export-gateway --serve
+      afscp_docker_start "$runtime_root/api.cid" "api" /usr/local/bin/afscp-api --serve
+      afscp_docker_run --rm /usr/local/bin/afscp-worker --run-once
+      cat "\${SNIPPET_TEMP_ROOT}/docker.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+
+    const dockerRunLines = result.stdout.split('\n').filter((line) => line.includes('docker <run>'));
+    const gatewayRun = dockerRunLines.find((line) => line.includes('<gateway>')) ?? '';
+    const apiRun = dockerRunLines.find((line) => line.includes('<api>')) ?? '';
+    const workerRun = dockerRunLines.find((line) => line.includes('</usr/local/bin/afscp-worker>')) ?? '';
+
+    expect(gatewayRun).toContain('</usr/local/bin/afscp-export-gateway>');
+    expect(gatewayRun).not.toContain('<--user>');
+    expect(apiRun).toContain('</usr/local/bin/afscp-api>');
+    expect(apiRun).toContain('<--user>');
+    expect(workerRun).toContain('</usr/local/bin/afscp-worker>');
+    expect(workerRun).toContain('<--user>');
   });
 
   it('fails closed when workload mount SecretRefs point at a non-default local-real volume', () => {

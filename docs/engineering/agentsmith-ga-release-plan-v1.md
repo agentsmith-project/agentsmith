@@ -516,6 +516,8 @@ GA 的判定是：
 - ASBCP owner：仅当新 evidence 再出现 `AGENT_SANDBOX_UNAVAILABLE`、`IDEMPOTENCY_CONFLICT`、`workload_release_incomplete`、`delete_pod` 5xx、pod status stuck，且 API / pod manager / ASBCP create-status summary 指向 sandbox 行为时，做 repo-local 窄修。v2.0.18 已覆盖同 workload delete convergence、stable observed-at 和 release/status idempotency；没有 sandbox 信号时不把 Files pending 回压给 ASBCP。
 - Runner owner：不承接 storage、Files retry、read export 或 AFSCP release truth。Runner 只证明 task HOME/workspace path、process lifecycle、terminal close ack、artifact scan 和 managed runner image/manifest handoff。
 
+2026-06-07 broader project-set review 继续核对 `agentsmith-desktop`、`agentsmith-release-kit`、`jvs`、`llm-universal-proxy`、`codex` 和 `business`。结论是：这些项目不承担当前 Files/AFSCP/sandbox runtime readiness blocker 的功能修复。`agentsmith-desktop` 是桌面本地挂载消费方；`agentsmith-release-kit` 只聚合 release / operator evidence，不拥有 Product Readiness 的 runtime truth；`jvs` 只有在 AFSCP evidence 明确指向 JVS typed error 或 direct contract bug 时才进入 owner 修复；`llm-universal-proxy` 的 `/ready` 是模型代理 readiness，不是 AgentSmith Product Readiness；`codex` 的 CLI sandbox 语义不等同于 `AGENT_SANDBOX_UNAVAILABLE`；`business` 只保留商务材料角色。后续不要把这些项目拉进本 blocker 的整改范围，除非新的 typed evidence 明确点名对应项目。
+
 功能增强触发条件：
 
 1. 单次 sandbox unavailable 后重跑通过：记录 runtime flake，不扩大改造。

@@ -503,6 +503,24 @@ GA 的判定是：
 - 不为一次 flake 做大重构；连续失败才按稳定性 blocker 推进 owner 修复。
 - 不把 ASBCP / AFSCP owner repo 的幂等缺口用 AgentSmith wrapper 长期掩盖；AgentSmith 只做最小调用收口和证据补强。
 
+### 7.3 项目集 runtime readiness owner 边界
+
+2026-06-07 project-set team observation 复核了 `agentsmith`、`agentsmith-fs-control-plane`、`mbos-sandbox-v1` 和 `agentsmith-runner` 的职责边界。结论是：当前 Files restore continuation focused backend-real 在 AgentSmith completed release fence invalidation 修复后通过，证据为 `artifacts/backend-real/current/files-restore-readexport-convergence-20260607T032831Z/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json`，`classification=clean_pass` 且无 runtime readiness signals / call summaries。因此本轮 GA 主线先不启动 AFSCP、ASBCP 或 runner 的多仓功能改造。
+
+后续如果 Product Readiness 或 focused gate 再次复发，按以下 owner 边界处理：
+
+- AgentSmith Files owner：只负责稳定 release fence 观察、typed pending、completed fence 后 invalidate read export、runtime flake / stability blocker evidence 分类，以及不读 stale projection。可以做最小 read-through / invalidation 修复；不得合成 AFSCP terminal truth。
+- AFSCP / Files storage owner：当 evidence 显示 workload mount binding 长期 `releasing` / `release_pending`、缺少 `released` / `revoked` terminal fact、或 read export 已创建但 WebDAV projection 不可见时，负责补齐 release/revoke terminal evidence、storage durable barrier 和 export-visible boundary。增强应落在运行时事实生产者和 AFSCP contract 实现，不新增 AgentSmith-side governance layer。
+- ASBCP owner：仅当新 evidence 再出现 `AGENT_SANDBOX_UNAVAILABLE`、`IDEMPOTENCY_CONFLICT`、`workload_release_incomplete`、`delete_pod` 5xx、pod status stuck，且 API / pod manager / ASBCP create-status summary 指向 sandbox 行为时，做 repo-local 窄修。v2.0.18 已覆盖同 workload delete convergence、stable observed-at 和 release/status idempotency；没有 sandbox 信号时不把 Files pending 回压给 ASBCP。
+- Runner owner：不承接 storage、Files retry、read export 或 AFSCP release truth。Runner 只证明 task HOME/workspace path、process lifecycle、terminal close ack、artifact scan 和 managed runner image/manifest handoff。
+
+功能增强触发条件：
+
+1. 单次 sandbox unavailable 后重跑通过：记录 runtime flake，不扩大改造。
+2. 同一 focused gate 内多次 `file_library_list_pending`，或连续 focused gate 同一 runtime readiness 失败：升级 stability blocker，先按 evidence 定 owner，再做 repo-local 最小修复。
+3. 只有当 focused backend-real 仍无法通过，或 Product Readiness 复发并产生稳定性 blocker，才同步启动兄弟项目功能增强；不要用拉长等待、无限重试或新增 report/gate 掩盖 terminal truth 缺口。
+4. 兄弟项目修复后的验证顺序是 owner focused test / repo-local gate，然后回 AgentSmith Files restore continuation focused backend-real，最后在阶段收口回 Product Readiness。
+
 ## 8. Implementation readiness
 
 本计划已进入开发实施。实施前置条件：

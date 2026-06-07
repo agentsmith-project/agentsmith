@@ -1983,6 +1983,14 @@ describe('project-file-library-routes', () => {
       createdBeforeOrAtMs: expect.any(Number),
       requestId: 'req_entries_pending_release_first',
     }));
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      createdBeforeOrAtMs: expect.any(Number),
+      requestId: 'req_entries_pending_release_first',
+    }));
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
@@ -2008,7 +2016,7 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
       path: 'workspace/.artifacts/',
       items: [
@@ -2062,7 +2070,14 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      createdBeforeOrAtMs: expect.any(Number),
+      requestId: 'req_entries_post_release_pending_first',
+    }));
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',
@@ -2087,7 +2102,14 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(3);
+    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      createdBeforeOrAtMs: expect.any(Number),
+      requestId: 'req_entries_post_release_pending_second',
+    }));
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',
@@ -5526,7 +5548,7 @@ describe('project-file-library-routes', () => {
   });
 
   it('does not call legacy restore preview/run/fence helpers on the direct restore route', () => {
-    const source = readFileSync('packages/api-entry-node/src/project-file-library-routes.ts', 'utf8');
+    const source = readFileSync(new URL('./project-file-library-routes.ts', import.meta.url), 'utf8');
     const start = source.indexOf("routeKind === 'fileLibraryRestore'");
     const end = source.indexOf("routeKind === 'fileLibraryEntries'", start);
     expect(start).toBeGreaterThanOrEqual(0);

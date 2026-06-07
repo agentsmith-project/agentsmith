@@ -1947,7 +1947,7 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
         released: true,
         runtime_access_status: 'released',
       },
-      invalidateListReadExport: false,
+      invalidateListReadExport: true,
     };
   }
   if (!isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)) {

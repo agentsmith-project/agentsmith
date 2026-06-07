@@ -1326,6 +1326,50 @@ runtime_readiness_flake_markers_present() {
   return 1
 }
 
+runtime_readiness_file_list_pending_count() {
+  local spec_state_file="${1:-}"
+  local spec_runtime_dir=""
+  local log_file
+  local file_count
+  local total_count=0
+  local -a candidates=()
+
+  if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
+    candidates+=(
+      "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
+      "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR}/afscp-worker.log}"
+      "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR}/afscp-export-gateway.log}"
+      "${AFSCP_READ_EXPORT_PROBE_LOG:-${INTERNAL_REAL_DIR}/afscp-read-export-probe.log}"
+    )
+  fi
+  if [[ -n "${ASBCP_LOG:-}" ]]; then
+    candidates+=("${ASBCP_LOG}")
+  fi
+  if [[ -n "${spec_state_file}" && -f "${spec_state_file}" ]]; then
+    spec_runtime_dir="$(dirname "${spec_state_file}")"
+    if [[ -d "${spec_runtime_dir}/integration" ]]; then
+      while IFS= read -r log_file; do
+        candidates+=("${log_file}")
+      done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 12)
+    fi
+  fi
+
+  for log_file in "${candidates[@]}"; do
+    if [[ ! -f "${log_file}" ]]; then
+      continue
+    fi
+    if command -v rg >/dev/null 2>&1; then
+      file_count="$(rg -o 'file_library_list_pending' "${log_file}" 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    else
+      file_count="$(grep -oE 'file_library_list_pending' "${log_file}" 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    fi
+    if [[ "${file_count:-0}" =~ ^[0-9]+$ ]]; then
+      total_count=$((total_count + file_count))
+    fi
+  done
+  printf '%s\n' "${total_count}"
+}
+
 collect_child_internal_log_tails() {
   local evidence_dir="$1"
   local spec_state_file="${2:-}"
@@ -1546,17 +1590,28 @@ collect_child_internal_failure_evidence() {
   local spec_api_port="${7:-}"
   local spec_web_port="${8:-}"
   local safe_stage evidence_dir runtime_failure_marker had_previous_runtime_readiness_failure current_runtime_readiness_failure
+  local current_file_list_pending_count repeated_current_runtime_readiness_failure
+  local runtime_readiness_blocker_outcome runtime_readiness_blocker_reason
   safe_stage="$(child_internal_evidence_slug "${stage}")"
   evidence_dir="${CHILD_INTERNAL_EVIDENCE_ROOT}/${safe_stage:-child-spec}"
   mkdir -p "${evidence_dir}" 2>/dev/null || return 0
   runtime_failure_marker="${evidence_dir}/runtime-readiness-failure.marker"
   had_previous_runtime_readiness_failure=0
   current_runtime_readiness_failure=0
+  current_file_list_pending_count=0
+  repeated_current_runtime_readiness_failure=0
   if [[ -f "${runtime_failure_marker}" ]]; then
     had_previous_runtime_readiness_failure=1
   fi
   if runtime_readiness_flake_markers_present "${spec_state_file}"; then
     current_runtime_readiness_failure=1
+  fi
+  current_file_list_pending_count="$(runtime_readiness_file_list_pending_count "${spec_state_file}" 2>/dev/null || printf '0')"
+  if ! [[ "${current_file_list_pending_count}" =~ ^[0-9]+$ ]]; then
+    current_file_list_pending_count=0
+  fi
+  if [[ "${current_file_list_pending_count}" -ge 2 ]]; then
+    repeated_current_runtime_readiness_failure=1
   fi
   (
     set +e
@@ -1611,21 +1666,33 @@ collect_child_internal_failure_evidence() {
     collect_runtime_readiness_details "${evidence_dir}" "${spec_state_file}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
     if [[ "${current_runtime_readiness_failure}" -eq 1 ]]; then
-      if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then
+      if [[ "${had_previous_runtime_readiness_failure}" -eq 1 || "${repeated_current_runtime_readiness_failure}" -eq 1 ]]; then
+        if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then
+          runtime_readiness_blocker_outcome="consecutive_focused_gate_runtime_readiness_failures"
+          runtime_readiness_blocker_reason="consecutive focused gate runtime readiness failures"
+        else
+          runtime_readiness_blocker_outcome="repeated_file_library_list_pending_within_focused_gate"
+          runtime_readiness_blocker_reason="repeated file_library_list_pending within one focused gate"
+        fi
         {
           printf 'stage=%s\n' "${stage}"
           printf 'classification=stability_blocker\n'
-          printf 'outcome=consecutive_focused_gate_runtime_readiness_failures\n'
+          printf 'outcome=%s\n' "${runtime_readiness_blocker_outcome}"
           printf 'gate_mode=%s\n' "${GATE_MODE:-workspace}"
           printf 'spec=%s\n' "${spec:-<unknown>}"
           printf 'grep_label=%s\n' "${label:-<none>}"
           printf 'exit_status=%s\n' "${exit_status:-<unknown>}"
-          printf 'previous_failure_marker=%s\n' "${runtime_failure_marker}"
+          if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then
+            printf 'previous_failure_marker=%s\n' "${runtime_failure_marker}"
+          else
+            printf 'previous_failure_marker=<none>\n'
+          fi
+          printf 'file_library_list_pending_count=%s\n' "${current_file_list_pending_count}"
           printf 'runtime_readiness_summary=%s\n' "${evidence_dir}/runtime-readiness-summary.txt"
           printf 'collected_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         } > "${evidence_dir}/runtime-stability-blocker-summary.txt"
-        annotate_runtime_readiness_details "${evidence_dir}" "stability_blocker" "consecutive_focused_gate_runtime_readiness_failures" "${stage}" "${spec}" "${label}"
-        gate_record_failure "${INTERNAL_REAL_DIR}" "stability_blocker" "${stage}_runtime_readiness" "consecutive focused gate runtime readiness failures; see ${evidence_dir}/runtime-stability-blocker-summary.txt"
+        annotate_runtime_readiness_details "${evidence_dir}" "stability_blocker" "${runtime_readiness_blocker_outcome}" "${stage}" "${spec}" "${label}"
+        gate_record_failure "${INTERNAL_REAL_DIR}" "stability_blocker" "${stage}_runtime_readiness" "${runtime_readiness_blocker_reason}; see ${evidence_dir}/runtime-stability-blocker-summary.txt"
       fi
       {
         printf 'stage=%s\n' "${stage}"

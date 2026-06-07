@@ -417,7 +417,10 @@ function runPrepareRuntimeWithLegacyRunnerImage(args: {
   }
 }
 
-function runInternalSpecGrepEarlyFailureHarness(options: { runs?: number } = {}): {
+function runInternalSpecGrepEarlyFailureHarness(options: {
+  runs?: number;
+  repeatedFileListPending?: boolean;
+} = {}): {
   stdout: string;
   stderr: string;
   status: number | null;
@@ -474,6 +477,12 @@ cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
 [files] runtime_pending_readiness_failure {"event":"runtime_pending_readiness_failure","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_runtime","file_library_id":"flib_runtime","task_id":"task_runtime","workload_id":"workload-runtime-1","request_id":"release:begin:req-runtime-json","operation":"delete_pod","error_code":"AGENT_SANDBOX_UNAVAILABLE","mapped_error_code":"FILE_LIBRARY_OPERATION_FAILED","mapped_message":"file_library_operation_failed","status":502,"retryable":true,"pod_manager":{"theme":"runtime_pending_readiness","workspaceId":"ws_default","projectId":"proj_runtime","workloadId":"workload-runtime-1","api_trace":[{"operation":"delete_pod","outcome":"error","workload_id":"workload-runtime-1","request_id":"req-runtime-json-api-trace","phase":"pending","status_code":502,"error_code":"AGENT_SANDBOX_UNAVAILABLE","asbcp_code":"dependency_failure","retryable":true}],"pod_manager_summary":{"workload_id":"workload-runtime-1","operations":["delete_pod"],"request_ids":["req-runtime-json-step"],"latest_operation":"delete_pod","latest_outcome":"error","latest_phase":"pending","latest_status_code":502,"latest_error_code":"AGENT_SANDBOX_UNAVAILABLE","latest_asbcp_code":"dependency_failure"},"asbcp_call_summaries":[{"operation":"delete_pod","outcome":"error","workload_id":"workload-runtime-1","request_id":"req-runtime-json-asbcp-summary","phase":"pending","status_code":502,"error_code":"AGENT_SANDBOX_UNAVAILABLE","asbcp_code":"dependency_failure","retryable":true}],"steps":[{"operation":"delete_pod","outcome":"error","workloadId":"workload-runtime-1","status":502,"requestId":"req-runtime-json-step","code":"AGENT_SANDBOX_UNAVAILABLE","asbcpCode":"dependency_failure","retryable":true,"message":"asbcp_error: delete_pod 502"}]}}}
 asbcp_workload_status http_status=200 request_id=req-runtime-status workload_id=workload-runtime-1 status=offline phase=offline error_code=INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING
 LOG
+${options.repeatedFileListPending ? `cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
+file_library_list_pending attempt=1 request_id=req-list-pending-1 workload_id=workload-runtime-1
+file_library_list_pending attempt=2 request_id=req-list-pending-2 workload_id=workload-runtime-1
+file_library_list_pending attempt=3 request_id=req-list-pending-3 workload_id=workload-runtime-1
+LOG
+` : ''}
 printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
@@ -2052,6 +2061,35 @@ describe('internal backend-real gate runtime contract', () => {
     expect(details).toMatchObject({
       classification: 'stability_blocker',
       outcome: 'consecutive_focused_gate_runtime_readiness_failures',
+    });
+    expect(details.convergence_policy?.backoff).toBe('increasing_after_consecutive_non_terminal');
+    expect(details.classification_rules?.stability_blocker).toContain('consecutive');
+  });
+
+  it('upgrades repeated file list pending within one focused gate to a stability blocker', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness({ repeatedFileListPending: true });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status_1=1');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
+    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('stability_blocker|files_restore_continuation_spec_runtime_readiness|repeated file_library_list_pending within one focused gate');
+    expect(result.runtimeStabilityBlockerSummary).toContain('classification=stability_blocker');
+    expect(result.runtimeStabilityBlockerSummary).toContain('outcome=repeated_file_library_list_pending_within_focused_gate');
+    expect(result.runtimeStabilityBlockerSummary).toContain('previous_failure_marker=<none>');
+    expect(result.runtimeStabilityBlockerSummary).toContain('file_library_list_pending_count=3');
+    expect(result.runtimeStabilityBlockerSummary).not.toContain('known-product-token');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      classification?: string;
+      outcome?: string;
+      convergence_policy?: { backoff?: string };
+      classification_rules?: Record<string, string>;
+    };
+    expect(details).toMatchObject({
+      classification: 'stability_blocker',
+      outcome: 'repeated_file_library_list_pending_within_focused_gate',
     });
     expect(details.convergence_policy?.backoff).toBe('increasing_after_consecutive_non_terminal');
     expect(details.classification_rules?.stability_blocker).toContain('consecutive');

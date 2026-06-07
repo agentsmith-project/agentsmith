@@ -63,10 +63,10 @@ const LLMUP_SOURCE_RUN_ATTEMPT = '1';
 const LLMUP_SOURCE_SUBJECT_NAME = 'llm-universal-proxy-image';
 const LLMUP_RELEASE_URL =
   `https://github.com/agentsmith-project/llm-universal-proxy/releases/tag/${LLMUP_VERSION}`;
-const AFSCP_VERSION = 'v1.0.8';
+const AFSCP_VERSION = 'v1.0.9';
 const AFSCP_DIGEST = `sha256:${'5'.repeat(64)}`;
-const AFSCP_COMMIT_SHA = '31da1e82a3e6e4593811d96502d9d57530f57664';
-const AFSCP_SOURCE_RUN_ID = '40001';
+const AFSCP_COMMIT_SHA = '8fb65cfe58b6647578458f7e7e054b6314931036';
+const AFSCP_SOURCE_RUN_ID = '27094271356';
 const AFSCP_SOURCE_RUN_ATTEMPT = '1';
 const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';
 const AFSCP_RELEASE_URL =
@@ -984,8 +984,8 @@ function writeDependencyImageSourceGates(root: string): Pick<
       digest: AFSCP_DIGEST,
       commitSha: AFSCP_COMMIT_SHA,
       releaseUrl: AFSCP_RELEASE_URL,
-      releaseId: 326107668,
-      tagObjectSha: '9f4f16a691049da6065a2bd45720c652e6fed171',
+      releaseId: 335606206,
+      tagObjectSha: '8fb65cfe58b6647578458f7e7e054b6314931036',
       sourceRunId: AFSCP_SOURCE_RUN_ID,
       sourceRunAttempt: AFSCP_SOURCE_RUN_ATTEMPT,
       sourceSubjectName: AFSCP_SOURCE_SUBJECT_NAME,
@@ -2102,11 +2102,11 @@ describe('release contract CI artifact producer', () => {
       lock_commit_sha: AFSCP_COMMIT_SHA,
       release_url: AFSCP_RELEASE_URL,
       release_tag: AFSCP_VERSION,
-      release_id: 326107668,
+      release_id: 335606206,
       release_html_url: AFSCP_RELEASE_URL,
       tag_ref: `refs/tags/${AFSCP_VERSION}`,
       tag_ref_object_type: 'tag',
-      tag_ref_object_sha: '9f4f16a691049da6065a2bd45720c652e6fed171',
+      tag_ref_object_sha: '8fb65cfe58b6647578458f7e7e054b6314931036',
       tag_commit_sha: AFSCP_COMMIT_SHA,
       tag_commit_sha_match: true,
       run_id: AFSCP_SOURCE_RUN_ID,

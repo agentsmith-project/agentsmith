@@ -30,7 +30,7 @@ const NON_CANONICAL_LLMUP_PROVIDER_IMAGE_REPOSITORY = ['ghcr.io/agentsmith-proje
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
-const AFSCP_COMMIT_SHA = '31da1e82a3e6e4593811d96502d9d57530f57664';
+const AFSCP_COMMIT_SHA = '8fb65cfe58b6647578458f7e7e054b6314931036';
 const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
@@ -64,7 +64,7 @@ const ADOPTED_PROVIDER_IMAGES = [
   },
   {
     id: 'afscp',
-    image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.8@sha256:${'5'.repeat(64)}`,
+    image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.9@sha256:${'5'.repeat(64)}`,
     digest: `sha256:${'5'.repeat(64)}`,
   },
   {
@@ -188,12 +188,12 @@ function buildImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBindin
       producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       commit_sha: AFSCP_COMMIT_SHA,
-      tag: 'v1.0.8',
-      run_id: '40001',
+      tag: 'v1.0.9',
+      run_id: '27094271356',
       run_attempt: '1',
-      run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/40001/attempts/1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/27094271356/attempts/1',
       subject_name: 'agentsmith-fs-control-plane-image',
-      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith-fs-control-plane/40001/agentsmith-fs-control-plane-image.oci',
+      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith-fs-control-plane/27094271356/agentsmith-fs-control-plane-image.oci',
       artifact_sha256: ADOPTED_PROVIDER_IMAGES[1].digest,
     },
     {

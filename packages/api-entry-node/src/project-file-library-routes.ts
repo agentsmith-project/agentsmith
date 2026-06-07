@@ -1939,6 +1939,8 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
     return { handled: false };
   }
   if (isRuntimeAccessReleaseCompleteCorrelation(input.binding.correlationId)) {
+    // The release-transition invalidation happens when a begin fence completes;
+    // repeated polls keep the current pending read export warm.
     return {
       handled: true,
       statusCode: 200,
@@ -1947,7 +1949,7 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
         released: true,
         runtime_access_status: 'released',
       },
-      invalidateListReadExport: true,
+      invalidateListReadExport: false,
     };
   }
   if (!isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)) {

@@ -899,6 +899,29 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(ensureIndex).toBeGreaterThan(resetIndex);
   });
 
+  it('fails fast and preserves AFSCP local runtime log tails when integration runtime bootstrap fails', () => {
+    const script = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
+    const ensureBody = shellFunctionBody(script, 'ensure_integration_afscp_local_runtime');
+    const collectorBody = shellFunctionBody(script, 'collect_integration_afscp_local_runtime_failure_evidence');
+    const failureIndex = script.indexOf('if ! ensure_integration_afscp_local_runtime; then');
+    const collectIndex = script.indexOf('collect_integration_afscp_local_runtime_failure_evidence', failureIndex);
+    const recordIndex = script.indexOf(
+      'gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "afscp_local_runtime"',
+      failureIndex,
+    );
+
+    expect(ensureBody).toContain('reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1');
+    expect(ensureBody).toContain('ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1');
+    expect(collectorBody).toContain('CURRENT_GATE_RESULT_EVIDENCE_DIR:-${INTEGRATION_LOG_DIR}');
+    expect(collectorBody).toContain('afscp-export-gateway.log');
+    expect(collectorBody).toContain('afscp-api.log');
+    expect(collectorBody).toContain('afscp-worker.log');
+    expect(collectorBody).toContain('afscp-read-export-probe.log');
+    expect(failureIndex).toBeGreaterThanOrEqual(0);
+    expect(collectIndex).toBeGreaterThan(failureIndex);
+    expect(recordIndex).toBeGreaterThan(collectIndex);
+  });
+
   it('resets owned release user-story AFSCP local-real data before ensuring the runtime', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const start = script.indexOf('ensure_release_user_story_afscp_local_runtime()');

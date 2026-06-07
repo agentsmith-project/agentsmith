@@ -1863,6 +1863,418 @@ SH
     expect(workerRun).toContain('<--user>');
   });
 
+  it('marks the AFSCP export gateway listener ready from a real HTTP response even when lsof cannot see it', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      cat > "$bin/curl" <<'SH'
+#!/usr/bin/env bash
+printf 'curl %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/curl.log"
+printf '404'
+SH
+      cat > "$bin/lsof" <<'SH'
+#!/usr/bin/env bash
+printf 'lsof called\\n' >> "$SNIPPET_TEMP_ROOT/lsof.log"
+exit 1
+SH
+      chmod +x "$bin/curl" "$bin/lsof"
+      export PATH="$bin:$PATH"
+      AFSCP_EXPORT_GATEWAY_BASE_URL="http://127.0.0.1:29999"
+      AFSCP_EXPORT_GATEWAY_READY_FILE="\${SNIPPET_TEMP_ROOT}/gateway.ready"
+      if afscp_wait_for_gateway_listener 0; then
+        printf 'status=ready\\n'
+      else
+        printf 'status=failed\\n'
+      fi
+      printf 'ready_file=%s\\n' "$(cat "$AFSCP_EXPORT_GATEWAY_READY_FILE" 2>/dev/null || true)"
+      cat "\${SNIPPET_TEMP_ROOT}/curl.log"
+      if [[ -f "\${SNIPPET_TEMP_ROOT}/lsof.log" ]]; then
+        cat "\${SNIPPET_TEMP_ROOT}/lsof.log"
+      else
+        printf 'lsof_not_called\\n'
+      fi
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status=ready');
+    expect(result.stdout).toContain('ready_file=ready');
+    expect(result.stdout).toContain('http://127.0.0.1:29999/');
+    expect(result.stdout).toContain('lsof_not_called');
+    expect(result.stdout).not.toContain('lsof called');
+  });
+
+  it('keeps waiting and fails the AFSCP export gateway listener check while HTTP reachability is 000', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mkdir -p "$bin"
+      printf '100\\n' > "\${SNIPPET_TEMP_ROOT}/date-counter"
+      cat > "$bin/date" <<'SH'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "+%s" ]]; then
+  value="$(cat "$SNIPPET_TEMP_ROOT/date-counter")"
+  printf '%s\\n' "$value"
+  printf '%s\\n' "$((value + 1))" > "$SNIPPET_TEMP_ROOT/date-counter"
+  exit 0
+fi
+exec /usr/bin/date "$@"
+SH
+      cat > "$bin/curl" <<'SH'
+#!/usr/bin/env bash
+printf '000'
+exit 7
+SH
+      cat > "$bin/sleep" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+      chmod +x "$bin/date" "$bin/curl" "$bin/sleep"
+      export PATH="$bin:$PATH"
+      AFSCP_EXPORT_GATEWAY_BASE_URL="http://127.0.0.1:29998"
+      AFSCP_EXPORT_GATEWAY_READY_FILE="\${SNIPPET_TEMP_ROOT}/gateway.ready"
+      if afscp_wait_for_gateway_listener 0; then
+        printf 'status=ready\\n'
+      else
+        printf 'status=failed\\n'
+      fi
+      if [[ -f "$AFSCP_EXPORT_GATEWAY_READY_FILE" ]]; then
+        printf 'ready_file=present\\n'
+      else
+        printf 'ready_file=missing\\n'
+      fi
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=failed');
+    expect(result.stdout).toContain('ready_file=missing');
+    expect(result.stderr).toContain('AFSCP export gateway listener not ready on port');
+  });
+
+  it('fails fast when AFSCP export gateway startup fails instead of starting API or worker loop', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      AFSCP_WORKER_LOG="\${SNIPPET_TEMP_ROOT}/afscp-worker.log"
+      prepare_afscp_local_runtime_env() { record prepare_env; }
+      ensure_afscp_local_runtime_prerequisites() { record prerequisites; }
+      ensure_afscp_local_runtime_mounts_and_write_env() { record mounts_and_env; }
+      apply_afscp_postgres_migrations() { record migrations; }
+      afscp_run_worker_once() { record worker_once; }
+      start_afscp_export_gateway() { record export_gateway; return 42; }
+      start_afscp_api() { record api; }
+      ensure_afscp_default_volume() { record default_volume; }
+      wait_afscp_api_ready() { record api_ready; }
+      start_afscp_worker_loop() { record worker_loop; }
+      if ensure_afscp_local_runtime; then
+        printf 'status=ready\\n'
+      else
+        printf 'status=failed:%s\\n' "$?"
+      fi
+      cat "$calls_file"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=failed:1');
+    expect(result.stdout).toContain('prepare_env');
+    expect(result.stdout).toContain('worker_once');
+    expect(result.stdout).toContain('export_gateway');
+    expect(result.stdout).not.toContain('\napi\n');
+    expect(result.stdout).not.toContain('default_volume');
+    expect(result.stdout).not.toContain('api_ready');
+    expect(result.stdout).not.toContain('worker_loop');
+  });
+
+  it('fails fast when AFSCP API startup fails instead of bootstrapping the default volume or worker loop', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      AFSCP_WORKER_LOG="\${SNIPPET_TEMP_ROOT}/afscp-worker.log"
+      prepare_afscp_local_runtime_env() { record prepare_env; }
+      ensure_afscp_local_runtime_prerequisites() { record prerequisites; }
+      ensure_afscp_local_runtime_mounts_and_write_env() { record mounts_and_env; }
+      apply_afscp_postgres_migrations() { record migrations; }
+      afscp_run_worker_once() { record worker_once; }
+      start_afscp_export_gateway() { record export_gateway; }
+      start_afscp_api() { record api; return 42; }
+      ensure_afscp_default_volume() { record default_volume; }
+      wait_afscp_api_ready() { record api_ready; }
+      start_afscp_worker_loop() { record worker_loop; }
+      if ensure_afscp_local_runtime; then
+        printf 'status=ready\\n'
+      else
+        printf 'status=failed:%s\\n' "$?"
+      fi
+      cat "$calls_file"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=failed:1');
+    expect(result.stdout).toContain('export_gateway');
+    expect(result.stdout).toContain('\napi\n');
+    expect(result.stdout).not.toContain('default_volume');
+    expect(result.stdout).not.toContain('api_ready');
+    expect(result.stdout).not.toContain('worker_loop');
+  });
+
+  it('fails fast inside source export gateway startup when a guarded child step fails', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      maybe_fail() {
+        local step="$1"
+        record "$step"
+        [[ "$fail_step" != "$step" ]] || return 42
+      }
+      ensure_afscp_local_runtime_mounts_and_write_env() { maybe_fail ensure_mounts; }
+      afscp_stop_pid_file() { maybe_fail stop_pid; }
+      wait_port_free() { maybe_fail wait_port_free; }
+      afscp_runtime_shell_prefix() { printf 'true'; }
+      launch_detached() { maybe_fail launch_detached; }
+      afscp_wait_for_gateway_listener() { maybe_fail gateway_listener; }
+      capture_listener_pid() { maybe_fail capture_listener_pid; }
+      AFSCP_EXPORT_GATEWAY_READY_FILE="\${SNIPPET_TEMP_ROOT}/gateway.ready"
+      AFSCP_EXPORT_GATEWAY_PID_FILE="\${SNIPPET_TEMP_ROOT}/gateway.pid"
+      AFSCP_EXPORT_GATEWAY_LOG="\${SNIPPET_TEMP_ROOT}/gateway.log"
+      AFSCP_EXPORT_GATEWAY_PORT=29997
+      AFSCP_EXPORT_GATEWAY_LISTEN_ADDR="127.0.0.1:29997"
+      run_case() {
+        fail_step="$1"
+        : > "$calls_file"
+        if start_afscp_export_gateway_source; then
+          printf 'case:%s status=ready\\n' "$fail_step"
+        else
+          printf 'case:%s status=failed:%s\\n' "$fail_step" "$?"
+        fi
+        printf 'case:%s calls=%s\\n' "$fail_step" "$(paste -sd, "$calls_file")"
+      }
+      run_case wait_port_free
+      run_case launch_detached
+      run_case gateway_listener
+      run_case capture_listener_pid
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('case:wait_port_free status=failed:1');
+    expect(result.stdout).toContain('case:wait_port_free calls=ensure_mounts,stop_pid,wait_port_free');
+    expect(result.stdout).toContain('case:launch_detached status=failed:1');
+    expect(result.stdout).toContain(
+      'case:launch_detached calls=ensure_mounts,stop_pid,wait_port_free,launch_detached',
+    );
+    expect(result.stdout).toContain('case:gateway_listener status=failed:1');
+    expect(result.stdout).toContain(
+      'case:gateway_listener calls=ensure_mounts,stop_pid,wait_port_free,launch_detached,gateway_listener',
+    );
+    expect(result.stdout).toContain('case:capture_listener_pid status=failed:1');
+    expect(result.stdout).toContain(
+      'case:capture_listener_pid calls=ensure_mounts,stop_pid,wait_port_free,launch_detached,gateway_listener,capture_listener_pid',
+    );
+  });
+
+  it('fails fast inside image export gateway startup when a guarded child step fails', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      maybe_fail() {
+        local step="$1"
+        record "$step"
+        [[ "$fail_step" != "$step" ]] || return 42
+      }
+      ensure_afscp_local_runtime_mounts_and_write_env() { maybe_fail ensure_mounts; }
+      afscp_stop_container_id_file() { maybe_fail stop_container; }
+      wait_port_free() { maybe_fail wait_port_free; }
+      afscp_docker_start_inherit_image_user() { maybe_fail docker_start; }
+      afscp_follow_container_logs() { maybe_fail follow_logs; }
+      afscp_wait_for_gateway_listener() { maybe_fail gateway_listener; }
+      AFSCP_EXPORT_GATEWAY_READY_FILE="\${SNIPPET_TEMP_ROOT}/gateway.ready"
+      AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE="\${SNIPPET_TEMP_ROOT}/gateway.cid"
+      AFSCP_EXPORT_GATEWAY_CONTAINER_NAME="gateway"
+      AFSCP_EXPORT_GATEWAY_LOG="\${SNIPPET_TEMP_ROOT}/gateway.log"
+      AFSCP_EXPORT_GATEWAY_PORT=29996
+      AFSCP_EXPORT_GATEWAY_LISTEN_ADDR="127.0.0.1:29996"
+      run_case() {
+        fail_step="$1"
+        : > "$calls_file"
+        if start_afscp_export_gateway_image; then
+          printf 'case:%s status=ready\\n' "$fail_step"
+        else
+          printf 'case:%s status=failed:%s\\n' "$fail_step" "$?"
+        fi
+        printf 'case:%s calls=%s\\n' "$fail_step" "$(paste -sd, "$calls_file")"
+      }
+      run_case wait_port_free
+      run_case docker_start
+      run_case follow_logs
+      run_case gateway_listener
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('case:wait_port_free status=failed:1');
+    expect(result.stdout).toContain('case:wait_port_free calls=ensure_mounts,stop_container,wait_port_free');
+    expect(result.stdout).toContain('case:docker_start status=failed:1');
+    expect(result.stdout).toContain(
+      'case:docker_start calls=ensure_mounts,stop_container,wait_port_free,docker_start',
+    );
+    expect(result.stdout).toContain('case:follow_logs status=failed:1');
+    expect(result.stdout).toContain(
+      'case:follow_logs calls=ensure_mounts,stop_container,wait_port_free,docker_start,follow_logs',
+    );
+    expect(result.stdout).toContain('case:gateway_listener status=failed:1');
+    expect(result.stdout).toContain(
+      'case:gateway_listener calls=ensure_mounts,stop_container,wait_port_free,docker_start,follow_logs,gateway_listener',
+    );
+  });
+
+  it('fails fast inside source API startup when a guarded child step fails', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      maybe_fail() {
+        local step="$1"
+        record "$step"
+        [[ "$fail_step" != "$step" ]] || return 42
+      }
+      ensure_afscp_local_runtime_mounts_and_write_env() { maybe_fail ensure_mounts; }
+      afscp_stop_pid_file() { maybe_fail stop_pid; }
+      wait_port_free() { maybe_fail wait_port_free; }
+      afscp_runtime_shell_prefix() { printf 'true'; }
+      launch_detached() { maybe_fail launch_detached; }
+      afscp_wait_for_api_listener() { maybe_fail api_listener; }
+      capture_listener_pid() { maybe_fail capture_listener_pid; }
+      AFSCP_API_READY_FILE="\${SNIPPET_TEMP_ROOT}/api.ready"
+      AFSCP_API_PID_FILE="\${SNIPPET_TEMP_ROOT}/api.pid"
+      AFSCP_API_LOG="\${SNIPPET_TEMP_ROOT}/api.log"
+      AFSCP_API_PORT=29995
+      AFSCP_BASE_URL="http://127.0.0.1:29995"
+      run_case() {
+        fail_step="$1"
+        : > "$calls_file"
+        if start_afscp_api_source; then
+          printf 'case:%s status=ready\\n' "$fail_step"
+        else
+          printf 'case:%s status=failed:%s\\n' "$fail_step" "$?"
+        fi
+        printf 'case:%s calls=%s\\n' "$fail_step" "$(paste -sd, "$calls_file")"
+      }
+      run_case wait_port_free
+      run_case launch_detached
+      run_case api_listener
+      run_case capture_listener_pid
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('case:wait_port_free status=failed:1');
+    expect(result.stdout).toContain('case:wait_port_free calls=ensure_mounts,stop_pid,wait_port_free');
+    expect(result.stdout).toContain('case:launch_detached status=failed:1');
+    expect(result.stdout).toContain(
+      'case:launch_detached calls=ensure_mounts,stop_pid,wait_port_free,launch_detached',
+    );
+    expect(result.stdout).toContain('case:api_listener status=failed:1');
+    expect(result.stdout).toContain(
+      'case:api_listener calls=ensure_mounts,stop_pid,wait_port_free,launch_detached,api_listener',
+    );
+    expect(result.stdout).toContain('case:capture_listener_pid status=failed:1');
+    expect(result.stdout).toContain(
+      'case:capture_listener_pid calls=ensure_mounts,stop_pid,wait_port_free,launch_detached,api_listener,capture_listener_pid',
+    );
+  });
+
+  it('fails fast inside image API startup when a guarded child step fails', () => {
+    const result = runInternalCommonSnippet(`
+      calls_file="\${SNIPPET_TEMP_ROOT}/calls.log"
+      record() { printf '%s\\n' "$*" >> "$calls_file"; }
+      maybe_fail() {
+        local step="$1"
+        record "$step"
+        [[ "$fail_step" != "$step" ]] || return 42
+      }
+      ensure_afscp_local_runtime_mounts_and_write_env() { maybe_fail ensure_mounts; }
+      afscp_stop_container_id_file() { maybe_fail stop_container; }
+      wait_port_free() { maybe_fail wait_port_free; }
+      afscp_docker_start() { maybe_fail docker_start; }
+      afscp_follow_container_logs() { maybe_fail follow_logs; }
+      afscp_wait_for_api_listener() { maybe_fail api_listener; }
+      AFSCP_API_READY_FILE="\${SNIPPET_TEMP_ROOT}/api.ready"
+      AFSCP_API_CONTAINER_ID_FILE="\${SNIPPET_TEMP_ROOT}/api.cid"
+      AFSCP_API_CONTAINER_NAME="api"
+      AFSCP_API_LOG="\${SNIPPET_TEMP_ROOT}/api.log"
+      AFSCP_API_PORT=29994
+      AFSCP_API_LISTEN_ADDR="127.0.0.1:29994"
+      AFSCP_BASE_URL="http://127.0.0.1:29994"
+      run_case() {
+        fail_step="$1"
+        : > "$calls_file"
+        if start_afscp_api_image; then
+          printf 'case:%s status=ready\\n' "$fail_step"
+        else
+          printf 'case:%s status=failed:%s\\n' "$fail_step" "$?"
+        fi
+        printf 'case:%s calls=%s\\n' "$fail_step" "$(paste -sd, "$calls_file")"
+      }
+      run_case wait_port_free
+      run_case docker_start
+      run_case follow_logs
+      run_case api_listener
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('case:wait_port_free status=failed:1');
+    expect(result.stdout).toContain('case:wait_port_free calls=ensure_mounts,stop_container,wait_port_free');
+    expect(result.stdout).toContain('case:docker_start status=failed:1');
+    expect(result.stdout).toContain(
+      'case:docker_start calls=ensure_mounts,stop_container,wait_port_free,docker_start',
+    );
+    expect(result.stdout).toContain('case:follow_logs status=failed:1');
+    expect(result.stdout).toContain(
+      'case:follow_logs calls=ensure_mounts,stop_container,wait_port_free,docker_start,follow_logs',
+    );
+    expect(result.stdout).toContain('case:api_listener status=failed:1');
+    expect(result.stdout).toContain(
+      'case:api_listener calls=ensure_mounts,stop_container,wait_port_free,docker_start,follow_logs,api_listener',
+    );
+  });
+
+  it('does not run the AFSCP read-export probe after local runtime ensure fails', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'afscp-local-runtime-helper-'));
+    const runnerPath = path.join(tempRoot, 'runner.sh');
+    const callsPath = path.join(tempRoot, 'calls.log');
+
+    try {
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        `source "${repoRoot}/scripts/lib/afscp-local-runtime.sh"`,
+        `calls_file="${callsPath}"`,
+        'with_afscp_local_runtime_env() {',
+        '  printf "ensure:%s\\n" "$1" >> "$calls_file"',
+        '  return 42',
+        '}',
+        'probe_afscp_read_export_for_gate() {',
+        '  printf "probe:%s\\n" "$1" >> "$calls_file"',
+        '}',
+        `if ensure_afscp_local_runtime_for_gate "${tempRoot}/runtime"; then`,
+        '  printf "status=ready\\n"',
+        'else',
+        '  printf "status=failed:%s\\n" "$?"',
+        'fi',
+        'cat "$calls_file"',
+        '',
+      ].join('\n'));
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('status=failed:1');
+      expect(result.stdout).toContain(`ensure:${tempRoot}/runtime`);
+      expect(result.stdout).not.toContain('probe:');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed when workload mount SecretRefs point at a non-default local-real volume', () => {
     const result = runInternalCommonSnippet(`
       AFSCP_JVS_ENABLED=false

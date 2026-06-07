@@ -803,8 +803,8 @@ ensure_integration_afscp_local_runtime() {
   echo "[integration-e2e-full] ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
   INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED=1
   stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" >/dev/null 2>&1 || true
-  reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
-  ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
+  reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1
+  ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1
 }
 
 stop_integration_afscp_local_runtime() {
@@ -813,6 +813,28 @@ stop_integration_afscp_local_runtime() {
   fi
 
   stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"
+}
+
+tail_integration_afscp_log_evidence() {
+  local source_file="$1"
+  local output_file="$2"
+  local max_lines="${3:-200}"
+  mkdir -p "$(dirname "${output_file}")"
+  if [[ -f "${source_file}" ]]; then
+    tail -n "${max_lines}" "${source_file}" > "${output_file}" 2>&1 || true
+  else
+    printf 'source file not available: %s\n' "${source_file}" > "${output_file}"
+  fi
+}
+
+collect_integration_afscp_local_runtime_failure_evidence() {
+  local evidence_dir="${CURRENT_GATE_RESULT_EVIDENCE_DIR:-${INTEGRATION_LOG_DIR}}/afscp-local-runtime"
+  mkdir -p "${evidence_dir}"
+  tail_integration_afscp_log_evidence "${INTEGRATION_AFSCP_DIR}/afscp-export-gateway.log" "${evidence_dir}/afscp-export-gateway-log-tail.txt" 300
+  tail_integration_afscp_log_evidence "${INTEGRATION_AFSCP_DIR}/afscp-api.log" "${evidence_dir}/afscp-api-log-tail.txt" 300
+  tail_integration_afscp_log_evidence "${INTEGRATION_AFSCP_DIR}/afscp-worker.log" "${evidence_dir}/afscp-worker-log-tail.txt" 300
+  tail_integration_afscp_log_evidence "${INTEGRATION_AFSCP_DIR}/afscp-read-export-probe.log" "${evidence_dir}/afscp-read-export-probe-log-tail.txt" 160
+  echo "[integration-e2e-full] AFSCP local runtime failure evidence: ${evidence_dir}" >&2
 }
 
 if parent_stack_reuse_enabled; then
@@ -860,6 +882,7 @@ else
   fi
 
   if ! ensure_integration_afscp_local_runtime; then
+    collect_integration_afscp_local_runtime_failure_evidence
     gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "afscp_local_runtime" "AFSCP local runtime unavailable"
     echo "[integration-e2e-full] AFSCP local runtime did not become ready at ${AFSCP_BASE_URL}" >&2
     stop_integration_afscp_local_runtime || true

@@ -116,8 +116,8 @@ with_afscp_local_runtime_env() {
 
 ensure_afscp_local_runtime_for_gate() {
   local runtime_dir="$1"
-  with_afscp_local_runtime_env "${runtime_dir}" ensure_afscp_local_runtime
-  probe_afscp_read_export_for_gate "${runtime_dir}"
+  with_afscp_local_runtime_env "${runtime_dir}" ensure_afscp_local_runtime || return 1
+  probe_afscp_read_export_for_gate "${runtime_dir}" || return 1
 }
 
 probe_afscp_read_export_for_gate() {

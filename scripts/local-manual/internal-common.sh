@@ -2690,10 +2690,13 @@ afscp_stop_container_id_file() {
 
 afscp_wait_for_gateway_listener() {
   local timeout="${1:-90}"
-  local started
+  local started gateway_url status
   started="$(date +%s)"
+  gateway_url="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}}"
+  gateway_url="${gateway_url%/}/"
   while true; do
-    if lsof -tiTCP:"${AFSCP_EXPORT_GATEWAY_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "${gateway_url}" 2>/dev/null || true)"
+    if [[ -n "${status}" && "${status}" != "000" ]]; then
       write_ready_file "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
       return 0
     fi
@@ -2745,25 +2748,25 @@ afscp_run_worker_once() {
 }
 
 start_afscp_export_gateway_source() {
-  ensure_afscp_local_runtime_mounts_and_write_env
-  afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
-  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
-  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
+  ensure_afscp_local_runtime_mounts_and_write_env || return 1
+  afscp_stop_pid_file "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway" || return 1
+  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}" || return 1
+  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway" || return 1
   internal_info "starting AFSCP export gateway at ${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
-  launch_detached "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "${AFSCP_EXPORT_GATEWAY_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-export-gateway --serve"
-  afscp_wait_for_gateway_listener 120
-  capture_listener_pid "${AFSCP_EXPORT_GATEWAY_PORT}" "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway"
+  launch_detached "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "${AFSCP_EXPORT_GATEWAY_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-export-gateway --serve" || return 1
+  afscp_wait_for_gateway_listener 120 || return 1
+  capture_listener_pid "${AFSCP_EXPORT_GATEWAY_PORT}" "${AFSCP_EXPORT_GATEWAY_PID_FILE}" "AFSCP export gateway" || return 1
 }
 
 start_afscp_export_gateway_image() {
-  ensure_afscp_local_runtime_mounts_and_write_env
-  afscp_stop_container_id_file "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "AFSCP export gateway" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}"
-  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}"
-  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway"
+  ensure_afscp_local_runtime_mounts_and_write_env || return 1
+  afscp_stop_container_id_file "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "AFSCP export gateway" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" || return 1
+  rm -f "${AFSCP_EXPORT_GATEWAY_READY_FILE}" || return 1
+  wait_port_free "${AFSCP_EXPORT_GATEWAY_PORT}" "AFSCP export gateway" || return 1
   internal_info "starting AFSCP export gateway from pinned image at ${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
-  afscp_docker_start_inherit_image_user "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve --listen-addr "${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}"
-  afscp_follow_container_logs "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" "${AFSCP_EXPORT_GATEWAY_LOG}"
-  afscp_wait_for_gateway_listener 120
+  afscp_docker_start_inherit_image_user "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve --listen-addr "${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR}" || return 1
+  afscp_follow_container_logs "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" "${AFSCP_EXPORT_GATEWAY_LOG}" || return 1
+  afscp_wait_for_gateway_listener 120 || return 1
 }
 
 start_afscp_export_gateway() {
@@ -2775,25 +2778,25 @@ start_afscp_export_gateway() {
 }
 
 start_afscp_api_source() {
-  ensure_afscp_local_runtime_mounts_and_write_env
-  afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API"
-  rm -f "${AFSCP_API_READY_FILE}"
-  wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
+  ensure_afscp_local_runtime_mounts_and_write_env || return 1
+  afscp_stop_pid_file "${AFSCP_API_PID_FILE}" "AFSCP API" || return 1
+  rm -f "${AFSCP_API_READY_FILE}" || return 1
+  wait_port_free "${AFSCP_API_PORT}" "AFSCP API" || return 1
   internal_info "starting AFSCP internal API at ${AFSCP_BASE_URL}"
-  launch_detached "${AFSCP_API_PID_FILE}" "${AFSCP_API_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-api --serve"
-  afscp_wait_for_api_listener 120
-  capture_listener_pid "${AFSCP_API_PORT}" "${AFSCP_API_PID_FILE}" "AFSCP API"
+  launch_detached "${AFSCP_API_PID_FILE}" "${AFSCP_API_LOG}" "$(afscp_runtime_shell_prefix) && exec go run ./cmd/afscp-api --serve" || return 1
+  afscp_wait_for_api_listener 120 || return 1
+  capture_listener_pid "${AFSCP_API_PORT}" "${AFSCP_API_PID_FILE}" "AFSCP API" || return 1
 }
 
 start_afscp_api_image() {
-  ensure_afscp_local_runtime_mounts_and_write_env
-  afscp_stop_container_id_file "${AFSCP_API_CONTAINER_ID_FILE}" "AFSCP API" "${AFSCP_API_CONTAINER_NAME}"
-  rm -f "${AFSCP_API_READY_FILE}"
-  wait_port_free "${AFSCP_API_PORT}" "AFSCP API"
+  ensure_afscp_local_runtime_mounts_and_write_env || return 1
+  afscp_stop_container_id_file "${AFSCP_API_CONTAINER_ID_FILE}" "AFSCP API" "${AFSCP_API_CONTAINER_NAME}" || return 1
+  rm -f "${AFSCP_API_READY_FILE}" || return 1
+  wait_port_free "${AFSCP_API_PORT}" "AFSCP API" || return 1
   internal_info "starting AFSCP internal API from pinned image at ${AFSCP_BASE_URL}"
-  afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve --listen "${AFSCP_API_LISTEN_ADDR}"
-  afscp_follow_container_logs "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" "${AFSCP_API_LOG}"
-  afscp_wait_for_api_listener 120
+  afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve --listen "${AFSCP_API_LISTEN_ADDR}" || return 1
+  afscp_follow_container_logs "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" "${AFSCP_API_LOG}" || return 1
+  afscp_wait_for_api_listener 120 || return 1
 }
 
 start_afscp_api() {
@@ -2820,7 +2823,7 @@ start_afscp_worker_loop_source() {
     fi
   fi
   internal_err "AFSCP worker loop failed to start; see ${AFSCP_WORKER_LOG}"
-  exit 1
+  return 1
 }
 
 start_afscp_worker_loop_image() {
@@ -2836,7 +2839,7 @@ start_afscp_worker_loop_image() {
     return 0
   fi
   internal_err "AFSCP worker loop failed to start; see ${AFSCP_WORKER_LOG}"
-  exit 1
+  return 1
 }
 
 start_afscp_worker_loop() {
@@ -2944,24 +2947,24 @@ JSON
   if [[ "${status}" != "200" ]]; then
     internal_err "failed to create AFSCP default volume operation: http ${status}"
     cat "${response_file}" >&2 || true
-    exit 1
+    return 1
   fi
-  operation_id="$(afscp_operation_id_from_file "${response_file}")"
+  operation_id="$(afscp_operation_id_from_file "${response_file}")" || return 1
   afscp_wait_operation_succeeded "${operation_id}"
 }
 
 ensure_afscp_local_runtime() {
-  prepare_afscp_local_runtime_env
-  ensure_afscp_local_runtime_prerequisites
-  ensure_afscp_local_runtime_mounts_and_write_env
-  apply_afscp_postgres_migrations
+  prepare_afscp_local_runtime_env || return 1
+  ensure_afscp_local_runtime_prerequisites || return 1
+  ensure_afscp_local_runtime_mounts_and_write_env || return 1
+  apply_afscp_postgres_migrations || return 1
   internal_info "validating AFSCP worker config"
-  afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1
-  start_afscp_export_gateway
-  start_afscp_api
-  ensure_afscp_default_volume
-  wait_afscp_api_ready
-  start_afscp_worker_loop
+  afscp_run_worker_once >> "${AFSCP_WORKER_LOG}" 2>&1 || return 1
+  start_afscp_export_gateway || return 1
+  start_afscp_api || return 1
+  ensure_afscp_default_volume || return 1
+  wait_afscp_api_ready || return 1
+  start_afscp_worker_loop || return 1
 }
 
 afscp_api_status() {

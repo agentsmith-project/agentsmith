@@ -1125,6 +1125,97 @@ describe('AFSCP File Library storage adapter', () => {
     }
   });
 
+  it('logs safe read export diagnostics for bounded WebDAV list pending', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    try {
+      const result = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_permission_diagnostic',
+      });
+      const assertion = expect(result).rejects.toThrow('file_library_list_pending');
+      await vi.advanceTimersByTimeAsync(12_000);
+      await assertion;
+
+      const diagnostics = warnSpy.mock.calls
+        .filter((call) => call[0] === '[files] file_library_list_read_export_diagnostic %s')
+        .map((call) => JSON.parse(String(call[1])) as { diagnostic: Record<string, unknown> })
+        .map((payload) => payload.diagnostic);
+      expect(diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          action: 'acquire',
+          cache_action: 'create',
+          export_id_fingerprint: expect.stringMatching(/^sha256:/),
+          active_count: 1,
+          storage_generation: 1,
+          expires_at: '2099-05-09T01:00:00.000Z',
+          ttl_remaining_ms: expect.any(Number),
+        }),
+        expect.objectContaining({
+          action: 'webdav_propfind',
+          cache_action: 'failed',
+          status: 401,
+          mapped_message: 'file_library_read_export_webdav_not_ready',
+          public_message: 'file_library_list_pending',
+          attempt_count: 6,
+          retrying: false,
+        }),
+        expect.objectContaining({
+          action: 'release',
+          cache_action: 'keep_alive',
+          reason: 'pending_list',
+          keep_alive: true,
+          has_enough_time: true,
+        }),
+      ]));
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(
+        /one-time-webdav-secret|Basic|https:\/\/files\.example\.test|export_flib_123/,
+      );
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps list pending behavior when read export diagnostic logging throws', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      throw new Error('diagnostic logger unavailable');
+    });
+    const fetchMock = vi.fn(async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
+    const { adapter } = await createMappedAdapter({ fetchFn: fetchMock });
+
+    try {
+      const result = adapter.listEntries({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: 'flib_123',
+        path: 'workspace/.artifacts/',
+        pageSize: 20,
+        sortBy: 'name',
+        sortOrder: 'asc',
+        requestId: 'req_list_permission_diagnostic_throw',
+      });
+      const assertion = expect(result).rejects.toThrow('file_library_list_pending');
+      await vi.advanceTimersByTimeAsync(12_000);
+      await assertion;
+
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a pending read export warm for the next listing request', async () => {
     vi.useFakeTimers();
     const xml = [

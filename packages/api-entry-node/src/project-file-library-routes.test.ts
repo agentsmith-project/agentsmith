@@ -1801,6 +1801,64 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('keeps entries list behavior when invalidation diagnostic logging throws', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      throw new Error('diagnostic logger unavailable');
+    });
+    try {
+      const storageAdapter = createStorageAdapter({
+        listEntries: vi.fn(async () => ({
+          path: 'workspace/.artifacts/',
+          items: [],
+          nextContinuationToken: null,
+        })),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+      await seedBoundTask({
+        deps,
+        libraryId,
+        taskId: 'task_entries_pre_list_release_warn_throw',
+        title: 'Entries pre-list release warn throw task',
+      });
+      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+        runtimeBinding = null;
+      });
+
+      const entriesJson = vi.fn();
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryEntries',
+        method: 'GET',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: {
+          url: '/file-libraries/entries?path=workspace%2F.artifacts',
+          headers: { 'x-request-id': 'req_entries_pre_list_release_warn_throw' },
+        } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: entriesJson,
+        readBody: vi.fn(),
+      });
+
+      expect(warnSpy).toHaveBeenCalled();
+      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+      expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
+      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
+        path: 'workspace/.artifacts/',
+        items: [],
+        next_continuation_token: null,
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('returns entries pending without creating a stale export while pre-list runtime release is pending', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => ({
@@ -2241,6 +2299,7 @@ describe('project-file-library-routes', () => {
 
   it('continues release-pending entries runtime access in the background before invalidating read export', async () => {
     vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const storageAdapter = createStorageAdapter({
         listEntries: vi.fn(async () => {
@@ -2329,7 +2388,16 @@ describe('project-file-library-routes', () => {
           }),
         }),
       });
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[files] file_library_list_read_export_invalidation_diagnostic %s',
+        expect.stringContaining('"action":"scheduled"'),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[files] file_library_list_read_export_invalidation_diagnostic %s',
+        expect.stringContaining('"reason":"runtime_access_release_recheck_completed"'),
+      );
     } finally {
+      warnSpy.mockRestore();
       vi.useRealTimers();
     }
   });

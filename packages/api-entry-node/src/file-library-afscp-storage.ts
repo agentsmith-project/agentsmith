@@ -326,6 +326,7 @@ interface CachedReadExportLease {
   cacheKey: string;
   entry: CachedReadExportEntry;
   context: WebdavExportContext;
+  acquireCacheAction: 'create' | 'reuse';
 }
 
 interface AfscpFileLibraryStorageAdapterOptions {
@@ -417,6 +418,90 @@ function readOnlyExportCacheKey(mapping: ProjectFileLibraryAfscpMapping): string
     mapping.repo_id,
     String(mapping.project_storage_generation),
   ].join(':');
+}
+
+function fingerprintSensitiveId(value: string | null | undefined): string | undefined {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) {
+    return undefined;
+  }
+  return `sha256:${createHash('sha256').update(normalized).digest('base64url').slice(0, 12)}`;
+}
+
+function readTtlRemainingMs(expiresAtMs: number | undefined, nowMs: number): number | undefined {
+  if (expiresAtMs === undefined || !Number.isFinite(expiresAtMs)) {
+    return undefined;
+  }
+  return Math.max(0, expiresAtMs - nowMs);
+}
+
+function logFileLibraryListReadExportDiagnostic(input: {
+  library: FileLibraryStorageLibraryInput & { requestId?: string };
+  action: 'acquire' | 'webdav_propfind' | 'release' | 'invalidate' | 'idle_revoke';
+  cacheAction?: string;
+  acquireCacheAction?: string;
+  reason?: string;
+  mapping?: ProjectFileLibraryAfscpMapping;
+  context?: WebdavExportContext;
+  entry?: CachedReadExportEntry;
+  cacheKey?: string;
+  attempt?: number;
+  attemptCount?: number;
+  status?: number;
+  mappedMessage?: string;
+  publicMessage?: string;
+  retrying?: boolean;
+  keepAlive?: boolean;
+  hasEnoughTime?: boolean;
+  isCurrent?: boolean;
+  invalidated?: boolean;
+  createdBeforeOrAtMs?: number;
+  idleRevokeMs?: number;
+}): void {
+  const nowMs = Date.now();
+  const context = input.context ?? input.entry?.context;
+  const mapping = input.mapping ?? context?.mapping;
+  const expiresAtMs = input.entry?.expiresAtMs
+    ?? (context ? readExportExpiresAtMs(context.access) : undefined);
+  const diagnostic = {
+    workspace_id: input.library.workspaceId,
+    project_id: input.library.projectId,
+    file_library_id: input.library.libraryId,
+    ...(input.library.requestId ? { request_id: input.library.requestId } : {}),
+    action: input.action,
+    ...(input.cacheAction ? { cache_action: input.cacheAction } : {}),
+    ...(input.acquireCacheAction ? { acquire_cache_action: input.acquireCacheAction } : {}),
+    ...(input.reason ? { reason: input.reason } : {}),
+    ...(input.cacheKey ? { cache_key_fingerprint: fingerprintSensitiveId(input.cacheKey) } : {}),
+    ...(context ? { export_id_fingerprint: fingerprintSensitiveId(context.exportId) } : {}),
+    ...(mapping ? { storage_generation: mapping.project_storage_generation } : {}),
+    ...(input.entry ? { active_count: input.entry.activeCount } : {}),
+    ...(context?.access.expires_at ? { expires_at: context.access.expires_at } : {}),
+    ...(expiresAtMs !== undefined ? { ttl_remaining_ms: readTtlRemainingMs(expiresAtMs, nowMs) } : {}),
+    ...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
+    ...(input.attemptCount !== undefined ? { attempt_count: input.attemptCount } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.mappedMessage ? { mapped_message: input.mappedMessage } : {}),
+    ...(input.publicMessage ? { public_message: input.publicMessage } : {}),
+    ...(input.retrying !== undefined ? { retrying: input.retrying } : {}),
+    ...(input.keepAlive !== undefined ? { keep_alive: input.keepAlive } : {}),
+    ...(input.hasEnoughTime !== undefined ? { has_enough_time: input.hasEnoughTime } : {}),
+    ...(input.isCurrent !== undefined ? { is_current: input.isCurrent } : {}),
+    ...(input.invalidated !== undefined ? { invalidated: input.invalidated } : {}),
+    ...(input.createdBeforeOrAtMs !== undefined ? { created_before_or_at_ms: input.createdBeforeOrAtMs } : {}),
+    ...(input.idleRevokeMs !== undefined ? { idle_revoke_ms: input.idleRevokeMs } : {}),
+  };
+  const payload = {
+    event: 'file_library_list_read_export_diagnostic',
+    theme: 'runtime_pending_readiness',
+    scope: 'file_library_list_read_export',
+    diagnostic,
+  };
+  try {
+    console.warn('[files] file_library_list_read_export_diagnostic %s', JSON.stringify(payload));
+  } catch {
+    // Diagnostics must never affect file library request handling.
+  }
 }
 
 function normalizeOperationStatus(value: unknown): FileLibraryStorageOperationStatus {
@@ -2007,14 +2092,17 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     try {
       for (let attempt = 0; attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length; attempt += 1) {
         await waitForReadExportRetryDelay(READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS[attempt] ?? 0, input.signal);
+        let responseStatus: number | undefined;
         try {
           const response = await this.webdavFetch(lease.context.access, path, {
             method: 'PROPFIND',
             headers: { Depth: '1' },
             signal: input.signal,
           });
+          responseStatus = response.status;
           ensureReadExportListOk(response);
-          let items = parseWebdavEntries(await response.text(), path);
+          const parsedItems = parseWebdavEntries(await response.text(), path);
+          let items = parsedItems;
           if (input.search) {
             const needle = input.search.toLowerCase();
             items = items.filter((item) => item.name.toLowerCase().includes(needle));
@@ -2048,14 +2136,41 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
           };
         } catch (error) {
           const message = mapListEntriesStorageMessage(error);
+          const retrying = attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
+            && isRetryableListEntriesStorageMessage(message);
+          const publicMessage = publicListEntriesStorageMessage(message);
+          logFileLibraryListReadExportDiagnostic({
+            library: input,
+            action: 'webdav_propfind',
+            cacheAction: retrying ? 'retry' : 'failed',
+            reason: retrying ? 'retryable_list_readiness' : 'bounded_retry_exhausted',
+            context: lease.context,
+            entry: lease.entry,
+            cacheKey: lease.cacheKey,
+            attempt: attempt + 1,
+            attemptCount: READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length,
+            status: responseStatus,
+            mappedMessage: message,
+            publicMessage,
+            retrying,
+          });
           if (
-            attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
-            && isRetryableListEntriesStorageMessage(message)
+            retrying
           ) {
             continue;
           }
-          const publicMessage = publicListEntriesStorageMessage(message);
           keepReadExportAlive = publicMessage === 'file_library_list_pending';
+          if (keepReadExportAlive) {
+            logFileLibraryListReadExportDiagnostic({
+              library: input,
+              action: 'acquire',
+              cacheAction: lease.acquireCacheAction,
+              reason: 'list_pending',
+              context: lease.context,
+              entry: lease.entry,
+              cacheKey: lease.cacheKey,
+            });
+          }
           throw new Error(publicMessage);
         }
       }
@@ -2076,6 +2191,15 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     const cacheKey = readOnlyExportCacheKey(mapping);
     const entry = this.readOnlyListExportCache.get(cacheKey);
     if (!entry) {
+      logFileLibraryListReadExportDiagnostic({
+        library: input,
+        action: 'invalidate',
+        cacheAction: 'skipped',
+        reason: 'cache_miss',
+        mapping,
+        cacheKey,
+        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      });
       return;
     }
     if (
@@ -2083,12 +2207,33 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       && Number.isFinite(input.createdBeforeOrAtMs)
       && entry.createdAtMs > input.createdBeforeOrAtMs
     ) {
+      logFileLibraryListReadExportDiagnostic({
+        library: input,
+        action: 'invalidate',
+        cacheAction: 'skipped',
+        reason: 'entry_newer_than_cutoff',
+        mapping,
+        entry,
+        cacheKey,
+        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      });
       return;
     }
     this.readOnlyListExportCache.delete(cacheKey);
     clearTimer(entry.idleRevokeTimer);
     entry.idleRevokeTimer = null;
     entry.invalidated = true;
+    logFileLibraryListReadExportDiagnostic({
+      library: input,
+      action: 'invalidate',
+      cacheAction: entry.activeCount === 0 ? 'revoked' : 'marked_invalidated',
+      reason: 'explicit_invalidation',
+      mapping,
+      entry,
+      cacheKey,
+      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      invalidated: entry.invalidated,
+    });
     if (entry.activeCount === 0) {
       await this.revokeExportAfterUse(input, entry.context);
     }
@@ -2099,7 +2244,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
   ): Promise<CachedReadExportLease> {
     const mapping = await this.requireActiveMapping(input);
     const cacheKey = readOnlyExportCacheKey(mapping);
-    const cached = await this.getUsableReadExportForList(input, cacheKey);
+    const cached = await this.getUsableReadExportForList(input, mapping, cacheKey);
     if (cached) {
       return cached;
     }
@@ -2123,12 +2268,27 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
           cacheKey,
           entry,
           context,
+          acquireCacheAction: 'create',
         };
       } catch (error) {
         const message = mapListEntriesStorageMessage(error);
+        const retrying = attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
+          && isRetryableListEntriesStorageMessage(message);
+        logFileLibraryListReadExportDiagnostic({
+          library: input,
+          action: 'acquire',
+          cacheAction: retrying ? 'create_retry' : 'create_failed',
+          reason: retrying ? 'retryable_create_export' : 'bounded_retry_exhausted',
+          mapping,
+          cacheKey,
+          attempt: attempt + 1,
+          attemptCount: READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length,
+          mappedMessage: message,
+          publicMessage: publicListEntriesStorageMessage(message),
+          retrying,
+        });
         if (
-          attempt < READ_EXPORT_LIST_READINESS_RETRY_DELAYS_MS.length - 1
-          && isRetryableListEntriesStorageMessage(message)
+          retrying
         ) {
           continue;
         }
@@ -2140,6 +2300,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
 
   private async getUsableReadExportForList(
     input: FileLibraryStorageLibraryInput & { actorUserId?: string; requestId?: string },
+    mapping: ProjectFileLibraryAfscpMapping,
     cacheKey: string,
   ): Promise<CachedReadExportLease | null> {
     const entry = this.readOnlyListExportCache.get(cacheKey);
@@ -2148,10 +2309,22 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     }
     const hasEnoughTime = entry.expiresAtMs - Date.now() > READ_EXPORT_LIST_CACHE_MIN_REMAINING_MS;
     if (entry.invalidated || !hasEnoughTime) {
+      const discardReason = entry.invalidated ? 'invalidated' : 'ttl_below_min';
       this.readOnlyListExportCache.delete(cacheKey);
       clearTimer(entry.idleRevokeTimer);
       entry.idleRevokeTimer = null;
       entry.invalidated = true;
+      logFileLibraryListReadExportDiagnostic({
+        library: input,
+        action: 'acquire',
+        cacheAction: entry.activeCount === 0 ? 'revoked' : 'discard',
+        reason: discardReason,
+        mapping,
+        entry,
+        cacheKey,
+        hasEnoughTime,
+        invalidated: entry.invalidated,
+      });
       if (entry.activeCount === 0) {
         await this.revokeExportAfterUse(input, entry.context);
       }
@@ -2164,6 +2337,7 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       cacheKey,
       entry,
       context: entry.context,
+      acquireCacheAction: 'reuse',
     };
   }
 
@@ -2178,11 +2352,33 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
     const isCurrent = current === entry;
     const hasEnoughTime = entry.expiresAtMs - Date.now() > READ_EXPORT_LIST_CACHE_MIN_REMAINING_MS;
     if (!outcome.keepAlive || !hasEnoughTime || entry.invalidated) {
+      const wasInvalidated = entry.invalidated;
+      const releaseReason = !outcome.keepAlive
+        ? 'list_completed_or_failed_non_pending'
+        : !hasEnoughTime
+          ? 'ttl_below_min'
+          : 'invalidated';
       entry.invalidated = true;
       clearTimer(entry.idleRevokeTimer);
       entry.idleRevokeTimer = null;
       if (isCurrent) {
         this.readOnlyListExportCache.delete(lease.cacheKey);
+      }
+      if (outcome.keepAlive || !hasEnoughTime || wasInvalidated) {
+        logFileLibraryListReadExportDiagnostic({
+          library: input,
+          action: 'release',
+          cacheAction: entry.activeCount === 0 ? 'revoked' : 'marked_invalidated',
+          acquireCacheAction: lease.acquireCacheAction,
+          reason: releaseReason,
+          context: lease.context,
+          entry,
+          cacheKey: lease.cacheKey,
+          keepAlive: outcome.keepAlive,
+          hasEnoughTime,
+          isCurrent,
+          invalidated: entry.invalidated,
+        });
       }
       if (entry.activeCount === 0) {
         await this.revokeExportAfterUse(input, entry.context);
@@ -2190,21 +2386,85 @@ export class AfscpFileLibraryStorageAdapter implements FileLibraryStoragePort {
       return;
     }
     if (!isCurrent || entry.activeCount > 0) {
+      logFileLibraryListReadExportDiagnostic({
+        library: input,
+        action: 'release',
+        cacheAction: 'skipped',
+        acquireCacheAction: lease.acquireCacheAction,
+        reason: !isCurrent ? 'not_current_cache_entry' : 'active_lease_remaining',
+        context: lease.context,
+        entry,
+        cacheKey: lease.cacheKey,
+        keepAlive: outcome.keepAlive,
+        hasEnoughTime,
+        isCurrent,
+        invalidated: entry.invalidated,
+      });
       return;
     }
     entry.idleRevokeTimer = setTimeout(() => {
       if (
         this.readOnlyListExportCache.get(lease.cacheKey) !== entry
-        || entry.activeCount > 0
       ) {
+        logFileLibraryListReadExportDiagnostic({
+          library: input,
+          action: 'idle_revoke',
+          cacheAction: 'skipped',
+          reason: 'not_current_cache_entry',
+          context: lease.context,
+          entry,
+          cacheKey: lease.cacheKey,
+          idleRevokeMs: READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS,
+          invalidated: entry.invalidated,
+        });
+        return;
+      }
+      if (entry.activeCount > 0) {
+        logFileLibraryListReadExportDiagnostic({
+          library: input,
+          action: 'idle_revoke',
+          cacheAction: 'skipped',
+          reason: 'active_lease_remaining',
+          context: lease.context,
+          entry,
+          cacheKey: lease.cacheKey,
+          idleRevokeMs: READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS,
+          invalidated: entry.invalidated,
+        });
         return;
       }
       this.readOnlyListExportCache.delete(lease.cacheKey);
       entry.invalidated = true;
       entry.idleRevokeTimer = null;
+      logFileLibraryListReadExportDiagnostic({
+        library: input,
+        action: 'idle_revoke',
+        cacheAction: 'revoked',
+        reason: 'idle_timeout',
+        context: lease.context,
+        entry,
+        cacheKey: lease.cacheKey,
+        idleRevokeMs: READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS,
+        invalidated: entry.invalidated,
+      });
       void this.revokeExportAfterUse(input, entry.context);
     }, READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS);
     unrefTimer(entry.idleRevokeTimer);
+    logFileLibraryListReadExportDiagnostic({
+      library: input,
+      action: 'release',
+      cacheAction: 'keep_alive',
+      acquireCacheAction: lease.acquireCacheAction,
+      reason: 'pending_list',
+      context: lease.context,
+      entry,
+      cacheKey: lease.cacheKey,
+      keepAlive: outcome.keepAlive,
+      hasEnoughTime,
+      isCurrent,
+      invalidated: entry.invalidated,
+      idleRevokeMs: READ_EXPORT_LIST_CACHE_IDLE_REVOKE_MS,
+    });
   }
 
   async createFolder(input: FileLibraryStorageLibraryInput & {

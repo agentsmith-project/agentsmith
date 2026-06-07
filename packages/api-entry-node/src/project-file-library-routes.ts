@@ -1631,6 +1631,52 @@ function logRuntimeAccessReleaseFailure(input: {
   }
 }
 
+function readRuntimeAccessReleaseStatus(response: RuntimeAccessReleaseRouteResponse | null | undefined): string | undefined {
+  const value = response?.body.runtime_access_status;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function logFileLibraryListReadExportInvalidationDiagnostic(input: {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+  trigger: string;
+  action: 'scheduled' | 'call_storage_invalidate' | 'skipped' | 'failed';
+  reason: string;
+  createdBeforeOrAtMs?: number;
+  releaseResponse?: RuntimeAccessReleaseRouteResponse | null;
+  recheckAttempt?: number;
+}): void {
+  const runtimeAccessStatus = readRuntimeAccessReleaseStatus(input.releaseResponse);
+  const diagnostic = {
+    theme: 'runtime_pending_readiness',
+    workspace_id: input.workspaceId,
+    project_id: input.projectId,
+    file_library_id: input.libraryId,
+    ...(input.requestId ? { request_id: input.requestId } : {}),
+    trigger: input.trigger,
+    action: input.action,
+    reason: input.reason,
+    ...(input.createdBeforeOrAtMs !== undefined ? { created_before_or_at_ms: input.createdBeforeOrAtMs } : {}),
+    ...(input.releaseResponse ? { release_status_code: input.releaseResponse.statusCode } : {}),
+    ...(runtimeAccessStatus ? { runtime_access_status: runtimeAccessStatus } : {}),
+    ...(input.releaseResponse ? { release_error_code: readResponseBodyErrorCode(input.releaseResponse.body) } : {}),
+    ...(input.recheckAttempt !== undefined ? { recheck_attempt: input.recheckAttempt } : {}),
+  };
+  const payload = {
+    event: 'file_library_list_read_export_invalidation_diagnostic',
+    theme: 'runtime_pending_readiness',
+    scope: 'file_library_list_read_export',
+    diagnostic,
+  };
+  try {
+    console.warn('[files] file_library_list_read_export_invalidation_diagnostic %s', JSON.stringify(payload));
+  } catch {
+    // Diagnostics must never affect file library request handling.
+  }
+}
+
 function runtimeAccessReleaseHardBlockers(
   blockers: FileLibraryRuntimeAccessReleaseBlockerCode[],
 ): FileLibraryRuntimeAccessReleaseBlockerCode[] {
@@ -2539,16 +2585,65 @@ async function invalidateListReadExport(input: {
   libraryId: string;
   createdBeforeOrAtMs?: number;
   requestId?: string;
+  trigger?: string;
+  reason?: string;
+  releaseResponse?: RuntimeAccessReleaseRouteResponse | null;
+  recheckAttempt?: number;
 }): Promise<void> {
-  await input.storageAdapter.invalidateListReadExport?.({
+  const trigger = input.trigger ?? 'unspecified';
+  const reason = input.reason ?? 'unspecified';
+  if (typeof input.storageAdapter.invalidateListReadExport !== 'function') {
+    logFileLibraryListReadExportInvalidationDiagnostic({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      requestId: input.requestId,
+      trigger,
+      action: 'skipped',
+      reason: 'storage_adapter_missing_invalidate',
+      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      releaseResponse: input.releaseResponse,
+      recheckAttempt: input.recheckAttempt,
+    });
+    return;
+  }
+  logFileLibraryListReadExportInvalidationDiagnostic({
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     libraryId: input.libraryId,
-    ...(typeof input.createdBeforeOrAtMs === 'number'
-      ? { createdBeforeOrAtMs: input.createdBeforeOrAtMs }
-      : {}),
     requestId: input.requestId,
+    trigger,
+    action: 'call_storage_invalidate',
+    reason,
+    createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+    releaseResponse: input.releaseResponse,
+    recheckAttempt: input.recheckAttempt,
   });
+  try {
+    await input.storageAdapter.invalidateListReadExport({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      ...(typeof input.createdBeforeOrAtMs === 'number'
+        ? { createdBeforeOrAtMs: input.createdBeforeOrAtMs }
+        : {}),
+      requestId: input.requestId,
+    });
+  } catch (error) {
+    logFileLibraryListReadExportInvalidationDiagnostic({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      requestId: input.requestId,
+      trigger,
+      action: 'failed',
+      reason: 'storage_invalidate_failed',
+      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      releaseResponse: input.releaseResponse,
+      recheckAttempt: input.recheckAttempt,
+    });
+    throw error;
+  }
 }
 
 function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
@@ -2561,22 +2656,60 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
   actorUserId: string;
   createdBeforeOrAtMs: number;
   requestId?: string;
+  trigger: string;
+  reason: string;
 }): void {
+  logFileLibraryListReadExportInvalidationDiagnostic({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    libraryId: input.libraryId,
+    requestId: input.requestId,
+    trigger: input.trigger,
+    action: 'scheduled',
+    reason: input.reason,
+    createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+  });
   void (async () => {
     let releaseResponse: RuntimeAccessReleaseRouteResponse | null = await input.releasePromise.catch(() => null);
     if (!releaseResponse) {
+      logFileLibraryListReadExportInvalidationDiagnostic({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        requestId: input.requestId,
+        trigger: input.trigger,
+        action: 'skipped',
+        reason: 'release_response_unavailable',
+        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      });
       return;
     }
 
     if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-      await invalidateListReadExport(input);
+      await invalidateListReadExport({
+        ...input,
+        reason: 'runtime_access_release_completed',
+        releaseResponse,
+      });
       return;
     }
     if (!runtimeAccessReleasePending(releaseResponse)) {
+      logFileLibraryListReadExportInvalidationDiagnostic({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        libraryId: input.libraryId,
+        requestId: input.requestId,
+        trigger: input.trigger,
+        action: 'skipped',
+        reason: 'runtime_access_release_not_pending',
+        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+        releaseResponse,
+      });
       return;
     }
 
-    for (const delayMs of FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS) {
+    for (let recheckIndex = 0; recheckIndex < FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS.length; recheckIndex += 1) {
+      const delayMs = FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS[recheckIndex] ?? 0;
       await waitForEntriesPendingRuntimeReleaseRecheck(delayMs);
       releaseResponse = await releaseRuntimeAccessForFileLibrary({
         deps: input.deps,
@@ -2587,16 +2720,56 @@ function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
         requestId: input.requestId,
       }).catch(() => null);
       if (!releaseResponse) {
+        logFileLibraryListReadExportInvalidationDiagnostic({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          libraryId: input.libraryId,
+          requestId: input.requestId,
+          trigger: input.trigger,
+          action: 'skipped',
+          reason: 'release_recheck_response_unavailable',
+          createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+          recheckAttempt: recheckIndex + 1,
+        });
         return;
       }
       if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-        await invalidateListReadExport(input);
+        await invalidateListReadExport({
+          ...input,
+          reason: 'runtime_access_release_recheck_completed',
+          releaseResponse,
+          recheckAttempt: recheckIndex + 1,
+        });
         return;
       }
       if (!runtimeAccessReleasePending(releaseResponse)) {
+        logFileLibraryListReadExportInvalidationDiagnostic({
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          libraryId: input.libraryId,
+          requestId: input.requestId,
+          trigger: input.trigger,
+          action: 'skipped',
+          reason: 'runtime_access_release_recheck_not_pending',
+          createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+          releaseResponse,
+          recheckAttempt: recheckIndex + 1,
+        });
         return;
       }
     }
+    logFileLibraryListReadExportInvalidationDiagnostic({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      libraryId: input.libraryId,
+      requestId: input.requestId,
+      trigger: input.trigger,
+      action: 'skipped',
+      reason: 'runtime_access_release_recheck_exhausted',
+      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
+      releaseResponse,
+      recheckAttempt: FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS.length,
+    });
   })().catch(() => undefined);
 }
 
@@ -2664,6 +2837,10 @@ async function convergeRuntimeAccessBeforeFileLibraryEntriesList(input: {
       actorUserId: input.actorUserId,
       createdBeforeOrAtMs: listPendingObservedAtMs,
       requestId: input.requestId,
+      trigger: 'pre_list_runtime_access_convergence',
+      reason: releaseResponse
+        ? 'runtime_access_release_pending_before_read_export'
+        : 'runtime_access_release_timeout_before_read_export',
     });
     return {
       handled: true,
@@ -2679,6 +2856,9 @@ async function convergeRuntimeAccessBeforeFileLibraryEntriesList(input: {
       libraryId: input.libraryId,
       createdBeforeOrAtMs: listPendingObservedAtMs,
       requestId: input.requestId,
+      trigger: 'pre_list_runtime_access_convergence',
+      reason: 'runtime_access_release_completed_before_read_export',
+      releaseResponse,
     });
     return { handled: false };
   }
@@ -3911,6 +4091,9 @@ export async function handleProjectFileLibraryRoutes(args: {
             libraryId,
             createdBeforeOrAtMs: listStartedAtMs,
             requestId,
+            trigger: 'list_pending_route_catch',
+            reason: 'runtime_access_release_completed_after_list_pending',
+            releaseResponse,
           });
         } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
           scheduleListReadExportInvalidationAfterRuntimeRelease({
@@ -3923,6 +4106,10 @@ export async function handleProjectFileLibraryRoutes(args: {
             actorUserId: user.id,
             createdBeforeOrAtMs: listStartedAtMs,
             requestId,
+            trigger: 'list_pending_route_catch',
+            reason: releaseResponse
+              ? 'runtime_access_release_pending_after_list_pending'
+              : 'runtime_access_release_timeout_after_list_pending',
           });
         }
       }

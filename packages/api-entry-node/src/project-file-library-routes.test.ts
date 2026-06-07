@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type http from 'node:http';
 import { PassThrough, Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -5548,7 +5548,12 @@ describe('project-file-library-routes', () => {
   });
 
   it('does not call legacy restore preview/run/fence helpers on the direct restore route', () => {
-    const source = readFileSync(new URL('./project-file-library-routes.ts', import.meta.url), 'utf8');
+    const routeSourcePath = [
+      'packages/api-entry-node/src/project-file-library-routes.ts',
+      'src/project-file-library-routes.ts',
+    ].find((candidate) => existsSync(candidate));
+    expect(routeSourcePath).toBeDefined();
+    const source = readFileSync(routeSourcePath as string, 'utf8');
     const start = source.indexOf("routeKind === 'fileLibraryRestore'");
     const end = source.indexOf("routeKind === 'fileLibraryEntries'", start);
     expect(start).toBeGreaterThanOrEqual(0);

@@ -5,7 +5,7 @@
 Status: `implementation-ready`
 Date: 2026-05-31
 Owner: Product + Engineering
-Scope: AgentSmith 项目集 GA 发布、部署验证、发布工具与面向实施/运维文档
+Scope: AgentSmith Web GA 发布、部署验证、发布工具与面向实施/运维文档
 
 ## 0. 一句话结论
 
@@ -55,7 +55,7 @@ GA 只保留两类正式 verdict：
 
 - `jvs`：由 AFSCP release evidence 覆盖，不作为 AgentSmith 顶层 GA repo。
 - `agentsmith-desktop`：独立交付面，且不在 `agentsmith-project` org 当前 Web release contract 内。
-- 本地 `codex`、sandbox/dev 目录：不是 AgentSmith GA 发布对象。
+- 未列入上表的本地/历史开发目录、sandbox/dev 目录：不是 AgentSmith GA 发布对象。
 
 ### 1.2 本轮明确不做
 
@@ -503,9 +503,9 @@ GA 的判定是：
 - 不为一次 flake 做大重构；连续失败才按稳定性 blocker 推进 owner 修复。
 - 不把 ASBCP / AFSCP owner repo 的幂等缺口用 AgentSmith wrapper 长期掩盖；AgentSmith 只做最小调用收口和证据补强。
 
-### 7.3 项目集 runtime readiness owner 边界
+### 7.3 Runtime readiness owner 边界（当前证据）
 
-2026-06-07 project-set team observation 复核了 `agentsmith`、`agentsmith-fs-control-plane`、`mbos-sandbox-v1` 和 `agentsmith-runner` 的职责边界。结论是：当前 Files restore continuation focused backend-real 在 AgentSmith completed release fence invalidation 修复后通过，证据为 `artifacts/backend-real/current/files-restore-readexport-convergence-20260607T032831Z/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json`，`classification=clean_pass` 且无 runtime readiness signals / call summaries。因此本轮 GA 主线先不启动 AFSCP、ASBCP 或 runner 的多仓功能改造。
+2026-06-07 team observation 复核了已列 GA runtime 依赖 repo 中 `agentsmith`、`agentsmith-fs-control-plane`、`mbos-sandbox-v1` 和 `agentsmith-runner` 的职责边界。结论是：当前 Files restore continuation focused backend-real 在 AgentSmith completed release fence invalidation 修复后通过，证据为 `artifacts/backend-real/current/files-restore-readexport-convergence-20260607T032831Z/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json`，`classification=clean_pass` 且无 runtime readiness signals / call summaries。因此本轮 GA 主线先不启动 AFSCP、ASBCP 或 runner 的多仓功能改造。
 
 2026-06-07 Product Readiness run `27082269204` 又在同一 Files restore continuation 场景复发，focused evidence 记录 `file_library_list_pending_count=6`、`classification=stability_blocker`，且没有 `AGENT_SANDBOX_UNAVAILABLE`。ASBCP v2.0.18 证据显示 pod delete 已收敛，runner 不拥有 Files/read export truth；team member 复核后把 owner 收敛到 AFSCP worker bounded execution：`AFSCP_WORKER_RUN_ONCE_TIMEOUT` 已存在，但历史实现只约束 store open，没有约束实际 JVS restore/export 等 operation 执行，卡住时可能让 same-repo mutation gate 长时间保持 pending。采纳的最小功能增强是 AFSCP repo-local 修复 run-once execution timeout，让超时通过既有 operation failed / writer fence release 路径收口；该修复已发布并通过 `infra/deploy/shared/afscp-image.lock` 采用为 AFSCP `v1.0.8` digest-pinned image。不在 AgentSmith 新增 gate/report/dashboard，也不让 ASBCP 或 runner 代写 AFSCP terminal truth。
 
@@ -516,14 +516,14 @@ GA 的判定是：
 - ASBCP owner：仅当新 evidence 再出现 `AGENT_SANDBOX_UNAVAILABLE`、`IDEMPOTENCY_CONFLICT`、`workload_release_incomplete`、`delete_pod` 5xx、pod status stuck，且 API / pod manager / ASBCP create-status summary 指向 sandbox 行为时，做 repo-local 窄修。v2.0.18 已覆盖同 workload delete convergence、stable observed-at 和 release/status idempotency；没有 sandbox 信号时不把 Files pending 回压给 ASBCP。
 - Runner owner：不承接 storage、Files retry、read export 或 AFSCP release truth。Runner 只证明 task HOME/workspace path、process lifecycle、terminal close ack、artifact scan 和 managed runner image/manifest handoff。
 
-2026-06-07 broader project-set review 继续核对 `agentsmith-desktop`、`agentsmith-release-kit`、`jvs`、`llm-universal-proxy`、`codex` 和 `business`。结论是：这些项目不承担当前 Files/AFSCP/sandbox runtime readiness blocker 的功能修复。`agentsmith-desktop` 是桌面本地挂载消费方；`agentsmith-release-kit` 只聚合 release / operator evidence，不拥有 Product Readiness 的 runtime truth；`jvs` 只有在 AFSCP evidence 明确指向 JVS typed error 或 direct contract bug 时才进入 owner 修复；`llm-universal-proxy` 的 `/ready` 是模型代理 readiness，不是 AgentSmith Product Readiness；`codex` 的 CLI sandbox 语义不等同于 `AGENT_SANDBOX_UNAVAILABLE`；`business` 只保留商务材料角色。后续不要把这些项目拉进本 blocker 的整改范围，除非新的 typed evidence 明确点名对应项目。
+2026-06-07 当前 GA/runtime owner 边界复核只覆盖已列 GA runtime 依赖 repo 与明确排除的 release surfaces。结论是：`agentsmith-desktop` 是独立交付面，不在当前 Web release contract 内；`agentsmith-release-kit` 只聚合 release / operator evidence，不拥有 Product Readiness 的 runtime truth；`jvs` 只有在 AFSCP evidence 明确指向 JVS typed error 或 direct contract bug 时才进入 owner 修复；`llm-universal-proxy` 的 `/ready` 是模型代理 readiness，不是 AgentSmith Product Readiness。未列入本节 owner 边界、且无 typed evidence 指向的本地/历史目录，不纳入本 blocker 整改范围。
 
-功能增强触发条件：
+Owner 修复触发条件：
 
 1. 单次 sandbox unavailable 后重跑通过：记录 runtime flake，不扩大改造。
 2. 同一 focused gate 内多次 `file_library_list_pending`，或连续 focused gate 同一 runtime readiness 失败：升级 stability blocker，先按 evidence 定 owner，再做 repo-local 最小修复。
-3. 只有当 focused backend-real 仍无法通过，或 Product Readiness 复发并产生稳定性 blocker，才同步启动兄弟项目功能增强；不要用拉长等待、无限重试或新增 report/gate 掩盖 terminal truth 缺口。
-4. 兄弟项目修复后的验证顺序是 owner focused test / repo-local gate，然后回 AgentSmith Files restore continuation focused backend-real，最后在阶段收口回 Product Readiness。
+3. 只有当 focused backend-real 仍无法通过，或 Product Readiness 复发并产生稳定性 blocker，且 evidence 指向已列 GA runtime 依赖 repo，才启动对应 owner repo 的 repo-local 最小修复；不要用拉长等待、无限重试或新增 report/gate 掩盖 terminal truth 缺口。
+4. 对应 owner repo 修复后的验证顺序是 repo-local focused test / gate，然后回 AgentSmith Files restore continuation focused backend-real，最后在阶段收口回 Product Readiness。
 
 ## 8. Implementation readiness
 

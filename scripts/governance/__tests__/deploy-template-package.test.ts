@@ -51,7 +51,7 @@ const LLMUP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/llm-universa
 const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane';
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
-const AFSCP_COMMIT_SHA = '8fb65cfe58b6647578458f7e7e054b6314931036';
+const AFSCP_COMMIT_SHA = '7c59deb0f71f2aaee7f50b6acd15d8654eb134dd';
 const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
@@ -355,7 +355,7 @@ function buildReleaseContractAssemblyInput(
       },
       {
         id: 'afscp',
-        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.9@sha256:${'5'.repeat(64)}`,
+        image: `${AFSCP_PROVIDER_IMAGE_REPOSITORY}:v1.0.10@sha256:${'5'.repeat(64)}`,
         digest: `sha256:${'5'.repeat(64)}`,
       },
       {
@@ -417,12 +417,12 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       producer_repo: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-fs-control-plane',
       commit_sha: AFSCP_COMMIT_SHA,
-      tag: 'v1.0.9',
-      run_id: '27094271356',
+      tag: 'v1.0.10',
+      run_id: '27097944665',
       run_attempt: '1',
-      run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/27094271356/attempts/1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/27097944665/attempts/1',
       subject_name: 'agentsmith-fs-control-plane-image',
-      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith-fs-control-plane/27094271356/agentsmith-fs-control-plane-image.oci',
+      artifact_uri: 'gh-artifact://agentsmith-project/agentsmith-fs-control-plane/27097944665/agentsmith-fs-control-plane-image.oci',
       artifact_sha256: `sha256:${'5'.repeat(64)}`,
     },
     {

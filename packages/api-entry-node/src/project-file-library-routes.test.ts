@@ -2116,6 +2116,68 @@ describe('project-file-library-routes', () => {
     });
   });
 
+  it('keeps the current pending read export warm when post-release entries list is still pending', async () => {
+    vi.useFakeTimers();
+    const listStartMs = Date.parse('2026-06-07T08:00:00.000Z');
+    vi.setSystemTime(new Date(listStartMs));
+    try {
+      const storageAdapter = createStorageAdapter({
+        listEntries: vi.fn(async () => {
+          vi.setSystemTime(new Date(listStartMs + 30_000));
+          throw new Error('file_library_list_pending');
+        }),
+      });
+      const deps = createDeps({ storageAdapter });
+      const created = await createReadyLibrary(deps);
+      const libraryId = String(created.id);
+      await seedBoundTask({
+        deps,
+        libraryId,
+        taskId: 'task_entries_pending_keeps_current_export',
+        title: 'Entries pending keeps current export task',
+      });
+      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
+      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+        runtimeBinding = null;
+      });
+
+      const entriesJson = vi.fn();
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryEntries',
+        method: 'GET',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        req: {
+          url: '/file-libraries/entries?path=workspace%2F.artifacts',
+          headers: { 'x-request-id': 'req_entries_pending_keep_current_export' },
+        } as never,
+        res: createMockResponse(),
+        deps,
+        user: OWNER_USER,
+        json: entriesJson,
+        readBody: vi.fn(),
+      });
+
+      expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
+      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(2);
+      expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId,
+        createdBeforeOrAtMs: listStartMs,
+        requestId: 'req_entries_pending_keep_current_export',
+      }));
+      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+        message: 'file_library_list_pending',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps entries pending without creating a stale export while slow idle runtime release continues in the background', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => {

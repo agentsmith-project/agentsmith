@@ -3881,6 +3881,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, runtimeAccessConvergence.statusCode, runtimeAccessConvergence.body);
       return true;
     }
+    const listStartedAtMs = Date.now();
     try {
       const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
       json(res, 200, {
@@ -3891,7 +3892,6 @@ export async function handleProjectFileLibraryRoutes(args: {
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
       if (isFileLibraryListPendingRouteError(mapped)) {
-        const listPendingObservedAtMs = Date.now();
         const releasePromise = releaseRuntimeAccessForFileLibrary({
           deps,
           workspaceId,
@@ -3907,7 +3907,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             workspaceId,
             projectId,
             libraryId,
-            createdBeforeOrAtMs: listPendingObservedAtMs,
+            createdBeforeOrAtMs: listStartedAtMs,
             requestId,
           });
         } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
@@ -3919,7 +3919,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             projectId,
             libraryId,
             actorUserId: user.id,
-            createdBeforeOrAtMs: listPendingObservedAtMs,
+            createdBeforeOrAtMs: listStartedAtMs,
             requestId,
           });
         }

@@ -64,7 +64,7 @@ with_afscp_local_runtime_env() {
     fi
     export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"
     export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
-    export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.16@sha256:f079bd5ff293dd5f10377c84d64cafe28a7c07070cb8d8316b7892bac71e4f18}}"
+    export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.17@sha256:b12828fafc02dd994c06f6d92bd9fedd795c530aae6cb2cd6382a5e756b7ff6a}}"
     export AFSCP_BASE_URL
     export AFSCP_EXPORT_GATEWAY_BASE_URL
     export AFSCP_DEFAULT_VOLUME_ID

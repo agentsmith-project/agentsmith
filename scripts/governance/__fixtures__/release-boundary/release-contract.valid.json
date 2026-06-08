@@ -18,7 +18,7 @@
     },
     {
       "id": "afscp",
-      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.16@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.17@sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
     },
     {
@@ -78,19 +78,19 @@
     },
     {
       "id": "afscp",
-      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.16@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "image": "ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.17@sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
       "source": "adopted_provider_images",
       "source_provenance": {
         "producer_repo": "github.com/agentsmith-project/agentsmith-fs-control-plane",
         "normalized_remote": "github.com/agentsmith-project/agentsmith-fs-control-plane",
-        "commit_sha": "a5b8f4482428068e456dde42dfe0dee5169a2f07",
-        "run_id": "27134733877",
+        "commit_sha": "1a69ace968f51ae1b8563b2e3fef7f34068759ac",
+        "run_id": "27143192442",
         "run_attempt": "1",
-        "run_url": "https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/27134733877/attempts/1",
+        "run_url": "https://github.com/agentsmith-project/agentsmith-fs-control-plane/actions/runs/27143192442/attempts/1",
         "subject_name": "agentsmith-fs-control-plane-image",
-        "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-fs-control-plane/27134733877/agentsmith-fs-control-plane-image.oci",
-        "tag": "v1.0.16",
+        "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-fs-control-plane/27143192442/agentsmith-fs-control-plane-image.oci",
+        "tag": "v1.0.17",
         "artifact_sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
       }
     },
@@ -268,7 +268,7 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:540114518d9116cde916fb070b737b5fe969500f36ded33b5f2c61005ff35129",
+    "subject_sha256": "sha256:311e973ca2437edbec74b254430e2fd630b0bb94b731ab1a5e0b30f5747a074c",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
@@ -276,7 +276,7 @@
     "run_url": "https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:388f33d2cff31c3a4c60f03d1bd18a9e0c5dcc2845f0ee90afaa511d788afae8",
+    "artifact_sha256": "sha256:e9bf1d59b38ffdb7a0d3d8d0bf759c6288b5f2a2260c84a54484ece0f4167050",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

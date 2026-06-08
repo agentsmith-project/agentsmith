@@ -85,11 +85,13 @@ function runInternalCommonSnippet(
   const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
   const envFile = path.join(tempRoot, '.env.local-manual');
   const internalEnvFile = path.join(tempRoot, 'local-manual-internal.env');
+  const fuseConf = path.join(tempRoot, 'fuse.conf');
 
   try {
     mkdirSync(path.dirname(envFile), { recursive: true });
     writeFileSync(envFile, '', 'utf8');
     writeFileSync(internalEnvFile, '', 'utf8');
+    writeFileSync(fuseConf, 'user_allow_other\n', 'utf8');
 
     return spawnSync(
       'bash',
@@ -101,6 +103,7 @@ function runInternalCommonSnippet(
           export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
           export LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
           export LOCAL_MANUAL_INTERNAL_ENV_FILE="${internalEnvFile}"
+          export AFSCP_LOCAL_RUNTIME_FUSE_CONF="${fuseConf}"
           export SNIPPET_TEMP_ROOT="${tempRoot}"
           source "${repoRoot}/scripts/local-manual/internal-common.sh"
           ${script}
@@ -2407,10 +2410,128 @@ SH
     expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable vol-local-manual');
     expect(result.stdout).toContain('juicefs mount -d');
     expect(result.stdout).toContain(
-      'juicefs mount -d --attr-cache 0s --entry-cache 0s --dir-entry-cache 0s --negative-entry-cache 0s --no-usage-report',
+      'juicefs mount -d --attr-cache 0s --entry-cache 0s --dir-entry-cache 0s --negative-entry-cache 0s --no-usage-report -o allow_other',
     );
     expect(result.stdout).toContain('--storage minio --bucket http://localhost:19000/mbos-dev');
     expect(result.stdout).toContain('postgres://mbos:mbos_dev_password@localhost:15432/mbos?sslmode=disable');
+  });
+
+  it('uses sudo JuiceFS mount when allow_other is disabled for a non-root mount owner and passwordless sudo is available', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      fuse_conf="\${SNIPPET_TEMP_ROOT}/fuse-disabled.conf"
+      mkdir -p "$bin" "$mount_root"
+      printf '#user_allow_other\\n' > "$fuse_conf"
+      cat > "$bin/id" <<'SH'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "-u" ]]; then
+  printf '1000\\n'
+  exit 0
+fi
+exec /usr/bin/id "$@"
+SH
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    exit 0
+    ;;
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/sudo" <<'SH'
+#!/usr/bin/env bash
+printf 'sudo %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/sudo.log"
+if [[ "$1" == "-n" && "$2" == "true" ]]; then
+  exit 0
+fi
+if [[ "$1" == "-n" && "$2" == "env" ]]; then
+  shift 2
+  while [[ "$#" -gt 0 && "$1" == *=* ]]; do
+    export "$1"
+    shift
+  done
+  "$@"
+  exit $?
+fi
+exit 97
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/id" "$bin/juicefs" "$bin/sudo" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      AFSCP_LOCAL_RUNTIME_FUSE_CONF="$fuse_conf"
+      ensure_afscp_local_runtime_volume_root
+      cat "\${SNIPPET_TEMP_ROOT}/sudo.log"
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('sudo -n true');
+    expect(result.stdout).toContain('sudo -n env ACCESS_KEY=mbos SECRET_KEY=mbos_dev_password PATH=');
+    expect(result.stdout).toContain('juicefs mount -d');
+    expect(result.stdout).toContain('-o allow_other');
+  });
+
+  it('fails closed before JuiceFS mount when allow_other is disabled for a non-root mount owner and sudo is unavailable', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      fuse_conf="\${SNIPPET_TEMP_ROOT}/fuse-disabled.conf"
+      mkdir -p "$bin" "$mount_root"
+      printf '#user_allow_other\\n' > "$fuse_conf"
+      cat > "$bin/id" <<'SH'
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "-u" ]]; then
+  printf '1000\\n'
+  exit 0
+fi
+exec /usr/bin/id "$@"
+SH
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'SHOULD_NOT_MOUNT %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+exit 0
+SH
+      cat > "$bin/sudo" <<'SH'
+#!/usr/bin/env bash
+printf 'sudo %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/sudo.log"
+exit 1
+SH
+      chmod +x "$bin/id" "$bin/juicefs" "$bin/sudo"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      AFSCP_LOCAL_RUNTIME_FUSE_CONF="$fuse_conf"
+      ensure_afscp_local_runtime_volume_root
+    `);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('requires passwordless sudo or user_allow_other');
+    expect(result.stderr).toContain('for -o allow_other');
+    expect(result.stderr).toContain('local-real fails closed');
+    expect(result.stdout).not.toContain('SHOULD_NOT_MOUNT');
   });
 
   it('fails closed before mounting when existing JuiceFS metadata has a stale name or object endpoint', () => {
@@ -2822,6 +2943,90 @@ SH
     expect(result.stdout).toContain('marker=absent');
   });
 
+  it('uses sudo unmount fallback when a root-mounted local-real AFSCP JuiceFS volume is still mounted', () => {
+    const result = runInternalCommonSnippet(`
+      bin="\${SNIPPET_TEMP_ROOT}/bin"
+      mount_root="\${SNIPPET_TEMP_ROOT}/afscp-volume-root"
+      mkdir -p "$bin" "$mount_root"
+      cat > "$bin/juicefs" <<'SH'
+#!/usr/bin/env bash
+printf 'juicefs %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+case "$1" in
+  config)
+    printf '{"Name":"vol-local-manual","Storage":"minio","Bucket":"http://localhost:19000/mbos-dev/"}\\n'
+    ;;
+  mount)
+    mountpoint="\${@: -1}"
+    mkdir -p "$mountpoint"
+    printf 'mounted\\n' > "$mountpoint/.juicefs-mounted"
+    ;;
+  umount)
+    exit 55
+    ;;
+esac
+exit 0
+SH
+      cat > "$bin/umount" <<'SH'
+#!/usr/bin/env bash
+printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+exit 56
+SH
+      cat > "$bin/sudo" <<'SH'
+#!/usr/bin/env bash
+printf 'sudo %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+if [[ "$1" == "-n" && "$2" == "true" ]]; then
+  exit 0
+fi
+if [[ "$1" == "-n" && "$2" == */juicefs && "$3" == "umount" ]]; then
+  exit 57
+fi
+if [[ "$1" == "-n" && "$2" == "umount" ]]; then
+  rm -f "$3/.juicefs-mounted"
+  exit 0
+fi
+exit 97
+SH
+      cat > "$bin/mountpoint" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
+SH
+      cat > "$bin/findmnt" <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
+  printf 'fuse.juicefs\\n'
+  exit 0
+fi
+exit 0
+SH
+      chmod +x "$bin/juicefs" "$bin/umount" "$bin/sudo" "$bin/mountpoint" "$bin/findmnt"
+      export PATH="$bin:$PATH"
+      AFSCP_JVS_ENABLED=false
+      AFSCP_VOLUME_ROOT="$mount_root"
+      ensure_afscp_local_runtime_volume_root
+      stop_afscp_local_runtime
+      if afscp_is_mountpoint "$mount_root"; then
+        printf 'still_mountpoint=yes\\n'
+      else
+        printf 'still_mountpoint=no\\n'
+      fi
+      if [[ -f "$AFSCP_VOLUME_ROOT_MOUNT_MARKER" ]]; then
+        printf 'marker=present\\n'
+      else
+        printf 'marker=absent\\n'
+      fi
+      cat "\${SNIPPET_TEMP_ROOT}/juicefs.log"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('juicefs umount');
+    expect(result.stdout).toContain('umount ');
+    expect(result.stdout).toContain('sudo -n true');
+    expect(result.stdout).toContain('sudo -n umount');
+    expect(result.stdout).toContain('still_mountpoint=no');
+    expect(result.stdout).toContain('marker=absent');
+  });
+
   it('fails closed without unmounting when the local-real AFSCP marker points outside AFSCP_VOLUME_ROOT', () => {
     const result = runInternalCommonSnippet(`
       bin="\${SNIPPET_TEMP_ROOT}/bin"
@@ -2901,6 +3106,11 @@ SH
 printf 'umount %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
 exit 56
 SH
+      cat > "$bin/sudo" <<'SH'
+#!/usr/bin/env bash
+printf 'sudo %s\\n' "$*" >> "$SNIPPET_TEMP_ROOT/juicefs.log"
+exit 57
+SH
       cat > "$bin/mountpoint" <<'SH'
 #!/usr/bin/env bash
 [[ "$1" == "-q" && -f "$2/.juicefs-mounted" ]]
@@ -2913,7 +3123,7 @@ if [[ "$1" == "-no" && "$2" == "FSTYPE" ]]; then
 fi
 exit 0
 SH
-      chmod +x "$bin/juicefs" "$bin/umount" "$bin/mountpoint" "$bin/findmnt"
+      chmod +x "$bin/juicefs" "$bin/umount" "$bin/sudo" "$bin/mountpoint" "$bin/findmnt"
       export PATH="$bin:$PATH"
       AFSCP_JVS_ENABLED=false
       AFSCP_VOLUME_ROOT="$mount_root"
@@ -2942,6 +3152,7 @@ SH
     expect(result.stderr).toContain('local-real fails closed');
     expect(result.stdout).toContain('juicefs umount');
     expect(result.stdout).toContain('umount ');
+    expect(result.stdout).toContain('sudo -n true');
     expect(result.stdout).toContain('marker=present');
     expect(result.stdout).toContain('still_mountpoint=yes');
   });

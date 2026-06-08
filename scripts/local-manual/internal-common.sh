@@ -100,6 +100,7 @@ AFSCP_VOLUME_ROOT="${AFSCP_VOLUME_ROOT:-${INTERNAL_REAL_DIR}/afscp-volume-root}"
 AFSCP_VOLUME_ROOT_MOUNT_MARKER="${AFSCP_VOLUME_ROOT_MOUNT_MARKER:-${INTERNAL_REAL_DIR}/afscp-volume-root.mount}"
 AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG="${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG:-${INTERNAL_REAL_DIR}/afscp-juicefs-mount.log}"
 AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR="${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR:-${INTERNAL_REAL_DIR}/afscp-juicefs-cache}"
+AFSCP_LOCAL_RUNTIME_FUSE_CONF="${AFSCP_LOCAL_RUNTIME_FUSE_CONF:-/etc/fuse.conf}"
 AFSCP_JVS_CWD="${AFSCP_JVS_CWD:-${INTERNAL_REAL_DIR}/afscp-jvs-cwd}"
 AFSCP_JVS_ROOT="${AFSCP_JVS_ROOT:-$(realpath -m "${ROOT_DIR}/../jvs")}"
 AFSCP_JVS_RELEASE_BINARY_NAME="${AFSCP_JVS_RELEASE_BINARY_NAME:-jvs-linux-amd64}"
@@ -2173,6 +2174,40 @@ afscp_validate_local_runtime_volume_root_mount() {
   afscp_validate_volume_root_rw "${path}" || return 1
 }
 
+afscp_fuse_allow_other_enabled() {
+  [[ -r "${AFSCP_LOCAL_RUNTIME_FUSE_CONF}" ]] \
+    && grep -Eq '^[[:space:]]*user_allow_other([[:space:]]+#.*)?[[:space:]]*$' "${AFSCP_LOCAL_RUNTIME_FUSE_CONF}"
+}
+
+afscp_passwordless_sudo_available() {
+  command -v sudo >/dev/null 2>&1 || return 1
+  sudo -n true >/dev/null 2>&1
+}
+
+afscp_mount_allow_other_needs_sudo() {
+  if [[ "$(id -u)" == "0" ]]; then
+    return 1
+  fi
+  if afscp_fuse_allow_other_enabled; then
+    return 1
+  fi
+  if afscp_passwordless_sudo_available; then
+    return 0
+  fi
+  internal_err "AFSCP local-real JuiceFS mount requires passwordless sudo or user_allow_other in ${AFSCP_LOCAL_RUNTIME_FUSE_CONF} for -o allow_other so the image-root export gateway can read AFSCP_VOLUME_ROOT; local-real fails closed"
+  return 2
+}
+
+afscp_try_sudo_unmount_local_runtime_volume_root() {
+  local mount_path="$1"
+  local juicefs_bin
+  afscp_passwordless_sudo_available || return 1
+  if juicefs_bin="$(command -v juicefs 2>/dev/null)"; then
+    sudo -n "${juicefs_bin}" umount "${mount_path}" >/dev/null 2>&1 && return 0
+  fi
+  sudo -n umount "${mount_path}" >/dev/null 2>&1
+}
+
 ensure_afscp_local_runtime_volume_root() {
   prepare_afscp_local_runtime_env
   mkdir -p "${AFSCP_VOLUME_ROOT}" "$(dirname "${AFSCP_VOLUME_ROOT_MOUNT_MARKER}")" "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}"
@@ -2184,9 +2219,20 @@ ensure_afscp_local_runtime_volume_root() {
     return 0
   fi
 
-  if ! command -v juicefs >/dev/null 2>&1; then
+  local juicefs_bin
+  if ! juicefs_bin="$(command -v juicefs)"; then
     internal_err "juicefs is required to mount AFSCP_VOLUME_ROOT; local-real fails closed"
     return 1
+  fi
+
+  local mount_with_sudo=0 mount_mode_status=0
+  if afscp_mount_allow_other_needs_sudo; then
+    mount_with_sudo=1
+  else
+    mount_mode_status=$?
+    if [[ "${mount_mode_status}" == "2" ]]; then
+      return 1
+    fi
   fi
 
   local metaurl bucket storage juicefs_name access_key secret_key
@@ -2205,7 +2251,7 @@ ensure_afscp_local_runtime_volume_root() {
 
   internal_info "mounting AFSCP local-real volume root with JuiceFS at ${AFSCP_VOLUME_ROOT}"
   if ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
-    juicefs format --no-update --storage "${storage}" --bucket "${bucket}" "${metaurl}" "${juicefs_name}" >/dev/null; then
+    "${juicefs_bin}" format --no-update --storage "${storage}" --bucket "${bucket}" "${metaurl}" "${juicefs_name}" >/dev/null; then
     internal_err "failed to format or validate AFSCP local-real JuiceFS volume; local-real fails closed"
     return 1
   fi
@@ -2214,8 +2260,19 @@ ensure_afscp_local_runtime_volume_root() {
     internal_err "failed to record AFSCP local-real mount marker; local-real fails closed"
     return 1
   fi
-  if ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
-    juicefs mount -d "${mount_consistency_options[@]}" --no-usage-report --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
+  if [[ "${mount_with_sudo}" == "1" ]]; then
+    if ! sudo -n env \
+      ACCESS_KEY="${access_key}" \
+      SECRET_KEY="${secret_key}" \
+      PATH="${PATH}" \
+      LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+      "${juicefs_bin}" mount -d "${mount_consistency_options[@]}" --no-usage-report -o allow_other --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
+      internal_err "failed to mount AFSCP_VOLUME_ROOT with JuiceFS; local-real fails closed"
+      unmount_afscp_local_runtime_volume_root || return 1
+      return 1
+    fi
+  elif ! ACCESS_KEY="${access_key}" SECRET_KEY="${secret_key}" \
+    "${juicefs_bin}" mount -d "${mount_consistency_options[@]}" --no-usage-report -o allow_other --check-storage --storage "${storage}" --bucket "${bucket}" --cache-dir "${AFSCP_LOCAL_RUNTIME_JUICEFS_CACHE_DIR}" --log "${AFSCP_LOCAL_RUNTIME_JUICEFS_MOUNT_LOG}" "${metaurl}" "${AFSCP_VOLUME_ROOT}" >/dev/null; then
     internal_err "failed to mount AFSCP_VOLUME_ROOT with JuiceFS; local-real fails closed"
     unmount_afscp_local_runtime_volume_root || return 1
     return 1
@@ -2272,12 +2329,17 @@ unmount_afscp_local_runtime_volume_root() {
   mount_state="$(afscp_mountpoint_state "${mount_path}")" || return 1
   if [[ "${mount_state}" == "mounted" ]]; then
     internal_info "unmounting AFSCP local-real JuiceFS volume root ${mount_path}"
-    if command -v juicefs >/dev/null 2>&1; then
-      juicefs umount "${mount_path}" >/dev/null 2>&1 || umount "${mount_path}" >/dev/null 2>&1 || true
+    local juicefs_bin
+    if juicefs_bin="$(command -v juicefs 2>/dev/null)"; then
+      "${juicefs_bin}" umount "${mount_path}" >/dev/null 2>&1 || umount "${mount_path}" >/dev/null 2>&1 || true
     else
       umount "${mount_path}" >/dev/null 2>&1 || true
     fi
     mount_state="$(afscp_mountpoint_state "${mount_path}")" || return 1
+    if [[ "${mount_state}" == "mounted" ]]; then
+      afscp_try_sudo_unmount_local_runtime_volume_root "${mount_path}" || true
+      mount_state="$(afscp_mountpoint_state "${mount_path}")" || return 1
+    fi
     if [[ "${mount_state}" == "mounted" ]]; then
       internal_err "failed to unmount AFSCP local-real JuiceFS volume root ${mount_path}; local-real fails closed"
       return 1

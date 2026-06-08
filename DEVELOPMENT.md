@@ -99,6 +99,13 @@ CI 前本地验证口径：
 - CI 是统一环境复核、保护、产物签发与 evidence 生产，不替代基本本地验证。CI failure 指向真实 bug 时，转入 owner repo 根因、业务逻辑或运行时不变量修复，不用 rerun、retry、report 或拉长等待掩盖。
 - 不为这条规则新增流程、看板、PR bot、强制 evidence 包或 wrapper；按 KISS / DRY / YAGNI 保持最小执行面。
 
+Files / sandbox / runtime readiness blocker 处理口径：
+
+- gate 只是探针；blocker 先翻译成 owner repo 的运行时不变量、状态机、API admission、terminal truth 或可见性边界，再决定修哪里。
+- `createSavePoint` accepted 不等于成功；terminal success 必须让同一 file library 的 save point list、Files read 和 restore 路径可见，不能可见时由 owner 返回 typed pending 或 failed。
+- restore ready 前必须释放或收敛冲突的 RW writer；`pending`、`releasing`、`offline`、`not_found` 等状态必须有 owner 收敛路径。
+- evidence-only patch 只用于判责和缩小 owner；不要新增 gate、report、wrapper retry、拉长等待或无限重试来掩盖 readiness 收敛缺口。
+
 Gate adapter fidelity notes:
 - adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
 - free-form `command` 只作为 operator hint / 展示面，不再承担 enforcement truth

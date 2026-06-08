@@ -420,6 +420,7 @@ function runPrepareRuntimeWithLegacyRunnerImage(args: {
 function runInternalSpecGrepEarlyFailureHarness(options: {
   runs?: number;
   repeatedFileListPending?: boolean;
+  dockerInspectAvailable?: boolean;
 } = {}): {
   stdout: string;
   stderr: string;
@@ -466,6 +467,7 @@ ASBCP_PORT=28080
 AFSCP_BASE_URL="http://127.0.0.1:30090"
 AFSCP_EXPORT_GATEWAY_BASE_URL="http://127.0.0.1:30091"
 AFSCP_DEFAULT_VOLUME_ID="vol_internal_probe"
+AFSCP_LOCAL_RUNTIME_IMAGE="ghcr.io/agentsmith-project/agentsmith-fs-control-plane:vtest@sha256:${'a'.repeat(64)}"
 AFSCP_SERVICE_TOKEN="known-product-token"
 AFSCP_BOOTSTRAP_SERVICE_TOKEN="known-bootstrap-token"
 AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
@@ -499,7 +501,38 @@ gate_record_preflight_check() {
 
 info() { :; }
 timeout() { shift; "$@"; }
-docker() { printf 'docker unavailable in harness\\n'; return 1; }
+${options.dockerInspectAvailable ? `docker() {
+  case "$1" in
+    info)
+      return 0
+      ;;
+    image)
+      if [[ "$2" == "inspect" ]]; then
+        printf 'ghcr.io/agentsmith-project/agentsmith-fs-control-plane@sha256:${'a'.repeat(64)}\\n'
+        return 0
+      fi
+      ;;
+    inspect)
+      local container_name="\${!#}"
+      case "\${container_name}" in
+        agentsmith-afscp-local-30090-api)
+          printf '%s\\tsha256:%s\\n' "\${AFSCP_LOCAL_RUNTIME_IMAGE}" "${'1'.repeat(64)}"
+          return 0
+          ;;
+        agentsmith-afscp-local-30090-worker)
+          printf '%s\\tsha256:%s\\n' "\${AFSCP_LOCAL_RUNTIME_IMAGE}" "${'2'.repeat(64)}"
+          return 0
+          ;;
+        agentsmith-afscp-local-30090-export-gateway)
+          printf '%s\\tsha256:%s\\n' "\${AFSCP_LOCAL_RUNTIME_IMAGE}" "${'3'.repeat(64)}"
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+  printf 'unexpected docker call: %s\\n' "$*" >&2
+  return 1
+}` : `docker() { printf 'docker unavailable in harness\\n'; return 1; }`}
 kubectl() { printf 'kubectl unavailable in harness\\n'; return 1; }
 resolve_internal_spec_port_pair() { return 1; }
 prepare_internal_backend_real_spec_runtime() {
@@ -1916,6 +1949,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.afscpRuntimeFingerprint).toContain('afscp_export_gateway_port=30091');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_default_volume_id=vol_internal_probe');
     expect(result.afscpRuntimeFingerprint).toContain('afscp_api_container=agentsmith-afscp-local-30090-api');
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_runtime_image_ref=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:vtest@sha256:${'a'.repeat(64)}`);
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_runtime_docker_inspect=unavailable');
     expect(result.runtimeReadinessSummary).toContain('theme=runtime_pending_readiness');
     expect(result.runtimeReadinessSummary).toContain('classification_hint=');
     expect(result.runtimeReadinessSummary).toContain('AGENT_SANDBOX_RATE_LIMITED');
@@ -2034,6 +2069,22 @@ describe('internal backend-real gate runtime contract', () => {
       }),
     ]));
     expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
+  });
+
+  it('records AFSCP image identity and container image summaries when docker inspect is available', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness({ dockerInspectAvailable: true });
+    const imageRef = `ghcr.io/agentsmith-project/agentsmith-fs-control-plane:vtest@sha256:${'a'.repeat(64)}`;
+
+    expect(result.status).toBe(0);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_runtime_image_ref=${imageRef}`);
+    expect(result.afscpRuntimeFingerprint).toContain('afscp_runtime_docker_inspect=available');
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_runtime_image_repo_digests=ghcr.io/agentsmith-project/agentsmith-fs-control-plane@sha256:${'a'.repeat(64)}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_api_container_config_image=${imageRef}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_api_container_image_id=sha256:${'1'.repeat(64)}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_worker_container_config_image=${imageRef}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_worker_container_image_id=sha256:${'2'.repeat(64)}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_export_gateway_container_config_image=${imageRef}`);
+    expect(result.afscpRuntimeFingerprint).toContain(`afscp_export_gateway_container_image_id=sha256:${'3'.repeat(64)}`);
   });
 
   it('upgrades consecutive focused runtime readiness failures to a stability blocker', () => {

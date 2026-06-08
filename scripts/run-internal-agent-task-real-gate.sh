@@ -661,17 +661,62 @@ collect_afscp_child_log_tail() {
   printf '%s log file was not available: %s\n' "${label}" "${log_file}" > "${output_file}"
 }
 
+collect_afscp_child_container_image_summary() {
+  local key="$1"
+  local container_name="$2"
+  local inspect_output config_image image_id
+
+  if inspect_output="$(docker inspect --format '{{printf "%s\t%s" .Config.Image .Image}}' "${container_name}" 2>/dev/null)"; then
+    IFS=$'\t' read -r config_image image_id <<< "${inspect_output}"
+    printf 'afscp_%s_container_config_image=%s\n' "${key}" "${config_image:-<unknown>}"
+    printf 'afscp_%s_container_image_id=%s\n' "${key}" "${image_id:-<unknown>}"
+    return 0
+  fi
+
+  printf 'afscp_%s_container_config_image=<unavailable>\n' "${key}"
+  printf 'afscp_%s_container_image_id=<unavailable>\n' "${key}"
+}
+
+collect_afscp_child_runtime_image_summary() {
+  local api_container="$1"
+  local worker_container="$2"
+  local gateway_container="$3"
+  local runtime_image_ref="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-}}"
+  local repo_digests
+
+  printf 'afscp_runtime_image_ref=%s\n' "${runtime_image_ref:-<unknown>}"
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    printf 'afscp_runtime_docker_inspect=unavailable\n'
+    return 0
+  fi
+
+  printf 'afscp_runtime_docker_inspect=available\n'
+  if [[ -n "${runtime_image_ref}" ]] && repo_digests="$(docker image inspect --format '{{range $index, $digest := .RepoDigests}}{{if $index}},{{end}}{{$digest}}{{end}}' "${runtime_image_ref}" 2>/dev/null)"; then
+    printf 'afscp_runtime_image_repo_digests=%s\n' "${repo_digests:-<none>}"
+  else
+    printf 'afscp_runtime_image_repo_digests=<unavailable>\n'
+  fi
+
+  collect_afscp_child_container_image_summary "api" "${api_container}"
+  collect_afscp_child_container_image_summary "worker" "${worker_container}"
+  collect_afscp_child_container_image_summary "export_gateway" "${gateway_container}"
+}
+
 collect_afscp_child_runtime_fingerprint() {
   local evidence_dir="$1"
   local output_file="${evidence_dir}/afscp-runtime-fingerprint.txt"
   local api_base="${AFSCP_BASE_URL:-}"
   local gateway_base="${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"
-  local api_port gateway_port runtime_mode container_prefix
+  local api_port gateway_port runtime_mode container_prefix api_container worker_container gateway_container
 
   api_port="$(child_internal_url_port "${api_base}" "<unknown>")"
   gateway_port="$(child_internal_url_port "${gateway_base}" "<unknown>")"
   runtime_mode="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
   container_prefix="${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX:-agentsmith-afscp-local-${api_port}}"
+  api_container="${AFSCP_API_CONTAINER_NAME:-${container_prefix}-api}"
+  worker_container="${AFSCP_WORKER_CONTAINER_NAME:-${container_prefix}-worker}"
+  gateway_container="${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME:-${container_prefix}-export-gateway}"
 
   {
     printf 'afscp_base_url=%s\n' "${api_base:-<unknown>}"
@@ -685,9 +730,10 @@ collect_afscp_child_runtime_fingerprint() {
     printf 'afscp_worker_log=%s\n' "${AFSCP_WORKER_LOG:-${INTERNAL_REAL_DIR:-}/afscp-worker.log}"
     printf 'afscp_export_gateway_log=%s\n' "${AFSCP_EXPORT_GATEWAY_LOG:-${INTERNAL_REAL_DIR:-}/afscp-export-gateway.log}"
     if [[ "${runtime_mode}" == "image" ]]; then
-      printf 'afscp_api_container=%s\n' "${AFSCP_API_CONTAINER_NAME:-${container_prefix}-api}"
-      printf 'afscp_worker_container=%s\n' "${AFSCP_WORKER_CONTAINER_NAME:-${container_prefix}-worker}"
-      printf 'afscp_export_gateway_container=%s\n' "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME:-${container_prefix}-export-gateway}"
+      printf 'afscp_api_container=%s\n' "${api_container}"
+      printf 'afscp_worker_container=%s\n' "${worker_container}"
+      printf 'afscp_export_gateway_container=%s\n' "${gateway_container}"
+      collect_afscp_child_runtime_image_summary "${api_container}" "${worker_container}" "${gateway_container}"
     else
       printf 'afscp_api_process=afscp-api\n'
       printf 'afscp_worker_process=afscp-worker\n'

@@ -695,6 +695,19 @@ function fileLibraryControlRouteErrorBody(
   return base;
 }
 
+function sendFileLibrarySavePointCreatePendingResponse(
+  res: http.ServerResponse,
+  json: JsonResponder,
+): void {
+  const error = new Error('file_library_save_point_create_pending');
+  const mapped = mapFileLibraryControlRouteError(
+    error,
+    'FILE_LIBRARY_SAVE_POINT_LIST_FAILED',
+    'file_library_save_point_list_failed',
+  );
+  json(res, mapped.statusCode, fileLibraryControlRouteErrorBody(mapped, error));
+}
+
 function isSameTaskFileTemplateCreateRequest(input: {
   template: TaskFileTemplateRecord;
   sourceLibraryId: string;
@@ -1394,6 +1407,18 @@ async function findReconciledActiveVersionOperation(input: {
     operation: active,
   });
   return isFileLibraryVersionOperationActiveStatus(reconciled.status) ? reconciled : null;
+}
+
+async function findReconciledActiveSavePointCreateOperation(input: {
+  deps: NodeApiDeps;
+  operationRepo: JsonDocFileLibraryVersionOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<FileLibraryVersionOperationRecord | null> {
+  const active = await findReconciledActiveVersionOperation(input);
+  return active?.kind === 'save_point_create' ? active : null;
 }
 
 async function ensureNoActiveRestoreOperation(input: {
@@ -3604,12 +3629,14 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     const savePointRepo = new JsonDocFileLibrarySavePointMappingRepo(deps.docStore);
+    const operationRepo = new JsonDocFileLibraryVersionOperationRepo(deps.docStore);
+    const requestId = readOptionalRequestId(req);
     try {
       const rawSavePoints = await deps.fileLibraryStorageAdapter.listSavePoints({
         workspaceId,
         projectId,
         libraryId,
-        requestId: typeof req.headers?.['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+        requestId,
       });
       const items: FileLibrarySavePointPublicRecord[] = [];
       for (const rawSavePoint of rawSavePoints) {
@@ -3625,10 +3652,36 @@ export async function handleProjectFileLibraryRoutes(args: {
           items.push(savePointRepo.toPublic(mapped));
         }
       }
+      if (items.length === 0) {
+        const activeSavePointCreate = await findReconciledActiveSavePointCreateOperation({
+          deps,
+          operationRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          requestId,
+        });
+        if (activeSavePointCreate) {
+          sendFileLibrarySavePointCreatePendingResponse(res, json);
+          return true;
+        }
+      }
       json(res, 200, { items });
     } catch (error) {
       const publicMessage = publicFileOperationMessage(error, 'file_library_save_point_list_failed');
       if (publicMessage === 'file_library_save_point_list_pending') {
+        const activeSavePointCreate = await findReconciledActiveSavePointCreateOperation({
+          deps,
+          operationRepo,
+          workspaceId,
+          projectId,
+          libraryId,
+          requestId,
+        });
+        if (activeSavePointCreate) {
+          sendFileLibrarySavePointCreatePendingResponse(res, json);
+          return true;
+        }
         const cachedItems = await listCachedUserSavePoints({
           savePointRepo,
           workspaceId,

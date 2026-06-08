@@ -264,13 +264,16 @@ describe('mapAfscpErrorEnvelope', () => {
     for (const [rawCode, mappedCode] of [
       ['REPO_MUTATION_IN_PROGRESS', 'afscp_repo_mutation_in_progress'],
       ['REPO_JVS_MUTATION_IN_PROGRESS', 'afscp_repo_mutation_in_progress'],
+      ['FILE_LIBRARY_OPERATION_PENDING', 'afscp_repo_mutation_in_progress'],
     ] as const) {
       const mapped = mapAfscpErrorEnvelope(409, {
         error: {
           code: rawCode,
           message: rawCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
             ? 'repo JVS mutation is in progress'
-            : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+            : rawCode === 'FILE_LIBRARY_OPERATION_PENDING'
+              ? 'file library operation is pending'
+              : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
           retryable: true,
           correlation_id: 'corr-mutation-busy',
           operation_id: 'op_repo_mutation_busy',
@@ -291,8 +294,36 @@ describe('mapAfscpErrorEnvelope', () => {
         operation_id: 'op_repo_mutation_busy',
         resource_kind: 'repo',
       });
-      expect(JSON.stringify(mapped)).not.toMatch(/REPO_JVS_MUTATION_IN_PROGRESS|repo JVS mutation is in progress|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
+      expect(JSON.stringify(mapped)).not.toMatch(/REPO_JVS_MUTATION_IN_PROGRESS|FILE_LIBRARY_OPERATION_PENDING|repo JVS mutation is in progress|file library operation is pending|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres/);
     }
+  });
+
+  it('maps file-library operation recovery-required conflicts without leaking details', () => {
+    const mapped = mapAfscpErrorEnvelope(409, {
+      error: {
+        code: 'FILE_LIBRARY_OPERATION_REQUIRES_RECOVERY',
+        message: 'file library operation op_private requires recovery',
+        retryable: false,
+        correlation_id: 'corr-operation-recovery',
+        operation_id: 'op_private_recovery',
+        details: {
+          resource: { type: 'operation', id: 'op_private_recovery' },
+          repo_id: 'repo_hidden_elsewhere',
+          namespace_id: 'ns_hidden',
+        },
+      },
+    });
+
+    expect(mapped).toEqual({
+      status: 409,
+      code: 'afscp_operator_recovery_required',
+      message: 'afscp_operator_recovery_required',
+      retryable: false,
+      correlation_id: 'corr-operation-recovery',
+      operation_id: 'op_private_recovery',
+      resource_kind: 'operation',
+    });
+    expect(JSON.stringify(mapped)).not.toMatch(/FILE_LIBRARY_OPERATION_REQUIRES_RECOVERY|file library operation op_private requires recovery|repo_hidden_elsewhere|ns_hidden/);
   });
 
   it('maps template clone and capability denials to stable non-leaking codes', () => {

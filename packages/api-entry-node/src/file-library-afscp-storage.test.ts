@@ -1741,6 +1741,7 @@ describe('AFSCP File Library storage adapter', () => {
   it.each([
     'REPO_MUTATION_IN_PROGRESS',
     'REPO_JVS_MUTATION_IN_PROGRESS',
+    'FILE_LIBRARY_OPERATION_PENDING',
   ] as const)('maps AFSCP save point list %s conflicts to pending instead of list failed', async (afscpCode) => {
     const client = createProductClient({
       listSavePoints: vi.fn(async () => {
@@ -1749,7 +1750,9 @@ describe('AFSCP File Library storage adapter', () => {
             code: afscpCode,
             message: afscpCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
               ? 'repo JVS mutation is in progress'
-              : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+              : afscpCode === 'FILE_LIBRARY_OPERATION_PENDING'
+                ? 'file library operation is pending'
+                : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
             retryable: true,
             correlation_id: 'corr_save_point_list_busy',
             operation_id: 'op_repo_mutation_busy',
@@ -1780,12 +1783,13 @@ describe('AFSCP File Library storage adapter', () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe('file_library_save_point_list_pending');
-    expect(JSON.stringify(caught)).not.toMatch(/file_library_save_point_list_failed|REPO_JVS_MUTATION_IN_PROGRESS|repo JVS mutation is in progress|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|corr_save_point_list_busy|op_repo_mutation_busy/);
+    expect(JSON.stringify(caught)).not.toMatch(/file_library_save_point_list_failed|REPO_JVS_MUTATION_IN_PROGRESS|FILE_LIBRARY_OPERATION_PENDING|repo JVS mutation is in progress|file library operation is pending|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|corr_save_point_list_busy|op_repo_mutation_busy/);
   });
 
   it.each([
     'REPO_MUTATION_IN_PROGRESS',
     'REPO_JVS_MUTATION_IN_PROGRESS',
+    'FILE_LIBRARY_OPERATION_PENDING',
   ] as const)('maps AFSCP save point create %s conflicts to pending instead of create failed', async (afscpCode) => {
     const client = createProductClient({
       createSavePoint: vi.fn(async () => {
@@ -1794,7 +1798,9 @@ describe('AFSCP File Library storage adapter', () => {
             code: afscpCode,
             message: afscpCode === 'REPO_JVS_MUTATION_IN_PROGRESS'
               ? 'repo JVS mutation is in progress'
-              : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
+              : afscpCode === 'FILE_LIBRARY_OPERATION_PENDING'
+                ? 'file library operation is pending'
+                : 'repo repo_hidden_elsewhere has an active mutation metadata_url=postgres://db',
             retryable: true,
             correlation_id: 'corr_save_point_create_busy',
             operation_id: 'op_repo_mutation_busy',
@@ -1828,7 +1834,7 @@ describe('AFSCP File Library storage adapter', () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe('file_library_save_point_create_pending');
-    expect(JSON.stringify(caught)).not.toMatch(/file_library_save_point_create_failed|REPO_JVS_MUTATION_IN_PROGRESS|repo JVS mutation is in progress|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|corr_save_point_create_busy|op_repo_mutation_busy/);
+    expect(JSON.stringify(caught)).not.toMatch(/file_library_save_point_create_failed|REPO_JVS_MUTATION_IN_PROGRESS|FILE_LIBRARY_OPERATION_PENDING|repo JVS mutation is in progress|file library operation is pending|repo_hidden_elsewhere|ns_hidden|metadata_url|postgres|corr_save_point_create_busy|op_repo_mutation_busy/);
     expect(client.pollOperation).not.toHaveBeenCalled();
   });
 

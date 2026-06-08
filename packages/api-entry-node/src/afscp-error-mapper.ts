@@ -262,11 +262,26 @@ export function mapAfscpErrorEnvelope(status: number, payload: unknown): AfscpMa
     });
   }
 
-  if (parsed.code === 'REPO_MUTATION_IN_PROGRESS' || parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS') {
+  if (
+    parsed.code === 'REPO_MUTATION_IN_PROGRESS'
+    || parsed.code === 'REPO_JVS_MUTATION_IN_PROGRESS'
+    || parsed.code === 'FILE_LIBRARY_OPERATION_PENDING'
+  ) {
     return buildMappedError({
       status: 409,
       code: 'afscp_repo_mutation_in_progress',
       retryable: parsed.retryable ?? true,
+      correlation_id: parsed.correlation_id,
+      operation_id: parsed.operation_id,
+      resource_kind: parsed.resource_kind,
+    });
+  }
+
+  if (parsed.code === 'FILE_LIBRARY_OPERATION_REQUIRES_RECOVERY') {
+    return buildMappedError({
+      status: 409,
+      code: 'afscp_operator_recovery_required',
+      retryable: parsed.retryable ?? false,
       correlation_id: parsed.correlation_id,
       operation_id: parsed.operation_id,
       resource_kind: parsed.resource_kind,

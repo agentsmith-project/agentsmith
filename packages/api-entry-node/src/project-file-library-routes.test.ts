@@ -3404,6 +3404,239 @@ describe('project-file-library-routes', () => {
     expect(JSON.stringify(activeJson.mock.calls[0]?.[2])).not.toMatch(/op_save_point_active|repo_/);
   });
 
+  it('keeps an empty save point collection pending while an admitted save-point create is active', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_active_empty',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      listSavePoints: vi.fn(async () => []),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_active_empty',
+        operation_state: 'running',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: null,
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_active_empty_create',
+          'idempotency-key': 'save-point-active-empty-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({ message: 'Before empty projection' }),
+    })).resolves.toBe(true);
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_active_empty_list' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(storageAdapter.getOperationProjection).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId: 'op_save_point_active_empty',
+      requestId: 'req_save_point_active_empty_list',
+    }));
+    expect(listJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING',
+      message: 'file_library_save_point_create_pending',
+      operation_status: 'pending',
+      retry_after_ms: 2000,
+    });
+    expect(JSON.stringify(listJson.mock.calls[0]?.[2])).not.toMatch(/op_save_point_active_empty|repo_/);
+  });
+
+  it('keeps save point list pending over cached items while an admitted save-point create is active', async () => {
+    const createSavePoint = vi.fn(async (input: { idempotencyKey: string }) => {
+      if (input.idempotencyKey.includes('for-restore')) {
+        return {
+          operationId: 'op_save_point_cached_user',
+          operationStatus: 'succeeded' as const,
+          savePointId: 'sp_user_cached',
+          createdAt: '2026-05-09T00:00:00.000Z',
+        };
+      }
+      return {
+        operationId: 'op_save_point_active_list_pending',
+        operationStatus: 'pending' as const,
+        savePointId: null,
+      };
+    });
+    const storageAdapter = createStorageAdapter({
+      createSavePoint,
+      listSavePoints: vi.fn(async () => {
+        throw new Error('file_library_save_point_list_pending repo_hidden_elsewhere');
+      }),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_active_list_pending',
+        operation_state: 'running',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: null,
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await createSavePointForRestore({ deps, libraryId, message: 'Cached before create' });
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_active_list_pending_create',
+          'idempotency-key': 'save-point-active-list-pending-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({ message: 'Before list pending projection' }),
+    })).resolves.toBe(true);
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_active_list_pending_list' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(listJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_SAVE_POINT_OPERATION_PENDING',
+      message: 'file_library_save_point_create_pending',
+      operation_status: 'pending',
+      retry_after_ms: 2000,
+    });
+    expect(JSON.stringify(listJson.mock.calls[0]?.[2])).not.toMatch(/sp_user_cached|op_save_point_active_list_pending|repo_hidden/);
+  });
+
+  it('does not keep the save point collection pending after save-point create reaches terminal failed', async () => {
+    const storageAdapter = createStorageAdapter({
+      createSavePoint: vi.fn(async () => ({
+        operationId: 'op_save_point_terminal_failed',
+        operationStatus: 'pending',
+        savePointId: null,
+      })),
+      listSavePoints: vi.fn(async () => []),
+      getOperationProjection: vi.fn(async () => ({
+        operation_id: 'op_save_point_terminal_failed',
+        operation_state: 'failed',
+        operation_type: 'save_point_create',
+        resource: { type: 'repo' },
+        error: { code: 'afscp_save_point_failed', message: 'raw storage failed' },
+        created_at: '2026-05-09T00:01:00.000Z',
+        updated_at: '2026-05-09T00:01:02.000Z',
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+
+    const createJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        headers: {
+          'x-request-id': 'req_save_point_terminal_failed_create',
+          'idempotency-key': 'save-point-terminal-failed-key',
+        },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({ message: 'Before failed projection' }),
+    })).resolves.toBe(true);
+    const operationId = (createJson.mock.calls[0]?.[2] as { id?: string }).id;
+
+    const listJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibrarySavePoints',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: { headers: { 'x-request-id': 'req_save_point_terminal_failed_list' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: listJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(listJson).toHaveBeenCalledWith(expect.anything(), 200, { items: [] });
+
+    const lookupJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryOperation',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      operationId,
+      req: { headers: { 'x-request-id': 'req_save_point_terminal_failed_lookup' } } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: lookupJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(lookupJson).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({
+      id: operationId,
+      status: 'failed',
+      failure_reason: 'file_library_save_point_create_failed',
+    }));
+    expect(JSON.stringify(lookupJson.mock.calls[0]?.[2])).not.toMatch(/op_save_point_terminal_failed|raw storage failed|repo_/);
+  });
+
   it('does not project completed save-point creation operations as permanently active', async () => {
     const storageAdapter = createStorageAdapter({
       createSavePoint: vi.fn(async () => ({

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.17@sha256:b12828fafc02dd994c06f6d92bd9fedd795c530aae6cb2cd6382a5e756b7ff6a}}"
+AFSCP_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.18@sha256:4506e681df46066fa993245b8737c34becd0de214b3dbfe11797dfd6bc4a1066}}"
 EXPECTED_JVS_SHA256="${EXPECTED_JVS_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"
 EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f762bc436f0d3dc7c7c1d60847992c3a82718}"
 AFSCP_JUICEFS_OUTPUT_PATH="${AFSCP_JUICEFS_OUTPUT_PATH:-}"

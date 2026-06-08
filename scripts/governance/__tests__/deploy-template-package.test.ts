@@ -52,7 +52,7 @@ const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-f
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
 const AFSCP_COMMIT_SHA = '3dd88d885901a300c2a993653ba4da058a294247';
-const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
+const ASBCP_COMMIT_SHA = 'adb6653b0a94378d42692e5a1025ce9f24cefb8d';
 const PACKAGE_URI =
   'gh-artifact://agentsmith/deploy-template-package/10001/agentsmith-deploy-template-package.tgz';
 const VALID_REMOTE_ATTESTATION = {
@@ -360,8 +360,9 @@ function buildReleaseContractAssemblyInput(
       },
       {
         id: 'asbcp',
-        image: `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.7@sha256:${'6'.repeat(64)}`,
-        digest: `sha256:${'6'.repeat(64)}`,
+        image:
+          `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.19@sha256:68ee6614f80c42c052b1b7b5c63eac1a531d5c98ae24597abe7745da1c10c1b7`,
+        digest: 'sha256:68ee6614f80c42c052b1b7b5c63eac1a531d5c98ae24597abe7745da1c10c1b7',
       },
     ],
     release_kit_prerequisite_images: [
@@ -430,14 +431,14 @@ function buildExternalImageSourceProvenance(): CurrentReleaseImageSourceProvenan
       producer_repo: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       commit_sha: ASBCP_COMMIT_SHA,
-      tag: 'v2.0.7',
-      run_id: '50001',
+      tag: 'v2.0.19',
+      run_id: '27167401711',
       run_attempt: '1',
-      run_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/50001/attempts/1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/27167401711/attempts/1',
       subject_name: 'agentsmith-sandbox-control-plane-image',
       artifact_uri:
-        'gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/50001/agentsmith-sandbox-control-plane-image.oci',
-      artifact_sha256: `sha256:${'6'.repeat(64)}`,
+        'gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/27167401711/agentsmith-sandbox-control-plane-image.oci',
+      artifact_sha256: 'sha256:68ee6614f80c42c052b1b7b5c63eac1a531d5c98ae24597abe7745da1c10c1b7',
     },
     {
       image_id: 'managed_runner',

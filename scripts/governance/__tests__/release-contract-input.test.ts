@@ -71,10 +71,10 @@ const AFSCP_SOURCE_RUN_ATTEMPT = '1';
 const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';
 const AFSCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/${AFSCP_VERSION}`;
-const ASBCP_VERSION = 'v2.0.12';
-const ASBCP_DIGEST = `sha256:${'6'.repeat(64)}`;
-const ASBCP_COMMIT_SHA = '291a0195aeab392ca7265460573670e41e5f058b';
-const ASBCP_SOURCE_RUN_ID = '50001';
+const ASBCP_VERSION = 'v2.0.19';
+const ASBCP_DIGEST = 'sha256:68ee6614f80c42c052b1b7b5c63eac1a531d5c98ae24597abe7745da1c10c1b7';
+const ASBCP_COMMIT_SHA = 'adb6653b0a94378d42692e5a1025ce9f24cefb8d';
+const ASBCP_SOURCE_RUN_ID = '27167401711';
 const ASBCP_SOURCE_RUN_ATTEMPT = '1';
 const ASBCP_SOURCE_SUBJECT_NAME = 'agentsmith-sandbox-control-plane-image';
 const ASBCP_RELEASE_URL =
@@ -1000,7 +1000,7 @@ function writeAsbcpFinalManifestSourceMetadata(
   writeCanonicalAsbcpImageLock(root);
   const dependencySourceGates = writeDependencyImageSourceGates(root);
   const metadataRoot = join(root, 'asbcp-final-manifest-source-metadata');
-  const assetId = 246802468;
+  const assetId = 442105226;
   const manifest = buildAsbcpFinalManifest();
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   const manifestSha256 = sha256Digest(manifestText);
@@ -1020,7 +1020,7 @@ function writeAsbcpFinalManifestSourceMetadata(
   const metadata: AsbcpFinalManifestSourceMetadataFixture = {
     manifest,
     releaseApi: {
-      id: 975310864,
+      id: 336241316,
       tag_name: ASBCP_VERSION,
       target_commitish: ASBCP_COMMIT_SHA,
       name: ASBCP_VERSION,
@@ -2142,9 +2142,9 @@ describe('release contract CI artifact producer', () => {
       manifest_path: 'asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',
       release_url: ASBCP_RELEASE_URL,
       release_tag: ASBCP_VERSION,
-      release_id: 975310864,
+      release_id: 336241316,
       release_html_url: ASBCP_RELEASE_URL,
-      asset_id: 246802468,
+      asset_id: 442105226,
       asset_name: ASBCP_FINAL_MANIFEST_ASSET_NAME,
       asset_content_type: 'application/json',
       api_asset_digest_source: 'github_release_asset.digest',

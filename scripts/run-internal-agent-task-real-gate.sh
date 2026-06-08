@@ -1739,6 +1739,8 @@ collect_child_internal_failure_evidence() {
         } > "${evidence_dir}/runtime-stability-blocker-summary.txt"
         annotate_runtime_readiness_details "${evidence_dir}" "stability_blocker" "${runtime_readiness_blocker_outcome}" "${stage}" "${spec}" "${label}"
         gate_record_failure "${INTERNAL_REAL_DIR}" "stability_blocker" "${stage}_runtime_readiness" "${runtime_readiness_blocker_reason}; see ${evidence_dir}/runtime-stability-blocker-summary.txt"
+      else
+        annotate_runtime_readiness_details "${evidence_dir}" "stability_blocker" "focused_gate_runtime_readiness_failure" "${stage}" "${spec}" "${label}"
       fi
       {
         printf 'stage=%s\n' "${stage}"

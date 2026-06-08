@@ -3613,6 +3613,9 @@ describe('integration-real-helpers', () => {
           expect((init?.headers as Record<string, string>)['X-Service-Key']).toBe('service-key-value');
           return new Response(JSON.stringify({
             status: 'accepted',
+            readiness_reason: 'pvc_binding_pending',
+            readiness_message: 'raw Kubernetes scheduling detail should stay out of AgentSmith evidence',
+            retry_after: 7,
             pod: {
               phase: 'Pending',
               pod_name: 'asbcp-pending-pod',
@@ -3668,8 +3671,10 @@ describe('integration-real-helpers', () => {
         expect(context).toContain('phase=Pending');
         expect(context).toContain('ready=false');
         expect(context).toContain(
-          'asbcp_workload_status http_status=202 request_id=asbcp_req_status_header status=accepted phase=Pending pod_name=asbcp-pending-pod',
+          'asbcp_workload_status http_status=202 request_id=asbcp_req_status_header status=accepted phase=Pending pod_name=asbcp-pending-pod readiness_reason=pvc_binding_pending retry_after=7',
         );
+        expect(context).not.toContain('readiness_message=');
+        expect(context).not.toContain('raw Kubernetes scheduling detail');
         expect(context).not.toContain('service-key-value');
         expect(await readFile(argLogPath, 'utf8')).toContain(
           'get pods -n agentsmith-sandbox -l app=managed-workload -o json',
@@ -3700,6 +3705,9 @@ describe('integration-real-helpers', () => {
               phase: `Pending pod_name=forged\n${'p'.repeat(160)}`,
               pod_name: `asbcp-pending-pod asbcp_code=forged\n${'n'.repeat(160)}`,
             },
+            readiness_reason: `PVC binding service-key-value\n${'q'.repeat(160)}`,
+            readiness_message: `raw message with service-key-value\n${'m'.repeat(160)}`,
+            retry_after: `10 retry_after=forged\n${'a'.repeat(160)}`,
             error: {
               code: `image_pull secret=service-key-value\n${'c'.repeat(160)}`,
             },
@@ -3747,11 +3755,15 @@ describe('integration-real-helpers', () => {
         expect(asbcpLine).toContain('phase=Pending_pod_name_forged_');
         expect(asbcpLine).toContain('pod_name=asbcp-pending-pod_asbcp_code_forged_');
         expect(asbcpLine).toContain('asbcp_code=image_pull_secret_<redacted>_');
-        expect(asbcpLine.length).toBeLessThan(650);
+        expect(asbcpLine).toContain('readiness_reason=PVC_binding_<redacted>_');
+        expect(asbcpLine).toContain('retry_after=10_retry_after_forged_');
+        expect(asbcpLine.length).toBeLessThan(850);
         expect(asbcpLine).not.toContain(' status=forged');
         expect(asbcpLine).not.toContain(' phase=forged');
         expect(asbcpLine).not.toContain(' pod_name=forged');
         expect(asbcpLine).not.toContain(' asbcp_code=forged');
+        expect(asbcpLine).not.toContain('readiness_message');
+        expect(asbcpLine).not.toContain('raw message');
         expect(asbcpLine).not.toContain('service-key-value');
       });
     } finally {

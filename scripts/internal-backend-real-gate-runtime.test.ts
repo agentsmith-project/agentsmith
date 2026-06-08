@@ -1926,6 +1926,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/afscp-runtime-fingerprint.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-summary.txt');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
+    expect(result.stdout).not.toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
     expect(result.summary).toContain('stage=files_restore_continuation_spec');
     expect(result.summary).toContain('gate_mode=files-restore-continue');
     expect(result.summary).toContain('spec=e2e/integration-files-user-stories.spec.ts');
@@ -1979,10 +1980,18 @@ describe('internal backend-real gate runtime contract', () => {
     const details = JSON.parse(result.runtimeReadinessDetails) as {
       schema_version: string;
       theme: string;
+      classification?: string;
+      outcome?: string;
       signals: RuntimeReadinessSignal[];
+      call_summaries?: RuntimeReadinessSignal[];
+      failure?: RuntimeReadinessSignal;
+      api?: RuntimeReadinessSignal;
+      pod_manager_summary?: RuntimeReadinessSignal;
     };
     expect(details.schema_version).toBe('agentsmith.runtime-readiness-details/v1');
     expect(details.theme).toBe('runtime_pending_readiness');
+    expect(details.classification).toBe('stability_blocker');
+    expect(details.outcome).toBe('focused_gate_runtime_readiness_failure');
     expect(details.signals).toEqual(expect.arrayContaining([
       expect.objectContaining({
         source: 'api',
@@ -2011,7 +2020,7 @@ describe('internal backend-real gate runtime contract', () => {
         source: 'api',
         request_id: 'release:begin:req-runtime-json',
         workload_id: 'workload-runtime-1',
-        phase: 'unknown',
+        phase: 'pending',
         status_code: '502',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
         call: 'delete_pod',
@@ -2021,7 +2030,7 @@ describe('internal backend-real gate runtime contract', () => {
         call: 'delete_pod',
         request_id: 'req-runtime-json-step',
         workload_id: 'workload-runtime-1',
-        phase: 'unknown',
+        phase: 'pending',
         status_code: '502',
         error_code: 'AGENT_SANDBOX_UNAVAILABLE',
         asbcp_code: 'dependency_failure',
@@ -2068,6 +2077,19 @@ describe('internal backend-real gate runtime contract', () => {
         error_code: 'INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING',
       }),
     ]));
+    expect(details.call_summaries).toEqual(details.signals);
+    expect(details.failure).toEqual(expect.objectContaining({
+      error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      workload_id: 'workload-runtime-1',
+    }));
+    expect(details.api).toEqual(expect.objectContaining({
+      source: 'api',
+      error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+    }));
+    expect(details.pod_manager_summary).toEqual(expect.objectContaining({
+      source: 'pod_manager',
+      error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+    }));
     expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
   });
 

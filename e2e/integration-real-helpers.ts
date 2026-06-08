@@ -4601,6 +4601,23 @@ function readAsbcpOptionalStringField(
   return null;
 }
 
+function readAsbcpOptionalScalarField(
+  input: Record<string, unknown> | undefined,
+  keys: string[],
+): string | null {
+  if (!input) return null;
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return null;
+}
+
 function eventTimestamp(item: KubernetesEventItem): string {
   return item.lastTimestamp ?? item.eventTime ?? item.metadata?.creationTimestamp ?? "";
 }
@@ -4753,9 +4770,19 @@ function sanitizeDiagnosticLine(value: string, maxLength = 240): string {
   return `${compact.slice(0, maxLength - 3)}...`;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function redactKnownAsbcpDiagnosticValues(value: string): string {
+  const serviceKey = process.env.ASBCP_SERVICE_KEY?.trim();
+  if (!serviceKey || serviceKey.length < 4) return value;
+  return value.replace(new RegExp(escapeRegExp(serviceKey), "g"), "<redacted>");
+}
+
 function sanitizeAsbcpDiagnosticField(value: string | null | undefined, maxLength = 96): string | null {
   if (!value) return null;
-  const sanitized = sanitizeDiagnosticLine(value, maxLength)
+  const sanitized = sanitizeDiagnosticLine(redactKnownAsbcpDiagnosticValues(value), maxLength)
     .replace(/[\s=]+/g, "_")
     .trim();
   return sanitized.length > 0 ? sanitized : null;
@@ -4815,6 +4842,14 @@ async function fetchAsbcpWorkloadStatusSummary(args: {
       readAsbcpOptionalStringField(errorPayload, ["code", "error_code", "errorCode"])
         || readAsbcpOptionalStringField(payload, ["code", "error_code", "errorCode"]),
     );
+    const readinessReason = sanitizeAsbcpDiagnosticField(
+      readAsbcpOptionalStringField(payload, ["readiness_reason", "readinessReason"])
+        || readAsbcpOptionalStringField(podPayload, ["readiness_reason", "readinessReason"]),
+    );
+    const retryAfter = sanitizeAsbcpDiagnosticField(
+      readAsbcpOptionalScalarField(payload, ["retry_after", "retryAfter", "retry_after_ms", "retryAfterMs"])
+        || readAsbcpOptionalScalarField(podPayload, ["retry_after", "retryAfter", "retry_after_ms", "retryAfterMs"]),
+    );
     const parts = [
       `http_status=${response.status}`,
       requestId ? `request_id=${requestId}` : null,
@@ -4822,6 +4857,8 @@ async function fetchAsbcpWorkloadStatusSummary(args: {
       phase ? `phase=${phase}` : null,
       podName ? `pod_name=${podName}` : null,
       asbcpCode ? `asbcp_code=${asbcpCode}` : null,
+      readinessReason ? `readiness_reason=${readinessReason}` : null,
+      retryAfter ? `retry_after=${retryAfter}` : null,
     ].filter(Boolean);
     return [`asbcp_workload_status ${parts.join(" ")}`];
   } catch (error) {

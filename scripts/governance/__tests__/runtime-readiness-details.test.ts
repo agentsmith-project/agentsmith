@@ -188,6 +188,107 @@ describe('runtime readiness details evidence', () => {
     );
   });
 
+  it('parses sandbox startup timeout envelopes with top-level API and pod manager diagnostics', () => {
+    const diagnostic = {
+      event: 'runtime_pending_readiness_failure',
+      theme: 'runtime_pending_readiness',
+      api: {
+        task_id: 'task_startup_timeout',
+        run_id: 'run_startup_timeout',
+        error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      },
+      pod_manager: {
+        workloadId: 'task-startup-timeout',
+        api_trace: [
+          {
+            operation: 'wait_for_running_status',
+            outcome: 'success',
+            request_id: 'req_status_pending',
+            workload_id: 'task-startup-timeout',
+            phase: 'Pending',
+          },
+          {
+            operation: 'wait_for_running',
+            outcome: 'error',
+            workload_id: 'task-startup-timeout',
+            error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+          },
+        ],
+        pod_manager_summary: {
+          workload_id: 'task-startup-timeout',
+          request_ids: ['req_status_pending'],
+          latest_operation: 'wait_for_running',
+          latest_outcome: 'error',
+          latest_phase: 'Pending',
+          latest_error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        },
+        asbcp_call_summaries: [
+          {
+            operation: 'wait_for_running',
+            outcome: 'error',
+            workload_id: 'task-startup-timeout',
+            error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+          },
+        ],
+      },
+      diagnostic: {
+        code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+        message: 'sandbox_startup_timeout',
+      },
+    };
+
+    const report = buildRuntimeReadinessDetails({
+      generatedAt: '2026-06-08T20:24:04.500Z',
+      podStatusText: '',
+      logFiles: [{
+        path: '/tmp/api.log',
+        content: `[sandbox] runtime_pending_readiness_failure ${JSON.stringify(diagnostic)}\n`,
+      }],
+    });
+
+    expect(report.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'api',
+        call: 'wait_for_running',
+        request_id: 'req_status_pending',
+        workload_id: 'task-startup-timeout',
+        phase: 'Pending',
+        status: 'Pending',
+        error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'wait_for_running',
+        request_id: 'req_status_pending',
+        workload_id: 'task-startup-timeout',
+        phase: 'Pending',
+        status: 'Pending',
+        error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        call: 'wait_for_running',
+        request_id: 'req_status_pending',
+        workload_id: 'task-startup-timeout',
+        phase: 'Pending',
+        status: 'Pending',
+        error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      }),
+    ]));
+    expect(report.failure).toEqual(expect.objectContaining({
+      error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+      workload_id: 'task-startup-timeout',
+    }));
+    expect(report.api).toEqual(expect.objectContaining({
+      source: 'api',
+      error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+    }));
+    expect(report.pod_manager_summary).toEqual(expect.objectContaining({
+      source: 'pod_manager',
+      error_code: 'AGENT_SANDBOX_STARTUP_TIMEOUT',
+    }));
+  });
+
   it('keeps the runtime readiness report schema stable while exposing call_summaries', () => {
     const report = buildRuntimeReadinessDetails({
       generatedAt: '2026-06-05T12:00:00.000Z',

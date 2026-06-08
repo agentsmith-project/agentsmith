@@ -103,6 +103,7 @@ Files / sandbox / runtime readiness blocker 处理口径：
 
 - gate 只是探针；blocker 先翻译成 owner repo 的运行时不变量、状态机、API admission、terminal truth 或可见性边界，再决定修哪里。
 - owner 边界：AgentSmith owns Files public projection、用户态状态/错误映射与 adapter evidence；AFSCP owns save point durability、materialization/list-visible truth 与存储侧 terminal truth。
+- ASBCP / sandbox owns workload writer lifecycle、sandbox/workload release-drain-flush、PVC/scheduling readiness 与 typed runtime readiness signal；它不拥有 Files save point terminal success 或 Files list/read/restore 可见性事实。
 - AgentSmith Files collection projection 与 operation terminal truth 分离：collection 只表达当前 list-visible 集合；active save point operation 可把空集合或 list pending 投影为 typed pending；terminal failed/succeeded 通过 operation resource 与后端 list-visible truth 暴露，不用 collection 伪造 last-operation failed 或长期 pending。
 - save point 可发起表示可进入受控 pending，不等于 runtime writer 存在时必须立即 terminal success；terminal success 必须对应同一 file library 的 save point list、Files read 和 restore 路径可见事实。
 - restore ready 前必须先收敛冲突的 RW writer fence / drain / flush；`pending`、`releasing`、`offline`、`not_found` 等状态必须有 owner 收敛路径，无法完成时返回 typed pending 或 failed。

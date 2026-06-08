@@ -30,10 +30,10 @@ describe('check-current-build-artifact-broker contract', () => {
 
   it('accepts provider image source locks with release URL and tag commit freshness fields', () => {
     const afscpLock = [
-      'afscp_version=v1.0.13',
-      'afscp_source_image=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.13@sha256:e7857d6e3195d3e8d1ca7e535ab5d6731eaec0e78c9fe1ad9eb7aac79e71d788',
-      'afscp_release_url=https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/v1.0.13',
-      'afscp_commit_sha=c9119198dc6e2a6f6098ee76c9f30b8ff48e5f66',
+      'afscp_version=v1.0.14',
+      'afscp_source_image=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.14@sha256:3d151494a95e17efa199ca3b8c0ff7cae2328d793c71a85fa2957d9a116fba01',
+      'afscp_release_url=https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/v1.0.14',
+      'afscp_commit_sha=a8eb82c64bc998a71ad729b96064f11e9e581713',
       '',
     ].join('\n');
 

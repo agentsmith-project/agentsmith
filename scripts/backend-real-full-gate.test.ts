@@ -869,7 +869,7 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(helper).toContain('export AFSCP_ENVIRONMENT="${AFSCP_ENVIRONMENT:-local-real}"');
     expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
-    expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.15@sha256:eaf0f4004d446ca9280f5494a0329a3daa7cc2d73605a31811a8a994b5095373}}"');
+    expect(helper).toContain('export AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.16@sha256:f079bd5ff293dd5f10377c84d64cafe28a7c07070cb8d8316b7892bac71e4f18}}"');
     expect(helper).toContain('prepare_afscp_gate_juicefs_from_image()');
     expect(helper).toContain('AFSCP_JUICEFS_OUTPUT_PATH="${bin_dir}/juicefs"');
     expect(helper).toContain('export PATH="${runtime_dir}/bin:${PATH}"');

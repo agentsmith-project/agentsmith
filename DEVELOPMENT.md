@@ -102,8 +102,8 @@ CI 前本地验证口径：
 Files / sandbox / runtime readiness blocker 处理口径：
 
 - gate 只是探针；blocker 先翻译成 owner repo 的运行时不变量、状态机、API admission、terminal truth 或可见性边界，再决定修哪里。
-- `createSavePoint` accepted 不等于成功；terminal success 必须让同一 file library 的 save point list、Files read 和 restore 路径可见，不能可见时由 owner 返回 typed pending 或 failed。
-- restore ready 前必须释放或收敛冲突的 RW writer；`pending`、`releasing`、`offline`、`not_found` 等状态必须有 owner 收敛路径。
+- save point 可发起表示可进入受控 pending，不等于 runtime writer 存在时必须立即 terminal success；terminal success 必须对应同一 file library 的 save point list、Files read 和 restore 路径可见事实。
+- restore ready 前必须先收敛冲突的 RW writer fence / drain / flush；`pending`、`releasing`、`offline`、`not_found` 等状态必须有 owner 收敛路径，无法完成时返回 typed pending 或 failed。
 - evidence-only patch 只用于判责和缩小 owner；不要新增 gate、report、wrapper retry、拉长等待或无限重试来掩盖 readiness 收敛缺口。
 
 Gate adapter fidelity notes:

@@ -91,6 +91,14 @@ Release boundary note: `npm run product:ready` is the AgentSmith product-side re
 - 长期 gate、docs、script 必须绑定当前功能、安全、合同、真实运行/发布风险，或显著降低 operator 心智负担；否则降级、合并或删除。
 - 服务商专用集成只能作为显式选择或 targeted diagnostic，不进入默认成功路径。
 
+CI 前本地验证口径：
+
+- CI 前不能裸奔；每个 change slice 至少跑与改动风险匹配的最小本地检查，并在交付说明中记录命令/结果，或说明不能运行的原因。
+- 小改动不要求本地跑 `npm run product:ready`、backend-real full、full visual、release-kit 四路径或 airgap 全链路；这些只在阶段收口、merge/release 前、高风险跨层变更或 incident 修复后升级执行。
+- 风险分层示例：docs-only 跑 docs/static guard；contract/API/权限/route 跑 contract/type/相关 unit；UI/visual 跑相关 unit、focused e2e 或 targeted visual；Files/sandbox/runner/runtime 跑 owner focused diagnostic 或 backend-real smoke；release/adoption/image lock 跑对应 contract/lock check；阶段收口或发布前回到 `npm run verify -- --goal=... --run` 或 `npm run product:ready`。
+- CI 是统一环境复核、保护、产物签发与 evidence 生产，不替代基本本地验证。CI failure 指向真实 bug 时，转入 owner repo 根因、业务逻辑或运行时不变量修复，不用 rerun、retry、report 或拉长等待掩盖。
+- 不为这条规则新增流程、看板、PR bot、强制 evidence 包或 wrapper；按 KISS / DRY / YAGNI 保持最小执行面。
+
 Gate adapter fidelity notes:
 - adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
 - free-form `command` 只作为 operator hint / 展示面，不再承担 enforcement truth

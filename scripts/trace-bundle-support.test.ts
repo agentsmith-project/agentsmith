@@ -206,6 +206,104 @@ describe('ux trace bundle support', () => {
     }
   });
 
+  it('replaces an older terminal attempt for the same authoritative index membership', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-terminal-attempt-'));
+    try {
+      const writeAttempt = async (args: {
+        storyId: string;
+        scenarioId: string;
+        runId: string;
+        outcome: 'pass' | 'fail';
+        finishedAt: string;
+      }): Promise<void> => {
+        const trace = await createUxTraceBundleWriter({
+          outputRoot: rootDir,
+          lane: 'backend-real',
+          suite: 'integration-release-user-story',
+          storyId: args.storyId,
+          scenarioId: args.scenarioId,
+          title: args.storyId,
+          actor: 'system 管理侧',
+          route: '/en-US/system/login',
+          specFile: 'e2e/integration-release-user-story.spec.ts',
+          browser: 'chromium',
+          gitSha: 'abc123',
+          runId: args.runId,
+          startedAt: '2026-06-09T22:20:41.489Z',
+        });
+
+        await trace.capture(makeFakePage('/en-US/system/login'), {
+          stepId: 'system-login',
+          action: 'Open system login',
+          target: 'system-login__heading',
+        });
+        await trace.finish({
+          outcome: args.outcome,
+          finishedAt: args.finishedAt,
+        });
+      };
+
+      await writeAttempt({
+        storyId: 'workspace-provisioning',
+        scenarioId: 'workspace-provisioning',
+        runId: 'run-other-membership',
+        outcome: 'pass',
+        finishedAt: '2026-06-09T22:19:41.000Z',
+      });
+      await writeAttempt({
+        storyId: 'release-user-story-end-to-end',
+        scenarioId: 'release-user-story-end-to-end',
+        runId: 'run-2026-06-09t22-20-41-489z',
+        outcome: 'fail',
+        finishedAt: '2026-06-09T22:20:41.489Z',
+      });
+      await writeAttempt({
+        storyId: 'release-user-story-end-to-end',
+        scenarioId: 'release-user-story-end-to-end',
+        runId: 'run-2026-06-09t22-23-41-992z',
+        outcome: 'pass',
+        finishedAt: '2026-06-09T22:23:41.992Z',
+      });
+
+      const index = JSON.parse(await readFile(path.join(rootDir, 'ux-trace-index.json'), 'utf-8')) as {
+        bundles: Array<{
+          story_id: string;
+          scenario_id: string;
+          run_id: string;
+          bundle_relpath: string;
+        }>;
+      };
+
+      expect(index.bundles.map((entry) => entry.run_id).sort()).toEqual([
+        'run-2026-06-09t22-23-41-992z',
+        'run-other-membership',
+      ]);
+      expect(index.bundles).toContainEqual(expect.objectContaining({
+        story_id: 'release-user-story-end-to-end',
+        scenario_id: 'release-user-story-end-to-end',
+        run_id: 'run-2026-06-09t22-23-41-992z',
+        bundle_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/run-2026-06-09t22-23-41-992z',
+      }));
+      expect(index.bundles).toContainEqual(expect.objectContaining({
+        story_id: 'workspace-provisioning',
+        scenario_id: 'workspace-provisioning',
+        run_id: 'run-other-membership',
+      }));
+      expect(index.bundles).not.toContainEqual(expect.objectContaining({
+        run_id: 'run-2026-06-09t22-20-41-489z',
+      }));
+      await expect(readFile(
+        path.join(
+          rootDir,
+          'backend-real/integration-release-user-story/release-user-story-end-to-end/run-2026-06-09t22-20-41-489z/manifest.json',
+        ),
+        'utf-8',
+      )).resolves.toContain('"outcome": "fail"');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('captures the first screenshot attempt with the default fullPage semantics', async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-fullpage-'));
     try {

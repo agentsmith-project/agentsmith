@@ -354,6 +354,12 @@ function readTraceIndexPayload(indexPath: string): UxTraceBundleIndex | null {
   }
 }
 
+function uxTraceBundleIndexMembershipKey(
+  entry: Pick<UxTraceBundleIndexEntry, 'lane' | 'suite' | 'story_id' | 'scenario_id'>,
+): string {
+  return [entry.lane, entry.suite, entry.story_id, entry.scenario_id].join('\u0000');
+}
+
 function writeUxTraceBundleIndex(args: {
   outputRoot: string;
   bundleDir: string;
@@ -373,7 +379,11 @@ function writeUxTraceBundleIndex(args: {
     contract_snapshot_relpath: `${bundleRelpath}/${UX_TRACE_CONTRACT_SNAPSHOT_FILE}`,
   };
   const existing = readTraceIndexPayload(indexPath);
-  const preserved = existing?.bundles.filter((candidate) => candidate.bundle_relpath !== bundleRelpath) ?? [];
+  const entryMembershipKey = uxTraceBundleIndexMembershipKey(entry);
+  const preserved = existing?.bundles.filter((candidate) => (
+    candidate.bundle_relpath !== bundleRelpath
+    && uxTraceBundleIndexMembershipKey(candidate) !== entryMembershipKey
+  )) ?? [];
   const payload: UxTraceBundleIndex = {
     version: 1,
     generated_at: nowIso(),

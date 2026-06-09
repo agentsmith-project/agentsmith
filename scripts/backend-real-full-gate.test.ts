@@ -889,19 +889,22 @@ describe('backend-real full gate runtime ownership contract', () => {
     const end = script.indexOf('stop_integration_afscp_local_runtime()', start);
     const body = script.slice(start, end);
     const stopIndex = body.indexOf('stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
+    const kindIndex = body.indexOf('ensure_integration_afscp_local_kind_context || return 1');
     const resetIndex = body.indexOf('reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
     const ensureIndex = body.indexOf('ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}"');
 
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(stopIndex).toBeGreaterThanOrEqual(0);
-    expect(resetIndex).toBeGreaterThan(stopIndex);
+    expect(kindIndex).toBeGreaterThan(stopIndex);
+    expect(resetIndex).toBeGreaterThan(kindIndex);
     expect(ensureIndex).toBeGreaterThan(resetIndex);
   });
 
   it('fails fast and preserves AFSCP local runtime log tails when integration runtime bootstrap fails', () => {
     const script = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
     const ensureBody = shellFunctionBody(script, 'ensure_integration_afscp_local_runtime');
+    const kindBody = shellFunctionBody(script, 'ensure_integration_afscp_local_kind_context');
     const collectorBody = shellFunctionBody(script, 'collect_integration_afscp_local_runtime_failure_evidence');
     const failureIndex = script.indexOf('if ! ensure_integration_afscp_local_runtime; then');
     const collectIndex = script.indexOf('collect_integration_afscp_local_runtime_failure_evidence', failureIndex);
@@ -910,6 +913,11 @@ describe('backend-real full gate runtime ownership contract', () => {
       failureIndex,
     );
 
+    expect(kindBody).toContain('LOCAL_KIND_FINAL_KUBECONFIG_PATH="${target_kubeconfig}"');
+    expect(kindBody).toContain('export KIND_CLUSTER_NAME KIND_CONTEXT_NAME LOCAL_KIND_CLUSTER_NAME LOCAL_KIND_FINAL_KUBECONFIG_PATH KUBECONFIG');
+    expect(kindBody).toContain('ensure_local_kind_cluster || return 1');
+    expect(kindBody).toContain('kubectl config use-context "${KIND_CONTEXT_NAME}"');
+    expect(ensureBody).toContain('ensure_integration_afscp_local_kind_context || return 1');
     expect(ensureBody).toContain('reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1');
     expect(ensureBody).toContain('ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1');
     expect(collectorBody).toContain('CURRENT_GATE_RESULT_EVIDENCE_DIR:-${INTEGRATION_LOG_DIR}');

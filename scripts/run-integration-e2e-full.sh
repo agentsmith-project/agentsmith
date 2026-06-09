@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/universal-proxy-runtime.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
+source "${ROOT_DIR}/scripts/scenarios/common.sh"
 
 BACKEND_REAL_SESSION_NAME=""
 if [[ "${1:-}" == "--session" ]]; then
@@ -794,6 +795,46 @@ cleanup_universal_proxy() {
     universal_proxy_runtime_cleanup_managed_container
 }
 
+ensure_integration_afscp_local_kind_context() {
+  local cluster_name
+  local context_name
+  local kind_config_path
+  local target_kubeconfig
+
+  cluster_name="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
+  context_name="${KIND_CONTEXT_NAME:-kind-${cluster_name}}"
+  if [[ -z "${cluster_name}" || "${context_name}" != kind-* ]]; then
+    echo "[integration-e2e-full] invalid local kind target before AFSCP local runtime reset: cluster=${cluster_name:-<empty>} context=${context_name:-<empty>}" >&2
+    return 1
+  fi
+
+  if declare -F scenario_kind_kubeconfig_path >/dev/null 2>&1; then
+    target_kubeconfig="$(scenario_kind_kubeconfig_path "${cluster_name}")"
+  else
+    target_kubeconfig="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-${HOME}/agentsmith/local-kind/${context_name}.kubeconfig}"
+  fi
+  kind_config_path="${KIND_CONFIG_PATH:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/unified/local-kind/config.yaml}}"
+
+  KIND_CLUSTER_NAME="${cluster_name}"
+  KIND_CONTEXT_NAME="${context_name}"
+  LOCAL_KIND_CLUSTER_NAME="${cluster_name}"
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${target_kubeconfig}"
+  KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  export KIND_CLUSTER_NAME KIND_CONTEXT_NAME LOCAL_KIND_CLUSTER_NAME LOCAL_KIND_FINAL_KUBECONFIG_PATH KUBECONFIG
+
+  echo "[integration-e2e-full] ensuring local kind context ${KIND_CONTEXT_NAME} before AFSCP local runtime reset" >&2
+  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  LOCAL_KIND_CONFIG_PATH="${kind_config_path}" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${KIND_CLUSTER_NAME}-control-plane}" \
+    ensure_local_kind_cluster || return 1
+
+  export KUBECONFIG="${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null || {
+    echo "[integration-e2e-full] failed to select local kind context ${KIND_CONTEXT_NAME} before AFSCP local runtime reset; local-real fails closed" >&2
+    return 1
+  }
+}
+
 ensure_integration_afscp_local_runtime() {
   if [[ "${INTEGRATION_AFSCP_LOCAL_RUNTIME}" != "true" ]]; then
     gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "afscp_local_runtime" "skipped" "INTEGRATION_AFSCP_LOCAL_RUNTIME=${INTEGRATION_AFSCP_LOCAL_RUNTIME}"
@@ -803,6 +844,7 @@ ensure_integration_afscp_local_runtime() {
   echo "[integration-e2e-full] ensuring AFSCP local runtime at ${AFSCP_BASE_URL}" >&2
   INTEGRATION_AFSCP_LOCAL_RUNTIME_OWNED=1
   stop_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" >/dev/null 2>&1 || true
+  ensure_integration_afscp_local_kind_context || return 1
   reset_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1
   ensure_afscp_local_runtime_for_gate "${INTEGRATION_AFSCP_DIR}" || return 1
 }

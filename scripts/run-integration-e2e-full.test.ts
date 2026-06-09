@@ -62,6 +62,7 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
     const scriptsDir = path.join(tempRoot, 'scripts');
     const scriptsLibDir = path.join(scriptsDir, 'lib');
     const scriptsLocalManualDir = path.join(scriptsDir, 'local-manual');
+    const scriptsScenariosDir = path.join(scriptsDir, 'scenarios');
     const infraSharedDir = path.join(tempRoot, 'infra', 'deploy', 'shared');
     const universalProxyConfigDir = path.join(infraSharedDir, 'universal-proxy');
     const binDir = path.join(tempRoot, 'bin');
@@ -77,6 +78,7 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
 
     mkdirSync(scriptsLibDir, { recursive: true });
     mkdirSync(scriptsLocalManualDir, { recursive: true });
+    mkdirSync(scriptsScenariosDir, { recursive: true });
     mkdirSync(universalProxyConfigDir, { recursive: true });
     mkdirSync(binDir, { recursive: true });
     mkdirSync(path.join(tempRoot, 'artifacts', 'backend-real', 'runs'), { recursive: true });
@@ -133,9 +135,19 @@ export_backend_real_endpoint_env() { :; }
       `#!/usr/bin/env bash
 set -euo pipefail
 
+reset_owned_afscp_local_runtime_for_gate() {
+  {
+    printf 'reset\\n'
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
+  } >> "${afscpLifecycleLog}"
+}
+
 ensure_afscp_local_runtime() {
   {
     printf 'ensure\\n'
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
     printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
     printf 'AFSCP_EXPORT_GATEWAY_BASE_URL=%s\\n' "\${AFSCP_EXPORT_GATEWAY_BASE_URL:-}"
     printf 'AFSCP_DEFAULT_VOLUME_ID=%s\\n' "\${AFSCP_DEFAULT_VOLUME_ID:-}"
@@ -150,6 +162,36 @@ stop_afscp_local_runtime() {
   {
     printf 'stop\\n'
     printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
+}
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsScenariosDir, 'common.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+scenario_local_kind_state_root() {
+  printf '%s\\n' "${tempRoot}/local-kind"
+}
+
+scenario_kind_kubeconfig_path() {
+  local cluster_name="\${1:-agentsmith}"
+  printf '%s/kind-%s.kubeconfig\\n' "$(scenario_local_kind_state_root)" "\${cluster_name}"
+}
+
+ensure_local_kind_cluster() {
+  mkdir -p "$(dirname "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH}")"
+  printf 'apiVersion: v1\\nkind: Config\\ncurrent-context: kind-agentsmith\\n' > "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  {
+    printf 'ensure-kind\\n'
+    printf 'LOCAL_KIND_CLUSTER_NAME=%s\\n' "\${LOCAL_KIND_CLUSTER_NAME:-}"
+    printf 'LOCAL_KIND_CONFIG_PATH=%s\\n' "\${LOCAL_KIND_CONFIG_PATH:-}"
+    printf 'LOCAL_KIND_CONTROL_PLANE_NODE_NAME=%s\\n' "\${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}"
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
   } >> "${afscpLifecycleLog}"
 }
 `,
@@ -434,6 +476,30 @@ done
 
 if [[ "\${status}" == "000" ]]; then
   exit 1
+fi
+exit 0
+`,
+    );
+
+    writeExecutable(
+      path.join(binDir, 'kubectl'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "config" && "\${2:-}" == "use-context" ]]; then
+  {
+    printf 'kubectl-use-context\\n'
+    printf 'context=%s\\n' "\${3:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
+  } >> "${afscpLifecycleLog}"
+  exit 0
+fi
+if [[ "\${1:-}" == "config" && "\${2:-}" == "current-context" ]]; then
+  printf 'kind-agentsmith\\n'
+  exit 0
+fi
+if [[ "\${1:-}" == "config" && "\${2:-}" == "get-contexts" ]]; then
+  printf 'kind-agentsmith\\n'
+  exit 0
 fi
 exit 0
 `,
@@ -759,7 +825,12 @@ exit 0
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED="${INTEGRATION_UNIVERSAL_PROXY_FORCE_MANAGED:-${UNIVERSAL_PROXY_RUNTIME_FORCE_MANAGED:-0}}"');
     expect(script).toContain('UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST="${INTEGRATION_UNIVERSAL_PROXY_UPSTREAM_HOST:-${UNIVERSAL_PROXY_RUNTIME_UPSTREAM_HOST:-host.docker.internal}}"');
     expect(script).toContain('source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"');
+    expect(script).toContain('source "${ROOT_DIR}/scripts/scenarios/common.sh"');
     expect(script).toContain('resolve_afscp_local_runtime_defaults "${API_PORT}" "vol_integration"');
+    expect(script).toContain('ensure_integration_afscp_local_kind_context()');
+    expect(script).toContain('LOCAL_KIND_FINAL_KUBECONFIG_PATH="${target_kubeconfig}"');
+    expect(script).toContain('export KIND_CLUSTER_NAME KIND_CONTEXT_NAME LOCAL_KIND_CLUSTER_NAME LOCAL_KIND_FINAL_KUBECONFIG_PATH KUBECONFIG');
+    expect(script).toContain('ensure_integration_afscp_local_kind_context || return 1');
     expect(script).toContain('ensure_integration_afscp_local_runtime');
     expect(script).toContain('stop_integration_afscp_local_runtime');
     expect(script).toContain('sync_keycloak_redirects_for_current_runtime()');
@@ -939,8 +1010,17 @@ exit 0
     expect(resolvedEnv.AFSCP_SERVICE_TOKEN).toBe('[set]');
     expect(resolvedEnv.AFSCP_BOOTSTRAP_SERVICE_TOKEN).toBe('[set]');
     expect(resolvedEnv.AFSCP_ORCHESTRATOR_SERVICE_TOKEN).toBe('[set]');
-    expect(readFileSync(fixture.afscpLifecycleLog, 'utf8')).toContain('ensure');
-    expect(readFileSync(fixture.afscpLifecycleLog, 'utf8')).toContain('stop');
+    const afscpLifecycle = readFileSync(fixture.afscpLifecycleLog, 'utf8');
+    const expectedKubeconfig = path.join(tempRoot, 'local-kind', 'kind-agentsmith.kubeconfig');
+    expect(afscpLifecycle).toContain('stop');
+    expect(afscpLifecycle).toContain('ensure-kind');
+    expect(afscpLifecycle).toContain('kubectl-use-context');
+    expect(afscpLifecycle).toContain('reset');
+    expect(afscpLifecycle).toContain('ensure');
+    expect(afscpLifecycle).toContain(`LOCAL_KIND_FINAL_KUBECONFIG_PATH=${expectedKubeconfig}`);
+    expect(afscpLifecycle).toContain(`KUBECONFIG=${expectedKubeconfig}`);
+    expect(afscpLifecycle.indexOf('ensure-kind')).toBeLessThan(afscpLifecycle.indexOf('reset'));
+    expect(afscpLifecycle.indexOf('reset')).toBeLessThan(afscpLifecycle.lastIndexOf('ensure'));
   }, 10000);
 
   it('keeps active local/backend-real runtime entrypoints free of sibling source-build proxy coupling', () => {
@@ -1106,6 +1186,7 @@ exit 0
     const scriptsDir = path.join(tempRoot, 'scripts');
     const scriptsLibDir = path.join(scriptsDir, 'lib');
     const scriptsLocalManualDir = path.join(scriptsDir, 'local-manual');
+    const scriptsScenariosDir = path.join(scriptsDir, 'scenarios');
     const binDir = path.join(tempRoot, 'bin');
     const stateRoot = path.join(tempRoot, 'artifacts', 'backend-real', 'current');
     const runId = 'integration-test-run';
@@ -1118,6 +1199,7 @@ exit 0
 
     mkdirSync(scriptsLibDir, { recursive: true });
     mkdirSync(scriptsLocalManualDir, { recursive: true });
+    mkdirSync(scriptsScenariosDir, { recursive: true });
     mkdirSync(binDir, { recursive: true });
     mkdirSync(path.join(tempRoot, 'artifacts', 'backend-real', 'runs'), { recursive: true });
 
@@ -1174,9 +1256,19 @@ export_backend_real_endpoint_env() {
       `#!/usr/bin/env bash
 set -euo pipefail
 
+reset_owned_afscp_local_runtime_for_gate() {
+  {
+    printf 'reset\\n'
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
+  } >> "${afscpLifecycleLog}"
+}
+
 ensure_afscp_local_runtime() {
   {
     printf 'ensure\\n'
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
     printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
   } >> "${afscpLifecycleLog}"
 }
@@ -1185,6 +1277,36 @@ stop_afscp_local_runtime() {
   {
     printf 'stop\\n'
     printf 'AFSCP_BASE_URL=%s\\n' "\${AFSCP_BASE_URL:-}"
+  } >> "${afscpLifecycleLog}"
+}
+`,
+      'utf8',
+    );
+
+    writeFileSync(
+      path.join(scriptsScenariosDir, 'common.sh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+
+scenario_local_kind_state_root() {
+  printf '%s\\n' "${tempRoot}/local-kind"
+}
+
+scenario_kind_kubeconfig_path() {
+  local cluster_name="\${1:-agentsmith}"
+  printf '%s/kind-%s.kubeconfig\\n' "$(scenario_local_kind_state_root)" "\${cluster_name}"
+}
+
+ensure_local_kind_cluster() {
+  mkdir -p "$(dirname "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH}")"
+  printf 'apiVersion: v1\\nkind: Config\\ncurrent-context: kind-agentsmith\\n' > "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH}"
+  {
+    printf 'ensure-kind\\n'
+    printf 'LOCAL_KIND_CLUSTER_NAME=%s\\n' "\${LOCAL_KIND_CLUSTER_NAME:-}"
+    printf 'LOCAL_KIND_CONFIG_PATH=%s\\n' "\${LOCAL_KIND_CONFIG_PATH:-}"
+    printf 'LOCAL_KIND_CONTROL_PLANE_NODE_NAME=%s\\n' "\${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}"
+    printf 'LOCAL_KIND_FINAL_KUBECONFIG_PATH=%s\\n' "\${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
   } >> "${afscpLifecycleLog}"
 }
 `,
@@ -1497,11 +1619,37 @@ exit 0
       'utf8',
     );
 
+    writeFileSync(
+      path.join(binDir, 'kubectl'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "config" && "\${2:-}" == "use-context" ]]; then
+  {
+    printf 'kubectl-use-context\\n'
+    printf 'context=%s\\n' "\${3:-}"
+    printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG:-}"
+  } >> "${afscpLifecycleLog}"
+  exit 0
+fi
+if [[ "\${1:-}" == "config" && "\${2:-}" == "current-context" ]]; then
+  printf 'kind-agentsmith\\n'
+  exit 0
+fi
+if [[ "\${1:-}" == "config" && "\${2:-}" == "get-contexts" ]]; then
+  printf 'kind-agentsmith\\n'
+  exit 0
+fi
+exit 0
+`,
+      'utf8',
+    );
+
     chmodSync(path.join(scriptsDir, 'run-integration-e2e-full.sh'), 0o755);
     chmodSync(path.join(scriptsDir, 'run-next-dev-safe.sh'), 0o755);
     chmodSync(path.join(binDir, 'npm'), 0o755);
     chmodSync(path.join(binDir, 'npx'), 0o755);
     chmodSync(path.join(binDir, 'curl'), 0o755);
+    chmodSync(path.join(binDir, 'kubectl'), 0o755);
 
     try {
       execFileSync('bash', [path.join(scriptsDir, 'run-integration-e2e-full.sh'), 'e2e/example.spec.ts'], {

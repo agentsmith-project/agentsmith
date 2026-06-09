@@ -188,6 +188,14 @@ jobs:
       - name: Run lane-backend-real-core
         run: npm run lane:backend-real:core
 
+      - name: Prune backend-real runtime caches before artifact upload
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -d artifacts/backend-real ]]; then
+            sudo find artifacts/backend-real -type d -name afscp-juicefs-cache -prune -exec rm -rf -- {} +
+          fi
+
       - name: Upload backend-real core artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -196,6 +204,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/backend-real/runs/**
+            !artifacts/backend-real/**/afscp-juicefs-cache/**
             !artifacts/backend-real/runs/**/next-dist/**
             artifacts/mock-lane/runs/**
             !artifacts/mock-lane/runs/**/next-dist/**

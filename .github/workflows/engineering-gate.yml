@@ -77,6 +77,14 @@ jobs:
             make governance-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
           fi
 
+      - name: Prune backend-real runtime caches before artifact upload
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -d artifacts/backend-real ]]; then
+            sudo find artifacts/backend-real -type d -name afscp-juicefs-cache -prune -exec rm -rf -- {} +
+          fi
+
       - name: Upload engineering artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -87,6 +95,7 @@ jobs:
             artifacts/governance-reports/**
             artifacts/backend-real/current/**
             artifacts/backend-real/runs/**
+            !artifacts/backend-real/**/afscp-juicefs-cache/**
             !artifacts/backend-real/runs/**/next-dist/**
             artifacts/mock-lane/runs/**
             !artifacts/mock-lane/runs/**/next-dist/**

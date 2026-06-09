@@ -1589,6 +1589,39 @@ describe('current workflow governance', () => {
     ).toBe(true);
   });
 
+  it('prunes backend-real AFSCP JuiceFS runtime caches before artifact upload', () => {
+    const checkedJobs = [
+      {
+        workflowPath: '.github/workflows/engineering-gate.yml',
+        jobId: 'engineering-gate',
+      },
+      {
+        workflowPath: '.github/workflows/quality-gates.yml',
+        jobId: 'lane-backend-real-core',
+      },
+    ] as const;
+
+    for (const { workflowPath, jobId } of checkedJobs) {
+      const parsedWorkflow = parseWorkflow(workflowPath);
+      const steps = collectJobSteps(parsedWorkflow, jobId);
+      const pruneStepIndex = steps.findIndex(
+        (step) => step.name === 'Prune backend-real runtime caches before artifact upload',
+      );
+      const uploadStepIndex = steps.findIndex((step) => step.uses === 'actions/upload-artifact@v7');
+      const pruneRun = pruneStepIndex >= 0 ? asRecord(steps[pruneStepIndex]).run : '';
+
+      expect(pruneStepIndex, `${workflowPath}:${jobId} must prune runtime caches`).toBeGreaterThanOrEqual(0);
+      expect(uploadStepIndex, `${workflowPath}:${jobId} must upload artifacts`).toBeGreaterThanOrEqual(0);
+      expect(pruneStepIndex, `${workflowPath}:${jobId} must prune before upload`).toBeLessThan(uploadStepIndex);
+      expect(pruneRun, `${workflowPath}:${jobId} must prune AFSCP JuiceFS cache directories`).toContain(
+        'sudo find artifacts/backend-real -type d -name afscp-juicefs-cache -prune -exec rm -rf -- {} +',
+      );
+      expect(collectJobArtifactPaths(parsedWorkflow, jobId)).toContain(
+        '!artifacts/backend-real/**/afscp-juicefs-cache/**',
+      );
+    }
+  });
+
   it('keeps BACKEND_REAL_API_KEY only as a GitHub Actions secret rename fallback with removal triggers', () => {
     const engineeringWorkflow = readRepoFile('.github/workflows/engineering-gate.yml');
     const qualityGatesWorkflow = readRepoFile('.github/workflows/quality-gates.yml');

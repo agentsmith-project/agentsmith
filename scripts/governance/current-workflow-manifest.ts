@@ -669,6 +669,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
           'artifacts/governance-reports/**',
           'artifacts/backend-real/current/**',
           'artifacts/backend-real/runs/**',
+          '!artifacts/backend-real/**/afscp-juicefs-cache/**',
           '!artifacts/backend-real/runs/**/next-dist/**',
           'artifacts/mock-lane/runs/**',
           '!artifacts/mock-lane/runs/**/next-dist/**',
@@ -1015,6 +1016,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         ],
         artifactPaths: [
           'artifacts/backend-real/runs/**',
+          '!artifacts/backend-real/**/afscp-juicefs-cache/**',
           '!artifacts/backend-real/runs/**/next-dist/**',
           'artifacts/mock-lane/runs/**',
           '!artifacts/mock-lane/runs/**/next-dist/**',

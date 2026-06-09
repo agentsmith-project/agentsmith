@@ -76,7 +76,7 @@ transition-only diagnostics / 过渡期专项诊断不是默认 Product Readines
 | status reader | `npm run product:status` | 读取 latest/summary 指针与 summary 中冻结的 status/deploy snapshot；不重新聚合 evidence，也不读取 mutable per-step result |
 | transition-only deploy diagnostics / 过渡期专项诊断 | [Unified Deploy Operations](./unified-deploy-operations.md) / owner runbook | 本机或目标集群 deploy、rollout、route smoke 定位；不属于 AgentSmith product readiness 必需证据 |
 | focused product-flow diagnostic / 过渡期专项诊断 | owner runbook | deploy profile 上的 product-flow aggregate 定位；不是 release-kit canonical report producer，也不属于 AgentSmith product readiness 必需证据 |
-| post-deploy product smoke handoff producer | release-kit GA handoff artifact | 绑定 downloaded `agentsmith-release-contract.json`，按 deployed target/run 输出 canonical report；final GA 至少把 `<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 和 `<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 交给 release-kit `--ga-release`；不属于默认 `product:ready` / release-full |
+| post-deploy product smoke handoff producer | release-kit GA handoff artifact | 绑定 downloaded `agentsmith-release-contract.json`、同一 deployed target 的 site env 和 substrate truth，按 deployed target/run 输出 canonical report；final GA 至少把 `<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 和 `<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 交给 release-kit `--ga-release`；不属于默认 `product:ready` / release-full |
 | preflight | internal adapter `gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | internal adapter `gate:default` | 默认工程门禁通过；它不能代替 full visual |
 | evidence owner | internal adapter `lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
@@ -88,7 +88,7 @@ transition-only diagnostics / 过渡期专项诊断不是默认 Product Readines
 2. `lane:visual` 是 full visual 证据 owner，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `gate:release` / `lane:backend-real:release` 承担 backend-real product readiness `ux_trace_bundle` 证据所有权。
 4. unified deploy 的 `local-kind` 与 `existing-cluster` 是同一部署模型的 profile；这些命令保留为 transition-only focused diagnostics / 过渡期专项诊断，不属于默认 product readiness campaign。route smoke 不能替代 focused product-flow 诊断，也不是 release-kit 职责归属证明。
-5. Post-deploy product smoke handoff 只消费 downloaded `agentsmith-release-contract.json`、部署目标 site env 与该目标的 `<ga-smoke-evidence-root>`，然后把 finalized report 交给 release-kit；final GA 至少需要 online 和 airgap 两个目标各一份 report；不要把该 lane 加回默认 `product:ready` / release-full。
+5. Post-deploy product smoke handoff 只消费 downloaded `agentsmith-release-contract.json`、同一 deployed target 的 site env / substrate truth 与该目标的 `<ga-smoke-evidence-root>`，然后把 finalized report 交给 release-kit；final GA 至少需要 online 和 airgap 两个目标各一份 report；不要把该 lane 加回默认 `product:ready` / release-full。
 6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run product:ready`。
 
 ### 4. CI Green 的含义（机器可读报告）

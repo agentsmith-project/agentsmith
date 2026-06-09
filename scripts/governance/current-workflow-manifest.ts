@@ -809,7 +809,7 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         blockingFor: ['manual', 'handoff'],
         scheduled: false,
         productReadinessBlocking: false,
-        notes: 'Runs the AgentSmith-owned post-deploy product smoke producer against one downloaded deployed target site env and uploads either the online or airgap GA handoff artifact; it is not an AgentSmith product readiness verdict.',
+        notes: 'Runs the AgentSmith-owned post-deploy product smoke producer against one downloaded deployed target site env plus the same target substrate truth and uploads either the online or airgap GA handoff artifact; it is not an AgentSmith product readiness verdict.',
       },
     ],
   }),

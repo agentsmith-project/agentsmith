@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -81,6 +81,10 @@ const SUBSTRATE_TRUTH = [
   'SUBSTRATE_KEYCLOAK_ADMIN=agentsmith-admin',
   'SUBSTRATE_KEYCLOAK_ADMIN_PASSWORD=agentsmith_dev_password',
 ].join('\n');
+const NEUTRAL_SUBSTRATE_TRUTH = readFileSync(
+  join(process.cwd(), 'scripts/governance/__fixtures__/release-boundary/substrate-connection.external-declared.valid.json'),
+  'utf8',
+);
 
 const tempRoots: string[] = [];
 
@@ -485,6 +489,72 @@ describe('unified deploy product flow producer', () => {
     expect(truth.minio.endpoint).toBe('http://172.19.0.1:19000');
     expect(truth.llmup.internalBaseUrl).toBe('http://agentsmith-llmup:8080');
     expect(truth.managedRunner.image).toBe('kind-registry:5000/mbos/agentsmith-managed-runner@sha256:9999');
+  });
+
+  it('keeps neutral substrate truth as the evidence binding while reading runtime-only substrate env', async () => {
+    const writes: Record<string, string> = {};
+    const fs: ProductFlowFs = {
+      readFile: vi.fn(async (filePath: string) => {
+        if (filePath.endsWith('site.env')) return SITE_ENV;
+        if (filePath.endsWith('neutral-substrate-truth.json')) return NEUTRAL_SUBSTRATE_TRUTH;
+        if (filePath.endsWith('runtime-substrate.env')) return SUBSTRATE_TRUTH;
+        throw new Error(`unexpected read: ${filePath}`);
+      }),
+      mkdir: vi.fn(async () => undefined),
+      writeFile: vi.fn(async (filePath: string, content: string) => {
+        writes[filePath] = content;
+      }),
+    };
+
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'neutral-substrate-truth.json',
+      runtimeSubstrateEnvPath: 'runtime-substrate.env',
+      evidenceDir: 'evidence',
+      fs,
+      fetch: makeFailingProfileFetch(),
+      flowIds: ['login_profile'],
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+      env: {},
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures[0]?.message).toContain('/me/profile expected 200');
+    expect(result.evidence.source.substrate_truth_path).toBe(resolve('neutral-substrate-truth.json'));
+    expect(JSON.stringify(result.evidence)).not.toContain('runtime-substrate.env');
+    expect(fs.readFile).toHaveBeenCalledWith(resolve('runtime-substrate.env'));
+  });
+
+  it('fails fast when neutral substrate truth is provided without runtime-only projection', async () => {
+    const fs: ProductFlowFs = {
+      readFile: vi.fn(async (filePath: string) => {
+        if (filePath.endsWith('site.env')) return SITE_ENV;
+        if (filePath.endsWith('neutral-substrate-truth.json')) return NEUTRAL_SUBSTRATE_TRUTH;
+        throw new Error(`unexpected read: ${filePath}`);
+      }),
+      mkdir: vi.fn(async () => undefined),
+      writeFile: vi.fn(async () => undefined),
+    };
+
+    await expect(runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'neutral-substrate-truth.json',
+      evidenceDir: 'evidence',
+      fs,
+      flowIds: ['login_profile'],
+      env: {},
+    })).rejects.toThrow(
+      /neutral substrate truth JSON requires runtime-only substrate env projection/u,
+    );
   });
 
   it('rejects provider base URLs that pods cannot route to', () => {

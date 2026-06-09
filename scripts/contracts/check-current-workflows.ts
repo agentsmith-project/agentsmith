@@ -584,6 +584,7 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
   const handoffStep = steps.find((step) => step.name === 'Verify post-deploy product smoke handoff file');
   const uploadStep = steps.find((step) => step.name === 'Upload post-deploy product smoke artifact');
+  const validateEnv = asRecord(validateStep?.env);
   const verifyEnv = asRecord(verifyStep?.env);
   const runEnv = asRecord(runStep?.env);
   const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
@@ -612,8 +613,8 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (smokeArtifactInput.default !== POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME) {
     failures.push(`${label} smoke_artifact_name default must be ${POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME}`);
   }
-  if (substrateTruthFilenameInput.default !== 'substrate-truth.env') {
-    failures.push(`${label} substrate_truth_filename default must be substrate-truth.env`);
+  if (substrateTruthFilenameInput.default !== 'substrate-truth.json') {
+    failures.push(`${label} substrate_truth_filename default must be substrate-truth.json`);
   }
   if (job === undefined) {
     failures.push(`${label} must exist in CURRENT_CI_WORKFLOW_MANIFEST`);
@@ -621,8 +622,12 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
     if (job.laneId !== 'lane-unified-deploy-product-flows') {
       failures.push(`${label} must bind to lane-unified-deploy-product-flows for traceable evidence`);
     }
-    if (job.requiresSecrets !== true || !job.requiredSecrets.includes('PRESET_ENDPOINT_API_KEY')) {
-      failures.push(`${label} must require PRESET_ENDPOINT_API_KEY for backend-real product smoke`);
+    if (
+      job.requiresSecrets !== true
+      || !job.requiredSecrets.includes('PRESET_ENDPOINT_API_KEY')
+      || !job.requiredSecrets.includes('PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV')
+    ) {
+      failures.push(`${label} must require PRESET_ENDPOINT_API_KEY and PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV for backend-real product smoke`);
     }
     assertArrayEqual(
       job.evidenceFamilies,
@@ -682,6 +687,12 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (!validateRun.includes('substrate_truth_filename must be a simple filename')) {
     failures.push(`${label} validation step must keep substrate_truth_filename constrained to a simple filename`);
   }
+  if (!validateRun.includes('PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV secret is required as the request-scoped runtime-only substrate env projection')) {
+    failures.push(`${label} validation step must require the runtime-only product-flow substrate env projection secret`);
+  }
+  if (validateEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE !== '${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}') {
+    failures.push(`${label} validation step must receive PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV as request env`);
+  }
   if (!verifyRun.includes('test -f "${RELEASE_CONTRACT_INPUT_PATH}"')) {
     failures.push(`${label} must verify the runner.temp release contract input`);
   }
@@ -690,6 +701,18 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   }
   if (!verifyRun.includes('test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"')) {
     failures.push(`${label} must verify the runner.temp substrate truth input`);
+  }
+  if (!verifyRun.includes('npm run post-deploy-product-smoke:doctor --')
+    || !verifyRun.includes('--release-contract="${RELEASE_CONTRACT_INPUT_PATH}"')
+    || !verifyRun.includes('--site-env="${SITE_ENV_INPUT_PATH}"')
+    || !verifyRun.includes('--substrate-truth="${SUBSTRATE_TRUTH_INPUT_PATH}"')) {
+    failures.push(`${label} must run the post-deploy product smoke input doctor during handoff input verification`);
+  }
+  if (
+    verifyEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE !== '${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}'
+    || runEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE !== '${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}'
+  ) {
+    failures.push(`${label} must pass the runtime-only substrate env projection through request env, not artifacts`);
   }
   if (!runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"')
     || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"')

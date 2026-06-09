@@ -13,7 +13,8 @@ POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET="$(unified_deploy_release_cont
 POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE="$(unified_deploy_release_site_env)"
 POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/site.env"
 POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE="$(unified_deploy_release_substrate_truth)"
-POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/substrate-truth.env"
+POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/substrate-truth.json"
+POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE="${UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV:-}"
 
 if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"; then
   printf '[post-deploy-product-smoke] release contract is required before product flows.\n' >&2
@@ -35,6 +36,23 @@ if [[ -z "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" ]] || ! test -f "
   printf '[post-deploy-product-smoke] set UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<path>.\n' >&2
   exit 1
 fi
+
+runtime_substrate_env_args=()
+if [[ -n "${POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE}" ]]; then
+  if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE}"; then
+    printf '[post-deploy-product-smoke] runtime-only product-flow substrate env projection path is not readable.\n' >&2
+    printf '[post-deploy-product-smoke] resolved source: %s\n' "${POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE}" >&2
+    printf '[post-deploy-product-smoke] set UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV=<path>, or provide UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE / SUBSTRATE_* request env.\n' >&2
+    exit 1
+  fi
+  runtime_substrate_env_args+=("--runtime-substrate-env=${POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE}")
+fi
+
+npm run post-deploy-product-smoke:doctor -- \
+  --release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}" \
+  --site-env="${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}" \
+  --substrate-truth="${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" \
+  "${runtime_substrate_env_args[@]}"
 
 mkdir -p "$(dirname "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}")"
 if ! [[ -e "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}" && "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}" -ef "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}" ]]; then
@@ -58,6 +76,7 @@ npm run test:unified-deploy:product-flows -- \
   --evidence-dir="${PRODUCT_FLOWS_EVIDENCE_DIR}" \
   --site-env="${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}" \
   --substrate-truth="${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}" \
+  "${runtime_substrate_env_args[@]}" \
   --producer-command="npm run lane:unified-deploy:product-flows" \
   --agent-task-polls="${UNIFIED_DEPLOY_AGENT_TASK_POLLS:-30}" \
   --agent-task-poll-interval-ms="${UNIFIED_DEPLOY_AGENT_TASK_POLL_INTERVAL_MS:-2000}" \

@@ -1357,6 +1357,7 @@ describe('current workflow governance', () => {
     const uploadPaths = typeof uploadWith.path === 'string'
       ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
       : [];
+    const validateEnv = asRecord(validateStep?.env);
     const validateRun = typeof validateStep?.run === 'string' ? validateStep.run : '';
     const verifyRun = typeof verifyStep?.run === 'string' ? verifyStep.run : '';
     const runStepCommand = typeof runStep?.run === 'string' ? runStep.run : '';
@@ -1365,14 +1366,14 @@ describe('current workflow governance', () => {
 
     expect(smokeArtifactInput.type).toBe('choice');
     expect(smokeArtifactInput.default).toBe(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
-    expect(substrateTruthFilenameInput.default).toBe('substrate-truth.env');
+    expect(substrateTruthFilenameInput.default).toBe('substrate-truth.json');
     expect(asStringArray(smokeArtifactInput.options).sort()).toEqual([
       POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME,
       POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME,
     ].sort());
     expect(job?.laneId).toBe('lane-unified-deploy-product-flows');
     expect(job?.requiresSecrets).toBe(true);
-    expect(job?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY']);
+    expect(job?.requiredSecrets).toEqual(['PRESET_ENDPOINT_API_KEY', 'PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV']);
     expect(job?.evidenceFamilies).toEqual(['post_deploy_product_smoke_report']);
     expect(job?.artifactPaths).toEqual(POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_PATHS);
     expect(job?.notes).toMatch(/online or airgap GA handoff artifact/i);
@@ -1389,6 +1390,12 @@ describe('current workflow governance', () => {
     expect(runEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
     expect(verifyEnv.SUBSTRATE_TRUTH_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
     expect(runEnv.SUBSTRATE_TRUTH_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
+    expect(verifyEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE)
+      .toBe('${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}');
+    expect(runEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE)
+      .toBe('${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}');
+    expect(validateEnv.UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE)
+      .toBe('${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}');
     expect(releaseContractDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR);
     expect(siteEnvDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
     expect(substrateTruthDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
@@ -1396,9 +1403,14 @@ describe('current workflow governance', () => {
     expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME);
     expect(validateRun).toContain('site_env_filename must be a simple filename');
     expect(validateRun).toContain('substrate_truth_filename must be a simple filename');
+    expect(validateRun).toContain('PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV secret is required as the request-scoped runtime-only substrate env projection');
     expect(verifyRun).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(verifyRun).toContain('test -f "${SITE_ENV_INPUT_PATH}"');
     expect(verifyRun).toContain('test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"');
+    expect(verifyRun).toContain('npm run post-deploy-product-smoke:doctor --');
+    expect(verifyRun).toContain('--release-contract="${RELEASE_CONTRACT_INPUT_PATH}"');
+    expect(verifyRun).toContain('--site-env="${SITE_ENV_INPUT_PATH}"');
+    expect(verifyRun).toContain('--substrate-truth="${SUBSTRATE_TRUTH_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH="${SUBSTRATE_TRUTH_INPUT_PATH}"');

@@ -138,6 +138,7 @@ describe('current gate governance', () => {
       expectedProductSmokes: POST_DEPLOY_PRODUCT_SMOKE_SPECS.map((spec) => spec.id),
     });
     expect(releaseProductFlowsScript).toContain('npm run test:unified-deploy:product-flows --');
+    expect(releaseProductFlowsScript).toContain('npm run post-deploy-product-smoke:doctor --');
     expect(releaseProductFlowsScript).toContain('npm run post-deploy-product-smoke:report --');
     expect(releaseProductFlowsScript).toContain('--producer-command="npm run lane:unified-deploy:product-flows"');
     expect(releaseProductFlowsScript).toContain('POST_DEPLOY_PRODUCT_SMOKE_ROOT="${RELEASE_CAMPAIGN_ROOT:-${UNIFIED_DEPLOY_RELEASE_ROOT_DIR:-${ROOT_DIR}/artifacts}}"');
@@ -161,6 +162,15 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript).toContain(
       'POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE="$(unified_deploy_release_substrate_truth)"',
     );
+    expect(releaseProductFlowsScript).toContain(
+      'POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/substrate-truth.json"',
+    );
+    expect(releaseProductFlowsScript).toContain(
+      'POST_DEPLOY_PRODUCT_SMOKE_RUNTIME_SUBSTRATE_ENV_SOURCE="${UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV:-}"',
+    );
+    expect(releaseProductFlowsScript).toContain(
+      'set UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV=<path>, or provide UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE / SUBSTRATE_* request env',
+    );
     expect(releaseProductFlowsScript).toContain('test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"');
     expect(releaseProductFlowsScript).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT or AGENTSMITH_RELEASE_CONTRACT_PATH');
     expect(releaseProductFlowsScript).toContain('deployed target substrate truth is required for release handoff');
@@ -178,6 +188,9 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"')).toBeLessThan(
       releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
     );
+    expect(releaseProductFlowsScript.indexOf('npm run post-deploy-product-smoke:doctor --')).toBeLessThan(
+      releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"'),
+    );
     expect(releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}"')).toBeLessThan(
       releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
     );
@@ -185,6 +198,7 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript).toContain('--path-root="${POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT}"');
     expect(releaseProductFlowsScript).toContain('--site-env="${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}"');
     expect(releaseProductFlowsScript).toContain('--substrate-truth="${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}"');
+    expect(releaseProductFlowsScript).toContain('"${runtime_substrate_env_args[@]}"');
     expect(releaseProductFlowsScript).not.toMatch(/\s--flow=/);
     expect(releaseProductFlowsScript).toContain('--agent-task-polls=');
     expect(releaseProductFlowsScript).toContain('--agent-task-poll-interval-ms=');
@@ -201,10 +215,11 @@ describe('current gate governance', () => {
       const productFlowsArgvPath = join(tempRoot, 'product-flows-argv.txt');
       const sourceContractPath = join(sourceRoot, 'agentsmith-release-contract.json');
       const sourceSiteEnvPath = join(sourceRoot, 'site.env');
-      const sourceSubstrateTruthPath = join(sourceRoot, 'substrate-truth.env');
+      const sourceSubstrateTruthPath = join(sourceRoot, 'substrate-truth.json');
+      const sourceRuntimeSubstrateEnvPath = join(sourceRoot, 'runtime-substrate.env');
       const targetContractPath = join(campaignRoot, 'release-contract', 'agentsmith-release-contract.json');
       const targetSiteEnvPath = join(campaignRoot, 'deployment-target', 'site.env');
-      const targetSubstrateTruthPath = join(campaignRoot, 'deployment-target', 'substrate-truth.env');
+      const targetSubstrateTruthPath = join(campaignRoot, 'deployment-target', 'substrate-truth.json');
       const expectedProductFlowsPath = join(campaignRoot, 'unified-deploy', 'product-flows', 'aggregate.json');
 
       mkdirSync(sourceRoot, { recursive: true });
@@ -214,7 +229,8 @@ describe('current gate governance', () => {
         sourceSiteEnvPath,
         'UNIFIED_DEPLOY_PROFILE=existing_kubernetes/external_declared/online\nPUBLIC_BASE_URL=https://agentsmith.example.com\n',
       );
-      writeFileSync(sourceSubstrateTruthPath, 'SUBSTRATE_TRUTH_SCHEMA_VERSION=agentsmith.docker-substrate.truth/v1\n');
+      writeFileSync(sourceSubstrateTruthPath, '{"schema_version":"agentsmith.substrate-connection.truth/v1"}\n');
+      writeFileSync(sourceRuntimeSubstrateEnvPath, 'SUBSTRATE_TRUTH_SCHEMA_VERSION=agentsmith.docker-substrate.truth/v1\n');
       expect(sourceContractPath.startsWith(`${campaignRoot}/`)).toBe(false);
 
       const npmStubPath = join(fakeBin, 'npm');
@@ -229,6 +245,12 @@ if [[ "$#" -lt 2 || "$1" != "run" ]]; then
 fi
 
 case "$2" in
+  post-deploy-product-smoke:doctor)
+    if [[ "\${3:-}" != "--" ]]; then
+      printf 'unexpected doctor argv: %s\\n' "$*" >&2
+      exit 64
+    fi
+    ;;
   test:unified-deploy:product-flows)
     if [[ "\${3:-}" != "--" ]]; then
       printf 'unexpected product flows argv: %s\\n' "$*" >&2
@@ -262,6 +284,7 @@ esac
           AGENTSMITH_RELEASE_CONTRACT_PATH: sourceContractPath,
           UNIFIED_DEPLOY_RELEASE_SITE_ENV: sourceSiteEnvPath,
           UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH: sourceSubstrateTruthPath,
+          UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV: sourceRuntimeSubstrateEnvPath,
           PRODUCT_FLOWS_ARGV_CAPTURE: productFlowsArgvPath,
           REPORT_ARGV_CAPTURE: reportArgvPath,
           UNIFIED_DEPLOY_RELEASE_CONTRACT: '',
@@ -277,6 +300,7 @@ esac
       const productFlowsArgv = readFileSync(productFlowsArgvPath, 'utf8').trim().split('\n');
       expect(productFlowsArgv).toContain(`--site-env=${targetSiteEnvPath}`);
       expect(productFlowsArgv).toContain(`--substrate-truth=${targetSubstrateTruthPath}`);
+      expect(productFlowsArgv).toContain(`--runtime-substrate-env=${sourceRuntimeSubstrateEnvPath}`);
 
       const reportArgv = readFileSync(reportArgvPath, 'utf8').trim().split('\n');
       expect(reportArgv).toContain(`--product-flows=${expectedProductFlowsPath}`);

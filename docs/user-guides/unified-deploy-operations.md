@@ -130,18 +130,18 @@ For the AgentSmith-owned canonical post-deploy product smoke report, run the lan
 ```bash
 UNIFIED_DEPLOY_RELEASE_CONTRACT=<downloaded-agentsmith-release-contract.json> \
 UNIFIED_DEPLOY_RELEASE_SITE_ENV=<online-site-env-for-deployed-target> \
-UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<online-substrate-truth-for-same-deployed-target> \
+UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<online-substrate-truth-json-for-same-deployed-target> \
 UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<online-ga-smoke-evidence-root> \
 npm run lane:unified-deploy:product-flows
 
 UNIFIED_DEPLOY_RELEASE_CONTRACT=<downloaded-agentsmith-release-contract.json> \
 UNIFIED_DEPLOY_RELEASE_SITE_ENV=<airgap-site-env-for-deployed-target> \
-UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<airgap-substrate-truth-for-same-deployed-target> \
+UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<airgap-substrate-truth-json-for-same-deployed-target> \
 UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<airgap-ga-smoke-evidence-root> \
 npm run lane:unified-deploy:product-flows
 ```
 
-`AGENTSMITH_RELEASE_CONTRACT_PATH` may be used instead of `UNIFIED_DEPLOY_RELEASE_CONTRACT`. The release contract must point to the downloaded `agentsmith-release-contract.json`. `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env, `UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH` selects the same deployed target substrate truth, and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the evidence root.
+`AGENTSMITH_RELEASE_CONTRACT_PATH` may be used instead of `UNIFIED_DEPLOY_RELEASE_CONTRACT`. The release contract must point to the downloaded `agentsmith-release-contract.json`. `UNIFIED_DEPLOY_RELEASE_SITE_ENV` selects the deployed target site env, `UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH` selects the same deployed target neutral `agentsmith.substrate-connection.truth/v1` JSON, and `UNIFIED_DEPLOY_RELEASE_ROOT_DIR` selects the evidence root. Product-flow execution still needs runtime-only substrate credentials through `UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE`, `UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV=<path>`, or `SUBSTRATE_*` request env; this projection is not copied into artifacts, and the final report binds only the neutral substrate truth JSON. Docker substrate env belongs only to focused/local diagnostics and runtime-only probe projection, and is rejected as the GA handoff truth.
 
 The GitHub Actions workflow `Post-deploy Product Smoke Artifact` runs the same AgentSmith-owned producer after downloading the release contract artifact, one deployed target `site.env` artifact, and the same deployed target substrate truth artifact into runner temp. Run it once for the online deployed target with artifact name `agentsmith-post-deploy-product-smoke-report`, and once for the airgap deployed target with artifact name `agentsmith-post-deploy-product-smoke-airgap-report`. Failed runs still upload their evidence root for diagnosis; the canonical handoff file is checked only on successful runs.
 

@@ -33,8 +33,10 @@ import {
   parseSiteEnv,
 } from './render';
 import {
+  DOCKER_SUBSTRATE_REQUIRED_ENV,
   DEFAULT_LIVE_SUBSTRATE_TRUTH_PATH,
   DEFAULT_SUBSTRATE_TRUTH_PATH,
+  SUBSTRATE_TRUTH_SCHEMA_ENV_KEY,
   parseSubstrateTruth,
 } from './substrate-truth';
 
@@ -142,6 +144,9 @@ type ProductFlowRuntimeTruth = {
 type ProductFlowProducerOptions = {
   siteEnvPath?: string;
   substrateTruthPath?: string;
+  runtimeSubstrateEnvPath?: string;
+  runtimeSubstrateEnvSource?: string;
+  env?: Record<string, string | undefined>;
   evidenceDir?: string;
   publicBaseUrl?: string;
   apiBaseUrl?: string;
@@ -390,6 +395,7 @@ export function buildProductFlowRuntimeTruth(input: {
   siteEnvPath: string;
   substrateTruthSource: string;
   substrateTruthPath: string;
+  evidenceSubstrateTruthPath?: string;
   publicBaseUrl?: string;
   apiBaseUrl?: string;
   providerBaseUrl?: string;
@@ -419,7 +425,7 @@ export function buildProductFlowRuntimeTruth(input: {
 
   return {
     siteEnvPath: input.siteEnvPath,
-    substrateTruthPath: input.substrateTruthPath,
+    substrateTruthPath: input.evidenceSubstrateTruthPath ?? input.substrateTruthPath,
     publicBaseUrl,
     apiBaseUrl,
     runnerPublicApiBaseUrl: trimTrailingSlash(siteEnv.RUNNER_PUBLIC_API_BASE_URL ?? ''),
@@ -2590,9 +2596,48 @@ function aggregateRootCauseFlow(flows: readonly ProductFlowEvidence[]): ProductV
   return primaryFailure ? rootCauseFlowFor(primaryFailure) : undefined;
 }
 
+const NEUTRAL_SUBSTRATE_CONNECTION_SCHEMA_VERSION = 'agentsmith.substrate-connection.truth/v1';
+const RUNTIME_SUBSTRATE_ENV_SOURCE_ENV_KEY = 'UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE';
+const RUNTIME_SUBSTRATE_ENV_PATH_ENV_KEY = 'UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV';
+
+function isNeutralSubstrateConnectionTruthJson(source: string): boolean {
+  try {
+    const parsed = JSON.parse(source) as unknown;
+    return asRecord(parsed).schema_version === NEUTRAL_SUBSTRATE_CONNECTION_SCHEMA_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function buildRuntimeSubstrateEnvSourceFromEnv(env: Record<string, string | undefined>): {
+  source: string | null;
+  missing: string[];
+} {
+  const requiredKeys = [SUBSTRATE_TRUTH_SCHEMA_ENV_KEY, ...DOCKER_SUBSTRATE_REQUIRED_ENV];
+  const missing = requiredKeys.filter((key) => !env[key]?.trim());
+  if (missing.length > 0) {
+    return { source: null, missing };
+  }
+
+  return {
+    source: `${requiredKeys.map((key) => `${key}=${env[key]?.trim() ?? ''}`).join('\n')}\n`,
+    missing: [],
+  };
+}
+
+function runtimeSubstrateProjectionError(missing: readonly string[]): Error {
+  const missingText = missing.length > 0
+    ? ` Missing request env values: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ', ...' : ''}.`
+    : '';
+  return new Error(
+    `neutral substrate truth JSON requires runtime-only substrate env projection via --runtime-substrate-env, ${RUNTIME_SUBSTRATE_ENV_SOURCE_ENV_KEY}, ${RUNTIME_SUBSTRATE_ENV_PATH_ENV_KEY}, or SUBSTRATE_* request env.${missingText}`,
+  );
+}
+
 async function loadTruth(options: ProductFlowProducerOptions, fsDriver: ProductFlowFs): Promise<ProductFlowRuntimeTruth> {
   const siteEnvPath = path.resolve(options.siteEnvPath ?? DEFAULT_LIVE_SITE_ENV_PATH);
   const substrateTruthPath = path.resolve(options.substrateTruthPath ?? DEFAULT_LIVE_SUBSTRATE_TRUTH_PATH);
+  const env = options.env ?? process.env;
   let siteEnvSource: string;
   try {
     siteEnvSource = await fsDriver.readFile(siteEnvPath);
@@ -2602,27 +2647,54 @@ async function loadTruth(options: ProductFlowProducerOptions, fsDriver: ProductF
     }
     siteEnvSource = await fsDriver.readFile(DEFAULT_SITE_ENV_PATH);
   }
-  let substrateTruthSource: string;
+  let evidenceSubstrateTruthSource: string;
+  let evidenceSubstrateTruthPath = substrateTruthPath;
   try {
-    substrateTruthSource = await fsDriver.readFile(substrateTruthPath);
+    evidenceSubstrateTruthSource = await fsDriver.readFile(substrateTruthPath);
   } catch (error: unknown) {
     if (options.substrateTruthPath) {
       throw error;
     }
-    substrateTruthSource = await fsDriver.readFile(DEFAULT_SUBSTRATE_TRUTH_PATH);
+    evidenceSubstrateTruthSource = await fsDriver.readFile(DEFAULT_SUBSTRATE_TRUTH_PATH);
+    evidenceSubstrateTruthPath = DEFAULT_SUBSTRATE_TRUTH_PATH;
   }
+
+  let runtimeSubstrateEnvSource = options.runtimeSubstrateEnvSource
+    ?? env[RUNTIME_SUBSTRATE_ENV_SOURCE_ENV_KEY];
+  let runtimeSubstrateEnvPath = options.runtimeSubstrateEnvPath
+    ?? env[RUNTIME_SUBSTRATE_ENV_PATH_ENV_KEY];
+  if (runtimeSubstrateEnvPath?.trim()) {
+    runtimeSubstrateEnvPath = path.resolve(runtimeSubstrateEnvPath);
+    runtimeSubstrateEnvSource = await fsDriver.readFile(runtimeSubstrateEnvPath);
+  }
+
+  if (!runtimeSubstrateEnvSource?.trim() && isNeutralSubstrateConnectionTruthJson(evidenceSubstrateTruthSource)) {
+    const runtimeFromEnv = buildRuntimeSubstrateEnvSourceFromEnv(env);
+    if (!runtimeFromEnv.source) {
+      throw runtimeSubstrateProjectionError(runtimeFromEnv.missing);
+    }
+    runtimeSubstrateEnvSource = runtimeFromEnv.source;
+  }
+
+  const substrateTruthSource = runtimeSubstrateEnvSource?.trim()
+    ? runtimeSubstrateEnvSource
+    : evidenceSubstrateTruthSource;
+  const runtimeSubstrateTruthPath = runtimeSubstrateEnvSource?.trim()
+    ? (runtimeSubstrateEnvPath ?? RUNTIME_SUBSTRATE_ENV_SOURCE_ENV_KEY)
+    : substrateTruthPath;
   return buildProductFlowRuntimeTruth({
     siteEnvSource,
     siteEnvPath,
     substrateTruthSource,
-    substrateTruthPath,
+    substrateTruthPath: runtimeSubstrateTruthPath,
+    evidenceSubstrateTruthPath,
     publicBaseUrl: options.publicBaseUrl,
     apiBaseUrl: options.apiBaseUrl,
     providerBaseUrl: options.providerBaseUrl,
     providerAdvertiseHost: options.providerAdvertiseHost,
     keycloakAdminBaseUrl: options.keycloakAdminBaseUrl,
     workspaceId: options.workspaceId,
-    env: process.env,
+    env,
   });
 }
 
@@ -2910,6 +2982,8 @@ function parseCliOptions(argv: readonly string[]): CliOptions {
       options.siteEnvPath = arg.slice('--site-env='.length);
     } else if (arg.startsWith('--substrate-truth=')) {
       options.substrateTruthPath = arg.slice('--substrate-truth='.length);
+    } else if (arg.startsWith('--runtime-substrate-env=')) {
+      options.runtimeSubstrateEnvPath = arg.slice('--runtime-substrate-env='.length);
     } else if (arg.startsWith('--public-base-url=')) {
       options.publicBaseUrl = arg.slice('--public-base-url='.length);
     } else if (arg.startsWith('--api-base=')) {

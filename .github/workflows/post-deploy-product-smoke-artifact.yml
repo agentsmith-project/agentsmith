@@ -26,7 +26,7 @@ on:
         default: "site.env"
         type: string
       substrate_truth_artifact_name:
-        description: "GitHub Actions artifact name containing the deployed target substrate truth env"
+        description: "GitHub Actions artifact name containing the deployed target neutral substrate truth JSON"
         required: true
         type: string
       substrate_truth_run_id:
@@ -34,9 +34,9 @@ on:
         required: true
         type: string
       substrate_truth_filename:
-        description: "Filename inside the substrate truth artifact"
+        description: "Filename inside the neutral substrate truth artifact"
         required: true
-        default: "substrate-truth.env"
+        default: "substrate-truth.json"
         type: string
       smoke_artifact_name:
         description: "Canonical GA handoff artifact name to upload for this deployed target"
@@ -85,10 +85,16 @@ jobs:
         run: npm run build -w @mbos/agent-runner-contract
 
       - name: Validate required secrets and inputs
+        env:
+          UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE: ${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}
         run: |
           set -euo pipefail
           if [[ -z "${PRESET_ENDPOINT_API_KEY:-}" ]]; then
             echo "PRESET_ENDPOINT_API_KEY secret is required for post-deploy product smoke artifact generation; BACKEND_REAL_API_KEY is accepted only as a temporary GitHub Actions secret rename fallback." >&2
+            exit 1
+          fi
+          if [[ -z "${UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE:-}" ]]; then
+            echo "PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV secret is required as the request-scoped runtime-only substrate env projection for product-flow execution; it is not uploaded as an artifact." >&2
             exit 1
           fi
           case "${AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_NAME}" in
@@ -142,6 +148,7 @@ jobs:
           RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
           SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
           SUBSTRATE_TRUTH_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth
+          UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE: ${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}
         run: |
           set -euo pipefail
           SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
@@ -149,12 +156,17 @@ jobs:
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${SITE_ENV_INPUT_PATH}"
           test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"
+          npm run post-deploy-product-smoke:doctor -- \
+            --release-contract="${RELEASE_CONTRACT_INPUT_PATH}" \
+            --site-env="${SITE_ENV_INPUT_PATH}" \
+            --substrate-truth="${SUBSTRATE_TRUTH_INPUT_PATH}"
 
       - name: Run post-deploy product smoke
         env:
           RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
           SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
           SUBSTRATE_TRUTH_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth
+          UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE: ${{ secrets.PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV }}
         run: |
           set -euo pipefail
           SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"

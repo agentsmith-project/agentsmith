@@ -798,9 +798,10 @@ export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[
         laneId: 'lane-unified-deploy-product-flows',
         commands: [
           'npm run build -w @mbos/agent-runner-contract',
+          'npm run post-deploy-product-smoke:doctor',
           'npm run lane:unified-deploy:product-flows',
         ],
-        requiredSecrets: ['PRESET_ENDPOINT_API_KEY'],
+        requiredSecrets: ['PRESET_ENDPOINT_API_KEY', 'PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV'],
         requiresSecrets: true,
         evidenceRequired: true,
         evidenceFamilies: ['post_deploy_product_smoke_report'],

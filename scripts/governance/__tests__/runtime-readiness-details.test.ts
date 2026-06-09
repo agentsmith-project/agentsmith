@@ -390,6 +390,29 @@ describe('runtime readiness details evidence', () => {
     ]);
   });
 
+  it('captures ASBCP readyz and managed runner runtime unavailable logs as runtime readiness signals', () => {
+    const signals = parseRuntimeReadinessSignals([{
+      path: '/tmp/api.log',
+      content: [
+        '[api-entry-node] ASBCP readyz preflight failed: asbcp_network_error: readyz fetch failed',
+        'Error: create_terminal_session_failed:409:{"error_code":"agent_runner_runtime_unavailable","message":"agent_runner_runtime_unavailable"}',
+      ].join('\n'),
+    }]);
+
+    expect(signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        call: 'asbcp_readyz_preflight',
+        error_code: 'asbcp_network_error',
+      }),
+      expect.objectContaining({
+        source: 'api',
+        call: 'create_terminal_session',
+        error_code: 'agent_runner_runtime_unavailable',
+      }),
+    ]));
+  });
+
   it('uses an explicit unknown phase when sandbox unavailable diagnostics omit phase', () => {
     const diagnostic = {
       diagnostic: {

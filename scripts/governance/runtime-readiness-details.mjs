@@ -55,6 +55,18 @@ function readFields(line) {
   if (fields.operation && !fields.call) {
     fields.call = fields.operation;
   }
+  if (/asbcp_network_error/u.test(line) && !fields.error_code) {
+    fields.error_code = 'asbcp_network_error';
+  }
+  if (/agent_runner_runtime_unavailable/u.test(line) && !fields.error_code) {
+    fields.error_code = 'agent_runner_runtime_unavailable';
+  }
+  if (/ASBCP readyz preflight failed/u.test(line) && !fields.call) {
+    fields.call = 'asbcp_readyz_preflight';
+  }
+  if (/create_terminal_session_failed/u.test(line) && !fields.call) {
+    fields.call = 'create_terminal_session';
+  }
   return fields;
 }
 
@@ -63,6 +75,9 @@ function classifySource(line) {
     return 'asbcp_create_status';
   }
   if (/\bAPI\b|\bapi\b/u.test(line)) {
+    return 'api';
+  }
+  if (/agent_runner_runtime_unavailable|create_terminal_session_failed/u.test(line)) {
     return 'api';
   }
   if (/pod[ _-]?manager|create_or_ensure_pod|get_pod_status|delete_pod/u.test(line)) {
@@ -219,6 +234,8 @@ function addSignal(signals, seen, input) {
       errorCode === 'AGENT_SANDBOX_UNAVAILABLE'
       || errorCode === 'AGENT_SANDBOX_STARTUP_TIMEOUT'
       || errorCode === 'AGENT_SANDBOX_RATE_LIMITED'
+      || errorCode === 'agent_runner_runtime_unavailable'
+      || errorCode === 'asbcp_network_error'
     )
     && (signal.source === 'api' || signal.source === 'pod_manager' || signal.source === 'asbcp_create_status')
     && !signal.phase
@@ -407,7 +424,7 @@ export function parseRuntimeReadinessSignals(files) {
     }
     const sourceLog = path.basename(file.path);
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
-      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
+      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|agent_runner_runtime_unavailable|asbcp_network_error|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|create_terminal_session_failed|pending|releasing|offline|not_found/u.test(line)) {
         continue;
       }
       if (appendRuntimeReadinessJsonSignals(line, sourceLog, index + 1, signals, seen)) {

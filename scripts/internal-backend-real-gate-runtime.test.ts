@@ -437,6 +437,7 @@ function runInternalSpecGrepEarlyFailureHarness(options: {
   runtimeReadinessSummary: string;
   runtimeReadinessDetails: string;
   runtimeStabilityBlockerSummary: string;
+  calls: string;
 } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-spec-grep-evidence-'));
@@ -542,7 +543,7 @@ ${options.dockerInspectAvailable ? `docker() {
   return 1
 }` : `docker() { printf 'docker unavailable in harness\\n'; return 1; }`}
 kubectl() { printf 'kubectl unavailable in harness\\n'; return 1; }
-resolve_internal_spec_port_pair() { return 1; }
+resolve_internal_spec_port_pair() { printf '21020 3121\\n'; }
 prepare_internal_backend_real_spec_runtime() {
   printf 'unexpected prepare\\n' >> "\${TEMP_ROOT}/calls.txt"
   return 1
@@ -605,6 +606,7 @@ exit 0
       'files_restore_continuation_spec',
       'runtime-stability-blocker-summary.txt',
     );
+    const callsPath = path.join(tempRoot, 'calls.txt');
 
     return {
       stdout: result.stdout ?? '',
@@ -629,6 +631,7 @@ exit 0
       runtimeStabilityBlockerSummary: existsSync(runtimeStabilityBlockerSummaryPath)
         ? readFileSync(runtimeStabilityBlockerSummaryPath, 'utf8')
         : '',
+      calls: existsSync(callsPath) ? readFileSync(callsPath, 'utf8') : '',
     };
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -1325,6 +1328,10 @@ describe('internal backend-real gate runtime contract', () => {
       '\nprepare_internal_backend_real_gate_runtime() {',
       '\n}\n\nprepare_internal_backend_real_spec_runtime()',
     );
+    const prepareSpecRuntimeFunction = shellFunctionDefinition(
+      helper,
+      'prepare_internal_backend_real_spec_runtime',
+    );
     const secondRunIndex = reclaimSpec.indexOf('const secondRun = await startAgentTaskRunViaApi');
     const secondOutcomeIndex = reclaimSpec.indexOf('runnerOutputActivityId: secondRun.runnerOutputActivityId');
     const asbcpRestartIndex = reclaimSpec.indexOf("await runInternalSandboxControl('stop-asbcp')");
@@ -1363,6 +1370,11 @@ describe('internal backend-real gate runtime contract', () => {
     );
     expect(helper).toContain('internal_real_gate_ensure_afscp_storage_csi');
     expect(helper).toContain('ensure_agentsmith_owned_namespace "${K8S_NAMESPACE}"');
+    expect(prepareSpecRuntimeFunction).toContain('internal_real_gate_reset_runtime "${spec_state_file}" || return 1');
+    expect(prepareSpecRuntimeFunction).toContain('internal_real_gate_start_runtime "${spec_state_file}" || return 1');
+    expect(prepareSpecRuntimeFunction.indexOf('internal_real_gate_start_runtime "${spec_state_file}" || return 1')).toBeLessThan(
+      prepareSpecRuntimeFunction.indexOf('printf \'%s\\n\' "${spec_state_file}"'),
+    );
     expect(helper).not.toContain('kubectl create namespace "${K8S_NAMESPACE}"');
     expect(helper).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE');
     expect(helper).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE');
@@ -1592,7 +1604,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(compositeFunction).not.toContain('run_internal_workspace_specs');
   });
 
-  it('collects child internal evidence on failed internal specs without replacing scenario failure classification', () => {
+  it('collects child internal evidence while allowing setup failures to use infra dependency classification', () => {
     const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
     const collector = sectionBetween(
       agentTaskGate,
@@ -1623,6 +1635,11 @@ describe('internal backend-real gate runtime contract', () => {
       agentTaskGate,
       '\ncollect_runtime_readiness_summary() {',
       '\n}\n\nruntime_readiness_flake_markers_present()',
+    );
+    const runtimeMarkerFunction = sectionBetween(
+      agentTaskGate,
+      '\nruntime_readiness_flake_markers_present() {',
+      '\n}\n\nruntime_readiness_file_list_pending_count()',
     );
     const evidenceCommand = sectionBetween(
       agentTaskGate,
@@ -1673,6 +1690,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(runtimeFlakeCollector).toContain('classification=runtime_flake');
     expect(runtimeFlakeCollector).toContain('focused_gate_passed_after_runtime_readiness_marker');
     expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
+    expect(runtimeMarkerFunction).toContain('agent_runner_runtime_unavailable');
+    expect(runtimeMarkerFunction).toContain('asbcp_network_error');
+    expect(runtimeSummaryCollector).toContain('ASBCP readyz preflight failed');
     expect(runtimeFlakeCollector).toContain('previous_runtime_readiness_failure=1');
     expect(runtimeFlakeCollector).toContain('previous_failure_marker=%s');
     expect(runtimeFlakeCollector).toContain('"${evidence_dir}/previous-${previous_file}"');
@@ -1716,8 +1736,9 @@ describe('internal backend-real gate runtime contract', () => {
     expect(redaction).toContain('[[:space:]]*[:=]');
     expect(redaction).toContain('[REDACTED]');
 
-    const failureRecord = 'gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"';
+    const failureRecord = 'gate_record_failure "${INTERNAL_REAL_DIR}" "${failure_class}" "${stage}" "${message}"';
     const evidenceCollect = 'collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" "${message}" "${exit_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true';
+    expect(recorder).toContain('local failure_class="${9:-scenario_assertion_failed}"');
     expect(recorder).toContain(failureRecord);
     expect(recorder).toContain(evidenceCollect);
     expect(recorder.indexOf(failureRecord)).toBeLessThan(recorder.indexOf(evidenceCollect));
@@ -1727,7 +1748,7 @@ describe('internal backend-real gate runtime contract', () => {
       'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: unable to resolve isolated ports for preferred api=${preferred_api_port} web=${preferred_web_port}" "" "${spec_status}" "${spec}" "${label}" "${preferred_api_port}" "${preferred_web_port}"',
     );
     expect(grepFunction).toContain(
-      'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"',
+      'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" "infra_dependency_unready"',
     );
     expect(grepFunction).toContain(
       'record_child_internal_spec_failure "${evidence_stage}" "${spec} failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"',
@@ -1943,7 +1964,10 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.summary).toContain('api_port=21020');
     expect(result.summary).toContain('web_port=3121');
     expect(result.summary).toContain('/upload/child-internal-evidence/files_restore_continuation_spec');
-    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('infra_dependency_unready|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright: internal ASBCP spec runtime setup failed');
+    expect(result.internalFailure).not.toContain('scenario_assertion_failed|files_restore_continuation_spec|');
+    expect(result.calls).not.toContain('unexpected preflight');
+    expect(result.calls).not.toContain('unexpected run');
     expect(result.internalChildEvidenceExists).toBe(false);
     expect(result.afscpApiLogTail).toContain('AFSCP API');
     expect(result.afscpApiLogTail).toContain('api ready token=[REDACTED]');
@@ -2109,7 +2133,8 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('status_1=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
     expect(result.stdout).not.toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
-    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('infra_dependency_unready|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright: internal ASBCP spec runtime setup failed');
+    expect(result.internalFailure).not.toContain('scenario_assertion_failed|files_restore_continuation_spec|');
     expect(result.runtimeStabilityBlockerSummary).toBe('');
 
     const details = JSON.parse(result.runtimeReadinessDetails) as {
@@ -2159,7 +2184,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stdout).toContain('status_1=1');
     expect(result.stdout).toContain('status_2=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
-    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('infra_dependency_unready|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright: internal ASBCP spec runtime setup failed');
     expect(result.internalFailure).toContain('stability_blocker|files_restore_continuation_spec_runtime_readiness|consecutive focused gate runtime readiness failures');
     expect(result.runtimeStabilityBlockerSummary).toContain('classification=stability_blocker');
     expect(result.runtimeStabilityBlockerSummary).toContain('outcome=consecutive_focused_gate_runtime_readiness_failures');
@@ -2188,7 +2213,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('status_1=1');
     expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
-    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.internalFailure).toContain('infra_dependency_unready|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright: internal ASBCP spec runtime setup failed');
     expect(result.internalFailure).toContain('stability_blocker|files_restore_continuation_spec_runtime_readiness|repeated file_library_list_pending within one focused gate');
     expect(result.runtimeStabilityBlockerSummary).toContain('classification=stability_blocker');
     expect(result.runtimeStabilityBlockerSummary).toContain('outcome=repeated_file_library_list_pending_within_focused_gate');

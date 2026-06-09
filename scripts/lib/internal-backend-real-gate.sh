@@ -624,10 +624,10 @@ prepare_internal_backend_real_spec_runtime() {
 
   cp "${CONFIG_PATH}" "${spec_config_path}"
   internal_real_gate_write_sandbox_state_file "${spec_state_file}" "${spec_config_path}" "${spec_sandbox_log}"
-  internal_real_gate_reset_runtime "${spec_state_file}"
+  internal_real_gate_reset_runtime "${spec_state_file}" || return 1
 
   echo "[internal-real-gate] starting isolated ASBCP for ${spec_slug} on :${ASBCP_PORT}" >&2
-  internal_real_gate_start_runtime "${spec_state_file}"
+  internal_real_gate_start_runtime "${spec_state_file}" || return 1
   CURRENT_SANDBOX_STATE_FILE="${spec_state_file}"
   printf '%s\n' "${spec_state_file}"
 }

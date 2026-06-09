@@ -1277,7 +1277,7 @@ collect_runtime_readiness_summary() {
   local log_file
   local -a candidates=()
 
-  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|API (ready|call|request|status)|api (ready|call|request|status)|pod manager|pod_manager|ASBCP create/status|ASBCP (create|status)|request_id|workload_id|phase|status_code|error_code'
+  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|create_terminal_session_failed|API (ready|call|request|status)|api (ready|call|request|status)|pod manager|pod_manager|ASBCP create/status|ASBCP (create|status)|request_id|workload_id|phase|status_code|error_code'
   if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
     candidates+=(
       "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
@@ -1345,7 +1345,7 @@ runtime_readiness_flake_markers_present() {
   local log_file
   local -a candidates=()
 
-  marker_pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT|IDEMPOTENCY_CONFLICT|file_library_list_pending'
+  marker_pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT|IDEMPOTENCY_CONFLICT|file_library_list_pending'
   if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
     candidates+=(
       "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
@@ -1774,7 +1774,8 @@ record_child_internal_spec_failure() {
   local label="${6:-}"
   local spec_api_port="${7:-}"
   local spec_web_port="${8:-}"
-  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
+  local failure_class="${9:-scenario_assertion_failed}"
+  gate_record_failure "${INTERNAL_REAL_DIR}" "${failure_class}" "${stage}" "${message}"
   collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" "${message}" "${exit_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
 }
 
@@ -1963,7 +1964,7 @@ run_internal_spec_grep() {
     if [[ "${spec_status}" -eq 0 ]]; then
       spec_status=1
     fi
-    record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}"
+    record_child_internal_spec_failure "${evidence_stage}" "${spec} failed before Playwright: internal ASBCP spec runtime setup failed with status ${spec_status}" "${spec_state_file}" "${spec_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" "infra_dependency_unready"
     return "${spec_status}"
   fi
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "${spec_slug}_asbcp" "passed" "port ${ASBCP_PORT}"

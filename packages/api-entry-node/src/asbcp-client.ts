@@ -66,6 +66,23 @@ function readStringField(record: Record<string, unknown>, snakeKey: string, came
   return readNonEmptyString(record[snakeKey]) ?? (camelKey ? readNonEmptyString(record[camelKey]) : undefined);
 }
 
+function readRedactedStringField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): string | undefined {
+  const value = readStringField(record, snakeKey, camelKey);
+  if (!value) {
+    return undefined;
+  }
+  const redacted = redactAsbcpLogText(value).trim();
+  return redacted.length > 0 ? redacted : undefined;
+}
+
+function readNonNegativeNumberField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): number | undefined {
+  const value = record[snakeKey] ?? (camelKey ? record[camelKey] : undefined);
+  const parsed = typeof value === 'number'
+    ? value
+    : (typeof value === 'string' && value.trim().length > 0 ? Number(value) : undefined);
+  return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 function readBooleanField(record: Record<string, unknown>, snakeKey: string, camelKey?: string): boolean | undefined {
   const value = record[snakeKey] ?? (camelKey ? record[camelKey] : undefined);
   return typeof value === 'boolean' ? value : undefined;
@@ -201,6 +218,9 @@ export interface PodStatusResponse {
   started_at?: string;
   expires_at?: string;
   message?: string;
+  readiness_reason?: string;
+  readiness_message?: string;
+  retry_after?: number;
   status_source?: 'current_status';
   delete_terminal_confirmed?: boolean;
 }
@@ -267,6 +287,9 @@ function readPodStatusResponse(value: unknown): PodStatusResponse | undefined {
   const startedAt = readNonEmptyString(value.started_at);
   const expiresAt = readNonEmptyString(value.expires_at);
   const message = readNonEmptyString(value.message);
+  const readinessReason = readRedactedStringField(value, 'readiness_reason', 'readinessReason');
+  const readinessMessage = readRedactedStringField(value, 'readiness_message', 'readinessMessage');
+  const retryAfter = readNonNegativeNumberField(value, 'retry_after', 'retryAfter');
   if (podName) status.pod_name = podName;
   if (ip) status.ip = ip;
   if (image) status.image = image;
@@ -275,6 +298,9 @@ function readPodStatusResponse(value: unknown): PodStatusResponse | undefined {
   if (startedAt) status.started_at = startedAt;
   if (expiresAt) status.expires_at = expiresAt;
   if (message) status.message = message;
+  if (readinessReason) status.readiness_reason = readinessReason;
+  if (readinessMessage) status.readiness_message = readinessMessage;
+  if (retryAfter !== undefined) status.retry_after = retryAfter;
   if (value.status_source === 'current_status') {
     status.status_source = 'current_status';
   }

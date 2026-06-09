@@ -197,6 +197,48 @@ describe('AsbcpClient', () => {
     expect(result.pod).toBeUndefined();
   });
 
+  it('preserves ASBCP pod readiness fields from status and ensure payloads', async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        phase: 'Pending',
+        pod_name: 'asbcp-pending-pod',
+        readiness_reason: 'pvc_binding_pending',
+        readiness_message: 'waiting for PVC token=raw-status-token',
+        retry_after: 7,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        pod: {
+          phase: 'Pending',
+          pod_name: 'asbcp-ensure-pending-pod',
+          readinessReason: 'image_pull_pending',
+          readinessMessage: 'waiting for image secret=raw-ensure-secret',
+          retryAfter: '9',
+        },
+      }), { status: 202 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
+    const ensure = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
+      image: 'runner:latest',
+      workspace_binding_id: 'flib_demo',
+    });
+
+    expect(status).toMatchObject({
+      phase: 'Pending',
+      pod_name: 'asbcp-pending-pod',
+      readiness_reason: 'pvc_binding_pending',
+      readiness_message: 'waiting for PVC token=[redacted]',
+      retry_after: 7,
+    });
+    expect(ensure.pod).toMatchObject({
+      phase: 'Pending',
+      pod_name: 'asbcp-ensure-pending-pod',
+      readiness_reason: 'image_pull_pending',
+      readiness_message: 'waiting for image secret=[redacted]',
+      retry_after: 9,
+    });
+  });
+
   it('maps status 404 to offline current status without treating it as delete terminal confirmation', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', {
       status: 404,

@@ -47,7 +47,6 @@ import { runReleaseContractAssembleCli } from '../release-contract-assemble';
 const RELEASE_ID = '2026.05.23-p1';
 const GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 const GENERATED_AT = '2026-05-23T12:00:00.000Z';
-const RUNNER_GA_HANDOFF_GENERATED_AT = '2026-06-03T05:51:41.335Z';
 const SOURCE_OPTIONS = { sourceGitSha: GIT_SHA } as const;
 const CLI_SOURCE_ARGV = ['--source-git-sha', GIT_SHA] as const;
 const APP_DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -100,26 +99,26 @@ const BUILD_PRODUCER = {
 const RUNNER_IMAGE_LOCK = {
   schema_version: 'agentsmith.runner-image-lock/v1',
   runner: 'agentsmith-runner',
-  release_id: 'locked-safety-008dbbd',
-  git_sha: '008dbbd3b232485cb77f3cae585d38955a8bf9fb',
+  release_id: 'main-06108c534526',
+  git_sha: '06108c5345263e89081400b5f30f3f67c7329369',
   runner_contract_version: '0.1.0',
   runner_protocol_version: '1.0',
   image: {
     id: 'agentsmith-runner',
     image:
-      'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
-    digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+      'ghcr.io/agentsmith-project/agentsmith-runner:release-main-06108c534526@sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
+    digest: 'sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
   },
   manifest: {
     producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
-    subject_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
-    artifact_sha256: 'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+    subject_sha256: 'sha256:91f8e59c17445a2c7fcafa7da5ab1fcc3b617c8c83170010a09882f4420cb0df',
+    artifact_sha256: 'sha256:91f8e59c17445a2c7fcafa7da5ab1fcc3b617c8c83170010a09882f4420cb0df',
   },
   handoff: {
     report_artifact_uri:
-      'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
-    manifest_input_sha256: 'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
-    report_sha256: 'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
+      'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/27233217906/runner-ga-handoff-report.json',
+    manifest_input_sha256: 'sha256:460ea641f407ad7e88abcab887f4dbf0f6e3dc26e90a86eff5ce18c2117254b0',
+    report_sha256: 'sha256:2fb3f79e4fdf8666326a3a74fc9f92cb608ae3426887449953ddb0f19c692b1b',
   },
 } as const satisfies CurrentRunnerImageLock;
 const CANONICAL_RUNNER_IMAGE_LOCK_PATH = join(
@@ -134,6 +133,14 @@ const CANONICAL_RUNNER_RELEASE_MANIFEST_PATH = join(
   '__fixtures__',
   'release-boundary',
   'runner-release-manifest.valid.json',
+);
+const CANONICAL_RUNNER_GA_HANDOFF_REPORT_PATH = join(
+  process.cwd(),
+  'scripts',
+  'governance',
+  '__fixtures__',
+  'release-boundary',
+  'runner-ga-handoff-report.valid.json',
 );
 const CANONICAL_RUNNER_IMAGE_LOCK_RELATIVE_PATH = join(
   'release',
@@ -226,16 +233,16 @@ function buildExternalImageSourceProvenance(
       producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
       commit_sha: RUNNER_IMAGE_LOCK.git_sha,
-      tag: 'release-locked-safety-008dbbd',
-      run_id: '26866339967',
+      tag: 'release-main-06108c534526',
+      run_id: '27233217906',
       run_attempt: '1',
-      run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/27233217906/attempts/1',
       subject_name: MANAGED_RUNNER_SOURCE_SUBJECT_NAME,
       artifact_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
+        'gh-artifact://agentsmith-project/agentsmith-runner/27233217906/agentsmith-managed-runner-image.oci',
       artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
       runner_release_manifest_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
       runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
       runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
@@ -747,69 +754,14 @@ function writeRunnerManifestSourceMetadata(
     artifactsApiPath: join(metadataRoot, 'artifacts-api.json'),
   };
   const remoteManifestText = readFileSync(manifestPath, 'utf8');
+  const remoteHandoffText = readFileSync(CANONICAL_RUNNER_GA_HANDOFF_REPORT_PATH, 'utf8');
   mkdirSync(join(metadataRoot, 'handoff-download'), { recursive: true });
   writeFileSync(paths.remoteManifestPath, remoteManifestText);
-  writeFileSync(paths.handoffReportPath, `${JSON.stringify(buildRunnerGaHandoffReport(manifest, remoteManifestText), null, 2)}\n`);
+  writeFileSync(paths.handoffReportPath, remoteHandoffText);
   writeFileSync(paths.runViewPath, `${JSON.stringify(metadata.runView, null, 2)}\n`);
   writeFileSync(paths.runApiPath, `${JSON.stringify(metadata.runApi, null, 2)}\n`);
   writeFileSync(paths.artifactsApiPath, `${JSON.stringify(metadata.artifactsApi, null, 2)}\n`);
   return paths;
-}
-
-function buildRunnerGaHandoffReport(
-  manifest: Record<string, unknown>,
-  remoteManifestText: string,
-): Record<string, unknown> {
-  const image = manifest.image as Record<string, unknown>;
-  const contractArtifact = manifest.contract_artifact as Record<string, unknown>;
-  const provenance = manifest.artifact_provenance as Record<string, unknown>;
-
-  return {
-    schema_version: 'agentsmith.runner-ga-handoff-report/v1',
-    scope: 'runner_ga_handoff_evidence',
-    status: 'pass',
-    generated_at: RUNNER_GA_HANDOFF_GENERATED_AT,
-    runner: manifest.runner,
-    release_id: manifest.release_id,
-    git_sha: manifest.git_sha,
-    runner_contract_version: manifest.runner_contract_version,
-    supported_protocol_versions: manifest.supported_protocol_versions,
-    image: {
-      id: image.id,
-      image: image.image,
-      digest: image.digest,
-    },
-    contract_artifact: {
-      package_uri: contractArtifact.package_uri,
-      package_sha256: contractArtifact.package_sha256,
-      descriptor_subject_sha256: contractArtifact.descriptor_subject_sha256,
-    },
-    manifest: {
-      input_sha256: sha256Digest(remoteManifestText),
-      artifact_uri: provenance.artifact_uri,
-      subject_sha256: provenance.subject_sha256,
-      artifact_sha256: provenance.artifact_sha256,
-    },
-    provenance: {
-      producer_repo: provenance.producer_repo,
-      normalized_remote: provenance.normalized_remote,
-      workflow_name: provenance.workflow_name,
-      job: provenance.job,
-      run_id: provenance.run_id,
-      run_attempt: provenance.run_attempt,
-      commit_sha: provenance.commit_sha,
-    },
-    checks: [
-      { name: 'runner_release_manifest', status: 'pass' },
-      { name: 'digest_pinned_runner_image', status: 'pass' },
-      { name: 'contract_artifact_binding', status: 'pass' },
-      { name: 'adoption_policy_declared', status: 'pass' },
-    ],
-    notes: [
-      'Runner GA handoff is evidence for AgentSmith adoption and release-kit final aggregation.',
-      'It does not issue formal_verdict and does not update AgentSmith locks.',
-    ],
-  };
 }
 
 function buildAsbcpFinalManifest(): Record<string, unknown> {
@@ -1890,16 +1842,16 @@ describe('release contract CI artifact producer', () => {
         producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
         normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
         commit_sha: RUNNER_IMAGE_LOCK.git_sha,
-        tag: 'release-locked-safety-008dbbd',
-        run_id: '26866339967',
+        tag: 'release-main-06108c534526',
+        run_id: '27233217906',
         run_attempt: '1',
-        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/27233217906/attempts/1',
         subject_name: MANAGED_RUNNER_SOURCE_SUBJECT_NAME,
         artifact_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
+          'gh-artifact://agentsmith-project/agentsmith-runner/27233217906/agentsmith-managed-runner-image.oci',
         artifact_sha256: RUNNER_IMAGE_LOCK.image.digest,
         runner_release_manifest_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
         runner_release_manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
         runner_release_manifest_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
         runner_ga_handoff_uri: RUNNER_IMAGE_LOCK.handoff.report_artifact_uri,
@@ -1978,7 +1930,7 @@ describe('release contract CI artifact producer', () => {
       manifest_git_sha: RUNNER_IMAGE_LOCK.git_sha,
       manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       manifest_provenance_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
-      run_id: '26866339967',
+      run_id: '27233217906',
       run_attempt: '1',
       workflow_name: 'Runner Image Publish',
       workflow_status: 'completed',
@@ -2027,13 +1979,13 @@ describe('release contract CI artifact producer', () => {
       manifest_release_id: RUNNER_IMAGE_LOCK.release_id,
       manifest_git_sha: RUNNER_IMAGE_LOCK.git_sha,
       manifest_artifact_uri:
-        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+        'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
       manifest_subject_sha256: RUNNER_IMAGE_LOCK.manifest.subject_sha256,
       manifest_provenance_artifact_sha256: RUNNER_IMAGE_LOCK.manifest.artifact_sha256,
       runner_image_digest: RUNNER_IMAGE_LOCK.image.digest,
       contract_package_uri:
-        'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/26866113545/mbos-agent-runner-contract-0.1.0.tgz',
-      run_id: '26866339967',
+        'gh-artifact://agentsmith-project/agentsmith/runner-contract-artifact/27233052617/mbos-agent-runner-contract-0.1.0.tgz',
+      run_id: '27233217906',
       run_attempt: '1',
       workflow_name: 'Runner Image Publish',
       head_sha: RUNNER_IMAGE_LOCK.git_sha,
@@ -2688,7 +2640,7 @@ describe('release contract CI artifact producer', () => {
       mutate: (metadata: RunnerManifestSourceMetadataFixture) => {
         metadata.runView.headSha = 'ffffffffffffffffffffffffffffffffffffffff';
       },
-      expected: 'run_view.headSha: expected 008dbbd3b232485cb77f3cae585d38955a8bf9fb; actual ffffffffffffffffffffffffffffffffffffffff',
+      expected: 'run_view.headSha: expected 06108c5345263e89081400b5f30f3f67c7329369; actual ffffffffffffffffffffffffffffffffffffffff',
     },
     {
       name: 'artifact missing',

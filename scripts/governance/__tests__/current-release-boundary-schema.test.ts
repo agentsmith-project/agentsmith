@@ -238,9 +238,9 @@ describe('current release boundary schema', () => {
       expect(validateRunnerImageLock(runnerImageLock.value).ok).toBe(true);
       expect(runnerImageLock.value.handoff).toEqual({
         report_artifact_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
-        manifest_input_sha256: 'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
-        report_sha256: 'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/27233217906/runner-ga-handoff-report.json',
+        manifest_input_sha256: 'sha256:460ea641f407ad7e88abcab887f4dbf0f6e3dc26e90a86eff5ce18c2117254b0',
+        report_sha256: 'sha256:2fb3f79e4fdf8666326a3a74fc9f92cb608ae3426887449953ddb0f19c692b1b',
       });
     }
 
@@ -890,39 +890,39 @@ describe('current release boundary schema', () => {
     expect(contract.managed_runner_image).toMatchObject({
       id: 'agentsmith-runner',
       image:
-        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
-      digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-main-06108c534526@sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
+      digest: 'sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
     });
     expect(contract.deploy_image_inventory).toContainEqual({
       id: 'managed_runner',
       image:
-        'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
-      digest: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+        'ghcr.io/agentsmith-project/agentsmith-runner:release-main-06108c534526@sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
+      digest: 'sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
       source: 'managed_runner_image',
       source_provenance: {
         producer_repo: 'github.com/agentsmith-project/agentsmith-runner',
         normalized_remote: 'github.com/agentsmith-project/agentsmith-runner',
-        commit_sha: '008dbbd3b232485cb77f3cae585d38955a8bf9fb',
-        tag: 'release-locked-safety-008dbbd',
-        run_id: '26866339967',
+        commit_sha: '06108c5345263e89081400b5f30f3f67c7329369',
+        tag: 'release-main-06108c534526',
+        run_id: '27233217906',
         run_attempt: '1',
-        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/26866339967/attempts/1',
+        run_url: 'https://github.com/agentsmith-project/agentsmith-runner/actions/runs/27233217906/attempts/1',
         subject_name: 'agentsmith-managed-runner-image',
         artifact_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/26866339967/agentsmith-managed-runner-image.oci',
-        artifact_sha256: 'sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a',
+          'gh-artifact://agentsmith-project/agentsmith-runner/27233217906/agentsmith-managed-runner-image.oci',
+        artifact_sha256: 'sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b',
         runner_release_manifest_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
         runner_release_manifest_subject_sha256:
-          'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+          'sha256:91f8e59c17445a2c7fcafa7da5ab1fcc3b617c8c83170010a09882f4420cb0df',
         runner_release_manifest_artifact_sha256:
-          'sha256:88f46a3519906e2db6f51390b000671e3322b4c7fbb8badca3f58e2357f4b3b0',
+          'sha256:91f8e59c17445a2c7fcafa7da5ab1fcc3b617c8c83170010a09882f4420cb0df',
         runner_ga_handoff_uri:
-          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
+          'gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/27233217906/runner-ga-handoff-report.json',
         runner_ga_handoff_manifest_input_sha256:
-          'sha256:84157be10c03ea383570b05c9628061a8f7f3e6d62ab011f6c491aa7e2204647',
+          'sha256:460ea641f407ad7e88abcab887f4dbf0f6e3dc26e90a86eff5ce18c2117254b0',
         runner_ga_handoff_report_sha256:
-          'sha256:498358b618a73b503781809d0a8d7efe14033b54887b89e8251a7f7852622ca0',
+          'sha256:2fb3f79e4fdf8666326a3a74fc9f92cb608ae3426887449953ddb0f19c692b1b',
       },
     });
 
@@ -998,7 +998,7 @@ describe('current release boundary schema', () => {
     rehashReleaseContract(runnerReleaseManifestRunDrift);
     expectInvalid(
       validateAgentSmithReleaseContract(runnerReleaseManifestRunDrift),
-      'runner_release_manifest_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+      'runner_release_manifest_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
     );
 
     const runnerReleaseManifestDigestDrift = cloneFixture('release-contract.valid.json');
@@ -2110,7 +2110,7 @@ describe('current release boundary schema', () => {
       'gh-artifact://agentsmith-runner/release/501/runner-release-manifest.json';
     expectInvalid(
       validateRunnerReleaseManifest(nonCanonicalManifestArtifactUri),
-      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/26866339967/runner-release-manifest.json',
+      'artifact_provenance.artifact_uri must equal gh-artifact://agentsmith-project/agentsmith-runner/runner-release-manifest/27233217906/runner-release-manifest.json',
     );
 
     const nonCanonicalPackageUri = cloneFixture('runner-release-manifest.valid.json');
@@ -2126,7 +2126,7 @@ describe('current release boundary schema', () => {
     const manifest = cloneFixture('runner-release-manifest.valid.json');
     const manifestImage = manifest.image as Record<string, unknown>;
     manifestImage.image =
-      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:07292903e04006a2912225970e824174894aad1953d8d3f98453e4df7a58849a';
+      'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:1f2c9b46183d9c791ea1e9d887af4ade1e54df2f363f502a43fa08ba8654769b';
     expectInvalid(
       validateRunnerReleaseManifest(manifest),
       'image.image tag "latest" is not allowed for canonical runner image refs.',
@@ -2135,7 +2135,7 @@ describe('current release boundary schema', () => {
     const lock = parseRunnerImageLockText(
       readRunnerImageLockText()
         .replace(
-          'ghcr.io/agentsmith-project/agentsmith-runner:release-locked-safety-008dbbd@sha256:',
+          'ghcr.io/agentsmith-project/agentsmith-runner:release-main-06108c534526@sha256:',
           'ghcr.io/agentsmith-project/agentsmith-runner:latest@sha256:',
         ),
       'latest-agentsmith-runner-image.lock',
@@ -2170,8 +2170,8 @@ describe('current release boundary schema', () => {
     const nonCanonicalHandoffUri = parseRunnerImageLockText(
       readRunnerImageLockText()
         .replace(
-          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/26866339967/runner-ga-handoff-report.json',
-          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/handoff/26866339967/report.json',
+          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/runner-ga-handoff/27233217906/runner-ga-handoff-report.json',
+          'runner_ga_handoff_uri=gh-artifact://agentsmith-project/agentsmith-runner/handoff/27233217906/report.json',
         ),
       'non-canonical-runner-ga-handoff.lock',
     );

@@ -1994,6 +1994,7 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/FileLibraryDeletingError"
                   - $ref: "#/components/schemas/FileLibraryNotReadyError"
+                  - $ref: "#/components/schemas/FileLibraryRestoreActiveWriterBlockedError"
                   - $ref: "#/components/schemas/ApiError"
         "422":
           description: Required idempotency key is missing or invalid

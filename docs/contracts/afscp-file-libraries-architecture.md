@@ -98,14 +98,14 @@ Status fields must not include namespace, repository, volume, export id, credent
 - save point terminal success requires one durable save point fact that the same file library can observe through operation projection, save point list, save point read/detail paths, and restore admission/readiness paths
 - if writer boundary, storage/materialization, or list-visible truth has not converged, the backend must keep the public operation typed pending or return a public-safe typed failed/recovery-required result; it must not leave users with an admitted operation, an unexplained terminal/empty projection, and a `200` empty save point list to wait on
 - restore starts as a direct operation after the user confirms current file changes that were not saved to a save point will be discarded
-- direct restore admission must use AFSCP `POST /internal/v1/repos/{repoId}/restore:admit` before AgentSmith creates a local durable restore operation; `listSavePoints` is history/listing evidence only and must not be treated as restore readiness
+- direct restore admission must be backed by AFSCP admission/readiness truth before AgentSmith creates a local durable restore operation; `listSavePoints` is history/listing evidence only and must not be treated as restore readiness
 - restore readiness, blockers, stale state, and failures are backend-owned truth
 - before restore is projected ready, the owning backend must converge related writer fence/drain/flush and release state; ASBCP/sandbox owns workload writer lifecycle and readiness signals, not Files terminal success
 - restore pending states must remain pending/restoring in the UI until the backend reports terminal success or typed failure
 - restore changes files only; task conversation and trace state are not restored
 - keep this surface KISS/DRY/YAGNI: use existing operation/list/read/restore projections and owner-typed errors instead of adding gate, report, or retry layers to compensate for terminal truth gaps
 
-AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a04fdfca18bd272e09f43cf` added restore-specific admit preflight. Capability denied from that endpoint is an admission failure and must happen before AgentSmith writes restore start/terminal audit or invokes AFSCP `/restore`.
+AFSCP sibling evidence: `agentsmith-fs-control-plane` commit `f8bd4576a8daa0bc9a04fdfca18bd272e09f43cf` added restore-specific admit/preflight capability. That is owner-side admission evidence and is distinct from Files list history; admission failure must be known before AgentSmith writes restore start/terminal audit or invokes AFSCP `/restore`.
 
 ### Read Export and Workspace Binding Convergence
 

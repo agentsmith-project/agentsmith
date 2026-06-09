@@ -8034,7 +8034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["ApiError"];
+                    "application/json": components["schemas"]["FileLibraryDeletingError"] | components["schemas"]["FileLibraryNotReadyError"] | components["schemas"]["FileLibraryRestoreActiveWriterBlockedError"] | components["schemas"]["ApiError"];
                 };
             };
             /** @description Required idempotency key is missing or invalid */

@@ -96,6 +96,8 @@ const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract';
 const POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env';
+const POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth';
 const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json';
 const POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND = 'npm run lane:unified-deploy:product-flows';
@@ -565,7 +567,9 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   const parsedWorkflow = parseWorkflow(workflowPath);
   const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
   const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
-  const smokeArtifactInput = asRecord(asRecord(workflowDispatch.inputs).smoke_artifact_name);
+  const workflowInputs = asRecord(workflowDispatch.inputs);
+  const smokeArtifactInput = asRecord(workflowInputs.smoke_artifact_name);
+  const substrateTruthFilenameInput = asRecord(workflowInputs.substrate_truth_filename);
   const smokeArtifactOptions = asStringArray(smokeArtifactInput.options);
   const workflow = CURRENT_CI_WORKFLOW_MANIFEST.find((entry) => entry.path === workflowPath);
   const job = workflow?.jobs.find((entry) => entry.id === jobId);
@@ -574,6 +578,7 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   const jobEnv = asRecord(parsedJob.env);
   const releaseContractDownloadStep = steps.find((step) => step.name === 'Download release contract artifact');
   const siteEnvDownloadStep = steps.find((step) => step.name === 'Download site env artifact');
+  const substrateTruthDownloadStep = steps.find((step) => step.name === 'Download substrate truth artifact');
   const validateStep = steps.find((step) => step.name === 'Validate required secrets and inputs');
   const verifyStep = steps.find((step) => step.name === 'Verify handoff inputs');
   const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
@@ -583,6 +588,7 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   const runEnv = asRecord(runStep?.env);
   const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
   const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
+  const substrateTruthDownloadWith = asRecord(substrateTruthDownloadStep?.with);
   const uploadWith = asRecord(uploadStep?.with);
   const uploadPaths = typeof uploadWith.path === 'string'
     ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -605,6 +611,9 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   );
   if (smokeArtifactInput.default !== POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME) {
     failures.push(`${label} smoke_artifact_name default must be ${POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME}`);
+  }
+  if (substrateTruthFilenameInput.default !== 'substrate-truth.env') {
+    failures.push(`${label} substrate_truth_filename default must be substrate-truth.env`);
   }
   if (job === undefined) {
     failures.push(`${label} must exist in CURRENT_CI_WORKFLOW_MANIFEST`);
@@ -634,7 +643,9 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
     failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
   }
-  if (Object.hasOwn(jobEnv, 'RELEASE_CONTRACT_INPUT_PATH') || Object.hasOwn(jobEnv, 'SITE_ENV_INPUT_DIR')) {
+  if (Object.hasOwn(jobEnv, 'RELEASE_CONTRACT_INPUT_PATH')
+    || Object.hasOwn(jobEnv, 'SITE_ENV_INPUT_DIR')
+    || Object.hasOwn(jobEnv, 'SUBSTRATE_TRUTH_INPUT_DIR')) {
     failures.push(`${label} runner.temp-derived paths must not live in job env because runner context is unavailable before job dispatch`);
   }
   if (verifyEnv.RELEASE_CONTRACT_INPUT_PATH !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH
@@ -645,11 +656,18 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
     || runEnv.SITE_ENV_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
     failures.push(`${label} site env step env must point to runner.temp`);
   }
+  if (verifyEnv.SUBSTRATE_TRUTH_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR
+    || runEnv.SUBSTRATE_TRUTH_INPUT_DIR !== POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR) {
+    failures.push(`${label} substrate truth step env must point to runner.temp`);
+  }
   if (releaseContractDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR) {
     failures.push(`${label} must download release contract input to ${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR}`);
   }
   if (siteEnvDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR) {
     failures.push(`${label} must download site env input to ${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR}`);
+  }
+  if (substrateTruthDownloadWith.path !== POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR) {
+    failures.push(`${label} must download substrate truth input to ${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR}`);
   }
   if (workflowSource.includes('artifacts/post-deploy-product-smoke/input')) {
     failures.push(`${label} must not use checkout-relative post-deploy product smoke input paths`);
@@ -661,18 +679,26 @@ function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {
   if (!validateRun.includes('site_env_filename must be a simple filename')) {
     failures.push(`${label} validation step must keep site_env_filename constrained to a simple filename`);
   }
+  if (!validateRun.includes('substrate_truth_filename must be a simple filename')) {
+    failures.push(`${label} validation step must keep substrate_truth_filename constrained to a simple filename`);
+  }
   if (!verifyRun.includes('test -f "${RELEASE_CONTRACT_INPUT_PATH}"')) {
     failures.push(`${label} must verify the runner.temp release contract input`);
   }
   if (!verifyRun.includes('test -f "${SITE_ENV_INPUT_PATH}"')) {
     failures.push(`${label} must verify the runner.temp site env input`);
   }
+  if (!verifyRun.includes('test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"')) {
+    failures.push(`${label} must verify the runner.temp substrate truth input`);
+  }
   if (!runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"')
     || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"')
+    || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH="${SUBSTRATE_TRUTH_INPUT_PATH}"')
     || !runStepCommand.includes('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"')
     || !runStepCommand.includes('SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"')
+    || !runStepCommand.includes('SUBSTRATE_TRUTH_INPUT_PATH="${SUBSTRATE_TRUTH_INPUT_DIR}/${SUBSTRATE_TRUTH_FILENAME}"')
     || !runCommands.includes(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND)) {
-    failures.push(`${label} must run ${POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND} with downloaded release contract, site env, and output root env`);
+    failures.push(`${label} must run ${POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND} with downloaded release contract, site env, substrate truth, and output root env`);
   }
   if (handoffStep === undefined) {
     failures.push(`${label} must keep the success-only post-deploy product smoke handoff file check step`);

@@ -10,6 +10,10 @@ POST_DEPLOY_PRODUCT_SMOKE_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/post-deploy-pro
 POST_DEPLOY_PRODUCT_SMOKE_PATH_ROOT="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"
 POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE="$(unified_deploy_release_contract)"
 POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET="$(unified_deploy_release_contract_target)"
+POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE="$(unified_deploy_release_site_env)"
+POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/site.env"
+POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE="$(unified_deploy_release_substrate_truth)"
+POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}/deployment-target/substrate-truth.env"
 
 if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"; then
   printf '[post-deploy-product-smoke] release contract is required before product flows.\n' >&2
@@ -18,9 +22,31 @@ if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"; then
   exit 1
 fi
 
+if ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}"; then
+  printf '[post-deploy-product-smoke] deployed target site env is required for release handoff.\n' >&2
+  printf '[post-deploy-product-smoke] resolved source: %s\n' "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}" >&2
+  printf '[post-deploy-product-smoke] set UNIFIED_DEPLOY_RELEASE_SITE_ENV=<path>.\n' >&2
+  exit 1
+fi
+
+if [[ -z "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" ]] || ! test -f "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}"; then
+  printf '[post-deploy-product-smoke] deployed target substrate truth is required for release handoff.\n' >&2
+  printf '[post-deploy-product-smoke] resolved source: %s\n' "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE:-<unset>}" >&2
+  printf '[post-deploy-product-smoke] set UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH=<path>.\n' >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}")"
 if ! [[ -e "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}" && "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}" -ef "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}" ]]; then
   cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}"
+fi
+
+mkdir -p "$(dirname "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}")"
+if ! [[ -e "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}" && "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}" -ef "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}" ]]; then
+  cp "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}"
+fi
+if ! [[ -e "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}" && "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" -ef "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}" ]]; then
+  cp "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}"
 fi
 
 mkdir -p "${PRODUCT_FLOWS_EVIDENCE_DIR}" "${POST_DEPLOY_PRODUCT_SMOKE_DIR}"
@@ -30,7 +56,8 @@ trap 'rm -f "${product_flow_log}"' EXIT
 product_flow_status=0
 npm run test:unified-deploy:product-flows -- \
   --evidence-dir="${PRODUCT_FLOWS_EVIDENCE_DIR}" \
-  --site-env="$(unified_deploy_release_site_env)" \
+  --site-env="${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}" \
+  --substrate-truth="${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}" \
   --producer-command="npm run lane:unified-deploy:product-flows" \
   --agent-task-polls="${UNIFIED_DEPLOY_AGENT_TASK_POLLS:-30}" \
   --agent-task-poll-interval-ms="${UNIFIED_DEPLOY_AGENT_TASK_POLL_INTERVAL_MS:-2000}" \

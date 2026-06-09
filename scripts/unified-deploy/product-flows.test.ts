@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -578,6 +578,8 @@ describe('unified deploy product flow producer', () => {
       public_base_url: 'http://agentsmith.localtest.me:29180',
       api_base_url: 'http://agentsmith.localtest.me:29180/api/v1',
       runner_public_api_base_url: 'ws://agentsmith.localtest.me:29180/api/v1',
+      site_env_path: resolve('site.env'),
+      substrate_truth_path: resolve('connection.env'),
     });
   });
 

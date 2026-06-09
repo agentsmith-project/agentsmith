@@ -25,6 +25,19 @@ on:
         required: true
         default: "site.env"
         type: string
+      substrate_truth_artifact_name:
+        description: "GitHub Actions artifact name containing the deployed target substrate truth env"
+        required: true
+        type: string
+      substrate_truth_run_id:
+        description: "GitHub Actions run id that produced the deployed target substrate truth artifact"
+        required: true
+        type: string
+      substrate_truth_filename:
+        description: "Filename inside the substrate truth artifact"
+        required: true
+        default: "substrate-truth.env"
+        type: string
       smoke_artifact_name:
         description: "Canonical GA handoff artifact name to upload for this deployed target"
         required: true
@@ -52,6 +65,7 @@ jobs:
       PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
       POST_DEPLOY_PRODUCT_SMOKE_ROOT: artifacts/release-runs/post-deploy-product-smoke-${{ github.run_id }}
       SITE_ENV_FILENAME: ${{ inputs.site_env_filename }}
+      SUBSTRATE_TRUTH_FILENAME: ${{ inputs.substrate_truth_filename }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -88,6 +102,10 @@ jobs:
             echo "site_env_filename must be a simple filename inside the downloaded site env artifact." >&2
             exit 1
           fi
+          if [[ -z "${SUBSTRATE_TRUTH_FILENAME}" || "${SUBSTRATE_TRUTH_FILENAME}" == */* || "${SUBSTRATE_TRUTH_FILENAME}" == *\\* || "${SUBSTRATE_TRUTH_FILENAME}" == "." || "${SUBSTRATE_TRUTH_FILENAME}" == ".." ]]; then
+            echo "substrate_truth_filename must be a simple filename inside the downloaded substrate truth artifact." >&2
+            exit 1
+          fi
           mkdir -p "${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"
           printf 'workflow=%s\nrun_id=%s\nartifact_name=%s\n' \
             "${GITHUB_WORKFLOW}" \
@@ -111,25 +129,39 @@ jobs:
           path: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
           github-token: ${{ github.token }}
 
+      - name: Download substrate truth artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.substrate_truth_artifact_name }}
+          run-id: ${{ inputs.substrate_truth_run_id }}
+          path: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth
+          github-token: ${{ github.token }}
+
       - name: Verify handoff inputs
         env:
           RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
           SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
+          SUBSTRATE_TRUTH_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth
         run: |
           set -euo pipefail
           SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
+          SUBSTRATE_TRUTH_INPUT_PATH="${SUBSTRATE_TRUTH_INPUT_DIR}/${SUBSTRATE_TRUTH_FILENAME}"
           test -f "${RELEASE_CONTRACT_INPUT_PATH}"
           test -f "${SITE_ENV_INPUT_PATH}"
+          test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"
 
       - name: Run post-deploy product smoke
         env:
           RELEASE_CONTRACT_INPUT_PATH: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json
           SITE_ENV_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env
+          SUBSTRATE_TRUTH_INPUT_DIR: ${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth
         run: |
           set -euo pipefail
           SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"
+          SUBSTRATE_TRUTH_INPUT_PATH="${SUBSTRATE_TRUTH_INPUT_DIR}/${SUBSTRATE_TRUTH_FILENAME}"
           UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}" \
           UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}" \
+          UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH="${SUBSTRATE_TRUTH_INPUT_PATH}" \
           UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}" \
           npm run lane:unified-deploy:product-flows
 

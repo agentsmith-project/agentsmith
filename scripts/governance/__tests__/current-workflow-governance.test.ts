@@ -125,6 +125,8 @@ const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract';
 const POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/site-env';
+const POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR =
+  '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/substrate-truth';
 const POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-post-deploy-product-smoke/input/release-contract/agentsmith-release-contract.json';
 const POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND = 'npm run lane:unified-deploy:product-flows';
@@ -1332,12 +1334,15 @@ describe('current workflow governance', () => {
     const parsedWorkflow = parseWorkflow(POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH);
     const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
     const workflowDispatch = asRecord(asRecord(rawOn).workflow_dispatch);
-    const smokeArtifactInput = asRecord(asRecord(workflowDispatch.inputs).smoke_artifact_name);
+    const workflowInputs = asRecord(workflowDispatch.inputs);
+    const smokeArtifactInput = asRecord(workflowInputs.smoke_artifact_name);
+    const substrateTruthFilenameInput = asRecord(workflowInputs.substrate_truth_filename);
     const steps = collectJobSteps(parsedWorkflow, POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID);
     const parsedJob = asRecord(asRecord(parsedWorkflow.jobs)[POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_JOB_ID]);
     const jobEnv = asRecord(parsedJob.env);
     const releaseContractDownloadStep = steps.find((step) => step.name === 'Download release contract artifact');
     const siteEnvDownloadStep = steps.find((step) => step.name === 'Download site env artifact');
+    const substrateTruthDownloadStep = steps.find((step) => step.name === 'Download substrate truth artifact');
     const validateStep = steps.find((step) => step.name === 'Validate required secrets and inputs');
     const verifyStep = steps.find((step) => step.name === 'Verify handoff inputs');
     const runStep = steps.find((step) => step.name === 'Run post-deploy product smoke');
@@ -1347,6 +1352,7 @@ describe('current workflow governance', () => {
     const runEnv = asRecord(runStep?.env);
     const releaseContractDownloadWith = asRecord(releaseContractDownloadStep?.with);
     const siteEnvDownloadWith = asRecord(siteEnvDownloadStep?.with);
+    const substrateTruthDownloadWith = asRecord(substrateTruthDownloadStep?.with);
     const uploadWith = asRecord(uploadStep?.with);
     const uploadPaths = typeof uploadWith.path === 'string'
       ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -1359,6 +1365,7 @@ describe('current workflow governance', () => {
 
     expect(smokeArtifactInput.type).toBe('choice');
     expect(smokeArtifactInput.default).toBe(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
+    expect(substrateTruthFilenameInput.default).toBe('substrate-truth.env');
     expect(asStringArray(smokeArtifactInput.options).sort()).toEqual([
       POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME,
       POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME,
@@ -1375,21 +1382,29 @@ describe('current workflow governance', () => {
     );
     expect(jobEnv).not.toHaveProperty('RELEASE_CONTRACT_INPUT_PATH');
     expect(jobEnv).not.toHaveProperty('SITE_ENV_INPUT_DIR');
+    expect(jobEnv).not.toHaveProperty('SUBSTRATE_TRUTH_INPUT_DIR');
     expect(verifyEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
     expect(runEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_PATH);
     expect(verifyEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
     expect(runEnv.SITE_ENV_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(verifyEnv.SUBSTRATE_TRUTH_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
+    expect(runEnv.SUBSTRATE_TRUTH_INPUT_DIR).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
     expect(releaseContractDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_INPUT_DIR);
     expect(siteEnvDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_INPUT_DIR);
+    expect(substrateTruthDownloadWith.path).toBe(POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_INPUT_DIR);
     expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_ONLINE_ARTIFACT_NAME);
     expect(validateRun).toContain(POST_DEPLOY_PRODUCT_SMOKE_AIRGAP_ARTIFACT_NAME);
     expect(validateRun).toContain('site_env_filename must be a simple filename');
+    expect(validateRun).toContain('substrate_truth_filename must be a simple filename');
     expect(verifyRun).toContain('test -f "${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(verifyRun).toContain('test -f "${SITE_ENV_INPUT_PATH}"');
+    expect(verifyRun).toContain('test -f "${SUBSTRATE_TRUTH_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_CONTRACT="${RELEASE_CONTRACT_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SITE_ENV="${SITE_ENV_INPUT_PATH}"');
+    expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH="${SUBSTRATE_TRUTH_INPUT_PATH}"');
     expect(runStepCommand).toContain('UNIFIED_DEPLOY_RELEASE_ROOT_DIR="${POST_DEPLOY_PRODUCT_SMOKE_ROOT}"');
     expect(runStepCommand).toContain('SITE_ENV_INPUT_PATH="${SITE_ENV_INPUT_DIR}/${SITE_ENV_FILENAME}"');
+    expect(runStepCommand).toContain('SUBSTRATE_TRUTH_INPUT_PATH="${SUBSTRATE_TRUTH_INPUT_DIR}/${SUBSTRATE_TRUTH_FILENAME}"');
     expect(runCommands).toContain(POST_DEPLOY_PRODUCT_SMOKE_RUN_COMMAND);
     expect(handoffStep?.if).toBe('success()');
     expect(handoffRun).toContain(

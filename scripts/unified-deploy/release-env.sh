@@ -21,6 +21,10 @@ unified_deploy_release_site_env() {
   fi
 }
 
+unified_deploy_release_substrate_truth() {
+  printf '%s\n' "${UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH:-}"
+}
+
 unified_deploy_release_contract() {
   if [[ -n "${UNIFIED_DEPLOY_RELEASE_CONTRACT:-}" ]]; then
     printf '%s\n' "${UNIFIED_DEPLOY_RELEASE_CONTRACT}"

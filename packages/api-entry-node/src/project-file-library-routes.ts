@@ -87,6 +87,7 @@ const TASK_FILE_TEMPLATE_USE_PERMISSION = 'project:agent_task:use';
 const TASK_FILE_TEMPLATE_MANAGE_PERMISSION = 'project:files:update';
 const FILE_LIBRARY_RETRY_AFTER_MS = 2_000;
 const RECENT_TERMINAL_RESTORE_OPERATION_PROJECTION_WINDOW_MS = 30_000;
+const RECENT_TERMINAL_VERSION_OPERATION_FAILURE_PROJECTION_WINDOW_MS = 30_000;
 const PRE_START_RESTORE_STARTS_IN_FLIGHT = new Set<string>();
 
 class FileLibraryRestoreOperationActiveError extends Error {
@@ -739,6 +740,10 @@ function isTerminalRestoreOperationStatus(status: FileLibraryRestoreOperationSta
   return status === 'succeeded' || status === 'failed' || status === 'recovery_required';
 }
 
+function isTerminalVersionOperationFailureStatus(status: FileLibraryVersionOperationStatus): boolean {
+  return status === 'failed' || status === 'recovery_required';
+}
+
 function isRecentTerminalRestoreOperation(operation: FileLibraryRestoreOperationRecord): boolean {
   if (!isTerminalRestoreOperationStatus(operation.status)) {
     return false;
@@ -750,6 +755,19 @@ function isRecentTerminalRestoreOperation(operation: FileLibraryRestoreOperation
   const nowMs = Date.now();
   return updatedAtMs <= nowMs + 1_000
     && nowMs - updatedAtMs <= RECENT_TERMINAL_RESTORE_OPERATION_PROJECTION_WINDOW_MS;
+}
+
+function isRecentTerminalVersionOperationFailure(operation: FileLibraryVersionOperationRecord): boolean {
+  if (!isTerminalVersionOperationFailureStatus(operation.status)) {
+    return false;
+  }
+  const updatedAtMs = Date.parse(operation.updated_at);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+  const nowMs = Date.now();
+  return updatedAtMs <= nowMs + 1_000
+    && nowMs - updatedAtMs <= RECENT_TERMINAL_VERSION_OPERATION_FAILURE_PROJECTION_WINDOW_MS;
 }
 
 async function findRecentTerminalRestoreOperation(input: {
@@ -764,6 +782,23 @@ async function findRecentTerminalRestoreOperation(input: {
     input.libraryId,
   );
   if (!latest || !isRecentTerminalRestoreOperation(latest)) {
+    return null;
+  }
+  return latest;
+}
+
+async function findRecentTerminalVersionOperationFailure(input: {
+  operationRepo: JsonDocFileLibraryVersionOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+}): Promise<FileLibraryVersionOperationRecord | null> {
+  const latest = await input.operationRepo.findLatestByLibrary(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+  );
+  if (!latest || !isRecentTerminalVersionOperationFailure(latest)) {
     return null;
   }
   return latest;
@@ -1407,6 +1442,32 @@ async function findReconciledActiveVersionOperation(input: {
     operation: active,
   });
   return isFileLibraryVersionOperationActiveStatus(reconciled.status) ? reconciled : null;
+}
+
+async function findVersionOperationActiveProjection(input: {
+  deps: NodeApiDeps;
+  operationRepo: JsonDocFileLibraryVersionOperationRepo;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  requestId?: string;
+}): Promise<FileLibraryVersionOperationRecord | null> {
+  const active = await input.operationRepo.findActiveByLibrary(
+    input.workspaceId,
+    input.projectId,
+    input.libraryId,
+  );
+  if (active) {
+    const reconciled = await reconcileVersionOperationRecord({
+      ...input,
+      operation: active,
+    });
+    return isFileLibraryVersionOperationActiveStatus(reconciled.status)
+      || isRecentTerminalVersionOperationFailure(reconciled)
+      ? reconciled
+      : null;
+  }
+  return findRecentTerminalVersionOperationFailure(input);
 }
 
 async function findReconciledActiveSavePointCreateOperation(input: {
@@ -3802,7 +3863,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         requestId,
         continuePreStart: true,
       });
-      const activeVersionOperation = await findReconciledActiveVersionOperation({
+      const versionOperationProjection = await findVersionOperationActiveProjection({
         deps,
         operationRepo,
         workspaceId,
@@ -3810,7 +3871,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         libraryId,
         requestId,
       });
-      const recentTerminalRestore = (!activeRestore && !activeVersionOperation)
+      const recentTerminalRestore = (!activeRestore && !versionOperationProjection)
         ? await findRecentTerminalRestoreOperation({
             restoreRepo,
             workspaceId,
@@ -3820,7 +3881,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         : null;
       const latest = pickLatestVersionOperation([
         ...(activeRestore ? [activeRestore] : []),
-        ...(activeVersionOperation ? [activeVersionOperation] : []),
+        ...(versionOperationProjection ? [versionOperationProjection] : []),
         ...(recentTerminalRestore ? [recentTerminalRestore] : []),
       ]);
       json(res, 200, {

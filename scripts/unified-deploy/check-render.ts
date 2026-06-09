@@ -1141,6 +1141,57 @@ function checkAfscpSchemaInitContainer(
   }
 }
 
+function checkNonRoot65532SecurityContext(
+  context: Record<string, unknown>,
+  resource: string,
+  label: string,
+  failures: CheckFailure[],
+): void {
+  if (
+    context.runAsNonRoot !== true
+    || context.runAsUser !== 65532
+    || context.runAsGroup !== 65532
+  ) {
+    addFailure(failures, resource, `${label} must keep the non-root 65532 security context`);
+  }
+}
+
+function hasImageUserOverride(context: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(context, 'runAsNonRoot')
+    || Object.prototype.hasOwnProperty.call(context, 'runAsUser')
+    || Object.prototype.hasOwnProperty.call(context, 'runAsGroup')
+    || Object.prototype.hasOwnProperty.call(context, 'fsGroup')
+    || Object.prototype.hasOwnProperty.call(context, 'fsGroupChangePolicy');
+}
+
+function checkAfscpImageUserBoundary(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  checkNonRoot65532SecurityContext(
+    asRecord(deploymentPodSpec(documents, 'afscp-api').securityContext),
+    'Deployment/afscp-api',
+    'afscp-api pod',
+    failures,
+  );
+
+  for (const deploymentName of ['afscp-worker', 'afscp-export-gateway'] as const) {
+    const podSpec = deploymentPodSpec(documents, deploymentName);
+    const container = deploymentContainer(documents, deploymentName, deploymentName);
+    const init = podSpecContainer(podSpec, 'initContainers', AFSCP_SCHEMA_CHECK_INIT_CONTAINER);
+    if (hasImageUserOverride(asRecord(podSpec.securityContext)) || hasImageUserOverride(asRecord(container.securityContext))) {
+      addFailure(
+        failures,
+        `Deployment/${deploymentName}`,
+        `${deploymentName} must inherit the AFSCP image user/root for storage tree traversal; do not force runAsUser/runAsNonRoot/runAsGroup/fsGroup in the pod or main container`,
+      );
+    }
+    checkNonRoot65532SecurityContext(
+      asRecord(init.securityContext),
+      `Deployment/${deploymentName}`,
+      `${deploymentName} schema check init container`,
+      failures,
+    );
+  }
+}
+
 function checkAfscpDefaultVolumeBootstrapConfig(
   config: Record<string, unknown>,
   defaultVolumeId: string,
@@ -1245,6 +1296,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   const defaultVolumeId = `${config.AFSCP_API_VOLUME_ROOTS ?? ''}`.split('=')[0];
   checkAfscpDefaultVolumeBootstrapConfig(config, defaultVolumeId, failures);
   checkAfscpPersistentVolumeResources(documents, namespace, defaultVolumeId, failures);
+  checkAfscpImageUserBoundary(documents, failures);
   for (const [key, expected] of [
     ['AFSCP_STORAGE_ENABLED', 'true'],
     ['AFSCP_STORAGE_READY', 'true'],

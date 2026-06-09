@@ -1063,6 +1063,11 @@ describe('unified deploy render producer', () => {
     const persistentVolumeCsi = asRecord(persistentVolumeSpec.csi);
     const persistentVolumeSecret = asRecord(persistentVolumeCsi.nodePublishSecretRef);
     const persistentVolumeClaimSpec = asRecord(persistentVolumeClaim.spec);
+    const afscpApiPodSpec = deploymentPodSpec(documents, 'afscp-api');
+    const afscpWorkerPodSpec = deploymentPodSpec(documents, 'afscp-worker');
+    const exportGatewayPodSpec = deploymentPodSpec(documents, 'afscp-export-gateway');
+    const afscpWorkerSchemaCheck = podSpecContainer(afscpWorkerPodSpec, 'initContainers', 'afscp-schema-check');
+    const exportGatewaySchemaCheck = podSpecContainer(exportGatewayPodSpec, 'initContainers', 'afscp-schema-check');
 
     expect(config.AFSCP_STORAGE_ENABLED).toBe('true');
     expect(config.AFSCP_JVS_ENABLED).toBe('true');
@@ -1106,6 +1111,12 @@ describe('unified deploy render producer', () => {
     expect(schemaJobSpec.ttlSecondsAfterFinished).toBe(86400);
     expect(schemaJobPodSpec.restartPolicy).toBe('Never');
     expect(schemaJobPodSpec.serviceAccountName).toBe('afscp-runtime');
+    expect(asRecord(schemaJobPodSpec.securityContext)).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+      fsGroup: 65532,
+    });
     expect(schemaJobContainer.image).toBe(afscpApi.image);
     expect(schemaJobContainer.command).toEqual(['/usr/local/bin/afscp-migrate']);
     expect(schemaJobContainer.args).toEqual(['--apply', '--check', '--timeout=60s']);
@@ -1117,6 +1128,12 @@ describe('unified deploy render producer', () => {
     expect(volumeJobSpec.ttlSecondsAfterFinished).toBe(86400);
     expect(volumeJobPodSpec.restartPolicy).toBe('Never');
     expect(volumeJobPodSpec.serviceAccountName).toBe('afscp-runtime');
+    expect(asRecord(volumeJobPodSpec.securityContext)).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+      fsGroup: 65532,
+    });
     expect(volumeJobContainer.image).toBe(afscpApi.image);
     expect(volumeJobContainer.command).toEqual(['/usr/local/bin/afscp-volume-bootstrap']);
     expect(volumeJobContainer.args).toEqual(['--ensure', '--check', '--timeout=60s']);
@@ -1130,6 +1147,26 @@ describe('unified deploy render producer', () => {
     expect(afscpWorker.args).toEqual(['--loop', '--interval=2s']);
     expect(exportGateway.command).toEqual(['/usr/local/bin/afscp-export-gateway']);
     expect(exportGateway.args).toEqual(['--serve', '--listen-addr', '0.0.0.0:8080']);
+    expect(asRecord(afscpApiPodSpec.securityContext)).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+      fsGroup: 65532,
+    });
+    expect(asRecord(afscpWorkerPodSpec.securityContext)).toEqual({});
+    expect(asRecord(exportGatewayPodSpec.securityContext)).toEqual({});
+    expect(asRecord(afscpWorker.securityContext)).toEqual({});
+    expect(asRecord(exportGateway.securityContext)).toEqual({});
+    expect(asRecord(afscpWorkerSchemaCheck.securityContext)).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+    });
+    expect(asRecord(exportGatewaySchemaCheck.securityContext)).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+    });
     expect(volumeSecret.metaurl).toBe('postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable');
     expect(volumeSecret.metaurl).not.toContain('@substrate-postgresql:5432/');
     expect(volumeSecret.bucket).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
@@ -1240,6 +1277,44 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('AFSCP_JVS_BINARY_PATH must come from the AFSCP image default');
     expect(text).toContain('AFSCP_JVS_BINARY_SHA256 must come from the AFSCP image default');
+  });
+
+  it('rejects AFSCP storage-reader pods that override the image user', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    deploymentPodSpec(documents, 'afscp-worker').securityContext = {
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+    };
+    deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway').securityContext = {
+      runAsNonRoot: true,
+      runAsUser: 65532,
+      runAsGroup: 65532,
+    };
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('afscp-worker must inherit the AFSCP image user/root');
+    expect(text).toContain('afscp-export-gateway must inherit the AFSCP image user/root');
+  });
+
+  it('rejects AFSCP API manifests that drop the non-root boundary', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    deploymentPodSpec(documents, 'afscp-api').securityContext = {
+      runAsNonRoot: false,
+      runAsUser: 0,
+      runAsGroup: 0,
+    };
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('afscp-api pod must keep the non-root 65532 security context');
   });
 
   it('rejects AFSCP WebDAV export public base URLs that include the gateway prefix', async () => {

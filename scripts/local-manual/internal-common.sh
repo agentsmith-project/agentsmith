@@ -83,7 +83,7 @@ AFSCP_EXPORT_GATEWAY_BASE_URL="${AFSCP_EXPORT_GATEWAY_BASE_URL:-http://127.0.0.1
 AFSCP_EXPORT_GATEWAY_PORT="${AFSCP_EXPORT_GATEWAY_PORT:-$(local_manual_port_from_url "${AFSCP_EXPORT_GATEWAY_BASE_URL}" 2>/dev/null || printf '28091')}"
 AFSCP_EXPORT_GATEWAY_LISTEN_ADDR="${AFSCP_EXPORT_GATEWAY_LISTEN_ADDR:-127.0.0.1:${AFSCP_EXPORT_GATEWAY_PORT}}"
 AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"
-AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.19@sha256:b79c26a4b263ba1213720e90e86f6b734dd0f0f92c7eb773ecd574ec1b405aac}}"
+AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.20@sha256:f0039fd21cc322c42784ae99069e288b0973f80002ba3a8c182e11a6110f340f}}"
 AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX="${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX:-agentsmith-afscp-local-${AFSCP_API_PORT}}"
 AFSCP_API_CONTAINER_NAME="${AFSCP_API_CONTAINER_NAME:-${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX}-api}"
 AFSCP_WORKER_CONTAINER_NAME="${AFSCP_WORKER_CONTAINER_NAME:-${AFSCP_LOCAL_RUNTIME_CONTAINER_PREFIX}-worker}"
@@ -2701,6 +2701,10 @@ afscp_docker_start_inherit_image_user() {
   AFSCP_DOCKER_INHERIT_IMAGE_USER=1 afscp_docker_start "$@"
 }
 
+afscp_docker_run_inherit_image_user() {
+  AFSCP_DOCKER_INHERIT_IMAGE_USER=1 afscp_docker_run "$@"
+}
+
 afscp_follow_container_logs() {
   local container_id_file="$1"
   local container_name="$2"
@@ -2798,7 +2802,7 @@ afscp_run_worker_once_source() {
 
 afscp_run_worker_once_image() {
   ensure_afscp_local_runtime_mounts_and_write_env
-  afscp_docker_run --rm /usr/local/bin/afscp-worker --run-once
+  afscp_docker_run_inherit_image_user --rm /usr/local/bin/afscp-worker --run-once
 }
 
 afscp_run_worker_once() {
@@ -2893,7 +2897,7 @@ start_afscp_worker_loop_image() {
   afscp_stop_container_id_file "${AFSCP_WORKER_CONTAINER_ID_FILE}" "AFSCP worker" "${AFSCP_WORKER_CONTAINER_NAME}"
   rm -f "${AFSCP_WORKER_READY_FILE}"
   internal_info "starting AFSCP worker loop from pinned image"
-  afscp_docker_start "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" /usr/local/bin/afscp-worker --loop --interval="${AFSCP_WORKER_INTERVAL_SECONDS}s"
+  afscp_docker_start_inherit_image_user "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" /usr/local/bin/afscp-worker --loop --interval="${AFSCP_WORKER_INTERVAL_SECONDS}s"
   afscp_follow_container_logs "${AFSCP_WORKER_CONTAINER_ID_FILE}" "${AFSCP_WORKER_CONTAINER_NAME}" "${AFSCP_WORKER_LOG}"
   sleep 1
   if docker ps -q --filter "name=^/${AFSCP_WORKER_CONTAINER_NAME}$" | grep -q .; then

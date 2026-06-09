@@ -421,6 +421,7 @@ function runInternalSpecGrepEarlyFailureHarness(options: {
   runs?: number;
   repeatedFileListPending?: boolean;
   dockerInspectAvailable?: boolean;
+  runtimeMarker?: boolean;
 } = {}): {
   stdout: string;
   stderr: string;
@@ -473,6 +474,12 @@ AFSCP_BOOTSTRAP_SERVICE_TOKEN="known-bootstrap-token"
 AFSCP_ORCHESTRATOR_TOKEN="known-orchestrator-token"
 CONTROL_SCRIPT="${tempRoot}/control.sh"
 mkdir -p "\${INTERNAL_REAL_DIR}" "\${CHILD_INTERNAL_EVIDENCE_ROOT}"
+${options.runtimeMarker === false ? `printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
+cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
+[files] file_library_list_read_export_invalidation_diagnostic {"event":"file_library_list_read_export_invalidation_diagnostic","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_runtime","file_library_id":"flib_runtime","task_id":"task_runtime","trigger":"list_read_export","action":"keep_pending","reason":"runtime_access_recheck_pending","release_status_code":409,"release_error_code":"AGENT_TASK_WORKSPACE_BINDING_CONFLICT"}}
+LOG
+printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+` : `
 printf 'api ready token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-api.log"
 printf 'API call summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE token=%s\\n' "\${AFSCP_SERVICE_TOKEN}" >> "\${INTERNAL_REAL_DIR}/afscp-api.log"
 cat >> "\${INTERNAL_REAL_DIR}/afscp-api.log" <<'LOG'
@@ -488,6 +495,7 @@ LOG
 printf 'worker ready token=%s\\n' "\${AFSCP_BOOTSTRAP_SERVICE_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'pod manager create_or_ensure_pod request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
 printf 'ASBCP create/status summary request_id=req-runtime-1 workload_id=workload-runtime-1 phase=pending status_code=503 error_code=AGENT_SANDBOX_UNAVAILABLE\\n' >> "\${INTERNAL_REAL_DIR}/afscp-worker.log"
+`}
 printf 'gateway ready token=%s\\n' "\${AFSCP_ORCHESTRATOR_TOKEN}" > "\${INTERNAL_REAL_DIR}/afscp-export-gateway.log"
 
 gate_record_failure() {
@@ -2090,6 +2098,40 @@ describe('internal backend-real gate runtime contract', () => {
       source: 'pod_manager',
       error_code: 'AGENT_SANDBOX_UNAVAILABLE',
     }));
+    expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
+  });
+
+  it('classifies non-runtime focused failures as clean runtime readiness evidence', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness({ runtimeMarker: false });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status_1=1');
+    expect(result.stdout).toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json');
+    expect(result.stdout).not.toContain('/upload/child-internal-evidence/files_restore_continuation_spec/runtime-stability-blocker-summary.txt');
+    expect(result.internalFailure).toContain('scenario_assertion_failed|files_restore_continuation_spec|e2e/integration-files-user-stories.spec.ts failed before Playwright');
+    expect(result.runtimeStabilityBlockerSummary).toBe('');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      schema_version?: string;
+      classification?: string;
+      outcome?: string;
+      signals?: unknown[];
+      call_summaries?: unknown[];
+      failure?: unknown;
+      api?: unknown;
+      pod_manager_summary?: unknown;
+    };
+    expect(details).toMatchObject({
+      schema_version: 'agentsmith.runtime-readiness-details/v1',
+      classification: 'clean_pass',
+      outcome: 'focused_gate_failed_without_runtime_readiness_marker',
+      signals: [],
+      call_summaries: [],
+    });
+    expect(details.failure).toBeUndefined();
+    expect(details.api).toBeUndefined();
+    expect(details.pod_manager_summary).toBeUndefined();
     expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
   });
 

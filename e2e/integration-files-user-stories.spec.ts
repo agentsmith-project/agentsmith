@@ -1948,8 +1948,15 @@ async function createSavePointFromOpenDialogWithPendingAssertions(args: {
       }
       expect(readStringField(operationRecord, 'kind')).toBe('save_point_create');
       expect(['accepted', 'running', 'succeeded']).toContain(readStringField(operationRecord, 'status'));
+      const operationId = readStringField(operationRecord, 'id');
+      if (!operationId) {
+        throw new Error(`save_point_operation_response_missing_id:${truncateEvidence(savePointBody)}`);
+      }
       await expect(args.dialog.getByTestId('files__restore-operation')).toBeVisible({ timeout: 10_000 });
-      return waitForSavePointIdByMessage(args);
+      return waitForSavePointIdByMessage({
+        ...args,
+        operationId,
+      });
     }
 
     const pendingEvidence = {
@@ -2005,23 +2012,51 @@ async function waitForSavePointIdByMessage(args: {
   projectId: string;
   libraryId: string;
   message: string;
+  operationId?: string;
 }): Promise<string> {
   let latestEvidence: SavePointEvidence | null = null;
+  let latestOperationEvidence: SavePointEvidence | null = null;
   let observedSavePointId: string | null = null;
-  await expect.poll(async () => {
+  const deadlineMs = Date.now() + 120_000;
+  const intervalsMs = [500, 1_000, 2_000, 5_000];
+  let intervalIndex = 0;
+
+  while (Date.now() <= deadlineMs) {
     latestEvidence = await readSavePointsEvidence(args);
-    if (!latestEvidence.ok) return null;
-    observedSavePointId = savePointListFindByMessage(latestEvidence.payload, args.message)?.id ?? null;
-    return observedSavePointId;
-  }, {
-    timeout: 120_000,
-    intervals: [500, 1_000, 2_000, 5_000],
-    message: 'save point did not become visible after admission',
-  }).toBeTruthy();
-  if (!observedSavePointId) {
-    throw new Error(`save_point_not_visible_after_admission:${JSON.stringify(latestEvidence)}`);
+    if (latestEvidence.ok) {
+      observedSavePointId = savePointListFindByMessage(latestEvidence.payload, args.message)?.id ?? null;
+      if (observedSavePointId) {
+        return observedSavePointId;
+      }
+    }
+
+    if (args.operationId) {
+      latestOperationEvidence = await readFileLibraryOperationEvidence({
+        ...args,
+        operationId: args.operationId,
+      });
+      const terminalFailure = readSavePointOperationTerminalFailure(latestOperationEvidence);
+      if (terminalFailure) {
+        throw new Error(`save_point_operation_terminal_${terminalFailure.status}_before_visibility:${JSON.stringify({
+          save_points: latestEvidence,
+          operation: latestOperationEvidence,
+        })}`);
+      }
+    }
+
+    const delayMs = Math.min(
+      intervalsMs[Math.min(intervalIndex, intervalsMs.length - 1)] ?? 5_000,
+      Math.max(0, deadlineMs - Date.now()),
+    );
+    intervalIndex += 1;
+    if (delayMs > 0) {
+      await args.page.waitForTimeout(delayMs);
+    }
   }
-  return observedSavePointId;
+  throw new Error(`save_point_not_visible_after_admission:${JSON.stringify({
+    save_points: latestEvidence,
+    operation: latestOperationEvidence,
+  })}`);
 }
 
 async function readSavePointsEvidence(args: {
@@ -2041,6 +2076,41 @@ async function readSavePointsEvidence(args: {
     body: truncateEvidence(body),
     payload: parseJsonEvidence(body),
   };
+}
+
+async function readFileLibraryOperationEvidence(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  operationId: string;
+}): Promise<SavePointEvidence> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-library-operations/${args.operationId}`,
+    { headers: await authHeaders(args.page) },
+  );
+  const body = await response.text();
+  return {
+    ok: response.ok(),
+    status: response.status(),
+    body: truncateEvidence(body),
+    payload: parseJsonEvidence(body),
+  };
+}
+
+function readSavePointOperationTerminalFailure(evidence: SavePointEvidence): {
+  status: string;
+} | null {
+  if (!evidence.ok) {
+    return null;
+  }
+  const record = asRecord(evidence.payload);
+  if (!record || readStringField(record, 'kind') !== 'save_point_create') {
+    return null;
+  }
+  const status = readStringField(record, 'status');
+  return status === 'failed' || status === 'recovery_required'
+    ? { status }
+    : null;
 }
 
 function readSavePointListItems(payload: unknown): SavePointListItemProjection[] {

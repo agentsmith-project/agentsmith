@@ -391,15 +391,13 @@ spec:
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
       serviceAccountName: afscp-runtime
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
-        fsGroupChangePolicy: OnRootMismatch
       initContainers:
         - name: afscp-schema-check
           image: "{{AFSCP_IMAGE}}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
           command:
             - /usr/local/bin/afscp-migrate
           args:
@@ -462,15 +460,13 @@ spec:
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
       serviceAccountName: afscp-runtime
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
-        fsGroupChangePolicy: OnRootMismatch
       initContainers:
         - name: afscp-schema-check
           image: "{{AFSCP_IMAGE}}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
           command:
             - /usr/local/bin/afscp-migrate
           args:

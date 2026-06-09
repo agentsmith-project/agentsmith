@@ -1252,6 +1252,13 @@ payload.stage ||= stage || null;
 payload.gate_mode ||= gateMode || null;
 payload.spec ||= spec || null;
 payload.grep_label ||= label || null;
+if (classification === 'clean_pass') {
+  payload.signals = [];
+  payload.call_summaries = [];
+  delete payload.failure;
+  delete payload.api;
+  delete payload.pod_manager_summary;
+}
 if (Array.isArray(payload.signals) && !Array.isArray(payload.call_summaries)) {
   payload.call_summaries = payload.signals;
 }
@@ -1751,6 +1758,7 @@ collect_child_internal_failure_evidence() {
         printf 'last_seen_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
       } > "${runtime_failure_marker}"
     else
+      annotate_runtime_readiness_details "${evidence_dir}" "clean_pass" "focused_gate_failed_without_runtime_readiness_marker" "${stage}" "${spec}" "${label}"
       rm -f "${runtime_failure_marker}" 2>/dev/null || true
     fi
   ) || true

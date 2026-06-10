@@ -95,6 +95,7 @@ Status fields must not include namespace, repository, volume, export id, credent
 
 - save points snapshot the whole file library HOME payload for the selected file library
 - save point create `accepted` / `pending` states mean the request has entered a controlled operation; they are not terminal success and must not be projected as a list-visible save point
+- after save point create or restore is `accepted` / `pending`, the public operation id must stay lookupable and resolve to terminal truth or an explicit typed pending/failed result; the operation must not silently disappear
 - save point terminal success requires one durable save point fact that the same file library can observe through operation projection, save point list, save point read/detail paths, and restore admission/readiness paths
 - if writer boundary, storage/materialization, or list-visible truth has not converged, the backend must keep the public operation typed pending or return a public-safe typed failed/recovery-required result; it must not leave users with an admitted operation, an unexplained terminal/empty projection, and a `200` empty save point list to wait on
 - restore starts as a direct controlled operation after the user confirms current file changes that were not saved to a save point will be discarded; user request accepted / local operation accepted means AgentSmith has entered pending control, not that AFSCP storage restore has started or succeeded
@@ -102,6 +103,7 @@ Status fields must not include namespace, repository, volume, export id, credent
 - restore readiness, blockers, stale state, and failures are backend-owned truth
 - before restore is projected ready, the owning backend must converge related writer fence/drain/flush and release state; ASBCP/sandbox owns workload writer lifecycle and readiness signals, not Files terminal success
 - restore pending states must remain pending/restoring in the UI until AFSCP restore terminal truth and the same file library list/read/restore visibility boundaries converge, or until the backend reports typed failure
+- terminal success must correspond to same file library visible facts through operation projection plus list/read/restore paths; terminal success without those visible facts is not a valid public operation result
 - restore changes files only; task conversation and trace state are not restored
 - keep this surface KISS/DRY/YAGNI: use existing operation/list/read/restore projections and owner-typed errors instead of adding gate, report, or retry layers to compensate for terminal truth gaps
 

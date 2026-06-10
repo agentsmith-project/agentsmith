@@ -49,6 +49,21 @@ const API_PACKAGE_MAIN = 'dist/index.js';
 const AGENTSMITH_APP_SERVICE_ACCOUNT = 'agentsmith-app';
 const AGENTSMITH_APP_CONFIG_MAP = 'agentsmith-app-config';
 const AGENTSMITH_APP_SECRET = 'agentsmith-app-secrets';
+const AGENTSMITH_APP_SECRET_KEYS = [
+  'DATABASE_URL',
+  'MONGO_URL',
+  'MONGO_DB_NAME',
+  'REDIS_URL',
+  'MINIO_ACCESS_KEY',
+  'MINIO_SECRET_KEY',
+  'AFSCP_SERVICE_TOKEN',
+  'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
+  'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+  'KEYCLOAK_ADMIN',
+  'KEYCLOAK_ADMIN_PASSWORD',
+  'ASBCP_SERVICE_KEY',
+  'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+] as const;
 const PRODUCT_SCHEMA_BOOTSTRAP_JOB = 'agentsmith-product-schema-bootstrap';
 const PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT = 'packages/api-entry-node/dist/product-schema-bootstrap.js';
 const API_PACKAGE_REQUIRED_BUILD_ARGS = [
@@ -84,14 +99,22 @@ const AFSCP_RUNTIME_SERVICE_ACCOUNT = 'afscp-runtime';
 const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
 const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
 const AFSCP_VOLUME_SECRET = 'afscp-default-volume-juicefs';
+const AFSCP_RUNTIME_SECRET_KEYS = [
+  'AFSCP_DATABASE_URL',
+  'AFSCP_POSTGRES_DSN',
+  'AFSCP_API_POSTGRES_DSN',
+  'AFSCP_EXPORT_GATEWAY_POSTGRES_DSN',
+  'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN',
+  'AFSCP_API_SERVICE_TOKENS',
+] as const;
 const AFSCP_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
 const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
 const AFSCP_SCHEMA_CHECK_INIT_CONTAINER = 'afscp-schema-check';
 const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
-const AFSCP_VOLUME_ROOT_PATH = '/var/lib/afscp/volumes/default';
+const AFSCP_VOLUME_ROOT_PATH = '/data/afscp/volumes/default';
 const AFSCP_JVS_CWD_VOLUME = 'afscp-jvs-cwd';
-const AFSCP_JVS_CWD_PATH = '/var/lib/afscp/jvs-cwd';
+const AFSCP_JVS_CWD_PATH = '/data/afscp/jvs-cwd';
 const ROLLOUT_CHECKSUM_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 type PackageJsonLike = {
@@ -251,8 +274,6 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
   for (const [kind, name] of [
     ['ServiceAccount', AFSCP_RUNTIME_SERVICE_ACCOUNT],
     ['ConfigMap', AFSCP_RUNTIME_CONFIG_MAP],
-    ['Secret', AFSCP_RUNTIME_SECRET],
-    ['Secret', AFSCP_VOLUME_SECRET],
     ['Job', AFSCP_SCHEMA_BOOTSTRAP_JOB],
     ['Job', AFSCP_VOLUME_BOOTSTRAP_JOB],
     ['ServiceAccount', ASBCP_SERVICE_ACCOUNT],
@@ -260,6 +281,19 @@ function checkRequiredResources(documents: readonly Record<string, unknown>[], f
   ] as const) {
     if (!hasResource(documents, kind, name)) {
       addFailure(failures, `${kind}/${name}`, `ASBCP ${kind} ${name} must be rendered`);
+    }
+  }
+}
+
+function checkNoRenderedSecretPayloads(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  for (const document of documents) {
+    if (resourceKind(document) !== 'Secret') {
+      continue;
+    }
+    for (const field of ['data', 'stringData', 'binaryData'] as const) {
+      if (Object.keys(asRecord(document[field])).length > 0) {
+        addFailure(failures, resourceId(document), `rendered Secret manifests must not include ${field}; use existing Secret references`);
+      }
     }
   }
 }
@@ -497,10 +531,6 @@ function checkAppConfig(documents: readonly Record<string, unknown>[], failures:
     resourceKind(document) === 'ConfigMap' && resourceName(document) === 'agentsmith-app-config',
   );
   const data = asRecord(asRecord(config).data);
-  const secret = documents.find((document) =>
-    resourceKind(document) === 'Secret' && resourceName(document) === 'agentsmith-app-secrets',
-  );
-  const stringData = asRecord(asRecord(secret).stringData);
 
   if (data.MBOS_UNIVERSAL_PROXY_BASE_URL !== 'http://agentsmith-llmup:8080') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'MBOS_UNIVERSAL_PROXY_BASE_URL must point to internal llmup service');
@@ -515,24 +545,6 @@ function checkAppConfig(documents: readonly Record<string, unknown>[], failures:
     if (typeof data[key] !== 'string' || !data[key]) {
       addFailure(failures, 'ConfigMap/agentsmith-app-config', `${key} must be rendered for API auth`);
     }
-  }
-  if (typeof stringData.MONGO_URL !== 'string' || !stringData.MONGO_URL) {
-    addFailure(failures, 'Secret/agentsmith-app-secrets', 'MONGO_URL must be rendered for Node API Mongo storage');
-  } else {
-    try {
-      const mongoUrl = new URL(stringData.MONGO_URL);
-      if (mongoUrl.pathname !== '/admin') {
-        addFailure(failures, 'Secret/agentsmith-app-secrets', 'MONGO_URL must use admin as the Mongo auth database');
-      }
-    } catch {
-      addFailure(failures, 'Secret/agentsmith-app-secrets', 'MONGO_URL must be a valid Mongo connection URL');
-    }
-  }
-  if (typeof stringData.MONGO_DB_NAME !== 'string' || !stringData.MONGO_DB_NAME) {
-    addFailure(failures, 'Secret/agentsmith-app-secrets', 'MONGO_DB_NAME must be rendered for Node API Mongo storage');
-  }
-  if (typeof stringData.MONGODB_URI === 'string' && !stringData.MONGO_URL) {
-    addFailure(failures, 'Secret/agentsmith-app-secrets', 'MONGODB_URI alone is not consumed by the Node API; render MONGO_URL and MONGO_DB_NAME');
   }
   if (data.MINIO_ENDPOINT !== 'substrate-minio') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'MINIO_ENDPOINT must be the host name without scheme or port');
@@ -602,7 +614,17 @@ function resourceFieldKeys(
   name: string,
 ): string[] {
   const field = kind === 'ConfigMap' ? 'data' : 'stringData';
-  return Object.keys(asRecord(resourceByKindName(documents, kind, name)[field]));
+  const renderedKeys = Object.keys(asRecord(resourceByKindName(documents, kind, name)[field]));
+  if (kind === 'ConfigMap' || renderedKeys.length > 0) {
+    return renderedKeys;
+  }
+  if (name === appSecretName(documents)) {
+    return [...AGENTSMITH_APP_SECRET_KEYS];
+  }
+  if (name === afscpRuntimeSecretName(documents)) {
+    return [...AFSCP_RUNTIME_SECRET_KEYS];
+  }
+  return [];
 }
 
 function projectedEnvKeys(
@@ -694,6 +716,54 @@ function resourceByKindName(
   name: string,
 ): Record<string, unknown> {
   return documents.find((document) => resourceKind(document) === kind && resourceName(document) === name) ?? {};
+}
+
+function firstString(values: readonly unknown[], fallback: string): string {
+  return values.find((value): value is string => typeof value === 'string' && value.length > 0) ?? fallback;
+}
+
+function appSecretName(documents: readonly Record<string, unknown>[]): string {
+  const productSchemaJob = resourceByKindName(documents, 'Job', PRODUCT_SCHEMA_BOOTSTRAP_JOB);
+  const productSchemaPodSpec = asRecord(asRecord(asRecord(productSchemaJob.spec).template).spec);
+  const productSchemaContainer = podSpecContainer(productSchemaPodSpec, 'containers', PRODUCT_SCHEMA_BOOTSTRAP_JOB);
+  const apiEnvFrom = deploymentContainerEnvFrom(documents, 'agentsmith-api', 'api');
+  const web = deploymentContainer(documents, 'agentsmith-web', 'web');
+
+  return firstString([
+    containerSecretKeyRef(productSchemaContainer, 'DATABASE_URL').name,
+    asRecord(apiEnvFrom.find((entry) => asRecord(entry.secretRef).name !== undefined)?.secretRef).name,
+    containerSecretKeyRef(web, 'MONGO_URL').name,
+  ], AGENTSMITH_APP_SECRET);
+}
+
+function afscpRuntimeSecretName(documents: readonly Record<string, unknown>[]): string {
+  const apiEnvFrom = deploymentContainerEnvFrom(documents, 'afscp-api', 'afscp-api');
+  const schemaJob = resourceByKindName(documents, 'Job', AFSCP_SCHEMA_BOOTSTRAP_JOB);
+  const schemaJobPodSpec = asRecord(asRecord(asRecord(schemaJob.spec).template).spec);
+  const schemaJobContainer = podSpecContainer(schemaJobPodSpec, 'containers', AFSCP_SCHEMA_BOOTSTRAP_JOB);
+  const schemaJobEnvFrom = Array.isArray(schemaJobContainer.envFrom) ? schemaJobContainer.envFrom.map(asRecord) : [];
+
+  return firstString([
+    asRecord(apiEnvFrom.find((entry) => asRecord(entry.secretRef).name !== undefined)?.secretRef).name,
+    asRecord(schemaJobEnvFrom.find((entry) => asRecord(entry.secretRef).name !== undefined)?.secretRef).name,
+  ], AFSCP_RUNTIME_SECRET);
+}
+
+function afscpVolumeSecretName(documents: readonly Record<string, unknown>[]): string {
+  const apiDeployment = resourceByKindName(documents, 'Deployment', 'afscp-api');
+  const namespace = resourceNamespace(apiDeployment) || resourceNamespace(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP));
+  const config = asRecord(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
+  const mountSecretRef = typeof config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS === 'string'
+    ? config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS.split('=')[1]
+    : undefined;
+  const mountSecretName = mountSecretRef?.startsWith(`${namespace}/`)
+    ? mountSecretRef.slice(`${namespace}/`.length)
+    : undefined;
+  const expectedPvName = `${namespace}-afscp-default-volume`;
+  const pv = resourceByKindName(documents, 'PersistentVolume', expectedPvName);
+  const csiSecretName = asRecord(asRecord(asRecord(pv.spec).csi).nodePublishSecretRef).name;
+
+  return firstString([csiSecretName, mountSecretName], AFSCP_VOLUME_SECRET);
 }
 
 function deploymentPodSpec(
@@ -802,11 +872,12 @@ function checkProductSchemaBootstrapJob(
   }
 
   const databaseUrlRef = containerSecretKeyRef(container, 'DATABASE_URL');
-  if (databaseUrlRef.name !== AGENTSMITH_APP_SECRET || databaseUrlRef.key !== 'DATABASE_URL') {
+  const expectedAppSecret = appSecretName(documents);
+  if (databaseUrlRef.name !== expectedAppSecret || databaseUrlRef.key !== 'DATABASE_URL') {
     addFailure(
       failures,
       `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
-      'product schema bootstrap Job must project DATABASE_URL from agentsmith-app-secrets/DATABASE_URL',
+      `product schema bootstrap Job must project DATABASE_URL from ${expectedAppSecret}/DATABASE_URL`,
     );
   }
   const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
@@ -871,8 +942,14 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
   if (!containerPorts(api).includes(20000) || servicePort(documents, 'agentsmith-api') !== 20000 || ingressPorts.get('/api/v1') !== 20000) {
     addFailure(failures, 'Service/agentsmith-api', 'api container, Service, and ingress must expose port 20000');
   }
+  const apiEnvFrom = deploymentContainerEnvFrom(documents, 'agentsmith-api', 'api');
   const apiProjectedKeys = projectedEnvKeys(documents, api);
-  if (!apiProjectedKeys.has('ASBCP_INTERNAL_BASE_URL') || !apiProjectedKeys.has('ASBCP_SERVICE_KEY')) {
+  if (
+    !hasEnvFromRef(apiEnvFrom, 'configMapRef', AGENTSMITH_APP_CONFIG_MAP)
+    || !hasEnvFromRef(apiEnvFrom, 'secretRef', appSecretName(documents))
+    || !apiProjectedKeys.has('ASBCP_INTERNAL_BASE_URL')
+    || !apiProjectedKeys.has('ASBCP_SERVICE_KEY')
+  ) {
     addFailure(failures, 'Deployment/agentsmith-api', 'api must project ASBCP_INTERNAL_BASE_URL and ASBCP_SERVICE_KEY for server-side ASBCP calls');
   }
   if (appConfigData.AFSCP_CALLER_SERVICE !== 'agentsmith-api') {
@@ -920,11 +997,12 @@ function checkLlmupContract(documents: readonly Record<string, unknown>[], failu
     addFailure(failures, 'Deployment/agentsmith-llmup', 'llmup must use client_provider_key auth mode');
   }
   const adminTokenRef = containerSecretKeyRef(container, 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN');
-  if (adminTokenRef.name !== 'agentsmith-app-secrets' || adminTokenRef.key !== 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN') {
+  const expectedAppSecret = appSecretName(documents);
+  if (adminTokenRef.name !== expectedAppSecret || adminTokenRef.key !== 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN') {
     addFailure(
       failures,
       'Deployment/agentsmith-llmup',
-      'llmup admin token must come from agentsmith-app-secrets/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+      `llmup admin token must come from ${expectedAppSecret}/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN`,
     );
   }
 
@@ -1014,6 +1092,7 @@ function checkAfscpPersistentVolumeResources(
   const pvAccessModes = Array.isArray(pvSpec.accessModes) ? pvSpec.accessModes : [];
   const pvcAccessModes = Array.isArray(pvcSpec.accessModes) ? pvcSpec.accessModes : [];
   const mountOptions = Array.isArray(pvSpec.mountOptions) ? pvSpec.mountOptions : [];
+  const expectedVolumeSecret = afscpVolumeSecretName(documents);
 
   if (resourceName(pv) !== expectedPvName) {
     addFailure(failures, `PersistentVolume/${expectedPvName}`, 'AFSCP default volume must render a static PersistentVolume');
@@ -1047,13 +1126,13 @@ function checkAfscpPersistentVolumeResources(
     csi.driver !== 'csi.juicefs.com'
     || csi.volumeHandle !== expectedPvName
     || csi.fsType !== 'juicefs'
-    || nodePublishSecretRef.name !== AFSCP_VOLUME_SECRET
+    || nodePublishSecretRef.name !== expectedVolumeSecret
     || nodePublishSecretRef.namespace !== namespace
   ) {
     addFailure(
       failures,
       `PersistentVolume/${expectedPvName}`,
-      'AFSCP default PersistentVolume must use JuiceFS CSI with the namespace-local volume Secret',
+      `AFSCP default PersistentVolume must use JuiceFS CSI with the namespace-local volume Secret ${expectedVolumeSecret}`,
     );
   }
   if (!mountOptions.includes(`subdir=/afscp/${defaultVolumeId}`)) {
@@ -1068,11 +1147,12 @@ function checkAfscpEnvFrom(
   failures: CheckFailure[],
 ): void {
   const envFrom = deploymentContainerEnvFrom(documents, deploymentName, containerName);
+  const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
   if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP)) {
     addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must consume ${AFSCP_RUNTIME_CONFIG_MAP}`);
   }
-  if (!hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
-    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must consume ${AFSCP_RUNTIME_SECRET}`);
+  if (!hasEnvFromRef(envFrom, 'secretRef', expectedRuntimeSecret)) {
+    addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must consume ${expectedRuntimeSecret}`);
   }
 }
 
@@ -1113,7 +1193,8 @@ function checkAfscpBootstrapJob(
     addFailure(failures, `Job/${jobName}`, `${label} Job must run ${command} ${args.join(' ')}`);
   }
   const envFrom = Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
-  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
+  const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', expectedRuntimeSecret)) {
     addFailure(failures, `Job/${jobName}`, `${label} Job must consume the AFSCP runtime config and secrets`);
   }
 }
@@ -1136,7 +1217,8 @@ function checkAfscpSchemaInitContainer(
     addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must gate startup on afscp-migrate --check`);
   }
   const envFrom = Array.isArray(init.envFrom) ? init.envFrom.map(asRecord) : [];
-  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', AFSCP_RUNTIME_SECRET)) {
+  const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', expectedRuntimeSecret)) {
     addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} schema check init container must consume the AFSCP runtime config and secrets`);
   }
 }
@@ -1260,10 +1342,10 @@ function checkAfscpDefaultVolumeBootstrapConfig(
 function checkAfscpContract(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   const apiDeployment = resourceByKindName(documents, 'Deployment', 'afscp-api');
   const config = asRecord(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
-  const secrets = asRecord(resourceByKindName(documents, 'Secret', AFSCP_RUNTIME_SECRET).stringData);
-  const volumeSecret = asRecord(resourceByKindName(documents, 'Secret', AFSCP_VOLUME_SECRET).stringData);
   const namespace = resourceNamespace(apiDeployment) || resourceNamespace(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP));
   const afscpImage = deploymentContainer(documents, 'afscp-api', 'afscp-api').image;
+  const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
+  const expectedVolumeSecret = afscpVolumeSecretName(documents);
 
   if (config.AFSCP_API_MODE !== 'internal') {
     addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP API must run in internal mode');
@@ -1274,7 +1356,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   if (config.AFSCP_VOLUME_ROOTS !== config.AFSCP_API_VOLUME_ROOTS || config.AFSCP_EXPORT_GATEWAY_VOLUME_ROOTS !== config.AFSCP_API_VOLUME_ROOTS) {
     addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP API, worker, and export gateway must share the same volume root map');
   }
-  if (config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS !== `${config.AFSCP_API_VOLUME_ROOTS}`.split('=')[0] + `=${namespace}/${AFSCP_VOLUME_SECRET}`) {
+  if (config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS !== `${config.AFSCP_API_VOLUME_ROOTS}`.split('=')[0] + `=${namespace}/${expectedVolumeSecret}`) {
     addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP workload mount Secret refs must point to the namespace-local JuiceFS CSI Secret');
   }
   if (config.AFSCP_JVS_CWD !== AFSCP_JVS_CWD_PATH) {
@@ -1285,7 +1367,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     );
   }
   for (const key of ['AFSCP_JVS_BINARY_PATH', 'AFSCP_JVS_BINARY_SHA256']) {
-    if (Object.prototype.hasOwnProperty.call(config, key) || Object.prototype.hasOwnProperty.call(secrets, key)) {
+    if (Object.prototype.hasOwnProperty.call(config, key)) {
       addFailure(
         failures,
         `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`,
@@ -1325,34 +1407,8 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   if (webDAVExportPublicBaseURL.replace(/\/+$/u, '').endsWith('/e')) {
     addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP WebDAV export public base URL must not include /e; AFSCP API appends /e/{exportId}/ and would render /e/e/ paths');
   }
-  for (const key of [
-    'AFSCP_DATABASE_URL',
-    'AFSCP_POSTGRES_DSN',
-    'AFSCP_API_POSTGRES_DSN',
-    'AFSCP_EXPORT_GATEWAY_POSTGRES_DSN',
-    'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN',
-    'AFSCP_API_SERVICE_TOKENS',
-  ]) {
-    if (typeof secrets[key] !== 'string' || !secrets[key]) {
-      addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, `${key} must be rendered for AFSCP runtime`);
-    }
-  }
-  if (!String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes('agentsmith-api=') || !String(secrets.AFSCP_API_SERVICE_TOKENS ?? '').includes(`${ASBCP_SERVICE_ACCOUNT}=`)) {
-    addFailure(failures, `Secret/${AFSCP_RUNTIME_SECRET}`, 'AFSCP service tokens must authorize product, bootstrap, and ASBCP callers');
-  }
-  for (const key of ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key']) {
-    if (typeof volumeSecret[key] !== 'string' || !volumeSecret[key]) {
-      addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, `JuiceFS CSI Secret must include ${key}`);
-    }
-  }
-  if (volumeSecret.storage !== 'minio' || !String(volumeSecret.bucket ?? '').startsWith(`http://substrate-minio.${namespace}.svc.cluster.local:9000/`)) {
-    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret must bind to internal substrate MinIO');
-  }
-  if (!String(volumeSecret.metaurl ?? '').includes(`@substrate-postgresql.${namespace}.svc.cluster.local:5432/`)) {
-    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret metaurl must use the namespace FQDN for substrate PostgreSQL metadata');
-  }
-  if (String(volumeSecret.metaurl ?? '').includes('@substrate-postgresql:5432/')) {
-    addFailure(failures, `Secret/${AFSCP_VOLUME_SECRET}`, 'AFSCP JuiceFS CSI Secret metaurl must not use a short substrate PostgreSQL service name');
+  if (!expectedRuntimeSecret || !expectedVolumeSecret) {
+    addFailure(failures, `ConfigMap/${AFSCP_RUNTIME_CONFIG_MAP}`, 'AFSCP existing Secret names must be available through workload and volume references');
   }
 
   const api = deploymentContainer(documents, 'afscp-api', 'afscp-api');
@@ -1443,10 +1499,9 @@ function checkAsbcpContract(
   const container = deploymentContainer(documents, ASBCP_SERVICE_ACCOUNT, 'asbcp');
   const configMap = resourceByKindName(documents, 'ConfigMap', ASBCP_CONFIG_MAP);
   const appConfigMap = resourceByKindName(documents, 'ConfigMap', 'agentsmith-app-config');
-  const appSecret = resourceByKindName(documents, 'Secret', 'agentsmith-app-secrets');
   const namespace = resourceNamespace(deployment) || resourceNamespace(configMap);
   const appConfigData = asRecord(appConfigMap.data);
-  const appSecretData = asRecord(appSecret.stringData);
+  const expectedAppSecret = appSecretName(documents);
   for (const forbiddenKey of [
     'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE',
     'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE',
@@ -1474,9 +1529,6 @@ function checkAsbcpContract(
   if (appConfigData.ASBCP_INTERNAL_BASE_URL !== 'http://agentsmith-sandbox-control-plane:8080') {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'ASBCP_INTERNAL_BASE_URL must point to the internal ASBCP Service');
   }
-  if (typeof appSecretData.ASBCP_SERVICE_KEY !== 'string' || appSecretData.ASBCP_SERVICE_KEY.length === 0) {
-    addFailure(failures, 'Secret/agentsmith-app-secrets', 'ASBCP_SERVICE_KEY must be rendered only as an app Secret value');
-  }
   addMissingEnvValueFailure(
     failures,
     container,
@@ -1502,9 +1554,9 @@ function checkAsbcpContract(
     failures,
     container,
     'ASBCP_AFSCP_ORCHESTRATOR_TOKEN',
-    'agentsmith-app-secrets',
+    expectedAppSecret,
     'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
-    'ASBCP AFSCP orchestrator token must come from agentsmith-app-secrets/AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+    `ASBCP AFSCP orchestrator token must come from ${expectedAppSecret}/AFSCP_ORCHESTRATOR_SERVICE_TOKEN`,
   );
   addMissingEnvValueFailure(
     failures,
@@ -1541,9 +1593,9 @@ function checkAsbcpContract(
     failures,
     container,
     'ASBCP_SERVICE_KEYS',
-    'agentsmith-app-secrets',
+    expectedAppSecret,
     'ASBCP_SERVICE_KEY',
-    'ASBCP service keys must come from agentsmith-app-secrets/ASBCP_SERVICE_KEY',
+    `ASBCP service keys must come from ${expectedAppSecret}/ASBCP_SERVICE_KEY`,
   );
 
   const volumeMounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
@@ -1593,11 +1645,12 @@ function checkWebServerRouteEnv(documents: readonly Record<string, unknown>[], f
   }
   for (const key of ['MONGO_URL', 'MONGO_DB_NAME']) {
     const ref = containerSecretKeyRef(web, key);
-    if (ref.name !== AGENTSMITH_APP_SECRET || ref.key !== key) {
+    const expectedAppSecret = appSecretName(documents);
+    if (ref.name !== expectedAppSecret || ref.key !== key) {
       addFailure(
         failures,
         'Deployment/agentsmith-web',
-        `web must project ${key} from ${AGENTSMITH_APP_SECRET}/${key}`,
+        `web must project ${key} from ${expectedAppSecret}/${key}`,
       );
     }
   }
@@ -1634,6 +1687,7 @@ export function checkRenderedOutput(
   if (parsed.ok) {
     failures.push(...checkAddressTruth(renderedYaml).failures);
     checkRequiredResources(parsed.documents, failures);
+    checkNoRenderedSecretPayloads(parsed.documents, failures);
     checkSubstrateBoundary(parsed.documents, failures);
     checkIngressRoutes(parsed.documents, failures);
     checkInternalServiceTypes(parsed.documents, failures);

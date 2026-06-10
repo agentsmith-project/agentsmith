@@ -254,15 +254,18 @@ function descriptorSubject(descriptor: CurrentDeployTemplatePackage): Omit<
   };
 }
 
-function readDeploymentManifestTemplates(repoRoot: string): string[] {
+function readDeploymentManifestAppTemplates(repoRoot: string): string[] {
   const manifest = readJson(join(repoRoot, 'infra/deploy/unified/deployment.manifest.json'));
   const templates = manifest.templates;
   if (templates === null || typeof templates !== 'object' || Array.isArray(templates)) {
     throw new Error('test fixture deployment manifest templates must be an object');
   }
+  const appTemplates = (templates as Record<string, unknown>).app;
+  if (!Array.isArray(appTemplates)) {
+    throw new Error('test fixture deployment manifest templates.app must be an array');
+  }
 
-  return Object.values(templates)
-    .flatMap((group) => Array.isArray(group) ? group : [])
+  return appTemplates
     .filter((path): path is string => typeof path === 'string')
     .map((path) => path.endsWith('.tpl') ? path.slice(0, -'.tpl'.length) : path)
     .sort();
@@ -730,13 +733,13 @@ describe('deploy template package generator', () => {
     expect(result.descriptor.manifest_sha256).toBe(sha256BufferDigest(archivedManifestBytes));
   });
 
-  it('archives only manifest.json and deployment manifest declared templates in release-kit paths', () => {
+  it('archives only manifest.json and deployment manifest app templates in release-kit paths', () => {
     const result = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot: REPO_ROOT,
       outputDir: outputRoot(),
       sourceGitSha: GIT_SHA,
     });
-    const templates = readDeploymentManifestTemplates(REPO_ROOT);
+    const templates = readDeploymentManifestAppTemplates(REPO_ROOT);
     const entries = archiveList(result.archivePath);
 
     expect(entries).toEqual([
@@ -752,8 +755,31 @@ describe('deploy template package generator', () => {
     ]) {
       expect(entries).not.toContain(forbidden);
     }
+    expect(entries.some((entry) => entry.startsWith('templates/local-kind-admin-preflight/'))).toBe(false);
+    expect(entries).toContain('templates/app/workloads.yaml');
     expect(entries.some((entry) => entry.startsWith('scripts/'))).toBe(false);
     expect(entries.some((entry) => entry.includes('node_modules'))).toBe(false);
+  });
+
+  it('does not collect image placeholders from local-kind admin preflight templates', () => {
+    const repoRoot = makeTempRoot();
+    writeFileSync(
+      join(repoRoot, 'infra/deploy/unified/templates/local-kind-admin-preflight/namespace.yaml.tpl'),
+      'kind: Pod\nimage: "{{MYSTERY_IMAGE}}"\n',
+    );
+    const result = generateDeployTemplatePackage(buildGenerationInput(), {
+      repoRoot,
+      outputDir: outputRoot(),
+      sourceGitSha: GIT_SHA,
+    });
+    const entries = archiveList(result.archivePath);
+
+    expect(result.manifest.required_image_ids).toEqual([
+      'agentsmith_app',
+      'ingress_nginx_certgen',
+      'ingress_nginx_controller',
+    ]);
+    expect(entries.some((entry) => entry.startsWith('templates/local-kind-admin-preflight/'))).toBe(false);
   });
 
   it('stages release-kit canonical placeholders for product image handoff', () => {
@@ -773,6 +799,27 @@ describe('deploy template package generator', () => {
     expect(workloads).not.toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
     expect(config).not.toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
     expect(workloads).not.toContain('{{NAMESPACE}}');
+  });
+
+  it('packages deploy templates without raw Secret payload manifests', () => {
+    const result = generateDeployTemplatePackage(buildGenerationInput(), {
+      repoRoot: REPO_ROOT,
+      outputDir: outputRoot(),
+      sourceGitSha: GIT_SHA,
+    });
+    const entries = archiveList(result.archivePath).filter((entry) => entry.startsWith('templates/') && entry.endsWith('.yaml'));
+
+    for (const entry of entries) {
+      const content = readArchiveMemberBytes(result.archivePath, entry).toString('utf8');
+      expect(content).not.toMatch(/kind:\s*Secret[\s\S]*?\n(?:data|stringData|binaryData):/u);
+    }
+
+    const workloads = readArchiveMemberBytes(result.archivePath, 'templates/app/workloads.yaml').toString('utf8');
+    const afscp = readArchiveMemberBytes(result.archivePath, 'templates/app/afscp.yaml').toString('utf8');
+    expect(workloads).toContain('secretKeyRef:');
+    expect(workloads).toContain('secretRef:');
+    expect(afscp).toContain('secretRef:');
+    expect(afscp).toContain('nodePublishSecretRef:');
   });
 
   it('fails fast when a template adds an undeclared image placeholder', () => {

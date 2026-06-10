@@ -17,14 +17,7 @@ afterEach(async () => {
 function removeLine(source: string, key: string): string {
   return source
     .split('\n')
-    .filter((line) => !line.trimStart().startsWith(`${key}:`))
-    .join('\n');
-}
-
-function removeEnvAssignment(source: string, key: string): string {
-  return source
-    .split('\n')
-    .filter((line) => !line.startsWith(`${key}=`))
+    .filter((line) => !line.trimStart().startsWith(`${key}:`) && !line.trimStart().startsWith(`- name: ${key}`))
     .join('\n');
 }
 
@@ -52,8 +45,9 @@ describe('unified deploy address truth producer', () => {
       expect(rendered.output).not.toContain('INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE');
       expect(rendered.output).not.toContain('INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE');
       expect(rendered.output).not.toContain('JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT');
-      expect(rendered.output).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:');
-      expect(rendered.output).toContain('ASBCP_SERVICE_KEY:');
+      expect(rendered.output).toContain('key: MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+      expect(rendered.output).toContain('key: ASBCP_SERVICE_KEY');
+      expect(rendered.output).not.toMatch(/\nkind: Secret\n/u);
       expect(rendered.output).not.toContain('@substrate-postgresql:15432/');
       expect(rendered.output).not.toContain('@substrate-mongodb:27027/');
       expect(rendered.output).not.toContain('@substrate-redis:16379/');
@@ -63,21 +57,21 @@ describe('unified deploy address truth producer', () => {
     },
   );
 
-  it('rejects missing app-owned ASBCP and llmup secrets', async () => {
+  it('rejects missing app-owned ASBCP and llmup secret references', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
-    const withoutAsbcpKey = removeLine(rendered.output, 'ASBCP_SERVICE_KEY');
-    const withoutLlmupToken = removeLine(rendered.output, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+    const withoutAsbcpKey = rendered.output.replace('name: ASBCP_SERVICE_KEYS', 'name: ASBCP_SERVICE_KEYS_MISSING');
+    const withoutLlmupToken = rendered.output.replace('name: LLM_UNIVERSAL_PROXY_ADMIN_TOKEN', 'name: LLM_UNIVERSAL_PROXY_ADMIN_TOKEN_MISSING');
 
     expect(checkAddressTruth(withoutAsbcpKey).failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
+        path: 'Deployment/agentsmith-sandbox-control-plane',
+        message: expect.stringContaining('ASBCP_SERVICE_KEYS'),
       }),
     ]));
     expect(checkAddressTruth(withoutLlmupToken).failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN'),
+        path: 'Deployment/agentsmith-llmup',
+        message: expect.stringContaining('LLM_UNIVERSAL_PROXY_ADMIN_TOKEN'),
       }),
     ]));
   });
@@ -129,9 +123,6 @@ describe('unified deploy address truth producer', () => {
   it('rejects app dependency config that reuses Docker substrate target ports', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const withExternalPorts = rendered.output
-      .replace('@substrate-postgresql:5432/', '@substrate-postgresql:15432/')
-      .replace('@substrate-mongodb:27017/', '@substrate-mongodb:27027/')
-      .replace('@substrate-redis:6379/0', '@substrate-redis:16379/0')
       .replace('MINIO_PORT: "9000"', 'MINIO_PORT: "19000"')
       .replace(
         'INTERNAL_KEYCLOAK_BASE_URL: "http://substrate-keycloak:8080"',
@@ -139,18 +130,6 @@ describe('unified deploy address truth producer', () => {
       );
 
     expect(checkAddressTruth(withExternalPorts).failures).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('DATABASE_URL must use substrate-postgresql:5432'),
-      }),
-      expect.objectContaining({
-        path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('MONGO_URL must use substrate-mongodb:27017'),
-      }),
-      expect.objectContaining({
-        path: 'Secret/agentsmith-app-secrets',
-        message: expect.stringContaining('REDIS_URL must use substrate-redis:6379'),
-      }),
       expect.objectContaining({
         path: 'ConfigMap/agentsmith-app-config',
         message: expect.stringContaining('MINIO_PORT must be 9000'),
@@ -247,29 +226,37 @@ describe('unified deploy address truth producer', () => {
     ]));
   });
 
-  it('fails render when required app-owned address secrets are absent from site env', async () => {
+  it('uses stable default existing Secret refs when site env omits explicit secret ref values', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const siteEnv = await readFile(rendered.siteEnvPath, 'utf8');
-    const missingSecrets = siteEnv
+    const withoutExplicitRefs = siteEnv
       .split('\n')
       .filter((line) =>
-        !line.startsWith('ASBCP_SERVICE_KEY=') && !line.startsWith('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='),
+        !line.startsWith('AGENTSMITH_APP_REF=')
+        && !line.startsWith('AGENTSMITH_APP_REF_REVISION=')
+        && !line.startsWith('AFSCP_RUNTIME_REF=')
+        && !line.startsWith('AFSCP_RUNTIME_REF_REVISION=')
+        && !line.startsWith('AFSCP_VOLUME_REF=')
+        && !line.startsWith('AFSCP_VOLUME_REF_REVISION='),
       )
       .join('\n');
 
-    await expect(renderUnifiedDeployToString({
+    const renderedWithDefaults = await renderUnifiedDeployToString({
       profile: 'local-kind',
-      siteEnv: missingSecrets,
-    })).rejects.toThrow(/ASBCP_SERVICE_KEY|MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN/u);
+      siteEnv: withoutExplicitRefs,
+    });
+
+    expect(checkAddressTruth(renderedWithDefaults.output).ok).toBe(true);
+    expect(renderedWithDefaults.output).toContain('name: agentsmith-app-secrets');
   });
 
-  it('writes failed producer evidence when app site env parsing fails before address checks', async () => {
+  it('writes failed producer evidence when app site env secret ref parsing fails before address checks', async () => {
     const root = await createTempRoot();
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const siteEnvPath = join(root, 'site.env');
     await writeFile(
       siteEnvPath,
-      removeEnvAssignment(await readFile(rendered.siteEnvPath, 'utf8'), 'ASBCP_SERVICE_KEY'),
+      (await readFile(rendered.siteEnvPath, 'utf8')).replace(/^AGENTSMITH_APP_REF=.*$/mu, 'AGENTSMITH_APP_REF=Invalid_Secret_Name'),
       'utf8',
     );
 
@@ -288,7 +275,7 @@ describe('unified deploy address truth producer', () => {
     expect(result.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'local-kind:render',
-        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
+        message: expect.stringContaining('AGENTSMITH_APP_REF'),
       }),
     ]));
     expect(report.producer).toBe('address-truth');
@@ -296,7 +283,7 @@ describe('unified deploy address truth producer', () => {
     expect(report.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: 'local-kind:render',
-        message: expect.stringContaining('ASBCP_SERVICE_KEY'),
+        message: expect.stringContaining('AGENTSMITH_APP_REF'),
       }),
     ]));
   });

@@ -34,7 +34,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: DATABASE_URL
 ---
 apiVersion: apps/v1
@@ -114,12 +114,12 @@ spec:
             - name: MONGO_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: MONGO_URL
             - name: MONGO_DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: MONGO_DB_NAME
 ---
 apiVersion: v1
@@ -189,7 +189,7 @@ spec:
             - configMapRef:
                 name: agentsmith-app-config
             - secretRef:
-                name: agentsmith-app-secrets
+                name: {{AGENTSMITH_APP_REF}}
 ---
 apiVersion: v1
 kind: Service
@@ -253,7 +253,7 @@ spec:
             - name: LLM_UNIVERSAL_PROXY_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN
           readinessProbe:
             httpGet:
@@ -340,7 +340,7 @@ spec:
             - name: ASBCP_SERVICE_KEYS
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: ASBCP_SERVICE_KEY
             - name: ASBCP_WORKLOAD_NAMESPACE
               value: "{{NAMESPACE}}"
@@ -349,7 +349,7 @@ spec:
             - name: ASBCP_AFSCP_ORCHESTRATOR_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: agentsmith-app-secrets
+                  name: {{AGENTSMITH_APP_REF}}
                   key: AFSCP_ORCHESTRATOR_SERVICE_TOKEN
             - name: ASBCP_AFSCP_CALLER_SERVICE
               value: agentsmith-sandbox-control-plane

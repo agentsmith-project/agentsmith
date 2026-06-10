@@ -56,6 +56,11 @@ import {
   type SubstrateRuntimeTruthSummary,
 } from './substrate-lifecycle';
 import {
+  SUBSTRATE_NATIVE_PORTS,
+  substrateMinioInternalMountEndpoint,
+  substrateServiceFqdn,
+} from './substrate-address-roles';
+import {
   LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS,
   LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
   LEGACY_ASBCP_RESIDUE_MATCHERS,
@@ -136,6 +141,8 @@ type OperationEvidence = {
     | 'afscp-static-volume-reset-delete-workloads'
     | 'afscp-static-volume-reset-delete-pvc'
     | 'afscp-static-volume-reset-delete-pv'
+    | 'local-kind-existing-secrets-dry-run'
+    | 'local-kind-existing-secrets-apply'
     | 'product-schema-bootstrap-delete-previous'
     | 'product-schema-bootstrap-wait'
     | 'product-schema-bootstrap-diagnostics-job-yaml'
@@ -305,6 +312,7 @@ export type LocalKindRolloutProducerResult = {
 type RenderedInputs = {
   preflightYaml: string;
   appYaml: string;
+  localKindExistingSecretsYaml: string;
   secretValues: string[];
   publicBaseUrl: string;
   siteEnvValues: Record<string, string>;
@@ -357,6 +365,14 @@ const AFSCP_WORKLOAD_DEPLOYMENTS = [
   'afscp-worker',
   'afscp-export-gateway',
 ] as const;
+const DEFAULT_APP_REF = 'agentsmith-app-secrets';
+const DEFAULT_AFSCP_RUNTIME_REF = 'afscp-runtime-secrets';
+const DEFAULT_AFSCP_VOLUME_REF = 'afscp-default-volume-juicefs';
+const DEFAULT_LLMUP_ADMIN_TOKEN = 'agentsmith-dev-llmup-admin-token';
+const DEFAULT_ASBCP_SERVICE_KEY = 'agentsmith-dev-asbcp-service-key';
+const DEFAULT_AFSCP_SERVICE_TOKEN = 'agentsmith-dev-afscp-product-token';
+const DEFAULT_AFSCP_BOOTSTRAP_SERVICE_TOKEN = 'agentsmith-dev-afscp-bootstrap-token';
+const DEFAULT_AFSCP_ORCHESTRATOR_SERVICE_TOKEN = 'agentsmith-dev-afscp-orchestrator-token';
 const ROLLOUT_DEPLOYMENTS = [
   'agentsmith-web',
   'agentsmith-api',
@@ -364,7 +380,7 @@ const ROLLOUT_DEPLOYMENTS = [
   ...AFSCP_WORKLOAD_DEPLOYMENTS,
   'agentsmith-sandbox-control-plane',
 ] as const;
-const SECRET_FIELD_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
+const SECRET_FIELD_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|SERVICE[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
 const SECRET_VALUE_PATTERN = /(?:password|secret|token|access[_-]?key|api[_-]?key|credential|client[_-]?secret)/iu;
 const PUBLIC_VALUE_DENYLIST = new Set(['agentsmith', 'admin', 'admin-cli', 'public', 'true', 'false']);
 const EMPTY_SUMMARY: ResourceSummary = {
@@ -506,6 +522,109 @@ function collectRenderedSecretValues(renderedYaml: string): string[] {
   return [...secrets].sort((left, right) => right.length - left.length);
 }
 
+function collectEnvSecretValues(values: Record<string, string>): string[] {
+  const secrets = new Set<string>();
+  for (const [key, value] of Object.entries(values)) {
+    addSecretValue(secrets, value, { force: SECRET_FIELD_KEY_PATTERN.test(key) || SECRET_VALUE_PATTERN.test(key) });
+    addAfscpCompositeServiceTokens(secrets, key, value);
+  }
+
+  return [...secrets].sort((left, right) => right.length - left.length);
+}
+
+function mergeSecretValues(...values: readonly string[][]): string[] {
+  return [...new Set(values.flat())].sort((left, right) => right.length - left.length);
+}
+
+function siteRef(values: Record<string, string>, key: string, fallback: string): string {
+  const value = values[key]?.trim();
+  return value || fallback;
+}
+
+function localDiagnosticSecretValue(values: Record<string, string>, key: string, fallback: string): string {
+  const value = values[key]?.trim();
+  return value || fallback;
+}
+
+function yamlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function localKindExistingSecretsYaml(options: {
+  namespace: string;
+  siteEnv: Record<string, string>;
+  substrateTruth: Record<string, string>;
+}): string {
+  const appRef = siteRef(options.siteEnv, 'AGENTSMITH_APP_REF', DEFAULT_APP_REF);
+  const runtimeRef = siteRef(options.siteEnv, 'AFSCP_RUNTIME_REF', DEFAULT_AFSCP_RUNTIME_REF);
+  const volumeRef = siteRef(options.siteEnv, 'AFSCP_VOLUME_REF', DEFAULT_AFSCP_VOLUME_REF);
+  const productToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_SERVICE_TOKEN', DEFAULT_AFSCP_SERVICE_TOKEN);
+  const bootstrapToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_BOOTSTRAP_SERVICE_TOKEN', DEFAULT_AFSCP_BOOTSTRAP_SERVICE_TOKEN);
+  const orchestratorToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN', DEFAULT_AFSCP_ORCHESTRATOR_SERVICE_TOKEN);
+  const postgresDsn = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?sslmode=disable`;
+  const appDatabaseUrl = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}`;
+  const mongoUrl = `mongodb://${options.substrateTruth.SUBSTRATE_MONGODB_USER}:${options.substrateTruth.SUBSTRATE_MONGODB_PASSWORD}@substrate-mongodb:${SUBSTRATE_NATIVE_PORTS.mongodb}/admin`;
+  const redisUrl = `redis://:${options.substrateTruth.SUBSTRATE_REDIS_PASSWORD}@substrate-redis:${SUBSTRATE_NATIVE_PORTS.redis}/0`;
+  const volumeMetaUrl = `postgres://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@${substrateServiceFqdn('postgresql', options.namespace)}:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?sslmode=disable`;
+  const volumeBucket = `${substrateMinioInternalMountEndpoint(options.namespace)}/${options.substrateTruth.SUBSTRATE_MINIO_BUCKET}`;
+  const documents: Array<{ name: string; data: Record<string, string> }> = [
+    {
+      name: appRef,
+      data: {
+        DATABASE_URL: appDatabaseUrl,
+        MONGO_URL: mongoUrl,
+        MONGO_DB_NAME: options.substrateTruth.SUBSTRATE_MONGODB_DATABASE,
+        REDIS_URL: redisUrl,
+        MINIO_ACCESS_KEY: options.substrateTruth.SUBSTRATE_MINIO_ACCESS_KEY,
+        MINIO_SECRET_KEY: options.substrateTruth.SUBSTRATE_MINIO_SECRET_KEY,
+        AFSCP_SERVICE_TOKEN: productToken,
+        AFSCP_BOOTSTRAP_SERVICE_TOKEN: bootstrapToken,
+        AFSCP_ORCHESTRATOR_SERVICE_TOKEN: orchestratorToken,
+        KEYCLOAK_ADMIN: options.substrateTruth.SUBSTRATE_KEYCLOAK_ADMIN,
+        KEYCLOAK_ADMIN_PASSWORD: options.substrateTruth.SUBSTRATE_KEYCLOAK_ADMIN_PASSWORD,
+        ASBCP_SERVICE_KEY: localDiagnosticSecretValue(options.siteEnv, 'ASBCP_SERVICE_KEY', DEFAULT_ASBCP_SERVICE_KEY),
+        MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: localDiagnosticSecretValue(options.siteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN', DEFAULT_LLMUP_ADMIN_TOKEN),
+      },
+    },
+    {
+      name: runtimeRef,
+      data: {
+        AFSCP_DATABASE_URL: postgresDsn,
+        AFSCP_POSTGRES_DSN: postgresDsn,
+        AFSCP_API_POSTGRES_DSN: postgresDsn,
+        AFSCP_EXPORT_GATEWAY_POSTGRES_DSN: postgresDsn,
+        AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN: postgresDsn,
+        AFSCP_API_SERVICE_TOKENS: `agentsmith-api=${productToken},agentsmith-bootstrap=${bootstrapToken},agentsmith-sandbox-control-plane=${orchestratorToken}`,
+      },
+    },
+    {
+      name: volumeRef,
+      data: {
+        name: `${options.namespace}-afscp-default`,
+        metaurl: volumeMetaUrl,
+        storage: 'minio',
+        bucket: volumeBucket,
+        'access-key': options.substrateTruth.SUBSTRATE_MINIO_ACCESS_KEY,
+        'secret-key': options.substrateTruth.SUBSTRATE_MINIO_SECRET_KEY,
+      },
+    },
+  ];
+
+  return `${documents.map((document) => [
+    'apiVersion: v1',
+    'kind: Secret',
+    'metadata:',
+    `  name: ${document.name}`,
+    `  namespace: ${options.namespace}`,
+    '  labels:',
+    '    app.kubernetes.io/name: agentsmith',
+    '    app.kubernetes.io/part-of: agentsmith-local-diagnostic',
+    'type: Opaque',
+    'stringData:',
+    ...Object.entries(document.data).map(([key, value]) => `  ${key}: ${yamlString(value)}`),
+  ].join('\n')).join('\n---\n')}\n`;
+}
+
 function redactDiagnostic(value: string, secretValues: readonly string[] = [], maxLength = 4000): string {
   let redacted = value
     .replace(/\/\/([^:\s/]+):([^@\s/]+)@/gu, '//$1:[REDACTED]@')
@@ -621,6 +740,26 @@ function renderedContainerEnvEntry(container: Record<string, unknown>, name: str
   return env.find((entry) => entry.name === name) ?? {};
 }
 
+function renderedContainerSecretKeyRef(container: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(asRecord(renderedContainerEnvEntry(container, name).valueFrom).secretKeyRef);
+}
+
+function renderedAppRef(appYaml: string): string {
+  const productSchema = findRenderedResource(appYaml, 'Job', PRODUCT_SCHEMA_BOOTSTRAP_JOB);
+  const productSchemaPodSpec = asRecord(asRecord(asRecord(productSchema.spec).template).spec);
+  const productSchemaContainers = Array.isArray(productSchemaPodSpec.containers) ? productSchemaPodSpec.containers.map(asRecord) : [];
+  const productSchemaContainer = productSchemaContainers.find((container) => container.name === PRODUCT_SCHEMA_BOOTSTRAP_JOB) ?? {};
+  const productSchemaRef = renderedContainerSecretKeyRef(productSchemaContainer, 'DATABASE_URL').name;
+  if (typeof productSchemaRef === 'string' && productSchemaRef.length > 0) {
+    return productSchemaRef;
+  }
+
+  const api = renderedDeploymentContainer(appYaml, 'agentsmith-api', 'api');
+  const apiEnvFrom = Array.isArray(api.envFrom) ? api.envFrom.map(asRecord) : [];
+  const apiRef = asRecord(apiEnvFrom.find((entry) => asRecord(entry.secretRef).name !== undefined)?.secretRef).name;
+  return typeof apiRef === 'string' && apiRef.length > 0 ? apiRef : DEFAULT_APP_REF;
+}
+
 function renderedStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -635,6 +774,8 @@ function buildLlmupConfigHealthEvidence(
   const container = renderedDeploymentContainer(appYaml, 'agentsmith-llmup', 'llmup');
   const podSpec = renderedDeploymentPodSpec(appYaml, 'agentsmith-llmup');
   const rolloutStatus = rollouts.find((rollout) => rollout.deployment === 'agentsmith-llmup')?.status ?? 'skipped';
+  const expectedAppRef = renderedAppRef(appYaml);
+  const adminTokenRef = renderedContainerSecretKeyRef(container, 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN');
 
   if (typeof configYaml !== 'string' || !configYaml.includes('listen: 0.0.0.0:8080') || !configYaml.includes('mode: client_provider_key')) {
     addFailure(failures, 'llmup:ConfigMap/agentsmith-llmup-config', 'llmup config must render listen address and client_provider_key auth mode');
@@ -642,13 +783,8 @@ function buildLlmupConfigHealthEvidence(
   if (renderedStringArray(container.args).join('\0') !== ['--config', '/app/config/config.yaml'].join('\0')) {
     addFailure(failures, 'llmup:Deployment/agentsmith-llmup', 'llmup must start with --config /app/config/config.yaml');
   }
-  if (asRecord(renderedContainerEnvEntry(container, 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN').valueFrom).secretKeyRef === undefined) {
-    addFailure(failures, 'llmup:Deployment/agentsmith-llmup', 'llmup must consume admin token from app Secret');
-  } else {
-    const secretKeyRef = asRecord(asRecord(renderedContainerEnvEntry(container, 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN').valueFrom).secretKeyRef);
-    if (secretKeyRef.name !== 'agentsmith-app-secrets' || secretKeyRef.key !== 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN') {
-      addFailure(failures, 'llmup:Deployment/agentsmith-llmup', 'llmup admin token must come from agentsmith-app-secrets/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
-    }
+  if (adminTokenRef.name !== expectedAppRef || adminTokenRef.key !== 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN') {
+    addFailure(failures, 'llmup:Deployment/agentsmith-llmup', `llmup admin token must come from ${expectedAppRef}/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN`);
   }
 
   for (const probeName of ['readinessProbe', 'livenessProbe'] as const) {
@@ -682,6 +818,7 @@ function buildLlmupConfigHealthEvidence(
     evidence: {
       ...EMPTY_LLMUP_CONFIG_HEALTH,
       status: failures.length === 0 ? 'passed' : 'failed',
+      admin_token_secret: `${String(adminTokenRef.name ?? expectedAppRef)}/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN`,
       rollout_status: rolloutStatus,
     },
     failures,
@@ -2226,11 +2363,25 @@ async function renderInputs(options: {
     templatesRoot: options.templatesRoot,
   });
   const siteEnv = parseSiteEnv(await readFile(options.siteEnvPath, 'utf8'));
+  const substrateTruth = parseSubstrateTruth(await readFile(options.substrateTruthPath, 'utf8'), {
+    sourcePath: options.substrateTruthPath,
+  });
+  const localKindSecretsYaml = localKindExistingSecretsYaml({
+    namespace: siteEnv.NAMESPACE,
+    siteEnv,
+    substrateTruth: substrateTruth.values,
+  });
 
   return {
     preflightYaml: preflight.output,
     appYaml: app.output,
-    secretValues: collectRenderedSecretValues(app.output),
+    localKindExistingSecretsYaml: localKindSecretsYaml,
+    secretValues: mergeSecretValues(
+      collectRenderedSecretValues(app.output),
+      collectRenderedSecretValues(localKindSecretsYaml),
+      collectEnvSecretValues(siteEnv),
+      collectEnvSecretValues(substrateTruth.values),
+    ),
     publicBaseUrl: siteEnv.PUBLIC_BASE_URL,
     siteEnvValues: siteEnv,
   };
@@ -3663,6 +3814,7 @@ async function checkAfscpFunctionalConvergence(options: {
 async function runApplySequence(options: {
   preflightYaml: string;
   appYaml: string;
+  localKindExistingSecretsYaml: string;
   namespace: string;
   kubeconfigPath: string;
   runner: LocalKindCommandRunner;
@@ -3784,6 +3936,34 @@ async function runApplySequence(options: {
   failures.push(...afscpStaticVolumeReset.failures);
   if (failures.length > 0) {
     return { operations, failures };
+  }
+
+  for (const step of [
+    {
+      name: 'local-kind-existing-secrets-dry-run',
+      args: [...baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: options.localKindExistingSecretsYaml,
+    },
+    {
+      name: 'local-kind-existing-secrets-apply',
+      args: [...baseArgs, 'apply', '-f', '-'],
+      input: options.localKindExistingSecretsYaml,
+    },
+  ] as const) {
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      return { operations, failures };
+    }
   }
 
   for (const step of [
@@ -4214,6 +4394,7 @@ export async function runLocalKindRolloutProducer(
   const apply = await runApplySequence({
     preflightYaml: rendered.preflightYaml,
     appYaml: rendered.appYaml,
+    localKindExistingSecretsYaml: rendered.localKindExistingSecretsYaml,
     namespace: safety.namespace,
     kubeconfigPath: kubeconfig.path,
     runner,

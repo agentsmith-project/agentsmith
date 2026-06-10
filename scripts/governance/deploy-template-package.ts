@@ -37,6 +37,11 @@ const DEPLOY_ROOT_RELATIVE_PATH = 'infra/deploy/unified';
 const DEPLOYMENT_MANIFEST_FILE_NAME = 'deployment.manifest.json';
 const ZERO_DIGEST = `sha256:${'0'.repeat(64)}`;
 const EARLY_DESCRIPTOR_REQUIRED_IMAGE_IDS = ['agentsmith_app'] as const;
+const RELEASE_DEPLOY_TEMPLATE_GROUP_NAME = 'app';
+const RELEASE_KIT_PREREQUISITE_IMAGE_IDS = [
+  'ingress_nginx_certgen',
+  'ingress_nginx_controller',
+] as const;
 const RESERVED_TEMPLATE_GROUP_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 const TEMPLATE_GROUP_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
 const RESERVED_TEMPLATE_PACKAGE_PATHS = new Set([
@@ -198,8 +203,8 @@ export function generateDeployTemplatePackage(
   const deploymentManifestBytes = readRequiredFile(deploymentManifestSourcePath);
   const deploymentManifest = parseDeploymentManifest(deploymentManifestBytes, deploymentManifestSourcePath);
   const templateGroups = resolveTemplateGroups(deploymentManifest, deployRoot);
-  const packageSources = buildPackageSources(deployRoot, templateGroups);
-  const requiredImageIds = collectRequiredImageIds(packageSources);
+  const packageSources = buildPackageSources(deployRoot, releaseTemplateGroups(templateGroups));
+  const requiredImageIds = collectRequiredImageIds(packageSources, RELEASE_KIT_PREREQUISITE_IMAGE_IDS);
   const templates = packageSources
     .map((source) => ({
       path: source.packagePath,
@@ -550,8 +555,24 @@ function buildPackageSources(
   return sources;
 }
 
-function collectRequiredImageIds(sources: readonly PackageFileSource[]): string[] {
-  const imageIds = new Set<string>();
+function releaseTemplateGroups(
+  templateGroups: Readonly<Record<string, readonly string[]>>,
+): Readonly<Record<string, readonly string[]>> {
+  const appTemplates = templateGroups[RELEASE_DEPLOY_TEMPLATE_GROUP_NAME];
+  if (!appTemplates || appTemplates.length === 0) {
+    throw new Error(`deployment manifest templates.${RELEASE_DEPLOY_TEMPLATE_GROUP_NAME} must not be empty.`);
+  }
+
+  return {
+    [RELEASE_DEPLOY_TEMPLATE_GROUP_NAME]: appTemplates,
+  };
+}
+
+function collectRequiredImageIds(
+  sources: readonly PackageFileSource[],
+  additionalImageIds: readonly string[] = [],
+): string[] {
+  const imageIds = new Set<string>(additionalImageIds);
 
   for (const source of sources) {
     if (source.transform !== 'release-kit-template') {

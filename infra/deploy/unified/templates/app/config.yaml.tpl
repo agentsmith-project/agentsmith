@@ -42,32 +42,6 @@ data:
   MINIO_BUCKET: "{{SUBSTRATE_MINIO_BUCKET}}"
 ---
 apiVersion: v1
-kind: Secret
-metadata:
-  name: agentsmith-app-secrets
-  namespace: {{NAMESPACE}}
-  labels:
-    app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/part-of: agentsmith-deploy
-  annotations:
-    rendered-by: agentsmith-unified-deploy
-type: Opaque
-stringData:
-  DATABASE_URL: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}"
-  MONGO_URL: "mongodb://{{SUBSTRATE_MONGODB_USER}}:{{SUBSTRATE_MONGODB_PASSWORD}}@substrate-mongodb:{{SUBSTRATE_MONGODB_SERVICE_PORT}}/admin"
-  MONGO_DB_NAME: "{{SUBSTRATE_MONGODB_DATABASE}}"
-  REDIS_URL: "redis://:{{SUBSTRATE_REDIS_PASSWORD}}@substrate-redis:{{SUBSTRATE_REDIS_SERVICE_PORT}}/0"
-  MINIO_ACCESS_KEY: "{{SUBSTRATE_MINIO_ACCESS_KEY}}"
-  MINIO_SECRET_KEY: "{{SUBSTRATE_MINIO_SECRET_KEY}}"
-  AFSCP_SERVICE_TOKEN: "{{AFSCP_SERVICE_TOKEN}}"
-  AFSCP_BOOTSTRAP_SERVICE_TOKEN: "{{AFSCP_BOOTSTRAP_SERVICE_TOKEN}}"
-  AFSCP_ORCHESTRATOR_SERVICE_TOKEN: "{{AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
-  KEYCLOAK_ADMIN: "{{SUBSTRATE_KEYCLOAK_ADMIN}}"
-  KEYCLOAK_ADMIN_PASSWORD: "{{SUBSTRATE_KEYCLOAK_ADMIN_PASSWORD}}"
-  ASBCP_SERVICE_KEY: "{{ASBCP_SERVICE_KEY}}"
-  MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: "{{MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}}"
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: agentsmith-llmup-config

@@ -20,7 +20,7 @@ import {
 } from './evidence';
 
 const APP_CONFIG = 'ConfigMap/agentsmith-app-config';
-const APP_SECRET = 'Secret/agentsmith-app-secrets';
+const APP_SECRET = 'agentsmith-app-secrets';
 const INGRESS = 'Ingress/agentsmith';
 const LLMUP_BASE_URL = 'http://agentsmith-llmup:8080';
 const ASBCP_INTERNAL_BASE_URL = 'http://agentsmith-sandbox-control-plane:8080';
@@ -73,10 +73,6 @@ function findResource(
   return documents.find((document) =>
     resourceKind(document) === kind && resourceName(document) === name,
   ) ?? {};
-}
-
-function collectSecret(documents: readonly Record<string, unknown>[]): Record<string, unknown> {
-  return asRecord(findResource(documents, 'Secret', 'agentsmith-app-secrets').stringData);
 }
 
 function collectIngressRoutes(documents: readonly Record<string, unknown>[]): Map<string, IngressRoute> {
@@ -146,40 +142,6 @@ function requireConfigValue(
   const actual = stringValue(config, key);
   if (actual !== expected) {
     addFailure(failures, APP_CONFIG, `${key} must be ${expected}`);
-  }
-}
-
-function requireSecretValue(
-  failures: CheckFailure[],
-  secret: Record<string, unknown>,
-  key: string,
-): void {
-  const actual = stringValue(secret, key);
-  if (!actual) {
-    addFailure(failures, APP_SECRET, `${key} must be rendered in app Secret`);
-  }
-}
-
-function requireSecretUrl(
-  failures: CheckFailure[],
-  secret: Record<string, unknown>,
-  key: string,
-  expectedHost: string,
-  expectedPort: string,
-): void {
-  const actual = stringValue(secret, key);
-  if (!actual) {
-    addFailure(failures, APP_SECRET, `${key} must be rendered in app Secret`);
-    return;
-  }
-
-  try {
-    const parsed = new URL(actual);
-    if (parsed.hostname !== expectedHost || parsed.port !== expectedPort) {
-      addFailure(failures, APP_SECRET, `${key} must use ${expectedHost}:${expectedPort}`);
-    }
-  } catch {
-    addFailure(failures, APP_SECRET, `${key} must be a valid URL`);
   }
 }
 
@@ -319,12 +281,98 @@ function checkConfigAddressTruth(config: Record<string, unknown>, failures: Chec
   }
 }
 
-function checkSecretAddressTruth(secret: Record<string, unknown>, failures: CheckFailure[]): void {
-  requireSecretValue(failures, secret, 'ASBCP_SERVICE_KEY');
-  requireSecretValue(failures, secret, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
-  requireSecretUrl(failures, secret, 'DATABASE_URL', 'substrate-postgresql', SUBSTRATE_NATIVE_PORTS.postgresql);
-  requireSecretUrl(failures, secret, 'MONGO_URL', 'substrate-mongodb', SUBSTRATE_NATIVE_PORTS.mongodb);
-  requireSecretUrl(failures, secret, 'REDIS_URL', 'substrate-redis', SUBSTRATE_NATIVE_PORTS.redis);
+function deploymentContainer(
+  documents: readonly Record<string, unknown>[],
+  deploymentName: string,
+  containerName: string,
+): Record<string, unknown> {
+  const deployment = findResource(documents, 'Deployment', deploymentName);
+  const podSpec = asRecord(asRecord(asRecord(asRecord(deployment.spec).template).spec));
+  const containers = Array.isArray(podSpec.containers) ? podSpec.containers : [];
+  return containers.map(asRecord).find((container) => container.name === containerName) ?? {};
+}
+
+function podSpecContainer(
+  podSpec: Record<string, unknown>,
+  containerName: string,
+): Record<string, unknown> {
+  const containers = Array.isArray(podSpec.containers) ? podSpec.containers : [];
+  return containers.map(asRecord).find((container) => container.name === containerName) ?? {};
+}
+
+function containerEnvEntry(container: Record<string, unknown>, name: string): Record<string, unknown> {
+  const env = Array.isArray(container.env) ? container.env : [];
+  return env.map(asRecord).find((entry) => entry.name === name) ?? {};
+}
+
+function containerSecretKeyRef(container: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(asRecord(containerEnvEntry(container, name).valueFrom).secretKeyRef);
+}
+
+function containerEnvFrom(container: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(container.envFrom) ? container.envFrom.map(asRecord) : [];
+}
+
+function firstString(values: readonly unknown[], fallback: string): string {
+  return values.find((value): value is string => typeof value === 'string' && value.length > 0) ?? fallback;
+}
+
+function appSecretName(documents: readonly Record<string, unknown>[]): string {
+  const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+  const productSchemaPodSpec = asRecord(asRecord(asRecord(productSchemaJob.spec).template).spec);
+  const productSchemaContainer = podSpecContainer(productSchemaPodSpec, 'agentsmith-product-schema-bootstrap');
+  const api = deploymentContainer(documents, 'agentsmith-api', 'api');
+  const web = deploymentContainer(documents, 'agentsmith-web', 'web');
+
+  return firstString([
+    containerSecretKeyRef(productSchemaContainer, 'DATABASE_URL').name,
+    asRecord(containerEnvFrom(api).find((entry) => asRecord(entry.secretRef).name !== undefined)?.secretRef).name,
+    containerSecretKeyRef(web, 'MONGO_URL').name,
+  ], APP_SECRET);
+}
+
+function requireSecretKeyRef(
+  failures: CheckFailure[],
+  pathName: string,
+  container: Record<string, unknown>,
+  envName: string,
+  expectedSecret: string,
+  expectedKey: string,
+): void {
+  const ref = containerSecretKeyRef(container, envName);
+  if (ref.name !== expectedSecret || ref.key !== expectedKey) {
+    addFailure(failures, pathName, `${envName} must reference ${expectedSecret}/${expectedKey}`);
+  }
+}
+
+function requireEnvFromSecretRef(
+  failures: CheckFailure[],
+  pathName: string,
+  container: Record<string, unknown>,
+  expectedSecret: string,
+): void {
+  if (!containerEnvFrom(container).some((entry) => asRecord(entry.secretRef).name === expectedSecret)) {
+    addFailure(failures, pathName, `workload must consume existing Secret ${expectedSecret}`);
+  }
+}
+
+function checkSecretReferenceTruth(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  const expectedAppSecret = appSecretName(documents);
+  const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+  const productSchemaPodSpec = asRecord(asRecord(asRecord(productSchemaJob.spec).template).spec);
+  const productSchemaContainer = podSpecContainer(productSchemaPodSpec, 'agentsmith-product-schema-bootstrap');
+  const web = deploymentContainer(documents, 'agentsmith-web', 'web');
+  const api = deploymentContainer(documents, 'agentsmith-api', 'api');
+  const llmup = deploymentContainer(documents, 'agentsmith-llmup', 'llmup');
+  const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
+
+  requireSecretKeyRef(failures, 'Job/agentsmith-product-schema-bootstrap', productSchemaContainer, 'DATABASE_URL', expectedAppSecret, 'DATABASE_URL');
+  requireSecretKeyRef(failures, 'Deployment/agentsmith-web', web, 'MONGO_URL', expectedAppSecret, 'MONGO_URL');
+  requireSecretKeyRef(failures, 'Deployment/agentsmith-web', web, 'MONGO_DB_NAME', expectedAppSecret, 'MONGO_DB_NAME');
+  requireEnvFromSecretRef(failures, 'Deployment/agentsmith-api', api, expectedAppSecret);
+  requireSecretKeyRef(failures, 'Deployment/agentsmith-llmup', llmup, 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN', expectedAppSecret, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+  requireSecretKeyRef(failures, 'Deployment/agentsmith-sandbox-control-plane', asbcp, 'ASBCP_SERVICE_KEYS', expectedAppSecret, 'ASBCP_SERVICE_KEY');
+  requireSecretKeyRef(failures, 'Deployment/agentsmith-sandbox-control-plane', asbcp, 'ASBCP_AFSCP_ORCHESTRATOR_TOKEN', expectedAppSecret, 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN');
 }
 
 export function checkAddressTruth(renderedYaml: string): CheckResult {
@@ -334,9 +382,8 @@ export function checkAddressTruth(renderedYaml: string): CheckResult {
   if (parsed.ok) {
     const configResource = findResource(parsed.documents, 'ConfigMap', 'agentsmith-app-config');
     const config = asRecord(configResource.data);
-    const secret = collectSecret(parsed.documents);
     checkConfigAddressTruth(config, failures, resourceNamespace(configResource));
-    checkSecretAddressTruth(secret, failures);
+    checkSecretReferenceTruth(parsed.documents, failures);
     checkIngressAddressTruth(parsed.documents, failures);
     checkInternalServices(parsed.documents, failures);
     checkSubstrateEndpointAddressTypes(parsed.documents, failures);

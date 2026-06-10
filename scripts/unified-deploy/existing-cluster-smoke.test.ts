@@ -75,7 +75,6 @@ function writeExistingClusterSiteEnv(root: string, asbcpImage: string = ASBCP_SO
       .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.test')
       .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.test/api/v1')
       .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.test/api/v1')
-      .replace(/^ASBCP_SERVICE_KEY=.*$/mu, 'ASBCP_SERVICE_KEY=agentsmith_test_asbcp_service_key')
       .replace(/^ASBCP_IMAGE=.*$/mu, `ASBCP_IMAGE=${asbcpImage}`),
     'utf8',
   );
@@ -153,6 +152,48 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
     calls.push({ command, args, input: options.input ?? '' });
     const joined = args.join(' ');
 
+    if (joined.includes('get secret agentsmith-app-secrets') || joined.includes('get secret custom-app-secrets')) {
+      return {
+        exitCode: 0,
+        stdout: [
+          'DATABASE_URL',
+          'MONGO_URL',
+          'MONGO_DB_NAME',
+          'REDIS_URL',
+          'MINIO_ACCESS_KEY',
+          'MINIO_SECRET_KEY',
+          'AFSCP_SERVICE_TOKEN',
+          'AFSCP_BOOTSTRAP_SERVICE_TOKEN',
+          'AFSCP_ORCHESTRATOR_SERVICE_TOKEN',
+          'KEYCLOAK_ADMIN',
+          'KEYCLOAK_ADMIN_PASSWORD',
+          'ASBCP_SERVICE_KEY',
+          'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+        ].join('\n'),
+        stderr: '',
+      };
+    }
+    if (joined.includes('get secret afscp-runtime-secrets') || joined.includes('get secret custom-afscp-runtime-secrets')) {
+      return {
+        exitCode: 0,
+        stdout: [
+          'AFSCP_DATABASE_URL',
+          'AFSCP_POSTGRES_DSN',
+          'AFSCP_API_POSTGRES_DSN',
+          'AFSCP_EXPORT_GATEWAY_POSTGRES_DSN',
+          'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN',
+          'AFSCP_API_SERVICE_TOKENS',
+        ].join('\n'),
+        stderr: '',
+      };
+    }
+    if (joined.includes('get secret afscp-default-volume-juicefs') || joined.includes('get secret custom-afscp-volume-juicefs')) {
+      return {
+        exitCode: 0,
+        stdout: ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key'].join('\n'),
+        stderr: '',
+      };
+    }
     if (joined.includes('auth can-i')) {
       return { exitCode: 0, stdout: 'yes\n', stderr: '' };
     }
@@ -278,13 +319,6 @@ describe('unified deploy existing-cluster smoke producer', () => {
     const evidenceDir = tempDir('existing-cluster-evidence-');
     const kubeconfigPath = writeKubeconfig(root);
     const siteEnvPath = writeExistingClusterSiteEnv(root);
-    writeFileSync(
-      siteEnvPath,
-      readFileSync(siteEnvPath, 'utf8')
-        .replace(/^ASBCP_SERVICE_KEY=.*$/mu, 'ASBCP_SERVICE_KEY=raw_asbcp_secret_token_123')
-        .replace(/^AFSCP_ORCHESTRATOR_SERVICE_TOKEN=.*$/mu, 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN=raw_orchestrator_token_456'),
-      'utf8',
-    );
     const calls: CommandCall[] = [];
     const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
       calls.push({ command, args, input: options.input ?? '' });
@@ -292,7 +326,7 @@ describe('unified deploy existing-cluster smoke producer', () => {
         return {
           exitCode: 1,
           stdout: 'no\n',
-          stderr: 'Forbidden: raw_asbcp_secret_token_123 raw_orchestrator_token_456 cannot get persistentvolumes',
+          stderr: 'Forbidden: sentinel_pg_secret sentinel_minio_secret cannot get persistentvolumes',
         };
       }
       return createPassingRunner([])(command, args, options);
@@ -318,8 +352,8 @@ describe('unified deploy existing-cluster smoke producer', () => {
     ]));
     expect(result.evidence.pre_apply_preflight.status).toBe('failed');
     expect(report).toContain('[REDACTED]');
-    expect(report).not.toContain('raw_asbcp_secret_token_123');
-    expect(report).not.toContain('raw_orchestrator_token_456');
+    expect(report).not.toContain('sentinel_pg_secret');
+    expect(report).not.toContain('sentinel_minio_secret');
   });
 
   it('checks ASBCP Secret projection, AFSCP caller role, and public ingress before apply', async () => {
@@ -395,6 +429,80 @@ describe('unified deploy existing-cluster smoke producer', () => {
         message: expect.stringContaining('ASBCP'),
       }),
     ]));
+  });
+
+  it('fails before apply when an expected existing Secret key is missing', async () => {
+    const root = tempDir('existing-cluster-missing-secret-key-');
+    const evidenceDir = tempDir('existing-cluster-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      if (args.join(' ').includes('get secret afscp-runtime-secrets')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return {
+          exitCode: 0,
+          stdout: [
+            'AFSCP_DATABASE_URL',
+            'AFSCP_POSTGRES_DSN',
+            'AFSCP_API_POSTGRES_DSN',
+            'AFSCP_EXPORT_GATEWAY_POSTGRES_DSN',
+            'AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return passing(command, args, options);
+    };
+
+    const result = await runSmoke({
+      evidenceDir,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner,
+      probeRunner: passingProbeRunner,
+    });
+    const report = readFileSync(result.evidence.paths.report_path, 'utf8');
+
+    expect(result.status).toBe('failed');
+    expect(calls.some((call) => call.args.includes('apply'))).toBe(false);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:Secret/afscp-runtime-secrets',
+        message: expect.stringContaining('AFSCP_API_SERVICE_TOKENS'),
+      }),
+    ]));
+    expect(report).not.toContain('sentinel_pg_secret');
+    expect(report).not.toContain('sentinel_minio_secret');
+  });
+
+  it('checks custom existing Secret refs before apply and reports LLMUP health with the custom app ref', async () => {
+    const root = tempDir('existing-cluster-custom-secret-refs-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    writeFileSync(
+      siteEnvPath,
+      readFileSync(siteEnvPath, 'utf8')
+        .replace(/^AGENTSMITH_APP_REF=.*$/mu, 'AGENTSMITH_APP_REF=custom-app-secrets')
+        .replace(/^AFSCP_RUNTIME_REF=.*$/mu, 'AFSCP_RUNTIME_REF=custom-afscp-runtime-secrets')
+        .replace(/^AFSCP_VOLUME_REF=.*$/mu, 'AFSCP_VOLUME_REF=custom-afscp-volume-juicefs'),
+      'utf8',
+    );
+    const calls: CommandCall[] = [];
+
+    const result = await runSmoke({
+      siteEnvPath,
+      env: { KUBECONFIG: kubeconfigPath },
+      homeDir: root,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+    });
+
+    expect(result.status, JSON.stringify(result.failures, null, 2)).toBe('passed');
+    expect(calls.some((call) => call.args.join(' ').includes('get secret custom-app-secrets'))).toBe(true);
+    expect(calls.some((call) => call.args.join(' ').includes('get secret custom-afscp-runtime-secrets'))).toBe(true);
+    expect(calls.some((call) => call.args.join(' ').includes('get secret custom-afscp-volume-juicefs'))).toBe(true);
+    expect(result.evidence.llmup_config_health.admin_token_secret).toBe('custom-app-secrets/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
   });
 
   it('does not live-check namespace RBAC that the app manifest creates for a fresh namespace', async () => {
@@ -580,9 +688,11 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[0]?.input).toContain('name: agentsmith-app-config');
     expect(applyCalls[0]?.input).toContain('name: agentsmith-app-secrets');
     expect(applyCalls[0]?.input).toContain('name: substrate-postgresql');
-    expect(applyCalls[0]?.input).toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(applyCalls[0]?.input).toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(applyCalls[0]?.input).toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(applyCalls[0]?.input).toContain('secretKeyRef:');
+    expect(applyCalls[0]?.input).toContain('key: DATABASE_URL');
+    expect(applyCalls[0]?.input).not.toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
+    expect(applyCalls[0]?.input).not.toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
+    expect(applyCalls[0]?.input).not.toContain('REDIS_URL: redis://:sentinel_redis_secret@substrate-redis:6379/0');
     expect(applyCalls[0]?.input).not.toContain('name: afscp-schema-bootstrap');
     expect(applyCalls[0]?.input).not.toContain('name: afscp-volume-bootstrap');
     expect(applyCalls[0]?.input).not.toContain('name: afscp-runtime-config');
@@ -606,6 +716,7 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[2]?.input).toContain('name: afscp-runtime-config');
     expect(applyCalls[2]?.input).toContain('name: afscp-runtime-secrets');
     expect(applyCalls[2]?.input).toContain('name: afscp-default-volume-juicefs');
+    expect(applyCalls[2]?.input).not.toMatch(/kind:\s*Secret[\s\S]*?\n(?:data|stringData|binaryData):/u);
     expect(applyCalls[2]?.input).toContain('kind: PersistentVolume');
     expect(applyCalls[2]?.input).toContain('kind: PersistentVolumeClaim');
     expect(applyCalls[2]?.input).not.toContain('kind: Deployment');
@@ -1142,7 +1253,7 @@ describe('unified deploy existing-cluster smoke producer', () => {
     ]));
   });
 
-  it('redacts individual tokens from the composite AFSCP service token secret in diagnostics', async () => {
+  it('redacts input secret values from kubectl diagnostics in evidence', async () => {
     const root = tempDir('existing-cluster-redaction-');
     const evidenceDir = tempDir('existing-cluster-evidence-');
     const kubeconfigPath = writeKubeconfig(root);
@@ -1152,8 +1263,8 @@ describe('unified deploy existing-cluster smoke producer', () => {
       if (args.join(' ').includes('apply --dry-run=server')) {
         return {
           exitCode: 1,
-          stdout: 'server echoed agentsmith_dev_afscp_product_token',
-          stderr: 'validation echoed agentsmith_dev_afscp_bootstrap_token and agentsmith_dev_afscp_orchestrator_token',
+          stdout: 'server echoed sentinel_pg_secret and sentinel_minio_secret',
+          stderr: 'validation echoed sentinel_mongo_secret and sentinel_redis_secret',
         };
       }
 
@@ -1170,9 +1281,10 @@ describe('unified deploy existing-cluster smoke producer', () => {
     const report = readFileSync(result.evidence.paths.report_path, 'utf8');
 
     expect(result.status).toBe('failed');
-    expect(report).not.toContain('agentsmith_dev_afscp_product_token');
-    expect(report).not.toContain('agentsmith_dev_afscp_bootstrap_token');
-    expect(report).not.toContain('agentsmith_dev_afscp_orchestrator_token');
+    expect(report).not.toContain('sentinel_pg_secret');
+    expect(report).not.toContain('sentinel_minio_secret');
+    expect(report).not.toContain('sentinel_mongo_secret');
+    expect(report).not.toContain('sentinel_redis_secret');
     expect(report).toContain('[REDACTED]');
   });
 });

@@ -37,7 +37,7 @@ data:
   AFSCP_DEFAULT_VOLUME_STATUS: "{{AFSCP_DEFAULT_VOLUME_STATUS}}"
   AFSCP_DEFAULT_VOLUME_ROOT_PATH: "{{AFSCP_VOLUME_ROOT_PATH}}"
   AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON: '{{AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON}}'
-  AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS: "{{AFSCP_DEFAULT_VOLUME_ID}}={{NAMESPACE}}/afscp-default-volume-juicefs"
+  AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS: "{{AFSCP_DEFAULT_VOLUME_ID}}={{NAMESPACE}}/{{AFSCP_VOLUME_REF}}"
   AFSCP_API_WEBDAV_EXPORT_PUBLIC_BASE_URL: "{{AFSCP_EXPORT_GATEWAY_INTERNAL_BASE_URL}}"
   AFSCP_EXPORT_GATEWAY_LISTEN_ADDR: "0.0.0.0:8080"
   AFSCP_EXPORT_GATEWAY_PREFIX: "/e/"
@@ -71,46 +71,6 @@ data:
   AFSCP_EXPORT_SESSION_RECONCILE_LIMIT: "10"
   AFSCP_WORKLOAD_MOUNT_STALE_LEASE_RECONCILE_ENABLED: "true"
   AFSCP_WORKLOAD_MOUNT_STALE_LEASE_RECONCILE_LIMIT: "50"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: afscp-runtime-secrets
-  namespace: {{NAMESPACE}}
-  labels:
-    app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: afscp-runtime
-    app.kubernetes.io/part-of: agentsmith-deploy
-  annotations:
-    rendered-by: agentsmith-unified-deploy
-type: Opaque
-stringData:
-  AFSCP_DATABASE_URL: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_API_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_EXPORT_GATEWAY_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_EXPORT_SESSION_RECONCILE_POSTGRES_DSN: "postgresql://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@substrate-postgresql:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  AFSCP_API_SERVICE_TOKENS: "agentsmith-api={{AFSCP_SERVICE_TOKEN}},agentsmith-bootstrap={{AFSCP_BOOTSTRAP_SERVICE_TOKEN}},agentsmith-sandbox-control-plane={{AFSCP_ORCHESTRATOR_SERVICE_TOKEN}}"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: afscp-default-volume-juicefs
-  namespace: {{NAMESPACE}}
-  labels:
-    app.kubernetes.io/name: agentsmith
-    app.kubernetes.io/component: afscp-runtime
-    app.kubernetes.io/part-of: agentsmith-deploy
-  annotations:
-    rendered-by: agentsmith-unified-deploy
-type: Opaque
-stringData:
-  name: "{{AFSCP_DEFAULT_VOLUME_JUICEFS_NAME}}"
-  metaurl: "postgres://{{SUBSTRATE_POSTGRES_USER}}:{{SUBSTRATE_POSTGRES_PASSWORD}}@{{SUBSTRATE_POSTGRES_SERVICE_FQDN}}:{{SUBSTRATE_POSTGRES_SERVICE_PORT}}/{{SUBSTRATE_POSTGRES_DATABASE}}?sslmode=disable"
-  storage: "minio"
-  bucket: "http://substrate-minio.{{NAMESPACE}}.svc.cluster.local:{{SUBSTRATE_MINIO_SERVICE_PORT}}/{{SUBSTRATE_MINIO_BUCKET}}"
-  access-key: "{{SUBSTRATE_MINIO_ACCESS_KEY}}"
-  secret-key: "{{SUBSTRATE_MINIO_SECRET_KEY}}"
 ---
 apiVersion: batch/v1
 kind: Job
@@ -156,7 +116,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -183,7 +143,7 @@ spec:
     volumeHandle: {{AFSCP_DEFAULT_VOLUME_PV_NAME}}
     fsType: juicefs
     nodePublishSecretRef:
-      name: afscp-default-volume-juicefs
+      name: {{AFSCP_VOLUME_REF}}
       namespace: {{NAMESPACE}}
 ---
 apiVersion: v1
@@ -251,7 +211,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -298,7 +258,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
       containers:
         - name: afscp-api
           image: "{{AFSCP_IMAGE}}"
@@ -315,7 +275,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
           readinessProbe:
             httpGet:
               path: /readyz
@@ -407,7 +367,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
       containers:
         - name: afscp-worker
           image: "{{AFSCP_IMAGE}}"
@@ -420,7 +380,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
           volumeMounts:
             - name: afscp-default-volume
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
@@ -476,7 +436,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
       containers:
         - name: afscp-export-gateway
           image: "{{AFSCP_IMAGE}}"
@@ -493,7 +453,7 @@ spec:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
-                name: afscp-runtime-secrets
+                name: {{AFSCP_RUNTIME_REF}}
           readinessProbe:
             tcpSocket:
               port: http

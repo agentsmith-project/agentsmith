@@ -69,6 +69,8 @@ export type SubstrateTruthValidationResult = CheckResult & {
 type SubstrateTruthOptions = {
   sourcePath?: string;
   requiredEnv?: readonly string[];
+  optionalEnv?: readonly string[];
+  includeDefaultRequiredEnv?: boolean;
 };
 
 const SECRET_KEY_PATTERN = /(?:PASSWORD|SECRET|TOKEN|PRIVATE|ACCESS[_-]?KEY|API[_-]?KEY|CREDENTIAL|DATABASE_URL|MONGO_URL|MONGODB_URI|REDIS_URL|CLIENT_SECRET|AUTHORIZATION)/iu;
@@ -153,11 +155,12 @@ function parseEnvText(source: string, sourcePath: string): {
 }
 
 function requiredSubstrateEnv(options: SubstrateTruthOptions): readonly string[] {
-  return Array.from(new Set([...DOCKER_SUBSTRATE_REQUIRED_ENV, ...(options.requiredEnv ?? [])]));
+  const defaultRequiredEnv = options.includeDefaultRequiredEnv === false ? [] : DOCKER_SUBSTRATE_REQUIRED_ENV;
+  return Array.from(new Set([...defaultRequiredEnv, ...(options.requiredEnv ?? [])]));
 }
 
 function allowedSubstrateTruthKeys(options: SubstrateTruthOptions): ReadonlySet<string> {
-  return new Set([SUBSTRATE_TRUTH_SCHEMA_ENV_KEY, ...requiredSubstrateEnv(options)]);
+  return new Set([SUBSTRATE_TRUTH_SCHEMA_ENV_KEY, ...requiredSubstrateEnv(options), ...(options.optionalEnv ?? [])]);
 }
 
 function isForbiddenKey(key: string, allowedKeys: ReadonlySet<string>): boolean {

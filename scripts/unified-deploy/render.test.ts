@@ -21,6 +21,15 @@ import { DEFAULT_MANIFEST_PATH } from './manifest';
 
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
+const asbcpImageLockPath = join(process.cwd(), 'infra', 'deploy', 'shared', 'asbcp-image.lock');
+
+function readAsbcpLockSourceRef(): string {
+  const match = /^asbcp_source_image=(.+)$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
+  if (!match?.[1]) {
+    throw new Error('asbcp-image.lock must include asbcp_source_image');
+  }
+  return match[1];
+}
 
 function tempDir(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -381,22 +390,69 @@ describe('unified deploy render producer', () => {
     expect(result.status).not.toBe(0);
   });
 
-  it('keeps tracked site env example free of raw ASBCP service key material', async () => {
+  it('keeps tracked site env example focused on existing Secret refs instead of raw tokens', async () => {
     const siteEnv = await readFile(DEFAULT_SITE_ENV_PATH, 'utf8');
 
-    expect(siteEnv).toContain('ASBCP_SERVICE_KEY=');
-    expect(siteEnv).not.toContain('agentsmith_dev_asbcp_service_key');
-    expect(siteEnv).toMatch(/^ASBCP_SERVICE_KEY=$/mu);
+    expect(siteEnv).toMatch(/^AGENTSMITH_APP_REF=agentsmith-app-secrets$/mu);
+    expect(siteEnv).toMatch(/^AGENTSMITH_APP_REF_REVISION=stable$/mu);
+    expect(siteEnv).toMatch(/^AFSCP_RUNTIME_REF=afscp-runtime-secrets$/mu);
+    expect(siteEnv).toMatch(/^AFSCP_RUNTIME_REF_REVISION=stable$/mu);
+    expect(siteEnv).toMatch(/^AFSCP_VOLUME_REF=afscp-default-volume-juicefs$/mu);
+    expect(siteEnv).toMatch(/^AFSCP_VOLUME_REF_REVISION=stable$/mu);
+    expect(siteEnv).not.toMatch(/^ASBCP_SERVICE_KEY=/mu);
+    expect(siteEnv).not.toMatch(/^MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=/mu);
+    expect(siteEnv).not.toMatch(/^AFSCP_(?:SERVICE|BOOTSTRAP_SERVICE|ORCHESTRATOR_SERVICE)_TOKEN=/mu);
   });
 
-  it('renders an untracked ephemeral ASBCP service key instead of a public fixed placeholder', async () => {
+  it('renders existing Secret references without Secret payload manifests', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
-    const appSecret = findResource(documents, 'Secret', 'agentsmith-app-secrets');
-    const serviceKey = asRecord(appSecret.stringData).ASBCP_SERVICE_KEY;
+    const secretResources = documents.filter((document) => resourceKind(document) === 'Secret');
 
-    expect(serviceKey).toEqual(expect.stringMatching(/^asbcp_ephemeral_[A-Za-z0-9_-]{32,}$/u));
-    expect(serviceKey).not.toBe('__EXAMPLE_ASBCP_SERVICE_KEY_SET_IN_UNTRACKED_SITE_ENV__');
+    expect(secretResources).toEqual([]);
+    expect(rendered.output).not.toMatch(/\nkind: Secret\n/u);
+    expect(rendered.output).not.toMatch(/\nkind: Secret\n[\s\S]*\n(?:data|stringData|binaryData):\n/u);
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_SERVICE_KEYS')).toEqual({
+      name: 'ASBCP_SERVICE_KEYS',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'ASBCP_SERVICE_KEY',
+        },
+      },
+    });
+  });
+
+  it('renders custom existing Secret names through workload and volume references', async () => {
+    const baseSiteEnv = await readFile(DEFAULT_SITE_ENV_PATH, 'utf8');
+    const siteEnv = [
+      ['AGENTSMITH_APP_REF', 'custom-app-secrets'],
+      ['AFSCP_RUNTIME_REF', 'custom-afscp-runtime-secrets'],
+      ['AFSCP_VOLUME_REF', 'custom-afscp-volume-juicefs'],
+    ].reduce((source, [key, value]) => replaceEnvLine(source, key, value), baseSiteEnv);
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const afscpConfig = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    const pv = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+    expect(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_SERVICE_KEYS')).toEqual({
+      name: 'ASBCP_SERVICE_KEYS',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'custom-app-secrets',
+          key: 'ASBCP_SERVICE_KEY',
+        },
+      },
+    });
+    expect(deploymentContainerEnvFrom(documents, 'afscp-api', 'afscp-api')).toEqual(expect.arrayContaining([
+      { secretRef: { name: 'custom-afscp-runtime-secrets' } },
+    ]));
+    expect(asRecord(asRecord(asRecord(pv.spec).csi).nodePublishSecretRef).name).toBe('custom-afscp-volume-juicefs');
+    expect(afscpConfig.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS).toBe('vol_agentsmith_default=agentsmith/custom-afscp-volume-juicefs');
   });
 
   it('derives ASBCP_IMAGE from the shared lock when site env leaves it unset', async () => {
@@ -416,7 +472,7 @@ describe('unified deploy render producer', () => {
     const documents = parsedDocuments(rendered.output);
     const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
 
-    expect(asbcp.image).toBe('ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.9@sha256:9005855236587b53b0b30836c557cf3b006858eae00d59c70f1461bf032494fb');
+    expect(asbcp.image).toBe(readAsbcpLockSourceRef());
   });
 
   it('keeps default producer evidence artifacts out of git', () => {
@@ -689,8 +745,8 @@ describe('unified deploy render producer', () => {
     const documents = parsedDocuments(rendered.output);
     const routes = serviceBackends(rendered.output);
     const envFrom = deploymentContainerEnvFrom(documents, 'agentsmith-web', 'web');
+    const apiEnvFrom = deploymentContainerEnvFrom(documents, 'agentsmith-api', 'api');
     const webKeys = projectedEnvKeys(documents, 'agentsmith-web', 'web');
-    const apiKeys = projectedEnvKeys(documents, 'agentsmith-api', 'api');
 
     expect(routes.get('/api/public')).toBe('agentsmith-web');
     expect(routes.get('/api/system')).toBe('agentsmith-web');
@@ -730,8 +786,10 @@ describe('unified deploy render producer', () => {
     expect(webKeys.has('REDIS_URL')).toBe(false);
     expect(webKeys.has('MINIO_ACCESS_KEY')).toBe(false);
     expect(webKeys.has('MINIO_SECRET_KEY')).toBe(false);
-    expect(apiKeys.has('ASBCP_INTERNAL_BASE_URL')).toBe(true);
-    expect(apiKeys.has('ASBCP_SERVICE_KEY')).toBe(true);
+    expect(apiEnvFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'agentsmith-app-config' } },
+      { secretRef: { name: 'agentsmith-app-secrets' } },
+    ]));
   });
 
   it('rejects Web env projections that reintroduce ASBCP internal URL or service key', async () => {
@@ -1044,8 +1102,6 @@ describe('unified deploy render producer', () => {
     });
     const documents = parsedDocuments(rendered.output);
     const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
-    const secrets = asRecord(findResource(documents, 'Secret', 'afscp-runtime-secrets').stringData);
-    const volumeSecret = asRecord(findResource(documents, 'Secret', 'afscp-default-volume-juicefs').stringData);
     const afscpApi = deploymentContainer(documents, 'afscp-api', 'afscp-api');
     const afscpWorker = deploymentContainer(documents, 'afscp-worker', 'afscp-worker');
     const exportGateway = deploymentContainer(documents, 'afscp-export-gateway', 'afscp-export-gateway');
@@ -1072,11 +1128,11 @@ describe('unified deploy render producer', () => {
     expect(config.AFSCP_STORAGE_ENABLED).toBe('true');
     expect(config.AFSCP_JVS_ENABLED).toBe('true');
     expect(config.AFSCP_JVS_READY).toBe('true');
-    expect(config.AFSCP_JVS_CWD).toBe('/var/lib/afscp/jvs-cwd');
+    expect(config.AFSCP_JVS_CWD).toBe('/data/afscp/jvs-cwd');
     expect(config).not.toHaveProperty('AFSCP_JVS_BINARY_PATH');
     expect(config).not.toHaveProperty('AFSCP_JVS_BINARY_SHA256');
-    expect(secrets).not.toHaveProperty('AFSCP_JVS_BINARY_PATH');
-    expect(secrets).not.toHaveProperty('AFSCP_JVS_BINARY_SHA256');
+    expect(findResource(documents, 'Secret', 'afscp-runtime-secrets')).toEqual({});
+    expect(findResource(documents, 'Secret', 'afscp-default-volume-juicefs')).toEqual({});
     expect(config.AFSCP_MOUNT_ENABLED).toBe('true');
     expect(config.AFSCP_REPO_TEMPLATE_ENABLED).toBe('true');
     expect(config.AFSCP_REPO_CREATE_RECOVERY_ENABLED).toBe('true');
@@ -1094,7 +1150,8 @@ describe('unified deploy render producer', () => {
     expect(config.AFSCP_DEFAULT_VOLUME_BACKEND).toBe('juicefs');
     expect(config.AFSCP_DEFAULT_VOLUME_ISOLATION_CLASS).toBe('shared');
     expect(config.AFSCP_DEFAULT_VOLUME_STATUS).toBe('active');
-    expect(config.AFSCP_DEFAULT_VOLUME_ROOT_PATH).toBe('/var/lib/afscp/volumes/default');
+    expect(config.AFSCP_DEFAULT_VOLUME_ROOT_PATH).toBe('/data/afscp/volumes/default');
+    expect(config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS).toBe('vol_agentsmith_default=agentsmith/afscp-default-volume-juicefs');
     expect(JSON.parse(String(config.AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON))).toEqual({
       webdav_export: true,
       workload_mount: true,
@@ -1167,9 +1224,6 @@ describe('unified deploy render producer', () => {
       runAsUser: 65532,
       runAsGroup: 65532,
     });
-    expect(volumeSecret.metaurl).toBe('postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable');
-    expect(volumeSecret.metaurl).not.toContain('@substrate-postgresql:5432/');
-    expect(volumeSecret.bucket).toBe('http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
     expect(persistentVolumeSpec).toMatchObject({
       volumeMode: 'Filesystem',
       accessModes: ['ReadWriteMany'],
@@ -1229,11 +1283,11 @@ describe('unified deploy render producer', () => {
       expect(volumeMounts).toEqual(expect.arrayContaining([
         {
           name: 'afscp-default-volume',
-          mountPath: '/var/lib/afscp/volumes/default',
+          mountPath: '/data/afscp/volumes/default',
         },
         {
           name: 'afscp-jvs-cwd',
-          mountPath: '/var/lib/afscp/jvs-cwd',
+          mountPath: '/data/afscp/jvs-cwd',
         },
       ]));
       expect(volumes.some((volume) => asRecord(volume.csi).driver === 'csi.juicefs.com')).toBe(false);
@@ -1360,20 +1414,21 @@ describe('unified deploy render producer', () => {
     expect(text).toContain('PersistentVolumeClaim');
   });
 
-  it('rejects AFSCP JuiceFS CSI secrets that use short substrate service names', async () => {
+  it('rejects AFSCP volume Secret reference drift', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
-    const volumeSecret = asRecord(findResource(documents, 'Secret', 'afscp-default-volume-juicefs').stringData);
-    volumeSecret.metaurl = 'postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=disable';
-    volumeSecret.bucket = 'http://substrate-minio:9000/sentinel-files';
+    const config = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    const csi = asRecord(asRecord(persistentVolume.spec).csi);
+    config.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS = 'vol_agentsmith_default=agentsmith/wrong-volume-secret';
+    asRecord(csi.nodePublishSecretRef).namespace = 'wrong-namespace';
 
     const text = checkRenderedOutput(stringifyDocuments(documents)).failures
       .map((failure) => failure.message)
       .join('\n');
 
-    expect(text).toContain('metaurl must use the namespace FQDN');
-    expect(text).toContain('metaurl must not use a short substrate PostgreSQL service name');
-    expect(text).toContain('AFSCP JuiceFS CSI Secret must bind to internal substrate MinIO');
+    expect(text).toContain('AFSCP workload mount Secret refs must point to the namespace-local JuiceFS CSI Secret');
+    expect(text).toContain('AFSCP default PersistentVolume must use JuiceFS CSI with the namespace-local volume Secret');
   });
 
   it('rejects AFSCP PV/PVC storage quantities that trigger Kubernetes fractional-byte warnings', async () => {
@@ -1588,12 +1643,11 @@ describe('unified deploy render producer', () => {
     const documents = parsedDocuments(rendered.output);
     const asbcp = deploymentContainer(documents, 'agentsmith-sandbox-control-plane', 'asbcp');
     const appConfigMap = findResource(documents, 'ConfigMap', 'agentsmith-app-config');
-    const appSecret = findResource(documents, 'Secret', 'agentsmith-app-secrets');
 
     asbcp.image = 'ghcr.io/example/asbcp:dev';
     containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_CONFIG_PATH').value = ['/etc/asbcp', 'config.yaml'].join('/');
     asRecord(appConfigMap.data).ASBCP_INTERNAL_BASE_URL = 'https://public.example.com/asbcp';
-    delete asRecord(appSecret.stringData).ASBCP_SERVICE_KEY;
+    asRecord(asRecord(containerEnvEntry(documents, 'agentsmith-sandbox-control-plane', 'asbcp', 'ASBCP_SERVICE_KEYS').valueFrom).secretKeyRef).key = 'WRONG_SERVICE_KEY';
 
     const text = checkRenderedOutput(stringifyDocuments(documents)).failures
       .map((failure) => failure.message)
@@ -1601,7 +1655,7 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('ASBCP image must use the canonical agentsmith-sandbox-control-plane repository');
     expect(text).toContain('ASBCP_INTERNAL_BASE_URL must point to the internal ASBCP Service');
-    expect(text).toContain('ASBCP_SERVICE_KEY must be rendered only as an app Secret value');
+    expect(text).toContain('ASBCP service keys must come from agentsmith-app-secrets/ASBCP_SERVICE_KEY');
     expect(text).toContain('ASBCP must set ASBCP_CONFIG_PATH to the canonical asbcp-config.yaml path');
   });
 
@@ -1765,9 +1819,19 @@ API_REPLICAS=2
     });
     const documents = parsedDocuments(rendered.output);
     const appConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'agentsmith-app-config', 'data');
-    const appSecretChecksum = resourceDataChecksum(documents, 'Secret', 'agentsmith-app-secrets', 'stringData');
+    const appSecretChecksum = checksum({
+      secretName: 'agentsmith-app-secrets',
+      revision: 'stable',
+    });
     const llmupConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'agentsmith-llmup-config', 'data');
     const asbcpConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'asbcp-config', 'data');
+    const afscpConfigChecksum = resourceDataChecksum(documents, 'ConfigMap', 'afscp-runtime-config', 'data');
+    const afscpSecretChecksum = checksum({
+      runtimeSecretName: 'afscp-runtime-secrets',
+      runtimeRevision: 'stable',
+      volumeSecretName: 'afscp-default-volume-juicefs',
+      volumeRevision: 'stable',
+    });
 
     expect(deploymentPodTemplateAnnotations(documents, 'agentsmith-web')).toMatchObject({
       'agentsmith.mbos.dev/checksum-app-config': appConfigChecksum,
@@ -1785,6 +1849,12 @@ API_REPLICAS=2
       'agentsmith.mbos.dev/checksum-asbcp-config': asbcpConfigChecksum,
       'agentsmith.mbos.dev/checksum-app-secrets': appSecretChecksum,
     });
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      expect(deploymentPodTemplateAnnotations(documents, deploymentName)).toMatchObject({
+        'agentsmith.mbos.dev/checksum-afscp-config': afscpConfigChecksum,
+        'agentsmith.mbos.dev/checksum-afscp-secrets': afscpSecretChecksum,
+      });
+    }
 
     const siteEnv = replaceEnvLine(
       await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
@@ -1807,12 +1877,15 @@ API_REPLICAS=2
       deploymentPodTemplateAnnotations(appConfigChangedDocuments, 'agentsmith-web')['agentsmith.mbos.dev/checksum-app-secrets'],
     ).toBe(appSecretChecksum);
 
+    const appSecretChangedSiteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'AGENTSMITH_APP_REF_REVISION',
+      'rotated-20260610',
+    );
     const appSecretChanged = await renderUnifiedDeployToString({
       profile: 'local-kind',
-      substrateTruth: substrateTruth.replace(
-        'SUBSTRATE_POSTGRES_PASSWORD=sentinel_pg_secret',
-        'SUBSTRATE_POSTGRES_PASSWORD=sentinel_pg_secret_rotated',
-      ),
+      siteEnv: appSecretChangedSiteEnv,
+      substrateTruth,
     });
     const appSecretChangedDocuments = parsedDocuments(appSecretChanged.output);
     expect(
@@ -1822,6 +1895,23 @@ API_REPLICAS=2
       expect(
         deploymentPodTemplateAnnotations(appSecretChangedDocuments, deploymentName)['agentsmith.mbos.dev/checksum-app-secrets'],
       ).not.toBe(appSecretChecksum);
+    }
+
+    const afscpSecretChangedSiteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'AFSCP_RUNTIME_REF_REVISION',
+      'rotated-20260610',
+    );
+    const afscpSecretChanged = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: afscpSecretChangedSiteEnv,
+      substrateTruth,
+    });
+    const afscpSecretChangedDocuments = parsedDocuments(afscpSecretChanged.output);
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      expect(
+        deploymentPodTemplateAnnotations(afscpSecretChangedDocuments, deploymentName)['agentsmith.mbos.dev/checksum-afscp-secrets'],
+      ).not.toBe(afscpSecretChecksum);
     }
   });
 
@@ -1841,18 +1931,47 @@ API_REPLICAS=2
     const configMap = documents.find((document) =>
       resourceKind(document) === 'ConfigMap' && resourceName(document) === 'agentsmith-app-config',
     );
-    const secret = documents.find((document) =>
-      resourceKind(document) === 'Secret' && resourceName(document) === 'agentsmith-app-secrets',
-    );
     const config = asRecord(asRecord(configMap).data);
-    const stringData = asRecord(asRecord(secret).stringData);
+    const web = deploymentContainer(documents, 'agentsmith-web', 'web');
+    const productSchemaJob = findResource(documents, 'Job', 'agentsmith-product-schema-bootstrap');
+    const productSchemaJobPodSpec = asRecord(asRecord(asRecord(productSchemaJob.spec).template).spec);
+    const productSchemaJobContainer = podSpecContainer(
+      productSchemaJobPodSpec,
+      'containers',
+      'agentsmith-product-schema-bootstrap',
+    );
 
     expect(firstEndpoint.addresses).toEqual(['198.51.100.31']);
-    expect(stringData.DATABASE_URL).toBe('postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(stringData.MONGO_URL).toBe('mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(stringData.MONGO_DB_NAME).toBe('sentinel_mongo_db');
-    expect(stringData.MONGODB_URI).toBeUndefined();
-    expect(stringData.REDIS_URL).toBe('redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(productSchemaJobContainer.env).toEqual([
+      {
+        name: 'DATABASE_URL',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'agentsmith-app-secrets',
+            key: 'DATABASE_URL',
+          },
+        },
+      },
+    ]);
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'MONGO_URL')).toEqual({
+      name: 'MONGO_URL',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'MONGO_URL',
+        },
+      },
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'MONGO_DB_NAME')).toEqual({
+      name: 'MONGO_DB_NAME',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'MONGO_DB_NAME',
+        },
+      },
+    });
+    expect(web.envFrom ?? []).toEqual([]);
     expect(config.MINIO_ENDPOINT).toBe('substrate-minio');
     expect(config.MINIO_PORT).toBe('9000');
     expect(config.MINIO_USE_SSL).toBe('false');
@@ -1866,8 +1985,6 @@ API_REPLICAS=2
     expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
     expect(config.KEYCLOAK_REALM).toBe('sentinel-realm');
     expect(config.KEYCLOAK_ADMIN_CLIENT_ID).toBe('admin-cli');
-    expect(stringData.KEYCLOAK_ADMIN).toBe('sentinel-admin');
-    expect(stringData.KEYCLOAK_ADMIN_PASSWORD).toBe('sentinel-admin-secret');
     expect(rendered.output).not.toContain('agentsmith-substrate-postgresql.local');
   });
 
@@ -1948,22 +2065,37 @@ ASBCP_SERVICE_KEY=substrate_should_not_override_app_secret
     const configMap = documents.find((document) =>
       resourceKind(document) === 'ConfigMap' && resourceName(document) === 'agentsmith-app-config',
     );
-    const secret = documents.find((document) =>
-      resourceKind(document) === 'Secret' && resourceName(document) === 'agentsmith-app-secrets',
-    );
     const config = asRecord(asRecord(configMap).data);
-    const stringData = asRecord(asRecord(secret).stringData);
+    const apiEnvFrom = deploymentContainerEnvFrom(documents, 'agentsmith-api', 'api');
+    const web = deploymentContainer(documents, 'agentsmith-web', 'web');
 
-    expect(stringData.DATABASE_URL).toBe('postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
-    expect(stringData.MONGO_URL).toBe('mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');
-    expect(stringData.MONGO_DB_NAME).toBe('sentinel_mongo_db');
-    expect(stringData.REDIS_URL).toBe('redis://:sentinel_redis_secret@substrate-redis:6379/0');
+    expect(apiEnvFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'agentsmith-app-config' } },
+      { secretRef: { name: 'agentsmith-app-secrets' } },
+    ]));
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'MONGO_URL')).toEqual({
+      name: 'MONGO_URL',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'MONGO_URL',
+        },
+      },
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'MONGO_DB_NAME')).toEqual({
+      name: 'MONGO_DB_NAME',
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'MONGO_DB_NAME',
+        },
+      },
+    });
+    expect(web.envFrom ?? []).toEqual([]);
     expect(config.MINIO_ENDPOINT).toBe('substrate-minio');
     expect(config.MINIO_PORT).toBe('9000');
     expect(config.MINIO_USE_SSL).toBe('false');
     expect(config.MINIO_BUCKET).toBe('sentinel-files');
-    expect(stringData.MINIO_ACCESS_KEY).toBe('sentinel_minio_access');
-    expect(stringData.MINIO_SECRET_KEY).toBe('sentinel_minio_secret');
     expect(config.KEYCLOAK_ISSUER_URL).toBe('https://sentinel-login.example.com/realms/sentinel-realm');
     expect(config.PUBLIC_KEYCLOAK_BASE_URL).toBe('https://sentinel-login.example.com');
     expect(config.INTERNAL_KEYCLOAK_BASE_URL).toBe('http://substrate-keycloak:8080');
@@ -1972,8 +2104,6 @@ ASBCP_SERVICE_KEY=substrate_should_not_override_app_secret
     expect(config.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT).toBeUndefined();
     expect(config.KEYCLOAK_REALM).toBe('sentinel-realm');
     expect(config.KEYCLOAK_ADMIN_CLIENT_ID).toBe('admin-cli');
-    expect(stringData.KEYCLOAK_ADMIN).toBe('sentinel-admin');
-    expect(stringData.KEYCLOAK_ADMIN_PASSWORD).toBe('sentinel-admin-secret');
   });
 
   it('rejects llmup Service exposure through NodePort or LoadBalancer', () => {

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
@@ -12,12 +12,12 @@ import {
   asRecord,
   isUnifiedDeployProfile,
   loadUnifiedDeployManifest,
-  manifestRequiredEnv,
   manifestTemplatePaths,
   resolveContainedTemplatePath,
   type UnifiedDeployProfile,
 } from './manifest';
 import {
+  DOCKER_SUBSTRATE_REQUIRED_ENV,
   DEFAULT_SUBSTRATE_TRUTH_PATH,
   parseSubstrateTruth,
 } from './substrate-truth';
@@ -32,7 +32,6 @@ import { parseKubernetesDocuments, resourceKind, resourceName } from './kubernet
 export const DEFAULT_SITE_ENV_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'unified', 'env', 'site.env.example');
 export const DEFAULT_TEMPLATES_ROOT = path.join(REPO_ROOT, 'infra', 'deploy', 'unified');
 const DEFAULT_ASBCP_IMAGE_LOCK_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'shared', 'asbcp-image.lock');
-const GENERATED_ASBCP_SERVICE_KEY = `asbcp_ephemeral_${randomBytes(32).toString('base64url')}`;
 
 type RenderUnifiedDeployOptions = {
   profile?: UnifiedDeployProfile;
@@ -72,8 +71,6 @@ const REQUIRED_DEPLOY_ENV = [
   'PUBLIC_BASE_URL',
   'PUBLIC_API_BASE_URL',
   'RUNNER_PUBLIC_API_BASE_URL',
-  'ASBCP_SERVICE_KEY',
-  'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
   'WEB_IMAGE',
   'API_IMAGE',
   'LLMUP_IMAGE',
@@ -82,6 +79,43 @@ const REQUIRED_DEPLOY_ENV = [
   'MANAGED_RUNNER_IMAGE',
   'INGRESS_NGINX_CONTROLLER_IMAGE',
   'INGRESS_NGINX_CERTGEN_IMAGE',
+] as const;
+const DEFAULT_SECRET_REF_ENV = {
+  AGENTSMITH_APP_REF: 'agentsmith-app-secrets',
+  AFSCP_RUNTIME_REF: 'afscp-runtime-secrets',
+  AFSCP_VOLUME_REF: 'afscp-default-volume-juicefs',
+  AGENTSMITH_APP_REF_REVISION: 'stable',
+  AFSCP_RUNTIME_REF_REVISION: 'stable',
+  AFSCP_VOLUME_REF_REVISION: 'stable',
+} as const;
+const SECRET_NAME_ENV = [
+  'AGENTSMITH_APP_REF',
+  'AFSCP_RUNTIME_REF',
+  'AFSCP_VOLUME_REF',
+] as const;
+const SECRET_REF_REVISION_ENV = [
+  'AGENTSMITH_APP_REF_REVISION',
+  'AFSCP_RUNTIME_REF_REVISION',
+  'AFSCP_VOLUME_REF_REVISION',
+] as const;
+const SECRET_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/u;
+const SECRET_REF_REVISION_PATTERN = /^[A-Za-z0-9._:-]+$/u;
+const RENDER_SUBSTRATE_REQUIRED_ENV = [
+  'SUBSTRATE_POSTGRES_HOST',
+  'SUBSTRATE_POSTGRES_PORT',
+  'SUBSTRATE_MONGODB_HOST',
+  'SUBSTRATE_MONGODB_PORT',
+  'SUBSTRATE_REDIS_HOST',
+  'SUBSTRATE_REDIS_PORT',
+  'SUBSTRATE_MINIO_HOST',
+  'SUBSTRATE_MINIO_PORT',
+  'SUBSTRATE_MINIO_BUCKET',
+  'SUBSTRATE_KEYCLOAK_HOST',
+  'SUBSTRATE_KEYCLOAK_PORT',
+  'SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER',
+  'SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL',
+  'SUBSTRATE_KEYCLOAK_REALM',
+  'SUBSTRATE_KEYCLOAK_CLIENT_ID',
 ] as const;
 
 const NUMERIC_ENV = new Set([
@@ -170,6 +204,20 @@ function validateEnv(values: Record<string, string>): void {
     }
   }
 
+  for (const key of SECRET_NAME_ENV) {
+    const value = values[key];
+    if (!value || value.length > 253 || !SECRET_NAME_PATTERN.test(value)) {
+      throw new Error(`${key} must be a non-empty Kubernetes Secret name`);
+    }
+  }
+
+  for (const key of SECRET_REF_REVISION_ENV) {
+    const value = values[key];
+    if (!value || !SECRET_REF_REVISION_PATTERN.test(value)) {
+      throw new Error(`${key} must be a non-empty non-secret revision token`);
+    }
+  }
+
   for (const [key, value] of Object.entries(values)) {
     if (value.includes('"')) {
       throw new Error(`${key} contains a double quote; template-safe env values are required`);
@@ -190,17 +238,10 @@ async function readAsbcpImageFromLock(lockPath: string = DEFAULT_ASBCP_IMAGE_LOC
 async function withDerivedDeployEnv(options: {
   values: Record<string, string>;
 }): Promise<Record<string, string>> {
-  const values = { ...options.values };
+  const values = { ...DEFAULT_SECRET_REF_ENV, ...options.values };
 
   if (!values.ASBCP_IMAGE) {
     values.ASBCP_IMAGE = await readAsbcpImageFromLock();
-  }
-
-  if (
-    values.ASBCP_SERVICE_KEY === ''
-    && Object.prototype.hasOwnProperty.call(values, 'ASBCP_SERVICE_KEY')
-  ) {
-    values.ASBCP_SERVICE_KEY = GENERATED_ASBCP_SERVICE_KEY;
   }
 
   return values;
@@ -283,7 +324,7 @@ function resourceFieldChecksum(
   documents: readonly Record<string, unknown>[],
   kind: string,
   name: string,
-  field: 'data' | 'stringData',
+  field: 'data',
 ): string {
   const resource = documents.find((document) =>
     resourceKind(document) === kind && resourceName(document) === name,
@@ -295,7 +336,7 @@ function resourceFieldChecksum(
   return sha256(asRecord(resource[field]));
 }
 
-function computeRolloutChecksums(renderedYaml: string): Record<RolloutChecksumKey, string> {
+function computeRolloutChecksums(renderedYaml: string, context: RenderContext): Record<RolloutChecksumKey, string> {
   const parsed = parseKubernetesDocuments(renderedYaml);
   if (!parsed.ok) {
     throw new Error(parsed.failures.map((failure) => `${failure.path}: ${failure.message}`).join('\n'));
@@ -303,11 +344,19 @@ function computeRolloutChecksums(renderedYaml: string): Record<RolloutChecksumKe
 
   return {
     AGENTSMITH_APP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'agentsmith-app-config', 'data'),
-    AGENTSMITH_APP_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'agentsmith-app-secrets', 'stringData'),
+    AGENTSMITH_APP_SECRETS_CHECKSUM: sha256({
+      secretName: context.AGENTSMITH_APP_REF,
+      revision: context.AGENTSMITH_APP_REF_REVISION,
+    }),
     AGENTSMITH_LLMUP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'agentsmith-llmup-config', 'data'),
     ASBCP_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'asbcp-config', 'data'),
     AFSCP_RUNTIME_CONFIG_CHECKSUM: resourceFieldChecksum(parsed.documents, 'ConfigMap', 'afscp-runtime-config', 'data'),
-    AFSCP_RUNTIME_SECRETS_CHECKSUM: resourceFieldChecksum(parsed.documents, 'Secret', 'afscp-runtime-secrets', 'stringData'),
+    AFSCP_RUNTIME_SECRETS_CHECKSUM: sha256({
+      runtimeSecretName: context.AFSCP_RUNTIME_REF,
+      runtimeRevision: context.AFSCP_RUNTIME_REF_REVISION,
+      volumeSecretName: context.AFSCP_VOLUME_REF,
+      volumeRevision: context.AFSCP_VOLUME_REF_REVISION,
+    }),
   };
 }
 
@@ -327,12 +376,12 @@ function buildContext(profile: UnifiedDeployProfile, env: Record<string, string>
     AFSCP_DEFAULT_VOLUME_JUICEFS_NAME: `${namespace}-afscp-default`,
     AFSCP_DEFAULT_VOLUME_PV_NAME: `${namespace}-afscp-default-volume`,
     AFSCP_DEFAULT_VOLUME_STORAGE_QUANTITY: '12P',
-    AFSCP_VOLUME_ROOT_PATH: '/var/lib/afscp/volumes/default',
+    AFSCP_VOLUME_ROOT_PATH: '/data/afscp/volumes/default',
     AFSCP_DEFAULT_VOLUME_BACKEND: 'juicefs',
     AFSCP_DEFAULT_VOLUME_ISOLATION_CLASS: 'shared',
     AFSCP_DEFAULT_VOLUME_STATUS: 'active',
     AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON: JSON.stringify(DEFAULT_AFSCP_VOLUME_CAPABILITIES),
-    AFSCP_JVS_CWD_PATH: '/var/lib/afscp/jvs-cwd',
+    AFSCP_JVS_CWD_PATH: '/data/afscp/jvs-cwd',
     SUBSTRATE_KEYCLOAK_PUBLIC_BASE_URL: publicKeycloakBaseUrl,
     SUBSTRATE_KEYCLOAK_PUBLIC_REALMS_BASE_URL: `${publicKeycloakBaseUrl}/realms`,
     SUBSTRATE_POSTGRES_SERVICE_PORT: SUBSTRATE_NATIVE_PORTS.postgresql,
@@ -397,7 +446,9 @@ export async function renderUnifiedDeployToString(options: RenderUnifiedDeployOp
   const substrateTruthSource = options.substrateTruth ?? await readFile(substrateTruthPath, 'utf8');
   const substrateTruth = parseSubstrateTruth(substrateTruthSource, {
     sourcePath: substrateTruthPath,
-    requiredEnv: manifestRequiredEnv(manifest),
+    requiredEnv: RENDER_SUBSTRATE_REQUIRED_ENV,
+    optionalEnv: DOCKER_SUBSTRATE_REQUIRED_ENV,
+    includeDefaultRequiredEnv: false,
   });
   const env = {
     ...deployEnv,
@@ -432,7 +483,7 @@ export async function renderUnifiedDeployToString(options: RenderUnifiedDeployOp
   );
   const rendered = await renderTemplates(templatePaths, templatesRoot, {
     ...baseContext,
-    ...computeRolloutChecksums(initialRendered.output),
+    ...computeRolloutChecksums(initialRendered.output, baseContext),
   });
 
   return {

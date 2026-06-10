@@ -2208,7 +2208,7 @@ export default defineConfig({
     ]);
   });
 
-  it('maps release/repo-split boundary guard, schema, and fixture files to targeted owner review', () => {
+  it('maps release/repo-split boundary guard, schema, source-gate helper, and fixture files to targeted owner review', () => {
     const changedFiles = [
       'scripts/contracts/check-release-boundary-contract.ts',
       'scripts/contracts/check-release-boundary-contract.test.ts',
@@ -2223,8 +2223,10 @@ export default defineConfig({
       'docs/engineering/release-kit-and-runner-repo-split-kiss-plan-v1.md',
       'scripts/contracts/fixtures/release-kit-source-boundary/valid-release-kit/src/allowed-inputs.ts',
       'scripts/governance/current-release-boundary-schema.ts',
+      'scripts/governance/github-actions-source-gate.ts',
       'scripts/governance/release-contract-artifact.ts',
       'scripts/governance/__tests__/current-release-boundary-schema.test.ts',
+      'scripts/governance/__tests__/github-actions-source-gate.test.ts',
       'scripts/governance/__fixtures__/release-boundary/deploy-template-package.valid.json',
       'scripts/governance/__fixtures__/release-boundary/release-contract.valid.json',
       'scripts/governance/__fixtures__/release-boundary/release-kit-evidence.valid.json',
@@ -2823,7 +2825,7 @@ export default defineConfig({
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
         'release:contract:assemble': 'tsx scripts/governance/release-contract-assemble.ts',
       },
@@ -2867,7 +2869,7 @@ export default defineConfig({
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
       },
     };
@@ -2913,7 +2915,7 @@ export default defineConfig({
     const currentPackageJson = {
       scripts: {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts',
         'release:contract': 'tsx scripts/governance/release-contract.ts',
         'release:contract:ci-artifact': 'tsx scripts/governance/release-contract-artifact.ts',
         'release:deploy-template-package': 'tsx scripts/governance/deploy-template-package.ts',
@@ -2958,7 +2960,7 @@ export default defineConfig({
     const unsafeScriptSets = [
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',
-        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts && echo unsafe',
+        'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts && echo unsafe',
       },
       {
         'test:governance': 'bash scripts/governance-default-gate.sh',

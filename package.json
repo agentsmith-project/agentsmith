@@ -78,7 +78,7 @@
     "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'files' && bash scripts/run-file-library-real-gate.sh && npm run test:e2e:integration:files:management-ux",
     "test:visual:backend-real:review": "bash scripts/backend-real-visual-review.sh",
     "test:release:precheck": "bash scripts/run-release-local-precheck.sh",
-    "test:release:contract": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts",
+    "test:release:contract": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts",
     "test:substrate:smoke": "bash scripts/substrate-smoke.sh",
     "test:unified-deploy:substrate-boundary": "tsx scripts/unified-deploy/check-substrate-boundary.ts",
     "test:unified-deploy:unit": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/unified-deploy/*.test.ts",

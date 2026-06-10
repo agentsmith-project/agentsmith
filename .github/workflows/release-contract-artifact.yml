@@ -61,6 +61,7 @@ jobs:
           runner_gate_dir="artifacts/release-contract/runner-manifest-source-gate"
           runner_remote_download_dir="${runner_gate_dir}/artifact-download"
           runner_handoff_download_dir="${runner_gate_dir}/handoff-download"
+          runner_selected_artifacts_path="${runner_gate_dir}/selected-artifacts.json"
           mkdir -p "${runner_gate_dir}"
           rm -rf "${runner_remote_download_dir}"
           rm -rf "${runner_handoff_download_dir}"
@@ -72,22 +73,15 @@ jobs:
             exit 1
           fi
 
-          gh run view "${runner_run_id}" \
+          npx tsx scripts/governance/github-actions-source-gate.ts download-run-artifacts \
             --repo "${runner_repo}" \
-            --json conclusion,databaseId,headSha,status,url,workflowName \
-            > "${runner_gate_dir}/run-view.json"
-          gh api "repos/${runner_repo}/actions/runs/${runner_run_id}" \
-            > "${runner_gate_dir}/run-api.json"
-          gh api "repos/${runner_repo}/actions/runs/${runner_run_id}/artifacts?per_page=100" \
-            > "${runner_gate_dir}/artifacts-api.json"
-          gh run download "${runner_run_id}" \
-            --repo "${runner_repo}" \
-            --name "${runner_artifact_name}" \
-            --dir "${runner_remote_download_dir}"
-          gh run download "${runner_run_id}" \
-            --repo "${runner_repo}" \
-            --name "${runner_handoff_artifact_name}" \
-            --dir "${runner_handoff_download_dir}"
+            --run-id "${runner_run_id}" \
+            --run-view-path "${runner_gate_dir}/run-view.json" \
+            --run-api-path "${runner_gate_dir}/run-api.json" \
+            --artifacts-api-path "${runner_gate_dir}/artifacts-api.json" \
+            --selected-artifacts-path "${runner_selected_artifacts_path}" \
+            --artifact "${runner_artifact_name}=${runner_remote_download_dir}" \
+            --artifact "${runner_handoff_artifact_name}=${runner_handoff_download_dir}"
 
           export RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR="${runner_remote_download_dir}"
           export RUNNER_GA_HANDOFF_DOWNLOAD_DIR="${runner_handoff_download_dir}"
@@ -248,12 +242,10 @@ jobs:
           export ASBCP_ASSET_NAME="${asbcp_asset_name}"
           gh api "repos/${asbcp_repo}/releases/tags/${asbcp_release_tag}" \
             > "${ASBCP_RELEASE_API_PATH}"
-          gh run list \
+          npx tsx scripts/governance/github-actions-source-gate.ts list-successful-runs \
             --repo "${asbcp_repo}" \
-            --commit "${asbcp_commit_sha}" \
-            --json conclusion,databaseId,headSha,status,url,workflowName \
-            --limit 20 \
-            > "${ASBCP_SOURCE_RUNS_API_PATH}"
+            --head-sha "${asbcp_commit_sha}" \
+            --output "${ASBCP_SOURCE_RUNS_API_PATH}"
 
           node <<'NODE'
           const { readFileSync, writeFileSync } = require('node:fs');
@@ -522,12 +514,10 @@ jobs:
             docker buildx imagetools inspect "${image_tag_ref}" --format '{{.Manifest.Digest}}' \
               > "${DEP_OBSERVED_DIGEST_PATH}"
             lock_commit_sha="$(cat "${DEP_LOCK_COMMIT_SHA_PATH}")"
-            gh run list \
+            npx tsx scripts/governance/github-actions-source-gate.ts list-successful-runs \
               --repo "${repo_slug}" \
-              --commit "${lock_commit_sha}" \
-              --json conclusion,databaseId,headSha,status,url,workflowName \
-              --limit 20 \
-              > "${DEP_SOURCE_RUNS_API_PATH}"
+              --head-sha "${lock_commit_sha}" \
+              --output "${DEP_SOURCE_RUNS_API_PATH}"
 
             node <<'NODE'
             const { readFileSync, writeFileSync } = require('node:fs');

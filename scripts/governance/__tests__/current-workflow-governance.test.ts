@@ -1749,21 +1749,24 @@ describe('current workflow governance', () => {
     expect(runnerSourceGateRun).toContain('runner_handoff_artifact_name="runner-ga-handoff"');
     expect(runnerSourceGateRun).toContain('runner_remote_download_dir="${runner_gate_dir}/artifact-download"');
     expect(runnerSourceGateRun).toContain('runner_handoff_download_dir="${runner_gate_dir}/handoff-download"');
+    expect(runnerSourceGateRun).toContain('runner_selected_artifacts_path="${runner_gate_dir}/selected-artifacts.json"');
     expect(runnerSourceGateRun).toContain(RUNNER_IMAGE_LOCK_ADOPTION_COMMAND);
     expect(runnerSourceGateRun).toContain('runner-manifest-source-gate');
     expect(runnerSourceGateRun).not.toContain('manifest.artifact_provenance.run_id');
     expect(runnerSourceGateRun).not.toContain('manifest.artifact_provenance.subject_name');
     expect(runnerSourceGateRun).not.toContain('runner release manifest artifact_provenance.subject_name is required.');
     expect(runnerSourceGateRun).toContain('runner_release_run_id must be a GitHub Actions numeric run id.');
-    expect(runnerSourceGateRun).toContain('gh run view "${runner_run_id}"');
-    expect(runnerSourceGateRun).toContain('--json conclusion,databaseId,headSha,status,url,workflowName');
-    expect(runnerSourceGateRun).toContain('gh api "repos/${runner_repo}/actions/runs/${runner_run_id}"');
     expect(runnerSourceGateRun).toContain(
-      'gh api "repos/${runner_repo}/actions/runs/${runner_run_id}/artifacts?per_page=100"',
+      'npx tsx scripts/governance/github-actions-source-gate.ts download-run-artifacts',
     );
-    expect(runnerSourceGateRun).toContain('gh run download "${runner_run_id}"');
-    expect(runnerSourceGateRun).toContain('--name "${runner_artifact_name}"');
-    expect(runnerSourceGateRun).toContain('--name "${runner_handoff_artifact_name}"');
+    expect(runnerSourceGateRun).toContain('--run-view-path "${runner_gate_dir}/run-view.json"');
+    expect(runnerSourceGateRun).toContain('--run-api-path "${runner_gate_dir}/run-api.json"');
+    expect(runnerSourceGateRun).toContain('--artifacts-api-path "${runner_gate_dir}/artifacts-api.json"');
+    expect(runnerSourceGateRun).toContain('--selected-artifacts-path "${runner_selected_artifacts_path}"');
+    expect(runnerSourceGateRun).toContain('--artifact "${runner_artifact_name}=${runner_remote_download_dir}"');
+    expect(runnerSourceGateRun).toContain('--artifact "${runner_handoff_artifact_name}=${runner_handoff_download_dir}"');
+    expect(runnerSourceGateRun).not.toContain('gh run download');
+    expect(runnerSourceGateRun).not.toContain('gh run view');
     expect(runnerSourceGateRun).toContain('RUNNER_REMOTE_MANIFEST_DOWNLOAD_DIR');
     expect(runnerSourceGateRun).toContain('RUNNER_GA_HANDOFF_DOWNLOAD_DIR');
     expect(runnerSourceGateRun).toContain('agentsmith.runner-release-manifest/v1');
@@ -1780,6 +1783,12 @@ describe('current workflow governance', () => {
     expect(asbcpSourceGateRun).toContain(ASBCP_IMAGE_ONLY_COMMAND);
     expect(asbcpSourceGateRun).toContain('asbcp_release_url must match asbcp_version');
     expect(asbcpSourceGateRun).toContain('gh api "repos/${asbcp_repo}/releases/tags/${asbcp_release_tag}"');
+    expect(asbcpSourceGateRun).toContain(
+      'npx tsx scripts/governance/github-actions-source-gate.ts list-successful-runs',
+    );
+    expect(asbcpSourceGateRun).toContain('--head-sha "${asbcp_commit_sha}"');
+    expect(asbcpSourceGateRun).toContain('--output "${ASBCP_SOURCE_RUNS_API_PATH}"');
+    expect(asbcpSourceGateRun).not.toContain('gh run list');
     expect(asbcpSourceGateRun).toContain('expected exactly one ${expectedAssetName} release asset');
     expect(asbcpSourceGateRun).toContain('-H "Accept: application/octet-stream"');
     expect(asbcpSourceGateRun).toContain('repos/${asbcp_repo}/releases/assets/${asbcp_asset_id}');
@@ -1795,6 +1804,12 @@ describe('current workflow governance', () => {
     expect(dependencyImageSourceGateRun).toContain('gh api "repos/${repo_slug}/releases/tags/${release_tag}"');
     expect(dependencyImageSourceGateRun).toContain('gh api "repos/${repo_slug}/git/ref/tags/${release_tag}"');
     expect(dependencyImageSourceGateRun).toContain('docker buildx imagetools inspect "${image_tag_ref}"');
+    expect(dependencyImageSourceGateRun).toContain(
+      'npx tsx scripts/governance/github-actions-source-gate.ts list-successful-runs',
+    );
+    expect(dependencyImageSourceGateRun).toContain('--head-sha "${lock_commit_sha}"');
+    expect(dependencyImageSourceGateRun).toContain('--output "${DEP_SOURCE_RUNS_API_PATH}"');
+    expect(dependencyImageSourceGateRun).not.toContain('gh run list');
     expect(dependencyImageSourceGateRun).toContain("check_command: `docker buildx imagetools inspect ${imageTagRef} --format '{{.Manifest.Digest}}'`");
     expect(dependencyImageSourceGateRun).toContain('source-gate.json');
     expect(dependencyImageSourceGateRun).toContain('observed GHCR digest must match lock digest');

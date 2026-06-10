@@ -514,8 +514,10 @@ function isReleaseBoundaryGuardPath(filePath: string): boolean {
     /^scripts\/contracts\/check-unified-deploy-vocabulary(?:\.test)?\.ts$/,
     /^scripts\/contracts\/fixtures\/release-kit-source-boundary\//,
     /^scripts\/governance\/current-release-boundary-schema\.ts$/,
+    /^scripts\/governance\/github-actions-source-gate\.ts$/,
     /^scripts\/governance\/release-contract-artifact\.ts$/,
     /^scripts\/governance\/__tests__\/current-release-boundary-schema\.test\.ts$/,
+    /^scripts\/governance\/__tests__\/github-actions-source-gate\.test\.ts$/,
     /^scripts\/governance\/__fixtures__\/release-boundary\/[^/]+\.json$/,
   ].some((pattern) => pattern.test(filePath));
 }
@@ -1286,7 +1288,7 @@ const LEGACY_SAFE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Partial<Re
   ],
 };
 const SAFE_EXACT_RELEASE_CONTRACT_PACKAGE_SCRIPT_COMMANDS: Readonly<Partial<Record<string, string>>> = {
-  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
+  'test:release:contract': 'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts scripts/governance/__tests__/github-actions-source-gate.test.ts',
   'release:contract': 'tsx scripts/governance/release-contract.ts',
   'release:contract:assemble': 'tsx scripts/governance/release-contract-assemble.ts',
 };
@@ -1298,6 +1300,7 @@ const LEGACY_SAFE_RELEASE_CONTRACT_PACKAGE_SCRIPT_PREVIOUS_COMMANDS: Readonly<Pa
   'test:release:contract': [
     'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts',
     'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts',
+    'node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run scripts/governance/__tests__/release-contract.test.ts scripts/governance/__tests__/release-contract-input.test.ts scripts/governance/__tests__/deploy-template-package.test.ts',
   ],
 };
 const SAFE_CONTRACTS_CHECK_SOURCE_BOUNDARY_SEGMENT = 'npm run contracts:check-release-kit-source-boundary';

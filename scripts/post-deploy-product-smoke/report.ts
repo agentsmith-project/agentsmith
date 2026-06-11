@@ -16,7 +16,10 @@ import {
   type PostDeployProductSmokeId,
 } from './constants';
 import {
+  CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION,
   validateAgentSmithReleaseContract,
+  validateSubstrateConnectionTruth,
+  type CurrentAgentSmithReleaseContract,
   type CurrentReleaseBoundaryValidationFailure,
 } from '../governance/current-release-boundary-schema';
 
@@ -68,6 +71,12 @@ type DeploymentTargetBinding = {
   runner_public_api_base_url?: string;
   site_env: EvidenceFileDigest;
   substrate_truth: EvidenceFileDigest;
+};
+
+type TargetAxes = {
+  target_cluster: string;
+  substrate_source: string;
+  distribution: string;
 };
 
 export type PostDeployProductSmokeReport = {
@@ -182,6 +191,11 @@ type ReleaseContractBinding = {
   git_sha: string;
 };
 
+type ReleaseContractRead = {
+  reportBinding: ReleaseContractBinding;
+  releaseContract: CurrentAgentSmithReleaseContract;
+};
+
 function formatValidationFailures(failures: readonly CurrentReleaseBoundaryValidationFailure[]): string {
   return failures.map((failure) => `${failure.path}: ${failure.reason}`).join('; ');
 }
@@ -189,7 +203,7 @@ function formatValidationFailures(failures: readonly CurrentReleaseBoundaryValid
 async function readReleaseContractBinding(
   releaseContractPath: string,
   reportReleaseContractPath: string,
-): Promise<ReleaseContractBinding> {
+): Promise<ReleaseContractRead> {
   const raw = await readFile(releaseContractPath);
   const parsed = JSON.parse(raw.toString('utf8')) as unknown;
   const validation = validateAgentSmithReleaseContract(parsed);
@@ -199,10 +213,13 @@ async function readReleaseContractBinding(
     );
   }
   return {
-    path: reportReleaseContractPath,
-    input_sha256: sha256Digest(raw),
-    release_id: validation.value.release_id,
-    git_sha: validation.value.git_sha,
+    reportBinding: {
+      path: reportReleaseContractPath,
+      input_sha256: sha256Digest(raw),
+      release_id: validation.value.release_id,
+      git_sha: validation.value.git_sha,
+    },
+    releaseContract: validation.value,
   };
 }
 
@@ -572,6 +589,19 @@ type SourceFileBinding = EvidenceFileDigest & {
   source: string;
 };
 
+const DOCKER_SUBSTRATE_SCHEMA_VALUES = new Set([
+  'agentsmith.docker-substrate.truth/v1',
+  'docker-substrate.truth/v1',
+]);
+const LOCAL_DEFAULT_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '::1',
+  '[::1]',
+  'agentsmith.localtest.me',
+]);
+
 function resolveAggregateSourcePath(
   rawPath: string,
   resolvedAggregatePath: string,
@@ -632,6 +662,11 @@ function parseEnvValue(source: string, key: string): string {
   return '';
 }
 
+function trimmedStringValue(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function normalizeUrlBinding(value: string): string {
   return value.trim().replace(/\/+$/u, '');
 }
@@ -657,10 +692,151 @@ function assertSiteEnvUrlMatchesSource(input: {
   }
 }
 
+function parseProfileAxes(profile: string): TargetAxes {
+  const value = profile.trim();
+  if (!value) {
+    throw new Error('deployment_target.profile is required from deployment_target.site_env.path.');
+  }
+  if (value === 'local-kind') {
+    throw new Error('local-kind defaults are not accepted for GA post-deploy product smoke handoff.');
+  }
+  if (value === 'existing-cluster') {
+    throw new Error(
+      'deployment_target.profile must use target_cluster/substrate_source/distribution; existing-cluster is a transition-only diagnostic profile.',
+    );
+  }
+
+  const [targetCluster, substrateSource, distribution, extra] = value.split('/');
+  if (!targetCluster || !substrateSource || !distribution || extra !== undefined) {
+    throw new Error(
+      'deployment_target.profile must use target_cluster/substrate_source/distribution for GA handoff target binding.',
+    );
+  }
+
+  return {
+    target_cluster: targetCluster,
+    substrate_source: substrateSource,
+    distribution,
+  };
+}
+
+function assertNoLocalDefaultUrl(label: string, value: string): void {
+  let hostname = '';
+  try {
+    hostname = new URL(value).hostname.toLowerCase();
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+  if (LOCAL_DEFAULT_HOSTS.has(hostname) || hostname.endsWith('.localtest.me')) {
+    throw new Error(`${label} must not use local-kind/default local URL for GA handoff.`);
+  }
+}
+
+function looksLikeDockerSubstrateEnv(source: string): boolean {
+  return /^\s*(?:export\s+)?SUBSTRATE_[A-Z0-9_]*=/mu.test(source)
+    || /^\s*(?:export\s+)?SUBSTRATE_TRUTH_SCHEMA_VERSION=/mu.test(source);
+}
+
+function parseNeutralSubstrateTruth(source: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error: unknown) {
+    if (looksLikeDockerSubstrateEnv(source)) {
+      throw new Error(
+        `deployment_target.substrate_truth must be neutral ${CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION} JSON; Docker substrate env is not accepted for GA handoff.`,
+      );
+    }
+    throw new Error(
+      `deployment_target.substrate_truth must be neutral JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error('deployment_target.substrate_truth must be a JSON object.');
+  }
+
+  const schemaVersion = trimmedStringValue(parsed, 'schema_version');
+  const sourceTruthSchema = trimmedStringValue(parsed, 'source_truth_schema');
+  const kitTruthSource = trimmedStringValue(parsed, 'kit_truth_source');
+  if (
+    DOCKER_SUBSTRATE_SCHEMA_VALUES.has(schemaVersion)
+    || DOCKER_SUBSTRATE_SCHEMA_VALUES.has(sourceTruthSchema)
+    || DOCKER_SUBSTRATE_SCHEMA_VALUES.has(kitTruthSource)
+  ) {
+    throw new Error(
+      'deployment_target.substrate_truth must be neutral JSON; Docker substrate schema is not accepted for GA handoff.',
+    );
+  }
+
+  const validation = validateSubstrateConnectionTruth(parsed);
+  if (!validation.ok) {
+    throw new Error(
+      `deployment_target.substrate_truth failed neutral substrate connection truth validation: ${
+        formatValidationFailures(validation.failures)
+      }`,
+    );
+  }
+
+  return validation.value;
+}
+
+function axesFromRecord(record: Record<string, unknown>, label: string): TargetAxes {
+  const axes = {
+    target_cluster: trimmedStringValue(record, 'target_cluster'),
+    substrate_source: trimmedStringValue(record, 'substrate_source'),
+    distribution: trimmedStringValue(record, 'distribution'),
+  };
+  if (!axes.target_cluster || !axes.substrate_source || !axes.distribution) {
+    throw new Error(`${label} must include target_cluster, substrate_source, and distribution.`);
+  }
+  return axes;
+}
+
+function assertTargetAxesMatch(left: TargetAxes, right: TargetAxes, rightLabel: string): void {
+  if (
+    left.target_cluster !== right.target_cluster
+    || left.substrate_source !== right.substrate_source
+    || left.distribution !== right.distribution
+  ) {
+    throw new Error(
+      `site_env target axes must match ${rightLabel}: `
+        + `${left.target_cluster}/${left.substrate_source}/${left.distribution} != `
+        + `${right.target_cluster}/${right.substrate_source}/${right.distribution}.`,
+    );
+  }
+}
+
+function releaseContractIncludesTarget(
+  releaseContract: CurrentAgentSmithReleaseContract,
+  target: TargetAxes,
+): boolean {
+  return releaseContract.target_profiles.some((profile) => (
+    profile.target_cluster === target.target_cluster
+    && profile.substrate_source === target.substrate_source
+    && profile.distribution === target.distribution
+  ));
+}
+
+function assertReleaseContractTarget(
+  releaseContract: CurrentAgentSmithReleaseContract,
+  target: TargetAxes,
+): void {
+  if (!releaseContractIncludesTarget(releaseContract, target)) {
+    throw new Error(
+      `release_contract.target_profiles must include selected handoff target `
+        + `${target.target_cluster}/${target.substrate_source}/${target.distribution}.`,
+    );
+  }
+}
+
 function buildDeploymentTargetBinding(
   aggregate: Record<string, unknown>,
   siteEnv: SourceFileBinding,
   substrateTruth: SourceFileBinding,
+  releaseContract: CurrentAgentSmithReleaseContract,
 ): DeploymentTargetBinding {
   const source = asRecord(aggregate.source);
   const profile = parseEnvValue(siteEnv.source, 'UNIFIED_DEPLOY_PROFILE');
@@ -683,6 +859,7 @@ function buildDeploymentTargetBinding(
   if (!apiBaseUrl) {
     throw new Error('deployment_target.api_base_url is required.');
   }
+  const profileAxes = parseProfileAxes(profile);
   assertSiteEnvUrlMatchesSource({
     label: 'deployment_target.public_base_url',
     sourceValue: publicBaseUrl,
@@ -706,6 +883,19 @@ function buildDeploymentTargetBinding(
     });
   }
   const boundRunnerPublicApiBaseUrl = runnerPublicApiBaseUrl || siteEnvRunnerPublicApiBaseUrl;
+  assertNoLocalDefaultUrl('deployment_target.public_base_url', publicBaseUrl);
+  assertNoLocalDefaultUrl('deployment_target.api_base_url', apiBaseUrl);
+  if (boundRunnerPublicApiBaseUrl) {
+    assertNoLocalDefaultUrl('deployment_target.runner_public_api_base_url', boundRunnerPublicApiBaseUrl);
+  }
+  const substrateTruthRecord = parseNeutralSubstrateTruth(substrateTruth.source);
+  assertTargetAxesMatch(
+    profileAxes,
+    axesFromRecord(substrateTruthRecord, 'substrate_truth'),
+    'substrate_truth target axes',
+  );
+  assertReleaseContractTarget(releaseContract, profileAxes);
+
   return {
     profile,
     public_base_url: publicBaseUrl,
@@ -790,7 +980,7 @@ export async function runPostDeployProductSmokeReportProducer(
     'product-flows aggregate',
   );
   const aggregate = productFlowsFile.record;
-  const releaseContract = await readReleaseContractBinding(
+  const releaseContractRead = await readReleaseContractBinding(
     resolvedReleaseContractPath,
     reportReleaseContractPath,
   );
@@ -814,14 +1004,19 @@ export async function runPostDeployProductSmokeReportProducer(
     resolvedPathRoot,
     'deployment_target.substrate_truth.path',
   );
-  const deploymentTarget = buildDeploymentTargetBinding(aggregate, siteEnv, substrateTruth);
+  const deploymentTarget = buildDeploymentTargetBinding(
+    aggregate,
+    siteEnv,
+    substrateTruth,
+    releaseContractRead.releaseContract,
+  );
 
   await mkdir(outputDir, { recursive: true });
   const report = buildReport(
     aggregate,
     reportProductFlowsPath,
     productFlowsFile.input_sha256,
-    releaseContract,
+    releaseContractRead.reportBinding,
     reportReportPath,
     (options.now ?? (() => new Date()))().toISOString(),
     reportEvidencePaths,

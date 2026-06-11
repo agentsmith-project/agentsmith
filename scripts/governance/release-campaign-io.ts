@@ -2516,6 +2516,75 @@ function productSmokeReleaseContractShapeIssues(
   return issues;
 }
 
+function productSmokePortableBindingIssues(
+  value: unknown,
+  label: string,
+): string[] {
+  const issues: string[] = [];
+  if (!isRecord(value)) {
+    issues.push(`${label} must be an object`);
+    return issues;
+  }
+
+  const bindingPath = value.path;
+  if (typeof bindingPath !== 'string' || bindingPath.trim().length === 0) {
+    issues.push(`${label}.path must be a non-empty string`);
+  } else if (isInvalidPortableProductSmokePath(bindingPath)) {
+    issues.push(`${label}.path must be a portable relative path`);
+  }
+
+  const sha256 = value.sha256;
+  if (typeof sha256 !== 'string' || !SHA256_DIGEST_PATTERN.test(sha256)) {
+    issues.push(`${label}.sha256 must be a sha256 digest`);
+  }
+
+  return issues;
+}
+
+function productSmokeDeploymentTargetShapeIssues(payload: Record<string, unknown>): string[] {
+  const issues: string[] = [];
+  if (!isRecord(payload.deployment_target)) {
+    issues.push('deployment_target must be an object');
+    return issues;
+  }
+
+  const deploymentTarget = payload.deployment_target;
+  const profile = deploymentTarget.profile;
+  if (typeof profile !== 'string' || profile.trim().length === 0) {
+    issues.push('deployment_target.profile must be a non-empty string');
+  } else {
+    const trimmedProfile = profile.trim();
+    if (trimmedProfile === 'local-kind' || trimmedProfile === 'existing-cluster') {
+      issues.push(`deployment_target.profile must not be ${trimmedProfile} for final GA intake`);
+      return issues;
+    }
+    const [targetCluster, substrateSource, distribution, extra] = trimmedProfile.split('/');
+    if (!targetCluster || !substrateSource || !distribution || extra !== undefined) {
+      issues.push('deployment_target.profile must use target_cluster/substrate_source/distribution');
+    }
+  }
+
+  for (const key of ['public_base_url', 'api_base_url'] as const) {
+    const value = deploymentTarget[key];
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      issues.push(`deployment_target.${key} must be a non-empty string`);
+    }
+  }
+
+  issues.push(
+    ...productSmokePortableBindingIssues(
+      deploymentTarget.site_env,
+      'deployment_target.site_env',
+    ),
+    ...productSmokePortableBindingIssues(
+      deploymentTarget.substrate_truth,
+      'deployment_target.substrate_truth',
+    ),
+  );
+
+  return issues;
+}
+
 function validateExpectedProductSmokeResults(
   payload: Record<string, unknown>,
   check: CurrentVerificationCampaignEvidenceCheck,
@@ -2537,6 +2606,7 @@ function validateExpectedProductSmokeResults(
   const invalidSmokes: string[] = [];
   const pathIssues = productSmokeReportPathIssues(payload);
   const releaseContractIssues = productSmokeReleaseContractShapeIssues(payload, pathIssues);
+  const deploymentTargetIssues = productSmokeDeploymentTargetShapeIssues(payload);
   for (const [smoke, smokeResult] of Object.entries(smokeResults)) {
     if (!isRecord(smokeResult)) {
       continue;
@@ -2576,6 +2646,12 @@ function validateExpectedProductSmokeResults(
   if (releaseContractIssues.length > 0) {
     return unifiedDeployDiagnostic(
       `${path} must include valid release_contract binding: ${releaseContractIssues.join('; ')}.`,
+      'contract_drift',
+    );
+  }
+  if (deploymentTargetIssues.length > 0) {
+    return unifiedDeployDiagnostic(
+      `${path} must include valid deployment_target binding: ${deploymentTargetIssues.join('; ')}.`,
       'contract_drift',
     );
   }

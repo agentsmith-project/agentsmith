@@ -222,6 +222,23 @@ function productSmokeResultsFixture(): Record<string, unknown> {
   ]));
 }
 
+function productSmokeDeploymentTargetFixture(): Record<string, unknown> {
+  return {
+    profile: 'existing_kubernetes/external_declared/online',
+    public_base_url: 'https://agentsmith.release.example.com',
+    api_base_url: 'https://agentsmith.release.example.com/api/v1',
+    runner_public_api_base_url: 'wss://agentsmith-runner.release.example.com/api/v1',
+    site_env: {
+      path: 'unified-deploy/product-flows/site.env',
+      sha256: `sha256:${'b'.repeat(64)}`,
+    },
+    substrate_truth: {
+      path: 'unified-deploy/product-flows/substrate-truth.json',
+      sha256: `sha256:${'c'.repeat(64)}`,
+    },
+  };
+}
+
 function productSmokeReportFixture(smokeResults: Record<string, unknown>): Record<string, unknown> {
   return {
     schema_version: POST_DEPLOY_PRODUCT_SMOKE_REPORT_SCHEMA_VERSION,
@@ -241,6 +258,7 @@ function productSmokeReportFixture(smokeResults: Record<string, unknown>): Recor
       release_id: '2026.05.23-p0',
       git_sha: '0123456789abcdef0123456789abcdef01234567',
     },
+    deployment_target: productSmokeDeploymentTargetFixture(),
     smoke_results: smokeResults,
     failures: [],
     paths: {
@@ -1176,6 +1194,88 @@ describe('release-full aggregate gate', () => {
         failure_class: 'contract_drift',
       });
       expect(reportRecord?.error).toContain('release_contract must be an object');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when deployment_target is missing', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-missing-target-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const report = productSmokeReportFixture(productSmokeResultsFixture());
+      delete report.deployment_target;
+
+      writeJson(reportPath, report);
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.error).toContain('deployment_target must be an object');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when deployment_target uses local-kind', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-local-kind-target-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const report = productSmokeReportFixture(productSmokeResultsFixture());
+      recordField(report, 'deployment_target').profile = 'local-kind';
+
+      writeJson(reportPath, report);
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.error).toContain('deployment_target.profile');
+      expect(reportRecord?.error).toContain('local-kind');
+    } finally {
+      rmSync(campaignRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails product smoke report evidence when deployment_target evidence bindings are malformed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-product-smoke-target-binding-shape-'));
+    try {
+      const reportCheck = getProductSmokeReportCheck();
+      const reportPath = materializeCampaignPath(campaignRoot, reportCheck.path);
+      const report = productSmokeReportFixture(productSmokeResultsFixture());
+      const deploymentTarget = recordField(report, 'deployment_target');
+      recordField(deploymentTarget, 'site_env').path = '/tmp/site.env';
+      recordField(deploymentTarget, 'substrate_truth').sha256 = `sha256:${'z'.repeat(64)}`;
+
+      writeJson(reportPath, report);
+
+      const reportRecord = evaluateCampaignEvidenceChecks(campaignRoot, getProductSmokeEvidenceStep())
+        .find((record) => record.id === 'post_deploy_product_smoke_report');
+
+      expect(reportRecord).toMatchObject({
+        id: 'post_deploy_product_smoke_report',
+        path: reportPath,
+        kind: 'file',
+        exists: false,
+        failure_class: 'contract_drift',
+      });
+      expect(reportRecord?.error).toContain('deployment_target.site_env.path');
+      expect(reportRecord?.error).toContain('deployment_target.substrate_truth.sha256');
     } finally {
       rmSync(campaignRoot, { recursive: true, force: true });
     }

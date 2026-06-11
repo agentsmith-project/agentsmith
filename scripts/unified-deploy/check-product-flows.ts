@@ -196,6 +196,8 @@ type ProductFlowState = {
   endpointModel?: string;
   libraryId?: string;
   managedRunner?: DefaultManagedRunnerSeedResult;
+  taskId?: string;
+  taskRunId?: string;
   chatSessionId?: string;
   chatAssistantContent?: string;
   flowStartedAt: string;
@@ -388,6 +390,111 @@ function sourceForEvidence(truth: ProductFlowRuntimeTruth): ProductFlowEvidence[
 
 function flowLabel(flow: ProductVerificationFlowId): string {
   return PRODUCT_VERIFICATION_FLOWS.find((item) => item.id === flow)?.label ?? flow;
+}
+
+function nonEmptyUnique(values: readonly (string | undefined)[]): string[] {
+  return Array.from(new Set(
+    values
+      .map((value) => value?.trim() ?? '')
+      .filter((value) => value.length > 0),
+  ));
+}
+
+const SMOKE_REQUEST_ID_KEYS = [
+  'request_id',
+  'requestId',
+  'correlation_id',
+  'correlationId',
+  'request_correlation_id',
+  'requestCorrelationId',
+] as const;
+
+const SMOKE_RESOURCE_ID_KEYS = [
+  'resource_id',
+  'resourceId',
+  'endpoint_id',
+  'endpointId',
+  'chat_session_id',
+  'chatSessionId',
+  'session_id',
+  'sessionId',
+  'task_id',
+  'taskId',
+  'task_run_id',
+  'taskRunId',
+  'run_id',
+  'runId',
+  'file_library_id',
+  'fileLibraryId',
+] as const;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectStringValuesForKeys(
+  value: unknown,
+  keys: ReadonlySet<string>,
+  depth = 0,
+): string[] {
+  if (depth > 5) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectStringValuesForKeys(item, keys, depth + 1));
+  }
+  if (!isJsonRecord(value)) {
+    return [];
+  }
+
+  const values: string[] = [];
+  for (const [key, nested] of Object.entries(value)) {
+    if (keys.has(key) && typeof nested === 'string' && nested.trim().length > 0) {
+      values.push(nested.trim());
+    }
+    values.push(...collectStringValuesForKeys(nested, keys, depth + 1));
+  }
+  return values;
+}
+
+function matchedRecordValues(
+  record: JsonRecord,
+  keys: readonly string[],
+  expectedValues: readonly string[],
+): string[] {
+  const expected = new Set(nonEmptyUnique(expectedValues));
+  if (expected.size === 0) {
+    return [];
+  }
+  const observed = collectStringValuesForKeys(record, new Set(keys));
+  return nonEmptyUnique(observed.filter((value) => expected.has(value)));
+}
+
+function smokeRequestIds(state: ProductFlowState): string[] {
+  return nonEmptyUnique(Object.values(state.requestIds));
+}
+
+function smokeUsageResourceIds(state: ProductFlowState): string[] {
+  return nonEmptyUnique([
+    state.endpointId,
+    state.chatSessionId,
+    state.libraryId,
+    state.taskId,
+    state.taskRunId,
+    state.managedRunner?.runnerId,
+  ]);
+}
+
+function smokeAuditTargets(state: ProductFlowState): Array<{
+  action: string;
+  resourceIds: string[];
+}> {
+  return [
+    { action: 'project.create', resourceIds: nonEmptyUnique([state.projectId]) },
+    { action: 'endpoint.create', resourceIds: nonEmptyUnique([state.endpointId]) },
+    { action: 'chat.run.completed', resourceIds: nonEmptyUnique([state.chatSessionId, state.endpointId]) },
+    { action: 'notebook.task.created', resourceIds: nonEmptyUnique([state.taskId]) },
+  ];
 }
 
 export function buildProductFlowRuntimeTruth(input: {
@@ -2324,16 +2431,20 @@ async function runAgentTaskManagedRunnerFlow(args: {
   if (!taskId) {
     throw productFlowError('managed runner task create response missing id', checks);
   }
+  state.taskId = taskId;
   const taskWorkspaceFileLibraryId = stringValue(task, 'workspace_file_library_id');
+  const taskRunRequestId = requestId('agent_task_managed_runner');
+  state.requestIds.agent_task_managed_runner_task_run = taskRunRequestId;
   const run = await expectJson(
     fetchImpl,
     apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/tasks/${encodeURIComponent(taskId)}/runs`),
     jsonInit(state, 'POST', {
       intent: 'Reply exactly: unified deploy managed runner ok',
-    }, { 'x-request-id': requestId('agent_task_managed_runner') }),
+    }, { 'x-request-id': taskRunRequestId }),
     200,
     'managed runner task run',
   );
+  state.taskRunId = stringValue(run, 'id');
   let traceStatus = '';
   let traceSummary = '';
   let traceCount = 0;
@@ -2388,15 +2499,41 @@ async function runAuditFlow(
     200,
     'audit query',
   );
-  const actions = itemsArray(audit).map((item) => stringValue(item, 'action'));
-  const requiredAny = ['project.create', 'endpoint.create', 'chat.run.completed', 'notebook.task.created'];
-  const matched = requiredAny.filter((action) => actions.includes(action));
+  const items = itemsArray(audit);
+  const actions = items.map((item) => stringValue(item, 'action'));
+  const requestIds = smokeRequestIds(state);
+  const targets = smokeAuditTargets(state);
+  const matched = items.flatMap((item) => {
+    const action = stringValue(item, 'action');
+    const target = targets.find((candidate) => candidate.action === action);
+    if (!target) {
+      return [];
+    }
+    const matchedRequestIds = matchedRecordValues(item, SMOKE_REQUEST_ID_KEYS, requestIds);
+    const matchedResourceIds = matchedRecordValues(item, SMOKE_RESOURCE_ID_KEYS, target.resourceIds);
+    if (matchedRequestIds.length === 0 && matchedResourceIds.length === 0) {
+      return [];
+    }
+    return [{
+      action,
+      matched_request_ids: matchedRequestIds,
+      matched_resource_ids: matchedResourceIds,
+    }];
+  });
   if (matched.length === 0) {
-    throw new Error(`audit query did not contain any product action evidence: expected one of ${requiredAny.join(', ')}`);
+    throw new Error(
+      `audit query did not contain product action evidence generated by this smoke; expected actions ${targets.map((target) => target.action).join(', ')}`,
+    );
   }
   return {
     total: numberValue(audit, 'total') ?? itemsArray(audit).length,
-    matched_actions: matched,
+    matched_actions: Array.from(new Set(matched.map((item) => item.action))).sort(),
+    matched_request_ids: nonEmptyUnique(matched.flatMap((item) => item.matched_request_ids)),
+    matched_resource_ids: nonEmptyUnique(matched.flatMap((item) => item.matched_resource_ids)),
+    expected_request_ids: requestIds,
+    expected_resource_ids_by_action: Object.fromEntries(
+      targets.map((target) => [target.action, target.resourceIds]),
+    ),
     observed_actions: Array.from(new Set(actions)).sort(),
   };
 }
@@ -2420,20 +2557,36 @@ async function runUsageFlow(
       'usage facts query',
     );
     const facts = itemsArray(usage);
-    const chatOrEndpoint = facts.filter((item) => {
-      const resourceType = stringValue(item, 'resource_type');
-      return resourceType === 'chat' || resourceType === 'endpoint';
+    const requestIds = smokeRequestIds(state);
+    const resourceIds = smokeUsageResourceIds(state);
+    const generatedBySmoke = facts.flatMap((item) => {
+      const matchedRequestIds = matchedRecordValues(item, SMOKE_REQUEST_ID_KEYS, requestIds);
+      const matchedResourceIds = matchedRecordValues(item, SMOKE_RESOURCE_ID_KEYS, resourceIds);
+      if (matchedRequestIds.length === 0 && matchedResourceIds.length === 0) {
+        return [];
+      }
+      return [{
+        record: item,
+        matched_request_ids: matchedRequestIds,
+        matched_resource_ids: matchedResourceIds,
+      }];
     });
-    if (chatOrEndpoint.length > 0) {
+    if (generatedBySmoke.length > 0) {
       return {
         total: numberValue(usage, 'total') ?? facts.length,
-        matched_resource_types: Array.from(new Set(chatOrEndpoint.map((item) => stringValue(item, 'resource_type')))).sort(),
-        matched_fact_ids: chatOrEndpoint.map((item) => stringValue(item, 'id')).filter((item) => item.length > 0),
+        matched_resource_types: Array.from(new Set(
+          generatedBySmoke.map((item) => stringValue(item.record, 'resource_type')),
+        )).filter((item) => item.length > 0).sort(),
+        matched_fact_ids: generatedBySmoke.map((item) => stringValue(item.record, 'id')).filter((item) => item.length > 0),
+        matched_request_ids: nonEmptyUnique(generatedBySmoke.flatMap((item) => item.matched_request_ids)),
+        matched_resource_ids: nonEmptyUnique(generatedBySmoke.flatMap((item) => item.matched_resource_ids)),
+        expected_request_ids: requestIds,
+        expected_resource_ids: resourceIds,
       };
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error('usage facts query did not contain chat or endpoint usage evidence after bounded polling');
+  throw new Error('usage facts query did not contain usage evidence generated by this smoke after bounded polling');
 }
 
 async function runSingleFlow(args: {

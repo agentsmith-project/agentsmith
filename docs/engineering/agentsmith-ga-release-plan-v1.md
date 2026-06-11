@@ -146,7 +146,7 @@ bash scripts/operator-release.sh --ga-report \
 
 ### 3.2 Maintainer GA verdict 入口
 
-Release-kit 增加一个最终聚合入口：
+Release-kit 增加一个 maintainer/internal 最终聚合入口；operator 不直接使用这个命令，主路径由 3.1 的 `operator-release.sh --ga-report` facade 包装：
 
 ```bash
 bash scripts/verify-release.sh --ga-release \
@@ -191,9 +191,9 @@ bash scripts/verify-release.sh --ga-release \
 
 只要任一 required path 缺失、digest 漂移、artifact freshness 不匹配、smoke 缺失或 airgap 在线下载，final verdict 必须 fail fast。Freshness 只能按 `release_id + git_sha + producer_repo + workflow run_id/run_attempt + digest/provenance` 判断，不能靠人工判断“新旧”。
 
-`--ga-release` 只消费 finalized path reports，不重新跑 producer。裸 `operator-release-surface-report.json`、adoption report、candidate intake、operator signoff intake 和 runbook acceptance 只能作为 path report 的内部子步骤证据；不能直接作为 GA verdict 输入，也不能成为 operator 主文档的成功判断对象。
+Maintainer/internal `verify-release.sh --ga-release` 只消费 finalized path reports，不重新跑 producer。裸 `operator-release-surface-report.json`、adoption report、candidate intake、operator signoff intake 和 runbook acceptance 只能作为 path report 的内部子步骤证据；不能直接作为 GA verdict 输入，也不能成为 operator 主文档的成功判断对象。
 
-Post-deploy product smoke 的 AgentSmith-owned producer 是 `npm run lane:unified-deploy:product-flows`。它需要下载后的 `agentsmith-release-contract.json`，可通过 `UNIFIED_DEPLOY_RELEASE_CONTRACT` 或 `AGENTSMITH_RELEASE_CONTRACT_PATH` 指向；`UNIFIED_DEPLOY_RELEASE_SITE_ENV` 指向部署目标 site env，`UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH` 指向同一 deployed target 的 neutral `agentsmith.substrate-connection.truth/v1` substrate truth JSON，`UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` 指向输出根；product-flow 执行所需 runtime-only substrate env projection 只通过 request env 或显式 path 输入，不写入 artifact/final report；Docker substrate env 不能作为 GA handoff truth，release handoff 不回退 repo-local/default truth。该 lane 每次为一个 deployed target/run 写一份 canonical report；final GA 至少要用不同 site env / evidence root 跑出一份 online report 和一份 airgap report，再用 repeated `--post-deploy-product-smoke-report` 交给 release-kit。`npm run test:unified-deploy:product-flows` 只是 focused aggregate diagnostic，不是 release-kit `--ga-release` 的 canonical report producer。该 lane 不加入默认 `product:ready` / release-full；release-kit `--ga-release` 只消费它已经写好的 finalized reports。
+Post-deploy product smoke 的 AgentSmith-owned producer 是 `npm run lane:unified-deploy:product-flows`。它需要下载后的 `agentsmith-release-contract.json`，可通过 `UNIFIED_DEPLOY_RELEASE_CONTRACT` 或 `AGENTSMITH_RELEASE_CONTRACT_PATH` 指向；`UNIFIED_DEPLOY_RELEASE_SITE_ENV` 指向部署目标 site env，`UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH` 指向同一 deployed target 的 neutral `agentsmith.substrate-connection.truth/v1` substrate truth JSON，`UNIFIED_DEPLOY_RELEASE_ROOT_DIR=<ga-smoke-evidence-root>` 指向输出根；product-flow 执行所需 runtime-only substrate env projection 只通过 request env 或显式 path 输入，不写入 artifact/final report；Docker substrate env 不能作为 GA handoff truth，release handoff 不回退 repo-local/default truth。该 lane 每次为一个 deployed target/run 写一份 canonical report；final GA 至少要用不同 site env / evidence root 跑出一份 online report 和一份 airgap report，再用 repeated `--post-deploy-product-smoke-report` 交给 `bash scripts/operator-release.sh --ga-report` facade。`npm run test:unified-deploy:product-flows` 只是 focused aggregate diagnostic，不是 maintainer/internal `verify-release.sh --ga-release` 的 canonical report producer。该 lane 不加入默认 `product:ready` / release-full；operator-facing facade 和 maintainer/internal `verify-release.sh --ga-release` aggregate 只消费它已经写好的 finalized reports。
 
 ### 3.3 AgentSmith 保持产品侧入口
 
@@ -221,7 +221,7 @@ npm run product:status
 | airgap/install_substrates | bundle create/check、substrate installer bundle、image load、substrate install truth、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | Post-deploy product smoke | `npm run lane:unified-deploy:product-flows` 按 deployed target/run 产出的 canonical reports；final GA 至少需要 `<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 和 `<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`，覆盖 auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
 | Runtime pending/readiness | Product Readiness report 中的 `runtime_readiness.observation_policy` 与 Files restore continuation focused backend-real `runtime-readiness-details.json`，覆盖 pending/releasing/offline/not_found 收口规则、AGENT_SANDBOX_UNAVAILABLE 诊断摘要、runtime flake / stability blocker 分类和递增等待间隔 | AgentSmith |
-| Final GA | `--ga-release` aggregate over required reports | release-kit |
+| Final GA | operator-facing `bash scripts/operator-release.sh --ga-report` facade wrapping maintainer/internal `bash scripts/verify-release.sh --ga-release` aggregate over required reports | release-kit |
 
 ### 4.2 不做矩阵爆炸
 
@@ -290,7 +290,7 @@ GA 的判定是：
 5. Release-kit CI 新增 manual GA workflow；默认 PR/push 仍跑 quick/core，避免重门禁拖慢开发。
 6. Bootstrap 语义迁移：
    - producer/path 子步骤报告继续可以是 `readiness:false`
-   - adoption/candidate/intake 报告不再是 GA 概念，只能作为 path report 内部输入或 `--ga-release --dry-run` 诊断
+   - adoption/candidate/intake 报告不再是 GA 概念，只能作为 path report 内部输入或 maintainer/internal `--ga-release --dry-run` 诊断
    - 只有 `ga-release-report.json` 可以表达正式结果：通过时 `status: pass` + `formal_verdict: issued`；blocked 时 `status: fail` + `formal_verdict: not_issued` + blockers
    - `ga-evidence-index.json` 只绑定最终 report digest、path evidence、product readiness、product runtime readiness、post-deploy smoke coverage 和 blockers，用于归档，不发独立 verdict
    - `target_profiles.required:true` 只在 GA release contract/final gate 模式允许
@@ -402,7 +402,7 @@ GA 的判定是：
 3. Runner artifact/image/manifest/adoption。
 4. AgentSmith app image + release contract。
 5. Release-kit 四路径部署证据。
-6. Release-kit final `--ga-release`。
+6. Release-kit final operator-facing `operator-release.sh --ga-report` facade wrapping maintainer/internal `verify-release.sh --ga-release`。
 7. 创建 GitHub Releases/tags：
    - `agentsmith`
    - `agentsmith-runner`
@@ -446,7 +446,7 @@ GA 的判定是：
 | `kit_provided` / `install_substrates` 双词增加心智负担 | GA 文档只保留一个 operator-facing 词，旧词作为 alias 或删除 |
 | `install_substrates` 带来备份、升级、HA 期待 | GA installer 不提供长期 substrate 运维承诺；operator 对持久化、备份、容量和生产 HA 策略负责 |
 | kind 被误认为正式发布目标 | 只放 maintainer rehearsal，不进 GA required matrix |
-| release evidence 过期或手工拼接 | final `--ga-release` 检查 run id、head sha、artifact freshness、digest |
+| release evidence 过期或手工拼接 | operator-facing `operator-release.sh --ga-report` facade 通过 maintainer/internal `verify-release.sh --ga-release` 检查 run id、head sha、artifact freshness、digest |
 | 服务商绑定回流 | provider-specific SaaS skills/OAuth/credential 不进入 success path |
 | 治理继续膨胀 | 只新增 final GA gate 和必要 source/contract checks；不新增看板/审批/产品治理对象；不新增 `current-*` manifest/gate 家族 |
 

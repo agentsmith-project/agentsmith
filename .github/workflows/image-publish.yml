@@ -151,9 +151,31 @@ jobs:
             -t "${APP_SHA_REF}" \
             -f infra/deploy/Dockerfile.agentsmith-app \
             .
-          docker push "${CONTENT_REF}"
-          docker push "${APP_RELEASE_REF}"
-          docker push "${APP_SHA_REF}"
+          push_image_with_retry() {
+            local image_ref="$1"
+            local attempt
+            local delay_seconds
+
+            for attempt in 1 2 3; do
+              echo "Pushing ${image_ref} (attempt ${attempt}/3)."
+              if docker push "${image_ref}"; then
+                return 0
+              fi
+
+              if [[ "${attempt}" == "3" ]]; then
+                echo "Failed to push ${image_ref} after ${attempt} attempts." >&2
+                return 1
+              fi
+
+              delay_seconds=$((attempt * 20))
+              echo "Push failed for ${image_ref} on attempt ${attempt}/3; retrying in ${delay_seconds}s." >&2
+              sleep "${delay_seconds}"
+            done
+          }
+
+          push_image_with_retry "${CONTENT_REF}"
+          push_image_with_retry "${APP_RELEASE_REF}"
+          push_image_with_retry "${APP_SHA_REF}"
 
           app_digest="$(docker buildx imagetools inspect "${APP_RELEASE_REF}" --format '{{.Manifest.Digest}}')"
           if [[ ! "${app_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then

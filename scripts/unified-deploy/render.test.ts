@@ -740,6 +740,26 @@ describe('unified deploy render producer', () => {
     expect([...routes.values()]).not.toContain('agentsmith-llmup');
   });
 
+  it('renders ingress rules with the host derived from PUBLIC_BASE_URL', async () => {
+    const siteEnv = replaceEnvLine(
+      await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'),
+      'PUBLIC_BASE_URL',
+      'http://agentsmith-ingress.example.test:29180',
+    );
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const ingress = findResource(documents, 'Ingress', 'agentsmith');
+    const rawRules = asRecord(ingress.spec).rules;
+    const rules = Array.isArray(rawRules) ? rawRules.map(asRecord) : [];
+
+    expect(rules).not.toHaveLength(0);
+    expect(rules.every((rule) => rule.host === 'agentsmith-ingress.example.test')).toBe(true);
+    expect(rules.every((rule) => typeof rule.host === 'string' && rule.host.length > 0)).toBe(true);
+  });
+
   it('projects only web-safe config and secrets into the Web-owned API routes', async () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);

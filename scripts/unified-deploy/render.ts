@@ -117,6 +117,7 @@ const RENDER_SUBSTRATE_REQUIRED_ENV = [
   'SUBSTRATE_KEYCLOAK_REALM',
   'SUBSTRATE_KEYCLOAK_CLIENT_ID',
 ] as const;
+const DERIVED_INGRESS_HOST_KEY = 'INGRESS_HOST';
 
 const NUMERIC_ENV = new Set([
   'SUBSTRATE_POSTGRES_PORT',
@@ -235,10 +236,35 @@ async function readAsbcpImageFromLock(lockPath: string = DEFAULT_ASBCP_IMAGE_LOC
   return image;
 }
 
+function deriveIngressHost(values: Record<string, string>): string {
+  const publicBaseUrl = values.PUBLIC_BASE_URL?.trim() ?? '';
+  let parsed: URL;
+
+  try {
+    parsed = new URL(publicBaseUrl);
+  } catch {
+    throw new Error('PUBLIC_BASE_URL must be an absolute URL so INGRESS_HOST can be derived');
+  }
+
+  const derivedHost = parsed.hostname.trim();
+  if (!derivedHost || derivedHost === '_') {
+    throw new Error('PUBLIC_BASE_URL must include a concrete hostname for INGRESS_HOST');
+  }
+
+  const explicitHost = values[DERIVED_INGRESS_HOST_KEY]?.trim();
+  if (explicitHost && explicitHost !== derivedHost) {
+    throw new Error('INGRESS_HOST must match the hostname of PUBLIC_BASE_URL');
+  }
+
+  return derivedHost;
+}
+
 async function withDerivedDeployEnv(options: {
   values: Record<string, string>;
 }): Promise<Record<string, string>> {
   const values = { ...DEFAULT_SECRET_REF_ENV, ...options.values };
+
+  values[DERIVED_INGRESS_HOST_KEY] = deriveIngressHost(values);
 
   if (!values.ASBCP_IMAGE) {
     values.ASBCP_IMAGE = await readAsbcpImageFromLock();

@@ -801,6 +801,19 @@ describe('deploy template package generator', () => {
     expect(workloads).not.toContain('{{NAMESPACE}}');
   });
 
+  it('stages ingress rules with the release-kit ingress host value placeholder', () => {
+    const result = generateDeployTemplatePackage(buildGenerationInput(), {
+      repoRoot: REPO_ROOT,
+      outputDir: outputRoot(),
+      sourceGitSha: GIT_SHA,
+    });
+    const ingress = readArchiveMemberBytes(result.archivePath, 'templates/app/ingress.yaml').toString('utf8');
+
+    expect(ingress).toContain('host: "${{ values.INGRESS_HOST }}"');
+    expect(ingress).not.toContain('- http:');
+    expect(ingress).not.toContain('{{INGRESS_HOST}}');
+  });
+
   it('packages deploy templates without raw Secret payload manifests', () => {
     const result = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot: REPO_ROOT,

@@ -11,7 +11,8 @@ metadata:
 spec:
   ingressClassName: "{{INGRESS_CLASS_NAME}}"
   rules:
-    - http:
+    - host: "{{INGRESS_HOST}}"
+      http:
         paths:
           - path: /api/public
             pathType: Prefix

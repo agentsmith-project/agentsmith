@@ -37,6 +37,27 @@ describe('codex-command-builder', () => {
     expect(config).not.toContain('env_http_headers');
   });
 
+  it('writes multi-agent disable into task codex config when requested by the runner', () => {
+    const config = buildTaskCodexConfig({
+      model: 'placeholder-model',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      disableMultiAgent: true,
+    });
+
+    expect(config).toContain('features.multi_agent = false');
+  });
+
+  it('keeps multi-agent config unset by default for native openai_responses execution', () => {
+    const config = buildTaskCodexConfig({
+      model: 'placeholder-model',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+    });
+
+    expect(config).not.toContain('features.multi_agent');
+  });
+
   it('builds yolo exec args without persisting auth in argv', () => {
     const args = buildCodexExecArgs({
       model: 'placeholder-model',
@@ -74,6 +95,32 @@ describe('codex-command-builder', () => {
     expect(args.slice(0, 4)).toEqual(['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json']);
     expect(args).not.toContain('resume');
     expect(args).not.toContain('--last');
+  });
+
+  it('disables Codex multi-agent through argv when requested by the runner', () => {
+    const args = buildCodexExecArgs({
+      model: 'placeholder-model',
+      prompt: 'hello',
+      cwd: '/tmp/task',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      disableMultiAgent: true,
+    });
+
+    expect(args).toContain('features.multi_agent=false');
+  });
+
+  it('keeps Codex multi-agent argv unset for native openai_responses execution', () => {
+    const args = buildCodexExecArgs({
+      model: 'placeholder-model',
+      prompt: 'hello',
+      cwd: '/tmp/task',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      disableMultiAgent: false,
+    });
+
+    expect(args).not.toContain('features.multi_agent=false');
   });
 
   it('derives config and exec compact limits from max output tokens without passing raw output limits', () => {

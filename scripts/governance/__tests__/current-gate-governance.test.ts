@@ -182,16 +182,24 @@ describe('current gate governance', () => {
     expect(releaseProductFlowsScript).toContain(
       'cp "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_SITE_ENV_TARGET}"',
     );
+    expect(releaseProductFlowsScript).toContain('project_airgap_managed_runner_image()');
+    expect(releaseProductFlowsScript).toContain('image-map.json');
+    expect(releaseProductFlowsScript).toContain('imageMap?.mappings');
+    expect(releaseProductFlowsScript).toContain("entry.id === 'managed_runner'");
+    expect(releaseProductFlowsScript).toContain('airgap MANAGED_RUNNER_IMAGE still points at ghcr.io');
     expect(releaseProductFlowsScript).toContain(
       'cp "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}" "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_TARGET}"',
     );
     expect(releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"')).toBeLessThan(
       releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
     );
-    expect(releaseProductFlowsScript.indexOf('npm run post-deploy-product-smoke:doctor --')).toBeLessThan(
-      releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_SOURCE}"'),
-    );
     expect(releaseProductFlowsScript.indexOf('cp "${POST_DEPLOY_PRODUCT_SMOKE_SUBSTRATE_TRUTH_SOURCE}"')).toBeLessThan(
+      releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
+    );
+    expect(releaseProductFlowsScript.lastIndexOf('project_airgap_managed_runner_image')).toBeLessThan(
+      releaseProductFlowsScript.indexOf('npm run post-deploy-product-smoke:doctor --'),
+    );
+    expect(releaseProductFlowsScript.indexOf('npm run post-deploy-product-smoke:doctor --')).toBeLessThan(
       releaseProductFlowsScript.indexOf('npm run test:unified-deploy:product-flows --'),
     );
     expect(releaseProductFlowsScript).toContain('--release-contract="${POST_DEPLOY_PRODUCT_SMOKE_RELEASE_CONTRACT_TARGET}"');
@@ -307,6 +315,171 @@ esac
       expect(reportArgv).toContain(`--release-contract=${targetContractPath}`);
       expect(reportArgv).not.toContain(`--release-contract=${sourceContractPath}`);
       expect(reportArgv).toContain(`--path-root=${campaignRoot}`);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('projects airgap managed runner image-map target into the product-flow target site env', () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'agentsmith-product-flows-airgap-image-map-'));
+
+    try {
+      const campaignRoot = join(tempRoot, 'campaign');
+      const sourceRoot = join(tempRoot, 'source');
+      const fakeBin = join(tempRoot, 'bin');
+      const doctorArgvPath = join(tempRoot, 'doctor-argv.txt');
+      const productFlowsArgvPath = join(tempRoot, 'product-flows-argv.txt');
+      const reportArgvPath = join(tempRoot, 'report-argv.txt');
+      const sourceContractPath = join(sourceRoot, 'agentsmith-release-contract.json');
+      const sourceImageMapPath = join(sourceRoot, 'image-map.json');
+      const sourceSiteEnvPath = join(sourceRoot, 'site.env');
+      const sourceSubstrateTruthPath = join(sourceRoot, 'substrate-truth.json');
+      const targetSiteEnvPath = join(campaignRoot, 'deployment-target', 'site.env');
+      const expectedProductFlowsPath = join(campaignRoot, 'unified-deploy', 'product-flows', 'aggregate.json');
+      const sourceImage = 'ghcr.io/agentsmith-project/agentsmith-runner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const targetImage = 'kind-registry:5000/agentsmith/agentsmith-runner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+      mkdirSync(sourceRoot, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(sourceContractPath, '{"schema_version":"test-release-contract"}\n');
+      writeFileSync(sourceImageMapPath, JSON.stringify({
+        mappings: [{
+          id: 'agentsmith_api',
+          target_image: 'kind-registry:5000/agentsmith/api@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        }, {
+          id: 'managed_runner',
+          target_image: targetImage,
+        }],
+      }));
+      writeFileSync(
+        sourceSiteEnvPath,
+        [
+          'UNIFIED_DEPLOY_PROFILE=existing_kubernetes/external_declared/airgap',
+          'PUBLIC_BASE_URL=https://agentsmith.example.com',
+          `MANAGED_RUNNER_IMAGE=${sourceImage}`,
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(sourceSubstrateTruthPath, '{"schema_version":"agentsmith.substrate-connection.truth/v1"}\n');
+
+      const npmStubPath = join(fakeBin, 'npm');
+      writeFileSync(
+        npmStubPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$#" -lt 2 || "$1" != "run" ]]; then
+  printf 'unexpected npm invocation: %s\\n' "$*" >&2
+  exit 64
+fi
+
+case "$2" in
+  post-deploy-product-smoke:doctor)
+    printf '%s\\n' "$@" > "\${DOCTOR_ARGV_CAPTURE}"
+    ;;
+  test:unified-deploy:product-flows)
+    printf '%s\\n' "$@" > "\${PRODUCT_FLOWS_ARGV_CAPTURE}"
+    printf '[fake product flows] --product-flows=%s/unified-deploy/product-flows/aggregate.json\\n' "\${RELEASE_CAMPAIGN_ROOT}"
+    ;;
+  post-deploy-product-smoke:report)
+    printf '%s\\n' "$@" > "\${REPORT_ARGV_CAPTURE}"
+    ;;
+  *)
+    printf 'unexpected npm script: %s\\n' "$2" >&2
+    exit 64
+    ;;
+esac
+`,
+      );
+      chmodSync(npmStubPath, 0o755);
+
+      execFileSync('bash', ['scripts/unified-deploy/release-product-flows.sh'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          RELEASE_CAMPAIGN_ROOT: campaignRoot,
+          AGENTSMITH_RELEASE_CONTRACT_PATH: sourceContractPath,
+          UNIFIED_DEPLOY_RELEASE_SITE_ENV: sourceSiteEnvPath,
+          UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH: sourceSubstrateTruthPath,
+          DOCTOR_ARGV_CAPTURE: doctorArgvPath,
+          PRODUCT_FLOWS_ARGV_CAPTURE: productFlowsArgvPath,
+          REPORT_ARGV_CAPTURE: reportArgvPath,
+          UNIFIED_DEPLOY_RELEASE_CONTRACT: '',
+          UNIFIED_DEPLOY_RELEASE_ROOT_DIR: '',
+          UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV: '',
+        },
+        stdio: 'pipe',
+      });
+
+      expect(readFileSync(sourceSiteEnvPath, 'utf8')).toContain(`MANAGED_RUNNER_IMAGE=${sourceImage}`);
+      expect(readFileSync(sourceSiteEnvPath, 'utf8')).not.toContain(targetImage);
+      const targetSiteEnv = readFileSync(targetSiteEnvPath, 'utf8');
+      expect(targetSiteEnv).toContain(`MANAGED_RUNNER_IMAGE=${targetImage}`);
+      expect(targetSiteEnv).not.toContain(sourceImage);
+
+      const doctorArgv = readFileSync(doctorArgvPath, 'utf8').trim().split('\n');
+      expect(doctorArgv).toContain(`--site-env=${targetSiteEnvPath}`);
+      const productFlowsArgv = readFileSync(productFlowsArgvPath, 'utf8').trim().split('\n');
+      expect(productFlowsArgv).toContain(`--site-env=${targetSiteEnvPath}`);
+      const reportArgv = readFileSync(reportArgvPath, 'utf8').trim().split('\n');
+      expect(reportArgv).toContain(`--product-flows=${expectedProductFlowsPath}`);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when airgap product-flow target site env still points managed runner at ghcr without an image-map target', () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'agentsmith-product-flows-airgap-missing-runner-map-'));
+
+    try {
+      const campaignRoot = join(tempRoot, 'campaign');
+      const sourceRoot = join(tempRoot, 'source');
+      const sourceContractPath = join(sourceRoot, 'agentsmith-release-contract.json');
+      const sourceSiteEnvPath = join(sourceRoot, 'site.env');
+      const sourceSubstrateTruthPath = join(sourceRoot, 'substrate-truth.json');
+      const sourceImage = 'ghcr.io/agentsmith-project/agentsmith-runner@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+      mkdirSync(sourceRoot, { recursive: true });
+      writeFileSync(sourceContractPath, '{"schema_version":"test-release-contract"}\n');
+      writeFileSync(
+        sourceSiteEnvPath,
+        [
+          'UNIFIED_DEPLOY_PROFILE=existing_kubernetes/external_declared/airgap',
+          'PUBLIC_BASE_URL=https://agentsmith.example.com',
+          `MANAGED_RUNNER_IMAGE=${sourceImage}`,
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(sourceSubstrateTruthPath, '{"schema_version":"agentsmith.substrate-connection.truth/v1"}\n');
+
+      let thrown: unknown;
+      try {
+        execFileSync('bash', ['scripts/unified-deploy/release-product-flows.sh'], {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            RELEASE_CAMPAIGN_ROOT: campaignRoot,
+            AGENTSMITH_RELEASE_CONTRACT_PATH: sourceContractPath,
+            UNIFIED_DEPLOY_RELEASE_SITE_ENV: sourceSiteEnvPath,
+            UNIFIED_DEPLOY_RELEASE_SUBSTRATE_TRUTH: sourceSubstrateTruthPath,
+            UNIFIED_DEPLOY_RELEASE_CONTRACT: '',
+            UNIFIED_DEPLOY_RELEASE_ROOT_DIR: '',
+            UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV: '',
+          },
+          stdio: 'pipe',
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      const failure = thrown as Error & { status?: number; stderr?: Buffer };
+      expect(failure.status).toBe(1);
+      expect(failure.stderr?.toString() ?? '').toContain(
+        'airgap MANAGED_RUNNER_IMAGE still points at ghcr.io',
+      );
+      expect(readFileSync(sourceSiteEnvPath, 'utf8')).toContain(`MANAGED_RUNNER_IMAGE=${sourceImage}`);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

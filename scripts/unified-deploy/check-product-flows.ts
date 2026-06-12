@@ -742,6 +742,56 @@ function itemsArray(record: JsonRecord): JsonRecord[] {
   return Array.isArray(items) ? items.map(asRecord) : [];
 }
 
+type ManagedRunnerTerminalFact = {
+  status: 'success' | 'error' | 'cancelled';
+  summary: string;
+  traceName: string;
+};
+
+function readManagedRunnerTerminalFact(trace: JsonRecord): ManagedRunnerTerminalFact | null {
+  const status = stringValue(trace, 'status');
+  if (status !== 'success' && status !== 'error' && status !== 'cancelled') {
+    return null;
+  }
+  const traceName = stringValue(trace, 'name');
+  const phase = stringValue(trace, 'phase');
+  const details = asRecord(trace.details);
+  const runPhase = stringValue(details, 'run_phase');
+  const isRunSummary = traceName === 'run.summary';
+  const isRunLifecycleTerminal = (
+    traceName === 'run.lifecycle'
+    && phase === 'end'
+    && (
+      runPhase === 'completed'
+      || runPhase === 'failed'
+      || runPhase === 'cancelled'
+      || status === 'error'
+      || status === 'cancelled'
+    )
+  );
+  if (!isRunSummary && !isRunLifecycleTerminal) {
+    return null;
+  }
+  return {
+    status,
+    summary: stringValue(trace, 'summary'),
+    traceName,
+  };
+}
+
+function readTaskRunId(run: JsonRecord): string {
+  return stringValue(run, 'run_id')
+    || stringValue(run, 'runId')
+    || stringValue(run, 'turn_id')
+    || stringValue(run, 'turnId');
+}
+
+function readTaskRunMessageId(run: JsonRecord): string {
+  return stringValue(run, 'message_id')
+    || stringValue(run, 'messageId')
+    || stringValue(run, 'id');
+}
+
 function compactJsonRecord(record: Record<string, unknown>): JsonRecord {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined && value !== ''),
@@ -2444,36 +2494,63 @@ async function runAgentTaskManagedRunnerFlow(args: {
     200,
     'managed runner task run',
   );
-  state.taskRunId = stringValue(run, 'id');
+  const runResponseId = stringValue(run, 'id');
+  const runId = readTaskRunId(run);
+  const messageId = readTaskRunMessageId(run);
+  state.taskRunId = runId;
   let traceStatus = '';
   let traceSummary = '';
+  let terminalTraceName = '';
   let traceCount = 0;
-  for (let attempt = 0; attempt < args.pollMax; attempt += 1) {
+  let traceReadCount = 0;
+  const query = new URLSearchParams({ page_size: '200' });
+  if (messageId) query.set('message_id', messageId);
+  if (runId) query.set('run_id', runId);
+  const traceUrl = apiV1Url(
+    truth,
+    `workspaces/${encodeURIComponent(truth.workspaceId)}`
+      + `/projects/${encodeURIComponent(state.projectId)}`
+      + `/tasks/${encodeURIComponent(taskId)}/traces?${query.toString()}`,
+  );
+  const readTerminalTrace = async (): Promise<void> => {
     const traces = await expectJson(
       fetchImpl,
-      apiV1Url(truth, `workspaces/${encodeURIComponent(truth.workspaceId)}/projects/${encodeURIComponent(state.projectId)}/tasks/${encodeURIComponent(taskId)}/traces?page_size=200`),
+      traceUrl,
       { method: 'GET', headers: authHeaders(state) },
       200,
       'managed runner task traces',
     );
+    traceReadCount += 1;
     const terminal = itemsArray(traces)
       .reverse()
-      .find((item) => stringValue(item, 'status') === 'success' || stringValue(item, 'status') === 'error' || stringValue(item, 'status') === 'cancelled');
+      .map(readManagedRunnerTerminalFact)
+      .find((item): item is ManagedRunnerTerminalFact => item !== null);
     traceCount = itemsArray(traces).length;
-    traceStatus = terminal ? stringValue(terminal, 'status') : '';
-    traceSummary = terminal ? stringValue(terminal, 'summary') : '';
+    traceStatus = terminal?.status ?? '';
+    traceSummary = terminal?.summary ?? '';
+    terminalTraceName = terminal?.traceName ?? '';
+  };
+  for (let attempt = 0; attempt < args.pollMax; attempt += 1) {
+    await readTerminalTrace();
     if (traceStatus) {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, args.pollIntervalMs));
   }
+  if (!traceStatus && args.pollMax > 0) {
+    await readTerminalTrace();
+  }
   checks.task_execution = {
     task_id: taskId,
     task_workspace_file_library_id: taskWorkspaceFileLibraryId,
-    run_response_id: stringValue(run, 'id'),
+    run_response_id: runResponseId,
+    run_id: runId,
+    message_id: messageId,
     trace_status: traceStatus || 'missing',
     trace_summary: traceSummary,
+    terminal_trace_name: terminalTraceName,
     trace_count: traceCount,
+    trace_read_count: traceReadCount,
     poll_count: args.pollMax,
   };
   if (traceStatus !== 'success') {

@@ -219,10 +219,14 @@ function makeKeycloakConflictReuseFetch(): ProductFlowFetch {
 function makeFocusedAgentTaskFetch(observed: {
   chatRequests: number;
   taskCreatePayloads?: Record<string, unknown>[];
+  traceRequests?: string[];
+  traceReadCount?: number;
+  managedRunnerTraceItemsByRead?: Record<string, unknown>[][];
   auditItems?: Record<string, unknown>[];
   usageItems?: Record<string, unknown>[];
 }): ProductFlowFetch {
   let libraryReadyReads = 0;
+  let traceReads = 0;
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -311,10 +315,24 @@ function makeFocusedAgentTaskFetch(observed: {
       return responseJson(201, { id: 'task_focused', workspace_file_library_id: 'flib_task_created' });
     }
     if (url.endsWith('/tasks/task_focused/runs') && method === 'POST') {
-      return responseJson(200, { id: 'run_focused' });
+      return responseJson(200, { id: 'msg_focused', run_id: 'run_focused' });
     }
     if (url.includes('/tasks/task_focused/traces') && method === 'GET') {
-      return responseJson(200, { items: [{ id: 'trace_done', status: 'success', summary: 'Run completed' }] });
+      traceReads += 1;
+      observed.traceReadCount = traceReads;
+      observed.traceRequests?.push(url);
+      const configuredItems = observed.managedRunnerTraceItemsByRead?.[
+        Math.min(traceReads - 1, observed.managedRunnerTraceItemsByRead.length - 1)
+      ];
+      return responseJson(200, {
+        items: configuredItems ?? [{
+          id: 'trace_done',
+          name: 'run.summary',
+          phase: 'end',
+          status: 'success',
+          summary: 'Run success',
+        }],
+      });
     }
     if (url.includes('/audit') && method === 'GET' && observed.auditItems) {
       return responseJson(200, {
@@ -871,7 +889,11 @@ describe('unified deploy product flow producer', () => {
   });
 
   it('runs the focused files plus managed runner flow with an independent create_new task workspace', async () => {
-    const observed = { chatRequests: 0, taskCreatePayloads: [] as Record<string, unknown>[] };
+    const observed = {
+      chatRequests: 0,
+      taskCreatePayloads: [] as Record<string, unknown>[],
+      traceRequests: [] as string[],
+    };
     const result = await runUnifiedDeployProductFlowsProducer({
       siteEnvPath: 'site.env',
       substrateTruthPath: 'connection.env',
@@ -939,6 +961,157 @@ describe('unified deploy product flow producer', () => {
       },
       task_execution: {
         task_workspace_file_library_id: 'flib_task_created',
+        run_response_id: 'msg_focused',
+        run_id: 'run_focused',
+        message_id: 'msg_focused',
+        terminal_trace_name: 'run.summary',
+      },
+    });
+    expect(observed.traceRequests).toHaveLength(1);
+    expect(observed.traceRequests[0]).toContain('message_id=msg_focused');
+    expect(observed.traceRequests[0]).toContain('run_id=run_focused');
+  });
+
+  it('waits for the run-scoped canonical managed runner terminal fact at the deadline', async () => {
+    const observed = {
+      chatRequests: 0,
+      traceRequests: [] as string[],
+      managedRunnerTraceItemsByRead: [
+        [{
+          id: 'trace_generic_success',
+          name: 'codex.output',
+          phase: 'end',
+          status: 'success',
+          summary: 'Agent message completed',
+        }],
+        [{
+          id: 'trace_run_summary',
+          name: 'run.summary',
+          phase: 'end',
+          status: 'success',
+          summary: 'Run success',
+        }],
+      ] as Record<string, unknown>[][],
+    };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project', 'files', 'agent_task_managed_runner'],
+      agentTaskPolls: 1,
+      agentTaskPollIntervalMs: 0,
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      providerStarter: async () => ({
+        baseUrl: 'http://172.19.0.1:39999/v1',
+        getRequestCount: () => observed.chatRequests,
+        close: async () => undefined,
+      }),
+      managedRunnerSeeder: async () => ({
+        runnerId: 'runner_focused',
+        runnerName: 'Focused runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_focused',
+        configuredImage: null,
+        agentTaskModelSetting: {
+          endpointId: 'ep_focused',
+          defaultModelId: 'integration-chat-model',
+          settingRevision: 'rev_focused',
+          updated: true,
+        },
+        capabilities: {},
+        diagnostics: {},
+        wsUrl: 'ws://agentsmith.localtest.me:29180/api/v1/agent-execution/ws?agent_runner_id=runner_focused',
+      }),
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const managedRunnerFlow = result.evidence.flows.find((flow) => flow.flow === 'agent_task_managed_runner');
+    expect(result.status).toBe('passed');
+    expect(observed.traceRequests).toHaveLength(2);
+    expect(observed.traceRequests.every((url) => (
+      url.includes('message_id=msg_focused') && url.includes('run_id=run_focused')
+    ))).toBe(true);
+    expect(managedRunnerFlow?.checks).toMatchObject({
+      task_execution: {
+        trace_status: 'success',
+        trace_summary: 'Run success',
+        terminal_trace_name: 'run.summary',
+        trace_read_count: 2,
+      },
+    });
+  });
+
+  it('fails managed runner flow on canonical run terminal error', async () => {
+    const observed = {
+      chatRequests: 0,
+      traceRequests: [] as string[],
+      managedRunnerTraceItemsByRead: [[{
+        id: 'trace_run_summary_error',
+        name: 'run.summary',
+        phase: 'end',
+        status: 'error',
+        summary: 'Run error',
+      }]],
+    };
+    const result = await runUnifiedDeployProductFlowsProducer({
+      siteEnvPath: 'site.env',
+      substrateTruthPath: 'connection.env',
+      evidenceDir: 'evidence',
+      fs: makeFs(),
+      fetch: makeFocusedAgentTaskFetch(observed),
+      flowIds: ['workspace_project', 'files', 'agent_task_managed_runner'],
+      backendBootstrapper: async () => ({}),
+      keycloakBootstrapper: async () => ({
+        users: {
+          devAdmin: { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+          integrationUser: { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+        },
+      }),
+      workspaceBootstrapper: async () => undefined,
+      tokenProvider: async () => 'token-dev-admin',
+      providerStarter: async () => ({
+        baseUrl: 'http://172.19.0.1:39999/v1',
+        getRequestCount: () => observed.chatRequests,
+        close: async () => undefined,
+      }),
+      managedRunnerSeeder: async () => ({
+        runnerId: 'runner_focused',
+        runnerName: 'Focused runner',
+        status: 'ready',
+        isDefault: true,
+        defaultEndpointId: 'ep_focused',
+        configuredImage: null,
+        agentTaskModelSetting: {
+          endpointId: 'ep_focused',
+          defaultModelId: 'integration-chat-model',
+          settingRevision: 'rev_focused',
+          updated: true,
+        },
+        capabilities: {},
+        diagnostics: {},
+        wsUrl: 'ws://agentsmith.localtest.me:29180/api/v1/agent-execution/ws?agent_runner_id=runner_focused',
+      }),
+      now: () => new Date('2026-05-07T00:00:00.000Z'),
+    });
+
+    const managedRunnerFlow = result.evidence.flows.find((flow) => flow.flow === 'agent_task_managed_runner');
+    expect(result.status).toBe('failed');
+    expect(managedRunnerFlow?.failure?.message).toContain('status=error summary=Run error');
+    expect(managedRunnerFlow?.checks).toMatchObject({
+      task_execution: {
+        trace_status: 'error',
+        terminal_trace_name: 'run.summary',
       },
     });
   });

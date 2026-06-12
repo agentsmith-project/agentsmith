@@ -814,6 +814,19 @@ describe('deploy template package generator', () => {
     expect(ingress).not.toContain('{{INGRESS_HOST}}');
   });
 
+  it('packages AFSCP volume bootstrap with an in-pod schema bootstrap barrier', () => {
+    const result = generateDeployTemplatePackage(buildGenerationInput(), {
+      repoRoot: REPO_ROOT,
+      outputDir: outputRoot(),
+      sourceGitSha: GIT_SHA,
+    });
+    const afscp = readArchiveMemberBytes(result.archivePath, 'templates/app/afscp.yaml').toString('utf8');
+
+    expect(afscp).toMatch(
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
+    );
+  });
+
   it('packages deploy templates without raw Secret payload manifests', () => {
     const result = generateDeployTemplatePackage(buildGenerationInput(), {
       repoRoot: REPO_ROOT,

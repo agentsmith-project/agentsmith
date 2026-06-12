@@ -1132,6 +1132,7 @@ describe('unified deploy render producer', () => {
     const volumeJob = findResource(documents, 'Job', 'afscp-volume-bootstrap');
     const volumeJobSpec = asRecord(volumeJob.spec);
     const volumeJobPodSpec = asRecord(asRecord(volumeJobSpec.template).spec);
+    const volumeJobSchemaBootstrap = podSpecContainer(volumeJobPodSpec, 'initContainers', 'afscp-schema-bootstrap');
     const volumeJobContainer = podSpecContainer(volumeJobPodSpec, 'containers', 'afscp-volume-bootstrap');
     const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
     const persistentVolumeClaim = findResource(documents, 'PersistentVolumeClaim', 'afscp-default-volume');
@@ -1211,6 +1212,13 @@ describe('unified deploy render producer', () => {
       runAsGroup: 65532,
       fsGroup: 65532,
     });
+    expect(volumeJobSchemaBootstrap.image).toBe(afscpApi.image);
+    expect(volumeJobSchemaBootstrap.command).toEqual(['/usr/local/bin/afscp-migrate']);
+    expect(volumeJobSchemaBootstrap.args).toEqual(['--apply', '--check', '--timeout=60s']);
+    expect(volumeJobSchemaBootstrap.envFrom).toEqual(expect.arrayContaining([
+      { configMapRef: { name: 'afscp-runtime-config' } },
+      { secretRef: { name: 'afscp-runtime-secrets' } },
+    ]));
     expect(volumeJobContainer.image).toBe(afscpApi.image);
     expect(volumeJobContainer.command).toEqual(['/usr/local/bin/afscp-volume-bootstrap']);
     expect(volumeJobContainer.args).toEqual(['--ensure', '--check', '--timeout=60s']);
@@ -1481,6 +1489,21 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('storage quantity must be 12P');
     expect(text).toContain('pre-GA 10Pi baseline');
+  });
+
+  it('rejects AFSCP default volume bootstrap jobs without the schema bootstrap barrier', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const volumeJob = findResource(documents, 'Job', 'afscp-volume-bootstrap');
+    const volumeJobSpec = asRecord(volumeJob.spec);
+    const volumeJobPodSpec = asRecord(asRecord(volumeJobSpec.template).spec);
+    delete volumeJobPodSpec.initContainers;
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('AFSCP default volume bootstrap Job must run afscp-migrate --apply --check before volume ensure');
   });
 
   it('rejects AFSCP default volume bootstrap jobs that use the nonexistent apply flag', async () => {

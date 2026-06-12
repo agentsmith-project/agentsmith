@@ -1199,6 +1199,30 @@ function checkAfscpBootstrapJob(
   }
 }
 
+function checkAfscpVolumeBootstrapSchemaBarrier(
+  documents: readonly Record<string, unknown>[],
+  afscpImage: unknown,
+  failures: CheckFailure[],
+): void {
+  const job = resourceByKindName(documents, 'Job', AFSCP_VOLUME_BOOTSTRAP_JOB);
+  const podSpec = asRecord(asRecord(asRecord(job.spec).template).spec);
+  const init = podSpecContainer(podSpec, 'initContainers', AFSCP_SCHEMA_BOOTSTRAP_JOB);
+  if (init.image !== afscpImage) {
+    addFailure(failures, `Job/${AFSCP_VOLUME_BOOTSTRAP_JOB}`, 'AFSCP default volume bootstrap Job must run the schema bootstrap barrier with the same AFSCP runtime image');
+  }
+  if (
+    stringArray(init.command).join('\0') !== '/usr/local/bin/afscp-migrate'
+    || stringArray(init.args).join('\0') !== ['--apply', '--check', '--timeout=60s'].join('\0')
+  ) {
+    addFailure(failures, `Job/${AFSCP_VOLUME_BOOTSTRAP_JOB}`, 'AFSCP default volume bootstrap Job must run afscp-migrate --apply --check before volume ensure');
+  }
+  const envFrom = Array.isArray(init.envFrom) ? init.envFrom.map(asRecord) : [];
+  const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
+  if (!hasEnvFromRef(envFrom, 'configMapRef', AFSCP_RUNTIME_CONFIG_MAP) || !hasEnvFromRef(envFrom, 'secretRef', expectedRuntimeSecret)) {
+    addFailure(failures, `Job/${AFSCP_VOLUME_BOOTSTRAP_JOB}`, 'AFSCP default volume bootstrap schema barrier must consume the AFSCP runtime config and secrets');
+  }
+}
+
 function checkAfscpSchemaInitContainer(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
@@ -1437,6 +1461,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     'AFSCP default volume bootstrap',
     failures,
   );
+  checkAfscpVolumeBootstrapSchemaBarrier(documents, afscpImage, failures);
   if (stringArray(api.command).join('\0') !== '/usr/local/bin/afscp-api' || stringArray(api.args).join('\0') !== ['--serve', '--listen', '0.0.0.0:8080'].join('\0')) {
     addFailure(failures, 'Deployment/afscp-api', 'afscp-api must run the internal API server on 0.0.0.0:8080');
   }

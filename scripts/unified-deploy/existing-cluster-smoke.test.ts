@@ -730,14 +730,15 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[4]?.input).toContain('kind: Job');
     expect(applyCalls[4]?.input).toContain('name: afscp-volume-bootstrap');
     expect(applyCalls[4]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
-    expect(applyCalls[4]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[4]?.input).not.toContain('/usr/local/bin/afscp-migrate');
+    expect(applyCalls[4]?.input).toMatch(
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
+    );
     expect(applyCalls[4]?.input).not.toContain('kind: Deployment');
     expect(applyCalls[4]?.input).not.toContain('kind: PersistentVolume');
     expect(applyCalls[4]?.input).not.toContain('kind: PersistentVolumeClaim');
     expect(applyCalls[5]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
     expect(applyCalls[5]?.input).toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[5]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[5]?.input).toContain('name: afscp-schema-bootstrap');
     expect(volumeJobPollIndex).toBeGreaterThan(volumeBootstrapApplyIndex);
     expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
     expect(applyCalls[6]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));

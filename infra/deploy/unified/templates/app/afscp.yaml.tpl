@@ -198,6 +198,20 @@ spec:
         runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: afscp-schema-bootstrap
+          image: "{{AFSCP_IMAGE}}"
+          command:
+            - /usr/local/bin/afscp-migrate
+          args:
+            - --apply
+            - --check
+            - --timeout=60s
+          envFrom:
+            - configMapRef:
+                name: afscp-runtime-config
+            - secretRef:
+                name: {{AFSCP_RUNTIME_REF}}
       containers:
         - name: afscp-volume-bootstrap
           image: "{{AFSCP_IMAGE}}"

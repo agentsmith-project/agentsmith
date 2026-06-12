@@ -1530,10 +1530,11 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[11]?.input).toContain('--ensure');
     expect(applyCalls[11]?.input).toContain('--check');
     expect(applyCalls[11]?.input).toMatch(
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap/u,
+    );
+    expect(applyCalls[11]?.input).toMatch(
       /name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap\s*\n\s*args:\s*\n\s*- --ensure\s*\n\s*- --check\s*\n\s*- --timeout=60s/u,
     );
-    expect(applyCalls[11]?.input).not.toContain('name: afscp-schema-bootstrap');
-    expect(applyCalls[11]?.input).not.toContain('/usr/local/bin/afscp-migrate');
     expect(applyCalls[11]?.input).not.toContain('kind: Deployment');
     expect(applyCalls[11]?.input).not.toContain('kind: PersistentVolume');
     expect(applyCalls[11]?.input).not.toContain('kind: PersistentVolumeClaim');
@@ -1541,7 +1542,7 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[11]?.input).not.toMatch(/name: afscp-volume-bootstrap[\s\S]*\/usr\/local\/bin\/afscp-volume-bootstrap[\s\S]*- --apply/u);
     expect(applyCalls[12]?.args).toEqual(expect.arrayContaining(['apply', '-f', '-']));
     expect(applyCalls[12]?.input).toContain('name: afscp-volume-bootstrap');
-    expect(applyCalls[12]?.input).not.toContain('name: afscp-schema-bootstrap');
+    expect(applyCalls[12]?.input).toContain('name: afscp-schema-bootstrap');
     expect(volumeJobPollIndex).toBeGreaterThan(volumeBootstrapApplyIndex);
     expect(appDryRunIndex).toBeGreaterThan(volumeJobPollIndex);
     expect(applyCalls[13]?.args).toEqual(expect.arrayContaining(['apply', '--dry-run=server', '-f', '-']));

@@ -55,7 +55,8 @@ MINIO_SECRET_KEY ?= mbos_dev_password
 MINIO_BUCKET ?= mbos-dev
 
 DATABASE_URL ?= postgresql://mbos:mbos_dev_password@localhost:15432/mbos
-REDIS_URL ?= redis://localhost:16379
+REDIS_PASSWORD ?= mbos_dev_password
+REDIS_URL ?= redis://:$(REDIS_PASSWORD)@localhost:16379
 MONGO_URL ?= mongodb://mbos:mbos_dev_password@localhost:17017/admin
 MONGO_DB_NAME ?= mbos
 BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/agent-task-runner/builtin-skills

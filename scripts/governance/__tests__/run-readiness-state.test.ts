@@ -705,6 +705,8 @@ describe('run-local readiness state', () => {
         .toContain('scripts/lib/run-readiness-state.sh');
       expect(content, `${path} must match integration_deps_ready identity before dependency startup`)
         .toContain('readiness_state_field_ready_with_identity integration_deps_ready');
+      expect(content, `${path} must revalidate Redis auth before reusing integration deps readiness`)
+        .toContain('local_redis_auth_ping "127.0.0.1"');
       expect(content, `${path} must not write readiness state from shell children`)
         .not.toContain('update --field');
     }

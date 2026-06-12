@@ -994,13 +994,14 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-25432}}"');
     expect(script).toContain('MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-27027}}"');
     expect(script).toContain('REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"');
+    expect(script).toContain('REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"');
     expect(script).toContain('MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"');
     expect(script).toContain('MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"');
     expect(script).toContain('KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"');
     expect(script).toContain("MINIO_PORT=\"${MINIO_PORT:-${MINIO_API_PORT}}\"");
     expect(script).toContain("DATABASE_URL=\"${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}\"");
     expect(script).toContain("MONGO_URL=\"${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}\"");
-    expect(script).toContain("POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}'");
+    expect(script).toContain("POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' REDIS_PASSWORD='${REDIS_PASSWORD}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}'");
     expect(script).not.toContain('API_PORT="${PORT_API:-20000}"');
     expect(script).not.toContain('WEB_PORT="${PORT_WEB:-3001}"');
     expect(script).not.toContain('MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"');

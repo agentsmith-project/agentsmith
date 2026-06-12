@@ -545,8 +545,8 @@ for (const failure of validateReleasePrecheckEvidenceOwnership()) {
 }
 requireMatch(
   releaseLocalPrecheck,
-  /deps_ready\(\)[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{POSTGRES_PORT\}"[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{MONGO_PORT\}"[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{REDIS_PORT\}"[\s\S]*minio\/health\/live/,
-  'release-local-precheck must keep lightweight dependency availability checks',
+  /deps_ready\(\)[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{POSTGRES_PORT\}"[\s\S]*tcp_ready "127\.0\.0\.1" "\$\{MONGO_PORT\}"[\s\S]*local_redis_auth_ping "127\.0\.0\.1" "\$\{REDIS_PORT\}" "\$\{REDIS_PASSWORD\}"[\s\S]*minio\/health\/live/,
+  'release-local-precheck must keep lightweight dependency availability checks with Redis auth ping',
 );
 requireMatch(
   releaseLocalPrecheck,

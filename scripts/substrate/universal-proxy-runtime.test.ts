@@ -83,6 +83,7 @@ describe('substrate universal proxy runtime contract', () => {
     cpSync(path.join(process.cwd(), 'scripts', 'substrate', 'providers', 'external.sh'), path.join(providersDir, 'external.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'substrate', 'providers', 'k8s.sh'), path.join(providersDir, 'k8s.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'llmup-image-lock.sh'), path.join(scriptsLibDir, 'llmup-image-lock.sh'));
+    cpSync(path.join(process.cwd(), 'scripts', 'lib', 'local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
     copyIfPresent(
       path.join(process.cwd(), 'scripts', 'lib', 'universal-proxy-runtime.sh'),
       path.join(scriptsLibDir, 'universal-proxy-runtime.sh'),
@@ -100,6 +101,7 @@ SUBSTRATE_STATE_ROOT=${stateRoot}
 SUBSTRATE_COMPOSE_FILE=${path.join(infraIntegrationDir, 'docker-compose.yml')}
 SUBSTRATE_PROXY_PORT=38080
 SUBSTRATE_KEYCLOAK_PORT=18080
+SUBSTRATE_REDIS_PASSWORD=mbos_dev_password
 `,
       'utf8',
     );
@@ -571,6 +573,8 @@ runtime_label=${container.runtimeLabel}
     expect(dockerLog).toContain('--health-cmd curl -fsS http://localhost:8080/health || exit 1');
     expect(dockerLog).not.toContain('/ready');
     const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
+    expect(connectionEnv).toContain('REDIS_URL=redis://:mbos_dev_password@localhost:16379');
+    expect(connectionEnv).toContain('SUBSTRATE_REDIS_PASSWORD=mbos_dev_password');
     expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_BASE_URL=http://127.0.0.1:38080');
     expect(connectionEnv).toMatch(/^MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=.+$/m);
   }, 10000);
@@ -662,13 +666,17 @@ MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=stale-admin-token
     });
 
     expect(result.status).toBe(0);
-    expect(readFileSync(fixture.connectionEnv, 'utf8')).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=\n');
+    const connectionEnv = readFileSync(fixture.connectionEnv, 'utf8');
+    expect(connectionEnv).toContain('REDIS_URL=redis://:mbos_dev_password@localhost:16379');
+    expect(connectionEnv).toContain('SUBSTRATE_REDIS_PASSWORD=mbos_dev_password');
+    expect(connectionEnv).toContain('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=\n');
   });
 
   it('keeps the compose provider structurally delegated to universal-proxy-runtime.sh', () => {
     const composeProvider = readFileSync('scripts/substrate/providers/compose.sh', 'utf8');
     expect(composeProvider).not.toContain('cargo build');
     expect(composeProvider).not.toContain('target/debug/llm-universal-proxy');
+    expect(composeProvider).toContain('REDIS_PASSWORD=${SUBSTRATE_REDIS_PASSWORD}');
     expect(composeProvider).toContain('universal_proxy_runtime_ensure');
   });
 

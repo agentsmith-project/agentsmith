@@ -8,10 +8,13 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 
 API_PORT="${API_PORT:-${INTEGRATION_API_PORT:-20000}}"
 WEB_PORT="${WEB_PORT:-${INTEGRATION_WEB_PORT:-3001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-18080}}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[wait-real-stack-ready]"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 EXPLICIT_KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-}"
@@ -75,7 +78,7 @@ ensure_local_release_stack() {
         DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
         MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
         MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-        REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+        REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:16379}" \
         MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
         MINIO_PORT="${MINIO_PORT:-19000}" \
         MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \

@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 ensure_backend_real_state
 
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
@@ -36,6 +37,8 @@ INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-15432}}"
 MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-17017}}"
 REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-16379}}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[release-local-precheck]"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-19000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-19001}}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"
@@ -135,7 +138,7 @@ PY
 deps_ready() {
   tcp_ready "127.0.0.1" "${POSTGRES_PORT}" || return 1
   tcp_ready "127.0.0.1" "${MONGO_PORT}" || return 1
-  tcp_ready "127.0.0.1" "${REDIS_PORT}" || return 1
+  local_redis_auth_ping "127.0.0.1" "${REDIS_PORT}" "${REDIS_PASSWORD}" "[release-local-precheck]" || return 1
   [[ "$(curl_status "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration")" == "200" ]] || return 1
   [[ "$(curl_status "http://localhost:${MINIO_API_PORT}/minio/health/live")" == "200" ]] || return 1
   return 0
@@ -274,6 +277,7 @@ if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
     POSTGRES_PORT="${POSTGRES_PORT}" \
     MONGO_PORT="${MONGO_PORT}" \
     REDIS_PORT="${REDIS_PORT}" \
+    REDIS_PASSWORD="${REDIS_PASSWORD}" \
     MINIO_API_PORT="${MINIO_API_PORT}" \
     MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
     KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
@@ -325,7 +329,7 @@ API_PID="$(
   DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
   MONGO_URL="${MONGO_URL}" \
   MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+  REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}" \
   MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
   MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
   MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \

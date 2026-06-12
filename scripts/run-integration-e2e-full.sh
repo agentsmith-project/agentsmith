@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/universal-proxy-runtime.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 
 BACKEND_REAL_SESSION_NAME=""
@@ -104,6 +105,8 @@ WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
 POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-25432}}"
 MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-27027}}"
 REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[integration-e2e-full]"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
@@ -366,7 +369,7 @@ require_parent_owned_existing_stack_reuse_truth() {
   require_parent_stack_equal "INTEGRATION_PARENT_STACK_MONGO_URL" "${MONGO_URL}"
   require_parent_stack_equal "INTEGRATION_PARENT_STACK_MONGO_DB_NAME" "${MONGO_DB_NAME}"
   require_parent_stack_equal "INTEGRATION_PARENT_STACK_DATABASE_URL" "${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
-  require_parent_stack_equal "INTEGRATION_PARENT_STACK_REDIS_URL" "${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+  require_parent_stack_equal "INTEGRATION_PARENT_STACK_REDIS_URL" "${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}"
   require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_ENDPOINT" "${MINIO_ENDPOINT:-localhost}"
   require_parent_stack_equal "INTEGRATION_PARENT_STACK_MINIO_PORT" "${MINIO_PORT:-${MINIO_API_PORT}}"
   require_parent_stack_value "INTEGRATION_PARENT_STACK_RUN_ROOT"
@@ -452,7 +455,7 @@ run_clean_with_integration_env() {
     DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
     MONGO_URL="${MONGO_URL}" \
     MONGO_DB_NAME="${MONGO_DB_NAME}" \
-    REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+    REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}" \
     MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
     MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
     MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
@@ -471,6 +474,7 @@ run_clean_with_integration_env() {
     POSTGRES_PORT="${POSTGRES_PORT:-}" \
     MONGO_PORT="${MONGO_PORT:-}" \
     REDIS_PORT="${REDIS_PORT:-}" \
+    REDIS_PASSWORD="${REDIS_PASSWORD}" \
     MINIO_API_PORT="${MINIO_API_PORT:-}" \
     MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-}" \
     KEYCLOAK_PORT="${KEYCLOAK_PORT:-}" \
@@ -950,7 +954,7 @@ else
       DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
       MONGO_URL="${MONGO_URL}" \
       MONGO_DB_NAME="${MONGO_DB_NAME}" \
-      REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+      REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}" \
       MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
       MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
       MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \

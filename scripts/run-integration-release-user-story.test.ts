@@ -53,6 +53,16 @@ describe('run-integration-release-user-story integration dependency contract', (
     expect(script).not.toContain(':-notebook');
   });
 
+  it('revalidates Redis auth before reusing integration dependency readiness', () => {
+    const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
+    const readyFunction = shellFunctionDefinition(script, 'release_user_story_integration_deps_ready');
+
+    expect(script).toContain('source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"');
+    expect(script).toContain('local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[integration-release-user-story]"');
+    expect(readyFunction).toContain('readiness_state_field_ready_with_identity integration_deps_ready');
+    expect(readyFunction).toContain('local_redis_auth_ping "127.0.0.1" "${INTEGRATION_REDIS_PORT}" "${REDIS_PASSWORD}" "[integration-release-user-story]"');
+  });
+
   it('hands the release user story managed runner image to ASBCP as a digest-pinned kind registry ref', () => {
     const script = readFileSync('scripts/run-integration-release-user-story.sh', 'utf8');
     const buildEnd = script.indexOf('\nfi\nprepare_release_user_story_managed_runner_image_handoff');

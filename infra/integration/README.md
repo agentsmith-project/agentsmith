@@ -122,7 +122,7 @@ docker compose -f infra/integration/docker-compose.yml down -v
 
 - PostgreSQL: `postgresql://mbos:mbos_dev_password@localhost:15432/mbos`
 - MongoDB: `mongodb://mbos:mbos_dev_password@localhost:17017/admin`
-- Redis: `redis://localhost:16379`
+- Redis: `redis://:mbos_dev_password@localhost:16379`
 - MinIO API: `http://localhost:19000` (user `mbos`, password `mbos_dev_password`, bucket `mbos-dev`)
 - MinIO Console: `http://localhost:19001`
 - Keycloak: `http://localhost:18080` (admin `admin` / `admin`, realm `mbos`, client `agentsmith`)

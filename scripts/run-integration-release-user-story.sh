@@ -15,6 +15,7 @@ source "${ROOT_DIR}/scripts/lib/managed-runner-image-handoff.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/afscp-local-runtime.sh"
 source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 ensure_backend_real_state
 
@@ -66,6 +67,8 @@ MONGO_DB_NAME="${INTEGRATION_MONGO_DB_NAME:-mbos}"
 POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}"
 MONGO_PORT="${INTEGRATION_MONGO_PORT}"
 REDIS_PORT="${INTEGRATION_REDIS_PORT}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[integration-release-user-story]"
 MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}"
 MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}"
 KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}"
@@ -266,7 +269,8 @@ release_user_story_integration_deps_ready() {
     "keycloak_port=${INTEGRATION_KEYCLOAK_PORT}" \
     "keycloak_base_url=${KEYCLOAK_BASE_URL}" \
     "keycloak_realm=${KEYCLOAK_REALM}" \
-    "keycloak_client_id=${KEYCLOAK_CLIENT_ID}"
+    "keycloak_client_id=${KEYCLOAK_CLIENT_ID}" \
+    && local_redis_auth_ping "127.0.0.1" "${INTEGRATION_REDIS_PORT}" "${REDIS_PASSWORD}" "[integration-release-user-story]"
 }
 
 ensure_release_user_story_integration_deps_for_afscp() {
@@ -286,6 +290,7 @@ ensure_release_user_story_integration_deps_for_afscp() {
           POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
           MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
           REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+          REDIS_PASSWORD="${REDIS_PASSWORD}" \
           MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
           MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
           KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
@@ -808,6 +813,7 @@ set +e
     MONGO_URL="${MONGO_URL}" \
     MONGO_DB_NAME="${MONGO_DB_NAME}" \
     REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+    REDIS_PASSWORD="${REDIS_PASSWORD}" \
     MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
     MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
     KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \

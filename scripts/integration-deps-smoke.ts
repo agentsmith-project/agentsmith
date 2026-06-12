@@ -20,7 +20,7 @@ function getConfig(): SmokeConfig {
   return {
     postgresUrl: process.env.POSTGRES_URL ?? 'postgresql://mbos:mbos_dev_password@localhost:15432/mbos',
     mongoUrl: process.env.MONGO_URL ?? 'mongodb://mbos:mbos_dev_password@localhost:17017/admin',
-    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:16379',
+    redisUrl: process.env.REDIS_URL ?? 'redis://:mbos_dev_password@localhost:16379',
     minioEndPoint: process.env.MINIO_ENDPOINT ?? 'localhost',
     minioPort: Number(process.env.MINIO_PORT ?? '19000'),
     minioUseSSL: (process.env.MINIO_USE_SSL ?? 'false') === 'true',

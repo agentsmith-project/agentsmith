@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 describe('release local precheck lightweight contract', () => {
   const script = readFileSync('scripts/run-release-local-precheck.sh', 'utf8');
+  const backendBootstrap = readFileSync('scripts/backend-real-bootstrap.sh', 'utf8');
   const internalGate = readFileSync('scripts/run-internal-agent-task-real-gate.sh', 'utf8');
   const fullGate = readFileSync('scripts/run-integration-e2e-full.sh', 'utf8');
 
@@ -85,6 +86,20 @@ describe('release local precheck lightweight contract', () => {
     expect(depsReadyBranch).toContain('DEPS_START_COUNT=1');
     expect(script.indexOf('API_WEB_OPERATION_STATUS="started"')).toBeGreaterThan(script.indexOf('WEB_PID="$(\n'));
     expect(script.indexOf('API_WEB_START_COUNT=1')).toBeGreaterThan(script.indexOf('WEB_PID="$(\n'));
+  });
+
+  it('revalidates Redis auth before reusing local integration dependencies', () => {
+    const depsReadyBody = script.slice(script.indexOf('deps_ready() {'), script.indexOf('\nintegration_compose_postgres_running()'));
+
+    expect(script).toContain('source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"');
+    expect(script).toContain('local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[release-local-precheck]"');
+    expect(depsReadyBody).toContain('local_redis_auth_ping "127.0.0.1" "${REDIS_PORT}" "${REDIS_PASSWORD}" "[release-local-precheck]"');
+    expect(depsReadyBody).not.toContain('tcp_ready "127.0.0.1" "${REDIS_PORT}"');
+
+    expect(backendBootstrap).toContain('source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"');
+    expect(backendBootstrap).toContain('local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[backend-real-bootstrap]"');
+    expect(backendBootstrap).toContain('&& local_redis_auth_ping "127.0.0.1" "${REDIS_PORT}" "${REDIS_PASSWORD}" "[backend-real-bootstrap]"');
+    expect(backendBootstrap).toContain('REDIS_PASSWORD="${REDIS_PASSWORD}" \\');
   });
 
   it('does not run release-owned browser product scenarios, Agent Task gates, or Files/Runner assertions', () => {

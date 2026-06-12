@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/lib/run-readiness-state.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 ensure_backend_real_state
 
 API_PORT="${API_PORT:-${INTEGRATION_API_PORT:-20000}}"
@@ -15,6 +16,8 @@ WEB_PORT="${WEB_PORT:-${INTEGRATION_WEB_PORT:-3001}}"
 POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-15432}}"
 MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-17017}}"
 REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-16379}}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[backend-real-bootstrap]"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-19000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-19001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-18080}}"
@@ -38,7 +41,8 @@ integration_deps_readiness_ready() {
     "keycloak_port=${KEYCLOAK_PORT}" \
     "keycloak_base_url=${KEYCLOAK_BASE_URL}" \
     "keycloak_realm=${KEYCLOAK_REALM}" \
-    "keycloak_client_id=${KEYCLOAK_CLIENT_ID}"
+    "keycloak_client_id=${KEYCLOAK_CLIENT_ID}" \
+    && local_redis_auth_ping "127.0.0.1" "${REDIS_PORT}" "${REDIS_PASSWORD}" "[backend-real-bootstrap]"
 }
 
 wait_for_keycloak() {
@@ -80,6 +84,7 @@ else
       POSTGRES_PORT="${POSTGRES_PORT}" \
       MONGO_PORT="${MONGO_PORT}" \
       REDIS_PORT="${REDIS_PORT}" \
+      REDIS_PASSWORD="${REDIS_PASSWORD}" \
       MINIO_API_PORT="${MINIO_API_PORT}" \
       MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}" \
       KEYCLOAK_PORT="${KEYCLOAK_PORT}" \

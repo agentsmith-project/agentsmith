@@ -85,6 +85,7 @@ describe('run-integration-e2e-full lifecycle observability contract', () => {
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
+    cpSync(path.join(process.cwd(), 'scripts', 'lib', 'local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
     writeFileSync(
       path.join(scriptsLibDir, 'afscp-read-export-probe.mjs'),
       `process.stdout.write(JSON.stringify({status:"passed",source:"webdav_propfind",webdav_status:207}) + "\\n");\n`,
@@ -677,7 +678,7 @@ exit 0
       INTEGRATION_PARENT_STACK_MONGO_URL: 'mongodb://mbos:mbos_dev_password@127.0.0.1:27027/admin',
       INTEGRATION_PARENT_STACK_MONGO_DB_NAME: 'mbos',
       INTEGRATION_PARENT_STACK_DATABASE_URL: 'postgresql://mbos:mbos_dev_password@localhost:25432/mbos',
-      INTEGRATION_PARENT_STACK_REDIS_URL: 'redis://localhost:26379',
+      INTEGRATION_PARENT_STACK_REDIS_URL: 'redis://:mbos_dev_password@localhost:26379',
       INTEGRATION_PARENT_STACK_MINIO_ENDPOINT: 'localhost',
       INTEGRATION_PARENT_STACK_MINIO_PORT: '29000',
     };
@@ -1205,6 +1206,7 @@ exit 0
 
     cpSync(path.join(process.cwd(), 'scripts', 'run-integration-e2e-full.sh'), path.join(scriptsDir, 'run-integration-e2e-full.sh'));
     cpSync(path.join(process.cwd(), 'scripts', 'lib', 'afscp-local-runtime.sh'), path.join(scriptsLibDir, 'afscp-local-runtime.sh'));
+    cpSync(path.join(process.cwd(), 'scripts', 'lib', 'local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
     writeFileSync(
       path.join(scriptsLibDir, 'afscp-read-export-probe.mjs'),
       `process.stdout.write(JSON.stringify({status:"passed",source:"webdav_propfind",webdav_status:207}) + "\\n");\n`,

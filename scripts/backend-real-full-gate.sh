@@ -10,6 +10,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+source "${ROOT_DIR}/scripts/lib/local-redis-auth.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
@@ -17,6 +18,8 @@ export_backend_real_endpoint_env
 POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-25432}}"
 MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-27027}}"
 REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-mbos_dev_password}"
+local_redis_require_simple_password REDIS_PASSWORD "${REDIS_PASSWORD}" "[backend-real-full-gate]"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}"
@@ -108,7 +111,7 @@ ensure_local_release_stack() {
       DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
       MONGO_URL="${MONGO_URL}" \
       MONGO_DB_NAME="${MONGO_DB_NAME}" \
-      REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
+      REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}" \
       MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
       MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
       MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
@@ -305,7 +308,7 @@ run_release_browser_trace_spec() {
     export INTEGRATION_PARENT_STACK_MONGO_URL="${MONGO_URL}"
     export INTEGRATION_PARENT_STACK_MONGO_DB_NAME="${MONGO_DB_NAME}"
     export INTEGRATION_PARENT_STACK_DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
-    export INTEGRATION_PARENT_STACK_REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+    export INTEGRATION_PARENT_STACK_REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}"
     export INTEGRATION_PARENT_STACK_MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
     export INTEGRATION_PARENT_STACK_MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}"
     export INTEGRATION_API_PORT="${API_PORT}"
@@ -313,6 +316,7 @@ run_release_browser_trace_spec() {
     export INTEGRATION_POSTGRES_PORT="${POSTGRES_PORT}"
     export INTEGRATION_MONGO_PORT="${MONGO_PORT}"
     export INTEGRATION_REDIS_PORT="${REDIS_PORT}"
+    export REDIS_PASSWORD="${REDIS_PASSWORD}"
     export INTEGRATION_MINIO_API_PORT="${MINIO_API_PORT}"
     export INTEGRATION_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT}"
     export INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}"
@@ -324,14 +328,15 @@ run_release_browser_trace_spec() {
     export UX_TRACE_OUTPUT_ROOT="${AUTHORITATIVE_UX_TRACE_ROOT}"
     export PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}"
     export DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}"
-    export REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}"
+    export REDIS_URL="${REDIS_URL:-redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}}"
+    export REDIS_PASSWORD="${REDIS_PASSWORD}"
     export MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
     export MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}"
     bash scripts/run-integration-e2e-full.sh "${spec_file}"
   )
 }
 
-run_cmd "POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
+run_cmd "POSTGRES_PORT='${POSTGRES_PORT}' MONGO_PORT='${MONGO_PORT}' REDIS_PORT='${REDIS_PORT}' REDIS_PASSWORD='${REDIS_PASSWORD}' MINIO_API_PORT='${MINIO_API_PORT}' MINIO_CONSOLE_PORT='${MINIO_CONSOLE_PORT}' KEYCLOAK_PORT='${KEYCLOAK_PORT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 prewarm_internal_kind_cluster
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passed" "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"

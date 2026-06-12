@@ -10,7 +10,7 @@ import {
 import { Pool } from 'pg';
 
 const POSTGRES_URL = process.env.POSTGRES_URL ?? 'postgresql://mbos:mbos_dev_password@localhost:15432/mbos';
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:16379';
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://:mbos_dev_password@localhost:16379';
 const MONGO_URL = process.env.MONGO_URL ?? 'mongodb://mbos:mbos_dev_password@localhost:17017/admin';
 const MONGO_DB = process.env.MONGO_DB ?? 'mbos';
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT ?? 'localhost';

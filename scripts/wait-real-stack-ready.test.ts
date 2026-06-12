@@ -66,6 +66,7 @@ describe('wait real stack ready runtime ownership contract', () => {
 
     cpSync(path.join(process.cwd(), 'scripts/wait-real-stack-ready.sh'), path.join(scriptsDir, 'wait-real-stack-ready.sh'));
     cpSync(path.join(process.cwd(), 'scripts/lib/backend-real-state.sh'), path.join(scriptsLibDir, 'backend-real-state.sh'));
+    cpSync(path.join(process.cwd(), 'scripts/lib/local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
 
     writeFileSync(
       path.join(scriptsLibDir, 'local-runtime-processes.sh'),
@@ -160,6 +161,7 @@ exit 0
 
     cpSync(path.join(process.cwd(), 'scripts/wait-real-stack-ready.sh'), path.join(scriptsDir, 'wait-real-stack-ready.sh'));
     cpSync(path.join(process.cwd(), 'scripts/lib/backend-real-state.sh'), path.join(scriptsLibDir, 'backend-real-state.sh'));
+    cpSync(path.join(process.cwd(), 'scripts/lib/local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
 
     writeFileSync(
       path.join(scriptsLibDir, 'local-runtime-processes.sh'),
@@ -327,6 +329,7 @@ sleep 1
 
     cpSync(path.join(process.cwd(), 'scripts/wait-real-stack-ready.sh'), path.join(scriptsDir, 'wait-real-stack-ready.sh'));
     cpSync(path.join(process.cwd(), 'scripts/lib/backend-real-state.sh'), path.join(scriptsLibDir, 'backend-real-state.sh'));
+    cpSync(path.join(process.cwd(), 'scripts/lib/local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
 
     writeFileSync(
       path.join(scriptsLibDir, 'local-runtime-processes.sh'),
@@ -469,6 +472,7 @@ sleep 1
 
     cpSync(path.join(process.cwd(), 'scripts/wait-real-stack-ready.sh'), path.join(scriptsDir, 'wait-real-stack-ready.sh'));
     cpSync(path.join(process.cwd(), 'scripts/lib/backend-real-state.sh'), path.join(scriptsLibDir, 'backend-real-state.sh'));
+    cpSync(path.join(process.cwd(), 'scripts/lib/local-redis-auth.sh'), path.join(scriptsLibDir, 'local-redis-auth.sh'));
 
     writeFileSync(
       path.join(scriptsLibDir, 'local-runtime-processes.sh'),

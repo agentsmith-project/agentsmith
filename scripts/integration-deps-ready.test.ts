@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createDefaultIntegrationDepsProbe,
+  validateLocalRedisPassword,
   waitForIntegrationDepsReady,
   type IntegrationDepsProbeName,
 } from './integration-deps-ready';
@@ -151,6 +152,7 @@ describe('integration deps readiness polling', () => {
       postgresPort: 15432,
       mongoPort: 17017,
       redisPort: 16379,
+      redisPassword: 'mbos_dev_password',
       minioPort: 19000,
       keycloakBaseUrl: 'http://localhost:18080',
       probeTimeoutMs: 1500,
@@ -161,6 +163,10 @@ describe('integration deps readiness polling', () => {
       },
       tcpProbe: async (port) => {
         calls.push(`tcp:${port}`);
+        return true;
+      },
+      redisAuthProbe: async (port) => {
+        calls.push(`redis-auth:${port}`);
         return true;
       },
       httpProbe: async (url) => {
@@ -174,6 +180,49 @@ describe('integration deps readiness polling', () => {
       remainingMs: 1_000,
     })).resolves.toBe(true);
     expect(calls).toEqual(['health:postgres']);
+  });
+
+  it('requires Redis auth ping even when the container healthcheck is healthy', async () => {
+    const calls: string[] = [];
+    const probe = createDefaultIntegrationDepsProbe({
+      postgresPort: 15432,
+      mongoPort: 17017,
+      redisPort: 16379,
+      redisPassword: 'mbos_dev_password',
+      minioPort: 19000,
+      keycloakBaseUrl: 'http://localhost:18080',
+      probeTimeoutMs: 1500,
+    }, {
+      dockerHealthProbe: async (name) => {
+        calls.push(`health:${name}`);
+        return true;
+      },
+      tcpProbe: async (port) => {
+        calls.push(`tcp:${port}`);
+        return true;
+      },
+      redisAuthProbe: async (port, password) => {
+        calls.push(`redis-auth:${port}:${password}`);
+        return false;
+      },
+      httpProbe: async (url) => {
+        calls.push(`http:${url}`);
+        return true;
+      },
+    });
+
+    await expect(probe('redis', {
+      deadlineMs: 1_000,
+      remainingMs: 1_000,
+    })).resolves.toBe(false);
+    expect(calls).toEqual(['health:redis', 'redis-auth:16379:mbos_dev_password']);
+  });
+
+  it('fails fast for local Redis passwords that are not URL-safe and simple', () => {
+    expect(validateLocalRedisPassword('mbos_dev_password-1.2')).toBe('mbos_dev_password-1.2');
+    expect(() => validateLocalRedisPassword('bad:value')).toThrow('local Redis password must be URL-safe/simple');
+    expect(() => validateLocalRedisPassword('bad/value')).toThrow('local Redis password must be URL-safe/simple');
+    expect(() => validateLocalRedisPassword('')).toThrow('local Redis password must be URL-safe/simple');
   });
 
   it('wires Makefile deps-ready to health polling instead of DEPS_READY_SLEEP', () => {

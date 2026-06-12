@@ -59,6 +59,6 @@ Quick start:
 - Default port: `3010` (`PORT=3020 npm run api:node:dev` to override)
 - Use Postgres repo: `DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos npm run api:node:dev`
 - Use full private stack:
-  `DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos REDIS_URL=redis://localhost:16379 MONGO_URL=mongodb://mbos:mbos_dev_password@localhost:17017/admin MONGO_DB_NAME=mbos MINIO_ENDPOINT=localhost MINIO_PORT=19000 MINIO_ACCESS_KEY=mbos MINIO_SECRET_KEY=mbos_dev_password MINIO_BUCKET=mbos-dev npm run api:node:dev`
+  `DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos REDIS_URL=redis://:mbos_dev_password@localhost:16379 MONGO_URL=mongodb://mbos:mbos_dev_password@localhost:17017/admin MONGO_DB_NAME=mbos MINIO_ENDPOINT=localhost MINIO_PORT=19000 MINIO_ACCESS_KEY=mbos MINIO_SECRET_KEY=mbos_dev_password MINIO_BUCKET=mbos-dev npm run api:node:dev`
 
 Source-processing tuning is no longer part of the current package mainline.

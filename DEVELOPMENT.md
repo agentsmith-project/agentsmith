@@ -86,6 +86,7 @@ Release boundary note: `npm run product:ready` is the AgentSmith product-side re
 - 每个改动先定事实源和职责边界：哪个对象由后端、合约、URL、manifest、lock 或本地 fixture 说了算，前端只消费对应真相。
 - GA 旧路径、旧命名、旧脚本和旧计划默认删除、归档或 fail fast；不要为过渡实现增加长期兼容层。
 - 每个 change slice 先用最小 TDD、fixture、focused diagnostic 或 focused e2e 证明局部事实；重门禁不是日常调试工具。
+- Product Readiness / gate 只作为发现和验收探针；遇到 blocker，先翻译成业务事实、运行时不变量或 owner repo 根因，再用最小 evidence 判责和缩小 owner。
 - focused diagnostic 只能写成 scoped evidence，不能写成 readiness、release、deploy、package 或 operator verdict。
 - active 文档只维护当前边界、下一步、阻断点和验收口径；历史 evidence、流水账和过期决策进入 archive/reference。
 - 长期 gate、docs、script 必须绑定当前功能、安全、合同、真实运行/发布风险，或显著降低 operator 心智负担；否则降级、合并或删除。

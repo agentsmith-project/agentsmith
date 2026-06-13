@@ -127,6 +127,9 @@ interface DiagnosticError {
   requestId?: string;
   retryable?: boolean;
   networkErrorName?: string;
+  readinessReason?: string;
+  readinessMessage?: string;
+  retryAfter?: number;
 }
 
 type SandboxRuntimeDiagnosticOutcome = 'success' | 'error';
@@ -144,6 +147,9 @@ interface SandboxRuntimeDiagnosticStep {
   asbcpCode?: string;
   retryable?: boolean;
   message?: string;
+  readinessReason?: string;
+  readinessMessage?: string;
+  retryAfter?: number;
 }
 
 interface SandboxRuntimeApiTraceEntry {
@@ -157,6 +163,9 @@ interface SandboxRuntimeApiTraceEntry {
   error_code?: string;
   asbcp_code?: string;
   retryable?: boolean;
+  readiness_reason?: string;
+  readiness_message?: string;
+  retry_after?: number;
 }
 
 interface SandboxRuntimePodManagerSummary {
@@ -171,6 +180,9 @@ interface SandboxRuntimePodManagerSummary {
   latest_http_status?: number;
   latest_error_code?: string;
   latest_asbcp_code?: string;
+  latest_readiness_reason?: string;
+  latest_readiness_message?: string;
+  latest_retry_after?: number;
 }
 
 interface SandboxRuntimeDiagnostics {
@@ -316,6 +328,29 @@ function readErrorStatus(error: unknown): number | undefined {
   return typeof error.status === 'number' && Number.isFinite(error.status) ? error.status : undefined;
 }
 
+function readOptionalString(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function readOptionalNonNegativeNumber(record: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed = typeof value === 'number'
+      ? value
+      : (typeof value === 'string' && value.trim().length > 0 ? Number(value) : undefined);
+    if (typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
 function isCreateOrEnsureTimeoutError(error: unknown): boolean {
   const name = readErrorName(error);
   if (name === 'AbortError' || name === 'TimeoutError') {
@@ -355,6 +390,11 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ? record.requestId.trim()
     : undefined;
   const retryable = typeof record.retryable === 'boolean' ? record.retryable : undefined;
+  const readinessReason = readOptionalString(record, 'readinessReason', 'readiness_reason');
+  const readinessMessage = sanitizeSandboxRuntimeDiagnosticText(
+    readOptionalString(record, 'readinessMessage', 'readiness_message'),
+  );
+  const retryAfter = readOptionalNonNegativeNumber(record, 'retryAfter', 'retry_after');
   const networkErrorName =
     typeof record.networkErrorName === 'string' && record.networkErrorName.trim().length > 0
       ? record.networkErrorName.trim()
@@ -371,6 +411,9 @@ function normalizeDiagnosticError(error: unknown): DiagnosticError {
     ...(requestId ? { requestId } : {}),
     ...(retryable !== undefined ? { retryable } : {}),
     ...(networkErrorName ? { networkErrorName } : {}),
+    ...(readinessReason ? { readinessReason } : {}),
+    ...(readinessMessage ? { readinessMessage } : {}),
+    ...(retryAfter !== undefined ? { retryAfter } : {}),
   };
 }
 
@@ -413,6 +456,11 @@ function buildPodStatusDiagnosticStep(input: {
     phase: input.status.phase,
     ...(input.status.pod_name ? { podName: input.status.pod_name } : {}),
     ...(input.status.message ? { message: sanitizeSandboxRuntimeDiagnosticText(input.status.message) } : {}),
+    ...(input.status.readiness_reason ? { readinessReason: input.status.readiness_reason } : {}),
+    ...(input.status.readiness_message
+      ? { readinessMessage: sanitizeSandboxRuntimeDiagnosticText(input.status.readiness_message) }
+      : {}),
+    ...(input.status.retry_after !== undefined ? { retryAfter: input.status.retry_after } : {}),
   };
 }
 
@@ -429,6 +477,11 @@ function buildPodEnsureDiagnosticStep(input: {
     ...(input.response.status ? { message: sanitizeSandboxRuntimeDiagnosticText(input.response.status) } : {}),
     ...(input.response.pod?.phase ? { phase: input.response.pod.phase } : {}),
     ...(input.response.pod?.pod_name ? { podName: input.response.pod.pod_name } : {}),
+    ...(input.response.pod?.readiness_reason ? { readinessReason: input.response.pod.readiness_reason } : {}),
+    ...(input.response.pod?.readiness_message
+      ? { readinessMessage: sanitizeSandboxRuntimeDiagnosticText(input.response.pod.readiness_message) }
+      : {}),
+    ...(input.response.pod?.retry_after !== undefined ? { retryAfter: input.response.pod.retry_after } : {}),
   };
 }
 
@@ -447,6 +500,9 @@ function buildSandboxRuntimeErrorDiagnosticStep(input: {
     ...(diagnostic.code ? { code: diagnostic.code } : {}),
     ...(diagnostic.asbcpCode ? { asbcpCode: diagnostic.asbcpCode } : {}),
     ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
+    ...(diagnostic.readinessReason ? { readinessReason: diagnostic.readinessReason } : {}),
+    ...(diagnostic.readinessMessage ? { readinessMessage: diagnostic.readinessMessage } : {}),
+    ...(diagnostic.retryAfter !== undefined ? { retryAfter: diagnostic.retryAfter } : {}),
     message: sanitizeSandboxRuntimeDiagnosticText(diagnostic.message),
   };
 }
@@ -474,6 +530,9 @@ function buildSandboxRuntimeApiTraceEntry(
     ...(stepErrorCode(step) ? { error_code: stepErrorCode(step) } : {}),
     ...(step.asbcpCode ? { asbcp_code: step.asbcpCode } : {}),
     ...(step.retryable !== undefined ? { retryable: step.retryable } : {}),
+    ...(step.readinessReason ? { readiness_reason: step.readinessReason } : {}),
+    ...(step.readinessMessage ? { readiness_message: step.readinessMessage } : {}),
+    ...(step.retryAfter !== undefined ? { retry_after: step.retryAfter } : {}),
   };
 }
 
@@ -494,6 +553,9 @@ function buildSandboxRuntimePodManagerSummary(input: {
   const latestStatusCode = [...input.steps].reverse().find((step) => step.status !== undefined)?.status;
   const latestHttpStatus = [...input.steps].reverse().find((step) => step.httpStatus !== undefined)?.httpStatus;
   const latestErrorStep = [...input.steps].reverse().find((step) => stepErrorCode(step));
+  const latestReadinessReason = [...input.steps].reverse().find((step) => step.readinessReason)?.readinessReason;
+  const latestReadinessMessage = [...input.steps].reverse().find((step) => step.readinessMessage)?.readinessMessage;
+  const latestRetryAfter = [...input.steps].reverse().find((step) => step.retryAfter !== undefined)?.retryAfter;
   return {
     workload_id: input.workloadId,
     operations: compactUniqueStrings(input.steps.map((step) => step.operation)),
@@ -507,6 +569,9 @@ function buildSandboxRuntimePodManagerSummary(input: {
       ? { latest_error_code: stepErrorCode(latestErrorStep) }
       : {}),
     ...(latestErrorStep?.asbcpCode ? { latest_asbcp_code: latestErrorStep.asbcpCode } : {}),
+    ...(latestReadinessReason ? { latest_readiness_reason: latestReadinessReason } : {}),
+    ...(latestReadinessMessage ? { latest_readiness_message: latestReadinessMessage } : {}),
+    ...(latestRetryAfter !== undefined ? { latest_retry_after: latestRetryAfter } : {}),
   };
 }
 

@@ -239,6 +239,51 @@ describe('AsbcpClient', () => {
     });
   });
 
+  it('preserves redacted ASBCP readiness fields from http error bodies', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'pod_unschedulable',
+        message: 'scheduler rejected workload token=raw-error-token',
+        request_id: 'asbcp_req_unschedulable',
+        readiness_reason: 'Insufficient cpu',
+        readiness_message: '0/1 nodes are available: Insufficient cpu secret=raw-error-secret',
+        retry_after: 11,
+        retryable: true,
+      },
+    }), { status: 503 })) as unknown as typeof fetch;
+
+    const client = new AsbcpClient('http://sandbox:8080', 'svc-key');
+    let caught: unknown;
+    try {
+      await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
+        image: 'runner:latest',
+        workspace_binding_id: 'flib_demo',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AsbcpHttpError);
+    expect(caught).toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      asbcpCode: 'pod_unschedulable',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      requestId: 'asbcp_req_unschedulable',
+      retryable: true,
+      readinessReason: 'Insufficient cpu',
+      readiness_reason: 'Insufficient cpu',
+      readinessMessage: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+      readiness_message: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+      retryAfterMs: 11_000,
+      retryAfter: 11,
+      retry_after: 11,
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain('raw-error-token');
+    expect((caught as Error).message).not.toContain('raw-error-secret');
+  });
+
   it('maps status 404 to offline current status without treating it as delete terminal confirmation', async () => {
     globalThis.fetch = vi.fn(async () => new Response('', {
       status: 404,

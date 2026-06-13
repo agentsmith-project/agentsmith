@@ -422,6 +422,7 @@ function runInternalSpecGrepEarlyFailureHarness(options: {
   repeatedFileListPending?: boolean;
   dockerInspectAvailable?: boolean;
   runtimeMarker?: boolean;
+  k8sSchedulingMarker?: boolean;
 } = {}): {
   stdout: string;
   stderr: string;
@@ -542,7 +543,29 @@ ${options.dockerInspectAvailable ? `docker() {
   printf 'unexpected docker call: %s\\n' "$*" >&2
   return 1
 }` : `docker() { printf 'docker unavailable in harness\\n'; return 1; }`}
-kubectl() { printf 'kubectl unavailable in harness\\n'; return 1; }
+${options.k8sSchedulingMarker ? `kubectl() {
+  case "$*" in
+    *"get pods"*" -o wide"*)
+      printf 'NAME READY STATUS RESTARTS AGE IP NODE\\n'
+      printf 'task-unschedulable 0/1 Pending 0 1m <none> <none>\\n'
+      return 0
+      ;;
+    *"get pods"*"jsonpath"*)
+      printf 'pod=task-unschedulable\\n'
+      printf 'phase=Pending\\n'
+      printf 'conditions=PodScheduled:False:Unschedulable;\\n'
+      printf 'containers=runner|image=runner:test|ready=false|restartCount=0|waiting=ContainerCreating|terminated=|exitCode=;\\n'
+      printf 'init_containers=\\n---\\n'
+      return 0
+      ;;
+    *"get events"*)
+      printf '1m Warning FailedScheduling pod/task-unschedulable 0/1 nodes are available: Insufficient cpu\\n'
+      return 0
+      ;;
+  esac
+  printf 'unexpected kubectl call: %s\\n' "$*" >&2
+  return 1
+}` : `kubectl() { printf 'kubectl unavailable in harness\\n'; return 1; }`}
 resolve_internal_spec_port_pair() { printf '21020 3121\\n'; }
 prepare_internal_backend_real_spec_runtime() {
   printf 'unexpected prepare\\n' >> "\${TEMP_ROOT}/calls.txt"
@@ -1692,6 +1715,14 @@ describe('internal backend-real gate runtime contract', () => {
     expect(runtimeFlakeCollector).toContain('runtime-flake-summary.txt');
     expect(runtimeMarkerFunction).toContain('agent_runner_runtime_unavailable');
     expect(runtimeMarkerFunction).toContain('asbcp_network_error');
+    expect(runtimeMarkerFunction).toContain('AGENT_SANDBOX_STARTUP_TIMEOUT');
+    expect(runtimeMarkerFunction).toContain('AGENT_UPSTREAM_ERROR.*(sandbox_diagnostics|sandboxDiagnostics');
+    expect(runtimeMarkerFunction).toContain('FailedScheduling');
+    expect(runtimeMarkerFunction).toContain('Insufficient cpu');
+    expect(runtimeMarkerFunction).toContain('pod_unschedulable');
+    expect(runtimeMarkerFunction).toContain('workspace_pvc_unbound');
+    expect(runtimeMarkerFunction).toContain('"${evidence_dir}/k8s-events.txt"');
+    expect(collector).toContain('runtime_readiness_flake_markers_present "${spec_state_file}" "${evidence_dir}"');
     expect(runtimeSummaryCollector).toContain('ASBCP readyz preflight failed');
     expect(runtimeFlakeCollector).toContain('previous_runtime_readiness_failure=1');
     expect(runtimeFlakeCollector).toContain('previous_failure_marker=%s');
@@ -2158,6 +2189,53 @@ describe('internal backend-real gate runtime contract', () => {
     expect(details.api).toBeUndefined();
     expect(details.pod_manager_summary).toBeUndefined();
     expect(result.runtimeReadinessDetails).not.toContain('known-product-token');
+  });
+
+  it('classifies K8s FailedScheduling sandbox markers as runtime readiness failures after evidence collection', () => {
+    const result = runInternalSpecGrepEarlyFailureHarness({
+      runtimeMarker: false,
+      k8sSchedulingMarker: true,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('status_1=1');
+    expect(result.k8sPodStatus).toContain('PodScheduled:False:Unschedulable');
+    expect(result.k8sEvents).toContain('FailedScheduling');
+    expect(result.k8sEvents).toContain('Insufficient cpu');
+
+    const details = JSON.parse(result.runtimeReadinessDetails) as {
+      classification?: string;
+      outcome?: string;
+      signals?: Array<{
+        source?: string;
+        call?: string;
+        error_code?: string;
+        readiness_reason?: string;
+      }>;
+      call_summaries?: unknown[];
+      failure?: {
+        source?: string;
+        error_code?: string;
+        readiness_reason?: string;
+      };
+    };
+    expect(details.classification).toBe('stability_blocker');
+    expect(details.outcome).toBe('focused_gate_runtime_readiness_failure');
+    expect(details.signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'k8s_event',
+        call: 'schedule_pod',
+        error_code: 'FailedScheduling',
+        readiness_reason: 'Insufficient cpu',
+      }),
+    ]));
+    expect(details.call_summaries).toEqual(details.signals);
+    expect(details.failure).toEqual(expect.objectContaining({
+      source: 'k8s_event',
+      error_code: 'FailedScheduling',
+      readiness_reason: 'Insufficient cpu',
+    }));
   });
 
   it('records AFSCP image identity and container image summaries when docker inspect is available', () => {

@@ -276,19 +276,39 @@ function readTextField(record: Record<string, unknown>, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readTextOrNumberField(record: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
 function summarizeSandboxRuntimeStep(value: unknown): string | null {
   if (!isRecord(value)) return null;
   const workloadId = readTextField(value, 'workloadId') || readTextField(value, 'workload_id');
+  const requestId = readTextOrNumberField(value, 'requestId', 'request_id');
+  const status = readTextOrNumberField(value, 'status', 'statusCode', 'status_code');
+  const httpStatus = readTextOrNumberField(value, 'httpStatus', 'http_status');
+  const code = readTextOrNumberField(value, 'code', 'error_code');
+  const asbcpCode = readTextOrNumberField(value, 'asbcpCode', 'asbcp_code');
+  const readinessReason = readTextOrNumberField(value, 'readinessReason', 'readiness_reason');
+  const readinessMessage = readTextOrNumberField(value, 'readinessMessage', 'readiness_message');
+  const retryAfter = readTextOrNumberField(value, 'retryAfter', 'retry_after');
   const parts = [
     readTextField(value, 'operation') || 'step',
     readTextField(value, 'outcome'),
-    readTextField(value, 'requestId') ? `request_id=${readTextField(value, 'requestId')}` : null,
+    requestId ? `request_id=${requestId}` : null,
     workloadId ? `workload_id=${workloadId}` : null,
     readTextField(value, 'phase') ? `phase=${readTextField(value, 'phase')}` : null,
-    typeof value.status === 'number' ? `status=${value.status}` : null,
-    typeof value.httpStatus === 'number' ? `http_status=${value.httpStatus}` : null,
-    readTextField(value, 'code') ? `code=${readTextField(value, 'code')}` : null,
-    readTextField(value, 'asbcpCode') ? `asbcp_code=${readTextField(value, 'asbcpCode')}` : null,
+    status ? `status=${status}` : null,
+    httpStatus ? `http_status=${httpStatus}` : null,
+    code ? `code=${code}` : null,
+    asbcpCode ? `asbcp_code=${asbcpCode}` : null,
+    readinessReason ? `readiness_reason=${readinessReason}` : null,
+    readinessMessage ? `readiness_message=${readinessMessage}` : null,
+    retryAfter ? `retry_after=${retryAfter}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(':') : null;
 }
@@ -340,7 +360,7 @@ export function summarizeAgentTaskTraces(traces: AgentTaskOutcomeTrace[], limit 
           normalizeText(trace.summary) || '<empty>',
           runtimeDiagnostics ? `runtime_diagnostics: ${runtimeDiagnostics}` : '',
         ].filter(Boolean).join(' '),
-        420,
+        640,
       );
       return `${category}${status ? `/${status}` : ''} ${name}: ${summary}`;
     });

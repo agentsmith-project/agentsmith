@@ -137,6 +137,30 @@ function readAsbcpErrorMessage(responseText: string): string | undefined {
   return readStringField(error, 'message');
 }
 
+function readAsbcpReadinessReason(responseText: string): string | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readRedactedStringField(error, 'readiness_reason', 'readinessReason');
+}
+
+function readAsbcpReadinessMessage(responseText: string): string | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readRedactedStringField(error, 'readiness_message', 'readinessMessage');
+}
+
+function readAsbcpRetryAfterSeconds(responseText: string): number | undefined {
+  const error = readAsbcpErrorRecord(responseText);
+  if (!error) {
+    return undefined;
+  }
+  return readNonNegativeNumberField(error, 'retry_after', 'retryAfter');
+}
+
 function readAsbcpRequestIdFromBody(responseText: string): string | undefined {
   const payload = parseAsbcpJsonObject(responseText);
   if (!payload) {
@@ -413,6 +437,12 @@ export class AsbcpHttpError extends Error {
   asbcpRetryable?: boolean;
   requestId?: string;
   retryAfterMs?: number;
+  readinessReason?: string;
+  readiness_reason?: string;
+  readinessMessage?: string;
+  readiness_message?: string;
+  retryAfter?: number;
+  retry_after?: number;
 
   constructor(input: {
     status: number;
@@ -424,8 +454,15 @@ export class AsbcpHttpError extends Error {
     asbcpRetryable?: boolean;
     requestId?: string;
     retryAfterMs?: number;
+    readinessReason?: string;
+    readinessMessage?: string;
   }) {
     super(redactAsbcpLogText(input.message));
+    const retryAfterMs = typeof input.retryAfterMs === 'number'
+      && Number.isFinite(input.retryAfterMs)
+      && input.retryAfterMs >= 0
+      ? Math.floor(input.retryAfterMs)
+      : undefined;
     this.name = 'AsbcpHttpError';
     this.status = input.status;
     this.operation = input.operation;
@@ -440,8 +477,20 @@ export class AsbcpHttpError extends Error {
     if (input.requestId) {
       this.requestId = input.requestId;
     }
-    if (typeof input.retryAfterMs === 'number' && Number.isFinite(input.retryAfterMs) && input.retryAfterMs >= 0) {
-      this.retryAfterMs = Math.floor(input.retryAfterMs);
+    if (retryAfterMs !== undefined) {
+      this.retryAfterMs = retryAfterMs;
+    }
+    if (input.readinessReason) {
+      this.readinessReason = input.readinessReason;
+      this.readiness_reason = input.readinessReason;
+    }
+    if (input.readinessMessage) {
+      this.readinessMessage = input.readinessMessage;
+      this.readiness_message = input.readinessMessage;
+    }
+    if (retryAfterMs !== undefined) {
+      this.retryAfter = Math.floor(retryAfterMs / 1_000);
+      this.retry_after = this.retryAfter;
     }
   }
 }
@@ -632,6 +681,9 @@ export class AsbcpClient {
   private buildHttpError(operation: string, resp: Response, responseText: string): AsbcpHttpError {
     const asbcpRetryable = readAsbcpErrorRetryable(responseText);
     const asbcpCode = readAsbcpErrorCode(responseText);
+    const retryAfterSeconds = readAsbcpRetryAfterSeconds(responseText);
+    const retryAfterMs = parseRetryAfterMs(resp.headers.get('retry-after'))
+      ?? (retryAfterSeconds !== undefined ? Math.round(retryAfterSeconds * 1_000) : undefined);
     const inferredReadinessRetryable = isWorkspaceBindingPvcReadinessInternalError(
       resp.status,
       operation,
@@ -654,7 +706,9 @@ export class AsbcpClient {
           ? { asbcpRetryable: true }
           : {}),
       requestId: readAsbcpResponseRequestId(resp, responseText),
-      retryAfterMs: parseRetryAfterMs(resp.headers.get('retry-after')),
+      retryAfterMs,
+      readinessReason: readAsbcpReadinessReason(responseText),
+      readinessMessage: readAsbcpReadinessMessage(responseText),
       message: buildAsbcpHttpErrorMessage({
         operation,
         status: resp.status,

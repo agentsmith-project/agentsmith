@@ -2683,6 +2683,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         workloadId: holderRef.workloadId,
         sessionId: task.id,
         sandboxOperation: 'create_or_ensure_pod',
+        readinessReason: 'Insufficient cpu',
+        readinessMessage: '0/1 nodes are available: Insufficient cpu',
+        retryAfter: 11,
         sandboxDiagnostics: {
           theme: 'runtime_pending_readiness',
           workspaceId: task.workspace_id,
@@ -2713,6 +2716,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
               status: 503,
               code: 'AGENT_SANDBOX_UNAVAILABLE',
               asbcpCode: 'sandbox_capacity_unavailable',
+              readinessReason: 'Insufficient cpu',
+              readinessMessage: '0/1 nodes are available: Insufficient cpu',
+              retryAfter: 11,
             },
           ],
         },
@@ -2845,6 +2851,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         workload_id: holderRef.workloadId,
         session_id: task.id,
         sandbox_operation: 'create_or_ensure_pod',
+        readiness_reason: 'Insufficient cpu',
+        readiness_message: '0/1 nodes are available: Insufficient cpu',
+        retry_after: 11,
         message: 'agent_sandbox_unavailable: pod missing',
         sandbox_diagnostics: {
           theme: 'runtime_pending_readiness',
@@ -2864,6 +2873,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
               status: 503,
               code: 'AGENT_SANDBOX_UNAVAILABLE',
               asbcpCode: 'sandbox_capacity_unavailable',
+              readinessReason: 'Insufficient cpu',
+              readinessMessage: '0/1 nodes are available: Insufficient cpu',
+              retryAfter: 11,
             }),
           ],
         },
@@ -2878,6 +2890,10 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect(runtimeLogPayload).toEqual(expect.stringContaining('"requestId":"asbcp_req_status_before_create"'));
       expect(runtimeLogPayload).toEqual(expect.stringContaining('"requestId":"asbcp_req_create_fail"'));
       expect(runtimeLogPayload).toEqual(expect.stringContaining('"asbcpCode":"sandbox_capacity_unavailable"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"readinessReason":"Insufficient cpu"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"readinessMessage":"0/1 nodes are available: Insufficient cpu"'));
+      expect(runtimeLogPayload).toEqual(expect.stringContaining('"retryAfter":11'));
+      expect(runtimeLogPayload).not.toEqual(expect.stringContaining('raw'));
     } finally {
       warnSpy.mockRestore();
     }

@@ -70,10 +70,10 @@ const AFSCP_SOURCE_RUN_ATTEMPT = '1';
 const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';
 const AFSCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/${AFSCP_VERSION}`;
-const ASBCP_VERSION = 'v2.0.19';
-const ASBCP_DIGEST = 'sha256:68ee6614f80c42c052b1b7b5c63eac1a531d5c98ae24597abe7745da1c10c1b7';
-const ASBCP_COMMIT_SHA = 'adb6653b0a94378d42692e5a1025ce9f24cefb8d';
-const ASBCP_SOURCE_RUN_ID = '27167401711';
+const ASBCP_VERSION = 'v2.0.20';
+const ASBCP_DIGEST = 'sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10';
+const ASBCP_COMMIT_SHA = '54af68bc4c211d8427b7a5e92fdc102af492a727';
+const ASBCP_SOURCE_RUN_ID = '27479192921';
 const ASBCP_SOURCE_RUN_ATTEMPT = '1';
 const ASBCP_SOURCE_SUBJECT_NAME = 'agentsmith-sandbox-control-plane-image';
 const ASBCP_RELEASE_URL =

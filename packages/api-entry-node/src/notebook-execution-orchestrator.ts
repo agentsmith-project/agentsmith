@@ -125,6 +125,11 @@ function buildAgentCancelledError(reason?: unknown): Error {
 }
 
 const MANAGED_AGENT_READY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000] as const;
+const SANDBOX_RUNTIME_READINESS_ERROR_CODES = new Set([
+  'AGENT_SANDBOX_UNAVAILABLE',
+  'AGENT_SANDBOX_STARTUP_TIMEOUT',
+  'AGENT_SANDBOX_RATE_LIMITED',
+]);
 
 function readErrorDiagnosticField(error: unknown, key: string): unknown {
   if (typeof error !== 'object' || error === null) {
@@ -155,6 +160,12 @@ function buildSandboxReadyRetryDiagnostic(error: unknown): Record<string, unknow
     ?? readErrorDiagnosticField(error, 'network_error_name');
   const requestId = readErrorDiagnosticField(error, 'requestId')
     ?? readErrorDiagnosticField(error, 'request_id');
+  const readinessReason = readErrorDiagnosticField(error, 'readinessReason')
+    ?? readErrorDiagnosticField(error, 'readiness_reason');
+  const readinessMessage = readErrorDiagnosticField(error, 'readinessMessage')
+    ?? readErrorDiagnosticField(error, 'readiness_message');
+  const retryAfter = readErrorDiagnosticField(error, 'retryAfter')
+    ?? readErrorDiagnosticField(error, 'retry_after');
   const sandboxDiagnostics = readErrorDiagnosticRecordField(error, 'sandboxDiagnostics')
     ?? readErrorDiagnosticRecordField(error, 'sandbox_diagnostics');
   return {
@@ -169,6 +180,9 @@ function buildSandboxReadyRetryDiagnostic(error: unknown): Record<string, unknow
     ...(typeof asbcpCode === 'string' ? { asbcp_code: asbcpCode } : {}),
     ...(typeof networkErrorName === 'string' ? { network_error_name: networkErrorName } : {}),
     ...(typeof requestId === 'string' ? { request_id: requestId } : {}),
+    ...(typeof readinessReason === 'string' ? { readiness_reason: readinessReason } : {}),
+    ...(typeof readinessMessage === 'string' ? { readiness_message: redactSensitiveTraceText(readinessMessage) } : {}),
+    ...(typeof retryAfter === 'number' && Number.isFinite(retryAfter) ? { retry_after: retryAfter } : {}),
     ...(sandboxDiagnostics ? { sandbox_diagnostics: sandboxDiagnostics } : {}),
     message: redactSensitiveTraceText(error instanceof Error ? error.message : String(error)),
   };
@@ -183,7 +197,7 @@ function logSandboxRuntimeReadinessFailure(input: {
   diagnostic: Record<string, unknown>;
 }): void {
   const sandboxDiagnostics = readErrorDiagnosticRecordField(input.diagnostic, 'sandbox_diagnostics');
-  if (input.code !== 'AGENT_SANDBOX_UNAVAILABLE' && !sandboxDiagnostics) {
+  if (!SANDBOX_RUNTIME_READINESS_ERROR_CODES.has(input.code) && !sandboxDiagnostics) {
     return;
   }
   const payload = {

@@ -57,40 +57,49 @@ describe('runtime readiness details evidence', () => {
             latest_error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           },
           api_trace: [
-            {
-              operation: 'get_pod_status',
-              outcome: 'success',
-              request_id: 'api_req_status',
-              workload_id: 'task-restore-1',
-              phase: 'offline',
-            },
-          ],
-          asbcp_call_summaries: [
-            {
+          {
+            operation: 'get_pod_status',
+            outcome: 'success',
+            request_id: 'api_req_status',
+            workload_id: 'task-restore-1',
+            phase: 'offline',
+            readiness_reason: 'workspace_pvc_unbound',
+            readiness_message: 'workspace PVC is not bound yet',
+            retry_after: 5,
+          },
+        ],
+        asbcp_call_summaries: [
+          {
               operation: 'create/status',
               outcome: 'error',
               request_id: 'asbcp_req_create',
               workload_id: 'task-restore-1',
               phase: 'offline',
               status_code: 503,
-              error_code: 'AGENT_SANDBOX_UNAVAILABLE',
-              asbcp_code: 'AGENT_SANDBOX_UNAVAILABLE',
-              retryable: true,
-            },
-          ],
-          steps: [
-            {
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            asbcp_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            retryable: true,
+            readiness_reason: 'Insufficient cpu',
+            readiness_message: '0/1 nodes are available: Insufficient cpu',
+            retry_after: 11,
+          },
+        ],
+        steps: [
+          {
               operation: 'create_or_ensure_pod',
               outcome: 'error',
               request_id: 'pod_mgr_create',
               workload_id: 'task-restore-1',
               phase: 'offline',
-              status: 503,
-              code: 'AGENT_SANDBOX_UNAVAILABLE',
-              retryable: true,
-            },
-          ],
-        },
+            status: 503,
+            code: 'AGENT_SANDBOX_UNAVAILABLE',
+            retryable: true,
+            readinessReason: 'Insufficient cpu',
+            readinessMessage: '0/1 nodes are available: Insufficient cpu',
+            retryAfter: 11,
+          },
+        ],
+      },
       },
     };
 
@@ -117,6 +126,9 @@ describe('runtime readiness details evidence', () => {
           request_id: 'api_req_status',
           workload_id: 'task-restore-1',
           phase: 'offline',
+          readiness_reason: 'workspace_pvc_unbound',
+          readiness_message: 'workspace PVC is not bound yet',
+          retry_after: '5',
         }),
         expect.objectContaining({
           source: 'pod_manager',
@@ -127,6 +139,9 @@ describe('runtime readiness details evidence', () => {
           phase: 'offline',
           status_code: '503',
           error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          readiness_reason: 'Insufficient cpu',
+          readiness_message: '0/1 nodes are available: Insufficient cpu',
+          retry_after: '11',
         }),
         expect.objectContaining({
           source: 'asbcp_create_status',
@@ -138,9 +153,117 @@ describe('runtime readiness details evidence', () => {
           status_code: '503',
           error_code: 'AGENT_SANDBOX_UNAVAILABLE',
           asbcp_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          readiness_reason: 'Insufficient cpu',
+          readiness_message: '0/1 nodes are available: Insufficient cpu',
+          retry_after: '11',
         }),
       ]),
     );
+  });
+
+  it('records K8s scheduling readiness reason markers in runtime readiness details', () => {
+    const report = buildRuntimeReadinessDetails({
+      generatedAt: '2026-06-13T12:00:00.000Z',
+      podStatusText: [
+        'pod=task-unschedulable',
+        'phase=Pending',
+        'conditions=PodScheduled:False:Unschedulable;',
+        '---',
+      ].join('\n'),
+      logFiles: [{
+        path: '/tmp/k8s-events.txt',
+        content: 'Warning FailedScheduling pod/task-unschedulable 0/1 nodes are available: Insufficient cpu\n',
+      }],
+    });
+
+    expect(report.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'k8s_event',
+        call: 'schedule_pod',
+        phase: 'unknown',
+        error_code: 'FailedScheduling',
+        readiness_reason: 'Insufficient cpu',
+      }),
+    ]));
+    expect(report.failure).toEqual(expect.objectContaining({
+      source: 'k8s_event',
+      error_code: 'FailedScheduling',
+      readiness_reason: 'Insufficient cpu',
+    }));
+    expect(report.k8s_pods).toEqual([
+      {
+        pod: 'task-unschedulable',
+        phase: 'Pending',
+        conditions: 'PodScheduled:False:Unschedulable;',
+      },
+    ]);
+  });
+
+  it('keeps upstream errors with sandbox diagnostics visible as runtime readiness evidence', () => {
+    const diagnostic = {
+      event: 'runtime_pending_readiness_failure',
+      diagnostic: {
+        code: 'AGENT_UPSTREAM_ERROR',
+        request_id: 'req_upstream_with_sandbox',
+        sandbox_diagnostics: {
+          theme: 'runtime_pending_readiness',
+          workloadId: 'task-upstream-sandbox',
+          pod_manager_summary: {
+            latest_operation: 'create_or_ensure_pod',
+            latest_outcome: 'error',
+            latest_request_id: 'asbcp_req_upstream_sandbox',
+            latest_status_code: 503,
+            latest_error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            latest_asbcp_code: 'pod_unschedulable',
+            latest_readiness_reason: 'Insufficient cpu',
+            latest_readiness_message: '0/1 nodes are available: Insufficient cpu',
+            latest_retry_after: 13,
+          },
+          steps: [
+            {
+              operation: 'create_or_ensure_pod',
+              outcome: 'error',
+              requestId: 'asbcp_req_upstream_sandbox',
+              workloadId: 'task-upstream-sandbox',
+              status: 503,
+              code: 'AGENT_SANDBOX_UNAVAILABLE',
+              asbcpCode: 'pod_unschedulable',
+              readinessReason: 'Insufficient cpu',
+              readinessMessage: '0/1 nodes are available: Insufficient cpu',
+              retryAfter: 13,
+            },
+          ],
+        },
+      },
+    };
+
+    const report = buildRuntimeReadinessDetails({
+      generatedAt: '2026-06-13T12:05:00.000Z',
+      podStatusText: '',
+      logFiles: [{
+        path: '/tmp/api.log',
+        content: `runtime_pending_readiness_failure ${JSON.stringify(diagnostic)}\n`,
+      }],
+    });
+
+    expect(report.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'create_or_ensure_pod',
+        request_id: 'asbcp_req_upstream_sandbox',
+        workload_id: 'task-upstream-sandbox',
+        status_code: '503',
+        error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+        asbcp_code: 'pod_unschedulable',
+        readiness_reason: 'Insufficient cpu',
+        readiness_message: '0/1 nodes are available: Insufficient cpu',
+        retry_after: '13',
+      }),
+    ]));
+    expect(report.failure).toEqual(expect.objectContaining({
+      error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+      readiness_reason: 'Insufficient cpu',
+    }));
   });
 
   it('derives pod manager summary request id from request_ids when no step record is present', () => {

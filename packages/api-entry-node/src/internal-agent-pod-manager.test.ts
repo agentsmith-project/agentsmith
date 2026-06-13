@@ -755,6 +755,136 @@ describe('internal-agent-pod-manager', () => {
     expect(getPodStatus).toHaveBeenCalledTimes(1);
   });
 
+  it('propagates ASBCP readiness reason fields through sandbox diagnostics', async () => {
+    const getPodStatus = vi.fn().mockResolvedValueOnce({
+      phase: 'offline',
+      request_id: 'asbcp_req_status_pending',
+      readiness_reason: 'workspace_pvc_unbound',
+      readiness_message: 'PVC binding pending secret=[redacted]',
+      retry_after: 5,
+    });
+    const unschedulableError = Object.assign(new Error('asbcp_error: create_or_ensure_pod 503 pod unschedulable'), {
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+      status: 503,
+      operation: 'create_or_ensure_pod',
+      asbcpCode: 'pod_unschedulable',
+      retryable: false,
+      requestId: 'asbcp_req_create_unschedulable',
+      readinessReason: 'Insufficient cpu',
+      readinessMessage: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+      retryAfter: 11,
+    });
+    const createOrEnsurePod = vi.fn().mockRejectedValue(unschedulableError);
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus,
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: buildRunnerHealthFoundExec(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await expect(manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: MANAGED_RUNNER_IMAGE_A,
+        _internal_raw_key: 'ask_xxx',
+      }),
+      workspaceMount: buildWorkspaceMount(),
+    })).rejects.toBe(unschedulableError);
+
+    expect(unschedulableError).toMatchObject({
+      sandboxDiagnostics: {
+        steps: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'get_pod_status',
+            outcome: 'success',
+            requestId: 'asbcp_req_status_pending',
+            workloadId: 'task_1',
+            phase: 'offline',
+            readinessReason: 'workspace_pvc_unbound',
+            readinessMessage: 'PVC binding pending secret=[redacted]',
+            retryAfter: 5,
+          }),
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            outcome: 'error',
+            requestId: 'asbcp_req_create_unschedulable',
+            workloadId: 'task_1',
+            status: 503,
+            code: 'AGENT_SANDBOX_UNAVAILABLE',
+            asbcpCode: 'pod_unschedulable',
+            readinessReason: 'Insufficient cpu',
+            readinessMessage: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+            retryAfter: 11,
+          }),
+        ]),
+        api_trace: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'get_pod_status',
+            request_id: 'asbcp_req_status_pending',
+            workload_id: 'task_1',
+            phase: 'offline',
+            readiness_reason: 'workspace_pvc_unbound',
+            readiness_message: 'PVC binding pending secret=[redacted]',
+            retry_after: 5,
+          }),
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            request_id: 'asbcp_req_create_unschedulable',
+            workload_id: 'task_1',
+            status_code: 503,
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            asbcp_code: 'pod_unschedulable',
+            readiness_reason: 'Insufficient cpu',
+            readiness_message: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+            retry_after: 11,
+          }),
+        ]),
+        pod_manager_summary: expect.objectContaining({
+          workload_id: 'task_1',
+          latest_request_id: 'asbcp_req_create_unschedulable',
+          latest_status_code: 503,
+          latest_error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+          latest_asbcp_code: 'pod_unschedulable',
+          latest_readiness_reason: 'Insufficient cpu',
+          latest_readiness_message: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+          latest_retry_after: 11,
+        }),
+        asbcp_call_summaries: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'create_or_ensure_pod',
+            request_id: 'asbcp_req_create_unschedulable',
+            workload_id: 'task_1',
+            status_code: 503,
+            error_code: 'AGENT_SANDBOX_UNAVAILABLE',
+            asbcp_code: 'pod_unschedulable',
+            readiness_reason: 'Insufficient cpu',
+            readiness_message: '0/1 nodes are available: Insufficient cpu secret=[redacted]',
+            retry_after: 11,
+          }),
+        ]),
+      },
+    });
+    expect(JSON.stringify(unschedulableError)).not.toContain('raw');
+  });
+
   it('continues with GET polling after PUT ensure times out when workload id is already known', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })

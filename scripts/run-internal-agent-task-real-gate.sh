@@ -788,6 +788,8 @@ collect_runtime_readiness_details() {
     "${evidence_dir}/afscp-export-gateway-log-tail.txt"
     "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
     "${evidence_dir}/asbcp-docker-logs.txt"
+    "${evidence_dir}/k8s-pod-status.txt"
+    "${evidence_dir}/k8s-events.txt"
     "${evidence_dir}/previous-log-tails.txt"
     "${evidence_dir}/previous-afscp-api-log-tail.txt"
     "${evidence_dir}/previous-afscp-worker-log-tail.txt"
@@ -852,7 +854,7 @@ function normalizeKey(key) {
 
 function readFields(line) {
   const fields = {};
-  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code|asbcp_code|asbcpCode|pod_name|podName|retryable|operation|call)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
+  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code|asbcp_code|asbcpCode|pod_name|podName|retryable|operation|call|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
   for (const match of line.matchAll(pattern)) {
     const rawValue = match[2] ?? '';
     fields[normalizeKey(match[1] ?? '')] = rawValue.replace(/^["']|["']$/g, '');
@@ -863,10 +865,34 @@ function readFields(line) {
   if (fields.operation && !fields.call) {
     fields.call = fields.operation;
   }
+  if (/AGENT_SANDBOX_STARTUP_TIMEOUT/u.test(line) && !fields.error_code) {
+    fields.error_code = 'AGENT_SANDBOX_STARTUP_TIMEOUT';
+  }
+  if (/AGENT_SANDBOX_UNAVAILABLE/u.test(line) && !fields.error_code) {
+    fields.error_code = 'AGENT_SANDBOX_UNAVAILABLE';
+  }
+  if (/FailedScheduling/u.test(line) && !fields.error_code) {
+    fields.error_code = 'FailedScheduling';
+  }
+  if (/(pod_unschedulable|Unschedulable)/u.test(line) && !fields.error_code) {
+    fields.error_code = 'pod_unschedulable';
+  }
+  if (/workspace_pvc_unbound/u.test(line) && !fields.error_code) {
+    fields.error_code = 'workspace_pvc_unbound';
+  }
+  if (/Insufficient cpu/u.test(line) && !fields.readiness_reason) {
+    fields.readiness_reason = 'Insufficient cpu';
+  }
+  if (/FailedScheduling/u.test(line) && !fields.call) {
+    fields.call = 'schedule_pod';
+  }
   return fields;
 }
 
 function classifySource(line) {
+  if (/FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound/u.test(line)) {
+    return 'k8s_event';
+  }
   if (/asbcp_workload_status|ASBCP|create\/status/u.test(line)) {
     return 'asbcp_create_status';
   }
@@ -965,8 +991,22 @@ function addSignal(signals, seen, input) {
   }
   const errorCode = signal.error_code ?? signal.code ?? signal.asbcp_code;
   if (
-    errorCode === 'AGENT_SANDBOX_UNAVAILABLE'
-    && (signal.source === 'api' || signal.source === 'pod_manager' || signal.source === 'asbcp_create_status')
+    (
+      errorCode === 'AGENT_SANDBOX_UNAVAILABLE'
+      || errorCode === 'AGENT_SANDBOX_STARTUP_TIMEOUT'
+      || errorCode === 'AGENT_SANDBOX_RATE_LIMITED'
+      || errorCode === 'FailedScheduling'
+      || errorCode === 'pod_unschedulable'
+      || errorCode === 'workspace_pvc_unbound'
+      || errorCode === 'agent_runner_runtime_unavailable'
+      || errorCode === 'asbcp_network_error'
+    )
+    && (
+      signal.source === 'api'
+      || signal.source === 'pod_manager'
+      || signal.source === 'asbcp_create_status'
+      || signal.source === 'k8s_event'
+    )
     && !signal.phase
   ) {
     signal.phase = 'unknown';
@@ -1002,6 +1042,9 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
     operation: diagnostic.operation,
     call: diagnostic.operation,
     retryable: diagnostic.retryable,
+    readiness_reason: diagnostic.readiness_reason ?? diagnostic.readinessReason,
+    readiness_message: diagnostic.readiness_message ?? diagnostic.readinessMessage,
+    retry_after: diagnostic.retry_after ?? diagnostic.retryAfter,
   });
 
   const podManager = diagnostic.pod_manager ?? diagnostic.podManager;
@@ -1027,6 +1070,9 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       error_code: entry.error_code ?? entry.errorCode ?? entry.code,
       asbcp_code: entry.asbcp_code ?? entry.asbcpCode,
       retryable: entry.retryable,
+      readiness_reason: entry.readiness_reason ?? entry.readinessReason,
+      readiness_message: entry.readiness_message ?? entry.readinessMessage,
+      retry_after: entry.retry_after ?? entry.retryAfter,
     });
   }
 
@@ -1045,6 +1091,9 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       http_status: podManagerSummary.latest_http_status ?? podManagerSummary.latestHttpStatus,
       error_code: podManagerSummary.latest_error_code ?? podManagerSummary.latestErrorCode,
       asbcp_code: podManagerSummary.latest_asbcp_code ?? podManagerSummary.latestAsbcpCode,
+      readiness_reason: podManagerSummary.latest_readiness_reason ?? podManagerSummary.latestReadinessReason,
+      readiness_message: podManagerSummary.latest_readiness_message ?? podManagerSummary.latestReadinessMessage,
+      retry_after: podManagerSummary.latest_retry_after ?? podManagerSummary.latestRetryAfter,
     });
   }
 
@@ -1070,6 +1119,9 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       error_code: entry.error_code ?? entry.errorCode ?? entry.code,
       asbcp_code: entry.asbcp_code ?? entry.asbcpCode,
       retryable: entry.retryable,
+      readiness_reason: entry.readiness_reason ?? entry.readinessReason,
+      readiness_message: entry.readiness_message ?? entry.readinessMessage,
+      retry_after: entry.retry_after ?? entry.retryAfter,
     });
   }
 
@@ -1089,9 +1141,13 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       phase: step.phase,
       status: typeof step.status === 'string' ? step.status : undefined,
       status_code: typeof step.status === 'number' ? step.status : step.status_code ?? step.statusCode,
+      http_status: step.http_status ?? step.httpStatus,
       error_code: step.error_code ?? step.errorCode ?? step.code,
       asbcp_code: step.asbcp_code ?? step.asbcpCode,
       retryable: step.retryable,
+      readiness_reason: step.readiness_reason ?? step.readinessReason,
+      readiness_message: step.readiness_message ?? step.readinessMessage,
+      retry_after: step.retry_after ?? step.retryAfter,
     });
   }
   return true;
@@ -1107,7 +1163,7 @@ function parseSignals(files) {
     }
     const sourceLog = path.basename(file);
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
-      if (!/AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
+      if (!/AGENT_SANDBOX_STARTUP_TIMEOUT|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_UPSTREAM_ERROR|FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|pending|releasing|offline|not_found/u.test(line)) {
         continue;
       }
       if (appendRuntimeReadinessJsonSignals(line, sourceLog, index + 1, signals, seen)) {
@@ -1284,7 +1340,7 @@ collect_runtime_readiness_summary() {
   local log_file
   local -a candidates=()
 
-  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|create_terminal_session_failed|API (ready|call|request|status)|api (ready|call|request|status)|pod manager|pod_manager|ASBCP create/status|ASBCP (create|status)|request_id|workload_id|phase|status_code|error_code'
+  pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_STARTUP_TIMEOUT|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_UPSTREAM_ERROR.*(sandbox_diagnostics|sandboxDiagnostics|runtime_pending_readiness|AGENT_SANDBOX|FailedScheduling|Insufficient cpu|pod_unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message)|(sandbox_diagnostics|sandboxDiagnostics|runtime_pending_readiness|AGENT_SANDBOX|FailedScheduling|Insufficient cpu|pod_unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message).*AGENT_UPSTREAM_ERROR|FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message|retry_after|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|AGENT_TASK_WORKSPACE_BINDING_CONFLICT|FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED|file_library_list_pending|runtime_access_rebind|workspace_binding_releasing|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|create_or_ensure_pod|get_pod_status|delete_pod|delete_workspace_binding|create_terminal_session_failed|API (ready|call|request|status)|api (ready|call|request|status)|pod manager|pod_manager|ASBCP create/status|ASBCP (create|status)|request_id|workload_id|phase|status_code|error_code|http_status'
   if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
     candidates+=(
       "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
@@ -1302,6 +1358,8 @@ collect_runtime_readiness_summary() {
     "${evidence_dir}/afscp-export-gateway-log-tail.txt"
     "${evidence_dir}/afscp-read-export-probe-log-tail.txt"
     "${evidence_dir}/asbcp-docker-logs.txt"
+    "${evidence_dir}/k8s-pod-status.txt"
+    "${evidence_dir}/k8s-events.txt"
     "${evidence_dir}/previous-log-tails.txt"
     "${evidence_dir}/previous-afscp-api-log-tail.txt"
     "${evidence_dir}/previous-afscp-worker-log-tail.txt"
@@ -1347,12 +1405,13 @@ collect_runtime_readiness_summary() {
 
 runtime_readiness_flake_markers_present() {
   local spec_state_file="${1:-}"
+  local evidence_dir="${2:-}"
   local spec_runtime_dir=""
   local marker_pattern
   local log_file
   local -a candidates=()
 
-  marker_pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT|IDEMPOTENCY_CONFLICT|file_library_list_pending'
+  marker_pattern='runtime_pending_readiness_failure|AGENT_SANDBOX_STARTUP_TIMEOUT|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_UPSTREAM_ERROR.*(sandbox_diagnostics|sandboxDiagnostics|runtime_pending_readiness|AGENT_SANDBOX|FailedScheduling|Insufficient cpu|pod_unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message)|(sandbox_diagnostics|sandboxDiagnostics|runtime_pending_readiness|AGENT_SANDBOX|FailedScheduling|Insufficient cpu|pod_unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message).*AGENT_UPSTREAM_ERROR|FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound|readiness_reason|readiness_message|retry_after|agent_runner_runtime_unavailable|asbcp_network_error|ASBCP readyz preflight failed|AGENT_TASK_INTERNAL_WORKLOAD_RELEASE_PENDING|FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT|IDEMPOTENCY_CONFLICT|file_library_list_pending'
   if [[ -n "${INTERNAL_REAL_DIR:-}" ]]; then
     candidates+=(
       "${AFSCP_API_LOG:-${INTERNAL_REAL_DIR}/afscp-api.log}"
@@ -1371,6 +1430,14 @@ runtime_readiness_flake_markers_present() {
         candidates+=("${log_file}")
       done < <(find "${spec_runtime_dir}/integration" -maxdepth 3 -type f -name '*.log' 2>/dev/null | sort | head -n 12)
     fi
+  fi
+  if [[ -n "${evidence_dir}" && -d "${evidence_dir}" ]]; then
+    candidates+=(
+      "${evidence_dir}/log-tails.txt"
+      "${evidence_dir}/asbcp-docker-logs.txt"
+      "${evidence_dir}/k8s-pod-status.txt"
+      "${evidence_dir}/k8s-events.txt"
+    )
   fi
 
   for log_file in "${candidates[@]}"; do
@@ -1725,6 +1792,9 @@ collect_child_internal_failure_evidence() {
     fi
     collect_runtime_readiness_details "${evidence_dir}" "${spec_state_file}"
     collect_runtime_readiness_summary "${evidence_dir}" "${spec_state_file}"
+    if [[ "${current_runtime_readiness_failure}" -ne 1 ]] && runtime_readiness_flake_markers_present "${spec_state_file}" "${evidence_dir}"; then
+      current_runtime_readiness_failure=1
+    fi
     if [[ "${current_runtime_readiness_failure}" -eq 1 ]]; then
       if [[ "${had_previous_runtime_readiness_failure}" -eq 1 || "${repeated_current_runtime_readiness_failure}" -eq 1 ]]; then
         if [[ "${had_previous_runtime_readiness_failure}" -eq 1 ]]; then

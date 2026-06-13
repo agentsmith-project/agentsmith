@@ -61,6 +61,7 @@ function selectManagedWorkloadPodForTask(input) {
   const taskWorkloadId = sanitizeWorkloadId(input?.taskId);
   const workspaceId = String(input?.workspaceId || '').trim();
   const projectId = String(input?.projectId || '').trim();
+  const includeTerminatingPods = input?.includeTerminatingPods === true;
   const candidates = readItems(input?.payload)
     .map((item) => ({
       podName: readPodName(item),
@@ -74,7 +75,7 @@ function selectManagedWorkloadPodForTask(input) {
       deletionTimestamp: readDeletionTimestamp(item),
     }))
     .filter((item) => item.podName.length > 0)
-    .filter((item) => !item.deletionTimestamp)
+    .filter((item) => includeTerminatingPods || !item.deletionTimestamp)
     .filter((item) => item.app === 'managed-workload')
     .filter((item) => matchesOptionalRawId(item.workspaceId, workspaceId))
     .filter((item) => matchesOptionalRawId(item.projectId, projectId))

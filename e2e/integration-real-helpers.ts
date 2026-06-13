@@ -36,6 +36,7 @@ type WorkloadPodSelectorInput = {
   workspaceId?: string;
   projectId?: string;
   payload?: unknown;
+  includeTerminatingPods?: boolean;
 };
 type WorkloadPodSelectorResult = {
   podName: string;
@@ -4344,6 +4345,7 @@ function selectManagedWorkloadPodItem(args: {
   workloadId: string;
   workspaceId?: string;
   projectId?: string;
+  includeTerminatingPods?: boolean;
 }): { item: KubernetesPodItem } & ManagedWorkloadPodSelection | null {
   const payload = parseWorkloadPodListPayload(args.payloadText);
   const selected = selectManagedWorkloadPodForTask({
@@ -4351,6 +4353,7 @@ function selectManagedWorkloadPodItem(args: {
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     payload,
+    includeTerminatingPods: args.includeTerminatingPods,
   }) as ManagedWorkloadPodSelection | null;
   if (!selected?.podName) return null;
 
@@ -5704,6 +5707,7 @@ export async function waitForWorkloadPodDeleted(args: {
           workloadId: args.workloadId,
           workspaceId: args.workspaceId,
           projectId: args.projectId,
+          includeTerminatingPods: true,
         });
         return selection?.podName ?? "";
       },

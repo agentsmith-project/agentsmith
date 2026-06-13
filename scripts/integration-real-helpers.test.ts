@@ -3849,6 +3849,50 @@ describe('integration-real-helpers', () => {
     });
   });
 
+  it('treats matching terminating workload pod objects as still present during deletion waits', async () => {
+    const workloadId = 'task-presence-terminating';
+    const podName = `asbcp-ws-default-proj-1-${workloadId}-15772034fcfa`;
+
+    await withMockKubectlPodSnapshot({
+      items: [
+        {
+          metadata: {
+            name: podName,
+            uid: 'pod-uid-terminating',
+            deletionTimestamp: '2026-06-13T12:00:00Z',
+            labels: {
+              app: 'managed-workload',
+              workspace_id: 'ws-default-9f642c763af7',
+              project_id: 'proj-1-e04b05f9bca4',
+              workload_id: `${workloadId}-15772034fcfa`,
+            },
+            annotations: {
+              'mbos.io/workspace-id': 'ws_default',
+              'mbos.io/project-id': 'proj_1',
+              'mbos.io/workload-id': workloadId,
+            },
+          },
+        },
+      ],
+    }, async () => {
+      await expect(waitForWorkloadPodPresent({
+        namespace: 'agentsmith-sandbox',
+        workloadId,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        timeoutMs: 10,
+      })).rejects.toThrow();
+
+      await expect(waitForWorkloadPodDeleted({
+        namespace: 'agentsmith-sandbox',
+        workloadId,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        timeoutMs: 10,
+      })).rejects.toThrow();
+    });
+  });
+
   it('creates Agent Task runner bundles without external mode, legacy selectors, or chat session side effects', async () => {
     const previousMongoUrl = process.env.MONGO_URL;
     const previousMongoDbName = process.env.MONGO_DB_NAME;

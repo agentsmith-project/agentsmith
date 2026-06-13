@@ -168,6 +168,43 @@ describe('agent task workload pod selector', () => {
     expect(selected).toBeNull();
   });
 
+  it('keeps terminating pods out of normal selection but can include them for deletion waits', () => {
+    const terminatingPodName = `workload-${taskWorkloadId}-terminating`;
+    const input = {
+      taskId,
+      workspaceId,
+      projectId,
+      payload: {
+        items: [
+          {
+            metadata: {
+              name: terminatingPodName,
+              deletionTimestamp: '2026-06-13T12:00:00Z',
+              labels: {
+                app: 'managed-workload',
+                workload_id: `${taskWorkloadId}-15772034fcfa`,
+              },
+              annotations: {
+                'mbos.io/workspace-id': workspaceId,
+                'mbos.io/project-id': projectId,
+                'mbos.io/workload-id': taskWorkloadId,
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    expect(selectManagedWorkloadPodForTask(input)).toBeNull();
+    expect(selectManagedWorkloadPodForTask({
+      ...input,
+      includeTerminatingPods: true,
+    })).toEqual({
+      podName: terminatingPodName,
+      workloadId: taskWorkloadId,
+    });
+  });
+
   it('does not match task-extra when looking for task even if the hashed label shares the task prefix', () => {
     const selected = selectManagedWorkloadPodForTask({
       taskId: 'task',

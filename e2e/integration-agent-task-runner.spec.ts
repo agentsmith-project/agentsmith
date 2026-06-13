@@ -138,24 +138,52 @@ function readRunnerLockedRuntimeSmokeImage(): string | null {
   return image;
 }
 
+function throwCleanupErrors(errors: unknown[], message: string): void {
+  if (errors.length === 0) return;
+  if (errors.length === 1) {
+    const [error] = errors;
+    if (error instanceof Error) throw error;
+    throw new Error(String(error));
+  }
+  throw new AggregateError(
+    errors.map((error) =>
+      error instanceof Error ? error : new Error(String(error)),
+    ),
+    message,
+  );
+}
+
 async function cleanupManagedAgentTaskWorkload(args: {
   projectId: string;
   taskId: string | null;
 }): Promise<void> {
   if (!args.taskId) return;
+  const errors: unknown[] = [];
   const workloadId = sanitizeWorkloadId(args.taskId);
-  await deleteInternalWorkloadViaAsbcp({
-    workspaceId: WORKSPACE_ID,
-    projectId: args.projectId,
-    workloadId,
-  });
-  await waitForWorkloadPodDeleted({
-    namespace: INTERNAL_AGENT_K8S_NAMESPACE,
-    workspaceId: WORKSPACE_ID,
-    projectId: args.projectId,
-    workloadId,
-    timeoutMs: 120_000,
-  });
+  try {
+    await deleteInternalWorkloadViaAsbcp({
+      workspaceId: WORKSPACE_ID,
+      projectId: args.projectId,
+      workloadId,
+    });
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await waitForWorkloadPodDeleted({
+      namespace: INTERNAL_AGENT_K8S_NAMESPACE,
+      workspaceId: WORKSPACE_ID,
+      projectId: args.projectId,
+      workloadId,
+      timeoutMs: 120_000,
+    });
+  } catch (error) {
+    errors.push(error);
+  }
+  throwCleanupErrors(
+    errors,
+    `managed_agent_task_workload_cleanup_failed:${args.taskId}`,
+  );
 }
 
 async function cleanupManagedTerminalSessionWorkload(args: {
@@ -164,19 +192,32 @@ async function cleanupManagedTerminalSessionWorkload(args: {
   taskId: string;
   terminalSessionId: string | null;
 }): Promise<void> {
+  const errors: unknown[] = [];
   if (args.terminalSessionId) {
-    await deleteTerminalSessionViaApi({
-      page: args.page,
-      workspaceId: WORKSPACE_ID,
+    try {
+      await deleteTerminalSessionViaApi({
+        page: args.page,
+        workspaceId: WORKSPACE_ID,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        sessionId: args.terminalSessionId,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await cleanupManagedAgentTaskWorkload({
       projectId: args.projectId,
       taskId: args.taskId,
-      sessionId: args.terminalSessionId,
     });
+  } catch (error) {
+    errors.push(error);
   }
-  await cleanupManagedAgentTaskWorkload({
-    projectId: args.projectId,
-    taskId: args.taskId,
-  });
+  throwCleanupErrors(
+    errors,
+    `managed_terminal_session_cleanup_failed:${args.taskId}`,
+  );
 }
 
 async function createRunnerlessAgentTask(args: {
